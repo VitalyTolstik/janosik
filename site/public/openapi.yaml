@@ -540,6 +540,32 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/members/me:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    delete:
+      tags: [Boards]
+      operationId: leaveBoard
+      summary: Leave the board
+      description: |
+        Any accepted member may leave as themselves. An `ADMIN` may leave only
+        while another accepted `ADMIN` remains; the last `ADMIN` answers
+        `409 { code: "last_admin", action: "leave" }`. Session-only: a PAT gets
+        `403 pat_forbidden`. Authored content stays with its original
+        attribution, the departure is recorded as `member_left`, and a
+        `membership: removed` SSE frame closes the caller's stream.
+      responses:
+        "200":
+          description: Left.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/members/{userId}:
     parameters:
       - $ref: "#/components/parameters/BoardId"

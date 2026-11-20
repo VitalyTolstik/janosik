@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -183,6 +189,42 @@ describe("GlobalSearch", () => {
     const results = screen.getByTestId("global-search-results");
     expect(results).toHaveTextContent("Boards");
     expect(results).toHaveTextContent("Alpha");
+  });
+
+  it("keeps a board hit above the card cap and expands every group", async () => {
+    const cards = Array.from({ length: 21 }, (_, index) => ({
+      id: `c-cap-${index}`,
+      title: `Widget ${String(index).padStart(2, "0")}`,
+    }));
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-cap", "Project", cards)},${boardJson(
+        "b-widget",
+        "Widget",
+        [],
+      )}]`,
+    );
+
+    renderSearch();
+    const options = await search("Widget");
+
+    // 20 cards + the board hit — the board is not hidden by the card cap.
+    expect(options).toHaveLength(21);
+    const results = screen.getByTestId("global-search-results");
+    const cardsGroup = within(results).getByRole("group", { name: "Cards" });
+    expect(within(cardsGroup).getAllByRole("option")).toHaveLength(20);
+    expect(results).toHaveTextContent("20 of 21");
+    expect(
+      within(results).getByRole("group", { name: "Boards" }),
+    ).toHaveTextContent("Widget");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
+
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(22));
+    expect(screen.queryByText("20 of 21")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show all results" }),
+    ).toBeNull();
   });
 
   it("links the combobox to its selected option and resets on no matches", async () => {

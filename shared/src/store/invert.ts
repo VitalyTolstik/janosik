@@ -495,11 +495,13 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       const index = before.labels.findIndex((l) => l.id === action.labelId);
       if (index === -1) return null;
       const label = before.labels[index];
-      // Every card it was attached to, and where in the list it sat.
+      // Every card it was attached to, where in the list it sat, and the
+      // card's own stamp before the delete — TASK-183.3 restores all three.
       const assignments = Object.values(before.cards)
         .map((card) => ({
           cardId: card.id,
           index: card.labelIds.indexOf(label.id),
+          updatedAt: card.updatedAt,
         }))
         .filter((entry) => entry.index !== -1);
       return {
@@ -511,8 +513,30 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       };
     }
 
-    case "RESTORE_LABEL":
-      return { ...head, type: "DELETE_LABEL", labelId: action.label.id };
+    case "RESTORE_LABEL": {
+      // Undoing a restore deletes the label again. The cards it re-attached
+      // get back the stamps they had before the restore, not the undo clock.
+      const stamps = new Map<string, number>();
+      for (const { cardId } of action.assignments ?? []) {
+        const card = cardOf(before, cardId);
+        if (card !== undefined && !stamps.has(card.id)) {
+          stamps.set(card.id, card.updatedAt);
+        }
+      }
+      return {
+        ...head,
+        type: "DELETE_LABEL",
+        labelId: action.label.id,
+        ...(stamps.size > 0
+          ? {
+              cardStamps: [...stamps].map(([cardId, updatedAt]) => ({
+                cardId,
+                updatedAt,
+              })),
+            }
+          : {}),
+      };
+    }
 
     /* ------------------------------------------------------------- checklists */
     case "ADD_CHECKLIST": {

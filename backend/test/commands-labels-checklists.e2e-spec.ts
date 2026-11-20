@@ -5,6 +5,7 @@ import type {
   Board,
   BoardAction,
   BoardEnvelope,
+  BoardScopedAction,
   CommandResponse,
   Label,
 } from "@janosik/shared";
@@ -961,7 +962,7 @@ describe("Commands API — labels & checklists (e2e)", () => {
       ]);
     });
 
-    it("cascades and restores card labels without changing card bookkeeping (TASK-183.3)", async () => {
+    it("stamps every card on delete and restores each prior stamp (TASK-183.3)", async () => {
       const boardId = await createBoard("Cascade board");
       await apply(
         boardId,
@@ -1012,18 +1013,15 @@ describe("Commands API — labels & checklists (e2e)", () => {
           on: true,
         }),
       );
+      const actor = await prisma.user.findUniqueOrThrow({
+        where: { email: ADMIN_EMAIL },
+        select: { id: true },
+      });
       const before = await getAggregate(boardId);
-      const label = before.labels.find((entry) => entry.id === "l-cas-1");
-      const assignments = Object.values(before.cards)
-        .map((card) => ({
-          cardId: card.id,
-          index: card.labelIds.indexOf("l-cas-1"),
-        }))
-        .filter((assignment) => assignment.index !== -1);
-      expect(assignments).toHaveLength(2);
+      const cardIds = ["card-cas-1", "card-cas-2"];
       const readCardBookkeeping = () =>
         prisma.card.findMany({
-          where: { id: { in: assignments.map(({ cardId }) => cardId) } },
+          where: { id: { in: cardIds } },
           orderBy: { id: "asc" },
           select: {
             id: true,
@@ -1035,17 +1033,35 @@ describe("Commands API — labels & checklists (e2e)", () => {
       const original = await readCardBookkeeping();
       expect(original).toHaveLength(2);
       expect(original[0].updatedAt).not.toEqual(original[1].updatedAt);
+      expect(original.every((row) => row.lastActorId === actor.id)).toBe(true);
 
-      await apply(
-        boardId,
-        scoped(boardId, { type: "DELETE_LABEL", labelId: "l-cas-1" }),
+      // A board-wide delete stamps every card that loses the label, exactly
+      // like a single-card mutation, and the version moves once per card.
+      const deleteAction = scoped(boardId, {
+        type: "DELETE_LABEL",
+        labelId: "l-cas-1",
+      });
+      const deleteAt = (deleteAction as BoardScopedAction).at;
+      const expectedAfterDelete = boardReducer([before], deleteAction, {
+        withActivity: false,
+      })[0];
+      const deleteResponse = await apply(boardId, deleteAction);
+      expect(stripAttribution(await getAggregate(boardId))).toEqual(
+        stripAttribution(expectedAfterDelete),
       );
 
-      const afterDelete = await getAggregate(boardId);
-      expect(afterDelete.labels.map((entry) => entry.id)).toEqual(["l-cas-2"]);
-      expect(afterDelete.cards["card-cas-1"].labelIds).toEqual([]);
-      expect(afterDelete.cards["card-cas-2"].labelIds).toEqual(["l-cas-2"]);
-      expect(await readCardBookkeeping()).toEqual(original);
+      const afterDelete = await readCardBookkeeping();
+      expect(afterDelete).toEqual(
+        original.map((row) => ({
+          ...row,
+          updatedAt: new Date(deleteAt),
+          version: row.version + 1,
+          lastActorId: actor.id,
+        })),
+      );
+      for (const row of afterDelete) {
+        expect(deleteResponse.versions[`card:${row.id}`]).toBe(row.version);
+      }
       const labelRow = await prisma.label.findUnique({
         where: { id: "l-cas-1" },
       });
@@ -1054,29 +1070,187 @@ describe("Commands API — labels & checklists (e2e)", () => {
         await prisma.cardLabel.count({ where: { labelId: "l-cas-1" } }),
       ).toBe(0);
 
-      const restored = await applyAndAssert(
-        boardId,
-        scoped(boardId, {
-          type: "RESTORE_LABEL",
-          label: label!,
-          index: 0,
-          assignments,
-        }),
+      // The generated inverse carries each card's pre-delete stamp.
+      const inverse = invert(before, deleteAction);
+      if (inverse?.type !== "RESTORE_LABEL") {
+        throw new Error("Expected a RESTORE_LABEL inverse");
+      }
+      expect(
+        [...(inverse.assignments ?? [])].sort((a, b) =>
+          a.cardId.localeCompare(b.cardId),
+        ),
+      ).toEqual(
+        original.map((row) => ({
+          cardId: row.id,
+          index: before.cards[row.id].labelIds.indexOf("l-cas-1"),
+          updatedAt: row.updatedAt.getTime(),
+        })),
       );
-      const links = await prisma.cardLabel.findMany({
-        where: { labelId: "l-cas-1" },
-        orderBy: { cardId: "asc" },
-      });
-      expect(links.map(({ cardId }) => cardId)).toEqual([
-        "card-cas-1",
-        "card-cas-2",
-      ]);
+
+      const undo = { ...inverse, at: tick() };
+      const restored = await applyAndAssert(boardId, undo);
+      expect(stripAttribution(restored)).toEqual(stripAttribution(before));
+      expect(await readCardBookkeeping()).toEqual(
+        original.map((row) => ({
+          ...row,
+          // Undo is a new write: the row version moves even though the
+          // timestamp goes back to the exact pre-delete value.
+          version: row.version + 2,
+        })),
+      );
       expect(restored.cards["card-cas-1"].labelIds).toEqual(["l-cas-1"]);
       expect(restored.cards["card-cas-2"].labelIds).toEqual([
         "l-cas-2",
         "l-cas-1",
       ]);
-      expect(await readCardBookkeeping()).toEqual(original);
+
+      // A pre-183.3 inverse (assignments with no `updatedAt`) still applies:
+      // the restore falls back to its own command stamp.
+      const secondDelete = scoped(boardId, {
+        type: "DELETE_LABEL",
+        labelId: "l-cas-1",
+      });
+      await applyAndAssert(boardId, secondDelete);
+      const secondInverse = invert(restored, secondDelete);
+      if (secondInverse?.type !== "RESTORE_LABEL") {
+        throw new Error("Expected a RESTORE_LABEL inverse");
+      }
+      const oldShapeInverse = {
+        ...secondInverse,
+        at: tick(),
+        assignments: (secondInverse.assignments ?? []).map(
+          ({ cardId, index }) => ({ cardId, index }),
+        ),
+      };
+      const oldRestored = await applyAndAssert(boardId, oldShapeInverse);
+      expect(oldRestored.labels.map((entry) => entry.id)).toContain("l-cas-1");
+      expect(oldRestored.cards["card-cas-1"].labelIds).toEqual(["l-cas-1"]);
+      const oldShapeRows = await prisma.card.findMany({
+        where: { id: { in: cardIds } },
+        orderBy: { id: "asc" },
+        select: { id: true, updatedAt: true, version: true },
+      });
+      for (const row of oldShapeRows) {
+        expect(row.updatedAt).toEqual(new Date(oldShapeInverse.at));
+        // delete + undo + delete + old-shape undo
+        expect(row.version).toBe(
+          original.find((entry) => entry.id === row.id)!.version + 4,
+        );
+      }
+
+      // Version/CAS: a stale card precondition refuses the delete; the
+      // current version applies it and stamps the row exactly once.
+      const current = await prisma.card.findMany({
+        where: { id: { in: cardIds } },
+        select: { id: true, version: true },
+      });
+      const casAction = scoped(boardId, {
+        type: "DELETE_LABEL",
+        labelId: "l-cas-1",
+      });
+      const stale = await server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(adminToken))
+        .send({
+          commandId: randomUUID(),
+          action: casAction,
+          ifMatchVersions: {
+            "card:card-cas-1":
+              current.find((row) => row.id === "card-cas-1")!.version + 1,
+          },
+        })
+        .expect(409);
+      expect(stale.body.conflict).toBe("version");
+
+      const casApply = { ...casAction, at: tick() };
+      const casResponse = await apply(boardId, casApply);
+      const casRows = await readCardBookkeeping();
+      expect(casRows).toEqual(
+        oldShapeRows.map((row) => ({
+          id: row.id,
+          updatedAt: new Date(casApply.at),
+          version: row.version + 1,
+          lastActorId: actor.id,
+        })),
+      );
+      for (const row of casRows) {
+        expect(casResponse.versions[`card:${row.id}`]).toBe(row.version);
+      }
+    });
+
+    // Audit of the same-class label writers (TASK-183.3): rename and recolor
+    // are label metadata, not card membership, so they must not stamp cards.
+    it("renames and recolors a label without touching card bookkeeping", async () => {
+      const boardId = await createBoard("Label metadata board");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: "col-meta",
+          title: "Todo",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-meta",
+          columnId: "col-meta",
+          title: "Card",
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_LABEL",
+          label: { id: "l-meta", name: "Bug", color: "red" },
+        }),
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "SET_CARD_LABEL",
+          cardId: "card-meta",
+          labelId: "l-meta",
+          on: true,
+        }),
+      );
+      const readCard = () =>
+        prisma.card.findUniqueOrThrow({
+          where: { id: "card-meta" },
+          select: { updatedAt: true, version: true, lastActorId: true },
+        });
+      const before = await readCard();
+      const labelBefore = await prisma.label.findUniqueOrThrow({
+        where: { id: "l-meta" },
+        select: { version: true },
+      });
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "RENAME_LABEL",
+          labelId: "l-meta",
+          name: "Defect",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "SET_LABEL_COLOR",
+          labelId: "l-meta",
+          color: "brand",
+        }),
+      );
+
+      expect(await readCard()).toEqual(before);
+      const label = await prisma.label.findUniqueOrThrow({
+        where: { id: "l-meta" },
+        select: { name: true, color: true, version: true },
+      });
+      expect(label.name).toBe("Defect");
+      expect(label.color).toBe("brand");
+      expect(label.version).toBe(labelBefore.version + 2);
     });
   });
 

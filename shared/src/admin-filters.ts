@@ -127,6 +127,21 @@ export interface AdminFilterSurfaceConfig {
 }
 
 const BOARD_CARD_SCOPE = ["boardId", "cardId"] as const;
+const EVENT_FACETS = ["actorId", "type"] as const;
+const COMMAND_FACETS = [
+  "boardId",
+  ...EVENT_FACETS,
+  "cardId",
+  "columnId",
+  "commandId",
+] as const;
+const AUDIT_FACETS = [
+  "adminId",
+  "action",
+  "targetType",
+  "targetId",
+  "commandId",
+] as const;
 const CARD_FACETS = [
   "boardId",
   "columnId",
@@ -193,20 +208,12 @@ function createEntityFilters(): Record<
       statusAndPeriodTabs,
     ),
     activity: filterSurface(
-      ADMIN_CARD_SCOPE,
-      [...BOARD_CARD_SCOPE, "actorId", "type"],
+      [...ADMIN_CARD_SCOPE, ...EVENT_FACETS],
+      [...BOARD_CARD_SCOPE, ...EVENT_FACETS],
       PERIOD_TABS,
     ),
-    commands: filterSurface(
-      ["boardId", "columnId", "cardId", "commandId"],
-      ["boardId", "actorId", "type", "cardId", "columnId", "commandId"],
-      PERIOD_TABS,
-    ),
-    audit: filterSurface(
-      ["commandId"],
-      ["adminId", "action", "targetType", "targetId", "commandId"],
-      PERIOD_TABS,
-    ),
+    commands: filterSurface(COMMAND_FACETS, COMMAND_FACETS, PERIOD_TABS),
+    audit: filterSurface(AUDIT_FACETS, AUDIT_FACETS, PERIOD_TABS),
     sessions: filterSurface([], [], PERIOD_TABS),
     tokens: filterSurface([], [], PERIOD_TABS),
     shares: filterSurface(["boardId"], [], { dateRange: true }),

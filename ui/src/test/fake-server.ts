@@ -751,6 +751,17 @@ export class FakeServer {
         Number(searchParams.get("since") ?? 0),
       );
     }
+    // TASK-177.2 self-leave: the caller stops being a member. The board
+    // leaves `GET /boards`, every board route answers 403 and the live
+    // stream gets the same `membership: removed` frame as the real server.
+    const leaveMatch = /^\/api\/v1\/boards\/([^/]+)\/members\/me$/.exec(path);
+    if (leaveMatch && method === "DELETE") {
+      const boardId = leaveMatch[1];
+      this.revoked.add(boardId);
+      this.membersByBoard.delete(boardId);
+      this.publishMembership(boardId, this.account.id, "removed");
+      return json(200, { status: "ok" });
+    }
     const membersMatch = /^\/api\/v1\/boards\/([^/]+)\/members$/.exec(path);
     if (membersMatch && method === "GET") {
       return json(

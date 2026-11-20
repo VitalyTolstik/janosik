@@ -415,6 +415,73 @@ describe("boardReducer — LABEL management", () => {
     expect(next.cards["card-1"].labelIds).not.toContain("label-urgent");
     expect(next.cards["card-5"].labelIds).not.toContain("label-urgent");
   });
+
+  // TASK-183.3: one delete touches every card wearing the label. Each one
+  // gets the command stamp, and the inverse's per-card stamps bring back the
+  // exact pre-delete values.
+  it("stamps every card on a multi-card label delete and restores each prior stamp", () => {
+    const seed = reduceBoard(freshBoard(), {
+      type: "SET_CARD_LABEL",
+      cardId: "card-1",
+      labelId: "label-urgent",
+      on: true,
+    });
+    const affected = ["card-1", "card-5"];
+    const label = seed.labels.find((entry) => entry.id === "label-urgent")!;
+    const at = CLOCK + 50;
+    const deleted = boardReducer([seed], {
+      type: "DELETE_LABEL",
+      labelId: label.id,
+      at,
+    } as BoardAction)[0];
+    for (const id of affected) {
+      expect(deleted.cards[id].labelIds).not.toContain(label.id);
+      expect(deleted.cards[id].updatedAt).toBe(at);
+    }
+    // A card without the label is untouched.
+    expect(deleted.cards["card-2"]).toBe(seed.cards["card-2"]);
+
+    const assignments = affected.map((cardId) => ({
+      cardId,
+      index: seed.cards[cardId].labelIds.indexOf(label.id),
+      updatedAt: seed.cards[cardId].updatedAt,
+    }));
+    const restoreAt = at + 100;
+    const restored = boardReducer([deleted], {
+      type: "RESTORE_LABEL",
+      label,
+      index: seed.labels.findIndex((entry) => entry.id === label.id),
+      assignments,
+      at: restoreAt,
+    } as BoardAction)[0];
+    for (const id of affected) {
+      expect(restored.cards[id].labelIds).toEqual(seed.cards[id].labelIds);
+      expect(restored.cards[id].updatedAt).toBe(seed.cards[id].updatedAt);
+    }
+    expect(restored.cards["card-2"].updatedAt).toBe(
+      seed.cards["card-2"].updatedAt,
+    );
+  });
+
+  it("accepts a pre-183.3 label restore and falls back to the command stamp", () => {
+    const seed = freshBoard();
+    const label = seed.labels.find((entry) => entry.id === "label-urgent")!;
+    const deleted = reduceBoard(seed, {
+      type: "DELETE_LABEL",
+      labelId: label.id,
+    });
+    const at = CLOCK + 200;
+    const restored = boardReducer([deleted], {
+      type: "RESTORE_LABEL",
+      label,
+      index: seed.labels.findIndex((entry) => entry.id === label.id),
+      // An old inverse has no per-card `updatedAt`.
+      assignments: [{ cardId: "card-5", index: 0 }],
+      at,
+    } as BoardAction)[0];
+    expect(restored.cards["card-5"].labelIds).toContain(label.id);
+    expect(restored.cards["card-5"].updatedAt).toBe(at);
+  });
 });
 
 describe("boardReducer — MOVE_CARD", () => {

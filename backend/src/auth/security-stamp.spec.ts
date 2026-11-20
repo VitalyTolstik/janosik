@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+import { env } from "@/config/env";
 import type { User } from "@prisma/client";
 import { UnauthorizedException } from "@nestjs/common";
 import { securityStamp } from "./security-stamp";
@@ -31,6 +33,25 @@ describe("credential security stamp", () => {
     expect(securityStamp({ ...user, emailVerifiedAt: new Date() })).not.toBe(
       stamp,
     );
+  });
+
+  it("uses the configured secret by default and accepts an explicit reset secret", () => {
+    const payload = JSON.stringify([
+      user.id,
+      user.email,
+      user.passwordHash,
+      null,
+    ]);
+    for (const secret of [env.JWT_SECRET, "independent-reset-secret"]) {
+      const expected = createHmac("sha256", secret)
+        .update(payload)
+        .digest("base64url");
+      const actual =
+        secret === env.JWT_SECRET
+          ? securityStamp(user)
+          : securityStamp(user, secret);
+      expect(actual).toBe(expected);
+    }
   });
 
   it("rejects an old access token after a password reset", async () => {

@@ -855,6 +855,15 @@ describe("Admin addressable filters (e2e)", () => {
     ["cards", "search=a&search=b"],
     ["commands", `from=${at(30)}&from=${at(31)}`],
     ["commands", "commandId=command-a-1&commandId=command-b-1"],
+    ["commands", "actorId=bad%2Fid"],
+    ["commands", "type=MOVE%20CARD"],
+    ["audit", "targetId=card-a-1&targetId=card-b-1"],
+    ["audit", "targetType=invalid%2Ftype"],
+    ["audit", "adminId=bad%2Fid"],
+    [
+      "audit",
+      Array.from({ length: 21 }, (_, i) => `action=event.${i}`).join("&"),
+    ],
     ["cards", "due=soon&due=soon"],
     ["cards", "hasAttachments=true&hasAttachments=false"],
     ["cards", "unassigned=true&unassigned=true"],
@@ -914,11 +923,11 @@ describe("Admin addressable filters (e2e)", () => {
     ["cards", "authorId=someone", "authorId"],
     ["comments", "mime=image", "mime"],
     ["attachments", "kind=note", "kind"],
-    ["activity", "actorId=someone", "actorId"],
-    ["commands", "type=ADD_CARD", "type"],
-    ["audit", "adminId=someone", "adminId"],
-    ["audit", "action=board.command", "action"],
-    ["audit", "targetId=card-a-1&targetId=card-b-1", "targetId"],
+    ["comments", "actorId=someone", "actorId"],
+    ["cards", "action=board.command", "action"],
+    ["activity", "adminId=someone", "adminId"],
+    ["commands", "targetType=board", "targetType"],
+    ["audit", "actorId=someone", "actorId"],
   ];
   it.each(deferredCases)(
     "returns unsupported_filter for %s?%s",
@@ -1172,5 +1181,336 @@ describe("Admin addressable filters (e2e)", () => {
 
   it("requires a master session for lookups", async () => {
     await server().get("/api/v1/admin/filter-options?type=board").expect(401);
+  });
+
+  describe("Audit hub exact event facets", () => {
+    const period = `from=${at(70)}&to=${at(79)}`;
+    const operatorId = "filters-operator";
+    const ownerId = "filters-owner";
+    const otherUser = "filter-email-only";
+
+    beforeAll(async () => {
+      const command = await prisma.command.findUniqueOrThrow({
+        where: { id: "command-a-1" },
+      });
+      const auditEvent = {
+        adminId: ownerId,
+        adminEmail: ADMIN_EMAIL,
+        action: "board.command",
+        targetType: "board",
+        targetId: "board-a",
+        details: { commandId: command.id, seq: Number(command.seq) },
+      };
+      await prisma.adminAuditLog.createMany({
+        data: [
+          { ...auditEvent, id: "exact-audit", createdAt: new Date(at(70)) },
+          {
+            ...auditEvent,
+            id: "exact-before",
+            createdAt: new Date(at(69)),
+            details: {},
+          },
+          {
+            ...auditEvent,
+            id: "exact-after",
+            createdAt: new Date(at(80)),
+            details: {},
+          },
+          {
+            ...auditEvent,
+            id: "exact-action",
+            action: "board.command_extra",
+            createdAt: new Date(at(71)),
+          },
+          {
+            ...auditEvent,
+            id: "exact-actor",
+            adminId: operatorId,
+            adminEmail: "filters-operator@example.com",
+            createdAt: new Date(at(72)),
+            details: {},
+          },
+          {
+            ...auditEvent,
+            id: "exact-type",
+            targetType: "card",
+            createdAt: new Date(at(73)),
+            details: {},
+          },
+          {
+            ...auditEvent,
+            id: "exact-target",
+            targetId: "board-a-other",
+            createdAt: new Date(at(74)),
+            details: {},
+          },
+          {
+            ...auditEvent,
+            id: "exact-colon",
+            targetId: "setting:board-a",
+            createdAt: new Date(at(75)),
+            details: {},
+          },
+        ],
+      });
+
+      const commandEvent = {
+        boardId: "board-a",
+        actorId: userId,
+        type: "MOVE_CARD",
+        payload: {},
+        result: {},
+        touches: ["card:card-a-1", "column:col-b"],
+      };
+      await prisma.command.createMany({
+        data: [
+          {
+            ...commandEvent,
+            id: "facet-command-1",
+            createdAt: new Date(at(70)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-2",
+            type: "UPDATE_CARD",
+            createdAt: new Date(at(79)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-actor",
+            actorId: otherUser,
+            createdAt: new Date(at(71)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-type",
+            type: "MOVE_CARD_EXTRA",
+            createdAt: new Date(at(72)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-board",
+            boardId: "board-b",
+            createdAt: new Date(at(73)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-card",
+            touches: ["card:card-a-2", "column:col-b"],
+            createdAt: new Date(at(74)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-column",
+            touches: ["card:card-a-1", "column:col-a"],
+            createdAt: new Date(at(75)),
+          },
+          {
+            ...commandEvent,
+            id: "facet-command-old",
+            createdAt: new Date(at(69)),
+          },
+        ],
+      });
+
+      const activityEvent = {
+        boardId: "board-a",
+        cardId: "card-a-1",
+        actorId: userId,
+        type: "comment_edited",
+        createdAt: new Date(at(70)),
+      };
+      await prisma.activity.createMany({
+        data: [
+          { ...activityEvent, id: "facet-activity-edit" },
+          {
+            ...activityEvent,
+            id: "facet-activity-delete",
+            type: "comment_deleted",
+            createdAt: new Date(at(79)),
+          },
+          { ...activityEvent, id: "facet-activity-other", actorId: otherUser },
+          { ...activityEvent, id: "facet-activity-card", cardId: "card-a-2" },
+          {
+            ...activityEvent,
+            id: "facet-activity-member",
+            cardId: null,
+            type: "member_role_changed",
+          },
+          {
+            ...activityEvent,
+            id: "facet-activity-board",
+            boardId: "board-b",
+            cardId: "card-b-1",
+          },
+          {
+            ...activityEvent,
+            id: "facet-activity-old",
+            createdAt: new Date(at(69)),
+          },
+        ],
+      });
+    });
+
+    it.each(["audit", "entities/audit"])(
+      "combines exact audit facets on %s for an operator",
+      async (route) => {
+        const filters = `adminId=${ownerId}&action=board.command&targetType=board&targetId=board-a&${period}`;
+        const selected = await getRoute(
+          `${route}?${filters}`,
+          operatorToken,
+        ).expect(200);
+        expect(selected.body.total).toBe(1);
+        expect(rowIds(selected.body.items)).toEqual(["exact-audit"]);
+        const repeated = await getRoute(
+          `${route}?${filters}&adminId=${operatorId}&action=board.command_extra&targetType=card&limit=1&offset=3`,
+          operatorToken,
+        ).expect(200);
+        expect(repeated.body).toMatchObject({ total: 4, limit: 1, offset: 3 });
+        expect(rowIds(repeated.body.items)).toEqual(["exact-audit"]);
+        const colon = await getRoute(
+          `${route}?targetId=setting:board-a&${period}`,
+          operatorToken,
+        ).expect(200);
+        expect(colon.body.total).toBe(1);
+        expect(rowIds(colon.body.items)).toEqual(["exact-colon"]);
+      },
+    );
+
+    it.each(["commands", "entities/commands"])(
+      "paginates combined command facets on %s",
+      async (route) => {
+        const filters = `boardId=board-a&cardId=card-a-1&columnId=col-b&actorId=${userId}&type=MOVE_CARD&type=UPDATE_CARD&${period}`;
+        for (const [offset, id] of [
+          "facet-command-2",
+          "facet-command-1",
+        ].entries()) {
+          const response = await getRoute(
+            `${route}?${filters}&limit=1&offset=${offset}`,
+            operatorToken,
+          ).expect(200);
+          expect(response.body).toMatchObject({ total: 2, limit: 1, offset });
+          expect(rowIds(response.body.items)).toEqual([id]);
+        }
+        const matched = await getRoute(
+          `${route}?${filters}&commandId=facet-command-1&actorId=${otherUser}`,
+          operatorToken,
+        ).expect(200);
+        expect(matched.body.total).toBe(1);
+        expect(rowIds(matched.body.items)).toEqual(["facet-command-1"]);
+        const missed = await getRoute(
+          `${route}?${filters}&commandId=facet-command-actor`,
+          operatorToken,
+        ).expect(200);
+        expect(missed.body.total).toBe(0);
+        expect(missed.body.items).toEqual([]);
+      },
+    );
+
+    it("preserves the command-to-audit link and intersects the selected action", async () => {
+      const command = await getRoute(
+        `entities/commands?commandId=command-a-1&actorId=${userId}&type=ADD_CARD`,
+        operatorToken,
+      ).expect(200);
+      expect(command.body.total).toBe(1);
+      expect(command.body.items[0].auditId).toBe("exact-audit");
+      const base = `entities/audit?commandId=command-a-1&${period}&targetId=board-a`;
+      const audit = await getRoute(
+        `${base}&action=board.command&action=board.command_extra`,
+        operatorToken,
+      ).expect(200);
+      expect(audit.body.total).toBe(1);
+      expect(rowIds(audit.body.items)).toEqual(["exact-audit"]);
+      const stray = await getRoute(
+        `${base}&action=board.command_extra`,
+        operatorToken,
+      ).expect(200);
+      expect(stray.body.total).toBe(0);
+      expect(stray.body.items).toEqual([]);
+    });
+
+    it("separates activity membership from comments and keeps exact totals across pages", async () => {
+      const base = `entities/activity?boardId=board-a&actorId=${userId}&${period}`;
+      const members = await getRoute(
+        `${base}&type=member_role_changed`,
+        operatorToken,
+      ).expect(200);
+      expect(members.body.total).toBe(1);
+      expect(rowIds(members.body.items)).toEqual(["facet-activity-member"]);
+      const comments = await getRoute(
+        `${base}&cardId=card-a-1&type=comment_edited&type=comment_deleted&limit=1&offset=1`,
+        operatorToken,
+      ).expect(200);
+      expect(comments.body).toMatchObject({ total: 2, limit: 1, offset: 1 });
+      expect(rowIds(comments.body.items)).toEqual(["facet-activity-edit"]);
+      const eitherActor = await getRoute(
+        `${base}&actorId=${otherUser}&cardId=card-a-1&type=comment_edited`,
+        operatorToken,
+      ).expect(200);
+      expect(eitherActor.body.total).toBe(2);
+      expect(rowIds(eitherActor.body.items)).toEqual([
+        "facet-activity-edit",
+        "facet-activity-other",
+      ]);
+      await getRoute(
+        "entities/activity?type=comment%2Fadded",
+        operatorToken,
+      ).expect(400);
+    });
+
+    it.each([
+      ["action", "board.command", "board.command_extra"],
+      ["commandType", "MOVE_CARD", "MOVE_CARD_EXTRA"],
+      ["activityType", "comment_deleted", "comment_edited"],
+      ["targetType", "board", "card"],
+    ])(
+      "returns distinct bounded %s options to an operator",
+      async (type, first, second) => {
+        const response = await lookup(
+          `type=${type}&limit=1&q=${first}`,
+          operatorToken,
+        ).expect(200);
+        expect(response.body.items).toEqual([
+          {
+            id: first,
+            label: first,
+            sublabel: null,
+            state: null,
+            boardId: null,
+            columnId: null,
+          },
+        ]);
+        const resolved = await lookup(
+          `type=${type}&ids=${first}&ids=${first}&ids=${second}&limit=1`,
+          operatorToken,
+        ).expect(200);
+        expect(rowIds(resolved.body.items)).toEqual([first, second].sort());
+        expect(resolved.body.hasMore).toBe(false);
+        await lookup(`type=${type}&limit=51`, operatorToken).expect(400);
+      },
+    );
+
+    it("finds an unknown-email login attempt by search without exposing it in the actor picker", async () => {
+      const email = "filters-unknown-attempt@example.com";
+      await server()
+        .post("/api/v1/admin/auth/login")
+        .send({ email, password: ADMIN_PASSWORD })
+        .expect(401);
+      const rows = await getRoute(
+        `entities/audit?search=${email.toUpperCase()}&action=admin.login_failed`,
+        operatorToken,
+      ).expect(200);
+      expect(rows.body.total).toBe(1);
+      expect(rows.body.items[0]).toMatchObject({
+        adminId: null,
+        adminEmail: email,
+        action: "admin.login_failed",
+      });
+      const hits = await lookup(
+        `type=auditActor&q=${email}`,
+        operatorToken,
+      ).expect(200);
+      expect(hits.body.items).toEqual([]);
+    });
   });
 });
