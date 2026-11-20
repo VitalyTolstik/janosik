@@ -1026,6 +1026,60 @@ export class BoardsService {
   }
 
   /**
+   * Leave a board as the caller (TASK-177.2, G-02). MEMBER and VIEWER may
+   * leave freely; an ADMIN may leave only while another accepted ADMIN
+   * remains, so a board can never be orphaned. The row is hard-deleted like
+   * an admin removal — authored cards/comments and their `actorId` are
+   * untouched — and the feed records `member_left` (not `member_removed`,
+   * which says someone else did it).
+   *
+   * Publishing `membership: removed` both refreshes open rosters and closes
+   * the leaver's own SSE stream (see `events.controller.ts`).
+   */
+  async leaveBoard(
+    boardId: string,
+    userId: string,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+  ): Promise<void> {
+    const member = await this.boardWrite.run(boardId, async (tx) => {
+      const member = await tx.boardMember.findUnique({
+        where: { boardId_userId: { boardId, userId } },
+        include: { user: true },
+      });
+      if (!member || member.acceptedAt === null) {
+        throw new NotFoundException("Board member not found");
+      }
+      if (member.role === Role.ADMIN) {
+        await this.assertNotLastAdmin(tx, boardId, userId, "leave");
+      }
+      await tx.boardMember.delete({ where: { id: member.id } });
+      await tx.activity.create({
+        data: {
+          boardId,
+          type: "member_left",
+          actorId: userId,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          agentName: attribution.agentName,
+          details: {
+            userId: member.userId,
+            email: member.user.email,
+            role: member.role,
+          },
+        },
+      });
+      return member;
+    });
+    this.realtime.publish(boardId, {
+      type: "membership",
+      boardId,
+      userId: member.userId,
+      change: "removed",
+    });
+  }
+
+  /**
    * Export the board as the shared envelope (the UI file format), readable
    * by every member including VIEWER (§7.4).
    */
@@ -1229,7 +1283,7 @@ export class BoardsService {
     tx: Prisma.TransactionClient,
     boardId: string,
     targetUserId: string,
-    action: "demote" | "remove",
+    action: "demote" | "remove" | "leave",
   ): Promise<void> {
     const otherAdmins = await tx.boardMember.count({
       where: {
@@ -1240,9 +1294,13 @@ export class BoardsService {
       },
     });
     if (otherAdmins === 0) {
-      throw new ConflictException(
-        `Cannot ${action} the last ADMIN of the board`,
-      );
+      throw new ConflictException({
+        message: `Cannot ${action} the last ADMIN of the board`,
+        // TASK-177.2: the client maps this to "another admin is required"
+        // instead of the generic invite conflict.
+        code: "last_admin",
+        action,
+      });
     }
   }
 }

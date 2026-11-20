@@ -852,6 +852,8 @@ export class AdminEntitiesService {
     const where: Prisma.ActivityWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
     if (query.cardId) where.cardId = query.cardId;
+    if (query.actorId) where.actorId = { in: query.actorId };
+    if (query.type) where.type = { in: query.type };
     if (query.columnId || query.singleLabelId) {
       where.card = {
         ...(query.columnId ? { columnId: query.columnId } : {}),
@@ -880,7 +882,7 @@ export class AdminEntitiesService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.activity.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: offset,
         take: limit,
         select: {

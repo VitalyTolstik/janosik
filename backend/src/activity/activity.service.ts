@@ -364,7 +364,8 @@ function readMembershipSnapshot(
     type !== "member_invited" &&
     type !== "member_role_changed" &&
     type !== "member_expiry_changed" &&
-    type !== "member_removed"
+    type !== "member_removed" &&
+    type !== "member_left"
   ) {
     return {};
   }

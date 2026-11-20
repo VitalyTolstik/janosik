@@ -81,10 +81,17 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
       true,
       true,
     ],
-    ["activity", scoped, "boardId cardId actorId type", "", true, true],
+    [
+      "activity",
+      `${scoped} actorId type`,
+      "boardId cardId actorId type",
+      "",
+      true,
+      true,
+    ],
     [
       "commands",
-      "boardId columnId cardId commandId",
+      "boardId columnId cardId commandId actorId type",
       "boardId actorId type cardId columnId commandId",
       "",
       true,
@@ -92,7 +99,7 @@ const surfaces: [AdminListSurface, string, string, string, boolean, boolean][] =
     ],
     [
       "audit",
-      "commandId",
+      "adminId action targetType targetId commandId",
       "adminId action targetType targetId commandId",
       "",
       true,
@@ -149,7 +156,12 @@ describe("admin filter values", () => {
       ["type", "blocks"],
       ["type", "relates_to"],
     ]);
-    expect(adminFilterEntries(filters, "commands")).toEqual([]);
+    expect(adminFilterEntries(filters, "comments")).toEqual([]);
+    expect(adminFilterEntries(filters, "commands")).toEqual([
+      ["type", "blocks"],
+      ["type", "invalid"],
+      ["type", "relates_to"],
+    ]);
   });
 
   it("allows multiple labels on cards and keeps legacy ids single-valued", () => {

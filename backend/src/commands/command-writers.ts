@@ -1222,6 +1222,13 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       await tx.cardLabel.deleteMany({
         where: { labelId: action.labelId, card: { deletedAt: null } },
       });
+      // TASK-183.3: the delete changes card content on every affected card.
+      // The reducer stamped each one; persist that exact stamp (and the
+      // version/lastActor bump) instead of leaving the rows behind.
+      for (const link of links) {
+        const card = cardOf(after, link.cardId);
+        if (card !== undefined) await bumpCard(tx, card, ctx.actorId);
+      }
       await tx.label.update({
         where: { id: action.labelId },
         data: { deletedAt: new Date(ctx.at), version: { increment: 1 } },
@@ -1263,10 +1270,17 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         `;
       }
       const touched = [touch.label(label.id)];
+      const assigned = new Set<string>();
       for (const { cardId } of action.assignments ?? []) {
+        if (assigned.has(cardId)) continue;
+        assigned.add(cardId);
         const card = cardOf(after, cardId);
         if (!card || !card.labelIds.includes(label.id)) continue;
         await writeCardLabels(tx, boardId, card.id, card.labelIds);
+        // TASK-183.3: a restore changes card content too — the reducer stamped
+        // each card from its assignment (or the command clock for an old
+        // inverse); the writer persists the same stamp exactly once.
+        await bumpCard(tx, card, ctx.actorId);
         touched.push(touch.card(card.id));
       }
       return [boardTouch, ...touched];

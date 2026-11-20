@@ -664,6 +664,94 @@ describe("invert — every action is reversible", () => {
     expect(undone).toEqual(before);
     expect(reduce(undone, action)).toEqual(after);
   });
+
+  // TASK-183.3: a board-wide delete stamps every card wearing the label, so
+  // its inverse must carry one stamp per card — not a single global value.
+  it("restores each card's own stamp after a multi-card label delete", () => {
+    let board = fixture();
+    for (const [index, cardId] of ["c-1", "c-2"].entries()) {
+      board = reduce(board, {
+        type: "SET_CARD_LABEL",
+        cardId,
+        labelId: "l-3",
+        on: true,
+        at: AT + index,
+      });
+    }
+    const beforeDelete = board;
+    expect(beforeDelete.cards["c-1"].updatedAt).not.toBe(
+      beforeDelete.cards["c-2"].updatedAt,
+    );
+
+    const deleteAction = {
+      type: "DELETE_LABEL",
+      labelId: "l-3",
+      at: AT + 100,
+    } as const;
+    const afterDelete = reduce(beforeDelete, deleteAction);
+    expect(afterDelete.cards["c-1"].updatedAt).toBe(deleteAction.at);
+    expect(afterDelete.cards["c-2"].updatedAt).toBe(deleteAction.at);
+
+    const inverse = invert(beforeDelete, deleteAction);
+    expect(inverse).toMatchObject({ type: "RESTORE_LABEL", inverse: true });
+    if (inverse?.type !== "RESTORE_LABEL") {
+      throw new Error("Expected a RESTORE_LABEL inverse");
+    }
+    expect(
+      [...(inverse.assignments ?? [])].sort((a, b) =>
+        a.cardId.localeCompare(b.cardId),
+      ),
+    ).toEqual([
+      {
+        cardId: "c-1",
+        index: 2,
+        updatedAt: beforeDelete.cards["c-1"].updatedAt,
+      },
+      {
+        cardId: "c-2",
+        index: 0,
+        updatedAt: beforeDelete.cards["c-2"].updatedAt,
+      },
+    ]);
+
+    expect(persisted(reduce(afterDelete, inverse))).toEqual(
+      persisted(beforeDelete),
+    );
+  });
+
+  // The inverse of a restore deletes the label again without advancing the
+  // cards past the stamps the restore replaced.
+  it("keeps a restore's inverse exact with per-card delete stamps", () => {
+    const before = fixture();
+    const restore = {
+      type: "RESTORE_LABEL",
+      label: { id: "l-back", name: "Back", color: "red" },
+      index: 1,
+      assignments: [
+        { cardId: "c-1", index: 1, updatedAt: 1_234 },
+        { cardId: "c-2", index: 0, updatedAt: 1_235 },
+      ],
+      at: AT,
+    } as const;
+    const after = reduce(before, restore);
+    expect(after.cards["c-1"].updatedAt).toBe(1_234);
+    expect(after.cards["c-2"].updatedAt).toBe(1_235);
+
+    const inverse = invert(before, restore);
+    expect(inverse).toMatchObject({ type: "DELETE_LABEL", inverse: true });
+    if (inverse?.type !== "DELETE_LABEL") {
+      throw new Error("Expected a DELETE_LABEL inverse");
+    }
+    expect(
+      [...(inverse.cardStamps ?? [])].sort((a, b) =>
+        a.cardId.localeCompare(b.cardId),
+      ),
+    ).toEqual([
+      { cardId: "c-1", updatedAt: before.cards["c-1"].updatedAt },
+      { cardId: "c-2", updatedAt: before.cards["c-2"].updatedAt },
+    ]);
+    expect(persisted(reduce(after, inverse))).toEqual(persisted(before));
+  });
 });
 
 /**
