@@ -144,12 +144,17 @@ export function HeartbeatText({
 }) {
   const { t, lang } = useI18n();
   const age = compactAge(heartbeatAge(session, now), lang);
+  const label =
+    session.stale && !session.paused && noHeartbeatLabel
+      ? t("agentControl.live.noHeartbeatAge", { age })
+      : t("agents.heartbeat.ago", { age });
   return (
     <span
       data-testid="agent-heartbeat"
       data-stale={session.stale ? "true" : "false"}
+      title={label}
       className={cn(
-        "inline-flex items-center gap-[5px] text-[11px] leading-[1.45] whitespace-nowrap",
+        "inline-flex max-w-full min-w-0 items-center gap-[5px] overflow-hidden text-[11px] leading-[1.45] whitespace-nowrap",
         muted
           ? "text-muted-foreground"
           : session.stale
@@ -165,11 +170,7 @@ export function HeartbeatText({
           <Activity className="h-[11px] w-[11px] shrink-0" aria-hidden />
         )
       ) : null}
-      <span>
-        {session.stale && !session.paused && noHeartbeatLabel
-          ? t("agentControl.live.noHeartbeatAge", { age })
-          : t("agents.heartbeat.ago", { age })}
-      </span>
+      <span className="min-w-0 truncate">{label}</span>
     </span>
   );
 }
@@ -357,7 +358,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_104px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5"
+      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_112px_104px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_112px_104px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -371,7 +372,7 @@ export function SessionTableHeader() {
 }
 
 const ROW_GRID =
-  "agents-session-grid grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_82px_104px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_82px_104px] min-[1181px]:gap-2.5";
+  "agents-session-grid grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 border-b border-border-soft px-2 py-1.5 text-left transition-colors last:border-b-0 hover:bg-hover/46 max-[760px]:px-1.5 max-[760px]:py-2 min-[761px]:min-h-[47px] min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_112px_104px] min-[761px]:gap-2 min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_112px_104px] min-[1181px]:gap-2.5";
 
 export function SessionRow({
   row,
@@ -441,7 +442,7 @@ export function SessionRow({
             : t("agents.runHash", { id: runNumber(row.currentRunId) })}
         </span>
       </span>
-      <span className="min-w-0 max-[760px]:col-start-1 max-[760px]:row-start-3">
+      <span className="min-w-0 overflow-hidden max-[760px]:col-start-1 max-[760px]:row-start-3">
         <HeartbeatText session={row} now={now} />
       </span>
       <span className="flex flex-nowrap items-center gap-1 max-[760px]:col-start-2 max-[760px]:row-start-2 max-[760px]:justify-end">

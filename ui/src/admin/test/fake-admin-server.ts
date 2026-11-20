@@ -1,4 +1,5 @@
 import {
+  ADMIN_FILTER_OPTION_LIMITS,
   boardReducer,
   CARD_PRIORITIES,
   completeness,
@@ -88,7 +89,7 @@ export interface FakeAdminState {
   admins: FakeAdmin[];
   users: AdminUserRowDto[];
   boards: AdminBoardRowDto[];
-  commands: AdminCommandRowDto[];
+  commands: (AdminCommandRowDto & { touches?: string[] })[];
   audit: AdminAuditRowDto[];
   cards: AdminCardRowDto[];
   sessions: AdminSessionRowDto[];
@@ -1238,6 +1239,11 @@ export class FakeAdminServer {
           seq,
           createdAt,
           payload: action as unknown as Record<string, unknown>,
+          touches: [
+            "cardId" in action && `card:${action.cardId}`,
+            "columnId" in action && `column:${action.columnId}`,
+            "toColumnId" in action && `column:${action.toColumnId}`,
+          ].filter((touch): touch is string => Boolean(touch)),
           auditId,
         },
         ...this.state.commands,
@@ -3034,7 +3040,15 @@ export class FakeAdminServer {
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const adminMemberId = searchParams.get("adminMemberId");
-    const linkTypes = searchParams.getAll("type");
+    const types = searchParams.getAll("type");
+    const commands = entity === "commands";
+    const activity = entity === "activity";
+    const audit = entity === "audit";
+    const eventList = commands || activity || audit;
+    const actorIds = searchParams.getAll(audit ? "adminId" : "actorId");
+    const actions = searchParams.getAll("action");
+    const targetTypes = searchParams.getAll("targetType");
+    const targetId = searchParams.get("targetId");
     const links = entity === "cardLinks";
     const boardContent =
       entity === "columns" ||
@@ -3049,7 +3063,7 @@ export class FakeAdminServer {
     const filtered = items.filter((item) => {
       const record = item as Record<string, unknown>;
       const parent =
-        comments || attachments
+        comments || attachments || activity
           ? this.state.cards.find((card) => card.id === record.cardId)
           : undefined;
       if (
@@ -3059,18 +3073,58 @@ export class FakeAdminServer {
       ) {
         return false;
       }
-      if (columnId && (parent?.columnId ?? record.columnId) !== columnId)
+      const touches = record.touches as string[] | undefined;
+      if (
+        columnId &&
+        (commands
+          ? !touches?.includes(`column:${columnId}`)
+          : (parent?.columnId ?? record.columnId) !== columnId)
+      )
         return false;
       if (
         cardId &&
-        (links
-          ? record.fromCardId !== cardId && record.toCardId !== cardId
-          : record.cardId !== cardId && record.id !== cardId)
+        (commands
+          ? !touches?.includes(`card:${cardId}`)
+          : links
+            ? record.fromCardId !== cardId && record.toCardId !== cardId
+            : record.cardId !== cardId && record.id !== cardId)
       ) {
         return false;
       }
-      if (links && linkTypes.length && !linkTypes.includes(String(record.type)))
+      if (
+        (links || commands || activity) &&
+        types.length &&
+        !types.includes(String(record.type))
+      )
         return false;
+      if (eventList) {
+        if (
+          actorIds.length &&
+          !actorIds.includes(String(record[audit ? "adminId" : "actorId"]))
+        )
+          return false;
+        if (from !== null && Number(record.createdAt) < Number(from))
+          return false;
+        if (to !== null && Number(record.createdAt) > Number(to)) return false;
+      }
+      if (audit) {
+        if (actions.length && !actions.includes(String(record.action)))
+          return false;
+        if (
+          targetTypes.length &&
+          !targetTypes.includes(String(record.targetType))
+        )
+          return false;
+        if (targetId !== null && record.targetId !== targetId) return false;
+      }
+      if (activity) {
+        const labelId = searchParams.get("labelId");
+        if (
+          labelId &&
+          !this.state.cardLabelIds[String(record.cardId)]?.includes(labelId)
+        )
+          return false;
+      }
       if (entity === "users") {
         if (
           verified !== null &&
@@ -3140,7 +3194,8 @@ export class FakeAdminServer {
         const details = record.details as Record<string, unknown> | null;
         const matched =
           commandMatch === "details"
-            ? details?.commandId === commandId
+            ? record.action === "board.command" &&
+              details?.commandId === commandId
             : commandMatch === "id"
               ? record.id === commandId
               : details?.commandId === commandId || record.id === commandId;
@@ -3236,6 +3291,18 @@ export class FakeAdminServer {
           ? "archived"
           : "active";
     let options: AdminFilterOptionDto[];
+    const bareOption = (id: string, label = id): AdminFilterOptionDto => ({
+      id,
+      label,
+      sublabel: null,
+      state: null,
+      boardId: null,
+      columnId: null,
+    });
+    const codes = (values: (string | null)[]) =>
+      [...new Set(values)].flatMap((value) =>
+        value === null ? [] : [bareOption(value)],
+      );
     switch (type) {
       case "board":
         options = this.state.boards.map((row) => ({
@@ -3292,6 +3359,31 @@ export class FakeAdminServer {
           columnId: null,
         }));
         break;
+      case "auditActor": {
+        const actors = new Map<string, AdminFilterOptionDto>();
+        const newest = [...this.state.audit].sort(
+          (left, right) =>
+            right.createdAt - left.createdAt || right.id.localeCompare(left.id),
+        );
+        for (const row of newest) {
+          if (row.adminId && row.adminEmail && !actors.has(row.adminId))
+            actors.set(row.adminId, bareOption(row.adminId, row.adminEmail));
+        }
+        options = [...actors.values()];
+        break;
+      }
+      case "action":
+        options = codes(this.state.audit.map(({ action }) => action));
+        break;
+      case "targetType":
+        options = codes(this.state.audit.map(({ targetType }) => targetType));
+        break;
+      case "commandType":
+        options = codes(this.state.commands.map(({ type }) => type));
+        break;
+      case "activityType":
+        options = codes(this.state.activity.map(({ type }) => type));
+        break;
       default:
         return this.json({ message: "Unknown lookup type" }, 400);
     }
@@ -3307,10 +3399,20 @@ export class FakeAdminServer {
     const boardId = params.get("boardId");
     const query = params.get("q")?.trim() ?? "";
     const search = query.toLowerCase();
-    const limit = Number(params.get("limit") ?? 20);
+    const limit = Number(
+      params.get("limit") ?? ADMIN_FILTER_OPTION_LIMITS.default,
+    );
+    if (
+      !Number.isInteger(limit) ||
+      limit < ADMIN_FILTER_OPTION_LIMITS.min ||
+      limit > ADMIN_FILTER_OPTION_LIMITS.max
+    )
+      return this.json({ message: "Invalid lookup limit" }, 400);
     const matches = options.filter(
       ({ id, label, sublabel, boardId: parent }) =>
-        (!boardId || parent === boardId) &&
+        (!boardId ||
+          !["column", "card", "label"].includes(type) ||
+          parent === boardId) &&
         (label.toLowerCase().includes(search) ||
           sublabel?.toLowerCase().includes(search) ||
           id.toLowerCase().includes(search)),

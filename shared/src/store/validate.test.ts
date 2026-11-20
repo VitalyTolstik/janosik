@@ -296,6 +296,48 @@ describe("validateBoardAction — accepted shapes", () => {
     expect(validateBoardAction(input)).toEqual({ ok: true, action: input });
   });
 
+  // TASK-183.3: the per-card stamps are optional, so a restore recorded
+  // before this contract still validates; a new inverse keeps them and the
+  // DELETE_LABEL side of it accepts its per-card stamps too.
+  it("accepts a label restore with or without per-card stamps", () => {
+    const oldShape = action({
+      type: "RESTORE_LABEL",
+      label: { id: "label-1", name: "Bug", color: "red" },
+      index: 0,
+      assignments: [{ cardId: "card-1", index: 0 }],
+      inverse: true,
+    });
+    expect(validateBoardAction(oldShape)).toEqual({
+      ok: true,
+      action: oldShape,
+    });
+
+    const newShape = action({
+      type: "RESTORE_LABEL",
+      label: { id: "label-1", name: "Bug", color: "red" },
+      index: 0,
+      assignments: [
+        { cardId: "card-1", index: 0, updatedAt: 1_698_000_000_000 },
+      ],
+      inverse: true,
+    });
+    expect(validateBoardAction(newShape)).toEqual({
+      ok: true,
+      action: newShape,
+    });
+
+    const deleteInverse = action({
+      type: "DELETE_LABEL",
+      labelId: "label-1",
+      inverse: true,
+      cardStamps: [{ cardId: "card-1", updatedAt: 1_698_000_000_000 }],
+    });
+    expect(validateBoardAction(deleteInverse)).toEqual({
+      ok: true,
+      action: deleteInverse,
+    });
+  });
+
   it("reads a JSON null optional as absent (cover cleared)", () => {
     const input = action({
       type: "SET_CARD_COVER",
@@ -669,6 +711,26 @@ describe("validateBoardAction — rejected shapes", () => {
       "action.assignments[0].index",
     ],
     [
+      "a malformed restore label stamp",
+      action({
+        type: "RESTORE_LABEL",
+        label: { id: "l", name: "B", color: "red" },
+        index: 0,
+        assignments: [{ cardId: "c", index: 0, updatedAt: "x" }],
+      }),
+      "action.assignments[0].updatedAt",
+    ],
+    [
+      "a malformed delete label stamp",
+      action({
+        type: "DELETE_LABEL",
+        labelId: "l",
+        inverse: true,
+        cardStamps: [{ cardId: "c" }],
+      }),
+      "action.cardStamps[0].updatedAt",
+    ],
+    [
       "a blank checklist title",
       action({
         type: "ADD_CHECKLIST",
@@ -851,6 +913,16 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
     ).toEqual({ ok: true, action: input });
   });
 
+  it("drops per-card delete stamps from a fresh DELETE_LABEL", () => {
+    const input = action({ type: "DELETE_LABEL", labelId: "label-1" });
+    expect(
+      validateBoardAction({
+        ...input,
+        cardStamps: [{ cardId: "card-1", updatedAt: 1_698_000_000_000 }],
+      }),
+    ).toEqual({ ok: true, action: input });
+  });
+
   it("drops a feed rewind on a type invert() never puts one on", () => {
     const result = validateBoardAction(
       action({
@@ -978,6 +1050,19 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
       },
       { type: "SET_CARD_LABEL", cardId: "card-1", labelId, on: false, at },
       { type: "DELETE_LABEL", labelId, at },
+      {
+        type: "RESTORE_LABEL",
+        label: { id: "l-restored", name: "Restored", color: "brand" },
+        index: 0,
+        assignments: [
+          {
+            cardId: "card-1",
+            index: 0,
+            updatedAt: before.cards["card-1"].updatedAt,
+          },
+        ],
+        at,
+      },
       { type: "RENAME_LABEL", labelId, name: "X", at },
       { type: "DELETE_CHECKLIST", cardId: "card-1", checklistId: "cl-1", at },
       {

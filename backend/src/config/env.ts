@@ -3,6 +3,7 @@ import path from "node:path";
 import dotenv from "dotenv";
 import { bool, cleanEnv, makeValidator, num, port, str, url } from "envalid";
 import { SHARE_LIMITS } from "@janosik/shared";
+import { consumeDemoResetEnv } from "./demo-reset-env";
 
 /**
  * Backend config — the single place where process.env is read and validated.
@@ -27,11 +28,21 @@ const load = (file: string): void => {
   }
 };
 
-load(".env");
-load(`.env.${process.env.NODE_ENV ?? "development"}`);
-load(".env.local");
+const resetEnv = consumeDemoResetEnv(process.argv.slice(2), { ...process.env });
+export const demoResetBoot = resetEnv !== undefined;
+if (resetEnv) {
+  Object.assign(process.env, resetEnv);
+} else {
+  load(".env");
+  load(`.env.${process.env.NODE_ENV ?? "development"}`);
+  load(".env.local");
+}
 
-if (process.env.NODE_ENV === "test" && process.env.TEST_DATABASE_URL) {
+if (
+  !demoResetBoot &&
+  process.env.NODE_ENV === "test" &&
+  process.env.TEST_DATABASE_URL
+) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
