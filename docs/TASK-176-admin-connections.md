@@ -1,5 +1,8 @@
 # TASK-176 — Admin connections, honest data, and comment editing
 
+The [demo fixture guide](DEMO-FIXTURES.md) documents how to recreate and verify
+the disposable TASK-176 acceptance data.
+
 - **Status:** 176.1–176.7 merged on `main`; 176.8–176.10 delivered in review branches (not merged); 176.11 closed docs-only; 176.12 deferred.
 - **Planning base:** `main` = `a858c75` (the base this spec was written against).
 - **Delivery bases:** 176.8/176.10 — review branch `feat/TASK-176.8-admin-card-edit`; 176.9 B1 — `feat/TASK-176.9-admin-card-fields` (base `05d0df30`); 176.9 B2 — `feat/TASK-176.9-admin-card-relations` (base `2469b1c6`). None of these review branches is merged.

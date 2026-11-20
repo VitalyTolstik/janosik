@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
+  read-only verification and master-account commands. The reset uses a
+  private backend to verify database identity before schema recreation and
+  supports a transactional fallback that retains global settings.
+  See [the demo fixture guide](docs/DEMO-FIXTURES.md).
+
 - TASK-176.9 B2 admin card checklists and links: `/admin/cards/:id` now shows a
   lazy `Checklists and links` panel beside the field editor on non-deleted
   cards. It is admin-native (no `BoardContext`), uses the same owner-attribution

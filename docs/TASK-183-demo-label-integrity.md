@@ -49,6 +49,11 @@ the board command contract or the admin demo runner.
 
 ## 2. Finding A — demo fixture hygiene
 
+TASK-183.1 implements the workflow in [Demo fixtures](DEMO-FIXTURES.md).
+The fixture retains the named label, checklist and links. The fixture card
+keeps the seed Backlog position and default assignee, cover and priority.
+The TASK-176.9 comments remain separate manual scaffolding.
+
 ### 2.1 Observed state
 
 Read-only probe of `http://127.0.0.1:5311` on 2026-11-19, app account
