@@ -461,6 +461,45 @@ export interface BoardSearchHit {
 
 export type SearchHit = CardSearchHit | BoardSearchHit;
 
+/** The palette's two result sections plus the pre-cap totals. */
+export interface SearchHitGroups {
+  cards: CardSearchHit[];
+  boards: BoardSearchHit[];
+  /** Total card matches before the cap. */
+  totalCards: number;
+  /** Total board matches before the cap. */
+  totalBoards: number;
+  /** Whether either group had more hits than the cap allowed. */
+  capped: boolean;
+}
+
+/**
+ * Split the flat `searchBoards` result into the palette's `Cards` and
+ * `Boards` sections, then cap each section independently (TASK-177.10).
+ * Capping after grouping means a board hit can never be pushed out by a
+ * long card list. `showAll` returns both groups intact; the palette's
+ * scroll container still keeps the visible list bounded.
+ */
+export function groupSearchHits(
+  hits: SearchHit[],
+  cap: number,
+  showAll = false,
+): SearchHitGroups {
+  const cards: CardSearchHit[] = [];
+  const boards: BoardSearchHit[] = [];
+  for (const hit of hits) {
+    if (hit.kind === "card") cards.push(hit);
+    else boards.push(hit);
+  }
+  return {
+    cards: showAll ? cards : cards.slice(0, cap),
+    boards: showAll ? boards : boards.slice(0, cap),
+    totalCards: cards.length,
+    totalBoards: boards.length,
+    capped: cards.length > cap || boards.length > cap,
+  };
+}
+
 /** Field priority for ranking: title beats description beats label/checklist. */
 const MATCH_FIELD_ORDER = [
   "title",

@@ -150,6 +150,11 @@ the match was in the text. Archived items carry an `Archived` badge. Use the
 arrow keys to move and Enter to open; opening a card takes you to its board
 with the card's dialog open.
 
+Each group shows up to 20 matches. When a group has more, its heading shows
+`20 of N` and the footer offers `Show all results`; the list then scrolls
+inside the palette. Capping happens per group, so a board hit is never hidden
+under a long list of card hits.
+
 ## The board filter bar
 
 The filter bar sits above the board. Its search box matches a card's title,
