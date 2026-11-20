@@ -213,20 +213,171 @@ describe("GlobalSearch", () => {
     // 20 cards + the board hit — the board is not hidden by the card cap.
     expect(options).toHaveLength(21);
     const results = screen.getByTestId("global-search-results");
-    const cardsGroup = within(results).getByRole("group", { name: "Cards" });
+    const cardsGroup = within(results).getByRole("group", {
+      name: "Cards, 20 of 21",
+    });
     expect(within(cardsGroup).getAllByRole("option")).toHaveLength(20);
     expect(results).toHaveTextContent("20 of 21");
+    expect(screen.getByText("20 of 21")).toHaveAttribute("aria-live", "polite");
     expect(
       within(results).getByRole("group", { name: "Boards" }),
     ).toHaveTextContent("Widget");
 
+    results.scrollTop = 120;
     fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
 
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(22));
+    expect(results.scrollTop).toBe(120);
     expect(screen.queryByText("20 of 21")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Show all results" }),
     ).toBeNull();
+  });
+
+  it("keeps the board selected by identity when Show all expands cards", async () => {
+    const cards = Array.from({ length: 21 }, (_, index) => ({
+      id: `c-select-${index}`,
+      title: `Widget ${String(index).padStart(2, "0")}`,
+    }));
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-cards", "Project", cards)},${boardJson(
+        "b-target",
+        "Widget",
+        [],
+      )}]`,
+    );
+
+    renderSearch();
+    await search("Widget");
+    const input = screen.getByRole("combobox", {
+      name: "Search cards and boards",
+    });
+    for (let index = 0; index < 20; index += 1) {
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+    }
+    expect(screen.getByRole("option", { selected: true }).textContent).toBe(
+      "Widget",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
+
+    // The board moved one row down, but the cursor stays on the same hit.
+    expect(screen.getByRole("option", { selected: true }).textContent).toBe(
+      "Widget",
+    );
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(screen.getByTestId("loc")).toHaveTextContent("/board/b-target"),
+    );
+  });
+
+  it("does not carry Show all across a debounced query change", async () => {
+    const widgetCards = Array.from({ length: 21 }, (_, index) => ({
+      id: `c-widget-${index}`,
+      title: `Widget ${String(index).padStart(2, "0")}`,
+    }));
+    const gadgetCards = Array.from({ length: 21 }, (_, index) => ({
+      id: `c-gadget-${index}`,
+      title: `Gadget ${String(index).padStart(2, "0")}`,
+    }));
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-widget-cards", "Project one", widgetCards)},${boardJson(
+        "b-widget",
+        "Widget",
+        [],
+      )},${boardJson("b-gadget-cards", "Project two", gadgetCards)},${boardJson(
+        "b-gadget",
+        "Gadget",
+        [],
+      )}]`,
+    );
+
+    renderSearch();
+    await search("Widget");
+    // 20 cards + the board, capped.
+    expect(screen.getAllByRole("option")).toHaveLength(21);
+
+    const input = screen.getByRole("combobox", {
+      name: "Search cards and boards",
+    });
+    fireEvent.change(input, { target: { value: "Gadget" } });
+    // Click while the old Widget results are still on screen but the debounce
+    // for Gadget has not landed yet.
+    fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
+
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(21));
+    expect(screen.getByText("20 of 21")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Show all results" }),
+    ).toBeInTheDocument();
+  });
+
+  it("bounds Show all at 200 per group and keeps its own counter", async () => {
+    const cards = Array.from({ length: 205 }, (_, index) => ({
+      id: `c-limit-${index}`,
+      title: `Limit ${String(index).padStart(3, "0")}`,
+    }));
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-limit", "Project", cards)}]`,
+    );
+
+    renderSearch();
+    const options = await search("Limit");
+    expect(options).toHaveLength(20);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("option")).toHaveLength(200),
+    );
+    expect(screen.getByText("200 of 205")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show all results" }),
+    ).toBeNull();
+  });
+
+  it("caps a boards-only result set and expands it", async () => {
+    const boards = Array.from({ length: 21 }, (_, index) =>
+      boardJson(
+        `b-many-${index}`,
+        `Board ${String(index).padStart(2, "0")}`,
+        [],
+      ),
+    );
+    localStorage.setItem("janosik-boards", `[${boards.join(",")}]`);
+
+    renderSearch();
+    const options = await search("Board");
+    expect(options).toHaveLength(20);
+    const results = screen.getByTestId("global-search-results");
+    expect(
+      within(results).getByRole("group", { name: "Boards, 20 of 21" }),
+    ).toBeInTheDocument();
+    // No card hits — only the Boards section is rendered and capped.
+    expect(within(results).queryByRole("group", { name: "Cards" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(21));
+  });
+
+  it("finds an archived card left in a legacy column only once", async () => {
+    const legacy = JSON.parse(
+      boardJson("b-legacy", "Legacy", [
+        { id: "c-arch", title: "Legacy duplicate" },
+        { id: "c-live", title: "Live card" },
+      ]),
+    );
+    legacy.cards["c-arch"].archivedAt = 2;
+    localStorage.setItem("janosik-boards", JSON.stringify([legacy]));
+
+    renderSearch();
+    const options = await search("Legacy duplicate");
+
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("Legacy duplicate");
   });
 
   it("links the combobox to its selected option and resets on no matches", async () => {

@@ -98,9 +98,10 @@ export function globalSearchSection(
   page: Page,
   name: "Cards" | "Boards",
 ): Locator {
+  // A capped section carries its count in the accessible name
+  // ("Cards, 20 of 21"); an uncapped one is exactly "Cards".
   return globalSearchResults(page).getByRole("group", {
-    name,
-    exact: true,
+    name: new RegExp(`^${name}`),
   });
 }
 
@@ -120,6 +121,10 @@ export async function openGlobalSearch(page: Page): Promise<Locator> {
 
 export async function searchGlobally(page: Page, query: string) {
   await globalSearchInput(page).fill(query);
+  // Background hydration streams boards after the shell is ready. Its totals
+  // and caps are only final once the pending rows settle; waiting here keeps
+  // tests that create a board first from racing that phase.
+  await expect(page.getByTestId("search-boards-loading")).toBeHidden();
 }
 
 export function archiveSearchInput(page: Page): Locator {

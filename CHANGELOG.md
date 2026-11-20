@@ -665,9 +665,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - TASK-177.10 groups global search results before applying the 20-hit cap:
   `Cards` and `Boards` are capped separately, so a board hit stays visible
-  under a long card list. The group heading shows `20 of N` and a
-  `Show all results` action expands the list inside the palette's scroll
-  container; EN/RU copy and the user guide cover the new control.
+  under a long card list. The group heading shows `20 of N` (or
+  `20 of N loaded` while other boards hydrate) and announces the count to
+  screen readers. `Show all results` is bound to the query it was clicked for
+  and expands to at most 200 matches per group without re-running the search,
+  while keeping the selected hit and scroll position. Archived cards left in
+  a legacy column are reported once. EN/RU copy and the user guide cover the
+  new behaviour.
 
 - TASK-177.3 keeps per-card comment drafts when you reopen a card and clears
   them when the session ends. Activity counts show `50+` when more rows remain

@@ -46,6 +46,20 @@ const SEARCH_DEBOUNCE_MS = 200;
 /** Per-group dropdown cap (Jira-style) — enough context without an endless list. */
 const MAX_RESULTS = 20;
 
+/**
+ * Hard ceiling for `Show all results` (TASK-177.10 review): expanding must
+ * never render an unbounded list, so each group stops at 200 matches. The
+ * heading then keeps a `shown of total` label while the palette scrolls.
+ */
+const MAX_EXPANDED_RESULTS = 200;
+
+/** Stable identity for keyboard selection across regrouping/expansion. */
+function searchHitKey(hit: SearchHit): string {
+  return hit.kind === "card"
+    ? `card:${hit.boardId}:${hit.card.id}`
+    : `board:${hit.boardId}`;
+}
+
 const isMac = isMacPlatform();
 
 interface GlobalSearchProps {
@@ -164,8 +178,16 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
 
   const [rawQuery, setRawQuery] = useState("");
   const [query, setQuery] = useState("");
-  const [showAll, setShowAll] = useState(false);
-  const [cursor, setCursor] = useState(0);
+  // Expansion is bound to the query it was requested for: typing during the
+  // debounce must not carry an uncapped list into the next query.
+  const [showAllFor, setShowAllFor] = useState<string | null>(null);
+  // Selection is a hit identity, not an index — expanding a group inserts
+  // rows above the board section without moving the cursor to another hit.
+  const [cursorKey, setCursorKey] = useState<string | null>(null);
+  // Scrolling is requested only by explicit navigation/query changes, never
+  // by expansion, so Show all keeps the user's scroll position.
+  const [scrollRequest, setScrollRequest] = useState(0);
+  const showAll = showAllFor === query;
   const listId = useId();
   const optionId = (index: number) => `${listId}-option-${index}`;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -173,7 +195,10 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
 
   // Debounce the query before the (synchronous) search runs over it.
   useEffect(() => {
-    const timer = setTimeout(() => setQuery(rawQuery), SEARCH_DEBOUNCE_MS);
+    const timer = setTimeout(() => {
+      setQuery(rawQuery);
+      setScrollRequest((request) => request + 1);
+    }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [rawQuery]);
 
@@ -183,25 +208,38 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
+  // Raw hits are memoized separately from grouping so Show all only
+  // re-slices the array instead of re-running the whole cross-board search.
+  const rawHits = useMemo(() => searchBoards(boards, query), [boards, query]);
   // Cap each section separately (TASK-177.10): a board hit stays visible even
   // when the card list alone exceeds the palette cap.
   const groups = useMemo(
-    () => groupSearchHits(searchBoards(boards, query), MAX_RESULTS, showAll),
-    [boards, query, showAll],
+    () =>
+      groupSearchHits(rawHits, MAX_RESULTS, {
+        showAll,
+        expandedCap: MAX_EXPANDED_RESULTS,
+      }),
+    [rawHits, showAll],
   );
   const { cards: cardHits, boards: boardHits } = groups;
   const boardOffset = cardHits.length;
   const hits = useMemo(() => [...groups.cards, ...groups.boards], [groups]);
 
-  const activeIndex = Math.min(cursor, hits.length - 1);
+  const activeIndex = useMemo(() => {
+    if (hits.length === 0) return -1;
+    if (cursorKey === null) return 0;
+    const index = hits.findIndex((hit) => searchHitKey(hit) === cursorKey);
+    return index >= 0 ? index : 0;
+  }, [cursorKey, hits]);
 
   useEffect(() => {
+    if (scrollRequest === 0) return;
     const row = resultsRef.current?.querySelector<HTMLElement>(
       '[aria-selected="true"]',
     );
     if (!row || typeof row.scrollIntoView !== "function") return;
     row.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, hits]);
+  }, [scrollRequest]);
 
   const openHit = (hit: SearchHit) => {
     if (hit.kind === "board" && hit.boardArchived) {
@@ -215,6 +253,23 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
         : routes.board(hit.boardId),
     );
   };
+
+  // While background hydration is still streaming boards, every total is a
+  // loaded-so-far figure. Label it so the counter never implies completeness;
+  // a board dropped after the retry budget clears pendingBoardCount with the
+  // existing `sync.loadFailed` toast.
+  const formatCount = (shown: number, total: number) =>
+    pendingBoardCount > 0
+      ? t("search.resultCountLoaded", { shown, total })
+      : t("search.resultCount", { shown, total });
+  const cardCount =
+    groups.totalCards > cardHits.length
+      ? formatCount(cardHits.length, groups.totalCards)
+      : undefined;
+  const boardCount =
+    groups.totalBoards > boardHits.length
+      ? formatCount(boardHits.length, groups.totalBoards)
+      : undefined;
 
   return (
     <>
@@ -238,8 +293,8 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           }
           onChange={(event) => {
             setRawQuery(event.target.value);
-            setShowAll(false);
-            setCursor(0);
+            setShowAllFor(null);
+            setCursorKey(null);
           }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || activeIndex < 0) return;
@@ -248,10 +303,14 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
               openHit(hits[activeIndex]);
             } else if (event.key === "ArrowDown") {
               event.preventDefault();
-              setCursor(Math.min(activeIndex + 1, hits.length - 1));
+              const next = Math.min(activeIndex + 1, hits.length - 1);
+              setCursorKey(searchHitKey(hits[next]));
+              setScrollRequest((request) => request + 1);
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
-              setCursor(Math.max(activeIndex - 1, 0));
+              const next = Math.max(activeIndex - 1, 0);
+              setCursorKey(searchHitKey(hits[next]));
+              setScrollRequest((request) => request + 1);
             }
           }}
           placeholder={t("search.placeholder")}
@@ -300,17 +359,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           hidden={hits.length === 0}
         >
           {cardHits.length > 0 ? (
-            <SearchSection
-              title={t("search.cards")}
-              count={
-                groups.totalCards > cardHits.length
-                  ? t("search.resultCount", {
-                      shown: cardHits.length,
-                      total: groups.totalCards,
-                    })
-                  : undefined
-              }
-            >
+            <SearchSection title={t("search.cards")} count={cardCount}>
               {cardHits.map((hit, index) => (
                 <ResultRow
                   key={`card-${hit.card.id}`}
@@ -353,17 +402,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             </SearchSection>
           ) : null}
           {boardHits.length > 0 ? (
-            <SearchSection
-              title={t("search.boards")}
-              count={
-                groups.totalBoards > boardHits.length
-                  ? t("search.resultCount", {
-                      shown: boardHits.length,
-                      total: groups.totalBoards,
-                    })
-                  : undefined
-              }
-            >
+            <SearchSection title={t("search.boards")} count={boardCount}>
               {boardHits.map((hit, index) => (
                 <ResultRow
                   key={`board-${hit.boardId}`}
@@ -394,7 +433,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             variant="ghost"
             size="sm"
             onClick={() => {
-              setShowAll(true);
+              setShowAllFor(query);
               inputRef.current?.focus();
             }}
             data-testid="search-show-all"
@@ -416,6 +455,10 @@ function SearchSection({
   count?: string;
   children: React.ReactNode;
 }) {
+  // The count belongs in the group's accessible name so screen readers hear
+  // "Cards, 20 of 21" when entering the section; the visible span is also a
+  // polite live region so a change after expanding/searching is announced.
+  const label = count ? `${title}, ${count}` : title;
   return (
     <div className="mb-1 last:mb-0">
       <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
@@ -423,12 +466,16 @@ function SearchSection({
           {title}
         </span>
         {count ? (
-          <span className="text-[11px] font-medium text-muted-foreground">
+          <span
+            aria-live="polite"
+            aria-atomic="true"
+            className="text-[11px] font-medium text-muted-foreground"
+          >
             {count}
           </span>
         ) : null}
       </div>
-      <div role="group" aria-label={title}>
+      <div role="group" aria-label={label}>
         {children}
       </div>
     </div>

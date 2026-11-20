@@ -244,6 +244,38 @@ test("caps each result group and expands them with Show all", async ({
   await expect(page.getByTestId("search-show-all")).toBeHidden();
 });
 
+test("keeps the board selected when Show all expands the cards", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  for (let index = 0; index < 21; index += 1) {
+    await board.card(todo, `Cursor result ${String(index).padStart(2, "0")}`);
+  }
+  const target = await createSearchBoard(board.api, "Cursor result");
+  await board.open(page);
+  await openGlobalSearch(page);
+  await searchGlobally(page, "Cursor result");
+
+  const results = globalSearchResults(page);
+  await expect(results.getByRole("option")).toHaveCount(21);
+  // Card hits occupy the first 20 rows; the board hit is last.
+  for (let index = 0; index < 20; index += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(results.getByRole("option", { selected: true })).toHaveText(
+    "Cursor result",
+  );
+
+  await page.getByTestId("search-show-all").click();
+  await expect(results.getByRole("option", { selected: true })).toHaveText(
+    "Cursor result",
+  );
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(new RegExp(`/board/${target.id}`));
+});
+
 test("opens the card dialog from a search hit", async ({ page, board }) => {
   const other = await createSearchBoard(board.api, "Product board");
   const roadmap = await other.column("Roadmap");

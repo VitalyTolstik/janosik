@@ -469,21 +469,34 @@ export interface SearchHitGroups {
   totalCards: number;
   /** Total board matches before the cap. */
   totalBoards: number;
-  /** Whether either group had more hits than the cap allowed. */
+  /** Whether either group had more hits than the default cap allowed. */
   capped: boolean;
+}
+
+export interface GroupSearchHitsOptions {
+  /** Return the expanded list (still bounded by `expandedCap`). */
+  showAll?: boolean;
+  /**
+   * Hard ceiling for the expanded list. Defaults to no extra ceiling; the
+   * palette always passes its own bound.
+   */
+  expandedCap?: number;
 }
 
 /**
  * Split the flat `searchBoards` result into the palette's `Cards` and
  * `Boards` sections, then cap each section independently (TASK-177.10).
  * Capping after grouping means a board hit can never be pushed out by a
- * long card list. `showAll` returns both groups intact; the palette's
- * scroll container still keeps the visible list bounded.
+ * long card list. `showAll` expands to `expandedCap`, never to an unbounded
+ * list; the palette's header keeps the `shown of total` label in that case.
  */
 export function groupSearchHits(
   hits: SearchHit[],
   cap: number,
-  showAll = false,
+  {
+    showAll = false,
+    expandedCap = Number.POSITIVE_INFINITY,
+  }: GroupSearchHitsOptions = {},
 ): SearchHitGroups {
   const cards: CardSearchHit[] = [];
   const boards: BoardSearchHit[] = [];
@@ -491,9 +504,10 @@ export function groupSearchHits(
     if (hit.kind === "card") cards.push(hit);
     else boards.push(hit);
   }
+  const limit = showAll ? expandedCap : cap;
   return {
-    cards: showAll ? cards : cards.slice(0, cap),
-    boards: showAll ? boards : boards.slice(0, cap),
+    cards: cards.slice(0, limit),
+    boards: boards.slice(0, limit),
     totalCards: cards.length,
     totalBoards: boards.length,
     capped: cards.length > cap || boards.length > cap,
@@ -578,6 +592,10 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
       for (const cardId of column.cardIds) {
         const card = board.cards[cardId];
         if (!card) continue;
+        // Legacy exports can leave an archived card in a column. The
+        // archived pass below owns it, so skip it here to avoid a duplicate
+        // hit (and a duplicate React key).
+        if (card.archivedAt !== undefined) continue;
         const hit = hitFor(card, column.title);
         if (hit) cardHits.push(hit);
       }

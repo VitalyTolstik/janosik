@@ -160,6 +160,12 @@ Each group shows up to 20 matches. When a group has more, its heading shows
 inside the palette. Capping happens per group, so a board hit is never hidden
 under a long list of card hits.
 
+`Show all results` expands at most 200 matches per group and keeps both the
+keyboard selection and the scroll position. If more than 200 remain, the
+heading keeps showing `shown of N`. While other boards are still loading, the
+heading says `20 of N loaded`, so a partial total is not mistaken for the whole
+workspace.
+
 ## The board filter bar
 
 The filter bar sits above the board. Its search box matches a card's title,

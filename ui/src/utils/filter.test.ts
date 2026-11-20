@@ -624,6 +624,28 @@ describe("searchBoards", () => {
     expect(hits[0].columnTitle).toBeUndefined();
   });
 
+  it("dedupes an archived card left in a legacy column", () => {
+    const board: Board = {
+      ...activeBoard,
+      columns: [
+        // Legacy exports can leave the archived card in its column.
+        { id: "col1", title: "To do", cardIds: ["c1", "c3"], createdAt: NOW },
+      ],
+      cards: {
+        ...activeBoard.cards,
+        c3: { ...card("c3", "Old card", []), archivedAt: NOW },
+      },
+    };
+
+    const hits = searchBoards([board], "old card");
+
+    expect(hits).toHaveLength(1);
+    if (hits[0].kind !== "card") return;
+    expect(hits[0].card.id).toBe("c3");
+    expect(hits[0].cardArchived).toBe(true);
+    expect(hits[0].columnTitle).toBeUndefined();
+  });
+
   it("ranks active boards before archived ones", () => {
     const hits = searchBoards(boards, "marketing");
     // Board-title hits: active "Marketing" before archived "Old Marketing board".
@@ -711,14 +733,34 @@ describe("groupSearchHits (TASK-177.10)", () => {
   });
 
   it("returns both groups intact with showAll", () => {
-    const groups = groupSearchHits(
-      searchBoards([widgetBoard], "widget"),
-      20,
-      true,
-    );
+    const groups = groupSearchHits(searchBoards([widgetBoard], "widget"), 20, {
+      showAll: true,
+    });
 
     expect(groups.cards).toHaveLength(21);
     expect(groups.boards).toHaveLength(1);
+    expect(groups.capped).toBe(true);
+  });
+
+  it("bounds the expanded list at the secondary cap", () => {
+    const manyIds = Array.from({ length: 250 }, (_, index) => `many-${index}`);
+    const manyBoard: Board = {
+      ...widgetBoard,
+      columns: [
+        { id: "col", title: "To do", cardIds: manyIds, createdAt: NOW },
+      ],
+      cards: Object.fromEntries(
+        manyIds.map((id, index) => [id, card(id, `Widget ${index}`, [])]),
+      ),
+    };
+
+    const groups = groupSearchHits(searchBoards([manyBoard], "widget"), 20, {
+      showAll: true,
+      expandedCap: 200,
+    });
+
+    expect(groups.totalCards).toBe(250);
+    expect(groups.cards).toHaveLength(200);
     expect(groups.capped).toBe(true);
   });
 

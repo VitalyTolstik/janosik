@@ -1288,6 +1288,7 @@
   "search.label": "Global search",
   "search.placeholder": "Search across all boards…",
   "search.resultCount": "{{shown}} of {{total}}",
+  "search.resultCountLoaded": "{{shown}} of {{total}} loaded",
   "search.showAll": "Show all results",
   "search.tooltip": "Search ({{shortcut}})",
   "share.actionError": "Something went wrong — try again",
