@@ -642,6 +642,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the total is unknown, or `N of M` when the total is known. A 65-comment
   regression test covers the transition to an exact count after pagination.
 
+- TASK-183.2: attaching or detaching a card label updates the card's timestamp.
+  Undo restores the previous timestamp, and focus refetch can detect the
+  change from the timestamp alone. The label comparison still covers older
+  snapshots and board-wide label deletion and restoration (tracked in
+  TASK-183.3).
+
 - TASK-182 phase 2: if the due-date picker fails in admin card Properties, the
   popover immediately offers Retry and a native date-and-time input while the
   other fields stay editable. A successful Retry moves keyboard focus into the
