@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   CalendarClock,
   Check,
@@ -113,7 +120,11 @@ function BoardMembersSkeleton() {
 function membershipError(error: unknown, t: Translate): string {
   if (error instanceof ApiError) {
     if (error.offline) return t("board.members.errors.offline");
-    if (error.status === 409) return t("board.members.errors.alreadyMember");
+    if (error.status === 409) {
+      return error.code === "last_admin"
+        ? t("board.members.lastAdmin")
+        : t("board.members.errors.alreadyMember");
+    }
     if (error.status === 403) return t("board.members.errors.forbidden");
   }
   return t("board.members.errors.generic");
@@ -380,7 +391,10 @@ export function BoardMembersDialog() {
           }}
         >
           <BoardMembersPanel
+            // A board switch must never leave the previous roster on screen.
+            key={board.id}
             boardId={board.id}
+            boardTitle={board.title}
             canManage={canManage}
             onLeave={leaveAndClose}
           />
@@ -392,6 +406,8 @@ export function BoardMembersDialog() {
 
 interface BoardMembersPanelProps {
   boardId: string;
+  /** Visible in the dialog header so a roster is never context-free. */
+  boardTitle?: string;
   /** ADMIN may invite/change roles/remove; others see the same list inert. */
   canManage: boolean;
   /**
@@ -406,6 +422,7 @@ interface BoardMembersPanelProps {
 
 export function BoardMembersPanel({
   boardId,
+  boardTitle,
   canManage,
   onLeave,
   currentUserId,
@@ -415,6 +432,10 @@ export function BoardMembersPanel({
   const { user } = useAuth();
   const selfId = currentUserId ?? user?.id;
   const openProfile = useOpenProfile();
+  const leaveReasonId = useId();
+  const leaveButtonRef = useRef<HTMLButtonElement | null>(null);
+  const leaveConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const wasConfirmingRef = useRef(false);
 
   const [members, setMembers] = useState<BoardMemberDto[] | null>(null);
   const [pending, setPending] = useState<BoardPendingInvitationDto[]>([]);
@@ -474,6 +495,20 @@ export function BoardMembersPanel({
   useEffect(() => {
     void load();
   }, [load, membersVersion]);
+
+  // A confirmation trap for keyboard users: opening moves focus to the
+  // destructive Yes, cancelling returns it to the Leave action.
+  useEffect(() => {
+    if (confirmLeave) {
+      wasConfirmingRef.current = true;
+      leaveConfirmRef.current?.focus();
+      return;
+    }
+    if (wasConfirmingRef.current) {
+      wasConfirmingRef.current = false;
+      leaveButtonRef.current?.focus();
+    }
+  }, [confirmLeave]);
 
   const adminCount =
     members?.filter((member) => member.role === "ADMIN").length ?? 0;
@@ -573,8 +608,11 @@ export function BoardMembersPanel({
     if (onLeave === undefined) return;
     setLeaving(true);
     try {
-      await onLeave(boardId);
+      const left = await onLeave(boardId);
       setConfirmLeave(false);
+      // A last-admin refusal must not leave the button armed on a stale
+      // roster: re-read the directory so the disabled reason is current.
+      if (!left) await load();
     } finally {
       setLeaving(false);
     }
@@ -621,6 +659,14 @@ export function BoardMembersPanel({
         <DialogDescription className="sr-only">
           {t("board.members.button")}
         </DialogDescription>
+        {boardTitle ? (
+          <p
+            data-testid="board-members-board-title"
+            className="truncate text-sm text-muted-foreground"
+          >
+            {boardTitle}
+          </p>
+        ) : null}
       </DialogHeader>
 
       {members === null && !loadFailed ? (
@@ -771,6 +817,7 @@ export function BoardMembersPanel({
                             {t("board.members.leaveConfirm")}
                           </span>
                           <Button
+                            ref={leaveConfirmRef}
                             variant="ghost"
                             size="icon"
                             aria-label={t("board.members.leaveConfirmYes")}
@@ -799,10 +846,17 @@ export function BoardMembersPanel({
                               : undefined
                           }
                         >
+                          <span id={leaveReasonId} className="sr-only">
+                            {t("board.members.lastAdminLeave")}
+                          </span>
                           <Button
+                            ref={leaveButtonRef}
                             variant="ghost"
                             size="sm"
                             aria-label={`${t("board.members.leave")} — ${label}`}
+                            aria-describedby={
+                              locked ? leaveReasonId : undefined
+                            }
                             data-testid="board-member-leave"
                             disabled={locked || leaving}
                             onClick={() => setConfirmLeave(true)}

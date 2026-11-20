@@ -39,6 +39,18 @@ const MAX_LIMIT = 100;
 const INLINE_ATTACHMENT_URL = /\/attachments\/([A-Za-z0-9-]+)\/content/g;
 
 /**
+ * Author display identity (TASK-177.2). A comment keeps its author's name
+ * after that person leaves the board, when the roster no longer has them.
+ */
+const AUTHOR_INCLUDE = {
+  author: { select: { displayName: true, email: true } },
+} as const;
+
+type CommentWithAuthor = Comment & {
+  author?: { displayName: string | null; email: string } | null;
+};
+
+/**
  * Card comments (§7.4, TASK-28) — plain text, ordinary REST.
  *
  * Comments are not reducer actions, so each write also records an
@@ -92,7 +104,10 @@ export class CommentsService {
     const id = dto.commandId;
     if (id !== undefined) {
       const existing = await rollbackOnThrow(() =>
-        this.prisma.comment.findUnique({ where: { id } }),
+        this.prisma.comment.findUnique({
+          where: { id },
+          include: AUTHOR_INCLUDE,
+        }),
       );
       if (existing) {
         // TASK-153: the replay must belong to the caller. Without the author
@@ -118,12 +133,17 @@ export class CommentsService {
       }
     }
 
-    let created: { comment: Comment; activityId: string; boardId: string };
+    let created: {
+      comment: CommentWithAuthor;
+      activityId: string;
+      boardId: string;
+    };
     try {
       created = await this.boardWrite.run(
         boardId,
         async (tx) => {
           const comment = await tx.comment.create({
+            include: AUTHOR_INCLUDE,
             data: {
               ...(id !== undefined ? { id } : {}),
               cardId,
@@ -175,6 +195,7 @@ export class CommentsService {
       ) {
         const existing = await this.prisma.comment.findUnique({
           where: { id },
+          include: AUTHOR_INCLUDE,
         });
         if (existing && existing.cardId === cardId) {
           // Same idempotency key from a different author is a collision, not
@@ -304,6 +325,7 @@ export class CommentsService {
         }
         const row = await tx.comment.findUniqueOrThrow({
           where: { id: comment.id },
+          include: AUTHOR_INCLUDE,
         });
         await reconcileDescriptionAttachments(tx, boardId, comment.text, text);
         // Inline pasted media lives outside `reconcileDescriptionAttachments`
@@ -388,6 +410,7 @@ export class CommentsService {
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,
+      include: AUTHOR_INCLUDE,
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
@@ -613,11 +636,13 @@ export class CommentsService {
   }
 }
 
-export function toCommentDto(comment: Comment): CommentDto {
+export function toCommentDto(comment: CommentWithAuthor): CommentDto {
   return {
     id: comment.id,
     cardId: comment.cardId,
     authorId: comment.authorId,
+    authorName: comment.author?.displayName ?? null,
+    authorEmail: comment.author?.email ?? null,
     text: comment.text,
     kind: comment.kind as CommentKind,
     actorType: comment.actorType === "agent" ? "agent" : "human",

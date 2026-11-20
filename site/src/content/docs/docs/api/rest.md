@@ -124,12 +124,17 @@ expiry. The last `ADMIN` of a board cannot be demoted, and the last `ADMIN`
 cannot be removed: both answer `409`.
 
 `DELETE /boards/:id/members/me` leaves the board as the caller. Any accepted
-`MEMBER` or `VIEWER` may call it; an `ADMIN` may leave only while another
-accepted `ADMIN` remains. The last `ADMIN` answers `409 { code: "last_admin",
-action: "leave" }`. The route is session-only (a PAT gets `403 pat_forbidden`).
-Authored cards and comments stay on the board with their original `actorId`;
-the departure is recorded as `member_left` and a `membership: removed` SSE frame
-closes the leaver's stream. Afterwards the board is absent from `GET /boards`
+`MEMBER` or `VIEWER` may call it; an `ADMIN` may leave only while another active
+`ADMIN` remains (pending and expired rows do not count). The last `ADMIN`
+answers `409 { code: "last_admin", action: "leave" }`. The route is session-only
+(a PAT gets `403 pat_forbidden`) and idempotent: repeating it after a successful
+leave, or after a lost response, answers `200`; only a missing/soft-deleted
+board is `404`. Authored cards and comments stay on the board with their
+original `actorId`; the feed and comment DTOs also carry the author's joined
+`actorName`/`actorEmail` and `authorName`/`authorEmail`, so the leaver is still
+named after the roster drops them. The departure is recorded as `member_left`
+and a `membership: left` SSE frame closes the leaver's stream; an admin removal
+keeps `membership: removed`. Afterwards the board is absent from `GET /boards`
 and direct board URLs answer `403`.
 
 ### Access order

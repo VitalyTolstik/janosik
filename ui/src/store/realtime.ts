@@ -649,7 +649,10 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
     // clean end does not trigger an immediate reconnect); every change is
     // forwarded so open member lists can refresh.
     if (event.type === "membership") {
-      if (event.change === "removed" && event.userId === host.getUserId()) {
+      if (
+        (event.change === "removed" || event.change === "left") &&
+        event.userId === host.getUserId()
+      ) {
         connection.stop();
       }
       host.onMembershipChange(event.boardId, event.userId, event.change);

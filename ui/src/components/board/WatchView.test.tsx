@@ -314,6 +314,28 @@ describe("WatchView (TASK-142)", () => {
     expect(entry).toHaveTextContent("MEMBER→VIEWER");
   });
 
+  it("keeps the leaver's display identity when the roster no longer has them", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "left",
+          at: Date.now(),
+          type: "member_left",
+          actorId: "u-3",
+          actorName: "Lena",
+          actorEmail: "lena@example.com",
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry).toHaveTextContent("Lena");
+    expect(entry).not.toHaveTextContent("u-3");
+  });
+
   it("pages the feed with numbered page buttons", async () => {
     hoisted.enabled.value = true;
     const now = Date.now();

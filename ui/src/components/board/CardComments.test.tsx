@@ -221,6 +221,35 @@ describe("CardComments", () => {
     });
   });
 
+  it("keeps the author's name from the DTO after they leave the board", async () => {
+    const server = new FakeServer([seedBoard()]);
+    // The roster still has the caller only; the comment author has left.
+    server.membersByBoard.set("b-1", [
+      {
+        userId: "user-1",
+        displayName: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+        expiresAt: null,
+        avatarColor: null,
+        avatarPath: null,
+      },
+    ]);
+    server.seedComments("card-1", [
+      comment({
+        authorId: "user-9",
+        authorName: "Lena",
+        authorEmail: "lena@example.com",
+        text: "Left but still named",
+      }),
+    ]);
+    renderComments(server);
+
+    const row = await screen.findByTestId("comment");
+    expect(within(row).getByText("Lena")).toBeInTheDocument();
+    expect(row).not.toHaveTextContent("?");
+  });
+
   it.each(["success", "failure", "newer draft"] as const)(
     "settles an in-flight send after reopening (%s)",
     async (outcome) => {

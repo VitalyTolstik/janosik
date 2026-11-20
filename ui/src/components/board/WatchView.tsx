@@ -811,7 +811,10 @@ function WatchRow({
     entry.actorType === "admin"
       ? t("activity.administrator")
       : entry.actorId
-        ? userLabel(actor?.displayName ?? null, actor?.email ?? entry.actorId)
+        ? userLabel(
+            actor?.displayName ?? entry.actorName ?? null,
+            actor?.email ?? entry.actorEmail ?? entry.actorId,
+          )
         : "—";
 
   const card = entry.cardId ? cards[entry.cardId] : undefined;

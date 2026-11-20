@@ -495,6 +495,30 @@ describe("BoardSwitcher role sections (server mode)", () => {
     );
   });
 
+  it("offers Leave board from the switcher for a shared board", async () => {
+    const server = new FakeServer([
+      serverBoard("b-1", "Alpha"),
+      serverBoard("b-2", "Beta"),
+    ]);
+    server.roles.set("b-2", "MEMBER");
+    renderServerSwitcher(server);
+    await openSwitcher();
+    await screen.findByTestId("board-group-shared");
+
+    const beta = screen
+      .getAllByRole("row")
+      .find(
+        (row) =>
+          row.dataset.index !== undefined && row.textContent?.includes("Beta"),
+      );
+    expect(beta).toBeDefined();
+    fireEvent.click(
+      within(beta!).getByRole("button", { name: "Leave board — Beta" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Yes, leave" }));
+    await waitFor(() => expect(server.revoked.has("b-2")).toBe(true));
+  });
+
   it("keeps the flat list when everyone is admin", async () => {
     const server = new FakeServer([
       serverBoard("b-1", "Alpha"),

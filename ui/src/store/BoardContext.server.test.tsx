@@ -11,7 +11,7 @@ import { MemoryRouter, useNavigate } from "react-router-dom";
 
 import type { Board, Card, CommandRequest } from "@janosik/shared";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { I18nProvider } from "@/i18n";
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { ToastProvider } from "@/components/Toast";
@@ -886,6 +886,119 @@ describe("BoardProvider membership revocation (TASK-36)", () => {
     expect(
       await screen.findByText("You no longer have access to this board"),
     ).toBeTruthy();
+  });
+
+  it("says 'You left the board' for a cross-tab voluntary leave", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp("/board/b-1");
+    await waitReady();
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+
+    act(() => {
+      server.revokeMembership("b-1");
+      server.publishMembership("b-1", server.account.id, "left");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("1"),
+    );
+    expect(await screen.findByText("You left the board")).toBeInTheDocument();
+    expect(
+      screen.queryByText("You no longer have access to this board"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves the only board and lands on the empty state", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    fireEvent.click(screen.getByTestId("leave-b1"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("0"),
+    );
+    expect(screen.getByTestId("title").textContent).toBe("");
+    expect(await screen.findByText("You left the board")).toBeInTheDocument();
+  });
+
+  it("handles the SSE leave before the DELETE response without a duplicate", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    let resolveLeave!: (value: { status: "ok" }) => void;
+    vi.spyOn(api, "leaveBoard").mockReturnValue(
+      new Promise((resolve) => {
+        resolveLeave = resolve;
+      }),
+    );
+
+    renderApp();
+    await waitReady();
+    fireEvent.click(screen.getByTestId("leave-b1"));
+
+    act(() => {
+      server.revokeMembership("b-1");
+      server.publishMembership("b-1", server.account.id, "left");
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("0"),
+    );
+    expect(await screen.findByText("You left the board")).toBeInTheDocument();
+
+    act(() => resolveLeave({ status: "ok" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("You left the board")).toHaveLength(1);
+  });
+
+  it("does not toast an error when the DELETE response is lost after the leave", async () => {
+    localStorage.removeItem(BOARD_STORAGE_KEY);
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    let rejectLeave!: (error: unknown) => void;
+    vi.spyOn(api, "leaveBoard").mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectLeave = reject;
+      }),
+    );
+
+    renderApp();
+    await waitReady();
+    fireEvent.click(screen.getByTestId("leave-b1"));
+
+    act(() => {
+      server.revokeMembership("b-1");
+      server.publishMembership("b-1", server.account.id, "left");
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("0"),
+    );
+    expect(await screen.findByText("You left the board")).toBeInTheDocument();
+
+    act(() => rejectLeave(new ApiError(0, null)));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      screen.queryByText("No network connection to the server"),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("You left the board")).toHaveLength(1);
   });
 
   it("treats a 403 stream as revocation and lands on the empty state", async () => {

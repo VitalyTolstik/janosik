@@ -879,6 +879,7 @@ export class ShareService {
     const rows = await tx.comment.findMany({
       where: { cardId: { in: cardIds }, deletedAt: null },
       take: SHARE_LIMITS.snapshotCommentCount + 1,
+      include: { author: { select: { displayName: true, email: true } } },
     });
     const comments = rows.map((row) => {
       const payload = toPublicComment(toCommentDto(row));

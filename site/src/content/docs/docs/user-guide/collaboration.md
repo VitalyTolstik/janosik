@@ -21,8 +21,9 @@ Each board has three roles:
 - `Member` — can edit the board freely.
 - `Viewer` — can only view the board.
 
-A board can never lose its last admin: the last admin cannot be demoted or
-removed.
+A board can never lose its last active admin: the last admin cannot be
+demoted, removed or leave. Pending and expired admin rows do not count as a
+replacement.
 
 ### Invite by email
 
@@ -42,6 +43,17 @@ expiry, and remove a member (behind a confirmation). A viewer's row shows
 `no expiry`, `until <date>` or `access expired`. An expired viewer stays on
 this list so an admin can remove the row or invite the person again; the
 lapsed row never grants access.
+
+### Leave a board
+
+Your own row in the members dialog has `Leave board`, behind a confirmation.
+On narrow screens, or without opening the dialog, the same action is available
+from the board switcher: open it and use the leave icon on the board's row.
+Leaving removes your membership, so the board disappears from the switcher and
+a direct board URL is denied. Cards and comments you wrote stay on the board
+and keep your name in history and comment attribution. An admin can leave only
+while another active admin remains; otherwise the app explains that another
+admin is needed and refreshes the roster.
 
 ## Invitations
 

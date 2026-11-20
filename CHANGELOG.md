@@ -29,6 +29,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answer `403`, and authored cards/comments keep their original attribution.
   Admin remove-other behaviour (`DELETE /boards/:id/members/:userId`) is
   unchanged. EN/RU copy and the API docs/openapi cover the route.
+  Review follow-up: self-leave is idempotent (a repeated DELETE or lost
+  response answers `200`), the last-admin guard ignores pending and expired
+  admins, and voluntary departures publish `membership: left` so another tab
+  says “You left the board” instead of “access revoked”. Activity entries and
+  comments now carry the author’s joined display name/email, so a leaver
+  remains named after the roster drops them. The members dialog is keyed by
+  board and shows its title, Leave is available from the board switcher at
+  mobile widths, focus moves into/out of the confirmation, a refused leave
+  refreshes the roster, and a last-admin `409` maps to the admin message.
 - TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
   read-only verification and master-account commands. The reset uses a
   private backend to verify database identity before schema recreation and
