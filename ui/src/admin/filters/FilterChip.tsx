@@ -40,6 +40,7 @@ export function FilterChip({
         : facet);
   const state = optionState(t, option?.state);
   const ids = loading ? undefined : optionIds(id, option);
+  const title = `${name} · ${optionIds(id, option, false)}`;
   const value = [loading ? t("admin.filters.loading") : name, state, ids]
     .filter(Boolean)
     .join(" · ");
@@ -48,7 +49,7 @@ export function FilterChip({
     <span
       className="inline-flex min-w-0 max-w-[min(20rem,calc(100dvw-2rem))] items-center gap-1 rounded-md border border-border bg-hover/40 pl-2 text-xs text-foreground"
       data-testid={`admin-filter-${key}`}
-      title={loading ? undefined : `${name} · ${optionIds(id, option, false)}`}
+      title={loading ? undefined : title}
     >
       <span
         className={cn(
@@ -61,7 +62,7 @@ export function FilterChip({
             <span className="shrink-0 text-muted-foreground">{facet}:</span>
           ) : null}
           <FilterColorDot color={option?.color} />
-          <span className="min-w-0 truncate" title={name}>
+          <span className="min-w-0 truncate" title={title}>
             {name}
           </span>
           {state ? (

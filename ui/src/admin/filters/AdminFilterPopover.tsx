@@ -142,7 +142,7 @@ function FilterMenu({
               variant="ghost"
               size="sm"
               className="mb-1 h-11 px-2 sm:h-8"
-              aria-label={t("admin.filters.back")}
+              aria-label={t("admin.filters.back", { facet: t(active.label) })}
               onClick={() => setActive(null)}
             >
               <ChevronLeft aria-hidden />

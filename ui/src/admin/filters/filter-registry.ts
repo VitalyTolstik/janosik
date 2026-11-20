@@ -41,7 +41,7 @@ export function cardFilterValue(
 
 export const BOARD_DEPENDENTS = ["columnId", "labelId", "cardId"] as const;
 
-function shortId(id: string): string {
+export function shortId(id: string): string {
   // CUIDs created together can share a timestamp prefix. Their random
   // suffix distinguishes boards when operators search for identical titles.
   return /^c[a-z0-9]{24}$/.test(id) ? id.slice(-8) : id.slice(0, 8);

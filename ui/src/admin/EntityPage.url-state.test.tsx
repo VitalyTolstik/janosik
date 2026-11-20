@@ -442,7 +442,7 @@ describe("cards filter bar", () => {
     expect(currentQuery().get("returnTo")).toBe("/admin");
     await waitFor(() => {
       expect(screen.getByTestId("admin-filter-results")).toHaveTextContent(
-        "Results: 2",
+        /^Filters applied · 2 results$/,
       );
     });
     expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
@@ -492,6 +492,7 @@ describe("cards filter bar", () => {
       }),
     );
     await waitFor(() => expect(currentQuery().has("labelId")).toBe(false));
+    expect(screen.getByTestId("admin-filter-clear-columnId")).toHaveFocus();
     await user.click(
       screen.getByRole("button", { name: "Clear search and filters" }),
     );
@@ -538,10 +539,15 @@ describe("cards filter bar", () => {
 
   it("keeps a conflicting deep link exact until that dependent filter is removed", async () => {
     const server = filterServer();
-    renderAdmin(`${cardsUrl}&boardId=${boardA}&columnId=${columnB}`);
+    renderAdmin(
+      `${cardsUrl}&boardId=${boardA}&columnId=${columnB}&labelId=${labelA}`,
+    );
     const conflict = await screen.findByRole("button", {
-      name: "Remove conflict: Column",
+      name: "Remove conflict: Column — In progress · column-B",
     });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Column — In progress · column-B refers to a different board or column.",
+    );
     expect(screen.getByTestId("admin-filter-columnId")).toHaveTextContent(
       /In progress.*column-B.*board-BB/,
     );
@@ -560,12 +566,17 @@ describe("cards filter bar", () => {
     await screen.findByTestId(`admin-card-row-${cardA}`);
     expect(currentQuery().has("columnId")).toBe(false);
     expect(currentQuery().get("boardId")).toBe(boardA);
+    expect(currentQuery().get("labelId")).toBe(labelA);
+    expect(screen.getByTestId("admin-filter-clear-labelId")).toHaveFocus();
   });
 
   it("offers an exact unknown ID and distinguishes empty matches from an empty list", async () => {
     vi.stubGlobal("fetch", new FakeAdminServer(emptyAdminState()).fetchImpl);
     renderAdmin(cardsUrl);
     await screen.findByText("Nothing here yet");
+    expect(
+      screen.queryByTestId("admin-pagination-status"),
+    ).not.toBeInTheDocument();
     const boards = await openFacet("Board");
     await userEvent.type(
       boards.getByRole("combobox", { name: /Board/ }),
@@ -584,6 +595,14 @@ describe("cards filter bar", () => {
       screen.queryByRole("button", { name: /^Remove conflict/ }),
     ).not.toBeInTheDocument();
     expect(currentQuery().get("boardId")).toBe("missing-board");
+
+    await userEvent.click(
+      within(screen.getByTestId("admin-empty-state")).getByRole("button", {
+        name: "Clear search and filters",
+      }),
+    );
+    await screen.findByText("Nothing here yet");
+    expect(screen.getByRole("button", { name: "Filters" })).toHaveFocus();
   });
 
   it("displays a retry when lookup fails, then reports zero for a valid parent combination", async () => {
@@ -611,6 +630,9 @@ describe("cards filter bar", () => {
       body: { code: "unsupported_filter", filter: "labelId" },
     });
     renderAdmin(`${cardsUrl}&boardId=${boardA}&labelId=${labelA}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This list does not support the filter “Label”.",
+    );
     const remove = await screen.findByRole("button", {
       name: "Remove filter: Label",
     });
@@ -621,6 +643,7 @@ describe("cards filter bar", () => {
     await screen.findByTestId(`admin-card-row-${cardA}`);
     expect(currentQuery().has("labelId")).toBe(false);
     expect(currentQuery().get("boardId")).toBe(boardA);
+    expect(screen.getByTestId("admin-filter-clear-boardId")).toHaveFocus();
   });
 
   it("keeps board and returnTo across a hub tab switch and drops the other list state", async () => {

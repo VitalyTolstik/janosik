@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import type {
@@ -284,6 +284,10 @@ export function EntityPage<E extends AdminEntity>({
   const resolvedFilters = useCardFilterOptions(
     cards ? list.filters : undefined,
   );
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const filterChipButtons = useRef<
+    Partial<Record<CardFilterKey, HTMLButtonElement | null>>
+  >({});
   const lookupPending = resolvedFilters.some(({ loading }) => loading);
   const lookupFailed = resolvedFilters.some(({ error }) => error);
   const rejectedFilter = cards ? unsupportedFilter(list.errorBody) : undefined;
@@ -291,6 +295,19 @@ export function EntityPage<E extends AdminEntity>({
     ({ key }) => key === rejectedFilter,
   );
   const rejectedName = rejectedFacet ? t(rejectedFacet.label) : rejectedFilter;
+
+  const focusAfterFilterRemoval = (key?: CardFilterKey) => {
+    if (key !== undefined && key !== "boardId") {
+      const index = resolvedFilters.findIndex((filter) => filter.key === key);
+      const neighbor = resolvedFilters[index + 1] ?? resolvedFilters[index - 1];
+      const button = neighbor && filterChipButtons.current[neighbor.key];
+      if (button) {
+        button.focus();
+        return;
+      }
+    }
+    filterTriggerRef.current?.focus();
+  };
 
   const commitCardsView = (next: AdminListQueryState) => {
     const current = new URLSearchParams(location.search);
@@ -306,6 +323,7 @@ export function EntityPage<E extends AdminEntity>({
 
   const changeCardFilter = (key: CardFilterKey, id: string | null) => {
     if (list.filters[key] === id) return;
+    if (id === null) focusAfterFilterRemoval(key);
     withSelectionReset(() => {
       const filters = { ...list.filters, [key]: id };
       const cleared =
@@ -329,6 +347,7 @@ export function EntityPage<E extends AdminEntity>({
   const clearAllFilters = () => {
     withSelectionReset(() => {
       if (cards) {
+        focusAfterFilterRemoval();
         commitCardsView({
           search: "",
           status: "all",
@@ -418,6 +437,8 @@ export function EntityPage<E extends AdminEntity>({
       {cards ? (
         <AdminFilterBar
           renderHeader={renderHeader}
+          triggerRef={filterTriggerRef}
+          chipButtons={filterChipButtons}
           filters={list.filters}
           resolved={resolvedFilters}
           filtered={filtered}
@@ -496,6 +517,7 @@ export function EntityPage<E extends AdminEntity>({
           <ForbiddenState onBack={() => navigate("/admin")} />
         ) : rejectedName ? (
           <EmptyState
+            announce
             message={t("admin.filters.unsupported", { facet: rejectedName })}
             action={
               <Button
@@ -513,6 +535,7 @@ export function EntityPage<E extends AdminEntity>({
           />
         ) : cards && list.filterError !== undefined ? (
           <EmptyState
+            announce
             message={t("admin.filters.invalid")}
             action={clearAction}
           />
@@ -721,7 +744,9 @@ export function EntityPage<E extends AdminEntity>({
             </Table>
           </>
         )}
-        {!list.loading && !list.error && (cards || list.items.length > 0)
+        {!list.loading &&
+        !list.error &&
+        (list.items.length > 0 || (cards && list.total > 0))
           ? pagination
           : null}
       </Panel>

@@ -365,11 +365,13 @@ export function ErrorState({
 
 export function EmptyState({
   message,
+  announce = false,
   filtered = false,
   onClear,
   action,
 }: {
   message?: string;
+  announce?: boolean;
   /** Distinguish "no rows exist" from "the current filters match nothing". */
   filtered?: boolean;
   onClear?: () => void;
@@ -381,7 +383,10 @@ export function EmptyState({
       className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center"
       data-testid="admin-empty-state"
     >
-      <p className="text-xs font-medium text-foreground">
+      <p
+        role={announce ? "alert" : undefined}
+        className="text-xs font-medium text-foreground"
+      >
         {message ?? t("admin.common.empty")}
       </p>
       {filtered ? (

@@ -165,9 +165,7 @@ for (const width of [1440, 1024, 390]) {
     const cardRow = page.getByTestId(`admin-card-row-${cardId}`);
     await expect(cardRow).toBeVisible();
     await expect(page.getByTestId("admin-filter-results")).toHaveText(
-      mobile
-        ? "Фильтры применены · Результатов: 1"
-        : "Filters applied · Results: 1",
+      mobile ? "Фильтры применены · найдено 1" : "Filters applied · 1 results",
     );
     await expect(page).toHaveURL(
       (url) =>
@@ -185,6 +183,7 @@ for (const width of [1440, 1024, 390]) {
     await labelRemove.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL((url) => !url.searchParams.has("labelId"));
+    await expect(page.getByTestId("admin-filter-clear-columnId")).toBeFocused();
     await page.goBack();
     await expect(page).toHaveURL(focusedList);
     await expect(labelRemove).toBeVisible();
@@ -203,21 +202,25 @@ for (const width of [1440, 1024, 390]) {
     const deepLink = new URL(focusedList);
     deepLink.searchParams.set("cardId", cardId);
     await page.goto(deepLink.href);
-    for (const [key, name, id, parent] of [
-      ["boardId", boardTitle, board.id, ""],
-      ["columnId", columnTitle, columnId, board.id.slice(-8)],
-      ["labelId", labelTitle, labelId, board.id.slice(-8)],
+    for (const [key, name, id, parent, fullParent] of [
+      ["boardId", boardTitle, board.id, "", ""],
+      ["columnId", columnTitle, columnId, board.id.slice(-8), board.id],
+      ["labelId", labelTitle, labelId, board.id.slice(-8), board.id],
       [
         "cardId",
         cardTitle,
         cardId,
         `${board.id.slice(-8)}/${columnId.slice(0, 8)}`,
+        `${board.id}/${columnId}`,
       ],
     ]) {
       const chip = page.getByTestId(`admin-filter-${key}`);
       const remove = chip.getByRole("button");
       const title = chip.locator(".truncate");
-      await expect(title).toHaveAttribute("title", name);
+      await expect(title).toHaveAttribute(
+        "title",
+        `${name} · ${id}${fullParent ? ` · ${fullParent}` : ""}`,
+      );
       const shortId = key === "boardId" ? id.slice(-8) : id.slice(0, 8);
       await expect(chip).toContainText(shortId);
       if (parent) await expect(chip).toContainText(parent);
@@ -258,5 +261,167 @@ for (const width of [1440, 1024, 390]) {
           url.searchParams.has(id),
         ),
     );
+    await expect(trigger).toBeFocused();
   });
 }
+
+test("names a conflicting column and removes only that filter", async ({
+  page,
+  board,
+}) => {
+  const columnId = await board.column("Matching column");
+  const otherBoard = await board.api.post("/api/v1/boards", {
+    data: { title: "Other board" },
+  });
+  expect(otherBoard.status()).toBe(201);
+  const { id: otherBoardId } = (await otherBoard.json()) as { id: string };
+
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(
+    adminPath(`boards?tab=cards&boardId=${otherBoardId}&columnId=${columnId}`),
+  );
+  const value = `Column — Matching column · ${columnId.slice(0, 8)}`;
+  const conflict = page.getByRole("alert");
+  await expect(conflict).toHaveCount(1);
+  await expect(conflict).toHaveText(
+    `${value} refers to a different board or column.`,
+  );
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.get("columnId") === columnId,
+  );
+  await expect(page.getByText("No cards match these filters.")).toBeVisible();
+  await page
+    .getByRole("button", { name: `Remove conflict: ${value}`, exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("boardId") === otherBoardId &&
+      !url.searchParams.has("columnId"),
+  );
+  await expect(page.getByTestId("admin-filter-clear-boardId")).toBeFocused();
+  await expect(conflict).toHaveCount(0);
+});
+
+test("retries a failed lookup for an applied filter", async ({
+  page,
+  board,
+}) => {
+  const columnId = await board.column("Lookup column");
+  const cardId = await board.card(columnId, "Lookup card");
+  await loginAsMaster(page, ownerCredentials());
+  await page.route(
+    (url) =>
+      url.pathname === "/api/v1/admin/filter-options" &&
+      url.searchParams.get("type") === "column" &&
+      url.searchParams.get("ids") === columnId,
+    (route) => route.fulfill({ status: 500, json: {} }),
+    { times: 1 },
+  );
+  await page.goto(adminPath(`boards?tab=cards&columnId=${columnId}`));
+  const failure = page.getByRole("status").filter({
+    hasText: /^Could not look up filter values\.$/,
+  });
+  await expect(failure).toBeVisible();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(failure).toHaveCount(0);
+  await expect(page.getByTestId("admin-filter-columnId")).toContainText(
+    "Lookup column",
+  );
+  await expect(page.getByTestId(`admin-card-row-${cardId}`)).toBeVisible();
+  await expect(page).toHaveURL(
+    (url) => url.searchParams.get("columnId") === columnId,
+  );
+});
+
+test("announces and removes an unsupported filter", async ({ page, board }) => {
+  const columnId = await board.column("Supported board column");
+  const cardId = await board.card(columnId, "Supported board card");
+  const labelId = await board.label("Unsupported label", "green");
+  await loginAsMaster(page, ownerCredentials());
+  await page.route(
+    (url) =>
+      url.pathname === "/api/v1/admin/entities/cards" &&
+      url.searchParams.get("labelId") === labelId,
+    (route) =>
+      route.fulfill({
+        status: 400,
+        json: { code: "unsupported_filter", filter: "labelId" },
+      }),
+  );
+  await page.goto(
+    adminPath(`boards?tab=cards&boardId=${board.id}&labelId=${labelId}`),
+  );
+  const alert = page.getByRole("alert");
+  await expect(alert).toHaveText(
+    "This list does not support the filter “Label”.",
+  );
+  const cardRow = page.getByTestId(`admin-card-row-${cardId}`);
+  await expect(cardRow).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Remove filter: Label", exact: true })
+    .click();
+  await expect(cardRow).toBeVisible();
+  await expect(alert).toHaveCount(0);
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("boardId") === board.id &&
+      !url.searchParams.has("labelId"),
+  );
+  await expect(page.getByTestId("admin-filter-clear-boardId")).toBeFocused();
+});
+
+test("announces invalid filters and restores focus after clearing them", async ({
+  page,
+  board,
+}) => {
+  const columnId = await board.column("Valid column");
+  const cardId = await board.card(columnId, "Valid card");
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(
+    adminPath(`boards?tab=cards&boardId=${board.id}&boardId=duplicate-board`),
+  );
+  const empty = page.getByTestId("admin-empty-state");
+  await expect(empty.getByRole("alert")).toHaveText(
+    "The URL contains invalid filters.",
+  );
+  const cardRow = page.getByTestId(`admin-card-row-${cardId}`);
+  await expect(cardRow).toHaveCount(0);
+  await empty.getByRole("button", { name: english.clear, exact: true }).click();
+  await expect(page).toHaveURL((url) => !url.searchParams.has("boardId"));
+  await expect(empty.getByRole("alert")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Filters", exact: true }),
+  ).toBeFocused();
+  await expect(cardRow).toBeVisible();
+});
+
+test("Escape closes an open facet picker and returns focus to Filters", async ({
+  page,
+  board,
+}) => {
+  const columnId = await board.column("Escape column");
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`boards?tab=cards&boardId=${board.id}`));
+  const trigger = page.getByRole("button", { name: "Filters 1", exact: true });
+  await trigger.press("Enter");
+  const dialog = page.getByRole("dialog", { name: english.dialog });
+  await dialog
+    .getByRole("button", { name: "Column", exact: true })
+    .press("Enter");
+  const input = dialog.getByRole("combobox", {
+    name: "Search options — Column",
+  });
+  await expect(input).toBeFocused();
+  await expect(
+    dialog.getByRole("button", { name: "Back to Column" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("option", { name: new RegExp(columnId.slice(0, 8)) }),
+  ).toBeVisible();
+  await input.press("ArrowDown");
+  await expect(input).toHaveAttribute("aria-activedescendant", /.+/);
+  await input.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(page).toHaveURL((url) => !url.searchParams.has("columnId"));
+});

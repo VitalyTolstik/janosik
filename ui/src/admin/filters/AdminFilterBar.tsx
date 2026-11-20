@@ -1,14 +1,16 @@
-import { useRef, type ReactNode } from "react";
+import type { MutableRefObject, ReactNode, RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { useAdminT } from "../admin-i18n";
 import type { AdminListFilters } from "../admin-list-query";
 import { AdminFilterPopover } from "./AdminFilterPopover";
 import { FilterChip } from "./FilterChip";
-import type { CardFilterKey } from "./filter-registry";
+import { shortId, type CardFilterKey } from "./filter-registry";
 import type { ResolvedCardFilter } from "./use-card-filter-options";
 
 export function AdminFilterBar({
   renderHeader,
+  triggerRef,
+  chipButtons,
   filters,
   resolved,
   filtered,
@@ -18,6 +20,10 @@ export function AdminFilterBar({
   onClear,
 }: {
   renderHeader: (trigger: ReactNode) => ReactNode;
+  triggerRef: RefObject<HTMLButtonElement>;
+  chipButtons: MutableRefObject<
+    Partial<Record<CardFilterKey, HTMLButtonElement | null>>
+  >;
   filters: AdminListFilters;
   resolved: ResolvedCardFilter[];
   filtered: boolean;
@@ -27,10 +33,6 @@ export function AdminFilterBar({
   onClear: () => void;
 }) {
   const t = useAdminT();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const chipButtons = useRef<
-    Partial<Record<CardFilterKey, HTMLButtonElement | null>>
-  >({});
   const failed = resolved.filter((filter) => filter.error);
   const conflicts = resolved.filter(({ option }) => {
     if (!option) return false;
@@ -43,15 +45,6 @@ export function AdminFilterBar({
         option.columnId !== filters.columnId)
     );
   });
-
-  const remove = (key: CardFilterKey) => {
-    const next =
-      resolved[resolved.findIndex((filter) => filter.key === key) + 1];
-    const nextButton =
-      key !== "boardId" && next ? chipButtons.current[next.key] : null;
-    (nextButton ?? triggerRef.current)?.focus();
-    onChange(key, null);
-  };
 
   return (
     <>
@@ -75,7 +68,7 @@ export function AdminFilterBar({
               buttonRef={(button) => {
                 chipButtons.current[filter.key] = button;
               }}
-              onRemove={() => remove(filter.key)}
+              onRemove={() => onChange(filter.key, null)}
             />
           ))}
           <Button
@@ -83,34 +76,35 @@ export function AdminFilterBar({
             variant="ghost"
             className="h-11 px-2 sm:h-8"
             data-testid="admin-filter-clear"
-            onClick={() => {
-              triggerRef.current?.focus();
-              onClear();
-            }}
+            onClick={onClear}
           >
             {t("admin.filters.clearAll")}
           </Button>
         </div>
       ) : null}
-      {conflicts.length > 0 ? (
-        <div
-          role="alert"
-          className="flex shrink-0 flex-wrap items-center gap-x-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-1 text-xs"
-        >
-          <p>{t("admin.filters.conflict")}</p>
-          {conflicts.map(({ key, label }) => (
+      {conflicts.map(({ key, label, id, option }) => {
+        const facet = t(label);
+        const name = option?.label ? `${facet} — ${option.label}` : facet;
+        const value = `${name} · ${shortId(id)}`;
+        return (
+          <div
+            key={key}
+            className="flex shrink-0 flex-wrap items-center gap-x-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-1 text-xs"
+          >
+            <p role="alert" className="min-w-0 wrap-anywhere">
+              {t("admin.filters.conflict", { value })}
+            </p>
             <Button
-              key={key}
               size="sm"
               variant="outline"
-              className="h-11 sm:h-8"
-              onClick={() => remove(key)}
+              className="h-auto min-h-11 max-w-full wrap-anywhere whitespace-normal sm:min-h-8"
+              onClick={() => onChange(key, null)}
             >
-              {t("admin.filters.removeConflict", { facet: t(label) })}
+              {t("admin.filters.removeConflict", { value })}
             </Button>
-          ))}
-        </div>
-      ) : null}
+          </div>
+        );
+      })}
       {failed.length > 0 ? (
         <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1 text-xs">
           <p role="status">{t("admin.filters.lookupError")}</p>
