@@ -551,7 +551,7 @@ export function Pagination({
               data-testid="admin-page-size"
               value={limit}
               onChange={(event) => onLimitChange(Number(event.target.value))}
-              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
             >
               {[25, 50, 100].map((size) => (
                 <option key={size} value={size}>
@@ -567,7 +567,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs"
+          className="h-7 px-2 text-xs max-sm:h-11 max-sm:min-h-11"
           disabled={pendingPage <= 1}
           data-testid="admin-pagination-prev"
           aria-label={t("admin.common.prev")}
@@ -585,7 +585,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs"
+          className="h-7 px-2 text-xs max-sm:h-11 max-sm:min-h-11"
           disabled={pendingPage >= pendingPages}
           data-testid="admin-pagination-next"
           aria-label={t("admin.common.next")}

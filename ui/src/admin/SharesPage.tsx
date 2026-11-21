@@ -95,10 +95,11 @@ export function SharesPage() {
   );
 
   return (
-    <div className="w-full max-w-5xl space-y-4 p-4">
+    <div className="w-full max-w-6xl space-y-4 p-4 xl:px-2">
       <PageHeader
         title={t("admin.shares.title")}
         subtitle={t("admin.shares.subtitle")}
+        actionsClassName="max-w-full max-sm:w-full"
         meta={
           list.loading || list.error ? undefined : (
             <span
@@ -113,7 +114,13 @@ export function SharesPage() {
             </span>
           )
         }
-        actions={<SearchInput value={list.search} onChange={list.setSearch} />}
+        actions={
+          <SearchInput
+            value={list.search}
+            onChange={list.setSearch}
+            className="max-sm:h-11 max-sm:min-h-11 max-sm:min-w-0 max-sm:flex-1 max-sm:basis-40"
+          />
+        }
       />
 
       <Panel className="p-0" aria-busy={list.loading || list.refreshing}>
@@ -155,11 +162,11 @@ export function SharesPage() {
                 {rows.map((row) => (
                   <tr key={row.id}>
                     <Td label={t("admin.shares.col.board")}>
-                      <div className="flex flex-col">
+                      <div className="flex min-w-0 flex-1 flex-col">
                         {row.boardDeleted ? (
-                          <div className="flex max-w-[20rem] min-w-0 items-center gap-2 text-muted-foreground">
+                          <div className="flex max-w-[20rem] min-w-0 items-center gap-2 text-muted-foreground max-sm:max-w-full">
                             <span
-                              className="truncate"
+                              className="min-w-0 truncate"
                               title={row.boardTitle ?? undefined}
                             >
                               {row.boardTitle ?? row.boardId}
@@ -187,12 +194,12 @@ export function SharesPage() {
                           <Link
                             to={`/admin/boards/${row.boardId}`}
                             title={row.boardTitle ?? undefined}
-                            className="block max-w-[20rem] truncate text-foreground hover:underline"
+                            className="block max-w-[20rem] truncate text-foreground hover:underline max-sm:max-w-full"
                           >
                             {row.boardTitle ?? row.boardId}
                           </Link>
                         )}
-                        <code className="font-mono text-[11px] text-muted-foreground">
+                        <code className="block max-w-full truncate font-mono text-[11px] text-muted-foreground">
                           /s/{row.token}
                         </code>
                       </div>
@@ -264,7 +271,7 @@ export function SharesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 p-0"
+                          className="h-7 w-7 p-0 max-sm:h-11 max-sm:w-11"
                           aria-label={t("admin.shares.copy")}
                           title={t("admin.shares.copy")}
                           data-testid={`admin-share-copy-${row.id}`}
@@ -291,7 +298,7 @@ export function SharesPage() {
                           rel="noreferrer"
                           aria-label={t("admin.shares.open")}
                           title={t("admin.shares.open")}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
                         >
                           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         </a>
@@ -303,7 +310,7 @@ export function SharesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 text-destructive"
+                            className="h-7 w-7 p-0 text-destructive max-sm:h-11 max-sm:w-11"
                             aria-label={t("admin.shares.revoke")}
                             title={t("admin.shares.revoke")}
                             disabled={busy === row.id}
