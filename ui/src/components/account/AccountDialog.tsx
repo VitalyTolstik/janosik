@@ -88,6 +88,9 @@ export function AccountDialog({
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const externalTrigger = useRef<HTMLElement | null>(null);
+  const sectionButtons = useRef<
+    Partial<Record<AccountSection, HTMLButtonElement | null>>
+  >({});
   // Mirrors Header's `?agents=` handling: Back from a deep-linked panel must
   // close it, not leave the URL and the dialog disagreeing.
   const lastDeepLink = useRef<AccountSection | null>(null);
@@ -199,6 +202,12 @@ export function AccountDialog({
       </Tooltip>
 
       <DialogContent
+        onOpenAutoFocus={(event) => {
+          // A deep link must land on the section it names, not Radix's first
+          // default target. Tab switches keep the focus the user gave them.
+          event.preventDefault();
+          sectionButtons.current[section]?.focus();
+        }}
         onCloseAutoFocus={(event) => {
           if (externalTrigger.current?.isConnected) {
             event.preventDefault();
@@ -246,6 +255,9 @@ export function AccountDialog({
             {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
               <button
                 key={id}
+                ref={(node) => {
+                  sectionButtons.current[id] = node;
+                }}
                 type="button"
                 data-testid={`account-nav-${id}`}
                 aria-current={section === id ? "page" : undefined}

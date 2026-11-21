@@ -157,7 +157,7 @@ export function NotificationsBell() {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        sideOffset={8}
+        sideOffset={12}
         collisionPadding={8}
         aria-label={t("common.notifications")}
         data-testid="invitations-panel"
@@ -311,7 +311,10 @@ function NotificationsPanel({
                 className="space-y-3 px-4 py-3"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
+                  <p
+                    className="line-clamp-2 break-words text-sm font-medium"
+                    title={invitation.boardTitle}
+                  >
                     {invitation.boardTitle}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
@@ -336,7 +339,7 @@ function NotificationsPanel({
                     data-testid="invitation-accept"
                     disabled={pending || expired}
                     onClick={() => void handleAccept(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs"
+                    className="h-8 flex-1 gap-1.5 text-xs max-md:min-h-11"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t("notifications.accept")}
@@ -347,7 +350,7 @@ function NotificationsPanel({
                     data-testid="invitation-decline"
                     disabled={pending}
                     onClick={() => void handleDecline(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-md:min-h-11"
                   >
                     <X className="h-3.5 w-3.5" />
                     {t("notifications.decline")}

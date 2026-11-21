@@ -61,6 +61,23 @@ async function openDataMenu(page: Page) {
   await expect(page.getByTestId("data-archive")).toBeVisible();
 }
 
+test("the notifications bell is reachable on the phone board", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+
+  const bell = page.getByTestId("notifications-bell");
+  await expect(bell).toBeVisible();
+  await expectInsideViewport(bell, "notifications bell");
+  await expectNoPageOverflow(page, "phone board with the notifications bell");
+
+  await bell.tap();
+  const panel = page.getByTestId("invitations-panel");
+  await expect(panel).toBeVisible();
+  await expectInsideViewport(panel, "notifications panel");
+});
+
 test("header, filters and view controls fit a phone without sideways scroll", async ({
   page,
   board,

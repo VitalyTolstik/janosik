@@ -297,6 +297,9 @@ describe("AccountDialog (TASK-36.1)", () => {
 
     expect(await screen.findByTestId("account-dialog")).toBeVisible();
     expect(await screen.findByTestId("account-tokens")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("account-nav-tokens")).toHaveFocus(),
+    );
   });
 
   it("keeps the account deep link in step with the visible section", async () => {
