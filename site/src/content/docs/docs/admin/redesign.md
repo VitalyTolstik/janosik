@@ -168,6 +168,31 @@ The shortcut sheet is also available from the top bar.
 - A 403 on an owner-only screen becomes an explicit "Owner rights required"
   state instead of the generic list error.
 
+## Filters
+
+Lists with facets beyond status and period have a `Filters` button beside the
+header controls. The badge counts active advanced facets; status and period stay
+in the header. On a desktop the button opens a popover; below 640 px it opens a
+bottom sheet with 44 px controls and a sticky action footer.
+
+- Facets are grouped into Scope, People and Properties. Only facets supported by
+  the list are offered; an old deep link to a supported facet still resolves and
+  is shown as a chip, while an unsupported parameter is replaced by an explicit
+  unsupported-filter state with a remove action.
+- Chips show a human label and the object's own short id, plus its parent board
+  and column ids. Archived, deleted and disabled objects keep a suffix; a
+  missing id reads `Unknown …` and stays removable.
+- The URL is the saved view. A filter change pushes one history entry, resets
+  the page to 1 and clears the bulk selection. Reload, back/forward and
+  `returnTo` restore the same chips and page.
+- Changing Board clears Column, Label, Label match and Card in the same commit;
+  Commands keeps Card and Column because they match historical `touches`.
+  Switching hub tabs keeps only `boardId` (and `returnTo`).
+- `Clear search and filters` resets search, status, period and advanced filters
+  in one entry. The page size is kept.
+- The full facet list, URL examples and the intentionally unfilterable surfaces
+  are on [monitoring and logs](../monitoring/#filters).
+
 ## Roles
 
 The server remains the source of truth. The UI mirrors it:

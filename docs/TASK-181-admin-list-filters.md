@@ -1,9 +1,13 @@
 # TASK-181 — Admin list filters and discoverable filter UX
 
-**Status:** planned
+**Status:** implemented on `feat/TASK-181.7-docs-acceptance` (2026-11-21);
+pending merge. Acceptance evidence is in
+[TASK-181.7-acceptance.md](./TASK-181.7-acceptance.md).
 
-**Revision:** 10 (2026-11-21) — records the TASK-181.6 Audit, Commands, and
-Activity facets and their [benchmark evidence](./TASK-181.6-audit-perf.md).
+**Revision:** 11 (2026-11-21) — records the TASK-181.7 25k qualification, the
+indexed MIME family, and the [acceptance evidence](./TASK-181.7-acceptance.md).
+Revision 10 recorded the TASK-181.6 Audit, Commands, and Activity facets and
+their [benchmark evidence](./TASK-181.6-audit-perf.md).
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -1610,6 +1614,13 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Final browser matrix and screenshots 1440/1024/390, RU + EN.
 - Perf evidence from `npm run perf:admin-filters` (5k PR gate + full 25k manual
   run) and any index migration notes.
+- Attachment MIME filtering uses an indexed `mimeFamily` column. A trigger keeps
+  it in step with `mimeType` for fixtures and imports; the upload service sets
+  it explicitly. The measured 25k indexes cover card priority/period/attachments,
+  comment author/kind/period, attachment period/uploader/transcode/MIME family,
+  card-link type/order, live label counts and the users period. The migration
+  and every measurement are recorded in the
+  [acceptance record](./TASK-181.7-acceptance.md).
 - A short “what is intentionally not filterable” section in the docs.
 
 **Acceptance**
@@ -1621,7 +1632,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
   checklist has no new violations.
 - No regressions in existing admin URLs, global search, bulk actions or
   `returnTo`.
-- Pass the 25k moderation and content qualifications before rollout.
+- Pass the 25k moderation and content qualifications before rollout. The
+  measured result, scoped exceptions and raw plans are in the
+  [acceptance record](./TASK-181.7-acceptance.md).
 
 ## 10. Test plan
 

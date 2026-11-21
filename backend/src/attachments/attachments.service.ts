@@ -39,6 +39,7 @@ import {
   StorageService,
 } from "./storage.service";
 import { MediaService } from "./media.service";
+import { attachmentMimeFamily } from "./mime-family";
 import { TranscodeService } from "./transcode.service";
 import { UploadLimiter } from "./upload-limiter";
 import { readFilePrefix } from "./upload-storage";
@@ -264,6 +265,7 @@ export class AttachmentsService {
               fileName,
               storedName,
               mimeType,
+              mimeFamily: attachmentMimeFamily(mimeType),
               sizeBytes: file.size,
               uploadedById: user.id,
               uploadedByTokenId: attribution.apiTokenId,

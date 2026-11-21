@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-181.7 admin filter docs, rollout evidence and 25k qualification. The
+  admin guide (EN/RU) now documents the Filters surface, every offered facet,
+  deep-link examples, chip resolution, conflict and unknown states, board/tab
+  rules, keyboard and mobile behaviour, and the surfaces that are intentionally
+  not filterable. Attachment MIME filters now use an indexed `mimeFamily`
+  column kept in step by a database trigger; measured indexes cover the 25k
+  card, comment, attachment, card-link, label and people facets. See
+  [the acceptance record](docs/TASK-181.7-acceptance.md).
+
 - TASK-177.1 share link editing: every non-revoked share row now has `Edit`,
   which reuses the create form to change the label, comments/attachments
   visibility and expiry while the mode and `/s/<token>` stay immutable.

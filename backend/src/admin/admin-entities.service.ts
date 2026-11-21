@@ -406,13 +406,27 @@ export class AdminEntitiesService {
           updatedAt: true,
           boardId: true,
           board: { select: { title: true } },
-          _count: {
-            select: { cards: { where: { deletedAt: null } } },
-          },
         },
       }),
       this.prisma.column.count({ where }),
     ]);
+
+    // Count only the columns on this page; a global `_count` would scan every
+    // card before the page is known. See the labels list above.
+    const counts =
+      items.length === 0
+        ? []
+        : await this.prisma.card.groupBy({
+            by: ["columnId"],
+            where: {
+              columnId: { in: items.map((column) => column.id) },
+              deletedAt: null,
+            },
+            _count: { _all: true },
+          });
+    const cardCounts = new Map(
+      counts.map((row) => [row.columnId, row._count._all]),
+    );
 
     return {
       items: items.map((column) => ({
@@ -422,7 +436,7 @@ export class AdminEntitiesService {
         title: column.title,
         wipLimit: column.wipLimit,
         position: column.position,
-        cardCount: column._count.cards,
+        cardCount: cardCounts.get(column.id) ?? 0,
         deletedAt: MS(column.deletedAt),
         version: column.version,
         createdAt: column.createdAt.getTime(),
@@ -548,13 +562,29 @@ export class AdminEntitiesService {
           version: true,
           boardId: true,
           board: { select: { title: true } },
-          _count: {
-            select: { cards: { where: { card: { deletedAt: null } } } },
-          },
         },
       }),
       this.prisma.label.count({ where }),
     ]);
+
+    // Count only the labels on this page. Prisma's `_count` aggregates every
+    // label in the table before the page is known, which scans the whole
+    // CardLabel relation at 25k. This page-scoped group uses the
+    // CardLabel(labelId, cardId) and Card(id, deletedAt) indexes.
+    const counts =
+      items.length === 0
+        ? []
+        : await this.prisma.cardLabel.groupBy({
+            by: ["labelId"],
+            where: {
+              labelId: { in: items.map((label) => label.id) },
+              card: { deletedAt: null },
+            },
+            _count: { _all: true },
+          });
+    const cardCounts = new Map(
+      counts.map((row) => [row.labelId, row._count._all]),
+    );
 
     return {
       items: items.map((label) => ({
@@ -564,7 +594,7 @@ export class AdminEntitiesService {
         name: label.name,
         color: label.color,
         position: label.position,
-        cardCount: label._count.cards,
+        cardCount: cardCounts.get(label.id) ?? 0,
         deletedAt: MS(label.deletedAt),
         version: label.version,
       })),
@@ -794,13 +824,9 @@ export class AdminEntitiesService {
     const where: Prisma.AttachmentWhereInput = {
       uploadedById: query.uploadedById,
       transcodeStatus: query.transcode,
+      mimeFamily: query.mime,
       createdAt: this.admin.dateRange(query),
     };
-    if (query.mime === "other") {
-      where.NOT = { OR: Object.values(ATTACHMENT_MIME_FAMILIES).flat() };
-    } else if (query.mime) {
-      where.AND = { OR: ATTACHMENT_MIME_FAMILIES[query.mime] };
-    }
     if (query.boardId) where.boardId = query.boardId;
     if (query.cardId) where.cardId = query.cardId;
     if (query.columnId || query.singleLabelId) {
@@ -2131,35 +2157,6 @@ const COMMENT_SELECT = {
   card: { select: { title: true } },
   author: { select: { email: true } },
 } satisfies Prisma.CommentSelect;
-
-const ATTACHMENT_MIME_FAMILIES = {
-  image: [{ mimeType: { startsWith: "image/", mode: "insensitive" } }],
-  video: [{ mimeType: { startsWith: "video/", mode: "insensitive" } }],
-  pdf: [{ mimeType: { equals: "application/pdf", mode: "insensitive" } }],
-  document: [
-    { mimeType: { startsWith: "text/", mode: "insensitive" } },
-    {
-      mimeType: {
-        in: [
-          "application/rtf",
-          "application/msword",
-          "application/vnd.ms-excel",
-          "application/vnd.ms-powerpoint",
-        ],
-        mode: "insensitive",
-      },
-    },
-    {
-      mimeType: {
-        startsWith: "application/vnd.openxmlformats-officedocument.",
-        mode: "insensitive",
-      },
-    },
-  ],
-} satisfies Record<
-  Exclude<NonNullable<AdminListQueryDto["mime"]>, "other">,
-  Prisma.AttachmentWhereInput[]
->;
 
 type AttachmentJoin = {
   id: string;

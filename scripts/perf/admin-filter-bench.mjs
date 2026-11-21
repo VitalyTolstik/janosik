@@ -76,10 +76,12 @@ const COLUMNS = {
   from: sql`"Column" t`,
   pageAlias: sql`t`,
   pageColumns: sql`t.*, COALESCE(counts.total, 0) AS card_count`,
-  pageJoins: sql`LEFT JOIN (
-    SELECT "columnId", COUNT(*) AS total FROM "Card"
-    WHERE "deletedAt" IS NULL GROUP BY "columnId"
-  ) counts ON counts."columnId" = t.id`,
+  // Page-scoped live card count, matching the admin service's page-scoped
+  // group. A global GROUP BY would count every column before the page exists.
+  pageJoins: sql`LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS total FROM "Card" c
+    WHERE c."columnId" = t.id AND c."deletedAt" IS NULL
+  ) counts ON TRUE`,
   displayJoins: sql`JOIN "Board" b ON b.id = t."boardId"`,
   select: sql`t.id, t.title, t."wipLimit", t.position, t."deletedAt", t.version,
     t."createdAt", t."updatedAt", t."boardId", b.title AS board_title, t.card_count`,
@@ -90,10 +92,14 @@ const LABELS = {
   from: sql`"Label" t`,
   pageAlias: sql`t`,
   pageColumns: sql`t.*, COALESCE(counts.total, 0) AS card_count`,
-  pageJoins: sql`LEFT JOIN (
-    SELECT cl."labelId", COUNT(*) AS total FROM "CardLabel" cl
-    JOIN "Card" c ON c.id = cl."cardId" WHERE c."deletedAt" IS NULL GROUP BY cl."labelId"
-  ) counts ON counts."labelId" = t.id`,
+  // Page-scoped live card count for the labels on this page. This mirrors the
+  // service's groupBy({ labelId In(page ids) }) and uses the
+  // CardLabel(labelId, cardId) and Card(id, deletedAt) indexes.
+  pageJoins: sql`LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS total FROM "CardLabel" cl
+    JOIN "Card" c ON c.id = cl."cardId"
+    WHERE cl."labelId" = t.id AND c."deletedAt" IS NULL
+  ) counts ON TRUE`,
   displayJoins: sql`JOIN "Board" b ON b.id = t."boardId"`,
   select: sql`t.id, t.name, t.color, t.position, t."deletedAt", t.version,
     t."boardId", b.title AS board_title, t.card_count`,
@@ -103,6 +109,12 @@ const LABELS = {
 const CHECKLISTS = {
   from: sql`"Checklist" t`,
   pageAlias: sql`t`,
+  // Prisma filters the board through Card/Column joins, not a correlated
+  // EXISTS; keep the measured shape identical for the board facet.
+  pageJoins: sql`JOIN "Card" c ON c.id = t."cardId"
+    JOIN "Column" co ON co.id = c."columnId"`,
+  countJoins: sql`JOIN "Card" c ON c.id = t."cardId"
+    JOIN "Column" co ON co.id = c."columnId"`,
   displayJoins: sql`JOIN "Card" c ON c.id = t."cardId"
     JOIN "Column" co ON co.id = c."columnId" JOIN "Board" b ON b.id = co."boardId"
     LEFT JOIN LATERAL (
@@ -132,10 +144,7 @@ function contentCases(preset, referenceTime) {
   // This card has an outgoing and an incoming link on board zero.
   const cardId = perfId(preset, "card", boards);
   const board = sql`t."boardId" = ${boardId}`;
-  const checklistBoard = sql`EXISTS (
-    SELECT 1 FROM "Card" c JOIN "Column" co ON co.id = c."columnId"
-    WHERE c.id = t."cardId" AND co."boardId" = ${boardId}
-  )`;
+  const checklistBoard = sql`co."boardId" = ${boardId}`;
   const checklistCard = sql`t."cardId" = ${cardId}`;
   const linkCard = sql`(t."fromCardId" = ${cardId} OR t."toCardId" = ${cardId})`;
   const linkTypes = sql`t.type IN ('blocks', 'relates_to')`;
@@ -216,13 +225,14 @@ function moderationCases(preset, referenceTime) {
   const kind = sql`t.kind IN ('blocker', 'question')`;
   // Fixture row 20 is a pending video, uploaded by user 22.
   const uploader = sql`t."uploadedById" = ${perfId(preset, "user", 22)}`;
-  const image = sql`t."mimeType" ILIKE 'image/%'`;
-  const video = sql`t."mimeType" ILIKE 'video/%'`;
-  const pdf = sql`t."mimeType" ILIKE 'application/pdf'`;
-  const document = sql`(t."mimeType" ILIKE 'text/%'
-    OR LOWER(t."mimeType") IN ('application/rtf', 'application/msword',
-      'application/vnd.ms-excel', 'application/vnd.ms-powerpoint')
-    OR t."mimeType" ILIKE 'application/vnd.openxmlformats-officedocument.%')`;
+  // The shipped admin query filters the indexed family column (TASK-181.7);
+  // the upload path stores it from mimeType and a database trigger covers
+  // direct writes.
+  const image = sql`t."mimeFamily" = 'image'`;
+  const video = sql`t."mimeFamily" = 'video'`;
+  const pdf = sql`t."mimeFamily" = 'pdf'`;
+  const document = sql`t."mimeFamily" = 'document'`;
+  const other = sql`t."mimeFamily" = 'other'`;
   const pending = sql`t."transcodeStatus" = 'pending'`;
 
   return [
@@ -247,10 +257,7 @@ function moderationCases(preset, referenceTime) {
         ["mime-video", video],
         ["mime-pdf", pdf],
         ["mime-document", document],
-        [
-          "mime-other",
-          sql`NOT (${image} OR ${video} OR ${pdf} OR ${document})`,
-        ],
+        ["mime-other", other],
         ["transcode", pending],
         ["transcode-failed", sql`t."transcodeStatus" = 'failed'`],
         ["transcode-done", sql`t."transcodeStatus" = 'done'`],
@@ -498,7 +505,11 @@ function statements({ model, predicate }, pageSize) {
       ) ${model.pageAlias} ${model.displayJoins} ${order}`
     : sql`SELECT ${model.select} FROM ${model.from} ${model.displayJoins ?? Prisma.empty}
         WHERE ${predicate} ${order} ${window}`;
-  return [page, sql`SELECT COUNT(*) FROM ${model.from} WHERE ${predicate}`];
+  return [
+    page,
+    sql`SELECT COUNT(*) FROM ${model.from} ${model.countJoins ?? Prisma.empty}
+        WHERE ${predicate}`,
+  ];
 }
 
 async function timed(db, queries) {
