@@ -5,14 +5,29 @@ import { adminPath, loginAsMaster, ownerCredentials } from "@/helpers/admin.js";
  * TASK-181.7 final browser matrix for the admin Filters surface.
  *
  * The behavioural coverage lives in card-filter-bar.spec.ts,
- * content-filters.spec.ts and moderation-filters.spec.ts. This file produces
- * the EN/RU screenshots at 1440, 1024 and 390 and proves the page never gains
- * horizontal overflow on the narrow viewport.
+ * content-filters.spec.ts and moderation-filters.spec.ts. This file proves the
+ * exact chips/URL/result at 1440, 1024 and 390 in EN/RU and produces the
+ * committed screenshots.
+ *
+ * Automated axe coverage for the admin shell is deliberately not claimed here:
+ * the admin redesign has pre-existing shell contrast findings outside this
+ * task. The filter surface is covered by the manual keyboard/focus checks and
+ * the user-app axe suite.
  */
 
 const copy = {
-  en: { filters: "Filters", dialog: "Filters for cards" },
-  ru: { filters: "Фильтры", dialog: "Фильтры карточек" },
+  en: {
+    filters: "Filters",
+    dialog: "Filters for cards",
+    results: "Filters applied · Results: 1",
+    period: "7 days",
+  },
+  ru: {
+    filters: "Фильтры",
+    dialog: "Фильтры карточек",
+    results: "Фильтры применены · Результатов: 1",
+    period: "7 дней",
+  },
 } as const;
 
 for (const locale of ["en", "ru"] as const) {
@@ -27,6 +42,8 @@ for (const locale of ["en", "ru"] as const) {
         labelId,
         on: true,
       });
+      // A second card keeps the header pluralization realistic ("2 cards").
+      await board.card(todo, "Filter acceptance other");
 
       await loginAsMaster(page, ownerCredentials());
       await page.setViewportSize({ width, height: 900 });
@@ -46,8 +63,23 @@ for (const locale of ["en", "ru"] as const) {
       });
       await expect(trigger).toBeVisible();
       await expect(page.getByTestId(`admin-card-row-${cardId}`)).toBeVisible();
-      await expect(page.getByTestId("admin-filter-boardId")).toBeVisible();
-      await expect(page.getByTestId("admin-filter-labelId")).toBeVisible();
+      await expect(page.getByTestId("admin-filter-boardId")).toContainText(
+        board.title,
+      );
+      await expect(page.getByTestId("admin-filter-labelId")).toContainText(
+        "Acceptance",
+      );
+      await expect(page.getByTestId("admin-filter-results")).toHaveText(
+        copy[locale].results,
+      );
+      await expect(
+        page.getByRole("button", { name: copy[locale].period, exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+
+      const url = new URL(page.url());
+      expect(url.searchParams.get("boardId")).toBe(board.id);
+      expect(url.searchParams.get("labelId")).toBe(labelId);
+      expect(url.searchParams.get("period")).toBe("7d");
 
       expect(
         await page.evaluate(

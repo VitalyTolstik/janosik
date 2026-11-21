@@ -173,8 +173,8 @@ archived-card `409`. The confirm dialog states the soft-delete behavior.
 
 ## Cards
 
-`/app/admin/cards` lists every card on the platform. The subtitle is `{total} cards
-across every board`.
+`/app/admin/cards` lists every card on the platform. The subtitle is `Cards
+across every board: {total}`.
 
 | Column | Value |
 | --- | --- |
@@ -409,7 +409,7 @@ The page has a search box, status tabs, pagination and bulk selection. The
 
 | Column | Value |
 | --- | --- |
-| Comment | the comment text, truncated |
+| Comment | the comment text, truncated, with its kind badge |
 | Card | card title, linked |
 | Author | author email, linked |
 | Created | creation time |
@@ -444,6 +444,7 @@ uploaded to cards`.
 | --- | --- |
 | File | a thumbnail, the file name and a download control |
 | Card | card title, linked |
+| Board | board title, linked |
 | Size | the file size |
 | Type | the MIME type |
 | Encode | the video transcode state: `none`, `pending`, `done` or `failed` |
@@ -518,9 +519,9 @@ token immediately.
 
 ## Public shares
 
-`/app/admin/shares` lists read-only board links created for any board. The subtitle
-is `Read-only board links created for any board,
-inspect and revoke.`
+`/app/admin/shares` lists read-only board links created for any board. The
+subtitle is `Read-only board links minted against any board — inspect and
+revoke.`
 
 | Column | Value |
 | --- | --- |

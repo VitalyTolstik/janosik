@@ -14,7 +14,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rules, keyboard and mobile behaviour, and the surfaces that are intentionally
   not filterable. Attachment MIME filters now use an indexed `mimeFamily`
   column kept in step by a database trigger; measured indexes cover the 25k
-  card, comment, attachment, card-link, label and people facets. See
+  card, comment, attachment, card-link, label and people facets. The Cards list
+  subtitle now reads `Cards across every board: N` instead of `N cards` (which
+  produced `1 cards`). See
   [the acceptance record](docs/TASK-181.7-acceptance.md).
 
 - TASK-177.1 share link editing: every non-revoked share row now has `Edit`,

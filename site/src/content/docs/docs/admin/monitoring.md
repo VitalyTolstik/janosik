@@ -185,11 +185,11 @@ not values; status and period stay in the header and are not counted.
 - On a desktop the button opens a popover anchored to it. Below 640 px it opens
   a bottom sheet capped at 70dvh with 44 px controls and bottom safe-area
   padding. Closing the surface returns focus to the button.
-- Facets are grouped into **Scope** (board, column, card, command), **People**
-  (assignee, author, uploader, actor, admin member) and **Properties** (label,
-  priority, due date, attachments, comment kind, link type, audit action,
-  target type). The groups and facets differ per list; only supported facets
-  are shown.
+- Facets are grouped into **Scope** (board, column, card, command, target id),
+  **People** (assignee, author, uploader, actor, admin member) and
+  **Properties** (label, priority, due date, attachments, comment kind, link
+  type, audit action, target type). The groups and facets differ per list; only
+  supported facets are shown.
 - Every picker searches as you type (250 ms debounce, at most 20 results) and
   discards a stale response. If the typed value looks like an id, `Use id …`
   accepts it even when the row is deleted or not returned by search.
@@ -255,8 +255,10 @@ search from hiding rows on another surface.
 
 - `Tab` reaches the Filters button; `Enter` or `Space` opens it; `Escape` closes
   it and returns focus to the button.
-- Pickers are comboboxes/listboxes: arrows, `Home`/`End`, `Enter`/`Space` and
-  type-to-search. A radio group is one tab stop with arrow-key selection.
+- Single-value pickers are comboboxes/listboxes; multi-value pickers are
+  searchable checkbox groups. Arrows and `Home`/`End` move focus; `Space` or
+  `Enter` selects. A radio group is one tab stop: arrows move focus and
+  `Space`/`Enter` selects.
 - In the mobile sheet every control is at least 44 px, the footer actions stay
   visible while the facet list scrolls, and the sheet respects the bottom safe
   area.
@@ -308,8 +310,8 @@ and archived or deleted cards, marked with their badge; `status=active`
 excludes them and `status=deleted` selects them. The Comments and Files
 counters link with `status=active`, matching their live-row definition. The
 Cards counter includes archived cards but excludes deleted ones, so its linked
-list can show archived rows in addition to the count; the Cards counter and
-the Cards counter and the Commands/Events counters stay unfiltered by status.
+list can show archived rows in addition to the count; the Cards and
+Commands/Events counters stay unfiltered by status.
 The status tabs (where the list has them) and filter chips narrow these lists.
 
 ### Activity, command log and audit filters
@@ -318,9 +320,9 @@ The three monitoring feeds use the same filter surface:
 
 | List | Offered facets |
 | --- | --- |
-| Activity | Board, Card, Actor, Event type |
-| Command log | Board, Card, Column, Actor, Command type, Command ID |
-| Audit trail | Master, Action, Target type, Target ID, Command ID |
+| Activity | Board, Card, Actor, Event |
+| Command log | Board, Card, Column, Actor, Action, Command |
+| Audit trail | Master, Action, Target type, Target ID, Command |
 
 - **Activity** types come from the distinct values stored in the feed, so
   membership, comment, approval and agent events are all reachable without a
@@ -329,11 +331,11 @@ The three monitoring feeds use the same filter surface:
   `MOVE_CARD` or `UPDATE_CARD`. Card and Column match historical `touches`, so
   changing or clearing Board keeps them. A card's current board or column does
   not restrict the commands that appear in its history.
-- **Audit trail** offers only actors visible in audit rows: a master id or the
-  attempted email on a failed sign-in. `adminId` is not a roster search and an
-  OPERATOR sees plain text, not a link to the owner-only Masters page. For a
-  failed sign-in without a master id, clear the Master chip, search the
-  attempted email and optionally narrow Action to `admin.login_failed`.
+- **Audit trail** offers the master ids visible in audit rows. `adminId` is not
+  a roster search and an OPERATOR sees plain text, not a link to the owner-only
+  Masters page. A failed sign-in whose attempted email has no master id is
+  reachable by clearing the Master chip, searching the attempted email and
+  optionally narrowing Action to `admin.login_failed`.
 - The Audit Action and Target type pickers list the values the server returns;
   free-typed codes are still accepted by the API as exact values. Target ID is
   an exact id; with one target type selected its chip links to the user, board

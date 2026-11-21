@@ -19,8 +19,9 @@ checklists, 75,000 checklist items, 50,000 comments, 10,000 attachments,
 10,000 commands, 10,000 card links, 10,000 activity rows and 25,000 audit rows.
 The gate fixture is the matching `--preset gate` subset (5,000 cards).
 
-The benchmark seeds a dedicated database, runs `VACUUM (ANALYZE)`, and measures
-one page query plus one exact count in a transaction at offset 0 and page sizes
+The acceptance procedure seeds a dedicated database, runs `VACUUM (ANALYZE)`,
+then invokes the benchmark, which measures one page query plus one exact count
+in a transaction at offset 0 and page sizes
 25, 50 and 100. Cold samples use a fresh connection with shared buffers intact.
 The final 25k and 5k runs use 5 cold + 20 warm samples for every case, so a
 single slow sample cannot define p95. A filtered case fails when warm p95 is
@@ -177,8 +178,15 @@ The behavioural matrix is covered by the existing admin specs:
 1440/1024/390), `content-filters.spec.ts` (boards/columns/labels/checklists/
 links/users), `moderation-filters.spec.ts` (comments/files/inline badges) and
 `audit.spec.ts` (audit/commands/activity, OPERATOR actor resolution). The
-keyboard-only chip removal, focus return, axe and reduced-motion checks remain
-in those suites.
+keyboard-only chip removal, focus return and reduced-motion checks remain in
+those suites. The acceptance matrix above additionally asserts the exact chip
+text, URL values, result total and selected period tab at every width/locale.
+
+Automated axe coverage in this repository targets the user app
+(`e2e/tests/app/a11y/card.spec.ts`). The admin shell has pre-existing contrast
+findings outside TASK-181.7; this record does not claim automated admin axe
+coverage. The filter surface's manual keyboard/focus and 390 px checks are part
+of the matrix above.
 
 ## Regression sweep
 
@@ -219,7 +227,7 @@ flake, not a functional failure.
 - The earlier 10-warm full runs exposed single-sample p95 outliers; the final
   5 cold + 20 warm runs pass all 318 cases in both runs. The extra warm samples
   are the stable measurement, not a lowered threshold.
-- The 25k qualification is a manual/nightly rollout gate, not a CI job. CI runs
+- The 25k qualification is a manual rollout gate, not a CI job. CI runs
   the 5k-capable unit/e2e/browser suites. A regression counts only when it
   reproduces in both independent runs; one-run p95 outliers are kept in the raw
   artifacts instead of being hidden.

@@ -177,8 +177,9 @@ bottom sheet with 44 px controls and a sticky action footer.
 
 - Facets are grouped into Scope, People and Properties. Only facets supported by
   the list are offered; an old deep link to a supported facet still resolves and
-  is shown as a chip, while an unsupported parameter is replaced by an explicit
-  unsupported-filter state with a remove action.
+  is shown as a chip. A hand-edited unsupported parameter is ignored; if the API
+  answers `unsupported_filter`, the panel shows the explicit state with a remove
+  action.
 - Chips show a human label and the object's own short id, plus its parent board
   and column ids. Archived, deleted and disabled objects keep a suffix; a
   missing id reads `Unknown …` and stays removable.
