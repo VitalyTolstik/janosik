@@ -280,9 +280,10 @@ paths:
         Requires the account-wide `admin` preset; a board-scoped PAT or a
         `worker`/`reviewer` token gets `403 scope_denied`. The caller becomes
         the first `ADMIN`. A retry with the same `Idempotency-Key` and body
-        returns the stored board, except after a starter failure: that answers
-        `503` with `details.boardId` and keeps the record in progress, so the
-        client opens/reads the existing board instead of retrying the create.
+        returns the stored board, except when the created board's starter
+        batch or first aggregate read fails: that answers `503` with
+        `details.boardId` and keeps the record in progress, so the client
+        opens/reads the existing board instead of retrying the create.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:

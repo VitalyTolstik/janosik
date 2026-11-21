@@ -1209,7 +1209,7 @@ describe("BoardProvider server-mode failures and board management", () => {
           return new Response(
             JSON.stringify({
               code: "starter_cleanup_failed",
-              retryable: true,
+              retryable: false,
               details: { boardId: "b-rec" },
             }),
             { status: 503, headers: { "Content-Type": "application/json" } },
@@ -1258,7 +1258,7 @@ describe("BoardProvider server-mode failures and board management", () => {
           return new Response(
             JSON.stringify({
               code: "board_read_failed",
-              retryable: true,
+              retryable: false,
               details: { boardId: "b-read" },
             }),
             { status: 503, headers: { "Content-Type": "application/json" } },
@@ -1311,7 +1311,7 @@ describe("BoardProvider server-mode failures and board management", () => {
           return new Response(
             JSON.stringify({
               code: "board_read_failed",
-              retryable: true,
+              retryable: false,
               details: { boardId: "b-flaky" },
             }),
             { status: 503, headers: { "Content-Type": "application/json" } },
