@@ -57,7 +57,7 @@ export function mergeHistoryIncompleteReason(
 export function commentHistoryGapException(): ConflictException {
   return new ConflictException({
     message:
-      "Comment history is inconsistent; the edit was not applied. Retry after the history sweep.",
+      "Comment history is inconsistent; the edit was not applied. An operator must reconcile the comment history before editing it again.",
     code: "comment_history_gap",
   });
 }
@@ -100,6 +100,21 @@ export type CommentHistoryTx = Pick<
   Prisma.TransactionClient,
   "comment" | "commentRevision" | "activity" | "$executeRaw"
 >;
+
+/**
+ * Take the same transaction-scoped board locks as `BoardWriteService`, in a
+ * stable order so multi-board jobs (GDPR erase, purge chunks) cannot deadlock
+ * against a single-board writer.
+ */
+export async function lockBoardWrites(
+  tx: Pick<Prisma.TransactionClient, "$executeRaw">,
+  boardIds: Iterable<string>,
+): Promise<void> {
+  const ids = [...new Set(boardIds)].sort();
+  for (const boardId of ids) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+  }
+}
 
 const AUTHOR_INCLUDE = {
   author: { select: { displayName: true, email: true } },

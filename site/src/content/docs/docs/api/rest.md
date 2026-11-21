@@ -207,8 +207,9 @@ both fields are optional, but at least one must be present or the server
 answers `400` (`text` must still be non-blank and at most 10 000 characters).
 An omitted field keeps its stored value. Only the author may edit; another
 author answers `403`, a deleted comment `404`. `authorId`, attribution and
-`createdAt` stay as they were, `editedAt` is stamped (Unix ms in `CommentDto`),
-and inline media removed from the text is soft-deleted.
+`createdAt` stay as they were. A real text change stamps `editedAt` (Unix ms in
+`CommentDto`) and appends a revision; a kind-only change does neither. Inline
+media removed from the text is soft-deleted.
 The edit writes a `comment_updated` activity row and SSE frame; changing a
 comment to `blocker`/`handoff` does not repeat attention already raised by the
 original comment.

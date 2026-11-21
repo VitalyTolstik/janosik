@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, Logger } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { ActorType } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
@@ -7,7 +7,7 @@ import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
 import {
   deleteCommentActivitySnapshots,
-  mergeHistoryIncompleteReason,
+  lockBoardWrites,
   verifyCommentHistory,
 } from "@/comments/comment-history";
 
@@ -454,21 +454,41 @@ export class AccountDeletionService {
       // editor FK is RESTRICT) and before comments/Activity disappear.
       const authoredComments = await tx.comment.findMany({
         where: { authorId: userId },
-        select: { id: true },
+        select: {
+          id: true,
+          card: { select: { column: { select: { boardId: true } } } },
+        },
       });
       const authoredIds = authoredComments.map((row) => row.id);
+      const editedCommentIds = await this.commentIdsEditedBy(
+        tx,
+        userId,
+        authoredIds,
+      );
+      const editedComments = await tx.comment.findMany({
+        where: { id: { in: editedCommentIds } },
+        select: {
+          id: true,
+          card: { select: { column: { select: { boardId: true } } } },
+        },
+      });
+      // Serialize with every board writer before re-reading the chain. The
+      // transaction already holds the user row; board locks come in sorted
+      // order so a multi-board erase cannot deadlock with a single writer.
+      await lockBoardWrites(tx, [
+        ...authoredComments.map((row) => row.card.column.boardId),
+        ...editedComments.map((row) => row.card.column.boardId),
+      ]);
+
       if (authoredIds.length > 0) {
         await deleteCommentActivitySnapshots(tx, authoredIds);
         await tx.commentRevision.deleteMany({
           where: { commentId: { in: authoredIds } },
         });
       }
-      const editedCommentIds = await this.commentIdsEditedBy(
-        tx,
-        userId,
-        authoredIds,
-      );
-      for (const commentId of editedCommentIds) {
+      for (const { id: commentId } of editedComments) {
+        // Re-read after the locks: a writer that committed earlier may have
+        // changed the text or the verified pair.
         const comment = await tx.comment.findUnique({
           where: { id: commentId },
           select: {
@@ -488,16 +508,21 @@ export class AccountDeletionService {
         // A confirmed chain loses its number after the cleanup; an
         // unconfirmed one keeps the mismatch so the next sweep finds it.
         const verified = await verifyCommentHistory(tx, comment);
-        await tx.comment.update({
-          where: { id: commentId },
-          data: {
-            historyIncompleteReason: mergeHistoryIncompleteReason(
-              comment.historyIncompleteReason,
-              "gdpr_erase",
-            ),
-            ...(verified ? { historyVerifiedRevisionNumber: null } : {}),
-          },
-        });
+        // The reason merge is a SQL CASE so a concurrent trim cannot
+        // downgrade gdpr_erase back to revision_limit.
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE "Comment"
+          SET "historyIncompleteReason" = CASE
+                WHEN "historyIncompleteReason" = 'writer_gap'::"CommentHistoryIncompleteReason"
+                  THEN "historyIncompleteReason"
+                ELSE 'gdpr_erase'::"CommentHistoryIncompleteReason"
+              END,
+              "historyVerifiedRevisionNumber" = CASE
+                WHEN ${verified} THEN NULL
+                ELSE "historyVerifiedRevisionNumber"
+              END
+          WHERE "id" = ${commentId}
+        `);
         await tx.commentRevision.deleteMany({ where: { commentId } });
         await deleteCommentActivitySnapshots(tx, [commentId], {
           onlyUpdates: true,

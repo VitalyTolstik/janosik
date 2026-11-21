@@ -49,11 +49,13 @@ export class CardAccessGuard extends MembershipGuard {
       return comment.card.column.boardId;
     }
 
-    // Attachments (TASK-47) resolve through their card the same way.
+    // Attachments (TASK-47) resolve through their card the same way. The row
+    // may be soft-deleted: DELETE then answers an idempotent no-op, while the
+    // content routes keep their own live-row 404.
     const attachmentId = request.params?.attachmentId;
     if (attachmentId) {
       const attachment = await this.prisma.attachment.findFirst({
-        where: { id: attachmentId, deletedAt: null },
+        where: { id: attachmentId },
         select: {
           card: {
             select: { deletedAt: true, column: { select: { boardId: true } } },

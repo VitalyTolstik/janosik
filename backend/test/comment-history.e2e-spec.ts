@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
+import type { Prisma } from "@prisma/client";
 import type { BoardAction } from "@janosik/shared";
 
 import { AppModule } from "@/app.module";
@@ -12,11 +13,14 @@ import { RealtimeService } from "@/realtime/realtime.service";
 import { AccountDeletionService } from "@/users/account-deletion.service";
 import { AdminService } from "@/admin/admin.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
+import { writeCommentUpdate } from "@/comments/comment-history";
 
 const ADMIN_EMAIL = "history-admin@example.com";
 const AUTHOR_EMAIL = "history-author@example.com";
 const ERASER_EMAIL = "history-eraser@example.com";
 const DOOMED_EMAIL = "history-doomed@example.com";
+const RACE_WRITER_EMAIL = "history-race-writer@example.com";
+const RACE_TRIM_EMAIL = "history-race-trim@example.com";
 const PASSWORD = "correct horse battery";
 
 const png = Buffer.from(
@@ -44,6 +48,8 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
   let author: { token: string; id: string };
   let eraser: { token: string; id: string };
   let doomed: { token: string; id: string };
+  let raceWriter: { token: string; id: string };
+  let raceTrim: { token: string; id: string };
 
   const server = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -65,6 +71,24 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     author = await register(AUTHOR_EMAIL, "Author");
     eraser = await register(ERASER_EMAIL, "Eraser");
     doomed = await register(DOOMED_EMAIL, "Doomed");
+    // Dedicated editors for the erase-race tests: created directly so the
+    // suite stays under the registration rate limit (no login is needed).
+    raceWriter = {
+      token: "",
+      id: (
+        await prisma.user.create({
+          data: { email: RACE_WRITER_EMAIL, displayName: "Race Writer" },
+        })
+      ).id,
+    };
+    raceTrim = {
+      token: "",
+      id: (
+        await prisma.user.create({
+          data: { email: RACE_TRIM_EMAIL, displayName: "Race Trim" },
+        })
+      ).id,
+    };
   });
 
   afterAll(async () => {
@@ -190,13 +214,98 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     cardId: string,
     token: string,
     name = "history.png",
+    headers: Record<string, string> = {},
   ): Promise<string> {
     const res = await server()
       .post(`/api/v1/cards/${cardId}/attachments`)
       .set(auth(token))
+      .set(headers)
       .attach("file", png, { filename: name, contentType: "image/png" })
       .expect(201);
     return res.body.id as string;
+  }
+
+  async function createPat(
+    name: string,
+    scopePreset: "worker" | "admin" = "worker",
+  ): Promise<{ token: string; id: string }> {
+    const res = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(admin.token))
+      .send({ name, expiresAt: null, scopePreset, trustedCi: false })
+      .expect(201);
+    return {
+      token: res.body.token as string,
+      id: (res.body.apiToken as { id: string }).id,
+    };
+  }
+
+  async function startAgent(
+    token: string,
+    boardId: string,
+    name: string,
+  ): Promise<string> {
+    const res = await server()
+      .post(`/api/v1/boards/${boardId}/agent-sessions`)
+      .set(auth(token))
+      .send({ name })
+      .expect(201);
+    return res.body.id as string;
+  }
+
+  const agentHeader = (
+    token: string,
+    sessionId: string,
+  ): Record<string, string> => ({
+    ...auth(token),
+    "X-Agent-Session": sessionId,
+  });
+
+  const lockBoard = (
+    tx: Pick<Prisma.TransactionClient, "$executeRaw">,
+    boardId: string,
+  ) =>
+    tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
+
+  function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  /** A valid revision chain without going through the HTTP writer. */
+  async function seedForeignRevision(
+    cardId: string,
+    editorId: string,
+    text = "Foreign text",
+  ): Promise<string> {
+    const comment = await prisma.comment.create({
+      data: { cardId, authorId: author.id, text },
+    });
+    const editedAt = new Date(Date.now() + 1_000);
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: {
+        editedAt,
+        historyVerifiedEditedAt: editedAt,
+        historyVerifiedRevisionNumber: 1,
+        lastRevisionNumber: 1,
+      },
+    });
+    await prisma.commentRevision.create({
+      data: {
+        commentId: comment.id,
+        revisionNumber: 1,
+        beforeText: "Original",
+        afterText: text,
+        createdAt: editedAt,
+        editorId,
+        cause: "author_edit",
+      },
+    });
+    return comment.id;
   }
 
   const commentUpdates = (commentId: string) =>
@@ -498,6 +607,12 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     const { boardId, cardId } = await boardWithCard("History trim", "ht");
     await invite(boardId, admin.token, author, AUTHOR_EMAIL);
     const created = await createComment(cardId, author.token, "v0");
+    // A legacy marker survives ordinary edits and is later outranked by the
+    // trim's revision_limit marker.
+    await prisma.comment.update({
+      where: { id: created.id },
+      data: { historyIncompleteReason: "legacy_cutover" },
+    });
 
     await editComment(created.id, author.token, { text: "v1" }).expect(200);
     const firstRevision = await prisma.commentRevision.findFirstOrThrow({
@@ -642,6 +757,450 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       .expect(200);
   });
 
+  it("keeps edit → attachment delete → edit chains continuous", async () => {
+    const { boardId, cardId } = await boardWithCard("History continuity", "hc");
+    await invite(boardId, admin.token, author, AUTHOR_EMAIL);
+
+    // Edit → attachment delete → edit.
+    const firstAttachment = await uploadAttachment(
+      cardId,
+      author.token,
+      "one.png",
+    );
+    const firstUrl = `/api/v1/attachments/${firstAttachment}/content`;
+    const first = await createComment(
+      cardId,
+      author.token,
+      `First ${firstUrl}`,
+    );
+    await editComment(first.id, author.token, {
+      text: `First edited ${firstUrl}`,
+    }).expect(200);
+    await server()
+      .delete(`/api/v1/attachments/${firstAttachment}`)
+      .set(auth(author.token))
+      .expect(200);
+    await editComment(first.id, author.token, { text: "First final" }).expect(
+      200,
+    );
+
+    const firstRevisions = await prisma.commentRevision.findMany({
+      where: { commentId: first.id },
+      orderBy: { revisionNumber: "asc" },
+    });
+    expect(firstRevisions.map((row) => row.revisionNumber)).toEqual([1, 2, 3]);
+    expect(firstRevisions.map((row) => row.cause)).toEqual([
+      "author_edit",
+      "attachment_deleted",
+      "author_edit",
+    ]);
+    expect(firstRevisions[0]!.afterText).toBe(firstRevisions[1]!.beforeText);
+    expect(firstRevisions[1]!.afterText).toBe(firstRevisions[2]!.beforeText);
+    expect(firstRevisions[2]!.afterText).toBe("First final");
+    expect(firstRevisions[1]!.beforeText).toContain(firstUrl);
+
+    // Attachment delete → edit (revision #1 starts the chain).
+    const secondAttachment = await uploadAttachment(
+      cardId,
+      author.token,
+      "two.png",
+    );
+    const secondUrl = `/api/v1/attachments/${secondAttachment}/content`;
+    const second = await createComment(
+      cardId,
+      author.token,
+      `Second ${secondUrl}`,
+    );
+    await server()
+      .delete(`/api/v1/attachments/${secondAttachment}`)
+      .set(auth(author.token))
+      .expect(200);
+    await editComment(second.id, author.token, { text: "Second final" }).expect(
+      200,
+    );
+    const secondRevisions = await prisma.commentRevision.findMany({
+      where: { commentId: second.id },
+      orderBy: { revisionNumber: "asc" },
+    });
+    expect(secondRevisions.map((row) => row.revisionNumber)).toEqual([1, 2]);
+    expect(secondRevisions.map((row) => row.cause)).toEqual([
+      "attachment_deleted",
+      "author_edit",
+    ]);
+    expect(secondRevisions[0]!.afterText).toBe(secondRevisions[1]!.beforeText);
+    expect(secondRevisions[1]!.afterText).toBe("Second final");
+  });
+
+  it("attributes an agent attachment scrub and treats a repeated delete as a no-op", async () => {
+    const { boardId, cardId } = await boardWithCard(
+      "History agent scrub",
+      "ha",
+    );
+    await invite(boardId, admin.token, author, AUTHOR_EMAIL);
+    const agent = await createPat("History scrub agent");
+    const sessionId = await startAgent(agent.token, boardId, "scrubber");
+    const attachmentId = await uploadAttachment(
+      cardId,
+      agent.token,
+      "agent.png",
+      { "X-Agent-Session": sessionId },
+    );
+    const url = `/api/v1/attachments/${attachmentId}/content`;
+    const comment = await createComment(cardId, author.token, `Agent ${url}`);
+
+    await server()
+      .delete(`/api/v1/attachments/${attachmentId}`)
+      .set(agentHeader(agent.token, sessionId))
+      .expect(200);
+    const revision = await prisma.commentRevision.findFirstOrThrow({
+      where: { commentId: comment.id },
+    });
+    expect(revision).toMatchObject({
+      revisionNumber: 1,
+      editorId: admin.id,
+      actorType: "agent",
+      apiTokenId: agent.id,
+      agentSessionId: sessionId,
+      agentName: "History scrub agent",
+      cause: "attachment_deleted",
+    });
+    const activity = (await commentUpdates(comment.id))[0]!;
+    expect(activity).toMatchObject({
+      actorId: admin.id,
+      actorType: "agent",
+      apiTokenId: agent.id,
+      agentSessionId: sessionId,
+      agentName: "History scrub agent",
+    });
+
+    const revisionsBefore = await prisma.commentRevision.count({
+      where: { commentId: comment.id },
+    });
+    const updatesBefore = (await commentUpdates(comment.id)).length;
+    await server()
+      .delete(`/api/v1/attachments/${attachmentId}`)
+      .set(agentHeader(agent.token, sessionId))
+      .expect(200);
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: comment.id } }),
+    ).toBe(revisionsBefore);
+    expect(await commentUpdates(comment.id)).toHaveLength(updatesBefore);
+  });
+
+  it("releases a claimed approval when the attachment scrub hits a history gap", async () => {
+    const { boardId, cardId } = await boardWithCard("History approval", "hap");
+    await invite(boardId, admin.token, author, AUTHOR_EMAIL);
+    const agent = await createPat("History approval agent", "admin");
+    const sessionId = await startAgent(agent.token, boardId, "approver");
+    const attachmentId = await uploadAttachment(
+      cardId,
+      author.token,
+      "approval.png",
+    );
+    const url = `/api/v1/attachments/${attachmentId}/content`;
+    const comment = await createComment(cardId, author.token, `Keep ${url}`);
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: {
+        text: `Old writer kept ${url}`,
+        editedAt: new Date(Date.now() + 5_000),
+      },
+    });
+
+    const created = await server()
+      .post(`/api/v1/boards/${boardId}/approvals`)
+      .set(agentHeader(agent.token, sessionId))
+      .send({
+        kind: "destructive",
+        ttlMinutes: 30,
+        plan: {
+          schemaVersion: 1,
+          boardId,
+          operations: [
+            {
+              op: "attachment.delete",
+              target: { boardId, attachmentId },
+              body: {},
+            },
+          ],
+        },
+      })
+      .expect(201);
+    const approvalId = created.body.id as string;
+    const planHash = created.body.planHash as string;
+    await server()
+      .post(`/api/v1/boards/${boardId}/approvals/${approvalId}/decision`)
+      .set(auth(admin.token))
+      .send({ decision: "approve", planHash })
+      .expect(200);
+
+    const rejected = await server()
+      .delete(`/api/v1/attachments/${attachmentId}`)
+      .set(agentHeader(agent.token, sessionId))
+      .set("X-Approval-Id", approvalId)
+      .expect(409);
+    expect(rejected.body.code).toBe("comment_history_gap");
+    expect(
+      (
+        await prisma.approvalRequest.findUniqueOrThrow({
+          where: { id: approvalId },
+        })
+      ).status,
+    ).toBe("approved");
+
+    // Repair the verified point (the 185.2 sweep will automate this) and
+    // reuse the same approval.
+    const row = await prisma.comment.findUniqueOrThrow({
+      where: { id: comment.id },
+    });
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: { historyVerifiedEditedAt: row.editedAt },
+    });
+    await server()
+      .delete(`/api/v1/attachments/${attachmentId}`)
+      .set(agentHeader(agent.token, sessionId))
+      .set("X-Approval-Id", approvalId)
+      .expect(200);
+    expect(
+      (
+        await prisma.approvalRequest.findUniqueOrThrow({
+          where: { id: approvalId },
+        })
+      ).status,
+    ).toBe("consumed");
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: comment.id } }),
+    ).toBe(1);
+  });
+
+  it("rolls back the revision when the write fails after the insert", async () => {
+    const { boardId, cardId } = await boardWithCard("History rollback", "hrb");
+    await invite(boardId, admin.token, author, AUTHOR_EMAIL);
+    const created = await createComment(cardId, author.token, "Rollback base");
+
+    await expect(
+      prisma.$transaction((tx) =>
+        writeCommentUpdate(tx, {
+          commentId: created.id,
+          boardId,
+          text: "Must not persist",
+          editorId: author.id,
+          attribution: {
+            actorType: "human",
+            apiTokenId: null,
+            agentSessionId: null,
+            runId: null,
+            agentName: null,
+          },
+          cause: "author_edit",
+          reconcileMedia: async () => {
+            throw new Error("rollback probe");
+          },
+        }),
+      ),
+    ).rejects.toThrow("rollback probe");
+    const row = await prisma.comment.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(row.text).toBe("Rollback base");
+    expect(row.editedAt).toBeNull();
+    expect(row.lastRevisionNumber).toBe(0);
+    expect(row.historyVerifiedRevisionNumber).toBeNull();
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: created.id } }),
+    ).toBe(0);
+    expect(await commentUpdates(created.id)).toHaveLength(0);
+  });
+
+  it("serialises PATCH and delete and re-reads the tombstone text under the lock", async () => {
+    const { boardId, cardId } = await boardWithCard(
+      "History delete race",
+      "hdr",
+    );
+    await invite(boardId, admin.token, author, AUTHOR_EMAIL);
+
+    const race = await createComment(cardId, author.token, "Race start");
+    const [editResponse, deleteResponse] = await Promise.all([
+      editComment(race.id, author.token, { text: "Race edited" }),
+      server().delete(`/api/v1/comments/${race.id}`).set(auth(author.token)),
+    ]);
+    expect(deleteResponse.status).toBe(200);
+    expect([200, 404]).toContain(editResponse.status);
+    const raceRow = await prisma.comment.findUniqueOrThrow({
+      where: { id: race.id },
+    });
+    expect(raceRow.deletedAt).not.toBeNull();
+    const raceRevisions = await prisma.commentRevision.count({
+      where: { commentId: race.id },
+    });
+    if (editResponse.status === 200) {
+      expect(raceRevisions).toBe(1);
+      expect(raceRow.text).toBe("Race edited");
+    } else {
+      expect(raceRevisions).toBe(0);
+      expect(raceRow.text).toBe("Race start");
+    }
+
+    // The tombstone snapshot must use the edited body, not the pre-lock read.
+    const edited = await createComment(cardId, author.token, "Before edit");
+    await editComment(edited.id, author.token, { text: "After edit" }).expect(
+      200,
+    );
+    await server()
+      .delete(`/api/v1/comments/${edited.id}`)
+      .set(auth(author.token))
+      .expect(200);
+    const tombstone = await prisma.activity.findFirstOrThrow({
+      where: {
+        type: "comment_deleted",
+        details: { path: ["commentId"], equals: edited.id },
+      },
+    });
+    expect(tombstone.details).toMatchObject({ text: "After edit" });
+    await server()
+      .delete(`/api/v1/comments/${edited.id}`)
+      .set(auth(author.token))
+      .expect(404);
+  });
+
+  it("serialises GDPR erase with a board writer and a concurrent trim", async () => {
+    const { boardId, cardId } = await boardWithCard(
+      "History erase race",
+      "her",
+    );
+
+    // Erase waits for a valid writer that appends revision #2 first.
+    const written = await seedForeignRevision(
+      cardId,
+      raceWriter.id,
+      "Race before writer",
+    );
+    const writerHeld = deferred();
+    const writerRelease = deferred();
+    const writer = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, boardId);
+      writerHeld.resolve();
+      await writerRelease.promise;
+      const at = new Date(Date.now() + 5_000);
+      await tx.comment.update({
+        where: { id: written },
+        data: {
+          text: "Race writer text",
+          editedAt: at,
+          historyVerifiedEditedAt: at,
+          historyVerifiedRevisionNumber: 2,
+          lastRevisionNumber: 2,
+        },
+      });
+      await tx.commentRevision.create({
+        data: {
+          commentId: written,
+          revisionNumber: 2,
+          beforeText: "Race before writer",
+          afterText: "Race writer text",
+          createdAt: at,
+          editorId: author.id,
+          cause: "author_edit",
+        },
+      });
+    });
+    await writerHeld.promise;
+    const writerErase = accountDeletion.deleteAccount(raceWriter.id);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    writerRelease.resolve();
+    await Promise.all([writer, writerErase]);
+
+    const writtenRow = await prisma.comment.findUniqueOrThrow({
+      where: { id: written },
+    });
+    expect(writtenRow.text).toBe("Race writer text");
+    expect(writtenRow.historyIncompleteReason).toBe("gdpr_erase");
+    expect(writtenRow.historyVerifiedRevisionNumber).toBeNull();
+    expect(writtenRow.lastRevisionNumber).toBe(2);
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: written } }),
+    ).toBe(0);
+
+    // A trim that commits while erase waits must not downgrade gdpr_erase.
+    const trimmed = await seedForeignRevision(
+      cardId,
+      raceTrim.id,
+      "Race before trim",
+    );
+    const trimHeld = deferred();
+    const trimRelease = deferred();
+    const trim = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, boardId);
+      trimHeld.resolve();
+      await trimRelease.promise;
+      await tx.comment.update({
+        where: { id: trimmed },
+        data: { historyIncompleteReason: "revision_limit" },
+      });
+    });
+    await trimHeld.promise;
+    const trimErase = accountDeletion.deleteAccount(raceTrim.id);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    trimRelease.resolve();
+    await Promise.all([trim, trimErase]);
+
+    const trimmedRow = await prisma.comment.findUniqueOrThrow({
+      where: { id: trimmed },
+    });
+    expect(trimmedRow.historyIncompleteReason).toBe("gdpr_erase");
+    expect(trimmedRow.historyVerifiedRevisionNumber).toBeNull();
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: trimmed } }),
+    ).toBe(0);
+  });
+
+  it("does not purge a comment restored while the purge waits for the board lock", async () => {
+    const { boardId, cardId } = await boardWithCard(
+      "History restore race",
+      "hrp",
+    );
+    await invite(boardId, admin.token, author, AUTHOR_EMAIL);
+    const comment = await createComment(cardId, author.token, "Restore me");
+    await editComment(comment.id, author.token, {
+      text: "Restore me edited",
+    }).expect(200);
+    await server()
+      .delete(`/api/v1/comments/${comment.id}`)
+      .set(auth(author.token))
+      .expect(200);
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: { deletedAt: new Date(Date.now() - 45 * 86_400_000) },
+    });
+
+    const held = deferred();
+    const release = deferred();
+    const restore = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, boardId);
+      held.resolve();
+      await release.promise;
+      await tx.comment.update({
+        where: { id: comment.id },
+        data: { deletedAt: null },
+      });
+    });
+    await held.promise;
+    const purge = maintenance.purgeSoftDeleted();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release.resolve();
+    await Promise.all([restore, purge]);
+
+    const row = await prisma.comment.findUnique({
+      where: { id: comment.id },
+    });
+    expect(row).not.toBeNull();
+    expect(row?.deletedAt).toBeNull();
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: comment.id } }),
+    ).toBe(1);
+  });
+
   it("hard purge removes revisions and comment Activity (comment and card paths)", async () => {
     const { boardId, cardId } = await boardWithCard("History purge", "hp");
     await invite(boardId, admin.token, author, AUTHOR_EMAIL);
@@ -739,6 +1298,23 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     const lastRevisionNumber = afterScrub.lastRevisionNumber;
     const verifiedEditedAt = afterScrub.historyVerifiedEditedAt?.getTime();
     expect(lastRevisionNumber).toBe(1);
+    // Simulate a trim that happened before the erase: gdpr_erase must win.
+    await prisma.comment.update({
+      where: { id: foreignComment.id },
+      data: { historyIncompleteReason: "revision_limit" },
+    });
+
+    // A second foreign chain is unverified: its number must stay for the
+    // sweep after erase.
+    const unverified = await seedForeignRevision(
+      foreign.cardId,
+      eraser.id,
+      "Unverified chain",
+    );
+    await prisma.comment.update({
+      where: { id: unverified },
+      data: { text: "Unverified old writer" },
+    });
 
     // Export boundary: comments carry their current projection, never the
     // revision snapshots or their ids.
@@ -776,6 +1352,18 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       }),
     ).toBe(0);
     expect(await commentUpdates(foreignComment.id)).toHaveLength(0);
+
+    // The unverified chain keeps its number for the next sweep.
+    const unverifiedAfter = await prisma.comment.findUniqueOrThrow({
+      where: { id: unverified },
+    });
+    expect(unverifiedAfter.text).toBe("Unverified old writer");
+    expect(unverifiedAfter.historyIncompleteReason).toBe("gdpr_erase");
+    expect(unverifiedAfter.lastRevisionNumber).toBe(1);
+    expect(unverifiedAfter.historyVerifiedRevisionNumber).toBe(1);
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: unverified } }),
+    ).toBe(0);
 
     // The next edit continues under a new monotonic number; the confirmed
     // chain means there is no false writer_gap.

@@ -969,6 +969,7 @@ export class DemoService implements OnModuleDestroy {
           assignedCards: { none: { NOT: demoCards } },
           commands: { none: {} },
           comments: { none: {} },
+          commentRevisions: { none: {} },
           attachments: { none: {} },
           activity: { none: {} },
           apiTokens: { none: {} },

@@ -16,6 +16,7 @@ import { AttentionService } from "@/notifications/attention.service";
 import {
   COMMENT_ACTIVITY_TYPES,
   deleteCommentActivitySnapshots,
+  lockBoardWrites,
 } from "@/comments/comment-history";
 
 /**
@@ -203,14 +204,38 @@ export class MaintenanceService {
       async (rows) =>
         this.prisma.$transaction(async (tx) => {
           const ids = rows.map((row) => row.id);
-          // TASK-185.1: revisions and comment snapshots are children of the
-          // comment and are explicitly removed before the hard delete.
-          await deleteCommentActivitySnapshots(tx, ids);
-          await tx.commentRevision.deleteMany({
-            where: { commentId: { in: ids } },
+          const candidates = await tx.comment.findMany({
+            where: { id: { in: ids }, ...stale },
+            select: {
+              id: true,
+              card: { select: { column: { select: { boardId: true } } } },
+            },
           });
-          return (await tx.comment.deleteMany({ where: { id: { in: ids } } }))
-            .count;
+          if (candidates.length === 0) return 0;
+          // TASK-185.1: lock each affected board, then re-check the flag. A
+          // restore that won the lock keeps its comment and revisions.
+          await lockBoardWrites(
+            tx,
+            candidates.map((row) => row.card.column.boardId),
+          );
+          const stillIds = (
+            await tx.comment.findMany({
+              where: { id: { in: ids }, ...stale },
+              select: { id: true },
+            })
+          ).map((row) => row.id);
+          if (stillIds.length === 0) return 0;
+          // Revisions and comment snapshots are children of the comment and
+          // are explicitly removed before the hard delete.
+          await deleteCommentActivitySnapshots(tx, stillIds);
+          await tx.commentRevision.deleteMany({
+            where: { commentId: { in: stillIds } },
+          });
+          return (
+            await tx.comment.deleteMany({
+              where: { id: { in: stillIds }, ...stale },
+            })
+          ).count;
         }),
     );
     count += await this.purgeChunks(
@@ -264,39 +289,75 @@ export class MaintenanceService {
       (take) =>
         this.prisma.card.findMany({ where: stale, select: { id: true }, take }),
       async (rows) => {
-        const ids = rows.map((row) => row.id);
-        const blobs = await this.prisma.attachment.findMany({
-          where: { cardId: { in: ids } },
-          select: { storedName: true, thumbnailName: true, posterName: true },
-        });
-        const results = await this.prisma.$transaction([
-          this.prisma.checklistItem.deleteMany({
+        let blobs: Array<{
+          storedName: string;
+          thumbnailName: string | null;
+          posterName: string | null;
+        }> = [];
+        const removed = await this.prisma.$transaction(async (tx) => {
+          const candidates = await tx.card.findMany({
+            where: { id: { in: rows.map((row) => row.id) }, ...stale },
+            select: {
+              id: true,
+              column: { select: { boardId: true } },
+            },
+          });
+          if (candidates.length === 0) return 0;
+          // TASK-185.1: serialize with restore/edit writers and re-check the
+          // soft-delete flag after the lock.
+          await lockBoardWrites(
+            tx,
+            candidates.map((row) => row.column.boardId),
+          );
+          const ids = (
+            await tx.card.findMany({
+              where: {
+                id: { in: candidates.map((row) => row.id) },
+                ...stale,
+              },
+              select: { id: true },
+            })
+          ).map((row) => row.id);
+          if (ids.length === 0) return 0;
+          blobs = await tx.attachment.findMany({
+            where: { cardId: { in: ids } },
+            select: {
+              storedName: true,
+              thumbnailName: true,
+              posterName: true,
+            },
+          });
+          await tx.checklistItem.deleteMany({
             where: { checklist: { cardId: { in: ids } } },
-          }),
-          this.prisma.checklist.deleteMany({ where: { cardId: { in: ids } } }),
-          this.prisma.cardLabel.deleteMany({ where: { cardId: { in: ids } } }),
-          this.prisma.cardLink.deleteMany({
+          });
+          await tx.checklist.deleteMany({ where: { cardId: { in: ids } } });
+          await tx.cardLabel.deleteMany({ where: { cardId: { in: ids } } });
+          await tx.cardLink.deleteMany({
             where: {
               OR: [{ fromCardId: { in: ids } }, { toCardId: { in: ids } }],
             },
-          }),
-          this.prisma.activity.deleteMany({
+          });
+          await tx.activity.deleteMany({
             where: {
               cardId: { in: ids },
               type: { in: [...COMMENT_ACTIVITY_TYPES] },
             },
-          }),
-          this.prisma.commentRevision.deleteMany({
+          });
+          await tx.commentRevision.deleteMany({
             where: { comment: { cardId: { in: ids } } },
-          }),
-          this.prisma.comment.deleteMany({ where: { cardId: { in: ids } } }),
-          this.prisma.attachment.deleteMany({ where: { cardId: { in: ids } } }),
-          this.prisma.card.deleteMany({ where: { id: { in: ids } } }),
-        ]);
+          });
+          await tx.comment.deleteMany({ where: { cardId: { in: ids } } });
+          await tx.attachment.deleteMany({ where: { cardId: { in: ids } } });
+          return (
+            await tx.card.deleteMany({
+              where: { id: { in: ids }, ...stale },
+            })
+          ).count;
+        });
         // A purged card's attachment blobs go with it (they were never
         // soft-deleted themselves, so the attachment pass above missed them).
         await this.removeBlobs(blobs);
-        return results[results.length - 1].count;
+        return removed;
       },
     );
     // Containers last, once they no longer hold any card.
@@ -480,7 +541,9 @@ export class MaintenanceService {
           this.prisma.boardMember.deleteMany({
             where: { boardId: { in: ids } },
           }),
-          this.prisma.board.deleteMany({ where: { id: { in: ids } } }),
+          this.prisma.board.deleteMany({
+            where: { id: { in: ids }, ...stale },
+          }),
         ]);
         return results[results.length - 1].count;
       },

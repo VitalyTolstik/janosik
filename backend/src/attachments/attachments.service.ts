@@ -445,7 +445,10 @@ export class AttachmentsService {
     const url = `/attachments/${attachmentId}/content`;
     return tx.comment.findMany({
       where: {
-        card: { column: { boardId }, deletedAt: null },
+        card: {
+          column: { boardId, deletedAt: null },
+          deletedAt: null,
+        },
         deletedAt: null,
         text: { contains: url },
       },
@@ -536,7 +539,7 @@ export class AttachmentsService {
     approvalId?: string,
   ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
-      where: { id: attachmentId, deletedAt: null },
+      where: { id: attachmentId },
       select: {
         id: true,
         cardId: true,
@@ -545,10 +548,13 @@ export class AttachmentsService {
         uploadedByTokenId: true,
         fileName: true,
         isInline: true,
+        deletedAt: true,
         card: { select: { deletedAt: true } },
       },
     });
     if (!row || row.card.deletedAt !== null) throw new NotFoundException();
+    // A repeated DELETE is an idempotent no-op rather than a 404.
+    if (row.deletedAt !== null) return;
 
     // Uploader or board ADMIN — the comments rule (author-only) does not
     // fit files, where cleanup is a board-management concern. TASK-166:
@@ -595,6 +601,13 @@ export class AttachmentsService {
       this.boardWrite.run(
         row.boardId,
         async (tx) => {
+          // Resolve the live row under the board lock first. A concurrent
+          // repeat delete sees `null` here and skips the history preflight.
+          const current = await tx.attachment.findFirst({
+            where: { id: attachmentId, deletedAt: null },
+            select: { id: true, descriptionDetached: true },
+          });
+          if (current === null) return { kind: "noop" as const };
           // TASK-185.1: verify every affected comment before the attachment
           // row or any text moves. A gap commits only the marks and aborts.
           if (
@@ -602,22 +615,14 @@ export class AttachmentsService {
           ) {
             return { kind: "gap" as const };
           }
-          const current = await tx.attachment.findUnique({
-            where: { id: attachmentId },
-            select: { descriptionDetached: true },
-          });
           const updated = await tx.attachment.updateMany({
             where: { id: attachmentId, deletedAt: null },
             data: { deletedAt: new Date() },
           });
-          if (updated.count === 0) {
-            if (approval !== null)
-              throw new NotFoundException("Attachment was already removed");
-            return null;
-          }
+          if (updated.count === 0) return { kind: "noop" as const };
           // TASK-108: inline media never incremented the counter, so they must
           // not decrement it either — that drift went negative over time.
-          if (!row.isInline && !current?.descriptionDetached) {
+          if (!row.isInline && !current.descriptionDetached) {
             await tx.card.update({
               where: { id: row.cardId },
               data: { attachmentCount: { decrement: 1 } },
@@ -646,6 +651,7 @@ export class AttachmentsService {
           return {
             kind: "ok" as const,
             activityId: activity.id,
+            at: activity.createdAt.getTime(),
             commentUpdates,
           };
         },
@@ -661,8 +667,18 @@ export class AttachmentsService {
         ),
       ),
     );
-    if (!removed) return;
-    if (removed.kind === "gap") throw commentHistoryGapException();
+    if (removed.kind === "noop") {
+      // A concurrent request already removed the row; the approval was not
+      // used, so make it usable again rather than leaving it consumed.
+      if (approval !== null) await this.approvals.releaseOperation(approval);
+      return;
+    }
+    if (removed.kind === "gap") {
+      // The approval was claimed before the transaction. A gap aborts the
+      // destructive operation, so release the claim before the 409.
+      if (approval !== null) await this.approvals.releaseOperation(approval);
+      throw commentHistoryGapException();
+    }
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
         operation: "attachment.delete",
@@ -682,6 +698,7 @@ export class AttachmentsService {
       "attachment_deleted",
       attachmentId,
       attribution,
+      removed.at,
     );
     for (const update of removed.commentUpdates) {
       this.publish(
@@ -692,6 +709,7 @@ export class AttachmentsService {
         "comment_updated",
         update.commentId,
         attribution,
+        update.at,
       );
     }
     await touchAgentSessionAfterWrite(
@@ -709,6 +727,7 @@ export class AttachmentsService {
     kind: "attachment_added" | "attachment_deleted" | "comment_updated",
     detail: string,
     attribution: RequestAttribution,
+    at: number = Date.now(),
   ): void {
     this.realtime.publish(boardId, {
       type: "activity",
@@ -717,7 +736,7 @@ export class AttachmentsService {
       cardId,
       actorId,
       actorType: attribution.actorType,
-      at: Date.now(),
+      at,
       kind,
       detail,
       ...(attribution.apiTokenId ? { apiTokenId: attribution.apiTokenId } : {}),

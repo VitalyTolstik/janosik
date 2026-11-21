@@ -27,6 +27,15 @@ then starts the 185.1 backend. The first real edit after cutover creates
 revision #1; restoring an old writer after that is detected by the verified
 pair, the last revision number and `afterText`.
 
+The cutover migration takes `ACCESS EXCLUSIVE` on `Comment` for the `ALTER
+TABLE` and rewrites every row in the table-wide backfill, so plan a maintenance
+window: every read/write of comments waits for the duration of that migration.
+The second migration only creates the two `Activity` expression indexes;
+`CREATE INDEX` is non-concurrent and briefly blocks writes to `Activity`.
+After cutover, trimming and purge snapshots are found through
+`details->>'revisionId'` / `details->>'commentId'`; TASK-185.2 replaces those
+expression indexes with the typed `Activity.commentId` column.
+
 ## Writer
 
 `backend/src/comments/comment-history.ts` is the only text-edit writer. It
@@ -48,6 +57,30 @@ A failed reconciliation persists `writer_gap` and commits before the request
 answers `409 comment_history_gap`. The attachment scrub verifies every affected
 comment before touching the attachment row; one gap persists only the marks and
 aborts the whole deletion.
+
+### Reconciliation runbook
+
+The standalone reconciliation sweep is **not part of 185.1**; it lands with the
+read/feed work in 185.2/185.6. Until then the 409 means an operator must inspect
+the comment manually:
+
+```sql
+SELECT c."id", c."editedAt", c."historyCutoverAt",
+       c."historyVerifiedEditedAt", c."historyVerifiedRevisionNumber",
+       c."lastRevisionNumber", c."historyIncompleteReason",
+       r."revisionNumber", r."createdAt", r."afterText" = c."text" AS text_matches
+FROM "Comment" c
+LEFT JOIN "CommentRevision" r
+  ON r."commentId" = c."id"
+ AND r."revisionNumber" = c."lastRevisionNumber"
+WHERE c."id" = '<commentId>';
+```
+
+A confirmed chain is repaired by adopting the current text as the verified
+point: set `historyVerifiedEditedAt = editedAt`,
+`historyVerifiedRevisionNumber = NULL` and keep `lastRevisionNumber`; the next
+edit appends a fresh number. Do not delete a legitimate revision during this
+check. Restarting writers is required when the gap came from an old release.
 
 ## Purge and GDPR
 

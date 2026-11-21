@@ -23,11 +23,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   read API and UI remain in later 185.x subtasks. See
   [the foundation notes](docs/TASK-185.1-comment-history-foundation.md).
 
+- TASK-185.1 hardening. An attachment-delete gap now releases its claimed
+  destructive approval instead of burning it; repeated attachment deletion is
+  an idempotent no-op; GDPR erase locks every affected board, re-reads the
+  verified chain and merges `gdpr_erase` atomically; purge re-checks
+  soft-deleted rows under the board lock so a restore wins; and Activity
+  `commentId`/`revisionId` lookups have expression indexes. The 409 names
+  operator reconciliation until the automated sweep lands in 185.2/185.6.
+
 - TASK-177.11 comment kind edit and filter. An author can now retype a
   comment's structured kind (note, status, question, blocker, evidence,
-  handoff) in the same inline editor as the text; the change stamps `editedAt`
-  and writes `comment_updated` history, and blocker/handoff attention already
-  sent for that comment is not duplicated. The comments thread also gains
+  handoff) in the same inline editor as the text; the change writes
+  `comment_updated` history (TASK-185.1 later made `editedAt` text-only), and
+  blocker/handoff attention already sent for that comment is not duplicated.
+  The comments thread also gains
   `All`/kind filter chips backed by the server's `?kind=` query, with EN/RU
   copy, accessible pressed state, 44 px touch targets and cursor paging kept
   inside the selected kind. The PATCH body and the API docs accept `text`

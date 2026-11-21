@@ -315,8 +315,20 @@ describe("MaintenanceService", () => {
     const prisma = makePrisma();
     const ids = (n: number, prefix: string) =>
       Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
+    const firstCards = ids(500, "a").map((row) => ({
+      ...row,
+      column: { boardId: "b1" },
+    }));
+    const secondCards = ids(120, "b").map((row) => ({
+      ...row,
+      column: { boardId: "b1" },
+    }));
     (prisma.card.findMany as jest.Mock)
       .mockResolvedValueOnce(ids(500, "a"))
+      .mockResolvedValueOnce(firstCards)
+      .mockResolvedValueOnce(ids(500, "a"))
+      .mockResolvedValueOnce(ids(120, "b"))
+      .mockResolvedValueOnce(secondCards)
       .mockResolvedValueOnce(ids(120, "b"));
     (prisma.card.deleteMany as jest.Mock)
       .mockResolvedValueOnce({ count: 500 })
@@ -368,6 +380,10 @@ describe("MaintenanceService", () => {
   it("deletes revisions and comment snapshots before a hard comment purge (TASK-185.1)", async () => {
     const prisma = makePrisma();
     (prisma.comment.findMany as jest.Mock)
+      .mockResolvedValueOnce([{ id: "cm-1" }])
+      .mockResolvedValueOnce([
+        { id: "cm-1", card: { column: { boardId: "b1" } } },
+      ])
       .mockResolvedValueOnce([{ id: "cm-1" }])
       .mockResolvedValue([]);
     (prisma.comment.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
@@ -647,7 +663,7 @@ describe("MaintenanceService", () => {
     // The board itself is deleted exactly once, by the final transaction.
     expect(removed).toBe(1);
     expect(prisma.board.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["b1"] } },
+      where: expect.objectContaining({ id: { in: ["b1"] } }),
     });
     // TASK-185.1: the board fallback removes revisions before comments.
     expect(prisma.commentRevision.deleteMany).toHaveBeenCalledWith({
