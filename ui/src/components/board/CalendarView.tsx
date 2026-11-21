@@ -951,7 +951,11 @@ export function CalendarView({
           <button
             type="button"
             aria-expanded={unscheduledOpen}
-            aria-label={`${t("view.calendar.unscheduled")} (${unscheduled.length})`}
+            aria-label={
+              unscheduledOpen
+                ? `${t("view.calendar.unscheduled")} (${unscheduled.length})`
+                : `${t("view.calendar.unscheduled")} ${unscheduled.length}`
+            }
             data-testid="unscheduled-toggle"
             onClick={() => setUnscheduledOpen((o) => !o)}
             className={cn(
