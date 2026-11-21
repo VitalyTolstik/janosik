@@ -222,7 +222,7 @@ describe("SharesPage", () => {
     expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
       "Page 1 of 3",
     );
-    expect(screen.getByTestId("admin-pagination-prev")).toBeDisabled();
+    expect(screen.getByTestId("admin-pagination-prev")).toBeEnabled();
     expect(screen.getByTestId("admin-pagination-next")).toBeEnabled();
 
     release();
@@ -233,6 +233,71 @@ describe("SharesPage", () => {
     );
     expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
       "Page 2 of 3",
+    );
+  });
+
+  it("advances the pending offset when Next is clicked again", async () => {
+    const server = new FakeAdminServer();
+    server.shares = shareRows(101);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    let release!: () => void;
+    server.holdCommands = new Promise((resolve) => {
+      release = resolve;
+    });
+
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("offset")).toBe("50"),
+    );
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("offset")).toBe("100"),
+    );
+
+    release();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+        "Page 3 of 3",
+      ),
+    );
+    expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+      "101 of 101",
+    );
+  });
+
+  it("keeps the page-size select on the pending choice until the response lands", async () => {
+    const server = new FakeAdminServer();
+    server.shares = shareRows(101);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    let release!: () => void;
+    server.holdCommands = new Promise((resolve) => {
+      release = resolve;
+    });
+    const pageSize = screen.getByTestId("admin-page-size");
+    fireEvent.change(pageSize, { target: { value: "25" } });
+
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("limit")).toBe("25"),
+    );
+    expect((pageSize as HTMLSelectElement).value).toBe("25");
+    expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+      "Page 1 of 3",
+    );
+
+    release();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+        "Page 1 of 5",
+      ),
+    );
+    expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+      "1–25 of 101",
     );
   });
 

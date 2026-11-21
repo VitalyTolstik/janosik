@@ -329,8 +329,10 @@ export function SharesPage() {
         {!list.loading && !list.error && (rows.length > 0 || list.total > 0) ? (
           <Pagination
             total={list.total}
-            limit={list.pageLimit}
-            offset={list.pageOffset}
+            limit={list.limit}
+            offset={list.offset}
+            statusLimit={list.pageLimit}
+            statusOffset={list.pageOffset}
             onChange={list.setOffset}
             onLimitChange={list.setLimit}
           />
