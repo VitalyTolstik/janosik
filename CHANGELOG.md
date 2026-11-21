@@ -41,7 +41,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
   read-only verification and master-account commands. The reset uses a
   private backend to verify database identity before schema recreation and
-  supports a transactional fallback that retains global settings.
+  supports a transactional fallback that retains global settings. It validates
+  the target, reset authorization and reset secrets from the pre-Prisma shell
+  environment, so `backend/.env`, `.env.<NODE_ENV>` and `.env.local` cannot
+  select a demo target or authorize a reset.
   See [the demo fixture guide](docs/DEMO-FIXTURES.md).
 
 - TASK-176.9 B2 admin card checklists and links: `/admin/cards/:id` now shows a

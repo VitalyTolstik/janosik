@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { ids, manifest, relations } from "../fixtures/task176-demo.mjs";
 import { assertFixtureRows, seedRelations, verifyFixture } from "./fixture.mjs";
 import { consumeSeedNonce, sweepMarkers } from "./identity.mjs";
@@ -289,4 +301,221 @@ test("target guards fail closed, including unsafe URL options and direct overlay
     dryRun.stdout + dryRun.stderr,
     /sensitive-(user|password)|postgresql:/,
   );
+});
+
+const ambientKeys = [
+  "DATABASE_URL",
+  "DEMO_DATABASE_URL",
+  "DEMO_API_URL",
+  "DEMO_ALLOW_OTHER_DB",
+  "DEMO_RESET_ALLOW",
+  "SEED_ALLOW",
+  "JWT_SECRET",
+  "PUBLIC_ORIGIN",
+  "SETTINGS_SECRET",
+  "SEED_SECRETS_FILE",
+];
+
+const fakePrismaModule = [
+  'const fs = require("node:fs");',
+  'const path = require("node:path");',
+  'const names = [".env", ".env." + process.env.NODE_ENV, ".env.local"];',
+  "for (const name of names) {",
+  '  const file = path.resolve(__dirname, "../../../backend", name);',
+  "  if (!fs.existsSync(file)) continue;",
+  '  for (const line of fs.readFileSync(file, "utf8").split(/\\r?\\n/)) {',
+  "    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim());",
+  "    if (!match || process.env[match[1]] !== undefined) continue;",
+  "    process.env[match[1]] = match[2];",
+  "  }",
+  "}",
+  "exports.Prisma = {};",
+  "exports.PrismaClient = class PrismaClient {};",
+].join("\n");
+
+// Reproduce Prisma's import-time dotenv load in a disposable copy. The fake
+// client also reads .env.local deliberately: no ambient env file may select a
+// target or authorize a reset, even one a future loader mistake might read.
+function createEnvSandbox() {
+  const dir = mkdtempSync(join(tmpdir(), "task176-env-"));
+  for (const file of [
+    "scripts/task176-demo.mjs",
+    "scripts/seed-agent-pixel-demo.mjs",
+    "scripts/fixtures/task176-demo.mjs",
+  ]) {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    cpSync(join(root, file), join(dir, file));
+  }
+  cpSync(join(root, "scripts/task176"), join(dir, "scripts/task176"), {
+    recursive: true,
+    filter: (file) => !file.endsWith(".test.mjs"),
+  });
+  mkdirSync(join(dir, "backend"), { recursive: true });
+  mkdirSync(join(dir, "node_modules/@prisma/client"), { recursive: true });
+  // The static graph still imports argon2 (hashing the pixel scene's
+  // passwords), so resolve the real package; only @prisma/client is faked.
+  const argon2 = join(root, "node_modules/argon2");
+  if (existsSync(argon2)) {
+    symlinkSync(
+      argon2,
+      join(dir, "node_modules/argon2"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  }
+  writeFileSync(
+    join(dir, "node_modules/@prisma/client/package.json"),
+    JSON.stringify({
+      name: "@prisma/client",
+      version: "0.0.0-test",
+      main: "index.js",
+    }),
+  );
+  writeFileSync(
+    join(dir, "node_modules/@prisma/client/index.js"),
+    fakePrismaModule,
+  );
+  return dir;
+}
+
+function writeAmbientEnv(dir, name, values) {
+  writeFileSync(
+    join(dir, "backend", name),
+    `${Object.entries(values)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n")}\n`,
+  );
+}
+
+test("ambient backend env files cannot supply the demo target, reset authorization or secrets", () => {
+  const dir = createEnvSandbox();
+  const targetEnv = {
+    DEMO_DATABASE_URL: "postgresql://localhost/janosik_task176_demo",
+    DEMO_API_URL: "http://127.0.0.1:5311",
+  };
+  const run = (env) =>
+    spawnSync(
+      process.execPath,
+      ["scripts/task176-demo.mjs", "reset", "--dry-run"],
+      { cwd: dir, env, encoding: "utf8" },
+    );
+  try {
+    writeAmbientEnv(dir, ".env", {
+      DATABASE_URL: "postgresql://dev-user:dev-password@localhost/janosik",
+      DEMO_DATABASE_URL: "postgresql://localhost/janosik_task176_demo",
+      DEMO_API_URL: "http://127.0.0.1:5311",
+      DEMO_ALLOW_OTHER_DB: "1",
+      DEMO_RESET_ALLOW: "1",
+      SEED_ALLOW: "1",
+      JWT_SECRET: "ambient-jwt-secret-that-must-not-be-used",
+      PUBLIC_ORIGIN: "http://127.0.0.1:9999",
+      SETTINGS_SECRET: "ambient-settings-secret",
+      SEED_SECRETS_FILE: join(dir, "ambient-secrets.json"),
+    });
+
+    const valid = run({ ...targetEnv, DEMO_RESET_ALLOW: "1" });
+    assert.equal(valid.status, 0, valid.stderr);
+    assert.match(valid.stdout, /localhost\/janosik_task176_demo/);
+    assert.doesNotMatch(
+      valid.stdout + valid.stderr,
+      /sensitive|dev-password|ambient-jwt|ambient-settings|postgresql:/,
+    );
+
+    const unauthorized = run(targetEnv);
+    assert.equal(unauthorized.status, 1);
+    assert.match(unauthorized.stderr, /DEMO_RESET_ALLOW=1/);
+
+    const missingTarget = run({ DEMO_RESET_ALLOW: "1" });
+    assert.equal(missingTarget.status, 1);
+    assert.match(missingTarget.stderr, /Set DEMO_DATABASE_URL/);
+
+    const otherDatabase = run({
+      ...targetEnv,
+      DEMO_DATABASE_URL: "postgresql://localhost/other_demo",
+      DEMO_RESET_ALLOW: "1",
+    });
+    assert.equal(otherDatabase.status, 1);
+    assert.match(
+      otherDatabase.stderr,
+      /explicitly allowed disposable database/,
+    );
+
+    rmSync(join(dir, "backend/.env"));
+    writeAmbientEnv(dir, ".env.local", {
+      DATABASE_URL: "postgresql://dev-user:dev-password@localhost/janosik",
+      DEMO_DATABASE_URL: "postgresql://localhost/other_demo",
+      DEMO_API_URL: "http://127.0.0.1:9998",
+      DEMO_ALLOW_OTHER_DB: "1",
+      DEMO_RESET_ALLOW: "1",
+      SEED_ALLOW: "1",
+      JWT_SECRET: "ambient-jwt-secret-that-must-not-be-used",
+      PUBLIC_ORIGIN: "http://127.0.0.1:9999",
+      SETTINGS_SECRET: "ambient-settings-secret",
+      SEED_SECRETS_FILE: join(dir, "ambient-secrets.json"),
+    });
+    const localOnly = run({ ...targetEnv, DEMO_RESET_ALLOW: "1" });
+    assert.equal(localOnly.status, 0, localOnly.stderr);
+    const localUnauthorized = run(targetEnv);
+    assert.equal(localUnauthorized.status, 1);
+    assert.match(localUnauthorized.stderr, /DEMO_RESET_ALLOW=1/);
+
+    writeAmbientEnv(dir, ".env", {
+      DATABASE_URL: "postgresql://dev-user:dev-password@localhost/janosik",
+      DEMO_DATABASE_URL: "postgresql://localhost/janosik_task176_demo",
+      DEMO_API_URL: "http://127.0.0.1:5311",
+      DEMO_ALLOW_OTHER_DB: "1",
+      DEMO_RESET_ALLOW: "1",
+      SEED_ALLOW: "1",
+      JWT_SECRET: "ambient-jwt-secret-that-must-not-be-used",
+      PUBLIC_ORIGIN: "http://127.0.0.1:9999",
+      SETTINGS_SECRET: "ambient-settings-secret",
+      SEED_SECRETS_FILE: join(dir, "ambient-secrets.json"),
+    });
+    const pixel = spawnSync(
+      process.execPath,
+      ["scripts/seed-agent-pixel-demo.mjs"],
+      {
+        cwd: dir,
+        env: { DATABASE_URL: "postgresql://localhost/janosik_pixel" },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(pixel.status, 1);
+    assert.match(pixel.stderr, /SEED_ALLOW=1/);
+    assert.doesNotMatch(pixel.stderr, /disposable database name/);
+    const targetUrl = pathToFileURL(
+      join(dir, "scripts/task176/target.mjs"),
+    ).href;
+    const databaseUrl = pathToFileURL(
+      join(dir, "scripts/task176/database.mjs"),
+    ).href;
+    const code = [
+      `const keys = ${JSON.stringify(ambientKeys)};`,
+      `const { shellEnv, demoTarget, childEnv } = await import(${JSON.stringify(targetUrl)});`,
+      `await import(${JSON.stringify(databaseUrl)});`,
+      'if (process.env.DATABASE_URL !== "postgresql://dev-user:dev-password@localhost/janosik")',
+      '  throw new Error("the fake Prisma loader did not run");',
+      "const leaked = keys.filter((key) => shellEnv[key] !== undefined);",
+      'if (leaked.length) { console.error("leaked:" + leaked.join(",")); process.exit(1); }',
+      "try {",
+      "  demoTarget(shellEnv);",
+      '  console.error("ambient target accepted");',
+      "  process.exit(1);",
+      "} catch (error) {",
+      "  if (!/Set DEMO_DATABASE_URL/.test(error.message)) throw error;",
+      "}",
+      'const child = childEnv({ databaseUrl: "postgresql://localhost/janosik_task176_demo" });',
+      'const leakedChild = keys.filter((key) => key !== "DATABASE_URL" && child[key] !== undefined);',
+      'if (leakedChild.length) { console.error("child:" + leakedChild.join(",")); process.exit(1); }',
+      'console.log("pristine");',
+    ].join("\n");
+    const snapshot = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", code],
+      { cwd: dir, env: {}, encoding: "utf8" },
+    );
+    assert.equal(snapshot.status, 0, snapshot.stderr);
+    assert.match(snapshot.stdout, /pristine/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

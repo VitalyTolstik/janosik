@@ -1,21 +1,7 @@
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { seedPixelScene, writeSeedSecrets } from "./seed-agent-pixel-demo.mjs";
-import {
-  hasCompleteSchema,
-  migrateReset,
-  resetFixtureAndAccounts,
-  terminateOtherConnections,
-  withDatabase,
-  withResetLease,
-} from "./task176/database.mjs";
 import { seedRelations, verifyFixture } from "./task176/fixture.mjs";
-import {
-  consumeSeedNonce,
-  probeIdentity,
-  sweepMarkers,
-} from "./task176/identity.mjs";
 import {
   assertFreePort,
   backend,
@@ -28,7 +14,12 @@ import {
   DemoError,
   demoTarget,
   reportError,
+  shellEnv,
 } from "./task176/target.mjs";
+
+// Prisma loads backend/.env at module import. Keep database.mjs, identity.mjs
+// and the pixel seed out of the static graph and import them only after
+// demoTarget(shellEnv) has validated the guarded target.
 
 async function reset(target, { fallback, dryRun }) {
   if (dryRun) {
@@ -37,6 +28,18 @@ async function reset(target, { fallback, dryRun }) {
     );
     return;
   }
+  const {
+    hasCompleteSchema,
+    migrateReset,
+    resetFixtureAndAccounts,
+    terminateOtherConnections,
+    withDatabase,
+    withResetLease,
+  } = await import("./task176/database.mjs");
+  const { consumeSeedNonce, probeIdentity, sweepMarkers } =
+    await import("./task176/identity.mjs");
+  const { seedPixelScene, writeSeedSecrets } =
+    await import("./seed-agent-pixel-demo.mjs");
   const buildFiles = [
     "dist/main.js",
     "dist/config/demo-reset-env.js",
@@ -49,14 +52,14 @@ async function reset(target, { fallback, dryRun }) {
     )
   )
     throw new DemoError("Build the backend before running the TASK-176 reset.");
-  const jwtSecret = process.env.JWT_SECRET;
+  const jwtSecret = shellEnv.JWT_SECRET;
   if (!jwtSecret || jwtSecret.length < 32)
     throw new DemoError(
       "Set JWT_SECRET (at least 32 characters) for the TASK-176 backend.",
     );
   let publicOrigin;
   try {
-    publicOrigin = new URL(process.env.PUBLIC_ORIGIN ?? target.apiUrl);
+    publicOrigin = new URL(shellEnv.PUBLIC_ORIGIN ?? target.apiUrl);
     if (
       !["http:", "https:"].includes(publicOrigin.protocol) ||
       publicOrigin.username ||
@@ -85,7 +88,7 @@ async function reset(target, { fallback, dryRun }) {
     await assertFreePort(target.port);
     lifecycle = createBackendLifecycle(lock, target, {
       jwtSecret,
-      settingsSecret: process.env.SETTINGS_SECRET ?? "",
+      settingsSecret: shellEnv.SETTINGS_SECRET ?? "",
       publicOrigin: publicOrigin.origin,
     });
     await withResetLease(target, async (leasePid) => {
@@ -167,9 +170,9 @@ async function reset(target, { fallback, dryRun }) {
       await withDatabase(target, verifyFixture);
       destructive = false;
     });
-    if (process.env.SEED_SECRETS_FILE) {
+    if (shellEnv.SEED_SECRETS_FILE) {
       try {
-        writeSeedSecrets(process.env.SEED_SECRETS_FILE);
+        writeSeedSecrets(shellEnv.SEED_SECRETS_FILE);
       } catch {
         throw new DemoError(
           "Fixture verified. Could not export seed credentials to a new 0600 file.",
@@ -221,8 +224,8 @@ async function admin(target, args) {
         env: {
           ...childEnv(target),
           DEMO_DATABASE_URL: target.databaseUrl,
-          DEMO_ALLOW_OTHER_DB: process.env.DEMO_ALLOW_OTHER_DB ?? "",
-          ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ?? "",
+          DEMO_ALLOW_OTHER_DB: shellEnv.DEMO_ALLOW_OTHER_DB ?? "",
+          ADMIN_PASSWORD: shellEnv.ADMIN_PASSWORD ?? "",
         },
         stdio: ["inherit", "inherit", "inherit", lock.fd],
       },
@@ -248,16 +251,17 @@ async function main() {
         "Usage: npm run demo:task176:reset [-- --fallback | --dry-run].",
       );
     }
-    await reset(demoTarget(process.env, { api: true, reset: true }), {
+    await reset(demoTarget(shellEnv, { api: true, reset: true }), {
       fallback: args.includes("--fallback"),
       dryRun: args.includes("--dry-run"),
     });
   } else if (command === "verify" && args.length === 0) {
-    const target = demoTarget(process.env);
+    const target = demoTarget(shellEnv);
     console.log(`TASK-176 verify target ${target.host}/${target.database}.`);
+    const { withDatabase } = await import("./task176/database.mjs");
     await withDatabase(target, verifyFixture);
   } else if (command === "admin") {
-    await admin(demoTarget(process.env), args);
+    await admin(demoTarget(shellEnv), args);
   } else {
     throw new DemoError(
       "TASK-176 supports reset, verify and admin. The overlay can only run inside an authorized reset.",

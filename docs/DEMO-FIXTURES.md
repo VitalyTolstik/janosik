@@ -17,7 +17,19 @@ Set `DEMO_DATABASE_URL` and `DEMO_API_URL` explicitly. The database name must
 be `janosik_task176_demo`. For a disposable database whose name ends in
 `_demo`, also set `DEMO_ALLOW_OTHER_DB=1`. The API URL must be
 `http://127.0.0.1:<port>` with a free port above 1023. Reset refuses conflicting
-shell `DATABASE_URL` or `API_URL` values and refuses `NODE_ENV=production`.
+`DATABASE_URL` or `API_URL` values exported in the invoking shell and refuses
+`NODE_ENV=production`.
+
+Only the environment the wrapper starts with counts. Before any Prisma module
+loads, the wrapper snapshots that shell environment; `backend/.env`,
+`backend/.env.<NODE_ENV>` and `backend/.env.local` cannot provide or override
+`DEMO_DATABASE_URL`, `DEMO_API_URL`, `DEMO_ALLOW_OTHER_DB`,
+`DEMO_RESET_ALLOW`, `SEED_ALLOW`, `JWT_SECRET`, `PUBLIC_ORIGIN`,
+`SETTINGS_SECRET` or `SEED_SECRETS_FILE`. In particular, a development
+`DATABASE_URL` in `backend/.env` neither conflicts with a shell
+`DEMO_DATABASE_URL` nor selects the target, and `DEMO_RESET_ALLOW=1` present
+only in an env file does not authorize a reset. Reset conflicts are still
+reported when the same values are exported in the shell.
 
 Set `JWT_SECRET` to at least 32 characters in the shell. If you plan to run a
 regular demo backend after reset, make its `PUBLIC_ORIGIN` and secrets
@@ -56,8 +68,10 @@ fresh connection, and stops and reaps it before verification.
 Each backend boot consumes a private 0600 nonce-bound env file supplied via CLI
 flags. Reset boot bypasses `backend/.env`, `.env.<NODE_ENV>` and `.env.local`,
 sets `COOKIE_SECURE=false`, and uses the backend's test environment to keep
-scheduled jobs off. Regular backend boot continues to load its normal env
-files.
+scheduled jobs off. The wrapper validates the target, authorizes the reset and
+selects `JWT_SECRET`, `PUBLIC_ORIGIN`, `SETTINGS_SECRET` and
+`SEED_SECRETS_FILE` from its pre-Prisma shell snapshot, never from those files.
+Regular backend boot continues to load its normal env files.
 
 After a crash, rerun `npm run demo:task176:reset` with the same demo settings.
 While holding the per-database file lock and PostgreSQL lease, reset checks the
@@ -184,6 +198,14 @@ Successful verification prints both SHA-256 hashes.
 ```bash
 npm run demo:task176:test
 ```
+
+The unit suite includes an ambient-environment regression: it creates a real
+`backend/.env` (and a `.env.local` case) with a development `DATABASE_URL`, a
+`DEMO_RESET_ALLOW=1` that exists only in the file, and the other guarded
+variables. A valid shell `DEMO_DATABASE_URL`/`DEMO_API_URL` must still pass
+target validation, the file-only reset authorization must be refused, and no
+file value may reach the target guard, reset authorization or child
+environment.
 
 Run the opt-in integration suite before merging or rolling out fixture changes.
 In GitHub Actions, manually run **CI** with `demo_task176_integration` enabled
