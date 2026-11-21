@@ -130,6 +130,11 @@ function membershipError(error: unknown, t: Translate): string {
   return t("board.members.errors.generic");
 }
 
+/** A deadline the server would accept but the user could never meet. */
+function isPastDeadline(value: number | null): boolean {
+  return value !== null && value <= Date.now();
+}
+
 interface RolePickerProps {
   value: BoardRole;
   /** Accessible name (the row's user is baked in by the caller). */
@@ -589,10 +594,66 @@ export function BoardMembersPanel({
     member: BoardMemberDto,
     value: number | null,
   ) {
+    if (isPastDeadline(value)) {
+      toast.error(t("board.members.expires.past"));
+      return;
+    }
     setPendingUserId(member.userId);
     try {
       replaceMember(
         await api.updateMember(boardId, member.userId, {
+          expiresAt: value === null ? null : new Date(value).toISOString(),
+        }),
+      );
+      toast.success(t("board.members.expiryChanged"));
+    } catch (error) {
+      toast.error(membershipError(error, t));
+    } finally {
+      setPendingUserId(null);
+    }
+  }
+
+  /** Keep a pending row in sync with the member row `PATCH` answers. */
+  const replacePending = (updated: BoardMemberDto) => {
+    setPending((prev) =>
+      prev.map((row) =>
+        row.userId === updated.userId
+          ? { ...row, role: updated.role, expiresAt: updated.expiresAt }
+          : row,
+      ),
+    );
+  };
+
+  async function handlePendingRoleChange(
+    invitation: BoardPendingInvitationDto,
+    next: BoardRole,
+  ) {
+    if (next === invitation.role) return;
+    setPendingUserId(invitation.userId);
+    try {
+      replacePending(
+        await api.updateMember(boardId, invitation.userId, { role: next }),
+      );
+      toast.success(t("board.members.roleChanged"));
+    } catch (error) {
+      toast.error(membershipError(error, t));
+    } finally {
+      setPendingUserId(null);
+    }
+  }
+
+  async function handlePendingExpiryChange(
+    invitation: BoardPendingInvitationDto,
+    value: number | null,
+  ) {
+    if (isPastDeadline(value)) {
+      toast.error(t("board.members.expires.past"));
+      return;
+    }
+    setPendingUserId(invitation.userId);
+    try {
+      replacePending(
+        await api.updateMember(boardId, invitation.userId, {
           expiresAt: value === null ? null : new Date(value).toISOString(),
         }),
       );
@@ -964,33 +1025,74 @@ export function BoardMembersPanel({
             {t("board.members.pending.title", { count: pending.length })}
           </p>
           <ul className="space-y-1">
-            {pending.map((invitation) => (
-              <li
-                key={invitation.id}
-                data-testid="board-pending-row"
-                className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm"
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  {invitation.email}
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {t(ROLE_KEYS[invitation.role])}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-danger"
-                  aria-label={t("board.members.pending.cancel", {
-                    email: invitation.email,
-                  })}
-                  data-testid="board-pending-cancel"
-                  disabled={pendingUserId === invitation.userId}
-                  onClick={() => void handleCancelInvitation(invitation)}
+            {pending.map((invitation) => {
+              const expired =
+                invitation.expiresAt !== null && invitation.expiresAt <= now;
+              const roleLabel = t(ROLE_KEYS[invitation.role]);
+              const expiryValue =
+                invitation.expiresAt === null
+                  ? t("board.members.expires.never")
+                  : formatDateOnly(invitation.expiresAt, lang);
+              return (
+                <li
+                  key={invitation.id}
+                  data-testid="board-pending-row"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-1.5 py-1.5 text-sm"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </li>
-            ))}
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="min-w-0 truncate">{invitation.email}</span>
+                    {expired ? (
+                      <span
+                        data-testid="board-pending-expired"
+                        className="shrink-0 rounded bg-danger/10 px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-danger"
+                      >
+                        {t("board.members.pending.expired")}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1">
+                    {invitation.role === "VIEWER" ? (
+                      <ExpiryPicker
+                        value={invitation.expiresAt}
+                        label={t("board.members.pending.expiresAria", {
+                          name: invitation.email,
+                          value: expiryValue,
+                        })}
+                        disabled={pendingUserId === invitation.userId}
+                        onChange={(value) =>
+                          void handlePendingExpiryChange(invitation, value)
+                        }
+                      />
+                    ) : null}
+                    <RolePicker
+                      compact
+                      value={invitation.role}
+                      label={t("board.members.pending.roleAria", {
+                        name: invitation.email,
+                        role: roleLabel,
+                      })}
+                      disabled={pendingUserId === invitation.userId}
+                      onChange={(next) =>
+                        void handlePendingRoleChange(invitation, next)
+                      }
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-danger"
+                      aria-label={t("board.members.pending.cancel", {
+                        email: invitation.email,
+                      })}
+                      data-testid="board-pending-cancel"
+                      disabled={pendingUserId === invitation.userId}
+                      onClick={() => void handleCancelInvitation(invitation)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

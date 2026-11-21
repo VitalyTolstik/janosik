@@ -1,4 +1,9 @@
-import { test, expect, publicUrl } from "@/fixtures/sharing.js";
+import {
+  test,
+  expect,
+  confirmShareRevoke,
+  publicUrl,
+} from "@/fixtures/sharing.js";
 
 test.describe.configure({ timeout: 90_000 });
 
@@ -21,7 +26,7 @@ test("revoking a live link disconnects an already open viewer", async ({
     await sharing.openOwner(page);
     const row = page.getByTestId("share-row").filter({ hasText: live.token });
     await expect(row).toBeVisible();
-    await row.getByRole("button", { name: "Revoke" }).click();
+    await confirmShareRevoke(page, row);
     await expect(row.getByText("Revoked")).toBeVisible();
 
     // The open stream checks its share on the keep-alive tick; the page must
