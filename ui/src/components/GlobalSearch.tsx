@@ -12,6 +12,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { shortcutLetterCode } from "@/utils/keyboard";
 
+import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
 import {
@@ -29,7 +30,12 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, LIMITS, type Label } from "@janosik/shared";
+import {
+  LABEL_COLOR_DOT,
+  LIMITS,
+  type Label,
+  type WorkspaceSearchMatch,
+} from "@janosik/shared";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import { LimitCounter } from "@/components/ui/limit-counter";
@@ -37,7 +43,9 @@ import { showRemaining } from "@/utils/limit-format";
 import {
   descriptionSnippet,
   groupSearchHits,
+  mergeWorkspaceSearchHits,
   searchBoards,
+  searchHitBadge,
   type SearchHit,
 } from "@/utils/filter";
 import { isMacPlatform } from "@/utils/platform";
@@ -61,6 +69,14 @@ function searchHitKey(hit: SearchHit): string {
 }
 
 const isMac = isMacPlatform();
+const NO_SERVER_MATCHES: WorkspaceSearchMatch[] = [];
+
+const SEARCH_TYPE_KEYS = {
+  card: "search.typeCard",
+  board: "search.typeBoard",
+  comment: "search.typeComment",
+  attachment: "search.typeAttachment",
+} as const;
 
 interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */
@@ -208,9 +224,48 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
+  const serverMode = isApiEnabled();
+  // Comment/attachment text is not in the board aggregate, so the palette
+  // asks for it in one bounded cross-board request (TASK-177.13) after the
+  // same debounce as the local query. The query travels with the result so a
+  // late answer for an older query can never repaint the current list.
+  const [serverResult, setServerResult] = useState<{
+    query: string;
+    matches: WorkspaceSearchMatch[];
+  }>({ query: "", matches: [] });
+  useEffect(() => {
+    const needle = query.trim();
+    if (!serverMode || needle === "") return;
+    let alive = true;
+    api
+      .searchWorkspaceMatches(needle)
+      .then((result) => {
+        if (alive) setServerResult({ query: needle, matches: result.matches });
+      })
+      .catch(() => {
+        // Search is an enhancement: an old server without the route or a
+        // transient failure leaves the local results untouched.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [serverMode, query]);
+  const serverMatches =
+    serverResult.query === query.trim()
+      ? serverResult.matches
+      : NO_SERVER_MATCHES;
+
   // Raw hits are memoized separately from grouping so Show all only
   // re-slices the array instead of re-running the whole cross-board search.
-  const rawHits = useMemo(() => searchBoards(boards, query), [boards, query]);
+  const rawHits = useMemo(
+    () =>
+      mergeWorkspaceSearchHits(
+        searchBoards(boards, query),
+        boards,
+        serverMatches,
+      ),
+    [boards, query, serverMatches],
+  );
   // Cap each section separately (TASK-177.10): a board hit stays visible even
   // when the card list alone exceeds the palette cap.
   const groups = useMemo(
@@ -247,11 +302,19 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
       return;
     }
     onClose();
-    navigate(
-      hit.kind === "card"
-        ? `${routes.board(hit.boardId)}?card=${hit.card.id}`
-        : routes.board(hit.boardId),
-    );
+    if (hit.kind === "board") {
+      navigate(routes.board(hit.boardId));
+      return;
+    }
+    // The dialog opens on the card; a comment/attachment hit additionally
+    // names the row so the dialog can reveal it. Without that id (older
+    // server, row gone) the card alone is still a useful destination.
+    const params = new URLSearchParams({ card: hit.card.id });
+    if (hit.commentId !== undefined) params.set("comment", hit.commentId);
+    else if (hit.attachmentId !== undefined) {
+      params.set("attachment", hit.attachmentId);
+    }
+    navigate(`${routes.board(hit.boardId)}?${params.toString()}`);
   };
 
   // While background hydration is still streaming boards, every total is a
@@ -372,6 +435,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                       <HighlightedText text={hit.card.title} query={query} />
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <ResultTypeBadge hit={hit} />
                       <span className="truncate">
                         {hit.boardTitle}
                         {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
@@ -386,14 +450,25 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                     />
                     <Snippet
                       text={
-                        hit.matchIn === "checklist"
+                        hit.matchIn === "checklist" ||
+                        hit.matchIn === "comment" ||
+                        hit.matchIn === "attachment"
                           ? (hit.matchText ?? "")
                           : (hit.card.description ?? "")
+                      }
+                      label={
+                        hit.matchIn === "comment"
+                          ? t("search.inComment")
+                          : hit.matchIn === "attachment"
+                            ? t("search.inAttachment")
+                            : undefined
                       }
                       query={query}
                       show={
                         hit.matchIn === "description" ||
-                        hit.matchIn === "checklist"
+                        hit.matchIn === "checklist" ||
+                        hit.matchIn === "comment" ||
+                        hit.matchIn === "attachment"
                       }
                     />
                   </div>
@@ -414,11 +489,12 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                     <div className="truncate text-sm font-medium text-foreground">
                       <HighlightedText text={hit.boardTitle} query={query} />
                     </div>
-                    {hit.boardArchived ? (
-                      <div className="mt-0.5">
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <ResultTypeBadge hit={hit} />
+                      {hit.boardArchived ? (
                         <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </div>
                   </div>
                 </ResultRow>
               ))}
@@ -437,6 +513,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
               inputRef.current?.focus();
             }}
             data-testid="search-show-all"
+            className="max-sm:min-h-11"
           >
             {t("search.showAll")}
           </Button>
@@ -503,12 +580,31 @@ function ResultRow({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left transition-colors",
+        "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left transition-colors max-sm:min-h-11",
         active ? "bg-hover" : "hover:bg-hover/60",
       )}
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Text type badge on every row (TASK-177.13). It is always a visible word,
+ * never a colour-only cue, so screen readers and colour-blind users get the
+ * same information: Card, Board, Comment or Attachment.
+ */
+function ResultTypeBadge({ hit }: { hit: SearchHit }) {
+  const { t } = useI18n();
+  const badge = searchHitBadge(hit);
+  return (
+    <span
+      data-testid="search-type-badge"
+      data-type={badge}
+      className="inline-flex shrink-0 items-center rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+    >
+      {t(SEARCH_TYPE_KEYS[badge])}
+    </span>
   );
 }
 
@@ -548,10 +644,13 @@ function Snippet({
   text,
   query,
   show,
+  label,
 }: {
   text: string;
   query: string;
   show: boolean;
+  /** Spoken/visible context for a comment or attachment snippet. */
+  label?: string;
 }) {
   const snippet = useMemo(
     () => (show ? descriptionSnippet(text, query) : null),
@@ -560,6 +659,7 @@ function Snippet({
   if (!snippet) return null;
   return (
     <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+      {label ? <span className="font-medium">{label}: </span> : null}
       {snippet.map((segment, index) =>
         typeof segment === "string" ? (
           <Fragment key={index}>{segment}</Fragment>

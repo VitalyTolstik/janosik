@@ -97,6 +97,13 @@ interface CardDialogProps {
   open: boolean;
   /** VIEWER mode (TASK-35): read-only fields, no mutating actions. */
   readOnly?: boolean;
+  /**
+   * Search deep link (TASK-177.13): scroll to and highlight the exact
+   * comment/attachment. An unknown id is ignored, leaving the card dialog as
+   * the fallback.
+   */
+  focusCommentId?: string;
+  focusAttachmentId?: string;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -156,6 +163,8 @@ export function CardDialog({
   cardId,
   open,
   readOnly = false,
+  focusCommentId,
+  focusAttachmentId,
   onOpenChange,
 }: CardDialogProps) {
   const {
@@ -1312,6 +1321,7 @@ export function CardDialog({
                   cardId={card.id}
                   boardId={board.id}
                   readOnly={readOnly}
+                  focusId={focusAttachmentId}
                 />
 
                 <CardChecklists
@@ -1329,6 +1339,7 @@ export function CardDialog({
                   updatedAt={card.updatedAt}
                   localActivity={card.activity}
                   readOnly={readOnly}
+                  focusCommentId={focusCommentId}
                 />
               </div>
             </div>

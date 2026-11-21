@@ -254,14 +254,14 @@ describe("GlobalSearch", () => {
     for (let index = 0; index < 20; index += 1) {
       fireEvent.keyDown(input, { key: "ArrowDown" });
     }
-    expect(screen.getByRole("option", { selected: true }).textContent).toBe(
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
       "Widget",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
 
     // The board moved one row down, but the cursor stays on the same hit.
-    expect(screen.getByRole("option", { selected: true }).textContent).toBe(
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
       "Widget",
     );
     fireEvent.keyDown(input, { key: "Enter" });

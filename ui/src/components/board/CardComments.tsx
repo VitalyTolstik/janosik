@@ -73,6 +73,11 @@ interface CardCommentsProps {
   boardId: string;
   /** VIEWER mode: read the thread, no composer and no delete (TASK-35). */
   readOnly?: boolean;
+  /**
+   * Search deep link (TASK-177.13): the comment to scroll to and highlight.
+   * An id outside the loaded page is ignored — the card stays the fallback.
+   */
+  focusId?: string;
   /** Undefined while loading, null when unavailable. */
   onCountChange?: (count: ActivityCount | null | undefined) => void;
 }
@@ -90,6 +95,7 @@ export function CardComments({
   cardId,
   boardId,
   readOnly = false,
+  focusId,
   onCountChange,
 }: CardCommentsProps) {
   const { t } = useI18n();
@@ -104,6 +110,7 @@ export function CardComments({
   });
   const { items, nextCursor } = thread;
   const itemsRef = useRef<CommentDto[]>([]);
+  const listRef = useRef<HTMLOListElement>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
   const [status, setStatus] = useState<
@@ -171,6 +178,17 @@ export function CardComments({
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  // Deep link from global search (TASK-177.13): reveal the matched comment
+  // once its page has landed. The row is matched by data attribute rather
+  // than a selector so a hand-edited URL cannot inject CSS syntax.
+  useEffect(() => {
+    if (!focusId || !loaded) return;
+    const row = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ?? [],
+    ).find((element) => element.dataset.commentId === focusId);
+    row?.scrollIntoView?.({ block: "center" });
+  }, [focusId, loaded, items.length]);
 
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;
@@ -438,7 +456,7 @@ export function CardComments({
           {t("comment.empty")}
         </p>
       ) : items.length > 0 ? (
-        <ol className="space-y-1" data-testid="comment-list">
+        <ol ref={listRef} className="space-y-1" data-testid="comment-list">
           {items.map((comment) => (
             <CommentRow
               key={comment.id}
@@ -447,6 +465,7 @@ export function CardComments({
               boardId={boardId}
               currentUserId={user?.id}
               readOnly={readOnly}
+              highlighted={comment.id === focusId}
               onDelete={() => setPendingDelete(comment)}
               onUpdated={(saved) =>
                 setThread((current) => ({
@@ -706,6 +725,8 @@ interface CommentRowProps {
   boardId: string;
   currentUserId: string | undefined;
   readOnly: boolean;
+  /** Search deep link target (TASK-177.13). */
+  highlighted?: boolean;
   onDelete: () => void;
   /** Replaces the row after a successful inline edit (TASK-176.2). */
   onUpdated: (comment: CommentDto) => void;
@@ -717,6 +738,7 @@ function CommentRow({
   boardId,
   currentUserId,
   readOnly,
+  highlighted = false,
   onDelete,
   onUpdated,
 }: CommentRowProps) {
@@ -790,9 +812,14 @@ function CommentRow({
 
   return (
     <li
-      className={`group flex items-start gap-2.5 text-sm ${pending ? "opacity-60" : ""}`}
+      className={cn(
+        "group flex items-start gap-2.5 rounded-md text-sm",
+        highlighted && "bg-primary/10 ring-2 ring-primary/40",
+        pending && "opacity-60",
+      )}
       data-testid="comment"
       data-comment-id={comment.id}
+      data-search-highlight={highlighted ? "true" : undefined}
       data-pending={pending ? "true" : undefined}
     >
       <button

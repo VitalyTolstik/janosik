@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Board, Card, Label } from "@janosik/shared";
+import type { Board, Card, Label, WorkspaceSearchMatch } from "@janosik/shared";
 import {
   activeFacetCount,
   createdDayRange,
@@ -11,9 +11,11 @@ import {
   groupSearchHits,
   isFilterActive,
   matchesCardFilter,
+  mergeWorkspaceSearchHits,
   readFilterParams,
   resolveFilterChange,
   searchBoards,
+  searchHitBadge,
   splitHighlight,
   writeFilterParams,
   type CardFilter,
@@ -484,6 +486,30 @@ describe("filterCardIds", () => {
     );
     expect(result).toEqual({ col1: ["c7"] });
   });
+
+  it("adds server-only comment matches without bypassing the other facets", () => {
+    const columns = { col1: ["c1", "c3"] };
+    const result = filterCardIds(
+      columns,
+      cards,
+      { ...EMPTY_FILTER, query: "flaky" },
+      NOW,
+      [],
+      new Set(["c3"]),
+    );
+    expect(result).toEqual({ col1: ["c3"] });
+
+    // A comment hit still obeys a contradicting due facet.
+    const due = filterCardIds(
+      columns,
+      { ...cards, c3: { ...cards.c3, dueDate: NOW + 5 * 86_400_000 } },
+      { ...EMPTY_FILTER, query: "flaky", due: "overdue" },
+      NOW,
+      [],
+      new Set(["c3"]),
+    );
+    expect(due).toEqual({ col1: [] });
+  });
 });
 
 describe("query semantics (title + description + label names)", () => {
@@ -696,6 +722,125 @@ describe("searchBoards", () => {
 
   it("returns nothing for an empty query", () => {
     expect(searchBoards(boards, "  ")).toEqual([]);
+  });
+});
+
+describe("server search merging (TASK-177.13)", () => {
+  const board: Board = {
+    id: "b1",
+    title: "Alpha",
+    columns: [
+      { id: "col1", title: "To do", cardIds: ["c1", "c2"], createdAt: NOW },
+    ],
+    cards: {
+      c1: card("c1", "Landing redesign", []),
+      c2: card("c2", "Newsletter", []),
+    },
+    labels: [],
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  const match = (
+    overrides: Partial<WorkspaceSearchMatch> & { cardId: string },
+  ): WorkspaceSearchMatch => ({
+    boardId: "b1",
+    boardTitle: "Alpha",
+    cardTitle: "Newsletter",
+    matchIn: "comment",
+    ...overrides,
+  });
+
+  it("appends comment and attachment hits with their row ids", () => {
+    const local = searchBoards([board], "design");
+    const hits = mergeWorkspaceSearchHits(
+      local,
+      [board],
+      [
+        match({
+          cardId: "c2",
+          matchIn: "comment",
+          text: "the flaky deploy",
+          commentId: "cm-1",
+        }),
+        match({
+          cardId: "c2",
+          matchIn: "attachment",
+          text: "flaky.log",
+          attachmentId: "at-1",
+        }),
+      ],
+    );
+
+    expect(hits).toHaveLength(2);
+    const hit = hits[1];
+    expect(hit.kind).toBe("card");
+    if (hit.kind !== "card") throw new Error("expected a card hit");
+    expect(hit.matchIn).toBe("comment");
+    expect(hit.matchText).toBe("the flaky deploy");
+    expect(hit.commentId).toBe("cm-1");
+    expect(hit.columnTitle).toBe("To do");
+    expect(searchHitBadge(hit)).toBe("comment");
+    expect(searchHitBadge(hits[0])).toBe("card");
+  });
+
+  it("keeps one row per card, local hits first, and skips unloaded boards", () => {
+    const local = searchBoards([board], "newsletter");
+    const hits = mergeWorkspaceSearchHits(
+      local,
+      [board],
+      [
+        match({
+          cardId: "c2",
+          matchIn: "comment",
+          text: "comment",
+          commentId: "cm-1",
+        }),
+        match({
+          cardId: "c2",
+          matchIn: "attachment",
+          text: "file.pdf",
+          attachmentId: "at-1",
+        }),
+        match({
+          boardId: "missing",
+          cardId: "c9",
+          matchIn: "attachment",
+          text: "other.pdf",
+        }),
+      ],
+    );
+
+    expect(hits).toHaveLength(1);
+    const hit = hits[0];
+    expect(hit.kind).toBe("card");
+    if (hit.kind !== "card") throw new Error("expected a card hit");
+    expect(hit.matchIn).toBe("title");
+    expect(hit.commentId).toBeUndefined();
+  });
+
+  it("groups new match kinds before capping each section", () => {
+    const hits = [
+      ...mergeWorkspaceSearchHits(
+        [],
+        [board],
+        [
+          match({ cardId: "c1", commentId: "cm-1" }),
+          match({ cardId: "c2", attachmentId: "at-1", matchIn: "attachment" }),
+        ],
+      ),
+      {
+        kind: "board" as const,
+        boardId: "b2",
+        boardTitle: "Alpha archive",
+        boardArchived: true,
+      },
+    ];
+    const groups = groupSearchHits(hits, 1);
+    expect(groups.cards).toHaveLength(1);
+    expect(groups.totalCards).toBe(2);
+    expect(groups.boards).toHaveLength(1);
+    expect(groups.totalBoards).toBe(1);
+    expect(groups.capped).toBe(true);
   });
 });
 

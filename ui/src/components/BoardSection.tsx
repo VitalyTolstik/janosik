@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { api, isApiEnabled } from "@/api/client";
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
 // Calendar/table render only after a view switch — lazy chunks (TASK-34).
@@ -32,6 +33,13 @@ import {
   type FilterChange,
 } from "@/utils/filter";
 import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
+
+/**
+ * Quiet period before the board filter asks the server about text the board
+ * aggregate cannot see (comments, attachment names). The local narrowing is
+ * instant; this only adds the extra hits.
+ */
+const SERVER_FILTER_DEBOUNCE_MS = 250;
 
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
@@ -78,6 +86,59 @@ export function BoardSection() {
   const { density, setDensity } = useBoardDensity();
 
   const active = isFilterActive(filter);
+  const serverMode = isApiEnabled();
+  const query = filter.query.trim();
+  // Comment/attachment ids matched by the server for exactly this query.
+  // The query is stored with the ids so a pending response can never leak
+  // into the next query: a mismatch shows nothing, not the previous hits.
+  const [serverMatch, setServerMatch] = useState<{
+    boardId: string;
+    query: string;
+    cardIds: ReadonlySet<string>;
+  } | null>(null);
+
+  const boardId = board?.id;
+  useEffect(() => {
+    if (!serverMode || boardId === undefined || query === "") return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      api
+        .searchBoardCards(boardId, query)
+        .then((result) => {
+          if (!alive) return;
+          setServerMatch({
+            boardId,
+            query,
+            cardIds: new Set(
+              (result.matches ?? [])
+                .filter(
+                  (match) =>
+                    match.matchIn === "comment" ||
+                    match.matchIn === "attachment",
+                )
+                .map((match) => match.cardId),
+            ),
+          });
+        })
+        .catch(() => {
+          // Search is an enhancement: an old server without the route or a
+          // transient failure keeps the local filter working (no toast).
+          if (alive) setServerMatch(null);
+        });
+    }, SERVER_FILTER_DEBOUNCE_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [serverMode, boardId, query]);
+
+  const serverCardIds =
+    serverMatch !== null &&
+    serverMatch.boardId === board?.id &&
+    serverMatch.query === query &&
+    query !== ""
+      ? serverMatch.cardIds
+      : undefined;
 
   const filteredIds = useMemo(() => {
     if (!active || !board) return null;
@@ -87,8 +148,9 @@ export function BoardSection() {
       filter,
       Date.now(),
       board.labels,
+      serverCardIds,
     );
-  }, [active, board, filter]);
+  }, [active, board, filter, serverCardIds]);
 
   const matchCount = filteredIds
     ? Object.values(filteredIds).reduce((sum, ids) => sum + ids.length, 0)
@@ -163,9 +225,13 @@ export function BoardSection() {
       // A history push, not a replace: Back then closes the dialog. The
       // functional update keeps this callback stable across URL changes, so
       // opening a card does not hand every table row a fresh `onOpen` prop.
+      // A plain card click starts at the top, so a leftover search deep link
+      // to a comment/attachment must not follow it.
       setSearchParams((current) => {
         const next = copySearchParamsWithoutLanguageHandoff(current);
         next.set("card", cardId);
+        next.delete("comment");
+        next.delete("attachment");
         return next;
       });
     },
@@ -183,6 +249,12 @@ export function BoardSection() {
   // VIEWER is read-only: the server answers 403 to every command, so the UI
   // hides the mutating affordances instead of offering actions that bounce.
   const readOnly = roleOf(board.id) === "VIEWER";
+  // A global-search hit can name the exact comment/attachment under the card
+  // (TASK-177.13). The dialog scrolls to it and highlights it; an id that is
+  // not in the loaded page/list is ignored, so the fallback is the card with
+  // its dialog open at the top. The params never enable anything on their own.
+  const focusCommentId = searchParams.get("comment") ?? undefined;
+  const focusAttachmentId = searchParams.get("attachment") ?? undefined;
 
   return (
     <main
@@ -265,6 +337,8 @@ export function BoardSection() {
           if (searchParams.get("card")) {
             const next = copySearchParamsWithoutLanguageHandoff(searchParams);
             next.delete("card");
+            next.delete("comment");
+            next.delete("attachment");
             setSearchParams(next, { replace: true });
           }
         }}
@@ -273,6 +347,8 @@ export function BoardSection() {
           cardId={openCardId}
           open={openCardId !== null}
           readOnly={readOnly}
+          focusCommentId={focusCommentId}
+          focusAttachmentId={focusAttachmentId}
           onOpenChange={(open) => {
             if (!open) {
               // Mark the closing card so a server commit landing between the
@@ -285,6 +361,8 @@ export function BoardSection() {
                 const next =
                   copySearchParamsWithoutLanguageHandoff(searchParams);
                 next.delete("card");
+                next.delete("comment");
+                next.delete("attachment");
                 setSearchParams(next, { replace: true });
               }
             }

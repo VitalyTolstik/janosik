@@ -19,7 +19,7 @@ test("opens from the header and focuses the input", async ({ page, board }) => {
 
   await expect(globalSearchInput(page)).toBeFocused();
   await expect(globalSearchResults(page)).toContainText(
-    "Type to search titles, descriptions, labels and checklists across all boards.",
+    "Type to search titles, descriptions, labels, checklists, comments and attachment file names across all boards.",
   );
 });
 
@@ -208,7 +208,7 @@ test("clears the query when the palette is reopened", async ({
 
   await expect(globalSearchInput(page)).toHaveValue("");
   await expect(globalSearchResults(page)).toContainText(
-    "Type to search titles, descriptions, labels and checklists across all boards.",
+    "Type to search titles, descriptions, labels, checklists, comments and attachment file names across all boards.",
   );
 });
 
@@ -489,7 +489,7 @@ test("handles whitespace-only, max length and ArrowUp", async ({
 
   await searchGlobally(page, "   ");
   await expect(globalSearchResults(page)).toContainText(
-    "Type to search titles, descriptions, labels and checklists across all boards.",
+    "Type to search titles, descriptions, labels, checklists, comments and attachment file names across all boards.",
   );
   await expect(globalSearchResults(page)).not.toContainText("Nothing found.");
 
