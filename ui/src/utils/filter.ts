@@ -1,4 +1,10 @@
-import type { Board, Card, CardPriority, Label } from "@janosik/shared";
+import type {
+  Board,
+  Card,
+  CardPriority,
+  Label,
+  WorkspaceSearchMatch,
+} from "@janosik/shared";
 import {
   CARD_PRIORITIES,
   DEFAULT_CARD_PRIORITY,
@@ -400,6 +406,13 @@ export function filterCardIds(
   filter: CardFilter,
   now = Date.now(),
   labels: Label[] = [],
+  /**
+   * Card ids the server matched in text the board aggregate cannot see
+   * (comments and attachment names, TASK-177.13). They bypass only the query
+   * facet; every other facet still applies, so a comment hit is not shown
+   * under a contradicting due/label/assignee filter.
+   */
+  serverMatchIds?: ReadonlySet<string>,
 ): Record<string, string[]> {
   // The link facets need board-wide facts — build them once per run, and
   // only when one of the facets is actually in play.
@@ -412,17 +425,17 @@ export function filterCardIds(
       linked: (facts?.degree ?? 0) > 0,
     };
   };
+  const facetFilter = serverMatchIds ? { ...filter, query: "" } : filter;
   const result: Record<string, string[]> = {};
   for (const [colId, ids] of Object.entries(columns)) {
     result[colId] = ids.filter((id) => {
       const card = cards[id];
       if (card === undefined) return false;
-      return matchesCardFilter(
-        card,
-        filter,
-        now,
-        labels,
-        needsLinks ? factsFor(id) : undefined,
+      const facts = needsLinks ? factsFor(id) : undefined;
+      if (matchesCardFilter(card, filter, now, labels, facts)) return true;
+      return (
+        serverMatchIds?.has(id) === true &&
+        matchesCardFilter(card, facetFilter, now, labels, facts)
       );
     });
   }
@@ -445,10 +458,19 @@ export interface CardSearchHit {
   /** The board's label catalogue — lets the UI render label chips. */
   boardLabels: Label[];
   card: Card;
-  /** Where the query matched, drives the UI (snippet vs title highlight). */
-  matchIn: "title" | "description" | "label" | "checklist";
-  /** The matching checklist-item text, when `matchIn` is "checklist". */
+  /**
+   * Where the query matched, drives the UI (snippet vs title highlight).
+   * `comment` and `attachment` hits come from the server search
+   * (TASK-177.13); the rest are matched against the loaded board.
+   */
+  matchIn:
+    "title" | "description" | "label" | "checklist" | "comment" | "attachment";
+  /** The matching checklist/comment text or attachment file name. */
   matchText?: string;
+  /** Exact comment row behind a `comment` hit. */
+  commentId?: string;
+  /** Exact attachment row behind an `attachment` hit. */
+  attachmentId?: string;
 }
 
 /** A board whose title matched — secondary group of the results. */
@@ -609,6 +631,107 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
   }
 
   return [...cardHits, ...boardHits];
+}
+
+/**
+ * Natural card order used by `searchBoards`: active boards before archived,
+ * columns in stored order, then the board's off-column archived cards.
+ * Server hits are inserted by this rank so adding one does not move it below
+ * an archived local hit (TASK-177.13 review).
+ */
+function cardSearchRank(boards: Board[]): Map<string, number> {
+  const rank = new Map<string, number>();
+  const sorted = [...boards].sort(
+    (a, b) =>
+      Number(a.archivedAt !== undefined) - Number(b.archivedAt !== undefined),
+  );
+  let index = 0;
+  for (const board of sorted) {
+    for (const column of board.columns) {
+      for (const cardId of column.cardIds) {
+        const card = board.cards[cardId];
+        if (!card || card.archivedAt !== undefined) continue;
+        rank.set(`${board.id}:${cardId}`, index++);
+      }
+    }
+    for (const card of Object.values(board.cards)) {
+      if (card.archivedAt === undefined) continue;
+      const key = `${board.id}:${card.id}`;
+      if (!rank.has(key)) rank.set(key, index++);
+    }
+  }
+  return rank;
+}
+
+/**
+ * Append server-only comment/attachment matches to the local palette hits
+ * (TASK-177.13). Boards and cards must already be loaded — the palette
+ * searches the loaded workspace, and a card matched in a board that is still
+ * hydrating is picked up when that board arrives. One row per card: a local
+ * title/description/label/checklist hit wins over a server hit, and the first
+ * server hit (newest comment before newest attachment) wins over later ones.
+ */
+export function mergeWorkspaceSearchHits(
+  hits: SearchHit[],
+  boards: Board[],
+  matches: readonly WorkspaceSearchMatch[],
+): SearchHit[] {
+  const boardById = new Map(boards.map((board) => [board.id, board]));
+  const seen = new Set(
+    hits
+      .filter((hit): hit is CardSearchHit => hit.kind === "card")
+      .map((hit) => `${hit.boardId}:${hit.card.id}`),
+  );
+  const extra: CardSearchHit[] = [];
+  for (const match of matches) {
+    const key = `${match.boardId}:${match.cardId}`;
+    if (seen.has(key)) continue;
+    const board = boardById.get(match.boardId);
+    const card = board?.cards[match.cardId];
+    if (!board || !card) continue;
+    seen.add(key);
+    const columnTitle = board.columns.find((column) =>
+      column.cardIds.includes(card.id),
+    )?.title;
+    extra.push({
+      kind: "card",
+      boardId: board.id,
+      boardTitle: board.title,
+      boardArchived: board.archivedAt !== undefined,
+      cardArchived: card.archivedAt !== undefined,
+      columnTitle,
+      boardLabels: board.labels,
+      card,
+      matchIn: match.matchIn,
+      ...(match.text === undefined ? {} : { matchText: match.text }),
+      ...(match.matchIn === "comment" ? { commentId: match.commentId } : {}),
+      ...(match.matchIn === "attachment"
+        ? { attachmentId: match.attachmentId }
+        : {}),
+    });
+  }
+  if (extra.length === 0) return hits;
+
+  const rank = cardSearchRank(boards);
+  const rankOf = (hit: SearchHit) =>
+    hit.kind === "card"
+      ? (rank.get(`${hit.boardId}:${hit.card.id}`) ?? Number.MAX_SAFE_INTEGER)
+      : Number.MAX_SAFE_INTEGER;
+  const cards = [...hits.filter((hit) => hit.kind === "card"), ...extra].sort(
+    (a, b) => rankOf(a) - rankOf(b),
+  );
+  const boardHits = hits.filter((hit) => hit.kind === "board");
+  return [...cards, ...boardHits];
+}
+
+/** The visible type badge for a hit: `Card`, `Board`, `Comment`, `Attachment`. */
+export function searchHitBadge(
+  hit: SearchHit,
+): "card" | "board" | "comment" | "attachment" {
+  if (hit.kind === "board") return "board";
+  return hit.matchIn === "comment" || hit.matchIn === "attachment"
+    ? hit.matchIn
+    : "card";
 }
 
 // --- Match highlighting -----------------------------------------------------

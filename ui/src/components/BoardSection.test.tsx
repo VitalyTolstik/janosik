@@ -410,6 +410,51 @@ describe("BoardSection", () => {
     expect(await screen.findByText("Card not found")).toBeInTheDocument();
   });
 
+  it("clears comment and attachment row params with the card deep link", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard(
+      "/board/board-view?card=card-plain&comment=cm-1&attachment=at-1&lng=ru&keep=1",
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByDisplayValue("Plain card")).toBeInTheDocument();
+    expect(screen.getByTestId("route-probe").textContent).toContain(
+      "comment=cm-1",
+    );
+    expect(screen.getByTestId("route-probe").textContent).toContain(
+      "attachment=at-1",
+    );
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.getByTestId("route-probe").textContent).toBe("?keep=1"),
+    );
+  });
+
+  it("drops stale row params when another card is opened normally", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view?comment=cm-1&attachment=at-1&keep=1");
+
+    fireEvent.click(await screen.findByText("Plain card"));
+
+    const route = screen.getByTestId("route-probe").textContent ?? "";
+    expect(route).toContain("card=card-plain");
+    expect(route).not.toContain("comment=");
+    expect(route).not.toContain("attachment=");
+  });
+
+  it("drops comment and attachment params with a dead card link", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard(
+      "/board/board-view?card=does-not-exist&comment=cm-1&attachment=at-1&keep=1",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("route-probe").textContent).toBe("?keep=1"),
+    );
+    expect(await screen.findByText("Card not found")).toBeInTheDocument();
+  });
+
   it("deletes the open card without reporting it as missing", async () => {
     localStorage.setItem("janosik-boards", boardWithDueCard());
     renderBoard("/board/board-view?card=card-plain");

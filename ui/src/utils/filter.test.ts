@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { Board, Card, Label } from "@janosik/shared";
+import type {
+  Board,
+  Card,
+  Label,
+  WorkspaceAttachmentSearchMatch,
+  WorkspaceCommentSearchMatch,
+} from "@janosik/shared";
 import {
   activeFacetCount,
   createdDayRange,
@@ -11,9 +17,11 @@ import {
   groupSearchHits,
   isFilterActive,
   matchesCardFilter,
+  mergeWorkspaceSearchHits,
   readFilterParams,
   resolveFilterChange,
   searchBoards,
+  searchHitBadge,
   splitHighlight,
   writeFilterParams,
   type CardFilter,
@@ -484,6 +492,30 @@ describe("filterCardIds", () => {
     );
     expect(result).toEqual({ col1: ["c7"] });
   });
+
+  it("adds server-only comment matches without bypassing the other facets", () => {
+    const columns = { col1: ["c1", "c3"] };
+    const result = filterCardIds(
+      columns,
+      cards,
+      { ...EMPTY_FILTER, query: "flaky" },
+      NOW,
+      [],
+      new Set(["c3"]),
+    );
+    expect(result).toEqual({ col1: ["c3"] });
+
+    // A comment hit still obeys a contradicting due facet.
+    const due = filterCardIds(
+      columns,
+      { ...cards, c3: { ...cards.c3, dueDate: NOW + 5 * 86_400_000 } },
+      { ...EMPTY_FILTER, query: "flaky", due: "overdue" },
+      NOW,
+      [],
+      new Set(["c3"]),
+    );
+    expect(due).toEqual({ col1: [] });
+  });
 });
 
 describe("query semantics (title + description + label names)", () => {
@@ -696,6 +728,155 @@ describe("searchBoards", () => {
 
   it("returns nothing for an empty query", () => {
     expect(searchBoards(boards, "  ")).toEqual([]);
+  });
+});
+
+describe("server search merging (TASK-177.13)", () => {
+  const board: Board = {
+    id: "b1",
+    title: "Alpha",
+    columns: [
+      { id: "col1", title: "To do", cardIds: ["c1", "c2"], createdAt: NOW },
+    ],
+    cards: {
+      c1: card("c1", "Landing redesign", []),
+      c2: card("c2", "Newsletter", []),
+    },
+    labels: [],
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  const commentMatch = (
+    cardId: string,
+    text = "comment",
+    commentId = "cm-1",
+  ): WorkspaceCommentSearchMatch => ({
+    boardId: "b1",
+    boardTitle: "Alpha",
+    cardId,
+    cardTitle: "Newsletter",
+    matchIn: "comment",
+    text,
+    commentId,
+  });
+  const attachmentMatch = (
+    cardId: string,
+    text = "file.pdf",
+    attachmentId = "at-1",
+    boardId = "b1",
+  ): WorkspaceAttachmentSearchMatch => ({
+    boardId,
+    boardTitle: "Alpha",
+    cardId,
+    cardTitle: "Newsletter",
+    matchIn: "attachment",
+    text,
+    attachmentId,
+  });
+
+  it("appends comment and attachment hits with their row ids", () => {
+    const local = searchBoards([board], "design");
+    const hits = mergeWorkspaceSearchHits(
+      local,
+      [board],
+      [
+        commentMatch("c2", "the flaky deploy", "cm-1"),
+        attachmentMatch("c2", "flaky.log", "at-1"),
+      ],
+    );
+
+    expect(hits).toHaveLength(2);
+    const hit = hits[1];
+    expect(hit.kind).toBe("card");
+    if (hit.kind !== "card") throw new Error("expected a card hit");
+    expect(hit.matchIn).toBe("comment");
+    expect(hit.matchText).toBe("the flaky deploy");
+    expect(hit.commentId).toBe("cm-1");
+    expect(hit.columnTitle).toBe("To do");
+    expect(searchHitBadge(hit)).toBe("comment");
+    expect(searchHitBadge(hits[0])).toBe("card");
+  });
+
+  it("keeps one row per card, local hits first, and skips unloaded boards", () => {
+    const local = searchBoards([board], "newsletter");
+    const hits = mergeWorkspaceSearchHits(
+      local,
+      [board],
+      [
+        commentMatch("c2"),
+        attachmentMatch("c2"),
+        attachmentMatch("c9", "other.pdf", "at-2", "missing"),
+      ],
+    );
+
+    expect(hits).toHaveLength(1);
+    const hit = hits[0];
+    expect(hit.kind).toBe("card");
+    if (hit.kind !== "card") throw new Error("expected a card hit");
+    expect(hit.matchIn).toBe("title");
+    expect(hit.commentId).toBeUndefined();
+  });
+
+  it("keeps an active server hit above an archived local hit", () => {
+    const active: Board = {
+      ...board,
+      id: "active",
+      title: "Active board",
+      columns: [
+        { id: "col-a", title: "Todo", cardIds: ["c-server"], createdAt: NOW },
+      ],
+      cards: { "c-server": card("c-server", "Server target", []) },
+    };
+    const archived: Board = {
+      ...board,
+      id: "archived",
+      title: "Archived board",
+      archivedAt: NOW,
+      columns: [
+        { id: "col-z", title: "Todo", cardIds: ["c-local"], createdAt: NOW },
+      ],
+      cards: { "c-local": card("c-local", "Needle archived", []) },
+    };
+    const local = searchBoards([active, archived], "needle");
+    const hits = mergeWorkspaceSearchHits(
+      local,
+      [active, archived],
+      [
+        {
+          boardId: "active",
+          boardTitle: "Active board",
+          cardId: "c-server",
+          cardTitle: "Server target",
+          matchIn: "comment",
+          text: "needle in a comment",
+          commentId: "cm-active",
+        },
+      ],
+    );
+    const cards = hits.filter((hit) => hit.kind === "card");
+    expect(cards.map((hit) => hit.card.id)).toEqual(["c-server", "c-local"]);
+  });
+
+  it("groups new match kinds before capping each section", () => {
+    const hits = [
+      ...mergeWorkspaceSearchHits(
+        [],
+        [board],
+        [commentMatch("c1"), attachmentMatch("c2")],
+      ),
+      {
+        kind: "board" as const,
+        boardId: "b2",
+        boardTitle: "Alpha archive",
+        boardArchived: true,
+      },
+    ];
+    const groups = groupSearchHits(hits, 1);
+    expect(groups.cards).toHaveLength(1);
+    expect(groups.totalCards).toBe(2);
+    expect(groups.boards).toHaveLength(1);
+    expect(groups.totalBoards).toBe(1);
+    expect(groups.capped).toBe(true);
   });
 });
 
