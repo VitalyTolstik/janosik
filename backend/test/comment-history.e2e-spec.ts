@@ -877,6 +877,12 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       where: { commentId: comment.id },
     });
     const updatesBefore = (await commentUpdates(comment.id)).length;
+    // A non-uploader MEMBER is refused even though the row is already deleted;
+    // the idempotent no-op is only after the uploader/admin check.
+    await server()
+      .delete(`/api/v1/attachments/${attachmentId}`)
+      .set(auth(author.token))
+      .expect(403);
     await server()
       .delete(`/api/v1/attachments/${attachmentId}`)
       .set(agentHeader(agent.token, sessionId))
@@ -1070,7 +1076,17 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       "her",
     );
 
-    // Erase waits for a valid writer that appends revision #2 first.
+    // Erase waits for a valid writer that appends revision #2 first. The new
+    // revision's editorId is the erased user: the FK takes KEY SHARE on the
+    // User row while the erase holds FOR NO KEY UPDATE.
+    await prisma.boardMember.create({
+      data: {
+        boardId,
+        userId: raceWriter.id,
+        role: "MEMBER",
+        acceptedAt: new Date(),
+      },
+    });
     const written = await seedForeignRevision(
       cardId,
       raceWriter.id,
@@ -1100,7 +1116,7 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
           beforeText: "Race before writer",
           afterText: "Race writer text",
           createdAt: at,
-          editorId: author.id,
+          editorId: raceWriter.id,
           cause: "author_edit",
         },
       });
@@ -1196,6 +1212,64 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     });
     expect(row).not.toBeNull();
     expect(row?.deletedAt).toBeNull();
+    expect(
+      await prisma.commentRevision.count({ where: { commentId: comment.id } }),
+    ).toBe(1);
+  });
+
+  it("does not purge a board restored while the purge waits for the board lock", async () => {
+    const { boardId, cardId } = await boardWithCard(
+      "History board restore",
+      "hbr",
+    );
+    const comment = await createComment(cardId, admin.token, "Board comment");
+    await editComment(comment.id, admin.token, {
+      text: "Board comment edited",
+    }).expect(200);
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { deletedAt: new Date(Date.now() - 45 * 86_400_000) },
+    });
+
+    const held = deferred();
+    const release = deferred();
+    const staleAt = new Date(Date.now() - 45 * 86_400_000);
+    const restore = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, boardId);
+      held.resolve();
+      await release.promise;
+      // Restore the board while its cards/comments are (or become) stale.
+      await tx.board.update({
+        where: { id: boardId },
+        data: { deletedAt: null },
+      });
+      await tx.card.update({
+        where: { id: cardId },
+        data: { deletedAt: staleAt },
+      });
+      await tx.comment.update({
+        where: { id: comment.id },
+        data: { deletedAt: staleAt },
+      });
+    });
+    await held.promise;
+    const purge = maintenance.purgeSoftDeleted();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release.resolve();
+    await Promise.all([restore, purge]);
+
+    expect(
+      await prisma.board.findUnique({ where: { id: boardId } }),
+    ).not.toBeNull();
+    const card = await prisma.card.findUnique({ where: { id: cardId } });
+    expect(card?.deletedAt).not.toBeNull();
+    const commentRow = await prisma.comment.findUnique({
+      where: { id: comment.id },
+    });
+    expect(commentRow?.deletedAt).not.toBeNull();
+    expect(
+      await prisma.boardMember.count({ where: { boardId } }),
+    ).toBeGreaterThan(0);
     expect(
       await prisma.commentRevision.count({ where: { commentId: comment.id } }),
     ).toBe(1);

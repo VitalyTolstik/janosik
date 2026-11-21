@@ -566,8 +566,8 @@ describe("MaintenanceService", () => {
         args.where.column ? [{ id: "c1" }] : [],
     );
     (prisma.attachment.findMany as jest.Mock).mockImplementation(
-      async (args: { where: { cardId?: unknown } }) =>
-        args.where.cardId
+      async (args: { where: { cardId?: unknown; card?: unknown } }) =>
+        args.where.cardId || args.where.card
           ? [
               {
                 storedName: "gone.bin",
@@ -606,7 +606,7 @@ describe("MaintenanceService", () => {
       where: { commandId: { in: ["pre-1"] } },
     });
     expect(prisma.agentRun.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] } },
+      where: { boardId: "b1" },
     });
     expect(
       (prisma.commandPreimage.deleteMany as jest.Mock).mock
@@ -620,7 +620,7 @@ describe("MaintenanceService", () => {
       where: { id: { in: ["cmd-1"] } },
     });
     expect(prisma.boardShare.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] }, mode: "live" },
+      where: { boardId: "b1", mode: "live" },
     });
     expect(prisma.activity.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ["act-1"] } },
@@ -663,13 +663,11 @@ describe("MaintenanceService", () => {
     // The board itself is deleted exactly once, by the final transaction.
     expect(removed).toBe(1);
     expect(prisma.board.deleteMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id: { in: ["b1"] } }),
+      where: expect.objectContaining({ id: "b1" }),
     });
     // TASK-185.1: the board fallback removes revisions before comments.
     expect(prisma.commentRevision.deleteMany).toHaveBeenCalledWith({
-      where: {
-        comment: { card: { column: { boardId: { in: ["b1"] } } } },
-      },
+      where: { comment: { card: { column: { boardId: "b1" } } } },
     });
     // Feed and log go as two pages by row id — never one unbounded
     // boardId batch inside the transaction.
@@ -691,12 +689,11 @@ describe("MaintenanceService", () => {
     // Each page is read with a take bound and a boardId filter.
     expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);
     expect((prisma.activity.findMany as jest.Mock).mock.calls[0][0]).toEqual({
-      where: { boardId: { in: ["b1"] } },
+      where: { boardId: "b1" },
       select: { id: true },
       take: PURGE_CHUNK,
     });
-    // The card pages found nothing, so the only transaction left is the
-    // small final one that deletes the subtree tail and the board.
+    // The whole board subtree runs in one board-locked transaction.
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 

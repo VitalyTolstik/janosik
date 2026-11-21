@@ -553,8 +553,6 @@ export class AttachmentsService {
       },
     });
     if (!row || row.card.deletedAt !== null) throw new NotFoundException();
-    // A repeated DELETE is an idempotent no-op rather than a 404.
-    if (row.deletedAt !== null) return;
 
     // Uploader or board ADMIN — the comments rule (author-only) does not
     // fit files, where cleanup is a board-management concern. TASK-166:
@@ -567,8 +565,6 @@ export class AttachmentsService {
           ? row.uploadedByTokenId === attribution.apiTokenId
           : row.uploadedById === user.id
         : row.uploadedById === user.id;
-    let approval: Awaited<ReturnType<ApprovalsService["authorizeOperation"]>> =
-      null;
     if (!ownUpload) {
       const membership = await this.prisma.boardMember.findFirst({
         where: {
@@ -579,6 +575,13 @@ export class AttachmentsService {
         select: { role: true },
       });
       if (membership?.role !== "ADMIN") throw new ForbiddenException();
+    }
+    // A repeated DELETE is an idempotent no-op rather than a 404, but only
+    // after the uploader/admin check above. It never claims an approval.
+    if (row.deletedAt !== null) return;
+    let approval: Awaited<ReturnType<ApprovalsService["authorizeOperation"]>> =
+      null;
+    if (!ownUpload) {
       // TASK-166: deleting another user's upload is admin + destructive.
       // The board role was checked first; the approval gate then applies the
       // token preset (admin), the board policy and the exact
@@ -587,7 +590,7 @@ export class AttachmentsService {
       approval = await this.approvals.authorizeOperation({
         boardId: row.boardId,
         userId: user.id,
-        role: membership.role,
+        role: "ADMIN",
         principal,
         agentSessionId: attribution.agentSessionId,
         op: "attachment.delete",

@@ -30,11 +30,13 @@ pair, the last revision number and `afterText`.
 The cutover migration takes `ACCESS EXCLUSIVE` on `Comment` for the `ALTER
 TABLE` and rewrites every row in the table-wide backfill, so plan a maintenance
 window: every read/write of comments waits for the duration of that migration.
-The second migration only creates the two `Activity` expression indexes;
-`CREATE INDEX` is non-concurrent and briefly blocks writes to `Activity`.
-After cutover, trimming and purge snapshots are found through
-`details->>'revisionId'` / `details->>'commentId'`; TASK-185.2 replaces those
-expression indexes with the typed `Activity.commentId` column.
+The second migration only creates the two `Activity` expression indexes with
+`IF NOT EXISTS`; `CREATE INDEX` is non-concurrent and briefly blocks writes to
+`Activity`. `backend/scripts/db-indexes.cjs` builds concurrent equivalents, so a
+large instance can run that script before `migrate deploy` and turn the
+migration into a no-op. After cutover, trimming and purge snapshots are found
+through `details->>'revisionId'` / `details->>'commentId'`; TASK-185.2 replaces
+those expression indexes with the typed `Activity.commentId` column.
 
 ## Writer
 

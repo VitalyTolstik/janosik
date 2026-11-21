@@ -83,7 +83,7 @@ export class AccountDeletionService {
     const deleteAfter = new Date(
       now.getTime() + ACCOUNT_DELETE_GRACE_DAYS * DAY_MS,
     );
-    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR NO KEY UPDATE`;
     const tokenIds = (
       await tx.apiToken.findMany({
         where: { userId },
@@ -379,7 +379,11 @@ export class AccountDeletionService {
     const now = new Date();
 
     const deleted = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+      // `FOR NO KEY UPDATE` still serializes two erasures of the same user,
+      // but it is compatible with the KEY SHARE a concurrent revision insert
+      // takes on `User` through `CommentRevision.editorId`. A plain
+      // `FOR UPDATE` here deadlocked with that writer (40P01).
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR NO KEY UPDATE`;
       if (dueCutoff !== undefined) {
         const current = await tx.user.findUnique({
           where: { id: userId },
@@ -452,33 +456,51 @@ export class AccountDeletionService {
       await tx.attachment.deleteMany({ where: { uploadedById: userId } });
       // TASK-185.1: history cleanup must happen before the user row (the
       // editor FK is RESTRICT) and before comments/Activity disappear.
-      const authoredComments = await tx.comment.findMany({
-        where: { authorId: userId },
-        select: {
-          id: true,
-          card: { select: { column: { select: { boardId: true } } } },
-        },
-      });
+      // Lock every accepted-member board BEFORE reading candidates: a writer
+      // that already holds a board lock can no longer append a revision in
+      // the window between the candidate query and the cleanup.
+      const lockedBoardIds = new Set(boardIds);
+      await lockBoardWrites(tx, lockedBoardIds);
+      let authoredComments: Array<{
+        id: string;
+        card: { column: { boardId: string } };
+      }> = [];
+      let editedComments: Array<{
+        id: string;
+        card: { column: { boardId: string } };
+      }> = [];
+      for (;;) {
+        authoredComments = await tx.comment.findMany({
+          where: { authorId: userId },
+          select: {
+            id: true,
+            card: { select: { column: { select: { boardId: true } } } },
+          },
+        });
+        const authoredIds = authoredComments.map((row) => row.id);
+        const editedCommentIds = await this.commentIdsEditedBy(
+          tx,
+          userId,
+          authoredIds,
+        );
+        editedComments = await tx.comment.findMany({
+          where: { id: { in: editedCommentIds } },
+          select: {
+            id: true,
+            card: { select: { column: { select: { boardId: true } } } },
+          },
+        });
+        // A membership created after the outer read can expose another board.
+        // Lock it and re-query; the next pass sees every writer blocked.
+        const discovered = [
+          ...authoredComments.map((row) => row.card.column.boardId),
+          ...editedComments.map((row) => row.card.column.boardId),
+        ].filter((boardId) => !lockedBoardIds.has(boardId));
+        if (discovered.length === 0) break;
+        await lockBoardWrites(tx, discovered);
+        for (const boardId of discovered) lockedBoardIds.add(boardId);
+      }
       const authoredIds = authoredComments.map((row) => row.id);
-      const editedCommentIds = await this.commentIdsEditedBy(
-        tx,
-        userId,
-        authoredIds,
-      );
-      const editedComments = await tx.comment.findMany({
-        where: { id: { in: editedCommentIds } },
-        select: {
-          id: true,
-          card: { select: { column: { select: { boardId: true } } } },
-        },
-      });
-      // Serialize with every board writer before re-reading the chain. The
-      // transaction already holds the user row; board locks come in sorted
-      // order so a multi-board erase cannot deadlock with a single writer.
-      await lockBoardWrites(tx, [
-        ...authoredComments.map((row) => row.card.column.boardId),
-        ...editedComments.map((row) => row.card.column.boardId),
-      ]);
 
       if (authoredIds.length > 0) {
         await deleteCommentActivitySnapshots(tx, authoredIds);

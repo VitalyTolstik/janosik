@@ -14,10 +14,11 @@ import "@/config/env";
  * statements from `migration.sql` run under `SET LOCAL search_path`.
  */
 const MIGRATION = "20261122100000_task_185_1_comment_history";
+const INDEX_MIGRATION = "20261122110000_task_185_1_activity_history_indexes";
 
-function migrationStatements(): string[] {
+function migrationStatements(name: string): string[] {
   const migration = readFileSync(
-    join(__dirname, `../prisma/migrations/${MIGRATION}/migration.sql`),
+    join(__dirname, `../prisma/migrations/${name}/migration.sql`),
     "utf8",
   );
   return migration
@@ -34,10 +35,13 @@ describe("TASK-185.1 comment history migration (e2e)", () => {
   const schema = `task185_1_mig_${Date.now()}_${process.pid}`;
   const quote = (name: string): string => `"${name}"`;
 
-  async function applyMigration(target: string): Promise<void> {
+  async function applyMigration(
+    target: string,
+    name: string = MIGRATION,
+  ): Promise<void> {
     await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL search_path TO ${quote(target)}`);
-      for (const statement of migrationStatements()) {
+      for (const statement of migrationStatements(name)) {
         await tx.$executeRawUnsafe(statement);
       }
     });
@@ -57,6 +61,13 @@ describe("TASK-185.1 comment history migration (e2e)", () => {
         "text" TEXT NOT NULL,
         "editedAt" TIMESTAMP(3),
         CONSTRAINT "Comment_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE ${quote(target)}."Activity" (
+        "id" TEXT NOT NULL,
+        "details" JSONB,
+        CONSTRAINT "Activity_pkey" PRIMARY KEY ("id")
       )
     `);
   }
@@ -160,6 +171,35 @@ describe("TASK-185.1 comment history migration (e2e)", () => {
     } finally {
       await prisma
         .$executeRawUnsafe(`DROP SCHEMA IF EXISTS ${quote(empty)} CASCADE`)
+        .catch(() => undefined);
+    }
+  });
+
+  it("applies the Activity JSON expression indexes idempotently", async () => {
+    const indexed = `task185_1_idx_${Date.now()}_${process.pid}`;
+    await createBaseSchema(indexed);
+    try {
+      await applyMigration(indexed);
+      await applyMigration(indexed, INDEX_MIGRATION);
+      // Re-running is a no-op thanks to IF NOT EXISTS.
+      await applyMigration(indexed, INDEX_MIGRATION);
+      const indexes = await prisma.$queryRaw<Array<{ indexname: string }>>`
+        SELECT indexname
+          FROM pg_indexes
+         WHERE schemaname = ${indexed}
+           AND indexname IN (
+             'Activity_commentId_expr_idx',
+             'Activity_revisionId_expr_idx'
+           )
+         ORDER BY indexname
+      `;
+      expect(indexes.map((row) => row.indexname)).toEqual([
+        "Activity_commentId_expr_idx",
+        "Activity_revisionId_expr_idx",
+      ]);
+    } finally {
+      await prisma
+        .$executeRawUnsafe(`DROP SCHEMA IF EXISTS ${quote(indexed)} CASCADE`)
         .catch(() => undefined);
     }
   });
