@@ -132,7 +132,7 @@ export function BoardSettingsShell({
         hideClose
         className={cn(
           "h-[min(47.25rem,calc(100dvh-4.75rem))] max-h-[calc(100dvh-4.75rem)] w-[calc(100vw-1.75rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[56px] md:bottom-auto",
-          "max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0! max-md:pl-[env(safe-area-inset-left)] max-md:pr-[env(safe-area-inset-right)] max-md:pt-[env(safe-area-inset-top)]",
+          "pl-[max(0px,env(safe-area-inset-left))] pr-[max(0px,env(safe-area-inset-right))] pt-[max(0px,env(safe-area-inset-top))] max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0!",
         )}
         data-testid="board-settings-dialog"
       >

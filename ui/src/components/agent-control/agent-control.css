@@ -79,6 +79,10 @@ html.light .agent-control-surface {
     top: 56px;
     width: calc(100vw - 20px);
     height: calc(100dvh - 70px);
+    /* TASK-177.18: a landscape phone/tablet sheet still sits under the
+       notch; keep its content inside the horizontal safe area. */
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
   }
 }
 
@@ -1036,6 +1040,9 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
   .agent-control-surface .ac-foot {
     padding: 8px 10px;
+    /* Shorthand above resets the base inset; re-apply it for 761–900 px
+       landscape phones/tablets. */
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 }
 

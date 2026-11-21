@@ -70,6 +70,13 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     const close = dialog.querySelector("[data-testid='dialog-close']");
     expect(close?.className).toContain("env(safe-area-inset-top)");
     expect(close?.className).toContain("env(safe-area-inset-right)");
+    // The md variants must not fall back to the unsafe 1rem offsets.
+    expect(close?.className).toContain(
+      "md:right-[max(1rem,env(safe-area-inset-right))]",
+    );
+    expect(close?.className).toContain(
+      "md:top-[max(1rem,env(safe-area-inset-top))]",
+    );
   });
 
   it("offers a 44 px close hit area on mobile and a compact one on desktop", async () => {

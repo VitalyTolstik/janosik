@@ -13,6 +13,7 @@ const indexHtml = source("index.html");
 const accountDialog = source("src/components/account/AccountDialog.tsx");
 const sessionUi = source("src/components/agents/session-ui.tsx");
 const cardItem = source("src/components/board/CardItem.tsx");
+const cardDialog = source("src/components/board/CardDialog.tsx");
 const agentsAutomation = source(
   "src/components/board/settings/AgentsAutomation.tsx",
 );
@@ -24,6 +25,8 @@ const workflowSettings = source(
 );
 const header = source("src/components/Header.tsx");
 const dialog = source("src/components/ui/dialog.tsx");
+const globalSearch = source("src/components/GlobalSearch.tsx");
+const adminSearch = source("src/admin/GlobalSearch.tsx");
 const agentControlCss = source(
   "src/components/agent-control/agent-control.css",
 );
@@ -55,6 +58,12 @@ describe("mobile safe areas (TASK-177.18)", () => {
     expect(header).toContain("max(0.375rem,env(safe-area-inset-top))");
     expect(header).toContain("max(0.75rem,env(safe-area-inset-left))");
     expect(header).toContain("sm:pl-[max(1.5rem,env(safe-area-inset-left))]");
+    // iPad standalone (>=640) grows the fixed row instead of squeezing it.
+    expect(header).toContain("sm:pt-[env(safe-area-inset-top)]");
+    expect(header).toContain("sm:h-[calc(52px_+_env(safe-area-inset-top))]");
+    expect(header).toContain(
+      "sm:min-h-[calc(52px_+_env(safe-area-inset-top))]",
+    );
   });
 
   it("keeps dialog bodies and full-screen sheets inside the safe area", () => {
@@ -62,16 +71,35 @@ describe("mobile safe areas (TASK-177.18)", () => {
       expect(dialog).toContain(`env(safe-area-inset-${side})`);
     }
     expect(accountDialog).toContain("pt-[env(safe-area-inset-top)]");
+    // Unconditional, so a 904 px landscape sheet is covered too.
     expect(boardSettingsShell).toContain(
-      "max-md:pt-[env(safe-area-inset-top)]",
+      "pt-[max(0px,env(safe-area-inset-top))]",
     );
     expect(boardSettingsShell).toContain(
-      "max-md:pl-[env(safe-area-inset-left)]",
+      "pl-[max(0px,env(safe-area-inset-left))]",
     );
     expect(agentControlCss).toContain("padding-top: env(safe-area-inset-top)");
     expect(agentControlCss).toContain(
       "padding-right: env(safe-area-inset-right)",
     );
+    // Card-dialog header: the close button and the ⋮ menu both respect the
+    // status bar/notch; the menu is offset by the close button's width + gap.
+    expect(cardDialog).toContain(
+      "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_2.25rem)]",
+    );
+    expect(cardDialog).toContain("top-[max(0.75rem,env(safe-area-inset-top))]");
+    expect(cardDialog).toContain(
+      'closeClassName="right-[max(0.75rem,env(safe-area-inset-right))]',
+    );
+    // Tablet/landscape sheet (761–1279) keeps the horizontal insets.
+    expect(agentControlCss).toMatch(
+      /@media \(min-width: 761px\) and \(max-width: 1279px\) \{[\s\S]*?padding-left: max\(10px, env\(safe-area-inset-left\)\)/,
+    );
+    // The full-screen command palettes override p-0, so re-add the insets.
+    expect(globalSearch).toContain("max-sm:pb-[env(safe-area-inset-bottom)]");
+    expect(adminSearch).toContain("max-sm:h-screen");
+    expect(adminSearch).toContain("max-sm:pb-[env(safe-area-inset-bottom)]");
+    expect(adminSearch).toContain("max-sm:pt-[env(safe-area-inset-top)]");
   });
 
   it("keeps sticky footers above the home indicator", () => {
@@ -82,13 +110,19 @@ describe("mobile safe areas (TASK-177.18)", () => {
       "pb-[max(9px,env(safe-area-inset-bottom))]",
     );
     expect(sessionUi).toContain("pb-[max(10px,env(safe-area-inset-bottom))]");
+    // The base rule exists…
     expect(agentControlCss).toContain(
       "padding-bottom: max(9px, env(safe-area-inset-bottom))",
+    );
+    // …and the ≤900 media rule re-applies it after its padding shorthand.
+    expect(agentControlCss).toMatch(
+      /@media \(max-width: 900px\) \{[\s\S]*?\.agent-control-surface \.ac-foot \{[\s\S]*?padding-bottom: max\(8px, env\(safe-area-inset-bottom\)\)/,
     );
   });
 
   it("gives the card labels a readable lane clear of the hover actions", () => {
-    expect(cardItem).toContain("max-sm:w-1/2");
+    // Only labelled cards need the wider lane; no-label cards keep 75%.
+    expect(cardItem).toContain('labels.length > 0 && "max-md:w-1/2"');
     // The hover quick-action wrappers moved from the title/label row (`top-1.5`)
     // to the due row. The foreign-change dot keeps its own top-1.5 corner.
     expect(cardItem).toContain(

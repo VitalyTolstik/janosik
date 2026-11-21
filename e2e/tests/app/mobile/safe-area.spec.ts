@@ -32,7 +32,11 @@ async function seededCard(page: Page, board: BoardFixture) {
   return { card, labels, chip };
 }
 
-async function expectLabelInsideLane(labels: Locator, chip: Locator) {
+async function expectLabelInsideLane(
+  labels: Locator,
+  chip: Locator,
+  { full = true }: { full?: boolean } = {},
+) {
   const [lane, label] = await Promise.all([
     labels.boundingBox(),
     chip.boundingBox(),
@@ -40,9 +44,20 @@ async function expectLabelInsideLane(labels: Locator, chip: Locator) {
   expect(lane, "label lane has no box").not.toBeNull();
   expect(label, "label chip has no box").not.toBeNull();
   if (!lane || !label) return;
-  // The chip keeps its intrinsic width (`shrink-0`); if it were clipped by
-  // the lane/mask, its box would poke past the lane's right edge.
-  expect(label.x + label.width).toBeLessThanOrEqual(lane.x + lane.width + 0.5);
+  // The chip starts inside the lane in every layout.
+  expect(label.x).toBeGreaterThanOrEqual(lane.x - 0.5);
+  expect(label.x).toBeLessThan(lane.x + lane.width);
+  if (full) {
+    // Phone: the whole chip fits. It keeps its intrinsic width (`shrink-0`);
+    // if it were clipped by the lane/mask, its box would poke past the right
+    // edge.
+    expect(label.x + label.width).toBeLessThanOrEqual(
+      lane.x + lane.width + 0.5,
+    );
+  }
+  // Desktop deliberately clips the tail at the 25% lane — that is the
+  // shipped 75/25 design, not a regression — but the chip must never start
+  // outside the lane.
   expect(label.y).toBeGreaterThanOrEqual(lane.y - 0.5);
   expect(label.y + label.height).toBeLessThanOrEqual(
     lane.y + lane.height + 0.5,
@@ -166,7 +181,7 @@ test.describe("1440 px desktop control", () => {
     // sm:py-0 — the safe-area padding must not leak into the desktop header.
     expect(paddingTop).toBeCloseTo(0, 0);
 
-    await expectLabelInsideLane(labels, chip);
+    await expectLabelInsideLane(labels, chip, { full: false });
     await expectOutsideActions(labels, chip, [
       card.getByTestId("card-archive"),
       card.getByRole("button", { name: "Duplicate card" }),

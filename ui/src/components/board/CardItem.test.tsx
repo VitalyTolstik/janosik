@@ -87,14 +87,23 @@ describe("CardItem fixed tile layout", () => {
     // Same row container: the labels sit beside the title, not below it.
     expect(title.parentElement).toBe(labels.parentElement);
     expect(title.className).toContain("w-3/4");
-    // TASK-177.18 (U-07): the phone face gives the label chips half the
-    // row instead of the desktop quarter, so the first name stays readable.
-    expect(title.className).toContain("max-sm:w-1/2");
+    // TASK-177.18 (U-07): a labelled card gives the chips half the row up to
+    // the `md` breakpoint instead of the desktop quarter, so the first name
+    // stays readable on phones and 640–767 px tablets.
+    expect(title.className).toContain("max-md:w-1/2");
     expect(title.className).toContain("truncate");
     // The label quarter stays on one clipped line.
     expect(labels.className).toContain("whitespace-nowrap");
     expect(labels.className).toContain("overflow-hidden");
     expect(labels.children.length).toBe(6);
+  });
+
+  it("keeps the full title width on a phone when the card has no labels", () => {
+    renderCard(baseCard, []);
+    const title = screen.getByTestId("card-title");
+    expect(title.className).toContain("w-3/4");
+    // No label lane to protect, so the phone face must not reserve one.
+    expect(title.className).not.toContain("max-md:w-1/2");
   });
 
   it("renders the medium priority badge (the default is no longer hidden)", () => {

@@ -133,9 +133,9 @@ const seenCardIds = new Set<string>();
  *
  * The face is a fixed-size uniform grid tile (owner's call): every card
  * shares the same width and height regardless of content. Three rows —
- * the title (~75% of the width on desktop, half on a phone so a label
- * chip stays readable) shares the first line with the labels (clipped in
- * the remainder), the due date owns the second, and
+ * the title (~75% of the width on desktop, half below `md` when the card
+ * has labels so a chip stays readable) shares the first line with the
+ * labels (clipped in the remainder), the due date owns the second, and
  * the third packs the meta badges (description / linked cards /
  * checklists) against the priority and the assignee's avatar. Empty
  * slots keep their space so all cards line up.
@@ -480,9 +480,9 @@ function CardItemView({
                 style={{ background: coverBackground(card.cover) }}
               />
             ) : null}
-            {/* First line: the title owns ~75% of the tile on desktop; on a
-          phone it drops to half so the label chips keep a readable lane
-          (single line, fade at the cut). TASK-177.18 (U-07). */}
+            {/* First line: the title owns ~75% of the tile on desktop; below
+          `md`, a labelled card drops it to half so the label chips keep a
+          readable lane (single line, fade at the cut). TASK-177.18 (U-07). */}
             <div className="flex h-5 shrink-0 items-center gap-2">
               {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
             can't blow out the tile's intrinsic width. The full text stays in
@@ -491,7 +491,13 @@ function CardItemView({
               <p
                 ref={titleRef}
                 title={titleClamped ? card.title : undefined}
-                className="w-3/4 max-sm:w-1/2 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
+                className={cn(
+                  "w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
+                  // TASK-177.18: only a labelled card needs the wider label
+                  // lane. `max-md` also covers 640–767 px tablets, where the
+                  // card is still phone-width; 1440 keeps the 75/25 design.
+                  labels.length > 0 && "max-md:w-1/2",
+                )}
                 data-testid="card-title"
               >
                 <HighlightedText text={card.title} query={highlight ?? ""} />
