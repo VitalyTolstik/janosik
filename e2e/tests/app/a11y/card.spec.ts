@@ -111,6 +111,9 @@ async function expectNoAxeIssues(page: Page, context?: string) {
 }
 
 async function setTheme(page: Page, theme: "light" | "dark") {
+  // Axe must measure the settled surface, not an entry animation with a
+  // transient opacity. The app honours the media query for every animation.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.evaluate((value) => {
     localStorage.setItem("janosik-theme", value);
   }, theme);
@@ -404,6 +407,8 @@ test.describe("card a11y at 390 px", () => {
     await seedBoard(board);
     await board.open(page);
     await setTheme(page, "light");
+    await expect(page.getByTestId("board-title")).toBeVisible();
+    await expect(page.getByText("A11y card")).toBeVisible();
     await expect(page.locator("main")).toHaveCount(1);
     await expectNoAxeIssues(page);
 
