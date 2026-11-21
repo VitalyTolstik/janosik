@@ -515,19 +515,29 @@ export function Pagination({
   total,
   limit,
   offset,
+  statusLimit = limit,
+  statusOffset = offset,
   onChange,
   onLimitChange,
 }: {
   total: number;
+  /** Pending page size: the select and Prev/Next controls follow it. */
   limit: number;
+  /** Pending offset: Prev/Next move from here. */
   offset: number;
+  /** Page size echoed by the last completed response (status display). */
+  statusLimit?: number;
+  /** Offset echoed by the last completed response (status display). */
+  statusOffset?: number;
   onChange: (offset: number) => void;
   /** Enables the 25 / 50 / 100 rows-per-page select. */
   onLimitChange?: (limit: number) => void;
 }) {
   const t = useAdminT();
-  const pages = Math.max(1, Math.ceil(total / limit));
-  const page = Math.floor(offset / limit) + 1;
+  const statusPages = Math.max(1, Math.ceil(total / statusLimit));
+  const statusPage = Math.floor(statusOffset / statusLimit) + 1;
+  const pendingPages = Math.max(1, Math.ceil(total / limit));
+  const pendingPage = Math.floor(offset / limit) + 1;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-1.5">
       <span className="text-[11px] tabular-nums text-muted-foreground">
@@ -558,7 +568,7 @@ export function Pagination({
           size="sm"
           variant="ghost"
           className="h-7 px-2 text-xs"
-          disabled={page <= 1}
+          disabled={pendingPage <= 1}
           data-testid="admin-pagination-prev"
           aria-label={t("admin.common.prev")}
           onClick={() => onChange(Math.max(0, offset - limit))}
@@ -570,13 +580,13 @@ export function Pagination({
           className="text-[11px] text-muted-foreground"
           data-testid="admin-pagination-status"
         >
-          {t("admin.common.page", { page, pages })}
+          {t("admin.common.page", { page: statusPage, pages: statusPages })}
         </span>
         <Button
           size="sm"
           variant="ghost"
           className="h-7 px-2 text-xs"
-          disabled={page >= pages}
+          disabled={pendingPage >= pendingPages}
           data-testid="admin-pagination-next"
           aria-label={t("admin.common.next")}
           onClick={() => onChange(offset + limit)}
