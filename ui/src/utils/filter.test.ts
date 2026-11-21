@@ -8,6 +8,7 @@ import {
   descriptionSnippet,
   EMPTY_FILTER,
   filterCardIds,
+  groupSearchHits,
   isFilterActive,
   matchesCardFilter,
   readFilterParams,
@@ -673,6 +674,62 @@ describe("searchBoards", () => {
 
   it("returns nothing for an empty query", () => {
     expect(searchBoards(boards, "  ")).toEqual([]);
+  });
+});
+
+describe("groupSearchHits (TASK-177.10)", () => {
+  const ids = Array.from({ length: 21 }, (_, index) => `widget-${index}`);
+  const baseBoard: Board = {
+    id: "base",
+    title: "Marketing",
+    columns: [{ id: "col1", title: "To do", cardIds: ["c1"], createdAt: NOW }],
+    cards: { c1: card("c1", "Landing redesign", ["a"]) },
+    labels: [{ id: "a", name: "Design", color: "red" }],
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  const widgetBoard: Board = {
+    ...baseBoard,
+    id: "widget-board",
+    title: "Widget",
+    columns: [{ id: "col", title: "To do", cardIds: ids, createdAt: NOW }],
+    cards: Object.fromEntries(
+      ids.map((id, index) => [id, card(id, `Widget ${index}`, [])]),
+    ),
+    labels: [],
+  };
+
+  it("caps cards and boards separately so a board hit survives", () => {
+    const groups = groupSearchHits(searchBoards([widgetBoard], "widget"), 20);
+
+    // 21 card hits are capped, but the board-title hit stays in its group.
+    expect(groups.totalCards).toBe(21);
+    expect(groups.totalBoards).toBe(1);
+    expect(groups.cards.map((hit) => hit.card.id)).toEqual(ids.slice(0, 20));
+    expect(groups.boards.map((hit) => hit.boardId)).toEqual(["widget-board"]);
+    expect(groups.capped).toBe(true);
+  });
+
+  it("returns both groups intact with showAll", () => {
+    const groups = groupSearchHits(
+      searchBoards([widgetBoard], "widget"),
+      20,
+      true,
+    );
+
+    expect(groups.cards).toHaveLength(21);
+    expect(groups.boards).toHaveLength(1);
+    expect(groups.capped).toBe(true);
+  });
+
+  it("does not flag a cap when every group fits", () => {
+    const groups = groupSearchHits(searchBoards([baseBoard], "design"), 20);
+
+    expect(groups.cards).toHaveLength(1);
+    expect(groups.boards).toHaveLength(0);
+    expect(groups.totalCards).toBe(1);
+    expect(groups.totalBoards).toBe(0);
+    expect(groups.capped).toBe(false);
   });
 });
 

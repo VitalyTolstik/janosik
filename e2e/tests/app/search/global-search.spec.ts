@@ -212,17 +212,36 @@ test("clears the query when the palette is reopened", async ({
   );
 });
 
-test("caps the result list at 20 hits", async ({ page, board }) => {
+test("caps each result group and expands them with Show all", async ({
+  page,
+  board,
+}) => {
   const todo = await board.column("Todo");
   for (let index = 0; index < 21; index += 1) {
     await board.card(todo, `Cap result ${String(index).padStart(2, "0")}`);
   }
+  // The board-title hit must survive the card group's 20-hit cap.
+  await createSearchBoard(board.api, "Cap result");
   await board.open(page);
   await openGlobalSearch(page);
 
   await searchGlobally(page, "Cap result");
 
-  await expect(globalSearchResults(page).getByRole("option")).toHaveCount(20);
+  const results = globalSearchResults(page);
+  await expect(results.getByRole("option")).toHaveCount(21);
+  await expect(
+    globalSearchSection(page, "Cards").getByRole("option"),
+  ).toHaveCount(20);
+  await expect(globalSearchSection(page, "Boards")).toContainText("Cap result");
+  await expect(results).toContainText("20 of 21");
+
+  await page.getByTestId("search-show-all").click();
+
+  await expect(results.getByRole("option")).toHaveCount(22);
+  await expect(
+    globalSearchSection(page, "Cards").getByRole("option"),
+  ).toHaveCount(21);
+  await expect(page.getByTestId("search-show-all")).toBeHidden();
 });
 
 test("opens the card dialog from a search hit", async ({ page, board }) => {

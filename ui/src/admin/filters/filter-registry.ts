@@ -20,6 +20,9 @@ export const FILTER_BAR_TITLES = {
   cardLinks: "admin.filters.title.cardLinks",
   comments: "admin.filters.title.comments",
   attachments: "admin.filters.title.attachments",
+  audit: "admin.filters.title.audit",
+  commands: "admin.filters.title.commands",
+  activity: "admin.filters.title.activity",
 } as const satisfies Record<string, AdminMessageKey>;
 
 export type FilterBarSurface = keyof typeof FILTER_BAR_TITLES;
@@ -43,6 +46,24 @@ const definitions = {
   },
   kind: { kind: "multi", label: "admin.filters.kind" },
   type: { kind: "multi", label: "admin.filters.linkType" },
+  adminId: {
+    kind: "multi",
+    type: "auditActor",
+    label: "admin.audit.column.admin",
+  },
+  actorId: {
+    kind: "multi",
+    type: "user",
+    label: "admin.activity.column.actor",
+  },
+  action: { kind: "multi", type: "action", label: "admin.audit.column.action" },
+  targetType: {
+    kind: "multi",
+    type: "targetType",
+    label: "admin.filters.targetType",
+  },
+  targetId: { kind: "id", label: "admin.filters.targetId" },
+  commandId: { kind: "id", label: "admin.filter.commandId" },
   verified: { kind: "radio", label: "admin.filters.verified" },
   mime: { kind: "radio", label: "admin.filters.mime" },
   transcode: { kind: "radio", label: "admin.filters.transcode" },
@@ -52,7 +73,7 @@ const definitions = {
 } as const satisfies Record<
   string,
   {
-    kind: "lookup" | "multi" | "radio";
+    kind: "lookup" | "multi" | "radio" | "id";
     type?: AdminFilterOptionType;
     label: AdminMessageKey;
   }
@@ -67,9 +88,40 @@ export function filterFacet<Key extends FacetKey>(key: Key) {
   } & (typeof definitions)[Key];
 }
 
-export type FilterFacet = {
-  [Key in FacetKey]: ReturnType<typeof filterFacet<Key>>;
-}[FacetKey];
+const eventTypes = {
+  commands: {
+    key: "type",
+    kind: "multi",
+    type: "commandType",
+    label: "admin.commands.column.type",
+  },
+  activity: {
+    key: "type",
+    kind: "multi",
+    type: "activityType",
+    label: "admin.activity.column.type",
+  },
+} as const satisfies Record<
+  string,
+  {
+    key: "type";
+    kind: "multi";
+    type: AdminFilterOptionType;
+    label: AdminMessageKey;
+  }
+>;
+
+const commandActor = {
+  ...filterFacet("actorId"),
+  label: "admin.commands.filter.actor",
+} as const;
+
+export type FilterFacet =
+  | {
+      [Key in FacetKey]: ReturnType<typeof filterFacet<Key>>;
+    }[FacetKey]
+  | (typeof eventTypes)[keyof typeof eventTypes]
+  | typeof commandActor;
 
 export type LookupFacet = Extract<FilterFacet, { type: AdminFilterOptionType }>;
 export type DraftFacet = Extract<FilterFacet, { kind: "multi" }>;
@@ -77,16 +129,28 @@ export type ChoiceFacet = Extract<FilterFacet, { kind: "radio" }>;
 
 export function offeredFilters(surface: FilterBarSurface): FilterFacet[] {
   const { implemented, offered } = ENTITY_FILTERS[surface];
-  return offered.flatMap((key) =>
-    implemented.includes(key) && Object.hasOwn(definitions, key)
-      ? [filterFacet(key as FacetKey) as FilterFacet]
-      : [],
-  );
+  return offered.flatMap((key) => {
+    if (!implemented.includes(key) || !Object.hasOwn(definitions, key))
+      return [];
+    if (key === "type" && (surface === "commands" || surface === "activity"))
+      return [eventTypes[surface]];
+    if (key === "actorId" && surface === "commands") return [commandActor];
+    return [filterFacet(key as FacetKey) as FilterFacet];
+  });
 }
 
-export function filterLabel(key: string): AdminMessageKey | undefined {
+export function filterLabel(
+  key: string,
+  surface: FilterBarSurface,
+): AdminMessageKey | undefined {
   if (key === "unassigned") return "admin.filters.unassigned";
   if (key === "labelMatch") return "admin.filters.labelMatch";
+  if (key === "type") {
+    if (surface === "commands" || surface === "activity")
+      return eventTypes[surface].label;
+    return surface === "cardLinks" ? definitions.type.label : undefined;
+  }
+  if (key === "actorId" && surface === "commands") return commandActor.label;
   return Object.hasOwn(definitions, key)
     ? definitions[key as FacetKey].label
     : undefined;
@@ -182,7 +246,14 @@ export function removeListFilter(
           : filters.priority?.filter((priority) => priority !== value),
     };
   }
-  if (key === "kind" || key === "type") {
+  if (
+    key === "kind" ||
+    key === "type" ||
+    key === "actorId" ||
+    key === "adminId" ||
+    key === "action" ||
+    key === "targetType"
+  ) {
     return {
       [key]:
         value === undefined
@@ -202,12 +273,29 @@ export function removeListFilter(
     }
     return { assigneeId: remaining };
   }
-  if (key === "boardId" || key === "columnId" || key === "cardId")
+  if (
+    key === "boardId" ||
+    key === "columnId" ||
+    key === "cardId" ||
+    key === "commandId"
+  )
     return { [key]: null };
   return { [key]: undefined };
 }
 
 export const BOARD_DEPENDENTS = ["columnId", "labelId", "cardId"] as const;
+
+export function isPeopleLookup(facet: FilterFacet): boolean {
+  return (
+    "type" in facet && (facet.type === "user" || facet.type === "auditActor")
+  );
+}
+
+export function isCodeLookup(facet: LookupFacet): boolean {
+  return (
+    facet.key === "action" || facet.key === "targetType" || facet.key === "type"
+  );
+}
 
 export function shortId(id: string): string {
   // CUIDs created together can share a timestamp prefix. Their random

@@ -380,53 +380,111 @@ function facetCases(preset, referenceTime) {
     ...contentCases(preset, referenceTime),
   ];
   if (preset !== "full") return core;
-  const additional = [
+  return [
+    ...core.filter(({ list }) => list !== "audit"),
     {
       list: "cards",
       facet: "column",
       model: CARDS,
       predicate: sql`c."columnId" = ${id("column", 0)}`,
+      extended: true,
     },
-    {
-      list: "audit",
-      facet: "target",
-      model: AUDIT,
-      predicate: sql`a."targetType" IN ('card') AND a."targetId" = ${id("card", 0)}`,
-    },
-  ].map((entry) => ({ ...entry, extended: true }));
+    ...auditHubCases(preset, referenceTime),
+  ];
+}
 
-  const modelCases = [
+function auditHubCases(preset, referenceTime) {
+  const since = new Date(referenceTime.getTime() - 86_400_000);
+  const id = (model, index) => perfId(preset, model, index);
+  const period = (alias) => sql`${alias}."createdAt" >= ${since}`;
+  const auditPeriod = period(sql`a`);
+  const eventPeriod = period(sql`t`);
+  const auditActor = sql`a."adminId" IN (${id("actor", 0)})`;
+  const action = sql`a.action IN ('board.command')`;
+  const targetType = sql`a."targetType" IN ('card')`;
+  const targetId = sql`a."targetId" = ${id("card", 0)}`;
+  const actor = sql`t."actorId" IN (${id("user", 0)})`;
+  const commandType = sql`t.type IN ('MOVE_CARD')`;
+  const activityType = sql`t.type IN ('comment_edited')`;
+  const board = sql`t."boardId" = ${id("board", 0)}`;
+  const card = sql`t."cardId" = ${id("card", 0)}`;
+  const touches = sql`t.touches @> ARRAY[${`card:${id("card", 0)}`}, ${`column:${id("column", 0)}`}]::text[]`;
+
+  return [
+    [
+      "audit",
+      { ...AUDIT, order: sql`a."createdAt" DESC, a.id DESC` },
+      auditPeriod,
+      [
+        ["actor", auditActor],
+        ["action", action],
+        ["target-type", targetType],
+        ["target-id", targetId],
+        ["target", sql`${targetType} AND ${targetId}`],
+        [
+          "combined",
+          sql`${auditActor} AND ${action} AND ${targetType} AND ${targetId}`,
+        ],
+      ],
+    ],
     [
       "commands",
       {
         from: sql`"Command" t`,
-        select: sql`t.*`,
+        pageAlias: sql`t`,
+        displayJoins: sql`JOIN "Board" b ON b.id = t."boardId" JOIN "User" u ON u.id = t."actorId"`,
+        select: sql`t.id, t."boardId", t.type, t.seq, t."createdAt", t."actorId", t.payload, b.title, u.email`,
         order: sql`t."createdAt" DESC, t.seq DESC`,
       },
+      eventPeriod,
       [
-        ["actor", sql`t."actorId" IN (${id("user", 0)})`],
-        ["type", sql`t.type IN ('MOVE_CARD')`],
+        ["actor", actor],
+        ["type", commandType],
+        ["touches", touches],
+        [
+          "combined",
+          sql`${actor} AND ${commandType} AND ${board} AND ${touches}`,
+        ],
       ],
     ],
     [
       "activity",
       {
         from: sql`"Activity" t`,
-        select: sql`t.*`,
-        order: sql`t."createdAt" DESC`,
+        pageAlias: sql`t`,
+        displayJoins: sql`JOIN "Board" b ON b.id = t."boardId"
+          JOIN "User" u ON u.id = t."actorId" LEFT JOIN "Card" c ON c.id = t."cardId"`,
+        select: sql`t.id, t.type, t.details, t."createdAt", t."boardId", t."cardId",
+          t."actorId", b.title AS board_title, c.title AS card_title, u.email`,
+        order: sql`t."createdAt" DESC, t.id DESC`,
       },
+      eventPeriod,
       [
-        ["actor", sql`t."actorId" IN (${id("user", 0)})`],
-        ["type", sql`t.type IN ('comment_added')`],
+        ["actor", actor],
+        ["type", activityType],
+        [
+          "combined",
+          sql`${actor} AND ${activityType} AND ${board} AND ${card}`,
+        ],
       ],
     ],
-  ];
-  for (const [list, model, facets] of modelCases) {
-    for (const [facet, predicate] of [["unfiltered", unfiltered], ...facets]) {
-      additional.push({ list, facet, model, predicate, extended: true });
-    }
-  }
-  return [...core, ...additional];
+  ].flatMap(([list, model, window, facets]) =>
+    [
+      ["unfiltered", unfiltered],
+      ["period", window],
+      ...facets.flatMap(([facet, predicate]) => [
+        [facet, predicate],
+        [`${facet}-period`, sql`${predicate} AND ${window}`],
+      ]),
+    ].map(([facet, predicate]) => ({
+      list,
+      facet,
+      model,
+      predicate,
+      extended:
+        list !== "audit" || !["actor", "action", "unfiltered"].includes(facet),
+    })),
+  );
 }
 
 function statements({ model, predicate }, pageSize) {
@@ -519,12 +577,13 @@ async function main() {
       cards: { type: "boolean" },
       moderation: { type: "boolean" },
       content: { type: "boolean" },
+      audit: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
   if (values.help) {
     console.log(
-      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards|--moderation|--content] [--output timings.json]",
+      "ADMIN_FILTER_PERF_DATABASE_URL=<seeded scratch DB> npm run perf:admin-filters -- --preset small|gate|full [--cards|--moderation|--content|--audit] [--output timings.json]",
     );
     return;
   }
@@ -534,10 +593,14 @@ async function main() {
     cards: cardsOnly,
     moderation: moderationOnly,
     content: contentOnly,
+    audit: auditOnly,
   } = values;
   if (!Object.hasOwn(PRESETS, preset))
     throw new Error("Use --preset small, gate, or full.");
-  if ([cardsOnly, moderationOnly, contentOnly].filter(Boolean).length > 1)
+  if (
+    [cardsOnly, moderationOnly, contentOnly, auditOnly].filter(Boolean).length >
+    1
+  )
     throw new Error("Choose one benchmark scope.");
   const db = perfDatabase();
   const rows = perfDataset(preset);
@@ -555,7 +618,7 @@ async function main() {
         `Expected the ${preset} fixture in a dedicated database. Run seed-admin-filters.mjs with the matching preset.`,
       );
     }
-    if (!cardsOnly && !contentOnly) {
+    if (!cardsOnly && !contentOnly && !auditOnly) {
       const [comments, attachments] = await Promise.all([
         db.comment.count(),
         db.attachment.count(),
@@ -566,7 +629,7 @@ async function main() {
         );
       }
     }
-    if (!cardsOnly && !moderationOnly) {
+    if (!cardsOnly && !moderationOnly && !auditOnly) {
       const counts = await Promise.all(
         Object.entries({
           users: db.user,
@@ -584,11 +647,29 @@ async function main() {
         );
       }
     }
+    if (auditOnly) {
+      const [audit, commands, activity] = await Promise.all([
+        db.adminAuditLog.count(),
+        db.command.count(),
+        db.activity.count(),
+      ]);
+      if (
+        audit !== rows.audit ||
+        commands !== rows.commands ||
+        activity !== rows.activity
+      ) {
+        throw new Error(
+          "Expected the matching audit hub fixture in a dedicated database.",
+        );
+      }
+    }
     const pageSizes = preset === "small" ? [25] : [25, 50, 100];
     const results = [];
-    const entries = contentOnly
-      ? contentCases(preset, firstCard.updatedAt)
-      : facetCases(preset, firstCard.updatedAt);
+    const entries = auditOnly
+      ? auditHubCases(preset, firstCard.updatedAt)
+      : contentOnly
+        ? contentCases(preset, firstCard.updatedAt)
+        : facetCases(preset, firstCard.updatedAt);
     for (const entry of entries) {
       if (cardsOnly && entry.list !== "cards") continue;
       if (

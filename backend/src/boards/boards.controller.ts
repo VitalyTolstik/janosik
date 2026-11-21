@@ -338,6 +338,30 @@ export class BoardsController {
     return result;
   }
 
+  /**
+   * TASK-177.2 (G-02): leave a board as yourself. Any accepted role may call
+   * it, but the last ADMIN cannot — a board must never be left adminless.
+   * Session-only: a PAT must not drop its owner's membership.
+   *
+   * Declared before the `:userId` route so "me" is not parsed as an id.
+   */
+  @UseGuards(MembershipGuard, SessionOnlyGuard)
+  @Delete(":id/members/me")
+  @HttpCode(HttpStatus.OK)
+  async leaveBoard(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+  ): Promise<{ status: "ok" }> {
+    await this.boards.leaveBoard(
+      id,
+      user.id,
+      requestAttribution(principal, session?.id),
+    );
+    return { status: "ok" };
+  }
+
   @UseGuards(MembershipGuard)
   @BoardRoles(Role.ADMIN)
   @TokenScope("admin")

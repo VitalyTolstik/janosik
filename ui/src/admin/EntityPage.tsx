@@ -95,6 +95,7 @@ export interface EntityListConfig<T> {
   columns: Array<EntityColumn<T>>;
   /** Click target for a row — the entity's detail page when one exists. */
   rowHref?: (row: T) => string;
+  filterTargetHref?: (filters: AdminListFilters, rows: T[]) => string | null;
   rowTestId?: (row: T) => string;
   toolbar?: (reload: () => void) => ReactNode;
   actions?: (row: T, reload: () => void) => Array<EntityAction>;
@@ -293,6 +294,7 @@ export function EntityPage<E extends AdminEntity>({
     hasAdminFilters(list.filters);
   const resolvedFilters = useListFilterOptions(
     filterSurface ? list.filters : undefined,
+    filterSurface,
   );
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const filterChipRowRef = useRef<HTMLDivElement>(null);
@@ -301,7 +303,10 @@ export function EntityPage<E extends AdminEntity>({
   const rejectedFilter = filterSurface
     ? unsupportedFilter(list.errorBody)
     : undefined;
-  const rejectedLabel = rejectedFilter && filterLabel(rejectedFilter);
+  const rejectedLabel =
+    rejectedFilter &&
+    filterSurface &&
+    filterLabel(rejectedFilter, filterSurface);
   const rejectedName = rejectedLabel ? t(rejectedLabel) : rejectedFilter;
 
   const pendingFilterView = useRef<{
@@ -338,7 +343,7 @@ export function EntityPage<E extends AdminEntity>({
   ) => {
     const filters = { ...view.filters, ...patch };
     const cleared =
-      filters.boardId !== view.filters.boardId
+      filterSurface !== "commands" && filters.boardId !== view.filters.boardId
         ? BOARD_DEPENDENTS.filter((dependent) => filters[dependent] !== null)
         : [];
     for (const dependent of cleared) filters[dependent] = null;
@@ -378,7 +383,7 @@ export function EntityPage<E extends AdminEntity>({
       (value === undefined || button.dataset.filterValue === value);
     const index = buttons.findIndex(removes);
     const removedKeys: readonly string[] =
-      key === "boardId"
+      key === "boardId" && filterSurface !== "commands"
         ? [...BOARD_DEPENDENTS, "labelMatch"]
         : key === "labelId" && patch.labelMatch === undefined
           ? ["labelMatch"]
@@ -495,6 +500,7 @@ export function EntityPage<E extends AdminEntity>({
           triggerRef={filterTriggerRef}
           chipRowRef={filterChipRowRef}
           filters={list.filters}
+          targetHref={config.filterTargetHref?.(list.filters, list.items)}
           resolved={resolvedFilters}
           filtered={filtered}
           canClear={
@@ -571,7 +577,7 @@ export function EntityPage<E extends AdminEntity>({
           />
         ) : list.errorStatus === 403 ? (
           <ForbiddenState onBack={() => navigate("/admin")} />
-        ) : rejectedName ? (
+        ) : rejectedFilter && rejectedName ? (
           <EmptyState
             announce
             message={t("admin.filters.unsupported", { facet: rejectedName })}
@@ -581,11 +587,21 @@ export function EntityPage<E extends AdminEntity>({
                 size="sm"
                 className="h-11 sm:h-8"
                 onClick={() => {
-                  if (rejectedFilter && rejectedLabel) {
+                  if (rejectedLabel) {
                     removeFilter(rejectedFilter as FilterKey);
-                  } else {
-                    clearAllFilters();
+                    return;
                   }
+                  filterTriggerRef.current?.focus();
+                  const query = new URLSearchParams(location.search);
+                  if (query.has(rejectedFilter)) {
+                    query.delete(rejectedFilter);
+                    void navigate({
+                      search: query.toString(),
+                      hash: location.hash,
+                    });
+                  }
+                  // The unsupported key may already have been dropped by URL canonicalization.
+                  list.reload();
                 }}
               >
                 {t("admin.filters.removeUnsupported", { facet: rejectedName })}

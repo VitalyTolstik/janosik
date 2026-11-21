@@ -292,6 +292,13 @@ interface BoardActionsValue {
   ) => string | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void | Promise<void>;
+  /**
+   * Leave a board as the caller (TASK-177.2). Server mode only: removes the
+   * membership, forgets the board locally (switcher + role + undo history)
+   * and navigates away. Resolves `false` when the server refused or the app
+   * is in local mode (the error toast is already shown).
+   */
+  leaveBoard: (boardId: string) => Promise<boolean>;
   /** Archives a board (data kept; hidden from the normal switcher list). */
   archiveBoard: (boardId: string) => void;
   /** Brings an archived board back to the active list. */
@@ -1421,7 +1428,15 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    * so a revoked *only* board is replaced explicitly.
    */
   const revokeBoard = useCallback(
-    (boardId: string, reason: "access" | "deleted" = "access") => {
+    (
+      boardId: string,
+      reason: "access" | "deleted" | "left" = "access",
+    ): boolean => {
+      // The SSE frame and the DELETE response race. Whichever lands second
+      // must be a no-op instead of a duplicate toast/navigation.
+      if (!stateRef.current.some((board) => board.id === boardId)) {
+        return false;
+      }
       apply({ type: "REMOVE_BOARD", boardId });
       if (stateRef.current.some((board) => board.id === boardId)) {
         apply({
@@ -1436,9 +1451,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         const { [boardId]: _removed, ...rest } = prev;
         return rest;
       });
-      toast.error(
-        t(reason === "deleted" ? "board.deleted" : "board.accessRevoked"),
-      );
+      if (reason === "left") {
+        toast.success(t("board.members.leftToast"));
+      } else {
+        toast.error(
+          t(reason === "deleted" ? "board.deleted" : "board.accessRevoked"),
+        );
+      }
       // If the caller was viewing the board that just vanished, move them to
       // another active board (or the empty state) instead of leaving them on
       // a dead URL — the 404 route is only for genuinely unknown ids.
@@ -1446,8 +1465,49 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         const next = stateRef.current.find((board) => !board.archivedAt);
         navigate(next ? routes.board(next.id) : routes.home, { replace: true });
       }
+      return true;
     },
     [apply, dropHistory, toast, t, navigate],
+  );
+
+  /**
+   * Boards the caller is leaving right now. The SSE frame normally arrives
+   * before the DELETE response is parsed; the reason tells that path to show
+   * the success toast instead of "access revoked". Cleared when an
+   * `accepted` frame proves the caller is a member again.
+   */
+  const leavingBoardsRef = useRef(new Set<string>());
+
+  /**
+   * `DELETE /boards/:id/members/me` (TASK-177.2): leave the board and drop
+   * every local trace of it. The membership SSE does the same work when it
+   * wins the race; `revokeBoard` is idempotent, so exactly one success toast
+   * and one navigation happen.
+   */
+  const leaveBoard = useCallback(
+    async (boardId: string): Promise<boolean> => {
+      if (!serverMode) return false;
+      leavingBoardsRef.current.add(boardId);
+      try {
+        await api.leaveBoard(boardId);
+      } catch (error) {
+        leavingBoardsRef.current.delete(boardId);
+        const code = error instanceof ApiError ? error.code : undefined;
+        toast.error(
+          t(
+            code === "last_admin"
+              ? "board.members.errors.lastAdmin"
+              : error instanceof ApiError && error.offline
+                ? "board.members.errors.offline"
+                : "board.members.errors.generic",
+          ),
+        );
+        return false;
+      }
+      revokeBoard(boardId, "left");
+      return true;
+    },
+    [revokeBoard, serverMode, t, toast],
   );
 
   /**
@@ -1459,8 +1519,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const onMembershipChange = useCallback(
     (boardId: string, userId: string, change: MembershipChange) => {
       if (change === "removed" && userId === userIdRef.current) {
-        revokeBoard(boardId);
+        revokeBoard(
+          boardId,
+          leavingBoardsRef.current.has(boardId) ? "left" : "access",
+        );
         return;
+      }
+      // Re-added later in the same session: the next removal is an ordinary
+      // revocation again, not a repeat of the old self-leave.
+      if (change === "accepted" && userId === userIdRef.current) {
+        leavingBoardsRef.current.delete(boardId);
       }
       // A role or expiry move of the caller changes what the UI may offer.
       if (change === "updated" && userId === userIdRef.current) {
@@ -1954,6 +2022,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       ...createBoardActions(dispatch, getActiveBoard),
       addBoard,
       removeBoard,
+      leaveBoard,
       archiveBoard,
       unarchiveBoard,
       undo,
@@ -1971,6 +2040,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       getActiveBoard,
       addBoard,
       removeBoard,
+      leaveBoard,
       archiveBoard,
       unarchiveBoard,
       undo,
@@ -2543,6 +2613,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     sortColumn: noop,
     addBoard: () => "",
     removeBoard: noop,
+    leaveBoard: () => Promise.resolve(false),
     archiveBoard: noop,
     unarchiveBoard: noop,
     undo: noop,

@@ -3,6 +3,7 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  LogOut,
   Search,
   Trash2,
   X,
@@ -331,8 +332,19 @@ function ExpiryCalendarBody({
 
 export function BoardMembersDialog() {
   const { t } = useI18n();
-  const { board, roleOf } = useBoard();
+  const { board, roleOf, leaveBoard } = useBoard();
   const [open, setOpen] = useState(false);
+
+  // A successful leave navigates to another board; leaving the modal open
+  // would show that board's roster and keep the header behind a modal.
+  const leaveAndClose = useCallback(
+    async (boardId: string) => {
+      const left = await leaveBoard(boardId);
+      if (left) setOpen(false);
+      return left;
+    },
+    [leaveBoard],
+  );
 
   // Members are a server-only concept; the local (localStorage) mode has a
   // single implicit admin and no membership table.
@@ -367,7 +379,11 @@ export function BoardMembersDialog() {
             }
           }}
         >
-          <BoardMembersPanel boardId={board.id} canManage={canManage} />
+          <BoardMembersPanel
+            boardId={board.id}
+            canManage={canManage}
+            onLeave={leaveAndClose}
+          />
         </DialogContent>
       </Dialog>
     </>
@@ -378,15 +394,26 @@ interface BoardMembersPanelProps {
   boardId: string;
   /** ADMIN may invite/change roles/remove; others see the same list inert. */
   canManage: boolean;
+  /**
+   * Leave the board as the caller (TASK-177.2). The dialog passes the
+   * provider action; standalone mounts without it simply render no leave
+   * control. Resolves `false` when the server refused (a toast is shown).
+   */
+  onLeave?: (boardId: string) => Promise<boolean>;
+  /** Overrides `useAuth().user.id` in component tests. */
+  currentUserId?: string;
 }
 
 export function BoardMembersPanel({
   boardId,
   canManage,
+  onLeave,
+  currentUserId,
 }: BoardMembersPanelProps) {
   const { t, lang } = useI18n();
   const toast = useToast();
   const { user } = useAuth();
+  const selfId = currentUserId ?? user?.id;
   const openProfile = useOpenProfile();
 
   const [members, setMembers] = useState<BoardMemberDto[] | null>(null);
@@ -394,6 +421,8 @@ export function BoardMembersPanel({
   const [loadFailed, setLoadFailed] = useState(false);
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   // Frozen at mount so the "access expired" badges don't call `Date.now()`
   // during render (react-hooks/purity); the panel remounts on every open.
   const [now] = useState(() => Date.now());
@@ -540,6 +569,17 @@ export function BoardMembersPanel({
     }
   }
 
+  async function handleLeave() {
+    if (onLeave === undefined) return;
+    setLeaving(true);
+    try {
+      await onLeave(boardId);
+      setConfirmLeave(false);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   async function handleRemove(member: BoardMemberDto) {
     setPendingUserId(member.userId);
     try {
@@ -640,6 +680,7 @@ export function BoardMembersPanel({
               const label = userLabel(member.displayName, member.email);
               const locked = isLastAdmin(member);
               const pending = pendingUserId === member.userId;
+              const isSelf = selfId !== undefined && member.userId === selfId;
               const expired =
                 member.expiresAt !== null && member.expiresAt <= now;
               return (
@@ -696,7 +737,84 @@ export function BoardMembersPanel({
                     </div>
                   </button>
 
-                  {canManage ? (
+                  {isSelf && onLeave !== undefined ? (
+                    <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:flex-nowrap">
+                      {canManage ? (
+                        // Keep the admin's existing self-role control; only
+                        // the self-remove is replaced by Leave.
+                        <span
+                          title={
+                            locked ? t("board.members.lastAdmin") : undefined
+                          }
+                        >
+                          <RolePicker
+                            compact
+                            value={member.role}
+                            label={t("board.members.roleAria", { name: label })}
+                            disabled={pending || locked}
+                            onChange={(next) =>
+                              void handleRoleChange(member, next)
+                            }
+                          />
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {t(ROLE_KEYS[member.role])}
+                        </span>
+                      )}
+                      {confirmLeave ? (
+                        <span
+                          data-testid="member-leave-confirm"
+                          className="flex shrink-0 items-center gap-0.5 rounded-md border border-danger/30 bg-danger/5 p-0.5 pl-2"
+                        >
+                          <span className="pr-1 text-xs text-muted-foreground">
+                            {t("board.members.leaveConfirm")}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("board.members.leaveConfirmYes")}
+                            disabled={leaving || locked}
+                            onClick={() => void handleLeave()}
+                            className="h-7 w-7 text-danger hover:bg-danger/10 hover:text-danger"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("common.cancel")}
+                            disabled={leaving}
+                            onClick={() => setConfirmLeave(false)}
+                            className="h-7 w-7 text-muted-foreground hover:bg-hover hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
+                      ) : (
+                        <span
+                          title={
+                            locked
+                              ? t("board.members.lastAdminLeave")
+                              : undefined
+                          }
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`${t("board.members.leave")} — ${label}`}
+                            data-testid="board-member-leave"
+                            disabled={locked || leaving}
+                            onClick={() => setConfirmLeave(true)}
+                            className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-danger"
+                          >
+                            <LogOut size={14} />
+                            {t("board.members.leave")}
+                          </Button>
+                        </span>
+                      )}
+                    </div>
+                  ) : canManage ? (
                     <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1 sm:flex-nowrap">
                       {member.role === "VIEWER" ? (
                         <ExpiryPicker

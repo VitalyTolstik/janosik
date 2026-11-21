@@ -2137,6 +2137,8 @@ export class AdminService {
     const where: Prisma.CommandWhereInput = {};
     if (query.boardId) where.boardId = query.boardId;
     if (query.commandId) where.id = query.commandId;
+    if (query.actorId) where.actorId = { in: query.actorId };
+    if (query.type) where.type = { in: query.type };
     const touches: string[] = [];
     if (query.cardId) touches.push(`card:${query.cardId}`);
     if (query.columnId) touches.push(`column:${query.columnId}`);
@@ -2457,6 +2459,10 @@ export class AdminService {
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminAuditRowDto>> {
     const where: Prisma.AdminAuditLogWhereInput = {};
+    if (query.adminId) where.adminId = { in: query.adminId };
+    if (query.action) where.action = { in: query.action };
+    if (query.targetType) where.targetType = { in: query.targetType };
+    if (query.targetId) where.targetId = query.targetId;
     if (query.search) {
       where.OR = [
         { id: { contains: query.search } },
@@ -2470,7 +2476,7 @@ export class AdminService {
     // the action too, so a stray `details.commandId` on another action can
     // never satisfy the deep link.
     if (query.commandId) {
-      where.action = "board.command";
+      where.AND = [{ action: "board.command" }];
       where.details = { path: ["commandId"], equals: query.commandId };
     }
     where.createdAt = this.dateRange(query);
@@ -2478,7 +2484,7 @@ export class AdminService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.adminAuditLog.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: offset,
         take: limit,
       }),

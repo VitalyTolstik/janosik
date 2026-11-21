@@ -182,6 +182,20 @@ function Probe() {
           void actions.importBoards([emptyBoard("imported-1", "Imported")]);
         }}
       />
+      <button
+        type="button"
+        data-testid="leave-b1"
+        onClick={() => {
+          void actions.leaveBoard("b-1");
+        }}
+      />
+      <button
+        type="button"
+        data-testid="leave-b2"
+        onClick={() => {
+          void actions.leaveBoard("b-2");
+        }}
+      />
     </div>
   );
 }
@@ -1091,6 +1105,41 @@ describe("BoardProvider server-mode failures and board management", () => {
       expect(screen.getByTestId("board-count").textContent).toBe("1"),
     );
     expect(server.boards.size).toBe(1);
+  });
+
+  it("leaves a board over REST and drops it from the switcher (TASK-177.2)", async () => {
+    const server = new FakeServer([
+      seedBoard(),
+      { ...seedBoard(), id: "b-2", title: "Second" },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+
+    // A refusal — e.g. the last ADMIN — keeps the board and local state.
+    server.failNextRequest(409, {
+      message: "Cannot leave the last ADMIN of the board",
+      code: "last_admin",
+    });
+    fireEvent.click(screen.getByTestId("leave-b1"));
+    expect(
+      await screen.findByText(
+        "You are the last admin. Make another admin before leaving the board.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("board-count").textContent).toBe("2");
+    expect(screen.getByTestId("title").textContent).toBe("Board");
+
+    // A real leave forgets the board, its role and its resume point.
+    fireEvent.click(screen.getByTestId("leave-b1"));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("1"),
+    );
+    expect(screen.getByTestId("title").textContent).toBe("Second");
+    expect(server.revoked.has("b-1")).toBe(true);
+    expect(server.requests.map((r) => `${r.method} ${r.path}`)).toContain(
+      "DELETE /api/v1/boards/b-1/members/me",
+    );
   });
 
   it("imports boards over REST and re-hydrates, or leaves the list alone on failure", async () => {
