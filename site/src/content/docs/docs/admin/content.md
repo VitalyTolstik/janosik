@@ -364,8 +364,8 @@ palette`.
 | Status | `Active` or `Deleted` |
 
 The page has a search box, status tabs, pagination and bulk selection. The
-`Filters` button offers Board and Card; the Card facet is the practical way to
-inspect one card's checklist without opening the card detail.
+`Filters` button offers Board; an exact column, card or label id from an old
+link still narrows the list and resolves to a readable chip.
 
 ## Checklists
 

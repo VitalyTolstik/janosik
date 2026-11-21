@@ -66,6 +66,11 @@ for (const locale of ["en", "ru"] as const) {
           name: copy[locale].dialog,
         });
         await expect(dialog).toBeVisible();
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth,
+          ),
+        ).toBe(true);
         await page.screenshot({
           path: test.info().outputPath(`filters-${locale}-${width}-sheet.png`),
           fullPage: false,

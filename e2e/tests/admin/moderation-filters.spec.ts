@@ -348,6 +348,9 @@ for (const width of [1440, 1024, 390]) {
     await expect(page.getByTestId("admin-filter-mime")).toHaveText(
       copy.documents,
     );
+    // A text/plain upload must actually classify as a document; otherwise a
+    // family accidentally stored as "other" still passes the PDF-empty check.
+    await expect(page.getByText(files[1].name, { exact: false })).toBeVisible();
 
     const transcode = await openFacet(copy.attachmentsDialog, copy.transcode);
     const statuses = transcode.getByRole("radiogroup", {

@@ -71,6 +71,7 @@ describe("transcode output size", () => {
         expect(data.transcodeStatus).toBe("done");
         if (shouldReplace) {
           expect(data.mimeType).toBe("video/mp4");
+          expect(data.mimeFamily).toBe("video");
           expect((await readFile(path.join(dir, data.storedName))).length).toBe(
             size,
           );

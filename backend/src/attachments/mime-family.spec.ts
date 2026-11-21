@@ -1,3 +1,4 @@
+import { ADMIN_MIME_FAMILIES } from "@janosik/shared";
 import { attachmentMimeFamily } from "./mime-family";
 
 describe("attachmentMimeFamily", () => {
@@ -30,5 +31,18 @@ describe("attachmentMimeFamily", () => {
     ["", "other"],
   ] as const)("maps %s to %s", (mimeType, family) => {
     expect(attachmentMimeFamily(mimeType)).toBe(family);
+  });
+
+  it("maps a representative value for every admin family", () => {
+    const samples = {
+      image: "image/png",
+      video: "video/mp4",
+      pdf: "application/pdf",
+      document: "text/plain",
+      other: "application/json",
+    } as const;
+    for (const family of ADMIN_MIME_FAMILIES) {
+      expect(attachmentMimeFamily(samples[family])).toBe(family);
+    }
   });
 });

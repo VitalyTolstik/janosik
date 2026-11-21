@@ -1182,7 +1182,9 @@ Behavior:
 - `adminMemberId` uses the existing `BoardMember(userId, acceptedAt)` index;
   no new index is required for the accepted-ADMIN membership lookup.
 - Add indexes in a separate migration only after the plan is recorded; note the
-  lock window for self-hosters in the PR. No data backfill.
+  lock window for self-hosters in the PR. 181.7 also adds a one-time
+  `mimeFamily` column/backfill and trigger; the index-only part has no data
+  backfill beyond that column.
 - From 181.2, lookup requests are parallel, debounced and cached in memory per admin
   session with a short TTL (30â€“60 s). Do not refetch on every keystroke or
   pagination. Abort stale requests by generation id (TASK-180.9 M40 pattern).
@@ -1828,10 +1830,12 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8â
      and rebase each subtask; do not edit `EntityPage.tsx`/`HubTabs.tsx` in
      parallel.
 7. Index migration (if any) is separate, measured, and documented for
-   self-hosters. No data backfill.
-8. Rollback: revert the UI/endpoint; the supported matrix keeps old URLs valid,
-   the new strict 400 behavior disappears if 181.1 is reverted, and no schema/
-   data change is required beyond optional indexes.
+   self-hosters. 181.7 adds the one-time `mimeFamily` backfill; the index-only
+   migrations do not rewrite data.
+8. Rollback: revert the UI/endpoint; the supported matrix keeps old URLs valid
+   and the new strict 400 behavior disappears if 181.1 is reverted. The 181.7
+   `mimeFamily` column/trigger and indexes may remain in place; they are
+   additive and do not change the API response.
 
 ## 12. Risks and mitigations
 

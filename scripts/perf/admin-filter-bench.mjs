@@ -40,6 +40,15 @@ const COMMENTS = {
   order: sql`t."createdAt" DESC`,
 };
 
+const COMMENTS_BOARD = {
+  ...COMMENTS,
+  // The shipped board filter joins Card -> Column before the page is chosen.
+  pageJoins: sql`JOIN "Card" c ON c.id = t."cardId"
+    JOIN "Column" co ON co.id = c."columnId"`,
+  countJoins: sql`JOIN "Card" c ON c.id = t."cardId"
+    JOIN "Column" co ON co.id = c."columnId"`,
+};
+
 const ATTACHMENTS = {
   from: sql`"Attachment" t`,
   pageAlias: sql`t`,
@@ -234,8 +243,11 @@ function moderationCases(preset, referenceTime) {
   const document = sql`t."mimeFamily" = 'document'`;
   const other = sql`t."mimeFamily" = 'other'`;
   const pending = sql`t."transcodeStatus" = 'pending'`;
+  const boardId = perfId(preset, "board", 0);
+  const commentBoard = sql`co."boardId" = ${boardId}`;
+  const attachmentBoard = sql`t."boardId" = ${boardId}`;
 
-  return [
+  const base = [
     [
       "comments",
       COMMENTS,
@@ -282,6 +294,55 @@ function moderationCases(preset, referenceTime) {
       }),
     ),
   );
+
+  // Board-scoped moderation is the most common support path (counter links
+  // and the moderation tabs carry boardId), so it gets its own measured cases.
+  // `commentsBoard` is the same Comment relation with the Card/Column join the
+  // shipped board filter needs; its own unfiltered baseline keeps the delta
+  // comparable. It is not a separate admin list.
+  const boardBaseline = {
+    list: "commentsBoard",
+    facet: "unfiltered",
+    model: COMMENTS_BOARD,
+    predicate: unfiltered,
+    extended: true,
+  };
+  const boardCases = [
+    ["commentsBoard", "board", COMMENTS_BOARD, commentBoard],
+    [
+      "commentsBoard",
+      "board-period",
+      COMMENTS_BOARD,
+      sql`${commentBoard} AND ${period}`,
+    ],
+    [
+      "commentsBoard",
+      "board-kind",
+      COMMENTS_BOARD,
+      sql`${commentBoard} AND ${kind}`,
+    ],
+    ["attachments", "board", ATTACHMENTS, attachmentBoard],
+    [
+      "attachments",
+      "board-period",
+      ATTACHMENTS,
+      sql`${attachmentBoard} AND ${period}`,
+    ],
+    [
+      "attachments",
+      "board-mime",
+      ATTACHMENTS,
+      sql`${attachmentBoard} AND ${image}`,
+    ],
+  ].map(([list, facet, model, predicate]) => ({
+    list,
+    facet,
+    model,
+    predicate,
+    extended: true,
+  }));
+
+  return [...base, boardBaseline, ...boardCases];
 }
 
 function facetCases(preset, referenceTime) {
@@ -686,6 +747,7 @@ async function main() {
       if (
         moderationOnly &&
         entry.list !== "comments" &&
+        entry.list !== "commentsBoard" &&
         entry.list !== "attachments"
       )
         continue;

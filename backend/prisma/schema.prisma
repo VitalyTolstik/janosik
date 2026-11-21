@@ -846,6 +846,7 @@ model Attachment {
   createdAt           DateTime  @default(now())
 
   @@index([cardId, createdAt])
+  @@index([boardId, createdAt]) // board-scoped moderation
   @@index([createdAt]) // admin period filter
   @@index([uploadedById, createdAt]) // admin uploader filter
   @@index([mimeFamily, createdAt]) // admin MIME family filter
@@ -948,6 +949,7 @@ model AdminAuditLog {
   @@index([adminId, createdAt])
   @@index([action, createdAt])
   @@index([targetType, targetId])
+  @@index([targetType, createdAt]) // target type + period
 }
 
 // ---------------------------------------------------------------------------
