@@ -108,6 +108,11 @@ interface FilterBarProps {
   /** Total number of matching cards across all columns (for the count). */
   matchCount: number;
   /**
+   * A server comment/attachment lookup is still pending for the current
+   * query — the count would be a misleading `0 cards found` (TASK-177.13).
+   */
+  matchPending?: boolean;
+  /**
    * Apply a filter change. The reducer form is resolved against the latest
    * filter in `BoardSection`, not the `filter` prop this render captured.
    */
@@ -253,6 +258,7 @@ export function FilterBar({
   labels,
   boardId,
   matchCount,
+  matchPending = false,
   onChange,
 }: FilterBarProps) {
   const { t, tp, lang } = useI18n();
@@ -651,7 +657,9 @@ export function FilterBar({
             data-testid="filter-match-count"
             className="whitespace-nowrap text-xs text-muted-foreground"
           >
-            {tp("filter.found", matchCount)}
+            {matchPending
+              ? t("filter.searchingServer")
+              : tp("filter.found", matchCount)}
           </span>
           <Button
             variant="ghost"

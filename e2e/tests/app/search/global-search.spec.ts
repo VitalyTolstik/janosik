@@ -19,7 +19,7 @@ test("opens from the header and focuses the input", async ({ page, board }) => {
 
   await expect(globalSearchInput(page)).toBeFocused();
   await expect(globalSearchResults(page)).toContainText(
-    "Type to search titles, descriptions, labels and checklists across all boards.",
+    "Type to search titles, descriptions, labels, checklists, comments and visible attachment file names across all boards.",
   );
 });
 
@@ -208,7 +208,7 @@ test("clears the query when the palette is reopened", async ({
 
   await expect(globalSearchInput(page)).toHaveValue("");
   await expect(globalSearchResults(page)).toContainText(
-    "Type to search titles, descriptions, labels and checklists across all boards.",
+    "Type to search titles, descriptions, labels, checklists, comments and visible attachment file names across all boards.",
   );
 });
 
@@ -263,13 +263,19 @@ test("keeps the board selected when Show all expands the cards", async ({
   for (let index = 0; index < 20; index += 1) {
     await page.keyboard.press("ArrowDown");
   }
-  await expect(results.getByRole("option", { selected: true })).toHaveText(
-    "Cursor result",
+  const selected = results.getByRole("option", { selected: true });
+  await expect(selected).toContainText("Cursor result");
+  await expect(selected.getByTestId("search-type-badge")).toHaveAttribute(
+    "data-type",
+    "board",
   );
 
   await page.getByTestId("search-show-all").click();
-  await expect(results.getByRole("option", { selected: true })).toHaveText(
-    "Cursor result",
+  const stillSelected = results.getByRole("option", { selected: true });
+  await expect(stillSelected).toContainText("Cursor result");
+  await expect(stillSelected.getByTestId("search-type-badge")).toHaveAttribute(
+    "data-type",
+    "board",
   );
   await page.keyboard.press("Enter");
 
@@ -489,7 +495,7 @@ test("handles whitespace-only, max length and ArrowUp", async ({
 
   await searchGlobally(page, "   ");
   await expect(globalSearchResults(page)).toContainText(
-    "Type to search titles, descriptions, labels and checklists across all boards.",
+    "Type to search titles, descriptions, labels, checklists, comments and visible attachment file names across all boards.",
   );
   await expect(globalSearchResults(page)).not.toContainText("Nothing found.");
 

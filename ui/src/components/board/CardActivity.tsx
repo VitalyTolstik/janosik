@@ -44,6 +44,8 @@ interface CardActivityProps {
   /** Local-mode timeline when no server is reachable. */
   localActivity?: CardActivityEvent[];
   readOnly?: boolean;
+  /** Search deep link (TASK-177.13): comment row to reveal and highlight. */
+  focusCommentId?: string;
 }
 
 /**
@@ -62,6 +64,7 @@ export function CardActivity({
   updatedAt,
   localActivity,
   readOnly = false,
+  focusCommentId,
 }: CardActivityProps) {
   const { t, tp } = useI18n();
   const [view, setView] = useState<ActivityView>("comments");
@@ -146,6 +149,7 @@ export function CardActivity({
           cardId={cardId}
           boardId={boardId}
           readOnly={readOnly}
+          focusId={focusCommentId}
           onCountChange={setCommentCount}
         />
       </div>
