@@ -316,6 +316,22 @@ describe("CardLinks (TASK-46)", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the remove action visible on touch with a 44 px target", async () => {
+    renderBoard();
+    const dialog = await openCardDialog("Set up CI/CD pipeline");
+    await linkCard(dialog, "Fix critical");
+
+    const remove = await within(dialog).findByTestId("card-link-remove");
+    expect(remove).toHaveClass(
+      "no-hover:opacity-100",
+      "focus-visible:opacity-100",
+      "max-md:h-11",
+      "max-md:w-11",
+      "no-hover:h-11",
+      "no-hover:w-11",
+    );
+  });
+
   it("renders a row towards a deleted card so its cap can be freed", async () => {
     seedDanglingBoard();
     renderSeededBoard();
