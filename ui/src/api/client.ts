@@ -25,6 +25,7 @@ import type {
   BoardMemberDto,
   BoardPendingInvitationDto,
   BoardShareDto,
+  BoardStarterLocale,
   BoardSummary,
   CommandRequest,
   CommandResponse,
@@ -926,10 +927,13 @@ export class ApiClient {
     return this.request<BoardSummary[]>("/boards");
   }
 
-  createBoard(title: string): Promise<BoardAggregate> {
+  createBoard(
+    title: string,
+    options?: { template?: "starter"; templateLocale?: BoardStarterLocale },
+  ): Promise<BoardAggregate> {
     return this.requestIdempotent<BoardAggregate>("/boards", {
       method: "POST",
-      body: { title },
+      body: { title, ...options },
       headers: { "Idempotency-Key": createId() },
     });
   }
@@ -1455,6 +1459,18 @@ export class ApiClient {
     try {
       return await this.request<T>(path, init);
     } catch (error) {
+      // The server deliberately keeps these records in progress so the same
+      // key cannot duplicate the write. Retrying would only turn the
+      // actionable 503 (with the created board id) into a 409, so let the
+      // caller recover from the original body.
+      if (
+        error instanceof ApiError &&
+        (error.code === "starter_cleanup_failed" ||
+          error.code === "starter_read_failed" ||
+          error.code === "board_read_failed")
+      ) {
+        throw error;
+      }
       if (
         error instanceof ApiError &&
         (error.status === 0 ||

@@ -52,6 +52,51 @@ describe("ApiClient — REST idempotency (TASK-180.2 M17)", () => {
     expect(keys[1]).toBe(keys[0]);
   });
 
+  it.each([
+    "starter_cleanup_failed",
+    "starter_read_failed",
+    "board_read_failed",
+  ])("does not retry an actionable %s 503", async (code) => {
+    let attempts = 0;
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async () => {
+        attempts += 1;
+        return json(
+          { code, retryable: true, details: { boardId: "b-rec" } },
+          503,
+        );
+      },
+    });
+    await expect(client.createBoard("Launch")).rejects.toMatchObject({
+      status: 503,
+      code,
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("sends the first-run starter options in the create body", async () => {
+    const bodies: unknown[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (_input, init) => {
+        bodies.push(
+          typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+        );
+        return json({ id: "board-starter", title: "Launch" }, 201);
+      },
+    });
+    await client.createBoard("Launch", {
+      template: "starter",
+      templateLocale: "ru",
+    });
+    expect(bodies[0]).toEqual({
+      title: "Launch",
+      template: "starter",
+      templateLocale: "ru",
+    });
+  });
+
   it("uses a fresh key for each logical import and keeps it on retry", async () => {
     const keys: Array<string | null> = [];
     let attempts = 0;
