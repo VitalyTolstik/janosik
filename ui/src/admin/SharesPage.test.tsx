@@ -120,14 +120,34 @@ describe("SharesPage", () => {
   it("caps a long board title instead of widening the table", async () => {
     const title =
       "A very long board title that would otherwise push the expiry and actions columns off the screen";
+    const deletedTitle =
+      "A very long deleted board title that would otherwise push the expiry and actions columns off the screen";
     const server = new FakeAdminServer();
-    server.shares = [shareRow({ id: "long-title", boardTitle: title })];
+    server.shares = [
+      shareRow({ id: "long-title", boardTitle: title }),
+      shareRow({
+        id: "long-deleted",
+        boardTitle: deletedTitle,
+        boardDeleted: true,
+        createdAt: CREATED_AT - 1,
+      }),
+    ];
     vi.stubGlobal("fetch", server.fetchImpl);
     renderShares();
 
     const link = await screen.findByRole("link", { name: title });
     expect(link).toHaveAttribute("title", title);
     expect(link).toHaveClass("max-w-[20rem]", "truncate");
+
+    const deleted = screen.getByText(deletedTitle);
+    expect(deleted).toHaveAttribute("title", deletedTitle);
+    expect(deleted).toHaveClass("truncate");
+    expect(deleted.parentElement).toHaveClass(
+      "flex",
+      "max-w-[20rem]",
+      "min-w-0",
+    );
+    expect(screen.getByText("board gone")).toBeVisible();
   });
 
   it("pages 101 shares, reports the server total and disables the edges", async () => {
@@ -175,7 +195,7 @@ describe("SharesPage", () => {
     expect(screen.getByTestId("admin-pagination-next")).toBeDisabled();
   });
 
-  it("hides the window label while the next page is in flight", async () => {
+  it("keeps the window label on the visible snapshot while the next page is in flight", async () => {
     const server = new FakeAdminServer();
     server.shares = shareRows(101);
     vi.stubGlobal("fetch", server.fetchImpl);

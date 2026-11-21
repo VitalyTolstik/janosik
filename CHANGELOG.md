@@ -60,10 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - TASK-177.5 truthful admin shares list: `/admin/shares` now pages over the
   server's `total/offset/limit` with the shared 25/50/100 pager and shows the
-  visible window as `N of M`. The label is derived from the response snapshot
-  and hidden while a page is pending, so a new offset can never be paired with
-  the previous rows, and an out-of-range page after rows shrink is clamped to
-  the last real page. Each row has an `Expires` column with an `Expired` badge
+  visible window as `N of M`. The label comes from the same response as the
+  rows, so it stays on the last completed page while the next request is
+  pending and never pairs a new offset with the previous rows; an
+  out-of-range page after rows shrink is clamped to the last real page. Each
+  row has an `Expires` column with an `Expired` badge
   (suppressed for revoked links, which keep their own badge) and an accessible
   no-expiry dash. Search resets paging, a zero-result search uses the filtered
   empty state, and the list uses the shared responsive admin table/card layout

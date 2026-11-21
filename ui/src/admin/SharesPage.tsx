@@ -152,11 +152,16 @@ export function SharesPage() {
                     <Td label={t("admin.shares.col.board")}>
                       <div className="flex flex-col">
                         {row.boardDeleted ? (
-                          <span className="text-muted-foreground">
-                            {row.boardTitle ?? row.boardId}
+                          <div className="flex max-w-[20rem] min-w-0 items-center gap-2 text-muted-foreground">
+                            <span
+                              className="truncate"
+                              title={row.boardTitle ?? undefined}
+                            >
+                              {row.boardTitle ?? row.boardId}
+                            </span>
                             {row.revokedAt === null ? (
                               <span
-                                className="ml-2 inline-flex"
+                                className="inline-flex shrink-0"
                                 title={
                                   row.mode === "live"
                                     ? t("admin.shares.boardGone.hint")
@@ -172,7 +177,7 @@ export function SharesPage() {
                                 </Badge>
                               </span>
                             ) : null}
-                          </span>
+                          </div>
                         ) : (
                           <Link
                             to={`/admin/boards/${row.boardId}`}
