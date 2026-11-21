@@ -1,4 +1,4 @@
-import { test, expect } from "../../../fixtures/sharing.js";
+import { test, expect, confirmShareRevoke } from "../../../fixtures/sharing.js";
 
 test.describe.configure({ timeout: 60_000 });
 
@@ -26,7 +26,7 @@ test("mode filters, limits and revoked link deletion", async ({
   ).toBeVisible();
   expect((await dialog.boundingBox())!.height).toBe(height);
   const row = page.getByTestId("share-row").first();
-  await row.getByRole("button", { name: "Revoke" }).click();
+  await confirmShareRevoke(page, row);
   await expect(page.getByText("Active links: 4 / 5")).toBeVisible();
   await expect(row.getByRole("button", { name: "Copy link" })).toHaveCount(0);
   await expect(row.getByRole("button", { name: "Embed code" })).toHaveCount(0);

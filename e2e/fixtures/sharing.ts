@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { type APIRequestContext, type Page } from "@playwright/test";
+import {
+  type APIRequestContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { test as authTest, expect, login } from "./auth.js";
 import { appUrl, siteUrl } from "../helpers/urls.js";
 
@@ -123,4 +127,15 @@ export const test = authTest.extend<{ sharing: Sharing }>({
 export { expect };
 export function publicUrl(token: string, query = ""): string {
   return new URL(`s/${token}${query}`, appUrl).href;
+}
+
+/** Click a share row's Revoke and confirm the shared dialog. */
+export async function confirmShareRevoke(
+  page: Page,
+  row: Locator,
+): Promise<void> {
+  await row.getByRole("button", { name: "Revoke" }).click();
+  const dialog = page.getByRole("dialog", { name: /^Revoke / });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Revoke" }).click();
 }

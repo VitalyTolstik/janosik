@@ -104,7 +104,9 @@ export function DataMenu() {
         return;
       }
       downloadTextFile("janosik-boards.json", raw);
-      toast.success(t("data.exportSuccess"));
+      toast.success(
+        t("data.exportAllSuccess", { count: completeBoards.length }),
+      );
     } catch {
       toast.error(t("data.exportFailed"));
     }

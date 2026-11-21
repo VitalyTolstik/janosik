@@ -39,7 +39,7 @@ export function DataSafetyBanner() {
         timestampedFilename("janosik-boards"),
         serializeExport(boards),
       );
-      toast.success(t("data.exportSuccess"));
+      toast.success(t("data.exportAllSuccess", { count: boards.length }));
     } catch {
       toast.error(t("data.exportFailed"));
     }
@@ -56,7 +56,7 @@ export function DataSafetyBanner() {
     }
     try {
       downloadTextFile(timestampedFilename("janosik-damaged"), raw);
-      toast.success(t("data.exportSuccess"));
+      toast.success(t("safety.corruptDownloaded"));
     } catch {
       toast.error(t("data.exportFailed"));
     }
