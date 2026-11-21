@@ -1,9 +1,13 @@
 # TASK-181 — Admin list filters and discoverable filter UX
 
-**Status:** planned
+**Status:** implemented on `feat/TASK-181.7-docs-acceptance` (2026-11-21);
+pending merge. Acceptance evidence is in
+[TASK-181.7-acceptance.md](./TASK-181.7-acceptance.md).
 
-**Revision:** 10 (2026-11-21) — records the TASK-181.6 Audit, Commands, and
-Activity facets and their [benchmark evidence](./TASK-181.6-audit-perf.md).
+**Revision:** 11 (2026-11-21) — records the TASK-181.7 25k qualification, the
+indexed MIME family, and the [acceptance evidence](./TASK-181.7-acceptance.md).
+Revision 10 recorded the TASK-181.6 Audit, Commands, and Activity facets and
+their [benchmark evidence](./TASK-181.6-audit-perf.md).
 
 **Priority:** P1 for the shared contract and cards, P2 for the remaining hubs
 
@@ -1178,7 +1182,9 @@ Behavior:
 - `adminMemberId` uses the existing `BoardMember(userId, acceptedAt)` index;
   no new index is required for the accepted-ADMIN membership lookup.
 - Add indexes in a separate migration only after the plan is recorded; note the
-  lock window for self-hosters in the PR. No data backfill.
+  lock window for self-hosters in the PR. 181.7 also adds a one-time
+  `mimeFamily` column/backfill and trigger; the index-only part has no data
+  backfill beyond that column.
 - From 181.2, lookup requests are parallel, debounced and cached in memory per admin
   session with a short TTL (30–60 s). Do not refetch on every keystroke or
   pagination. Abort stale requests by generation id (TASK-180.9 M40 pattern).
@@ -1610,6 +1616,13 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Final browser matrix and screenshots 1440/1024/390, RU + EN.
 - Perf evidence from `npm run perf:admin-filters` (5k PR gate + full 25k manual
   run) and any index migration notes.
+- Attachment MIME filtering uses an indexed `mimeFamily` column. A trigger keeps
+  it in step with `mimeType` for fixtures and imports; the upload service sets
+  it explicitly. The measured 25k indexes cover card priority/period/attachments,
+  comment author/kind/period, attachment period/uploader/transcode/MIME family,
+  card-link type/order, live label counts and the users period. The migration
+  and every measurement are recorded in the
+  [acceptance record](./TASK-181.7-acceptance.md).
 - A short “what is intentionally not filterable” section in the docs.
 
 **Acceptance**
@@ -1617,11 +1630,14 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
 - Docs match the shipped UI; no dead links; EN/RU parity.
 - `npm run format:check`, lint, typecheck, unit/shared/backend/e2e/browser suites
   green; no test expectations weakened.
-- 390 has no horizontal overflow; keyboard-only flow works; axe/manual a11y
-  checklist has no new violations.
+- 390 has no horizontal overflow; keyboard-only flow works; the manual admin
+  a11y checklist has no new violations. The automated axe suite covers the
+  user app separately.
 - No regressions in existing admin URLs, global search, bulk actions or
   `returnTo`.
-- Pass the 25k moderation and content qualifications before rollout.
+- Pass the 25k moderation and content qualifications before rollout. The
+  measured result, scoped exceptions and raw plans are in the
+  [acceptance record](./TASK-181.7-acceptance.md).
 
 ## 10. Test plan
 
@@ -1815,10 +1831,12 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8�
      and rebase each subtask; do not edit `EntityPage.tsx`/`HubTabs.tsx` in
      parallel.
 7. Index migration (if any) is separate, measured, and documented for
-   self-hosters. No data backfill.
-8. Rollback: revert the UI/endpoint; the supported matrix keeps old URLs valid,
-   the new strict 400 behavior disappears if 181.1 is reverted, and no schema/
-   data change is required beyond optional indexes.
+   self-hosters. 181.7 adds the one-time `mimeFamily` backfill; the index-only
+   migrations do not rewrite data.
+8. Rollback: revert the UI/endpoint; the supported matrix keeps old URLs valid
+   and the new strict 400 behavior disappears if 181.1 is reverted. The 181.7
+   `mimeFamily` column/trigger and indexes may remain in place; they are
+   additive and do not change the API response.
 
 ## 12. Risks and mitigations
 

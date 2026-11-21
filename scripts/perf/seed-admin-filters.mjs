@@ -35,6 +35,28 @@ export function perfId(preset, model, index) {
   return `perf181-${preset}-${model}-${index}`;
 }
 
+// Keep in sync with backend/src/attachments/mime-family.ts and the database
+// trigger in the TASK-181.7 migration.
+function mimeFamily(mimeType) {
+  const value = mimeType.toLowerCase();
+  if (value.startsWith("image/")) return "image";
+  if (value.startsWith("video/")) return "video";
+  if (value === "application/pdf") return "pdf";
+  if (
+    value.startsWith("text/") ||
+    [
+      "application/rtf",
+      "application/msword",
+      "application/vnd.ms-excel",
+      "application/vnd.ms-powerpoint",
+    ].includes(value) ||
+    value.startsWith("application/vnd.openxmlformats-officedocument.")
+  ) {
+    return "document";
+  }
+  return "other";
+}
+
 export function perfDatabase() {
   const datasourceUrl = process.env.ADMIN_FILTER_PERF_DATABASE_URL;
   if (!datasourceUrl) {
@@ -223,26 +245,30 @@ async function seed(db, preset) {
     createdAt: recent(i),
     deletedAt: i % 53 === 52 ? recent(i) : null,
   }));
-  await insert(db.attachment, size.attachments, (i) => ({
-    id: id("file", i),
-    cardId: card(i),
-    boardId: id("board", boardIndex(i)),
-    fileName: `attachment-${i}`,
-    storedName: id("file", i),
-    sizeBytes: 20_000 + i,
-    mimeType:
+  await insert(db.attachment, size.attachments, (i) => {
+    const mimeType =
       i % mimeTypes.length === 4
         ? documentTypes[Math.floor(i / mimeTypes.length) % documentTypes.length]
-        : mimeTypes[i % mimeTypes.length],
-    uploadedById: user(i + 2),
-    isInline: i % 4 === 2,
-    descriptionDetached: i % 4 === 3,
-    transcodeStatus:
-      i % mimeTypes.length === 2
-        ? ["pending", "failed", "done", "done", "none"][i % 5]
-        : "none",
-    createdAt: recent(i),
-  }));
+        : mimeTypes[i % mimeTypes.length];
+    return {
+      id: id("file", i),
+      cardId: card(i),
+      boardId: id("board", boardIndex(i)),
+      fileName: `attachment-${i}`,
+      storedName: id("file", i),
+      sizeBytes: 20_000 + i,
+      mimeType,
+      mimeFamily: mimeFamily(mimeType),
+      uploadedById: user(i + 2),
+      isInline: i % 4 === 2,
+      descriptionDetached: i % 4 === 3,
+      transcodeStatus:
+        i % mimeTypes.length === 2
+          ? ["pending", "failed", "done", "done", "none"][i % 5]
+          : "none",
+      createdAt: recent(i),
+    };
+  });
   await insert(db.command, size.commands, (i) => ({
     id: id("command", i),
     boardId: id("board", boardIndex(i)),

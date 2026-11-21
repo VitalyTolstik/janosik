@@ -55,6 +55,8 @@ model User {
   passwordReset   PasswordResetToken?
   oauthIdentities OAuthIdentity[]
   dismissals      AnnouncementDismissal[]
+
+  @@index([createdAt]) // admin users period filter
 }
 
 model OAuthIdentity {
@@ -584,6 +586,7 @@ model Column {
   cards       Card[]
 
   @@index([boardId, position])
+  @@index([boardId, id]) // board-scoped comments join
   @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
@@ -630,6 +633,13 @@ model Card {
   attachments          Attachment[]
 
   @@index([columnId, position])
+  // TASK-181.7 admin list filters and live card counts.
+  @@index([columnId, id]) // board-scoped comments join
+  @@index([columnId, deletedAt])
+  @@index([id, deletedAt])
+  @@index([createdAt])
+  @@index([priority, updatedAt])
+  @@index([attachmentCount, updatedAt])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
   @@index([claimedByTokenId])
   @@index([claimedBySessionId])
@@ -663,6 +673,9 @@ model CardLink {
   @@index([boardId])
   @@index([fromCardId, position])
   @@index([toCardId])
+  @@index([createdAt]) // admin list order and createdAt filters
+  @@index([type, createdAt]) // admin type filters
+  @@index([boardId, type, createdAt]) // admin type + board
   @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
@@ -693,6 +706,7 @@ model CardLabel {
 
   @@id([cardId, labelId])
   @@index([labelId]) // label cascade
+  @@index([labelId, cardId]) // admin labels card counts
 }
 
 model Checklist {
@@ -779,6 +793,9 @@ model Comment {
   updatedAt      DateTime  @updatedAt
 
   @@index([cardId, createdAt])
+  @@index([authorId, createdAt]) // admin author and combined filters
+  @@index([kind, createdAt]) // admin kind and combined filters
+  @@index([createdAt]) // admin period filter
   @@index([deletedAt]) // purge sweep (TASK-148)
   @@index([apiTokenId, createdAt])
   @@index([agentSessionId, createdAt])
@@ -797,6 +814,9 @@ model Attachment {
   fileName            String
   storedName          String    @unique
   mimeType            String
+  // TASK-181.7: indexed MIME family for the admin filter. A database trigger
+  // keeps it in step with mimeType for rows written outside the upload service.
+  mimeFamily          String    @default("other")
   sizeBytes           Int // ≤ LIMITS.attachmentSize (25 MB)
   uploadedBy          User      @relation(fields: [uploadedById], references: [id])
   uploadedById        String
@@ -828,6 +848,11 @@ model Attachment {
   createdAt           DateTime  @default(now())
 
   @@index([cardId, createdAt])
+  @@index([boardId, createdAt]) // board-scoped moderation
+  @@index([createdAt]) // admin period filter
+  @@index([uploadedById, createdAt]) // admin uploader filter
+  @@index([mimeFamily, createdAt]) // admin MIME family filter
+  @@index([transcodeStatus, createdAt]) // admin transcode filter
   @@index([deletedAt]) // purge sweep (TASK-92)
   @@index([deletedAt, transcodeStatus]) // boot recovery (TASK-92)
   @@index([deletedAt, derivativeStatus]) // media boot recovery (TASK-92)
@@ -926,6 +951,7 @@ model AdminAuditLog {
   @@index([adminId, createdAt])
   @@index([action, createdAt])
   @@index([targetType, targetId])
+  @@index([targetType, createdAt]) // target type + period
 }
 
 // ---------------------------------------------------------------------------

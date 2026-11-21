@@ -30,6 +30,10 @@ and public share browsers that sit under security.
 The page has a search box, status tabs (all, active, archived, deleted),
 pagination, a `Create board` button and bulk selection.
 
+The `Filters` button offers `Admin member`. The filter matches the exact user
+id of any accepted `ADMIN`; it is not the Owner column. Two accepted ADMINs
+both match, while a `MEMBER`, a `VIEWER` and a pending invitation do not.
+
 ### Create a board
 
 The `Create board` dialog takes a title and an owner email. The owner becomes
@@ -169,8 +173,8 @@ archived-card `409`. The confirm dialog states the soft-delete behavior.
 
 ## Cards
 
-`/app/admin/cards` lists every card on the platform. The subtitle is `{total} cards
-across every board`.
+`/app/admin/cards` lists every card on the platform. The subtitle is `Cards
+across every board: {total}`.
 
 | Column | Value |
 | --- | --- |
@@ -184,7 +188,24 @@ across every board`.
 | Updated | last update time |
 | Status | `Active`, `Archived` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection.
+The page has a search box, status tabs, period tabs, pagination and bulk
+selection.
+
+The `Filters` button and its chips narrow the list by:
+
+| Facet | Values | Notes |
+| --- | --- | --- |
+| Board | one exact board id | |
+| Column | one exact column id | |
+| Label | one or more label ids, plus **Any label** / **All labels** | All requires every selected label |
+| Assignee | one or more user ids, plus `Unassigned` | `Unassigned` is OR-ed with the selected assignees |
+| Priority | `Blocker`, `Highest`, `High`, `Medium`, `Low`, `Lowest` | `Medium` includes cards without a priority |
+| Due date | `Overdue`, `Due in 24 hours`, `No due date` | the same boundaries as the board filter |
+| Card attachments | `Has card attachments`, `No card attachments` | card-face files only; inline files and `descriptionDetached` files are excluded |
+
+The period tabs apply to `createdAt` (any time, 24 hours, 7 days, 30 days).
+An exact card id remains available as an advanced deep link
+(`?cardId=<id>`) for support and search hand-offs.
 
 Row actions: `Archive` (confirmed), `Restore` (when archived) and `Delete`
 (destructive, confirmed).
@@ -324,7 +345,9 @@ column on the platform`.
 | Updated | last update time |
 | Status | `Active` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection.
+The page has a search box, status tabs, pagination and bulk selection. The
+`Filters` button offers Board; an exact column, card or label id from an old
+link still narrows the list and resolves to a readable chip.
 
 ## Labels
 
@@ -340,7 +363,9 @@ palette`.
 | Version | the label version |
 | Status | `Active` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection.
+The page has a search box, status tabs, pagination and bulk selection. The
+`Filters` button offers Board; an exact column, card or label id from an old
+link still narrows the list and resolves to a readable chip.
 
 ## Checklists
 
@@ -355,7 +380,9 @@ The page has a search box, status tabs, pagination and bulk selection.
 | Done | `doneCount/itemCount` |
 | Status | `Active` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection.
+The page has a search box, status tabs, pagination and bulk selection. The
+`Filters` button offers Board and Card, so a check can start from the board or
+from one exact card.
 
 ## Card links
 
@@ -371,7 +398,9 @@ The page has a search box, status tabs, pagination and bulk selection.
 | Created | creation time |
 | Status | `Active` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection.
+The page has a search box, status tabs, pagination and bulk selection. The
+`Filters` button offers Board, Card and Link type (`Blocks`, `Relates to`,
+`Duplicates`). The Card facet matches either side of the link.
 
 ## Comments
 
@@ -380,14 +409,31 @@ The page has a search box, status tabs, pagination and bulk selection.
 
 | Column | Value |
 | --- | --- |
-| Comment | the comment text, truncated |
+| Comment | the comment text, truncated, with its kind badge |
 | Card | card title, linked |
 | Author | author email, linked |
 | Created | creation time |
 | Status | `Active` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection. The row
-action `Delete` soft-deletes the comment, so it becomes invisible for members.
+The page has a search box, status tabs, period tabs, pagination and bulk
+selection. The `Filters` button offers:
+
+| Facet | Values |
+| --- | --- |
+| Board | one exact board id |
+| Card | one exact card id |
+| Author | one exact user id |
+| Comment kind | `Note`, `Status`, `Question`, `Blocker`, `Evidence`, `Handoff` |
+
+The period tabs apply to `createdAt`. **All** includes live and soft-deleted
+rows; **Active** and **Deleted** use the comment's own `deletedAt`. A live
+comment on an archived or deleted board or card still appears in Active.
+Column and label ids from old links remain supported and are shown as chips,
+but they are not offered in the picker because board and card already narrow
+the list.
+
+The row action `Delete` soft-deletes the comment, so it becomes invisible for
+members.
 
 ## Attachments
 
@@ -397,6 +443,7 @@ uploaded to cards`.
 | Column | Value |
 | --- | --- |
 | File | a thumbnail, the file name and a download control |
+| Board | board title, linked |
 | Card | card title, linked |
 | Size | the file size |
 | Type | the MIME type |
@@ -405,7 +452,25 @@ uploaded to cards`.
 | Created | creation time |
 | Status | `Active` or `Deleted` |
 
-The page has a search box, status tabs, pagination and bulk selection.
+The page has a search box, status tabs, period tabs, pagination and bulk
+selection. The `Filters` button offers:
+
+| Facet | Values | Notes |
+| --- | --- | --- |
+| Board | one exact board id | |
+| Card | one exact card id | |
+| Uploader | one exact user id | |
+| File type | `Images`, `Videos`, `PDF`, `Documents`, `Other` | derived case-insensitively from the stored MIME type |
+| Video processing | `Pending`, `Failed`, `Done`, `No transcoding` | `No transcoding` covers non-video files and videos uploaded with transcoding disabled |
+
+The period tabs apply to `createdAt`. Images and videos match their MIME
+prefix, PDF matches `application/pdf`, and Documents covers `text/*`, RTF and
+legacy/Open XML Office formats. Other covers the remaining types, including
+JSON, audio and archives. The tab keeps inline rows visible with an `Inline`
+badge and detached description files with a `Detached` badge; there is no
+inline filter in this version. The card `Has card attachments` filter counts
+card-face files only, so an inline-only card can appear here while its
+`No card attachments` chip is active.
 
 Row actions:
 
@@ -454,9 +519,9 @@ token immediately.
 
 ## Public shares
 
-`/app/admin/shares` lists read-only board links created for any board. The subtitle
-is `Read-only board links created for any board,
-inspect and revoke.`
+`/app/admin/shares` lists read-only board links created for any board. The
+subtitle is `Read-only board links minted against any board — inspect and
+revoke.`
 
 | Column | Value |
 | --- | --- |

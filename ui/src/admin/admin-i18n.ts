@@ -856,7 +856,7 @@ const en = {
   "admin.boards.toast.deleted": "Board deleted",
 
   "admin.cards.title": "Cards",
-  "admin.cards.subtitle": "{total} cards across every board",
+  "admin.cards.subtitle": "Cards across every board: {total}",
   "admin.cards.filter.all": "All",
   "admin.cards.filter.active": "Active",
   "admin.cards.filter.archived": "Archived",

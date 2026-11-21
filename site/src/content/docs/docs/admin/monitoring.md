@@ -156,8 +156,9 @@ its entity supports.
 
 - Status tabs appear only for entities with a status filter (for example
   active, archived, deleted).
-- Period tabs appear only for time-based feeds (activity, commands, sessions,
-  tokens, audit): any time, 24 hours, 7 days, 30 days.
+- Period tabs appear on users, cards, comments, attachments and the
+  time-based feeds (activity, commands, sessions, tokens, audit): any time,
+  24 hours, 7 days, 30 days.
 - Pagination shows the total, the page size and the current page. The page
   size default is 50, the minimum is 1 and the maximum is 100.
 - The entity list state lives in the URL (`search`, `status`, `period`,
@@ -174,6 +175,113 @@ its entity supports.
   per page.
 - If an action fails, a notification shows `Access denied` on `403`, `No connection to the
   server` when the request never left, and `The action failed` otherwise.
+
+### Filters
+
+Lists that have facets beyond status and period expose a `Filters` button next
+to the header controls. The number on the button counts active advanced facets,
+not values; status and period stay in the header and are not counted.
+
+- On a desktop the button opens a popover anchored to it. Below 640 px it opens
+  a bottom sheet capped at 70dvh with 44 px controls and bottom safe-area
+  padding. Closing the surface returns focus to the button.
+- Facets are grouped into **Scope** (board, column, card, command, target id),
+  **People** (assignee, author, uploader, actor, admin member) and
+  **Properties** (label, priority, due date, attachments, comment kind, link
+  type, audit action, target type). The groups and facets differ per list; only
+  supported facets are shown.
+- Every picker searches as you type (250 ms debounce, at most 20 results) and
+  discards a stale response. If the typed value looks like an id, `Use id …`
+  accepts it even when the row is deleted or not returned by search.
+- Single-value pickers apply on selection and close. Multi-value pickers keep
+  a draft: `Apply` commits the whole facet once, `Clear` empties the draft and
+  `Cancel`/`Escape` discards it. Selected values stay pinned at the top and the
+  picker shows `Selected: N`. A facet accepts up to 20 values.
+- Choice facets apply immediately when selected: email verification, due date,
+  card attachments, file type and video processing. Choosing `Any` removes the
+  parameter and its chip.
+- The labels picker shows **Any label** / **All labels** once two or more
+  labels are selected. `All` adds a `Label match: All` chip; removing labels
+  until fewer than two remain resets the mode to Any.
+- The URL is the saved view. Adding, removing or applying a filter pushes one
+  history entry; typing in the search box still replaces the current entry.
+  Reload, back/forward, a shared link and `returnTo` reproduce the same list,
+  page and chips.
+- A filter change resets the page to 1 and clears the bulk selection. Changing
+  the page keeps the selection.
+- `Clear search and filters` resets search, status, period and every advanced
+  filter in one history entry. The page size is kept.
+- Counts are exact server totals (`N total`, `Page X of Y`), never the number
+  of loaded rows. There are no filter-option counts.
+
+#### Filter chips
+
+- A chip shows a human label and the object's own short id (eight characters).
+  Dependent chips also show their parent board and column short ids; the full
+  title and ids are in the tooltip and in the remove button's accessible name.
+- Archived, deleted and disabled objects keep their name with `(archived)`,
+  `(deleted)` or `(disabled)`.
+- An id that no longer exists becomes `Unknown board`, `Unknown column` and so
+  on. The filter stays active and the list shows its normal consistent empty
+  state; the chip is not silently removed.
+- If an object exists but belongs to a different board or column than the
+  active board/column, the panel shows a conflict banner naming the value and
+  a `Remove conflict` action. The filters are kept and the list keeps the exact
+  AND, which can legitimately be empty. Commands is exempt because its card and
+  column facets match historical `touches`.
+- If a lookup fails, the chips and rows stay in place and an inline `Retry`
+  appears above the table. The page never presents an unfiltered list as if the
+  filter had matched.
+- A hand-edited parameter that the list does not support is dropped while the
+  URL is parsed. A direct API call with that parameter returns
+  `400 unsupported_filter`; the panel then replaces the list with an explicit
+  unsupported-filter state and a `Remove filter` action.
+
+#### Board changes and hub tabs
+
+Changing or clearing **Board** removes Column, Label, Label match and Card in
+the same URL update and announces how many filters were cleared. Commands is
+the exception: it keeps Card and Column when Board changes or clears, because
+those facets match the historical command `touches`, not the card's current
+parent.
+
+Switching hub tabs keeps `boardId` (and only `boardId`) where the target
+supports it. Search, status, period, column, label, label match, card and
+checklist state are dropped, and `returnTo` is preserved. This keeps "I am
+inspecting board X" across content and moderation while preventing a stale
+search from hiding rows on another surface.
+
+#### Keyboard and touch
+
+- `Tab` reaches the Filters button; `Enter` or `Space` opens it; `Escape` closes
+  it and returns focus to the button.
+- Single-value pickers are comboboxes/listboxes; multi-value pickers are
+  searchable checkbox groups. Arrows and `Home`/`End` move focus; `Space` or
+  `Enter` selects. A radio group is one tab stop: arrows move focus and
+  `Space`/`Enter` selects.
+- In the mobile sheet every control is at least 44 px, the footer actions stay
+  visible while the facet list scrolls, and the sheet respects the bottom safe
+  area.
+- Chips wrap. At 390 px a long title is ellipsized while the ids stay visible,
+  and the page never scrolls horizontally.
+- Nothing requires hover: every chip remove control is a real focusable button
+  with a minimum 24×24 px hit target (32 px in the desktop panel, 44 px on a
+  phone).
+
+#### What is intentionally not filterable
+
+- There are no board-style saved views, no localStorage restore, no
+  filter-option counts and no CSV export.
+- Sessions and API tokens keep their period tabs only. The sessions list is
+  live-only, so a status filter would imply revoked or expired rows that the
+  list does not show. Public shares keep search only until their pagination is
+  truthful.
+- Masters is a small owner-only roster and has no filters.
+- Detail pages (user, card, board members, dashboard) are already narrowed by
+  their parent and do not repeat list filters.
+- Checklist items have no top-level tab; they are read on the card detail.
+- Security settings show a bounded recent-alert panel, not a searchable
+  security log.
 
 ### Addressable filters
 
@@ -202,9 +310,36 @@ and archived or deleted cards, marked with their badge; `status=active`
 excludes them and `status=deleted` selects them. The Comments and Files
 counters link with `status=active`, matching their live-row definition. The
 Cards counter includes archived cards but excludes deleted ones, so its linked
-list can show archived rows in addition to the count; the Cards counter and
-the Cards counter and the Commands/Events counters stay unfiltered by status.
+list can show archived rows in addition to the count; the Cards and
+Commands/Events counters stay unfiltered by status.
 The status tabs (where the list has them) and filter chips narrow these lists.
+
+### Activity, command log and audit filters
+
+The three monitoring feeds use the same filter surface:
+
+| List | Offered facets |
+| --- | --- |
+| Activity | Board, Card, Actor, Event |
+| Command log | Board, Card, Column, Actor, Action, Command |
+| Audit trail | Master, Action, Target type, Target ID, Command |
+
+- **Activity** types come from the distinct values stored in the feed, so
+  membership, comment, approval and agent events are all reachable without a
+  hard-coded list. The actor facet matches the membership or comment actor.
+- **Command log** types are exact command codes such as `ADD_CARD`,
+  `MOVE_CARD` or `UPDATE_CARD`. Card and Column match historical `touches`, so
+  changing or clearing Board keeps them. A card's current board or column does
+  not restrict the commands that appear in its history.
+- **Audit trail** offers the master ids visible in audit rows. `adminId` is not
+  a roster search and an OPERATOR sees plain text, not a link to the owner-only
+  Masters page. A failed sign-in whose attempted email has no master id is
+  reachable by clearing the Master chip, searching the attempted email and
+  optionally narrowing Action to `admin.login_failed`.
+- The Audit Action and Target type pickers list the values the server returns;
+  free-typed codes are still accepted by the API as exact values. Target ID is
+  an exact id; with one target type selected its chip links to the user, board
+  or card detail when a returned audit row confirms that the object exists.
 
 The dashboard is described here; the user, board and content listings are on
 their own pages: see [users and masters](/docs/admin/people/) and

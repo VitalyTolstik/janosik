@@ -220,6 +220,7 @@ export class TranscodeService implements OnModuleInit {
         data: {
           storedName: finalName,
           mimeType: "video/mp4",
+          mimeFamily: "video",
           sizeBytes: size,
           transcodeStatus: "done",
         },

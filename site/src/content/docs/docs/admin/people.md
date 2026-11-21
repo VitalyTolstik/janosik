@@ -24,8 +24,15 @@ registered`.
 | Registered | creation time |
 | Status | `Active` or `Blocked` |
 
-The page has a search box, status tabs (all, active, blocked), pagination and a
-`Create user` button. Rows link to the user detail page.
+The page has a search box, status tabs (all, active, blocked), period tabs,
+pagination and a `Create user` button. Rows link to the user detail page.
+
+The `Filters` button offers **Email verification**: `Verified` or `Unverified`.
+It combines with the period tabs, which apply to the registration time
+(`createdAt`), so support can answer "unverified sign-ups from the last seven
+days" with one exact, paginated list. The URL carries the choice, for example
+`/app/admin/users?verified=false&period=7d`; a saved link, reload and
+back/forward restore it.
 
 ### Create a user
 
