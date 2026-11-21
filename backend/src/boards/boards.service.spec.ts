@@ -364,3 +364,40 @@ describe("BoardsService.createBoard — L24 rollback proof", () => {
     expect(attention.notifyLimitExceeded).toHaveBeenCalled();
   });
 });
+
+describe("BoardsService.discardFreshBoard", () => {
+  function makeService(transaction: jest.Mock) {
+    const prisma = {
+      $transaction: transaction,
+      boardMember: { deleteMany: jest.fn() },
+      board: { deleteMany: jest.fn() },
+    } as unknown as PrismaService;
+    return new BoardsService(
+      prisma,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  }
+
+  it("retries a transient cleanup failure", async () => {
+    const transaction = jest
+      .fn()
+      .mockRejectedValueOnce(new Error("busy"))
+      .mockRejectedValueOnce(new Error("busy"))
+      .mockResolvedValueOnce([{ count: 1 }, { count: 1 }]);
+    await expect(
+      makeService(transaction).discardFreshBoard("b1"),
+    ).resolves.toBe(true);
+    expect(transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up after three failures", async () => {
+    const transaction = jest.fn().mockRejectedValue(new Error("down"));
+    await expect(
+      makeService(transaction).discardFreshBoard("b1"),
+    ).resolves.toBe(false);
+    expect(transaction).toHaveBeenCalledTimes(3);
+  });
+});

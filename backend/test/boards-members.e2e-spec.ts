@@ -5,6 +5,8 @@ import type { Board, BoardEnvelope } from "@janosik/shared";
 import { normalizeBoards } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
+import { BoardsService } from "@/boards/boards.service";
+import { CommandsService } from "@/commands/commands.service";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -173,16 +175,336 @@ describe("Boards API (e2e)", () => {
       expect(colored.body[0].avatarColor).toBe("indigo");
     });
 
+    it("creates the requested first-run starter with commands", async () => {
+      const res = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Launch plan",
+          template: "starter",
+          templateLocale: "en",
+        })
+        .expect(201);
+
+      const board = res.body as Board;
+      expect(board.title).toBe("Launch plan");
+      expect(board.columns.map((column) => column.title)).toEqual([
+        "To do",
+        "In progress",
+        "Done",
+      ]);
+      const cards = Object.values(board.cards);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]?.title).toBe("Welcome to your board");
+      expect(cards[0]?.checklists?.[0]?.title).toBe("First steps");
+      expect(cards[0]?.checklists?.[0]?.items.map((item) => item.text)).toEqual(
+        [
+          "Rename the board to your project",
+          "Add your first real card",
+          "Invite a teammate",
+        ],
+      );
+      // Starter content is real history: 3 columns + card + checklist + 3 items.
+      const commands = await server()
+        .get(`/api/v1/boards/${board.id}/commands`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(commands.body).toHaveLength(8);
+      expect(commands.body[0]?.action).toMatchObject({ type: "ADD_COLUMN" });
+    });
+
+    it("creates a Russian starter and an empty board without template", async () => {
+      const ru = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Запуск", template: "starter", templateLocale: "ru" })
+        .expect(201);
+      expect(
+        ru.body.columns.map((column: { title: string }) => column.title),
+      ).toEqual(["Сделать", "В работе", "Готово"]);
+      expect(Object.values(ru.body.cards)[0]).toMatchObject({
+        title: "Добро пожаловать на доску",
+      });
+
+      const empty = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Plain" })
+        .expect(201);
+      expect(empty.body.columns).toEqual([]);
+      expect(empty.body.cards).toEqual({});
+    });
+
+    it("replays a starter create and rejects invalid template fields", async () => {
+      const key = randomUUID();
+      const body = {
+        title: "Replay starter",
+        template: "starter",
+        templateLocale: "en",
+      };
+      const first = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(201);
+      const second = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(201);
+      expect(second.body).toEqual(first.body);
+
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Bad template", template: "nope" })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Bad locale", templateLocale: "ru" })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Bad locale",
+          template: "starter",
+          templateLocale: "de",
+        })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Bad locale", template: null, templateLocale: "ru" })
+        .expect(400);
+    });
+
+    it("discards the fresh board when the starter batch fails and retries the key", async () => {
+      const commands = app.get(CommandsService);
+      const spy = jest
+        .spyOn(commands, "applyBatch")
+        .mockRejectedValueOnce(new Error("starter failure"));
+      const key = randomUUID();
+      const body = { title: "Doomed starter", template: "starter" };
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(500);
+      spy.mockRestore();
+
+      const afterFailure = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        afterFailure.body.some(
+          (board: { title: string }) => board.title === "Doomed starter",
+        ),
+      ).toBe(false);
+
+      const retry = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(201);
+      expect(retry.body.title).toBe("Doomed starter");
+      const afterRetry = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        afterRetry.body.filter(
+          (board: { title: string }) => board.title === "Doomed starter",
+        ),
+      ).toHaveLength(1);
+    });
+
+    it("keeps the key when the failed starter cannot be cleaned up", async () => {
+      const commands = app.get(CommandsService);
+      const boards = app.get(BoardsService);
+      const commandSpy = jest
+        .spyOn(commands, "applyBatch")
+        .mockRejectedValueOnce(new Error("starter failure"));
+      const cleanupSpy = jest
+        .spyOn(boards, "discardFreshBoard")
+        .mockResolvedValue(false);
+      const key = randomUUID();
+      const body = { title: "Cleanup doom", template: "starter" };
+      const failed = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(503);
+      commandSpy.mockRestore();
+      cleanupSpy.mockRestore();
+      expect(failed.body).toMatchObject({
+        code: "starter_cleanup_failed",
+        retryable: false,
+        details: { boardId: expect.any(String) },
+      });
+
+      // The empty board may exist; the same key must never mint a second one.
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(409);
+      const list = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        list.body.filter(
+          (board: { title: string }) => board.title === "Cleanup doom",
+        ),
+      ).toHaveLength(1);
+    });
+
+    it("returns the board id when the create read itself fails", async () => {
+      const boards = app.get(BoardsService);
+      const readSpy = jest
+        .spyOn(boards, "getAggregate")
+        .mockRejectedValue(new Error("read failed"));
+      const key = randomUUID();
+      const body = { title: "Create read doom", template: "starter" };
+      const failed = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(503);
+      readSpy.mockRestore();
+      expect(failed.body).toMatchObject({
+        code: "board_read_failed",
+        retryable: false,
+        details: { boardId: expect.any(String) },
+      });
+
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(409);
+      const list = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      const boardsWithTitle = list.body.filter(
+        (board: { title: string }) => board.title === "Create read doom",
+      );
+      expect(boardsWithTitle).toHaveLength(1);
+      expect(boardsWithTitle[0].id).toBe(failed.body.details.boardId);
+    });
+
+    it("creates the starter through an account-wide admin PAT", async () => {
+      const tokenResponse = await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(adminToken))
+        .send({
+          name: "starter pat",
+          expiresAt: null,
+          scopePreset: "admin",
+          trustedCi: false,
+        })
+        .expect(201);
+      const pat = tokenResponse.body.token as string;
+      const created = await server()
+        .post("/api/v1/boards")
+        .set(auth(pat))
+        .send({ title: "PAT starter", template: "starter" })
+        .expect(201);
+      expect(created.body.columns).toHaveLength(3);
+
+      const commands = await server()
+        .get(`/api/v1/boards/${created.body.id}/commands`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(commands.body).toHaveLength(8);
+      expect(
+        commands.body.every(
+          (command: {
+            actorType?: string;
+            apiTokenId?: string;
+            runId?: string;
+          }) =>
+            command.actorType === "agent" &&
+            command.apiTokenId === tokenResponse.body.apiToken.id &&
+            typeof command.runId === "string",
+        ),
+      ).toBe(true);
+    });
+
+    it("keeps the key and board id when the starter aggregate read fails", async () => {
+      const boards = app.get(BoardsService);
+      const original = boards.getAggregate.bind(boards);
+      let calls = 0;
+      const readSpy = jest
+        .spyOn(boards, "getAggregate")
+        .mockImplementation(async (boardId: string) => {
+          calls += 1;
+          // First call is createBoard's own return; the controller read then
+          // fails three times.
+          if (calls >= 2) throw new Error("read failed");
+          return original(boardId);
+        });
+      const key = randomUUID();
+      const body = { title: "Read doom", template: "starter" };
+      const failed = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(503);
+      readSpy.mockRestore();
+      expect(failed.body).toMatchObject({
+        code: "starter_read_failed",
+        retryable: false,
+        details: { boardId: expect.any(String) },
+      });
+
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(409);
+      const list = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      const boardsWithTitle = list.body.filter(
+        (board: { title: string }) => board.title === "Read doom",
+      );
+      expect(boardsWithTitle).toHaveLength(1);
+      expect(boardsWithTitle[0].id).toBe(failed.body.details.boardId);
+    });
+
     it("lists only the boards the caller is a member of", async () => {
       const adminList = await server()
         .get("/api/v1/boards")
         .set(auth(adminToken))
         .expect(200);
-      expect(adminList.body).toHaveLength(1);
-      expect(adminList.body[0]).toMatchObject({
+      const roadmap = adminList.body.find(
+        (board: { title: string }) => board.title === "Roadmap board",
+      );
+      expect(roadmap).toMatchObject({
         title: "Roadmap board",
         counters: { cards: 0, columns: 0 },
       });
+      expect(
+        adminList.body.every(
+          (board: { role: string }) => board.role === "ADMIN",
+        ),
+      ).toBe(true);
 
       const outsiderList = await server()
         .get("/api/v1/boards")
