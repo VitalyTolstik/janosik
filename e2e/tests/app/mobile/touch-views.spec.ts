@@ -10,11 +10,13 @@ import {
   adjacentVisibleDay,
   calendarChip,
   calendarDay,
+  dateFromDayKey,
   openCalendar,
   openTable,
   tableRow,
   todayKey,
   unscheduledCard,
+  visibleDayKeys,
 } from "@/helpers/views.js";
 
 /**
@@ -107,7 +109,13 @@ test("plans an unscheduled chip from the touch panel", async ({
   await toggle.tap();
   await expect(page.getByTestId("unscheduled-list")).toBeVisible();
 
-  const target = await adjacentVisibleDay(page);
+  // Use the first visible day: dragging from the panel to a day further down
+  // makes the grid auto-scroll, so the final cell under the finger differs
+  // from the one measured before the gesture. That path is covered by the
+  // dedicated auto-scroll case below.
+  const [targetKey] = await visibleDayKeys(page);
+  if (!targetKey) throw new Error("The calendar grid has no visible day");
+  const target = { key: targetKey, date: dateFromDayKey(targetKey) };
   const saved = page.waitForResponse(
     (response) =>
       response.url().includes(`/boards/${board.id}/commands`) &&
