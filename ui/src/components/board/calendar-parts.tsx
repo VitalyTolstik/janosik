@@ -110,7 +110,6 @@ export function MonthYearMenu({
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={t("view.calendar.monthYearAria")}
           aria-haspopup="dialog"
           data-testid="month-year-trigger"
           className="-mx-1.5 rounded-md px-1.5 py-0.5 text-sm font-semibold text-foreground transition-colors hover:bg-hover"

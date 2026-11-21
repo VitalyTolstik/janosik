@@ -776,7 +776,7 @@ export function BoardMembersPanel({
                             aria-label={t("board.members.leaveConfirmYes")}
                             disabled={leaving || locked}
                             onClick={() => void handleLeave()}
-                            className="h-7 w-7 text-danger hover:bg-danger/10 hover:text-danger"
+                            className="h-7 w-7 text-danger hover:bg-danger/10 hover:text-(--chip-red)"
                           >
                             <Check className="h-3.5 w-3.5" />
                           </Button>
@@ -856,7 +856,7 @@ export function BoardMembersPanel({
                             aria-label={t("board.members.removeConfirmYes")}
                             disabled={pending}
                             onClick={() => void handleRemove(member)}
-                            className="h-6 w-6 text-danger hover:bg-danger/10 hover:text-danger"
+                            className="h-6 w-6 text-danger hover:bg-danger/10 hover:text-(--chip-red)"
                           >
                             <Check className="h-3.5 w-3.5" />
                           </Button>

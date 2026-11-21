@@ -357,9 +357,9 @@ function ColumnViewBody({
               className={cn(
                 "flex h-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-medium",
                 overWipLimit
-                  ? "bg-danger/15 text-danger"
+                  ? "bg-danger/15 text-(--chip-red)"
                   : atWipLimit
-                    ? "bg-warning/15 text-warning"
+                    ? "bg-warning/15 text-(--chip-warning)"
                     : "bg-hover text-muted-foreground",
               )}
             >
@@ -404,7 +404,7 @@ function ColumnViewBody({
         {workflowBlockedReason ? (
           <p
             data-testid={`column-workflow-blocked-${column.id}`}
-            className="mx-2 mb-1 flex items-start gap-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-[10px] leading-snug text-danger"
+            className="mx-2 mb-1 flex items-start gap-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-[10px] leading-snug text-(--chip-red)"
           >
             <Lock className="mt-px h-3 w-3 shrink-0" aria-hidden />
             <span className="min-w-0">{workflowBlockedReason}</span>

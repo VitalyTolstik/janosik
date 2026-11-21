@@ -397,7 +397,7 @@ export function AgentsAutomation({
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[18px] pb-5 pt-4 max-md:px-2.5 max-md:pb-4 max-md:pt-[11px]"
         data-testid="agents-automation-scroll"
       >
-        <header className="mb-3 flex items-start gap-3 max-md:flex-wrap">
+        <div className="mb-3 flex items-start gap-3 max-md:flex-wrap">
           <div className="min-w-0 flex-1">
             <h2 className="m-0 font-agent-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
               {t("board.settings.agents.title")}
@@ -421,7 +421,7 @@ export function AgentsAutomation({
             <RotateCcw className="h-[13px] w-[13px]" aria-hidden />
             {t("board.settings.agents.reset")}
           </button>
-        </header>
+        </div>
 
         <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/[0.06] px-2.5 py-2 text-[11px] leading-[1.45]">
           <Info

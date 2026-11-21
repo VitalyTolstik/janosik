@@ -136,7 +136,7 @@ export function BoardSettingsShell({
         )}
         data-testid="board-settings-dialog"
       >
-        <header className="relative flex shrink-0 items-center gap-3 border-b border-border pb-3 pl-4 pr-3.5 pt-3.5 max-md:flex-wrap max-md:px-2.5 max-md:pb-[9px] max-md:pr-[52px] max-md:pt-2.5">
+        <div className="relative flex shrink-0 items-center gap-3 border-b border-border pb-3 pl-4 pr-3.5 pt-3.5 max-md:flex-wrap max-md:px-2.5 max-md:pb-[9px] max-md:pr-[52px] max-md:pt-2.5">
           <div className="min-w-0 flex-1">
             <p
               aria-hidden
@@ -178,13 +178,13 @@ export function BoardSettingsShell({
           >
             <X className="h-4 w-4" />
           </button>
-        </header>
+        </div>
 
         <div
           className="flex min-h-0 flex-1 flex-col md:flex-row"
           data-testid="board-settings-body"
         >
-          <aside
+          <div
             className="shrink-0 border-b border-border bg-[color-mix(in_oklab,var(--background)_22%,var(--popover))] p-[5px_8px] max-md:min-h-[46px] md:flex md:w-[194px] md:flex-col md:border-b-0 md:border-r md:p-[12px_9px]"
             data-testid="board-settings-rail"
           >
@@ -238,7 +238,7 @@ export function BoardSettingsShell({
               </b>
               {t("board.settings.shell.hint")}
             </p>
-          </aside>
+          </div>
           <div
             className="min-h-0 min-w-0 flex-1 overflow-hidden bg-popover"
             data-testid="board-settings-content"

@@ -373,7 +373,7 @@ export function CardLinks({
                             <button
                               type="button"
                               aria-label={t("card.links.remove")}
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/row:opacity-100"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-(--chip-red) focus-visible:opacity-100 group-hover/row:opacity-100"
                               data-testid="card-link-remove"
                               onClick={() => remove(row)}
                             >
@@ -443,7 +443,7 @@ export function CardLinks({
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                         index === cursor
-                          ? "bg-primary/10 text-primary"
+                          ? "bg-primary/10 text-(--tab-text)"
                           : "hover:bg-hover",
                       )}
                       onMouseEnter={() => setCursor(index)}
@@ -553,7 +553,7 @@ function DropdownPicker({
             key={entry.option}
             className={cn(
               entry.option === value.option &&
-                "bg-primary/10 font-medium text-primary",
+                "bg-primary/10 font-medium text-(--tab-text)",
             )}
             data-testid={`card-links-type-${entry.option}`}
             onSelect={() => {

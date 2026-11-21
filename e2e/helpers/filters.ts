@@ -49,7 +49,7 @@ export function cardByTitle(page: Page, title: string): Locator {
 
 export async function openFilters(page: Page): Promise<Locator> {
   await filterBar(page)
-    .getByRole("button", { name: "Filters", exact: true })
+    .getByRole("button", { name: /^Filters(?: \d+)?$/ })
     .click();
   await expect(filtersPopover(page)).toBeVisible();
   return filtersPopover(page);

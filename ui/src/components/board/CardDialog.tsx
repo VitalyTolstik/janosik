@@ -7,7 +7,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type RefObject,
 } from "react";
 import {
   Archive,
@@ -99,10 +98,6 @@ interface CardDialogProps {
   /** VIEWER mode (TASK-35): read-only fields, no mutating actions. */
   readOnly?: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The card face/handle that opened the dialog — focus returns here on
-   *  close (U-04). Radix's own restore lands on `<body>` when the trigger
-   *  is not a `DialogTrigger`, which lost the keyboard position. */
-  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /** Idle gap after the last keystroke that stamps the final `updatedAt`. */
@@ -162,7 +157,6 @@ export function CardDialog({
   open,
   readOnly = false,
   onOpenChange,
-  returnFocusRef,
 }: CardDialogProps) {
   const {
     board,
@@ -229,7 +223,7 @@ export function CardDialog({
   useEffect(() => {
     if (open || !pendingFocusReturnRef.current) return;
     pendingFocusReturnRef.current = false;
-    const opener = returnFocusRef?.current ?? openerRef.current;
+    const opener = openerRef.current;
     const timer = window.setTimeout(() => {
       const target =
         opener?.isConnected === true
@@ -238,7 +232,7 @@ export function CardDialog({
       target?.focus();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [open, returnFocusRef]);
+  }, [open]);
   const hour12 = useHour12();
   const toast = useToast();
   // Fires the "too long" toast once per crossing (not on every keystroke
@@ -826,7 +820,7 @@ export function CardDialog({
             // (see the effect above); this hook covers a close that keeps the
             // dialog mounted. Never guess a fallback here: on unmount the
             // board may already belong to the next screen.
-            const opener = returnFocusRef?.current ?? openerRef.current;
+            const opener = openerRef.current;
             if (opener?.isConnected !== true) return;
             event.preventDefault();
             opener.focus();

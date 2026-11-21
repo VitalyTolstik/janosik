@@ -148,7 +148,7 @@ export function TransitionMatrix({
               <th
                 role="columnheader"
                 aria-colindex={1}
-                className="w-[126px] border-b border-border/60 bg-surface/90 px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground/75"
+                className="w-[126px] border-b border-border/60 bg-surface/90 px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground"
               >
                 {t("workflow.fromTo")}
               </th>
@@ -187,7 +187,7 @@ export function TransitionMatrix({
                     ring={false}
                   />
                   <span className="ml-1 align-middle">{from.title}</span>
-                  <span className="float-right pt-px font-mono text-[11px] font-normal text-muted-foreground/75">
+                  <span className="float-right pt-px font-mono text-[11px] font-normal text-muted-foreground">
                     {from.cardIds.length}
                   </span>
                 </th>
@@ -263,7 +263,7 @@ export function TransitionMatrix({
                                 ? "border-dashed border-border/60 bg-transparent text-muted-foreground"
                                 : "border-border/60 bg-transparent text-muted-foreground/50 hover:border-primary/40 hover:bg-primary/5",
                           conditional &&
-                            "border-warning/50 bg-warning/[0.14] text-warning",
+                            "border-warning/50 bg-warning/[0.14] text-(--chip-warning)",
                           isSelected && "ring-1 ring-primary",
                         )}
                       >
@@ -292,7 +292,7 @@ export function TransitionMatrix({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1.5 text-[11px] text-muted-foreground/75">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1.5 text-[11px] text-muted-foreground">
         <LegendSwatch kind="on" label={t("workflow.matrixLegend.allowed")} />
         <LegendSwatch kind="off" label={t("workflow.matrixLegend.off")} />
         <LegendSwatch

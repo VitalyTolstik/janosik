@@ -159,11 +159,11 @@ export function ColumnRail({
                   <ColumnDot color={accent} size={5} />
                   <span className="truncate">{column.title}</span>
                 </span>
-                <span className="truncate text-[11px] leading-4 text-muted-foreground/75">
+                <span className="truncate text-[11px] leading-4 text-muted-foreground">
                   {t("workflow.rail.rules", { count: rulesCount })}
                 </span>
               </span>
-              <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground/75">
+              <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
                 {cardCount}
               </span>
             </button>

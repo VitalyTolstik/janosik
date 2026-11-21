@@ -483,7 +483,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                           {canManage ? (
                             <button
                               aria-label={t("board.switcher.archive")}
-                              className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/row:opacity-100"
+                              className="no-hover:opacity-100 absolute inset-0 flex items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/row:opacity-100"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setConfirmArchiveId(b.id);
@@ -603,7 +603,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                           </button>
                           <button
                             aria-label={t("board.switcher.delete")}
-                            className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/archived:opacity-100"
+                            className="no-hover:opacity-100 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-(--chip-red) focus-visible:opacity-100 group-hover/archived:opacity-100"
                             onClick={(e) => {
                               e.stopPropagation();
                               setConfirmDeleteId(b.id);

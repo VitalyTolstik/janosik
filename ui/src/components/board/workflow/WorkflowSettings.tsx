@@ -225,7 +225,7 @@ export function WorkflowSettings({
       data-testid={`${testIdPrefix}-editor`}
       aria-busy={displaySaving || undefined}
     >
-      <header className="flex shrink-0 items-start gap-[18px] border-b border-border/75 px-5 pb-[15px] pt-[17px] max-md:flex-wrap max-md:gap-2 max-md:px-3.5 max-md:pb-3 max-md:pt-[13px]">
+      <div className="flex shrink-0 items-start gap-[18px] border-b border-border/75 px-5 pb-[15px] pt-[17px] max-md:flex-wrap max-md:gap-2 max-md:px-3.5 max-md:pb-3 max-md:pt-[13px]">
         {!insideSettingsShell ? (
           <div className="min-w-0">
             {variant === "dialog" ? (
@@ -349,7 +349,7 @@ export function WorkflowSettings({
             </DialogClose>
           ) : null}
         </div>
-      </header>
+      </div>
 
       <div
         className={cn(
@@ -387,7 +387,7 @@ export function WorkflowSettings({
           ) : null}
           {workflowInvalid ? (
             <div
-              className="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-[11px] leading-[1.45] text-danger"
+              className="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-[11px] leading-[1.45] text-(--chip-red)"
               data-testid={`${testIdPrefix}-invalid`}
             >
               {t("workflow.error.invalidStored")}
@@ -411,7 +411,7 @@ export function WorkflowSettings({
           ) : null}
           {validationError ? (
             <p
-              className="flex items-center gap-1.5 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-2 text-[11px] leading-[1.45] text-danger"
+              className="flex items-center gap-1.5 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-2 text-[11px] leading-[1.45] text-(--chip-red)"
               data-testid={`${testIdPrefix}-error`}
               role="alert"
             >
@@ -422,7 +422,7 @@ export function WorkflowSettings({
 
           {view === "columns" ? (
             <div className="flex flex-col md:grid md:grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_316px]">
-              <main className="flex min-w-0 flex-col gap-3.5">
+              <div className="flex min-w-0 flex-col gap-3.5">
                 <TransitionList
                   columns={columns}
                   source={columns.find(
@@ -453,7 +453,7 @@ export function WorkflowSettings({
                   controller={controller}
                   testIdPrefix={testIdPrefix}
                 />
-              </main>
+              </div>
               <TransitionInspector
                 controller={controller}
                 testIdPrefix={testIdPrefix}
@@ -463,7 +463,7 @@ export function WorkflowSettings({
             </div>
           ) : (
             <div className="flex flex-col md:grid md:grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_316px]">
-              <main className="flex min-w-0 flex-col gap-2.5">
+              <div className="flex min-w-0 flex-col gap-2.5">
                 <TransitionMatrix
                   controller={controller}
                   testIdPrefix={testIdPrefix}
@@ -484,7 +484,7 @@ export function WorkflowSettings({
                   controller={controller}
                   testIdPrefix={testIdPrefix}
                 />
-              </main>
+              </div>
               <TransitionInspector
                 controller={controller}
                 testIdPrefix={testIdPrefix}
@@ -502,7 +502,7 @@ export function WorkflowSettings({
           role="alert"
           tabIndex={-1}
           data-testid={`${testIdPrefix}-save-error`}
-          className="flex flex-wrap items-center justify-between gap-2 border-t border-danger/30 bg-danger/10 px-5 py-2 text-[11px] leading-[1.45] text-danger focus:outline-none max-md:px-3.5"
+          className="flex flex-wrap items-center justify-between gap-2 border-t border-danger/30 bg-danger/10 px-5 py-2 text-[11px] leading-[1.45] text-(--chip-red) focus:outline-none max-md:px-3.5"
         >
           <span className="flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -541,7 +541,7 @@ export function WorkflowSettings({
           >
             {statusText}
           </span>
-          <span className="truncate border-l border-border pl-3 text-muted-foreground/75 max-md:hidden">
+          <span className="truncate border-l border-border pl-3 text-muted-foreground max-md:hidden">
             {statusHint}
           </span>
         </div>

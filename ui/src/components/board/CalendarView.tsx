@@ -783,9 +783,9 @@ export function CalendarView({
               className={cn(
                 "flex min-h-6 w-full touch-manipulation items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
                 status === "overdue" &&
-                  "border-danger/40 bg-danger/10 text-danger",
+                  "border-danger/40 bg-danger/10 text-(--chip-red)",
                 status === "soon" &&
-                  "border-warning/40 bg-warning/10 text-warning",
+                  "border-warning/40 bg-warning/10 text-(--chip-warning)",
                 status === "later" &&
                   "border-border/60 bg-muted/40 text-foreground/80",
                 touchDrag.activePayload === card.id &&
@@ -871,7 +871,7 @@ export function CalendarView({
             className={cn(
               "rounded px-2 py-0.5 text-xs font-medium transition-colors",
               !isWeek
-                ? "bg-primary/15 text-primary"
+                ? "bg-primary/15 text-(--tab-text)"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -884,7 +884,7 @@ export function CalendarView({
             className={cn(
               "rounded px-2 py-0.5 text-xs font-medium transition-colors",
               isWeek
-                ? "bg-primary/15 text-primary"
+                ? "bg-primary/15 text-(--tab-text)"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -931,7 +931,7 @@ export function CalendarView({
         {/* Helper text: the grid's main affordance is not obvious from
             the grid itself. */}
         <span
-          className="hidden text-[11px] text-muted-foreground/70 lg:inline"
+          className="hidden text-[11px] text-muted-foreground lg:inline"
           data-testid="calendar-hint"
         >
           {t("view.calendar.hint")}
@@ -964,9 +964,14 @@ export function CalendarView({
             {unscheduledOpen ? (
               <span className="truncate">{t("view.calendar.unscheduled")}</span>
             ) : null}
-            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-[10px] font-medium text-muted-foreground">
+            {"("}
+            <span
+              aria-hidden
+              className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-[10px] font-medium text-muted-foreground"
+            >
               {unscheduled.length}
             </span>
+            {")"}
           </button>
           {unscheduledOpen ? (
             <>
@@ -989,7 +994,7 @@ export function CalendarView({
                 data-testid="unscheduled-list"
               >
                 {unscheduled.length === 0 ? (
-                  <p className="px-1 text-[11px] text-muted-foreground/70">
+                  <p className="px-1 text-[11px] text-muted-foreground">
                     {t("view.calendar.unscheduledEmpty")}
                   </p>
                 ) : virtualizeUnscheduled ? (
@@ -1088,7 +1093,7 @@ export function CalendarView({
                               "bg-primary font-semibold text-primary-foreground",
                             !isToday(day) &&
                               !isSameMonth(day, anchor) &&
-                              "text-muted-foreground/60",
+                              "text-muted-foreground",
                           )}
                         >
                           {format(day, "d")}
@@ -1104,7 +1109,7 @@ export function CalendarView({
                                 setOpenDayKey(isDayOpen ? null : key);
                               }}
                               className={cn(
-                                "no-hover:opacity-100 absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
+                                "no-hover:opacity-100 absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-(--tab-text) opacity-0 transition-opacity hover:bg-primary/25 group-hover/cell:opacity-100 focus-visible:opacity-100",
                                 isDayOpen && "opacity-100",
                               )}
                             >
@@ -1173,7 +1178,7 @@ export function CalendarView({
                     <DayPanelEntries
                       entries={entries}
                       empty={
-                        <p className="px-1 text-[11px] text-muted-foreground/70">
+                        <p className="px-1 text-[11px] text-muted-foreground">
                           {t("view.calendar.dayEmpty")}
                         </p>
                       }
@@ -1362,7 +1367,7 @@ function UnscheduledComposer({
         disabled={disabled}
         data-testid="unscheduled-add"
         onClick={() => setEditing(true)}
-        className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/10 px-1.5 py-1.5 text-[11px] font-medium text-primary transition-colors enabled:hover:border-primary/70 enabled:hover:bg-primary/20 disabled:opacity-50"
+        className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/10 px-1.5 py-1.5 text-[11px] font-medium text-(--tab-text) transition-colors enabled:hover:border-primary/70 enabled:hover:bg-primary/20 disabled:opacity-50"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden />
         {t("composer.add")}

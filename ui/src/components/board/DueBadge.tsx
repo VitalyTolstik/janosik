@@ -53,10 +53,12 @@ export function DueBadge({ dueDate }: DueBadgeProps) {
         <span
           className={cn(
             "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
-            status === "overdue" && "border-danger/40 bg-danger/10 text-danger",
-            status === "soon" && "border-warning/40 bg-warning/10 text-warning",
+            status === "overdue" &&
+              "border-danger/40 bg-danger/10 text-(--chip-red)",
+            status === "soon" &&
+              "border-warning/40 bg-warning/10 text-(--chip-warning)",
             status === "later" &&
-              "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+              "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-(--tab-text)",
           )}
           data-testid="card-due-badge"
           data-due-status={status}

@@ -68,14 +68,14 @@ export function GlobalTransitions({
                 <span>
                   {t("workflow.globalChip", { column: column.title })}
                 </span>
-                <span className="font-mono text-[11px] text-muted-foreground/80 max-[360px]:hidden">
+                <span className="font-mono text-[11px] text-muted-foreground max-[360px]:hidden">
                   {formatRoles(transition.allowedRoles, t)}
                 </span>
               </button>
             );
           })}
           {globals.length === 0 ? (
-            <span className="px-1 pt-1 text-[11px] text-muted-foreground/75">
+            <span className="px-1 pt-1 text-[11px] text-muted-foreground">
               {t("workflow.globalEmptyShort")}
             </span>
           ) : null}

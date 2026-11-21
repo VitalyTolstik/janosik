@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { LABEL_COLOR_CHIP } from "@janosik/shared";
+import { LABEL_COLORS, LABEL_COLOR_CHIP } from "@janosik/shared";
 
 /**
  * Contrast pairs behind U-04 (TASK-177.15).
@@ -153,10 +153,32 @@ describe.each(themes)("$name theme contrast pairs", ({ css, ui }) => {
     const text = ui["--tab-text"];
     expect(text, "--tab-text is defined").toBeTruthy();
     for (const surface of surfaces) {
-      expect(
-        contrast(text, tint(css["--primary"], surface.value, 0.15)),
-        `primary tab text on ${surface.token}`,
-      ).toBeGreaterThanOrEqual(4.5);
+      for (const alpha of [0.1, 0.15]) {
+        expect(
+          contrast(text, tint(css["--primary"], surface.value, alpha)),
+          `primary tab text on ${surface.token} at ${alpha}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("status chips clear AA on their 10% and 15% fills", () => {
+    const pairs = [
+      ["--danger", "--chip-red"],
+      ["--warning", "--chip-warning"],
+      ["--success", "--chip-green"],
+    ] as const;
+    for (const [base, textToken] of pairs) {
+      const text = ui[textToken];
+      expect(text, `${textToken} is defined`).toBeTruthy();
+      for (const surface of surfaces) {
+        for (const alpha of [0.1, 0.15]) {
+          expect(
+            contrast(text, tint(css[base], surface.value, alpha)),
+            `${textToken} on ${base} at ${alpha} over ${surface.token}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
     }
   });
 
@@ -192,5 +214,85 @@ describe("label chip classes", () => {
     }
     // Retired amber aliases the warning tokens.
     expect(LABEL_COLOR_CHIP.amber).toContain("text-(--chip-warning)");
+  });
+
+  it("guards every label color the picker can offer", () => {
+    const paired = new Set<string>(LABEL_PAIRS.map(([name]) => name));
+    for (const color of LABEL_COLORS) {
+      expect(LABEL_COLOR_CHIP[color], `${color} chip class`).toBeTruthy();
+      if (color === "plain") continue;
+      // `amber` is not in LABEL_COLORS today; it is covered above as the
+      // retired warning alias. A new picker color without a contrast pair
+      // fails here instead of silently shipping a raw hue.
+      expect(paired.has(color), `${color} has a contrast pair`).toBe(true);
+    }
+  });
+});
+
+/**
+ * Source guards for class overrides. Tailwind emits utilities in generation
+ * order, not class-attribute order, so a leftover `text-primary` beside
+ * `bg-primary/15` can silently win over `text-(--tab-text)` regardless of
+ * where it sits in `cn(...)`. These scans fail if a raw palette hue returns
+ * to a tinted surface or an active toggle stops using the tab token.
+ */
+describe("tinted-state classes in components", () => {
+  const UI_SRC = path.join(import.meta.dirname, "..");
+  const read = (relative: string) =>
+    readFileSync(path.join(UI_SRC, relative), "utf8");
+
+  const FILES = [
+    "components/board/FilterBar.tsx",
+    "components/board/CalendarView.tsx",
+    "components/board/ViewSwitcher.tsx",
+    "components/board/CardActivity.tsx",
+    "components/board/CardLinks.tsx",
+    "components/board/TableView.tsx",
+    "components/board/CardItem.tsx",
+    "components/board/CardHistory.tsx",
+    "components/board/DueBadge.tsx",
+    "components/board/ColumnView.tsx",
+    "components/board/WatchView.tsx",
+    "components/board/workflow/TransitionList.tsx",
+    "components/board/UserProfileDialog.tsx",
+  ] as const;
+
+  const TINTED_TEXT_RULES = [
+    ["bg-primary/1[05]", "text-primary(?![\\w-])"],
+    ["bg-warning/1[05]", "text-warning(?![\\w-])"],
+    ["bg-danger/1[05]", "text-danger(?![\\w-])"],
+    ["bg-success/1[05]", "text-success(?![\\w-])"],
+  ] as const;
+
+  it.each(FILES)("%s pairs tinted fills with tint-safe text", (file) => {
+    const source = read(file);
+    // Only compare within one class literal: two sibling `cn(...)` branches
+    // may legitimately name the fill and the text on separate lines.
+    const literals = [...source.matchAll(/"([^"\n]*)"/g)].map(
+      (match) => match[1],
+    );
+    for (const [fill, text] of TINTED_TEXT_RULES) {
+      const fillPattern = new RegExp(`^.*${fill}`);
+      const textPattern = new RegExp(`^.*${text}`);
+      for (const literal of literals) {
+        expect(
+          fillPattern.test(literal) && textPattern.test(literal),
+          `${file}: "${literal}" must not pair ${fill} with ${text}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("keeps every active primary toggle on the tab token", () => {
+    for (const file of [
+      "components/board/FilterBar.tsx",
+      "components/board/CalendarView.tsx",
+      "components/board/ViewSwitcher.tsx",
+      "components/board/CardActivity.tsx",
+    ]) {
+      expect(read(file), `${file}: active toggle token`).toContain(
+        "text-(--tab-text)",
+      );
+    }
   });
 });

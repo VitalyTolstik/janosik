@@ -154,7 +154,7 @@ function UserProfileBody({
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
             online
-              ? "border-success/40 bg-success/10 text-success"
+              ? "border-success/40 bg-success/10 text-(--chip-green)"
               : "border-border bg-muted text-muted-foreground",
           )}
         >

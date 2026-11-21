@@ -1,5 +1,11 @@
 import axe from "axe-core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -108,12 +114,26 @@ async function axeViolations(context: Element | Document) {
       "color-contrast": { enabled: false },
     },
   });
-  return results.violations.map(
-    (violation) =>
-      `${violation.id}: ${violation.nodes
-        .map((node) => node.target.join(" "))
-        .join(", ")}`,
+  // `label-content-name-mismatch` needs layout/paint for its visible-text
+  // pass and errors inside jsdom; the browser suite owns that rule (with
+  // `incomplete` included). Keep the jsdom incomplete gate for the rule that
+  // can still report a meaningful incomplete here.
+  const relevantIncomplete = results.incomplete.filter(
+    (result) => result.id === "color-contrast",
   );
+  const format = (violation: (typeof results.violations)[number]) =>
+    `${violation.id}: ${violation.nodes
+      .map((node) => node.target.join(" "))
+      .join(", ")}`;
+  return [
+    ...results.violations.map(format),
+    ...relevantIncomplete.map(
+      (violation) =>
+        `incomplete ${format(violation)} :: ${violation.nodes
+          .map((node) => node.failureSummary ?? "")
+          .join(" | ")}`,
+    ),
+  ];
 }
 
 function setupServer() {
@@ -189,6 +209,30 @@ describe("card dialog focus and checklist names", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
     await waitFor(() => expect(handle).toHaveFocus());
+  });
+
+  it("returns focus to the board main when the open card is deleted", async () => {
+    renderPage();
+    await openCard();
+
+    await userEvent.click(screen.getByRole("button", { name: "Card actions" }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete card" }),
+    );
+    const confirm = await screen.findByRole("dialog", {
+      name: "Delete this card?",
+    });
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: "Delete" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText("A11y card")).not.toBeInTheDocument(),
+    );
+    const main = document.querySelector<HTMLElement>(
+      '[data-testid="board-main"]',
+    );
+    await waitFor(() => expect(main).toHaveFocus());
   });
 
   it("names checklist toggles from the item text and labels the progressbar", async () => {

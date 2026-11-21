@@ -468,8 +468,8 @@ function DiffSegments({ segments }: { segments: DiffSegment[] }) {
             className={cn(
               "rounded-sm px-0.5 font-medium",
               segment.kind === "removed"
-                ? "bg-danger/10 text-danger line-through decoration-danger/50"
-                : "bg-success/10 text-success",
+                ? "bg-danger/10 text-(--chip-red) line-through decoration-danger/50"
+                : "bg-success/10 text-(--chip-green)",
             )}
           >
             {segment.text}

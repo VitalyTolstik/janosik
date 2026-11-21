@@ -66,7 +66,7 @@ export function WorkflowRulesDialog({
         ) : (
           <div className="space-y-4 text-sm">
             {board?.workflowInvalid ? (
-              <p className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
+              <p className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-(--chip-red)">
                 {t("workflow.error.invalidStored")}
               </p>
             ) : null}
@@ -74,7 +74,7 @@ export function WorkflowRulesDialog({
               <span
                 className={
                   workflow.enabled
-                    ? "rounded-full bg-success/15 px-2 py-0.5 font-medium text-success"
+                    ? "rounded-full bg-success/15 px-2 py-0.5 font-medium text-(--chip-green)"
                     : "rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground"
                 }
               >

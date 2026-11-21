@@ -982,7 +982,7 @@ function TokenRow({
             size="sm"
             variant="ghost"
             data-testid="token-revoke"
-            className="text-danger hover:bg-danger/10 hover:text-danger"
+            className="text-danger hover:bg-danger/10 hover:text-(--chip-red)"
             onClick={onRevoke}
           >
             <Trash2 className="h-4 w-4" aria-hidden />

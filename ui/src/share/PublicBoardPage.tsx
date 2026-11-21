@@ -56,6 +56,35 @@ export function PublicBoardPage() {
   const [status, setStatus] = useState<PageStatus>("loading");
   const [openCardId, setOpenCardId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Focus return for the public card panel (U-04): remember the read-only
+  // card face that opened it, then restore after the host state closes it.
+  const cardOpenerRef = useRef<HTMLElement | null>(null);
+  const cardWasOpenRef = useRef(false);
+  const openCard = (cardId: string) => {
+    const active = document.activeElement;
+    cardOpenerRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null;
+    setOpenCardId(cardId);
+  };
+  useEffect(() => {
+    if (openCardId !== null) {
+      cardWasOpenRef.current = true;
+      return;
+    }
+    if (!cardWasOpenRef.current) return;
+    cardWasOpenRef.current = false;
+    const opener = cardOpenerRef.current;
+    const timer = window.setTimeout(() => {
+      const target =
+        opener?.isConnected === true
+          ? opener
+          : document.querySelector<HTMLElement>(
+              '[data-testid="public-board-main"]',
+            );
+      target?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [openCardId]);
 
   // Load the payload once per token (and again on a manual retry).
   useEffect(() => {
@@ -217,8 +246,12 @@ export function PublicBoardPage() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <ShareBoardProvider board={board} members={members}>
         {!embed ? <PublicHeader mode={dto.mode} /> : null}
-        <main className="flex min-h-0 flex-1 flex-col">
-          <DndBoard readOnly onCardClick={(cardId) => setOpenCardId(cardId)} />
+        <main
+          data-testid="public-board-main"
+          tabIndex={-1}
+          className="flex min-h-0 flex-1 flex-col outline-none"
+        >
+          <DndBoard readOnly onCardClick={openCard} />
           {openCardId !== null ? (
             <PublicCardDialog
               token={token}

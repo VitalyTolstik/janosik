@@ -129,7 +129,7 @@ test("counts every active facet on the filters button", async ({
 
   await expectCardTitles(page, ["Alpha task"]);
   await expect(
-    filterBar(page).getByRole("button", { name: "Filters", exact: true }),
+    filterBar(page).getByRole("button", { name: /^Filters(?: \d+)?$/ }),
   ).toContainText("5");
 });
 
@@ -165,6 +165,6 @@ test("resets the query and every facet at once", async ({ page, board }) => {
   await expectCardTitles(page, ["Alpha task", "Beta task"]);
   await expect(filterBar(page).getByText(/cards? found/)).toHaveCount(0);
   await expect(
-    filterBar(page).getByRole("button", { name: "Filters", exact: true }),
+    filterBar(page).getByRole("button", { name: /^Filters(?: \d+)?$/ }),
   ).not.toContainText("4");
 });

@@ -397,7 +397,7 @@ export function WatchView({ boardId }: WatchViewProps) {
         <span
           className={
             serverMode
-              ? "ml-auto text-xs font-semibold uppercase tracking-widest text-danger"
+              ? "ml-auto text-xs font-semibold uppercase tracking-widest text-(--chip-red)"
               : "ml-auto text-xs uppercase tracking-widest text-muted-foreground"
           }
         >
@@ -433,7 +433,7 @@ export function WatchView({ boardId }: WatchViewProps) {
 
           <Section title={t("watch.onlineList")}>
             {presence.length === 0 ? (
-              <p className="py-1 text-sm text-muted-foreground/70">
+              <p className="py-1 text-sm text-muted-foreground">
                 {t("watch.nobody")}
               </p>
             ) : (
@@ -454,7 +454,7 @@ export function WatchView({ boardId }: WatchViewProps) {
               their recent activity is shown here instead (TASK-157). */}
           <Section title={t("watch.agentsList")}>
             {activeAgents.length === 0 ? (
-              <p className="py-1 text-sm text-muted-foreground/70">
+              <p className="py-1 text-sm text-muted-foreground">
                 {t("watch.noAgents")}
               </p>
             ) : (
@@ -476,7 +476,7 @@ export function WatchView({ boardId }: WatchViewProps) {
                           {name}
                         </span>
                         <span
-                          className="block truncate text-[10px] text-muted-foreground/70"
+                          className="block truncate text-[10px] text-muted-foreground"
                           title={`${human}${agent.sessionId ? ` · session ${agent.sessionId}` : ""}`}
                         >
                           {human}
@@ -505,13 +505,16 @@ export function WatchView({ boardId }: WatchViewProps) {
             {t("watch.feed")}
           </div>
           <div
-            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+            role="region"
+            aria-label={t("watch.feed")}
+            tabIndex={0}
+            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-busy={!loaded}
           >
             {error ? (
               <div
                 data-testid="watch-error"
-                className="flex items-center gap-3 border-b border-danger/30 bg-danger/10 px-5 py-3 text-sm text-danger"
+                className="flex items-center gap-3 border-b border-danger/30 bg-danger/10 px-5 py-3 text-sm text-(--chip-red)"
               >
                 <span>{t("watch.feedError")}</span>
                 <button
@@ -525,7 +528,7 @@ export function WatchView({ boardId }: WatchViewProps) {
               </div>
             ) : null}
             {!serverMode ? (
-              <p className="px-5 py-4 text-sm text-muted-foreground/70">
+              <p className="px-5 py-4 text-sm text-muted-foreground">
                 {t("watch.feedLocal")}
               </p>
             ) : !loaded ? (
@@ -537,7 +540,7 @@ export function WatchView({ boardId }: WatchViewProps) {
               </SkeletonRegion>
             ) : items.length === 0 ? (
               error ? null : (
-                <p className="px-5 py-4 text-sm text-muted-foreground/70">
+                <p className="px-5 py-4 text-sm text-muted-foreground">
                   {t("watch.feedEmpty")}
                 </p>
               )
@@ -648,7 +651,7 @@ function Pager({
           entry === "gap" ? (
             <span
               key={`gap-${index}`}
-              className="px-1 text-muted-foreground/60"
+              className="px-1 text-muted-foreground"
               aria-hidden
             >
               …
@@ -890,13 +893,13 @@ function WatchRow({
                 ) : null}
                 {detail.from !== undefined ? (
                   <>
-                    <span className="text-danger/80 line-through [overflow-wrap:anywhere]">
+                    <span className="text-(--chip-red) line-through [overflow-wrap:anywhere]">
                       {detail.from}
                     </span>
-                    <span className="mx-1 text-muted-foreground/60">→</span>
+                    <span className="mx-1 text-muted-foreground">→</span>
                   </>
                 ) : null}
-                <span className="text-success/90 [overflow-wrap:anywhere]">
+                <span className="text-(--chip-green) [overflow-wrap:anywhere]">
                   {detail.to}
                 </span>
               </span>

@@ -82,11 +82,11 @@ export function ColumnSemantics({
           </div>
         </div>
       </div>
-      <p className="text-[11px] leading-[1.45] text-muted-foreground/75">
+      <p className="text-[11px] leading-[1.45] text-muted-foreground">
         {t("workflow.doneHint")}
       </p>
       {outsideProcess.length > 0 ? (
-        <p className="text-[11px] leading-4 text-warning">
+        <p className="text-[11px] leading-4 text-(--chip-warning)">
           {t("workflow.outsideProcess", {
             columns: outsideProcess.map((column) => column.title).join(", "),
           })}

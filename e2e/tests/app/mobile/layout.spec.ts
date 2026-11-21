@@ -87,7 +87,7 @@ test("header, filters and view controls fit a phone without sideways scroll", as
     ).toBeVisible();
   }
 
-  const filters = page.getByRole("button", { name: "Filters", exact: true });
+  const filters = page.getByRole("button", { name: /^Filters(?: \d+)?$/ });
   await filters.tap();
   const popover = page.getByTestId("filters-popover");
   await expectDialogFits(page, popover, "filters popover");
