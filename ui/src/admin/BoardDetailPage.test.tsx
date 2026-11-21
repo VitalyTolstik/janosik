@@ -171,9 +171,11 @@ describe("board detail addressable links", () => {
         "/admin/moderation",
       );
     });
-    expect(await screen.findByTestId("admin-filter-boardId")).toHaveTextContent(
-      "b-1",
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId("admin-filter-boardId")).toHaveTextContent(
+        "b-1",
+      );
+    });
     await waitFor(() => {
       const request = server.requests
         .filter((entry) => entry.path === "/admin/entities/comments")
