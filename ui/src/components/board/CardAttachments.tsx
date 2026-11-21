@@ -160,13 +160,18 @@ export function CardAttachments({
   // Search deep link (TASK-177.13): reveal the matched file once the first
   // list page lands. Row identity is read from data attributes, not spliced
   // into a selector, so a hand-edited URL is only ever an id comparison.
+  // One attempt per focus id keeps later list refreshes from moving the page.
+  const revealedFocusRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!focusId || !loaded) return;
+    if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
+    revealedFocusRef.current = focusId;
     const row = Array.from(
       listRef.current?.querySelectorAll<HTMLElement>("[data-attachment-id]") ??
         [],
     ).find((element) => element.dataset.attachmentId === focusId);
-    row?.scrollIntoView?.({ block: "center" });
+    if (!row) return;
+    row.scrollIntoView?.({ block: "center" });
+    row.focus?.({ preventScroll: true });
   }, [focusId, loaded, items.length]);
 
   const load = useCallback(async () => {
@@ -363,6 +368,7 @@ export function CardAttachments({
                 data-testid="card-attachment-row"
                 data-attachment-id={attachment.id}
                 data-search-highlight={highlighted ? "true" : undefined}
+                tabIndex={highlighted ? -1 : undefined}
               >
                 <AttachmentPreview attachment={attachment} />
                 <span

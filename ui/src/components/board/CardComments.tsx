@@ -182,12 +182,18 @@ export function CardComments({
   // Deep link from global search (TASK-177.13): reveal the matched comment
   // once its page has landed. The row is matched by data attribute rather
   // than a selector so a hand-edited URL cannot inject CSS syntax.
+  // One attempt per focus id: later SSE growth must not steal the reader's
+  // scroll position. An unknown id leaves the card as the fallback.
+  const revealedFocusRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!focusId || !loaded) return;
+    if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
+    revealedFocusRef.current = focusId;
     const row = Array.from(
       listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ?? [],
     ).find((element) => element.dataset.commentId === focusId);
-    row?.scrollIntoView?.({ block: "center" });
+    if (!row) return;
+    row.scrollIntoView?.({ block: "center" });
+    row.focus?.({ preventScroll: true });
   }, [focusId, loaded, items.length]);
 
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
@@ -821,6 +827,7 @@ function CommentRow({
       data-comment-id={comment.id}
       data-search-highlight={highlighted ? "true" : undefined}
       data-pending={pending ? "true" : undefined}
+      tabIndex={highlighted ? -1 : undefined}
     >
       <button
         type="button"

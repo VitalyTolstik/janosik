@@ -362,13 +362,17 @@ paths:
         file names on every board where the caller has an accepted, unexpired
         membership (TASK-177.13). Text that is part of the board aggregate —
         titles, descriptions, labels and checklists — is matched by the
-        client. At most 200 rows are returned; a board-scoped PAT sees only
+        client. Matches are deduped per board/card/kind and merged newest-first
+        across comments and files; at most 200 are returned and `total` /
+        `truncated` describe the complete result. A board-scoped PAT sees only
         its own board. This route is declared before `/boards/{boardId}`.
       parameters:
         - name: q
           in: query
           required: false
-          description: Query string; longer than 200 characters is `400`.
+          description: |
+            Query string; longer than 200 characters or a repeated `q` is
+            `400`.
           schema:
             type: string
             maxLength: 200
@@ -441,20 +445,33 @@ paths:
       summary: Search cards in a board
       description: |
         Case-insensitive substring search over title, description, checklist
-        items, comments and attachment file names. `cardIds` is the compact
-        MCP-facing list; `matches` adds the match kind, a short snippet and
-        the comment/attachment row id for deep links.
+        items, comments and visible attachment file names. `cardIds` is always
+        complete and remains the compact MCP-facing list. `matches` adds the
+        match kind, a short snippet and the comment/attachment row id for deep
+        links; it is capped at 200 and can be omitted with `includeMatches=0`
+        (the board filter uses ids only).
       parameters:
         - name: q
           in: query
           required: false
-          description: Query string; longer than 200 characters is `400`.
+          description: |
+            Query string; longer than 200 characters or a repeated `q` is
+            `400`.
           schema:
             type: string
             maxLength: 200
+        - name: includeMatches
+          in: query
+          required: false
+          description: |
+            `1`/`true` (default) includes the bounded `matches` list; `0`/
+            `false` returns `cardIds` with `matches: []`.
+          schema:
+            type: boolean
+            default: true
       responses:
         "200":
-          description: Matching card ids.
+          description: Matching card ids and an optional bounded match list.
           content:
             application/json:
               schema:
@@ -3923,7 +3940,9 @@ components:
           enum: [title, description, checklist, comment, attachment]
         text:
           type: string
-          description: Short snippet around the match.
+          description: |
+            Short snippet for description, checklist, comment and attachment
+            matches; title matches omit it.
         commentId:
           type: string
           description: Present on a comment match.
@@ -3936,32 +3955,73 @@ components:
       properties:
         cardIds:
           type: array
+          description: Complete card ids, unaffected by the match cap.
           items:
             type: string
         matches:
           type: array
+          description: Deduped per card/kind, capped at 200.
           items:
             $ref: "#/components/schemas/BoardSearchMatch"
+    WorkspaceCommentSearchMatch:
+      type: object
+      required: [matchIn, boardId, boardTitle, cardId, cardTitle, commentId]
+      properties:
+        matchIn:
+          type: string
+          const: comment
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        cardId:
+          type: string
+        cardTitle:
+          type: string
+        text:
+          type: string
+          description: Short snippet around the matched comment text.
+        commentId:
+          type: string
+    WorkspaceAttachmentSearchMatch:
+      type: object
+      required: [matchIn, boardId, boardTitle, cardId, cardTitle, attachmentId]
+      properties:
+        matchIn:
+          type: string
+          const: attachment
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        cardId:
+          type: string
+        cardTitle:
+          type: string
+        text:
+          type: string
+          description: Short snippet around the matched file name.
+        attachmentId:
+          type: string
     WorkspaceSearchMatch:
-      allOf:
-        - $ref: "#/components/schemas/BoardSearchMatch"
-        - type: object
-          required: [boardId, boardTitle, cardTitle]
-          properties:
-            boardId:
-              type: string
-            boardTitle:
-              type: string
-            cardTitle:
-              type: string
+      oneOf:
+        - $ref: "#/components/schemas/WorkspaceCommentSearchMatch"
+        - $ref: "#/components/schemas/WorkspaceAttachmentSearchMatch"
     WorkspaceSearchResult:
       type: object
-      required: [matches]
+      required: [matches, total, truncated]
       properties:
         matches:
           type: array
+          description: Newest first, deduped per board/card/kind, capped at 200.
           items:
             $ref: "#/components/schemas/WorkspaceSearchMatch"
+        total:
+          type: integer
+          description: Distinct board/card/kind matches before the cap.
+        truncated:
+          type: boolean
+          description: Whether `total` exceeds the returned `matches`.
     BoardMember:
       type: object
       required:

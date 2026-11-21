@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -8,7 +9,11 @@ import {
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Board } from "@janosik/shared";
+import type {
+  Board,
+  WorkspaceSearchMatch,
+  WorkspaceSearchResult,
+} from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -28,6 +33,14 @@ const boardsRef = vi.hoisted(() => ({
 vi.mock("@/store/BoardContext", () => ({
   useBoard: () => ({ boards: boardsRef.current, pendingBoardCount: 0 }),
 }));
+
+function workspace(
+  matches: WorkspaceSearchMatch[],
+  total = matches.length,
+  truncated = false,
+): WorkspaceSearchResult {
+  return { matches, total, truncated };
+}
 
 function makeBoard(cards: Array<{ id: string; title: string }>): Board {
   return {
@@ -106,8 +119,8 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
   });
 
   it("shows a Comment badge, a snippet and a comment deep link", async () => {
-    const search = vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue({
-      matches: [
+    const search = vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace([
         {
           boardId: "b-1",
           boardTitle: "Alpha",
@@ -117,8 +130,8 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
           text: "the flaky deploy",
           commentId: "cm-1",
         },
-      ],
-    });
+      ]),
+    );
 
     renderPalette();
     await openAndType("flaky");
@@ -143,8 +156,8 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
   });
 
   it("shows an Attachment badge and a file deep link", async () => {
-    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue({
-      matches: [
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace([
         {
           boardId: "b-1",
           boardTitle: "Alpha",
@@ -154,14 +167,14 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
           text: "flaky-report.pdf",
           attachmentId: "at-1",
         },
-      ],
-    });
+      ]),
+    );
 
     renderPalette();
     await openAndType("flaky");
     const option = await screen.findByRole("option");
     expect(option).toHaveTextContent("Attachment");
-    expect(option).toHaveTextContent("File:");
+    expect(option).toHaveTextContent("Attachment:");
     expect(within(option).getByTestId("search-type-badge")).toHaveAttribute(
       "data-type",
       "attachment",
@@ -176,8 +189,9 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
   });
 
   it("falls back to the card when a server hit has no row id", async () => {
-    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue({
-      matches: [
+    // Older servers answered without the row id; the UI must still navigate.
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace([
         {
           boardId: "b-1",
           boardTitle: "Alpha",
@@ -185,9 +199,9 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
           cardTitle: "Landing redesign",
           matchIn: "comment",
           text: "flaky",
-        },
-      ],
-    });
+        } as unknown as WorkspaceSearchMatch,
+      ]),
+    );
 
     renderPalette();
     await openAndType("flaky");
@@ -206,17 +220,19 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
       title: `Comment card ${String(index).padStart(2, "0")}`,
     }));
     boardsRef.current = [makeBoard(cards)];
-    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue({
-      matches: cards.map((card, index) => ({
-        boardId: "b-1",
-        boardTitle: "Alpha",
-        cardId: card.id,
-        cardTitle: card.title,
-        matchIn: "comment" as const,
-        text: `flaky note ${index}`,
-        commentId: `cm-${index}`,
-      })),
-    });
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace(
+        cards.map((card, index) => ({
+          boardId: "b-1",
+          boardTitle: "Alpha",
+          cardId: card.id,
+          cardTitle: card.title,
+          matchIn: "comment" as const,
+          text: `flaky note ${index}`,
+          commentId: `cm-${index}`,
+        })),
+      ),
+    );
 
     renderPalette();
     await openAndType("flaky");
@@ -228,6 +244,71 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(21));
+  });
+
+  it("shows a pending row instead of an empty state and announces the merge", async () => {
+    let release!: (value: WorkspaceSearchResult) => void;
+    const pending = new Promise<WorkspaceSearchResult>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(api, "searchWorkspaceMatches").mockReturnValue(pending);
+
+    renderPalette();
+    await openAndType("flaky");
+    expect(
+      await screen.findByTestId("search-server-pending"),
+    ).toHaveTextContent("Searching comments and attachments…");
+    expect(screen.queryByText("Nothing found.")).toBeNull();
+
+    await act(async () => {
+      release(
+        workspace([
+          {
+            boardId: "b-1",
+            boardTitle: "Alpha",
+            cardId: "c-1",
+            cardTitle: "Landing redesign",
+            matchIn: "comment",
+            text: "flaky deploy",
+            commentId: "cm-1",
+          },
+        ]),
+      );
+    });
+
+    expect(await screen.findByRole("option")).toHaveTextContent(
+      "Landing redesign",
+    );
+    expect(screen.queryByTestId("search-server-pending")).toBeNull();
+    expect(screen.getByTestId("search-results-status")).toHaveTextContent(
+      "Cards: 1; boards: 0.",
+    );
+  });
+
+  it("says when comment and file matches were truncated", async () => {
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace(
+        [
+          {
+            boardId: "b-1",
+            boardTitle: "Alpha",
+            cardId: "c-1",
+            cardTitle: "Landing redesign",
+            matchIn: "comment",
+            text: "flaky deploy",
+            commentId: "cm-1",
+          },
+        ],
+        201,
+        true,
+      ),
+    );
+
+    renderPalette();
+    await openAndType("flaky");
+    expect(
+      await screen.findByTestId("search-server-truncated"),
+    ).toHaveTextContent("Showing the first 1 of 201 comment and file matches.");
   });
 
   it("ignores a stale response that lands after a newer query", async () => {
@@ -260,8 +341,8 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
     fireEvent.change(input, { target: { value: "glitch" } });
     await waitFor(() => expect(search).toHaveBeenCalledWith("glitch"));
 
-    resolveNew({
-      matches: [
+    resolveNew(
+      workspace([
         {
           boardId: "b-1",
           boardTitle: "Alpha",
@@ -271,13 +352,13 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
           text: "glitch in deploy",
           commentId: "cm-new",
         },
-      ],
-    });
+      ]),
+    );
     const hit = await screen.findByRole("option");
     await waitFor(() => expect(hit).toHaveTextContent("glitch in deploy"));
 
-    resolveOld({
-      matches: [
+    resolveOld(
+      workspace([
         {
           boardId: "b-1",
           boardTitle: "Alpha",
@@ -287,8 +368,8 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
           text: "flaky note",
           commentId: "cm-old",
         },
-      ],
-    });
+      ]),
+    );
     await waitFor(() => expect(hit).toHaveTextContent("glitch in deploy"));
     expect(hit).not.toHaveTextContent("flaky note");
     expect(screen.queryByText("Landing redesign")).toBeNull();

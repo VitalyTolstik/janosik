@@ -263,13 +263,19 @@ test("keeps the board selected when Show all expands the cards", async ({
   for (let index = 0; index < 20; index += 1) {
     await page.keyboard.press("ArrowDown");
   }
-  await expect(results.getByRole("option", { selected: true })).toHaveText(
-    "Cursor result",
+  const selected = results.getByRole("option", { selected: true });
+  await expect(selected).toContainText("Cursor result");
+  await expect(selected.getByTestId("search-type-badge")).toHaveAttribute(
+    "data-type",
+    "board",
   );
 
   await page.getByTestId("search-show-all").click();
-  await expect(results.getByRole("option", { selected: true })).toHaveText(
-    "Cursor result",
+  const stillSelected = results.getByRole("option", { selected: true });
+  await expect(stillSelected).toContainText("Cursor result");
+  await expect(stillSelected.getByTestId("search-type-badge")).toHaveAttribute(
+    "data-type",
+    "board",
   );
   await page.keyboard.press("Enter");
 

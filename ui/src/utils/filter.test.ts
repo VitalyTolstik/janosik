@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import type { Board, Card, Label, WorkspaceSearchMatch } from "@janosik/shared";
+import type {
+  Board,
+  Card,
+  Label,
+  WorkspaceAttachmentSearchMatch,
+  WorkspaceCommentSearchMatch,
+} from "@janosik/shared";
 import {
   activeFacetCount,
   createdDayRange,
@@ -740,14 +746,32 @@ describe("server search merging (TASK-177.13)", () => {
     createdAt: NOW,
     updatedAt: NOW,
   };
-  const match = (
-    overrides: Partial<WorkspaceSearchMatch> & { cardId: string },
-  ): WorkspaceSearchMatch => ({
+  const commentMatch = (
+    cardId: string,
+    text = "comment",
+    commentId = "cm-1",
+  ): WorkspaceCommentSearchMatch => ({
     boardId: "b1",
     boardTitle: "Alpha",
+    cardId,
     cardTitle: "Newsletter",
     matchIn: "comment",
-    ...overrides,
+    text,
+    commentId,
+  });
+  const attachmentMatch = (
+    cardId: string,
+    text = "file.pdf",
+    attachmentId = "at-1",
+    boardId = "b1",
+  ): WorkspaceAttachmentSearchMatch => ({
+    boardId,
+    boardTitle: "Alpha",
+    cardId,
+    cardTitle: "Newsletter",
+    matchIn: "attachment",
+    text,
+    attachmentId,
   });
 
   it("appends comment and attachment hits with their row ids", () => {
@@ -756,18 +780,8 @@ describe("server search merging (TASK-177.13)", () => {
       local,
       [board],
       [
-        match({
-          cardId: "c2",
-          matchIn: "comment",
-          text: "the flaky deploy",
-          commentId: "cm-1",
-        }),
-        match({
-          cardId: "c2",
-          matchIn: "attachment",
-          text: "flaky.log",
-          attachmentId: "at-1",
-        }),
+        commentMatch("c2", "the flaky deploy", "cm-1"),
+        attachmentMatch("c2", "flaky.log", "at-1"),
       ],
     );
 
@@ -789,24 +803,9 @@ describe("server search merging (TASK-177.13)", () => {
       local,
       [board],
       [
-        match({
-          cardId: "c2",
-          matchIn: "comment",
-          text: "comment",
-          commentId: "cm-1",
-        }),
-        match({
-          cardId: "c2",
-          matchIn: "attachment",
-          text: "file.pdf",
-          attachmentId: "at-1",
-        }),
-        match({
-          boardId: "missing",
-          cardId: "c9",
-          matchIn: "attachment",
-          text: "other.pdf",
-        }),
+        commentMatch("c2"),
+        attachmentMatch("c2"),
+        attachmentMatch("c9", "other.pdf", "at-2", "missing"),
       ],
     );
 
@@ -818,15 +817,52 @@ describe("server search merging (TASK-177.13)", () => {
     expect(hit.commentId).toBeUndefined();
   });
 
+  it("keeps an active server hit above an archived local hit", () => {
+    const active: Board = {
+      ...board,
+      id: "active",
+      title: "Active board",
+      columns: [
+        { id: "col-a", title: "Todo", cardIds: ["c-server"], createdAt: NOW },
+      ],
+      cards: { "c-server": card("c-server", "Server target", []) },
+    };
+    const archived: Board = {
+      ...board,
+      id: "archived",
+      title: "Archived board",
+      archivedAt: NOW,
+      columns: [
+        { id: "col-z", title: "Todo", cardIds: ["c-local"], createdAt: NOW },
+      ],
+      cards: { "c-local": card("c-local", "Needle archived", []) },
+    };
+    const local = searchBoards([active, archived], "needle");
+    const hits = mergeWorkspaceSearchHits(
+      local,
+      [active, archived],
+      [
+        {
+          boardId: "active",
+          boardTitle: "Active board",
+          cardId: "c-server",
+          cardTitle: "Server target",
+          matchIn: "comment",
+          text: "needle in a comment",
+          commentId: "cm-active",
+        },
+      ],
+    );
+    const cards = hits.filter((hit) => hit.kind === "card");
+    expect(cards.map((hit) => hit.card.id)).toEqual(["c-server", "c-local"]);
+  });
+
   it("groups new match kinds before capping each section", () => {
     const hits = [
       ...mergeWorkspaceSearchHits(
         [],
         [board],
-        [
-          match({ cardId: "c1", commentId: "cm-1" }),
-          match({ cardId: "c2", attachmentId: "at-1", matchIn: "attachment" }),
-        ],
+        [commentMatch("c1"), attachmentMatch("c2")],
       ),
       {
         kind: "board" as const,

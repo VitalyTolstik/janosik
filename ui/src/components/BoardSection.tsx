@@ -103,27 +103,25 @@ export function BoardSection() {
     let alive = true;
     const timer = setTimeout(() => {
       api
-        .searchBoardCards(boardId, query)
+        .searchBoardCards(boardId, query, { includeMatches: false })
         .then((result) => {
           if (!alive) return;
           setServerMatch({
             boardId,
             query,
-            cardIds: new Set(
-              (result.matches ?? [])
-                .filter(
-                  (match) =>
-                    match.matchIn === "comment" ||
-                    match.matchIn === "attachment",
-                )
-                .map((match) => match.cardId),
-            ),
+            // The filter needs ids only; `matches` is empty unless a caller
+            // explicitly asks for the bounded explanatory list.
+            cardIds: new Set(result.cardIds),
           });
         })
         .catch(() => {
           // Search is an enhancement: an old server without the route or a
           // transient failure keeps the local filter working (no toast).
-          if (alive) setServerMatch(null);
+          // Resolve the query with no extra ids so the UI leaves its pending
+          // state and can show the truthful local-only result.
+          if (alive) {
+            setServerMatch({ boardId, query, cardIds: new Set<string>() });
+          }
         });
     }, SERVER_FILTER_DEBOUNCE_MS);
     return () => {
@@ -132,6 +130,13 @@ export function BoardSection() {
     };
   }, [serverMode, boardId, query]);
 
+  const serverPending =
+    serverMode &&
+    boardId !== undefined &&
+    query !== "" &&
+    (serverMatch === null ||
+      serverMatch.boardId !== boardId ||
+      serverMatch.query !== query);
   const serverCardIds =
     serverMatch !== null &&
     serverMatch.boardId === board?.id &&
@@ -192,7 +197,10 @@ export function BoardSection() {
         toast.error(t("card.notFound"));
       }
       const next = copySearchParamsWithoutLanguageHandoff(searchParams);
+      // The row params only ever accompany a live card deep link.
       next.delete("card");
+      next.delete("comment");
+      next.delete("attachment");
       setSearchParams(next, { replace: true });
       return;
     }
@@ -274,9 +282,20 @@ export function BoardSection() {
             labels={board.labels}
             boardId={board.id}
             matchCount={matchCount}
+            matchPending={serverPending}
             onChange={setFilter}
           />
         </div>
+      ) : null}
+      {serverPending ? (
+        <p
+          role="status"
+          aria-live="polite"
+          data-testid="filter-server-pending"
+          className="mb-3 text-xs text-muted-foreground"
+        >
+          {t("filter.searchingServer")}
+        </p>
       ) : null}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <ViewSwitcher value={view} onChange={setView} />
@@ -295,6 +314,7 @@ export function BoardSection() {
         <DndBoard
           filteredCardIds={filteredIds ?? undefined}
           isFiltering={active}
+          filterPending={serverPending}
           highlight={filter.query}
           onCardClick={handleCardClick}
           density={density}
@@ -315,6 +335,7 @@ export function BoardSection() {
             <TableView
               filteredCardIds={filteredIds ?? undefined}
               isFiltering={active}
+              filterPending={serverPending}
               highlight={filter.query}
               onCardClick={handleCardClick}
               readOnly={readOnly}

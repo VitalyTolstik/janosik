@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -54,6 +55,27 @@ import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
+
+/**
+ * Search `q` must be a single string. Express turns `?q=a&q=b` into an
+ * array; answering 400 keeps the service contract (and the length bound)
+ * honest instead of coercing arbitrary input (TASK-177.13 review).
+ */
+function searchQuery(value: unknown): string {
+  if (value === undefined) return "";
+  if (typeof value !== "string") {
+    throw new BadRequestException("q must be a single string");
+  }
+  return value;
+}
+
+/** `includeMatches` defaults to true; only explicit false values opt out. */
+function includeMatches(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (value === "1" || value === "true") return true;
+  if (value === "0" || value === "false") return false;
+  throw new BadRequestException("includeMatches must be 0, 1, false or true");
+}
 
 /**
  * Boards + membership REST surface (§7.4).
@@ -148,11 +170,11 @@ export class BoardsController {
   searchAcrossBoards(
     @CurrentUser() user: AuthUser,
     @CurrentPrincipal() principal: AuthPrincipal | undefined,
-    @Query("q") q?: string,
+    @Query("q") q?: unknown,
   ): Promise<WorkspaceSearchResult> {
     return this.boards.searchMatchesAcrossBoards(
       user.id,
-      q ?? "",
+      searchQuery(q),
       principal?.tokenScope?.boardId,
     );
   }
@@ -174,9 +196,10 @@ export class BoardsController {
   @Get(":id/search")
   search(
     @Param("id") id: string,
-    @Query("q") q?: string,
+    @Query("q") q?: unknown,
+    @Query("includeMatches") matches?: unknown,
   ): Promise<BoardCardSearchResult> {
-    return this.boards.searchCards(id, q ?? "");
+    return this.boards.searchCards(id, searchQuery(q), includeMatches(matches));
   }
 
   /**

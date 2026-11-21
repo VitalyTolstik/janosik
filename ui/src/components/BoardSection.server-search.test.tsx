@@ -1,8 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Board } from "@janosik/shared";
+import type { Board, BoardCardSearchResult } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { BoardSection } from "@/components/BoardSection";
@@ -17,7 +23,8 @@ import { FakeServer } from "@/test/fake-server";
 /**
  * Board filter + server search (TASK-177.13): the local query keeps hiding
  * cards; a comment/attachment match from the server brings a card back even
- * though its title/description do not contain the query.
+ * though its title/description do not contain the query. While the debounced
+ * lookup runs the board must not claim a definitive empty result.
  */
 
 const SERVER_BOARD: Board = {
@@ -52,6 +59,10 @@ const SERVER_BOARD: Board = {
   updatedAt: 1,
 };
 
+function result(cardId: string): BoardCardSearchResult {
+  return { cardIds: [cardId], matches: [] };
+}
+
 function renderBoard() {
   return render(
     <ThemeProvider>
@@ -72,6 +83,10 @@ function renderBoard() {
   );
 }
 
+function filterInput() {
+  return screen.getByLabelText("Search cards", { selector: "input" });
+}
+
 describe("BoardSection server search (TASK-177.13)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
@@ -88,35 +103,118 @@ describe("BoardSection server search (TASK-177.13)", () => {
   it("keeps a card matched only in a comment", async () => {
     const server = new FakeServer([SERVER_BOARD]);
     vi.stubGlobal("fetch", server.handle);
-    const search = vi.spyOn(api, "searchBoardCards").mockResolvedValue({
-      cardIds: ["c-2"],
-      matches: [
-        {
-          cardId: "c-2",
-          matchIn: "comment",
-          text: "the flaky build",
-          commentId: "cm-1",
-        },
-      ],
-    });
+    const search = vi
+      .spyOn(api, "searchBoardCards")
+      .mockResolvedValue(result("c-2"));
 
     renderBoard();
     expect(
       await screen.findByText("Other card", {}, { timeout: 15_000 }),
     ).toBeInTheDocument();
 
-    const input = screen.getByLabelText("Search cards", {
-      selector: "input",
-    });
-    fireEvent.change(input, { target: { value: "flaky" } });
+    fireEvent.change(filterInput(), { target: { value: "flaky" } });
 
-    // The local query does not match either title, so the card disappears
-    // until the debounced server answer names it.
     await waitFor(() => expect(screen.queryByText("Other card")).toBeNull());
     expect(
       await screen.findByText("Other card", {}, { timeout: 15_000 }),
     ).toBeInTheDocument();
-    expect(search).toHaveBeenCalledWith("b-1", "flaky");
+    expect(search).toHaveBeenCalledWith("b-1", "flaky", {
+      includeMatches: false,
+    });
     expect(screen.queryByText("Server card")).toBeNull();
+  });
+
+  it("shows a pending status instead of a false empty result", async () => {
+    const server = new FakeServer([SERVER_BOARD]);
+    vi.stubGlobal("fetch", server.handle);
+    let release!: (value: BoardCardSearchResult) => void;
+    const pending = new Promise<BoardCardSearchResult>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(api, "searchBoardCards").mockReturnValue(pending);
+
+    renderBoard();
+    await screen.findByText("Server card", {}, { timeout: 15_000 });
+    fireEvent.change(filterInput(), { target: { value: "flaky" } });
+
+    expect(
+      await screen.findByTestId("filter-server-pending"),
+    ).toHaveTextContent("Searching comments and attachments…");
+    expect(screen.queryByText("No cards match the filter")).toBeNull();
+    expect(screen.queryByText(/0 cards found/)).toBeNull();
+    expect(screen.getByTestId("filter-match-count")).toHaveTextContent(
+      "Searching comments and attachments…",
+    );
+
+    await act(async () => release(result("c-2")));
+
+    expect(
+      await screen.findByText("Other card", {}, { timeout: 15_000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("filter-server-pending")).toBeNull();
+  });
+
+  it("ignores a stale server response after a newer query", async () => {
+    const server = new FakeServer([SERVER_BOARD]);
+    vi.stubGlobal("fetch", server.handle);
+    let releaseOld!: (value: BoardCardSearchResult) => void;
+    let releaseNew!: (value: BoardCardSearchResult) => void;
+    const oldResponse = new Promise<BoardCardSearchResult>((resolve) => {
+      releaseOld = resolve;
+    });
+    const newResponse = new Promise<BoardCardSearchResult>((resolve) => {
+      releaseNew = resolve;
+    });
+    const search = vi
+      .spyOn(api, "searchBoardCards")
+      .mockImplementation((_boardId, query) =>
+        query === "flaky" ? oldResponse : newResponse,
+      );
+
+    renderBoard();
+    await screen.findByText("Server card", {}, { timeout: 15_000 });
+    fireEvent.change(filterInput(), { target: { value: "flaky" } });
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith("b-1", "flaky", {
+        includeMatches: false,
+      }),
+    );
+
+    fireEvent.change(filterInput(), { target: { value: "widget" } });
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith("b-1", "widget", {
+        includeMatches: false,
+      }),
+    );
+
+    await act(async () => releaseNew(result("c-1")));
+    expect(await screen.findByText("Server card")).toBeInTheDocument();
+
+    await act(async () => releaseOld(result("c-2")));
+    await waitFor(() => expect(screen.queryByText("Other card")).toBeNull());
+  });
+
+  it("makes one request per debounce window", async () => {
+    const server = new FakeServer([SERVER_BOARD]);
+    vi.stubGlobal("fetch", server.handle);
+    const search = vi
+      .spyOn(api, "searchBoardCards")
+      .mockResolvedValue(result("c-2"));
+
+    renderBoard();
+    await screen.findByText("Server card", {}, { timeout: 15_000 });
+    const input = filterInput();
+    fireEvent.change(input, { target: { value: "f" } });
+    fireEvent.change(input, { target: { value: "fl" } });
+    fireEvent.change(input, { target: { value: "fla" } });
+    fireEvent.change(input, { target: { value: "flaky" } });
+
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith("b-1", "flaky", {
+        includeMatches: false,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(search).toHaveBeenCalledTimes(1);
   });
 });

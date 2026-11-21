@@ -116,6 +116,7 @@ function renderComments(
   handler: FetchHandler = server.handle,
   cardId = "card-1",
   onCountChange?: (count: ActivityCount | null | undefined) => void,
+  focusId?: string,
 ) {
   vi.stubGlobal("fetch", handler);
   const tree = (open: boolean) => (
@@ -131,6 +132,7 @@ function renderComments(
                       cardId={cardId}
                       boardId="b-1"
                       readOnly={readOnly}
+                      focusId={focusId}
                       onCountChange={onCountChange}
                     />
                   )}
@@ -170,6 +172,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
 });
 
 describe("CardComments", () => {
@@ -937,6 +940,74 @@ describe("CardComments", () => {
     });
 
     expect(await screen.findByText("Live one")).toBeInTheDocument();
+  });
+
+  it("reveals a deep-linked comment once, focuses it and keeps the position", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-7", text: "Target comment" }),
+    ]);
+    renderComments(
+      server,
+      false,
+      server.handle,
+      "card-1",
+      undefined,
+      "comment-7",
+    );
+    await waitStream(server);
+
+    const row = await screen.findByTestId("comment");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(row).toHaveAttribute("data-search-highlight", "true");
+    expect(document.activeElement).toBe(row);
+
+    // A later SSE addition must not move the reader again.
+    act(() => {
+      server.seedComments("card-1", [
+        comment({ id: "comment-8", authorId: "user-2", text: "Live growth" }),
+        comment({ id: "comment-7", text: "Target comment" }),
+      ]);
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-growth",
+        boardId: "b-1",
+        cardId: "card-1",
+        actorId: "user-2",
+        at: Date.now(),
+        kind: "comment_added",
+        detail: "comment-8",
+      });
+    });
+    expect(await screen.findByText("Live growth")).toBeInTheDocument();
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the card intact for an unknown comment deep link", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Plain thread" })]);
+    renderComments(
+      server,
+      false,
+      server.handle,
+      "card-1",
+      undefined,
+      "missing-comment",
+    );
+
+    const row = await screen.findByTestId("comment");
+    expect(row).not.toHaveAttribute("data-search-highlight");
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it("drops a comment deleted elsewhere", async () => {

@@ -158,7 +158,8 @@ A visitor to a live link sees `Live · read-only`; a snapshot shows
 
 `Global search`, or Ctrl+K (Cmd+K on a Mac), searches card titles,
 descriptions, labels, checklist items, comments and attachment file names
-across every board.
+across every board. Comment and file matching needs a server connection; in
+local mode only the data stored in the boards is searched.
 
 ![Global search results, grouped into cards and boards.](/screens/search.png)
 
@@ -185,7 +186,8 @@ under a long list of card hits.
 keyboard selection and the scroll position. If more than 200 remain, the
 heading keeps showing `shown of N`. While other boards are still loading, the
 heading says `20 of N loaded`, so a partial total is not mistaken for the whole
-workspace.
+workspace. The server lookup for comments and files is also capped at 200
+matches; when more exist, the palette says how many of the total it shows.
 
 ## The board filter bar
 

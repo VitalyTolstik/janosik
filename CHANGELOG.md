@@ -9,14 +9,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - TASK-177.13 search in comments and attachment file names. Board search
-  (`GET /boards/:id/search`) now also matches live attachment names and
+  (`GET /boards/:id/search`) now also matches visible attachment names and
   returns a `matches` list (`title`, `description`, `checklist`, `comment`,
   `attachment`, with short snippets and comment/attachment ids) while keeping
-  `cardIds` for MCP callers. The global palette asks one bounded
+  `cardIds` complete for MCP callers. The match list is deduped per card/kind
+  and capped at 200; `includeMatches=0` returns ids only, which is what the
+  board filter requests. The global palette asks one bounded
   `GET /boards/search` for comment/file hits across active memberships
-  instead of searching every board, merges them with the local
-  title/description/label/checklist hits, keeps the `20 of N`/Show all caps
-  per group and labels each row `Card`, `Board`, `Comment` or `Attachment`.
+  instead of searching every board. Hits are grouped per card before the cap,
+  merged newest-first across comments and files, and expose `total`/
+  `truncated` so the palette never implies a complete list when it is not.
+  Hidden inline and `descriptionDetached` uploads are excluded. The palette
+  merges hits with the local title/description/label/checklist matches, keeps
+  the `20 of N`/Show all caps per group and labels each row `Card`, `Board`,
+  `Comment` or `Attachment`.
   A comment/file hit opens the card and carries `?comment=`/`?attachment=`;
   the dialog scrolls to and highlights the row, and an unknown id falls back
   to the card alone. The board filter debounces the same server search and

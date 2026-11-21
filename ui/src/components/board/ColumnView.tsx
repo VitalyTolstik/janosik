@@ -73,6 +73,8 @@ interface ColumnViewProps {
   onCardClick?: (cardId: string) => void;
   /** True while a board filter is active (changes the empty-state text). */
   isFiltered?: boolean;
+  /** The server comment/attachment lookup for the query is still pending. */
+  filterPending?: boolean;
   /** Filter/search query highlighted on the card fronts. */
   highlight?: string;
   /** The j/k keyboard cursor card — rendered with a focus ring. */
@@ -119,6 +121,7 @@ function ColumnViewBody({
   className,
   onCardClick,
   isFiltered = false,
+  filterPending = false,
   highlight,
   cursorCardId,
   canDuplicateColumn = true,
@@ -438,9 +441,11 @@ function ColumnViewBody({
             ) : (
               <ul className="flex flex-col">
                 <li className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">
-                  {isFiltered && column.cardIds.length > 0
-                    ? t("filter.noMatch")
-                    : t("column.empty")}
+                  {isFiltered && filterPending
+                    ? t("filter.searchingServer")
+                    : isFiltered && column.cardIds.length > 0
+                      ? t("filter.noMatch")
+                      : t("column.empty")}
                 </li>
                 {inlineAddAllowed && (
                   <AddCardZone

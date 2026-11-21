@@ -100,6 +100,7 @@ export function GlobalSearch({
   labelClassName,
 }: GlobalSearchProps) {
   const { t } = useI18n();
+  const serverMode = isApiEnabled();
 
   const [open, setOpen] = useState(false);
 
@@ -169,7 +170,7 @@ export function GlobalSearch({
         <DialogContent className="gap-0 p-0">
           <DialogTitle className="sr-only">{t("search.aria")}</DialogTitle>
           <DialogDescription className="sr-only">
-            {t("search.hint")}
+            {t(serverMode ? "search.hint" : "search.hintLocal")}
           </DialogDescription>
           {/* Query/results state lives in the palette body, which Radix
               unmounts on close — every open starts clean with no `open`
@@ -232,7 +233,9 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
   const [serverResult, setServerResult] = useState<{
     query: string;
     matches: WorkspaceSearchMatch[];
-  }>({ query: "", matches: [] });
+    total: number;
+    truncated: boolean;
+  }>({ query: "", matches: [], total: 0, truncated: false });
   useEffect(() => {
     const needle = query.trim();
     if (!serverMode || needle === "") return;
@@ -240,20 +243,39 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     api
       .searchWorkspaceMatches(needle)
       .then((result) => {
-        if (alive) setServerResult({ query: needle, matches: result.matches });
+        if (alive) {
+          setServerResult({
+            query: needle,
+            matches: result.matches,
+            total: result.total,
+            truncated: result.truncated,
+          });
+        }
       })
       .catch(() => {
         // Search is an enhancement: an old server without the route or a
-        // transient failure leaves the local results untouched.
+        // transient failure leaves the local results untouched. Resolving
+        // the query with no matches lets the palette leave its pending state.
+        if (alive) {
+          setServerResult({
+            query: needle,
+            matches: [],
+            total: 0,
+            truncated: false,
+          });
+        }
       });
     return () => {
       alive = false;
     };
   }, [serverMode, query]);
-  const serverMatches =
-    serverResult.query === query.trim()
-      ? serverResult.matches
-      : NO_SERVER_MATCHES;
+  const serverPending =
+    serverMode && query.trim() !== "" && serverResult.query !== query.trim();
+  const serverForQuery = serverResult.query === query.trim();
+  const serverMatches = serverForQuery
+    ? serverResult.matches
+    : NO_SERVER_MATCHES;
+  const serverTruncated = serverForQuery && serverResult.truncated;
 
   // Raw hits are memoized separately from grouping so Show all only
   // re-slices the array instead of re-running the whole cross-board search.
@@ -408,7 +430,17 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
         ) : null}
         {query.trim() === "" ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            {t("search.hint")}
+            {t(serverMode ? "search.hint" : "search.hintLocal")}
+          </p>
+        ) : serverPending ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-server-pending"
+            className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            {t("search.serverPending")}
           </p>
         ) : hits.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
@@ -436,6 +468,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <ResultTypeBadge hit={hit} />
+                      <span className="sr-only">, </span>
                       <span className="truncate">
                         {hit.boardTitle}
                         {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
@@ -491,6 +524,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">
                       <ResultTypeBadge hit={hit} />
+                      <span className="sr-only">, </span>
                       {hit.boardArchived ? (
                         <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
                       ) : null}
@@ -501,6 +535,32 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             </SearchSection>
           ) : null}
         </div>
+        {serverTruncated ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-server-truncated"
+            className="px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            {t("search.serverTruncated", {
+              shown: serverMatches.length,
+              total: serverResult.total,
+            })}
+          </p>
+        ) : null}
+        {query.trim() !== "" ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-results-status"
+            className="sr-only"
+          >
+            {t("search.resultsStatus", {
+              cards: groups.totalCards,
+              boards: groups.totalBoards,
+            })}
+          </p>
+        ) : null}
       </div>
       {groups.capped && !showAll ? (
         <div className="flex justify-end border-t border-border p-2">
@@ -513,7 +573,6 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
               inputRef.current?.focus();
             }}
             data-testid="search-show-all"
-            className="max-sm:min-h-11"
           >
             {t("search.showAll")}
           </Button>
@@ -580,7 +639,7 @@ function ResultRow({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left transition-colors max-sm:min-h-11",
+        "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left transition-colors",
         active ? "bg-hover" : "hover:bg-hover/60",
       )}
     >

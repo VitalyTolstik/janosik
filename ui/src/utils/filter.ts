@@ -634,6 +634,36 @@ export function searchBoards(boards: Board[], query: string): SearchHit[] {
 }
 
 /**
+ * Natural card order used by `searchBoards`: active boards before archived,
+ * columns in stored order, then the board's off-column archived cards.
+ * Server hits are inserted by this rank so adding one does not move it below
+ * an archived local hit (TASK-177.13 review).
+ */
+function cardSearchRank(boards: Board[]): Map<string, number> {
+  const rank = new Map<string, number>();
+  const sorted = [...boards].sort(
+    (a, b) =>
+      Number(a.archivedAt !== undefined) - Number(b.archivedAt !== undefined),
+  );
+  let index = 0;
+  for (const board of sorted) {
+    for (const column of board.columns) {
+      for (const cardId of column.cardIds) {
+        const card = board.cards[cardId];
+        if (!card || card.archivedAt !== undefined) continue;
+        rank.set(`${board.id}:${cardId}`, index++);
+      }
+    }
+    for (const card of Object.values(board.cards)) {
+      if (card.archivedAt === undefined) continue;
+      const key = `${board.id}:${card.id}`;
+      if (!rank.has(key)) rank.set(key, index++);
+    }
+  }
+  return rank;
+}
+
+/**
  * Append server-only comment/attachment matches to the local palette hits
  * (TASK-177.13). Boards and cards must already be loaded — the palette
  * searches the loaded workspace, and a card matched in a board that is still
@@ -654,7 +684,6 @@ export function mergeWorkspaceSearchHits(
   );
   const extra: CardSearchHit[] = [];
   for (const match of matches) {
-    if (match.matchIn !== "comment" && match.matchIn !== "attachment") continue;
     const key = `${match.boardId}:${match.cardId}`;
     if (seen.has(key)) continue;
     const board = boardById.get(match.boardId);
@@ -675,13 +704,24 @@ export function mergeWorkspaceSearchHits(
       card,
       matchIn: match.matchIn,
       ...(match.text === undefined ? {} : { matchText: match.text }),
-      ...(match.commentId === undefined ? {} : { commentId: match.commentId }),
-      ...(match.attachmentId === undefined
-        ? {}
-        : { attachmentId: match.attachmentId }),
+      ...(match.matchIn === "comment" ? { commentId: match.commentId } : {}),
+      ...(match.matchIn === "attachment"
+        ? { attachmentId: match.attachmentId }
+        : {}),
     });
   }
-  return [...hits, ...extra];
+  if (extra.length === 0) return hits;
+
+  const rank = cardSearchRank(boards);
+  const rankOf = (hit: SearchHit) =>
+    hit.kind === "card"
+      ? (rank.get(`${hit.boardId}:${hit.card.id}`) ?? Number.MAX_SAFE_INTEGER)
+      : Number.MAX_SAFE_INTEGER;
+  const cards = [...hits.filter((hit) => hit.kind === "card"), ...extra].sort(
+    (a, b) => rankOf(a) - rankOf(b),
+  );
+  const boardHits = hits.filter((hit) => hit.kind === "board");
+  return [...cards, ...boardHits];
 }
 
 /** The visible type badge for a hit: `Card`, `Board`, `Comment`, `Attachment`. */

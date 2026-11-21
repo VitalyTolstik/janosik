@@ -969,9 +969,12 @@ export class ApiClient {
   searchBoardCards(
     boardId: string,
     query: string,
+    opts: { includeMatches?: boolean } = {},
   ): Promise<BoardCardSearchResult> {
+    const params = new URLSearchParams({ q: query });
+    if (opts.includeMatches === false) params.set("includeMatches", "0");
     return this.request<BoardCardSearchResult>(
-      `/boards/${encodeURIComponent(boardId)}/search?q=${encodeURIComponent(query)}`,
+      `/boards/${encodeURIComponent(boardId)}/search?${params.toString()}`,
     );
   }
 

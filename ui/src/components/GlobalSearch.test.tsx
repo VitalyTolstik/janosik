@@ -254,16 +254,21 @@ describe("GlobalSearch", () => {
     for (let index = 0; index < 20; index += 1) {
       fireEvent.keyDown(input, { key: "ArrowDown" });
     }
-    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
-      "Widget",
+    const selected = screen.getByRole("option", { selected: true });
+    expect(selected).toHaveTextContent("Widget");
+    expect(within(selected).getByTestId("search-type-badge")).toHaveAttribute(
+      "data-type",
+      "board",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
 
     // The board moved one row down, but the cursor stays on the same hit.
-    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
-      "Widget",
-    );
+    const stillSelected = screen.getByRole("option", { selected: true });
+    expect(stillSelected).toHaveTextContent("Widget");
+    expect(
+      within(stillSelected).getByTestId("search-type-badge"),
+    ).toHaveAttribute("data-type", "board");
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() =>
       expect(screen.getByTestId("loc")).toHaveTextContent("/board/b-target"),
