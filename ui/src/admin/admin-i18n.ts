@@ -903,6 +903,9 @@ const en = {
   "admin.cards.fields.coverChange": "Change cover",
   "admin.cards.fields.coverRemove": "Remove cover",
   "admin.cards.fields.labels": "Labels",
+  "admin.cards.fields.labelsHelp": "About labels",
+  "admin.cards.fields.labelsHelpBody":
+    "Labels save immediately — there is no separate Save button. Click a label to attach it, click it again to detach it. Every change is recorded in the board history.",
   "admin.cards.fields.noLabels": "This board has no labels yet.",
   "admin.cards.fields.boardLoading": "Loading board members and labels…",
   "admin.cards.fields.boardFailed": "Could not load board members and labels.",
@@ -2435,6 +2438,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.cards.fields.coverChange": "Изменить обложку",
   "admin.cards.fields.coverRemove": "Убрать обложку",
   "admin.cards.fields.labels": "Метки",
+  "admin.cards.fields.labelsHelp": "О метках",
+  "admin.cards.fields.labelsHelpBody":
+    "Метки сохраняются сразу — отдельной кнопки «Сохранить» нет. Нажмите на метку, чтобы прикрепить её, и ещё раз — чтобы открепить. Каждое изменение попадает в историю доски.",
   "admin.cards.fields.noLabels": "На этой доске пока нет меток.",
   "admin.cards.fields.boardLoading": "Загрузка участников и меток…",
   "admin.cards.fields.boardFailed": "Не удалось загрузить участников и метки.",

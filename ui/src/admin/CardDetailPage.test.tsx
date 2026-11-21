@@ -829,9 +829,9 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     configure?: (server: FakeAdminServer) => void,
   ) {
     const { server } = setupFields(state, configure);
-    renderCard();
+    const view = renderCard();
     await screen.findByTestId("admin-card-fields");
-    return { server, state };
+    return { server, state, unmount: view.unmount };
   }
 
   async function renderFieldsWithCalendar(
@@ -1518,6 +1518,76 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
       labelId: "label-1",
       on: false,
     });
+  });
+
+  it("explains the immediate label save in a help popover", async () => {
+    await renderFields();
+    const help = await screen.findByTestId("admin-card-labels-help");
+    expect(help).toHaveAccessibleName("About labels");
+    expect(help.closest("label")).toBeNull();
+
+    fireEvent.click(help);
+    const body = await screen.findByText(
+      /Labels save immediately — there is no separate Save button/,
+    );
+    expect(body).toBeInTheDocument();
+
+    fireEvent.keyDown(body, { key: "Escape" });
+    await waitFor(() => expect(body).not.toBeInTheDocument());
+    expect(help).toHaveFocus();
+  });
+
+  it("keeps one label success toast per card and replaces it", async () => {
+    const { server, state } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    const region = screen.getByRole("region", { name: "Notifications" });
+
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    expect(within(region).getAllByRole("status")).toHaveLength(1);
+    expect(within(region).getByRole("status")).toHaveTextContent(
+      "Label updated",
+    );
+    expect(sentCommands(server)).toHaveLength(1);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-1"),
+      ).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-1"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-2"]);
+    });
+    expect(within(region).getAllByRole("status")).toHaveLength(1);
+    expect(within(region).getByRole("status")).toHaveTextContent(
+      "Label updated",
+    );
+    expect(sentCommands(server)).toHaveLength(2);
+  });
+
+  it("clears the label toast when the panel unmounts", async () => {
+    const { state, unmount } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    const region = screen.getByRole("region", { name: "Notifications" });
+    expect(within(region).getByRole("status")).toBeInTheDocument();
+
+    unmount();
+    expect(screen.queryByRole("region", { name: "Notifications" })).toBeNull();
   });
 
   it("disables the 21st label toggle at the cap", async () => {

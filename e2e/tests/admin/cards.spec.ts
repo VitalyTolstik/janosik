@@ -272,6 +272,17 @@ test("C6: a master edits card fields and every change has a command and audit ro
   await expect(secondLabel).toHaveAttribute("aria-pressed", "false");
   await secondLabel.click();
   await expect(secondLabel).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Label updated")).toBeVisible();
+
+  const labelsHelp = page.getByTestId("admin-card-labels-help");
+  await labelsHelp.click();
+  await expect(
+    page.getByText(
+      /Labels save immediately — there is no separate Save button/,
+    ),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(labelsHelp).toBeFocused();
 
   const auditResponse = await admin.get(
     `/api/v1/admin/audit?limit=100&search=${encodeURIComponent(board.id)}`,
