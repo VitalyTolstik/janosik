@@ -429,6 +429,8 @@ export class FakeAdminServer {
   }> = [];
   /** Paths whose next call answers 500 once (matched via `includes`). */
   failNext: string[] = [];
+  /** Hold the next board command until this promise resolves (race tests). */
+  holdCommands?: Promise<void>;
   /** Paths whose next call answers with an explicit status once. */
   failNextStatuses: Array<{
     path: string;
@@ -639,6 +641,10 @@ export class FakeAdminServer {
       const body =
         typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       this.requests.push({ method, path, body, query: url.searchParams });
+
+      const hold = this.holdCommands;
+      this.holdCommands = undefined;
+      if (hold) await hold;
 
       const failure = this.failNext.find((candidate) =>
         path.includes(candidate),

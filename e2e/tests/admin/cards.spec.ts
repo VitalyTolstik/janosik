@@ -272,6 +272,21 @@ test("C6: a master edits card fields and every change has a command and audit ro
   await expect(secondLabel).toHaveAttribute("aria-pressed", "false");
   await secondLabel.click();
   await expect(secondLabel).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Label updated")).toHaveCount(1);
+  await secondLabel.click();
+  await expect(secondLabel).toHaveAttribute("aria-pressed", "false");
+  // The per-card key replaces the first toast instead of stacking a second.
+  await expect(page.getByText("Label updated")).toHaveCount(1);
+
+  const labelsHelp = page.getByTestId("admin-card-labels-help");
+  await labelsHelp.click();
+  await expect(
+    page.getByText(
+      /Labels save immediately — there is no separate Save button/,
+    ),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(labelsHelp).toBeFocused();
 
   const auditResponse = await admin.get(
     `/api/v1/admin/audit?limit=100&search=${encodeURIComponent(board.id)}`,
@@ -377,6 +392,26 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
     await expect(
       page.getByTestId(`admin-card-label-toggle-${longLabelId}`),
     ).toBeVisible();
+    const labelsHelp = page.getByTestId("admin-card-labels-help");
+    const helpTriggerBox = await labelsHelp.boundingBox();
+    expect(helpTriggerBox?.width ?? 0).toBeGreaterThanOrEqual(24);
+    expect(helpTriggerBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+    await labelsHelp.click();
+    const helpDialog = page.getByRole("dialog", { name: "About labels" });
+    await expect(helpDialog).toBeVisible();
+    const helpBox = await helpDialog.boundingBox();
+    expect(helpBox).not.toBeNull();
+    expect(helpBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect(helpBox?.y ?? -1).toBeGreaterThanOrEqual(0);
+    expect((helpBox?.x ?? 0) + (helpBox?.width ?? 0)).toBeLessThanOrEqual(
+      viewport.width + 0.1,
+    );
+    expect((helpBox?.y ?? 0) + (helpBox?.height ?? 0)).toBeLessThanOrEqual(
+      viewport.height + 0.1,
+    );
+    await page.keyboard.press("Escape");
+    await expect(helpDialog).toBeHidden();
+    await expect(labelsHelp).toBeFocused();
     for (const box of [scroller, timeline, fields, relations]) {
       expect(
         await box.evaluate(

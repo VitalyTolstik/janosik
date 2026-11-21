@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -829,9 +831,62 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     configure?: (server: FakeAdminServer) => void,
   ) {
     const { server } = setupFields(state, configure);
-    renderCard();
+    const view = renderCard();
     await screen.findByTestId("admin-card-fields");
-    return { server, state };
+    return { server, state, unmount: view.unmount };
+  }
+
+  async function renderFieldSwitch(onSaved = vi.fn()) {
+    const state = fieldState();
+    state.cards.push(
+      adminCard({ id: "card-2", title: "Second card", commentIds: [] }),
+    );
+    state.cardLabelIds["card-2"] = [];
+    const { server } = setupFields(state);
+    const first = await adminApi.cardDetail("card-1");
+    const second = await adminApi.cardDetail("card-2");
+
+    function Harness() {
+      const [id, setId] = useState("card-1");
+      const [shown, setShown] = useState(true);
+      const detail = id === "card-1" ? first : second;
+      return (
+        <ThemeProvider>
+          <I18nProvider>
+            <ToastProvider>
+              <TooltipProvider>
+                <button
+                  type="button"
+                  data-testid="switch-card"
+                  onClick={() => setId("card-2")}
+                >
+                  switch
+                </button>
+                <button
+                  type="button"
+                  data-testid="hide-panel"
+                  onClick={() => setShown(false)}
+                >
+                  hide
+                </button>
+                {shown ? (
+                  <CardFieldsPanel
+                    key={detail.card.id}
+                    card={detail.card}
+                    cardLabels={detail.labels}
+                    onSaved={onSaved}
+                  />
+                ) : null}
+              </TooltipProvider>
+            </ToastProvider>
+          </I18nProvider>
+        </ThemeProvider>
+      );
+    }
+
+    const view = render(<Harness />);
+    await screen.findByTestId("admin-card-label-toggle-label-1");
+    return { server, state, onSaved, unmount: view.unmount };
   }
 
   async function renderFieldsWithCalendar(
@@ -1520,7 +1575,258 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
     });
   });
 
-  it("disables the 21st label toggle at the cap", async () => {
+  it("explains the immediate label save in a named help dialog", async () => {
+    await renderFields();
+    const help = await screen.findByTestId("admin-card-labels-help");
+    expect(help).toHaveAccessibleName("About labels");
+    expect(help.closest("label")).toBeNull();
+    expect(help).toHaveAttribute("aria-expanded", "false");
+
+    help.focus();
+    await userEvent.keyboard("{Enter}");
+    const dialog = await screen.findByRole("dialog", { name: "About labels" });
+    const body = within(dialog).getByText(/Labels save immediately/);
+    expect(body).toHaveTextContent("attach it");
+    expect(body).toHaveTextContent("detach it");
+    expect(body).toHaveTextContent("board history");
+    expect(help).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "About labels" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(help).toHaveFocus();
+    expect(help).toHaveAttribute("aria-expanded", "false");
+
+    help.focus();
+    await userEvent.keyboard(" ");
+    await screen.findByRole("dialog", { name: "About labels" });
+    await userEvent.click(document.body);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "About labels" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("localizes the labels help in Russian", async () => {
+    await ensureLocale("ru");
+    const i18n = defaultI18n.cloneInstance({ lng: "ru" });
+    await renderFieldsWithCalendar(
+      () => Promise.reject(new Error("Calendar chunk unavailable")),
+      i18n,
+    );
+    const help = screen.getByTestId("admin-card-labels-help");
+    expect(help).toHaveAccessibleName("О метках");
+    fireEvent.click(help);
+    const dialog = await screen.findByRole("dialog", { name: "О метках" });
+    const body = within(dialog).getByText(/Метки сохраняются сразу/);
+    expect(body).toHaveTextContent("прикрепить её");
+    expect(body).toHaveTextContent("историю доски");
+  });
+
+  it("keeps one label success toast per card and replaces it", async () => {
+    const { server, state } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    const region = screen.getByRole("region", { name: "Notifications" });
+
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    expect(within(region).getAllByRole("status")).toHaveLength(1);
+    expect(within(region).getByRole("status")).toHaveTextContent(
+      "Label updated",
+    );
+    expect(sentCommands(server)).toHaveLength(1);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-1"),
+      ).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-1"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-2"]);
+    });
+    expect(within(region).getAllByRole("status")).toHaveLength(1);
+    expect(within(region).getByRole("status")).toHaveTextContent(
+      "Label updated",
+    );
+    expect(sentCommands(server)).toHaveLength(2);
+  });
+
+  it("does not leak a late label success from card A into card B", async () => {
+    const { server, onSaved } = await renderFieldSwitch();
+    let release!: () => void;
+    server.holdCommands = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "POST" && request.path.endsWith("/commands"),
+        ),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByTestId("switch-card"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-1"),
+      ).toHaveAttribute("aria-pressed", "false"),
+    );
+
+    await act(async () => {
+      release();
+    });
+    expect(screen.queryByText("Label updated")).not.toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.queryByText("The action failed")).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("admin-card-label-toggle-label-2"),
+    ).not.toBeDisabled();
+  });
+
+  it("does not leak a late label failure from card A into card B", async () => {
+    const { server, onSaved } = await renderFieldSwitch();
+    let release!: () => void;
+    server.holdCommands = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.failNext.push("/commands");
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "POST" && request.path.endsWith("/commands"),
+        ),
+      ).toBe(true),
+    );
+
+    fireEvent.click(screen.getByTestId("switch-card"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-1"),
+      ).toHaveAttribute("aria-pressed", "false"),
+    );
+
+    await act(async () => {
+      release();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Label updated")).not.toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId("admin-card-label-toggle-label-2"),
+    ).not.toBeDisabled();
+  });
+
+  it("clears a visible label toast when the card changes", async () => {
+    const { state } = await renderFieldSwitch();
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    expect(screen.getByText("Label updated")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("switch-card"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-1"),
+      ).toHaveAttribute("aria-pressed", "false"),
+    );
+    expect(screen.queryByText("Label updated")).not.toBeInTheDocument();
+  });
+
+  it("clears a visible label toast when only the panel unmounts", async () => {
+    const { state } = await renderFieldSwitch();
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    expect(screen.getByText("Label updated")).toBeVisible();
+
+    fireEvent.click(screen.getByTestId("hide-panel"));
+    await waitFor(() =>
+      expect(screen.queryByText("Label updated")).not.toBeInTheDocument(),
+    );
+    // The provider is still mounted: the toast was removed by the panel
+    // cleanup, not by tearing down the notifications region.
+    expect(
+      screen.getByRole("region", { name: "Notifications" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("admin-card-label-toggle-label-1"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears the old success as soon as the next label request starts", async () => {
+    const { server, state } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    expect(screen.getByText("Label updated")).toBeVisible();
+
+    let release!: () => void;
+    server.holdCommands = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-1"));
+    await waitFor(() =>
+      expect(screen.queryByText("Label updated")).not.toBeInTheDocument(),
+    );
+
+    release();
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-2"]);
+    });
+    expect(screen.getByText("Label updated")).toBeVisible();
+  });
+
+  it("clears the previous label success when the next command fails", async () => {
+    const { server, state } = await renderFields();
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-2"),
+      ).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-2"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+    });
+    expect(screen.getByText("Label updated")).toBeVisible();
+
+    server.failNext.push("/commands");
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-label-1"),
+      ).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-label-1"));
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("boom");
+    });
+    expect(screen.queryByText("Label updated")).not.toBeInTheDocument();
+    expect(state.cardLabelIds["card-1"]).toEqual(["label-1", "label-2"]);
+  });
+
+  it("keeps the label toast on a cap-blocked click", async () => {
     const state = fieldState();
     const { server } = await renderFields(state, (fake) => {
       fake.boardLabels["b-1"] = Array.from({ length: 21 }, (_, index) =>
@@ -1532,17 +1838,29 @@ describe("CardDetailPage admin field editing (TASK-176.9)", () => {
         }),
       );
       state.cardLabelIds["card-1"] = Array.from(
-        { length: 20 },
+        { length: 19 },
         (_, index) => `cap-${index + 1}`,
       );
     });
     await waitFor(() => {
-      expect(screen.getByTestId("admin-card-label-toggle-cap-21")).toBeTruthy();
+      expect(screen.getByTestId("admin-card-label-toggle-cap-20")).toBeTruthy();
     });
+    fireEvent.click(screen.getByTestId("admin-card-label-toggle-cap-20"));
+    await waitFor(() => {
+      expect(state.cardLabelIds["card-1"]).toHaveLength(20);
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("admin-card-label-toggle-cap-20"),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+    expect(screen.getByText("Label updated")).toBeVisible();
+
     const last = screen.getByTestId("admin-card-label-toggle-cap-21");
     expect(last).toBeDisabled();
     fireEvent.click(last);
-    expect(sentCommands(server)).toHaveLength(0);
+    expect(screen.getByText("Label updated")).toBeVisible();
+    expect(sentCommands(server)).toHaveLength(1);
   });
 
   it("allows field edits on an archived card", async () => {

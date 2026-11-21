@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check, Paintbrush, X } from "lucide-react";
+import { Check, Info, Paintbrush, X } from "lucide-react";
 import {
   CARD_PRIORITIES,
   COVER_COLORS,
@@ -55,6 +55,11 @@ import { CharCount, Field, OwnerAttributionNotice, Panel } from "./ui";
  */
 
 type FieldKey = "title" | "assignee" | "due" | "priority" | "cover" | "labels";
+
+/** One keyed label-success toast per card (TASK-182.1). */
+function labelToastKey(cardId: string): string {
+  return `admin.card.labels:${cardId}`;
+}
 
 type CardFieldAction =
   | { type: "UPDATE_CARD"; title: string }
@@ -181,6 +186,39 @@ function CardCalendarFallback({
   );
 }
 
+function LabelsHelp() {
+  const t = useAdminT();
+  const titleId = useId();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0 text-muted-foreground"
+          aria-label={t("admin.cards.fields.labelsHelp")}
+          data-testid="admin-card-labels-help"
+        >
+          <Info aria-hidden className="h-3.5 w-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        aria-labelledby={titleId}
+        className="w-72 max-w-[calc(100vw-2rem)] text-xs"
+      >
+        <h2 id={titleId} className="font-medium">
+          {t("admin.cards.fields.labelsHelp")}
+        </h2>
+        <p className="mt-1 text-muted-foreground">
+          {t("admin.cards.fields.labelsHelpBody")}
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function CardFieldsPanel({
   card,
   cardLabels,
@@ -210,6 +248,19 @@ export function CardFieldsPanel({
   const [coverOpen, setCoverOpen] = useState(false);
   const [busy, setBusy] = useState<FieldKey | null>(null);
   const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
+  const mountedRef = useRef(true);
+  const cardIdRef = useRef(card.id);
+  cardIdRef.current = card.id;
+
+  // A label success toast belongs to one card. Clear it when the panel leaves
+  // the card; the parent also keys this panel by card id (TASK-182.1).
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      toast.clear(labelToastKey(card.id));
+    };
+  }, [card.id, toast]);
 
   useEffect(() => {
     let active = true;
@@ -313,30 +364,45 @@ export function CardFieldsPanel({
     field: FieldKey,
     action: CardFieldAction,
     successKey: AdminMessageKey,
+    options?: { toastKey?: string },
   ): Promise<boolean> => {
     if (busy !== null) return false;
+    const capturedCardId = card.id;
+    const current = () =>
+      mountedRef.current && cardIdRef.current === capturedCardId;
     setBusy(field);
     clearError(field);
+    // Clear only after the busy guard passed and the request is starting; a
+    // busy/cap refusal leaves the previous keyed toast untouched.
+    if (options?.toastKey) toast.clear(options.toastKey);
     try {
       await adminApi.sendBoardCommand(card.boardId, {
         commandId: createId(),
         action: {
           ...action,
-          cardId: card.id,
+          cardId: capturedCardId,
           at: Date.now(),
         } as BoardAction,
       });
-      toast.success(t(successKey));
+      if (!current()) return true;
+      if (options?.toastKey) {
+        toast.success(t(successKey), { key: options.toastKey });
+      } else {
+        toast.success(t(successKey));
+      }
       onSaved();
       return true;
     } catch (cause) {
-      setErrors((previous) => ({
-        ...previous,
-        [field]: errorText(cause, field),
-      }));
+      if (current()) {
+        if (options?.toastKey) toast.clear(options.toastKey);
+        setErrors((previous) => ({
+          ...previous,
+          [field]: errorText(cause, field),
+        }));
+      }
       return false;
     } finally {
-      setBusy(null);
+      if (current()) setBusy(null);
     }
   };
 
@@ -524,6 +590,7 @@ export function CardFieldsPanel({
       "labels",
       { type: "SET_CARD_LABEL", labelId, on },
       "admin.cards.toast.labelSaved",
+      { toastKey: labelToastKey(card.id) },
     );
   };
 
@@ -856,7 +923,11 @@ export function CardFieldsPanel({
           className="md:col-span-2 xl:col-span-3"
           data-testid="admin-card-field-labels"
         >
-          <Field label={t("admin.cards.fields.labels")} error={errors.labels}>
+          <Field
+            label={t("admin.cards.fields.labels")}
+            labelAction={<LabelsHelp />}
+            error={errors.labels}
+          >
             {boardStatus("labels") ??
               (boardLabels.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground">

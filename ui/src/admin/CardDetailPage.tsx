@@ -721,6 +721,7 @@ export function CardDetailPage() {
                 }
               >
                 <CardFieldsPanel
+                  key={card.id}
                   card={card}
                   cardLabels={detail.labels}
                   onSaved={reload}

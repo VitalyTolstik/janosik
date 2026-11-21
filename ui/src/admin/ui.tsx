@@ -755,6 +755,7 @@ export function Toggle({
 export function Field({
   label,
   htmlFor,
+  labelAction,
   error,
   hint,
   counter,
@@ -762,6 +763,8 @@ export function Field({
 }: {
   label?: ReactNode;
   htmlFor?: string;
+  /** Optional control next to the label, outside the `<label>` element. */
+  labelAction?: ReactNode;
   /** Localised message, or `null`/`undefined` when the field is valid. */
   error?: string | null;
   hint?: ReactNode;
@@ -770,10 +773,20 @@ export function Field({
 }) {
   return (
     <div className="flex flex-col gap-1 text-xs">
-      {label ? (
-        <label htmlFor={htmlFor} className="text-muted-foreground">
-          {label}
-        </label>
+      {label || labelAction ? (
+        <div className="flex items-center justify-between gap-2">
+          {label ? (
+            <label
+              htmlFor={htmlFor}
+              className="min-w-0 flex-1 text-muted-foreground"
+            >
+              {label}
+            </label>
+          ) : (
+            <span />
+          )}
+          {labelAction}
+        </div>
       ) : null}
       {children}
       {error || counter ? (
