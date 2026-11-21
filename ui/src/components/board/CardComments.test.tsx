@@ -1151,6 +1151,127 @@ describe("CardComments", () => {
     });
   });
 
+  it("filters the thread by kind through the server query", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-n", text: "A note", kind: "note" }),
+      comment({
+        id: "comment-b",
+        text: "A blocker",
+        kind: "blocker",
+        createdAt: 1_700_000_000_100,
+      }),
+      comment({
+        id: "comment-q",
+        text: "A question",
+        kind: "question",
+        createdAt: 1_700_000_000_200,
+      }),
+    ]);
+    const kindQueries: Array<string | null> = [];
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/comments")) {
+        kindQueries.push(url.searchParams.get("kind"));
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("A note");
+
+    const group = screen.getByTestId("comment-kind-filters");
+    expect(group).toHaveAttribute("aria-label", "Filter comments by kind");
+    const all = screen.getByTestId("comment-filter-all");
+    const blocker = screen.getByTestId("comment-filter-blocker");
+    expect(all).toHaveAttribute("aria-pressed", "true");
+    expect(blocker).toHaveAttribute("aria-pressed", "false");
+    // 44 px touch target, not just a colour cue.
+    expect(blocker).toHaveClass("min-h-11");
+
+    fireEvent.click(blocker);
+    expect(await screen.findByText("A blocker")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText("A note")).not.toBeInTheDocument(),
+    );
+    expect(blocker).toHaveAttribute("aria-pressed", "true");
+    expect(all).toHaveAttribute("aria-pressed", "false");
+    expect(kindQueries).toContain("blocker");
+    expect(screen.getByText("Showing Blocker comments")).toBeInTheDocument();
+
+    // A kind with no rows keeps the chip and answers with a specific empty
+    // state instead of the generic "No comments yet".
+    fireEvent.click(screen.getByTestId("comment-filter-handoff"));
+    expect(await screen.findByText("No Handoff comments")).toBeInTheDocument();
+    expect(screen.queryByText("No comments yet")).not.toBeInTheDocument();
+
+    fireEvent.click(all);
+    expect(await screen.findByText("A note")).toBeInTheDocument();
+    expect(all).toHaveAttribute("aria-pressed", "true");
+    expect(kindQueries).toContain(null);
+  });
+
+  it("lets the author change the kind while editing", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-k", text: "Blocked here", kind: "blocker" }),
+    ]);
+    renderComments(server);
+    const row = await screen.findByTestId("comment");
+    expect(within(row).getByTestId("comment-kind-badge")).toHaveTextContent(
+      "Blocker",
+    );
+
+    fireEvent.click(within(row).getByTestId("comment-edit"));
+    const picker = await within(row).findByTestId("comment-edit-kind");
+    expect(picker).toHaveAttribute("aria-label", "Comment kind: Blocker");
+    expect(within(row).getByTestId("comment-edit-save")).toBeDisabled();
+
+    fireEvent.click(picker);
+    fireEvent.click(
+      await screen.findByTestId("comment-edit-kind-option-question"),
+    );
+    // The text is untouched; retyping the kind alone is enough to save.
+    expect(within(row).getByTestId("comment-edit-save")).toBeEnabled();
+    fireEvent.click(within(row).getByTestId("comment-edit-save"));
+
+    await waitFor(() => {
+      const saved = screen.getByTestId("comment");
+      expect(within(saved).getByTestId("comment-kind-badge")).toHaveTextContent(
+        "Question",
+      );
+      expect(within(saved).getByTestId("comment-edited")).toBeInTheDocument();
+      expect(saved).toHaveTextContent("Blocked here");
+    });
+    expect(
+      server.requests.find(
+        (request) =>
+          request.method === "PATCH" &&
+          request.path === "/api/v1/comments/comment-k",
+      )?.body,
+    ).toEqual({ text: "Blocked here", kind: "question" });
+  });
+
+  it("drops an edited comment from the active kind filter", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-f", text: "Only blocker", kind: "blocker" }),
+    ]);
+    renderComments(server);
+    await screen.findByText("Only blocker");
+
+    fireEvent.click(screen.getByTestId("comment-filter-blocker"));
+    expect(await screen.findByText("Only blocker")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("comment-edit"));
+    fireEvent.click(await screen.findByTestId("comment-edit-kind"));
+    fireEvent.click(
+      await screen.findByTestId("comment-edit-kind-option-evidence"),
+    );
+    fireEvent.click(screen.getByTestId("comment-edit-save"));
+
+    expect(await screen.findByText("No Blocker comments")).toBeInTheDocument();
+    expect(screen.queryByText("Only blocker")).not.toBeInTheDocument();
+    expect(server.commentsByCard.get("card-1")?.[0]?.kind).toBe("evidence");
+  });
+
   it("updates an edited comment from a second tab through comment_updated", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [
