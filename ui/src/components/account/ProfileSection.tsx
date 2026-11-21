@@ -262,6 +262,7 @@ export function ProfileSection() {
             data-testid="account-notify-digest"
             className="mt-0.5 h-3.5 w-3.5 rounded border-border"
             checked={digest}
+            disabled={saving}
             onChange={(event) => setDigest(event.target.checked)}
           />
           <span>
@@ -278,6 +279,7 @@ export function ProfileSection() {
             data-testid="account-notify-attention"
             className="mt-0.5 h-3.5 w-3.5 rounded border-border"
             checked={attention}
+            disabled={saving}
             onChange={(event) => setAttention(event.target.checked)}
           />
           <span>

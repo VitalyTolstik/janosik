@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { MouseEvent } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import type { AttentionNotificationPage } from "@janosik/shared";
+import type { AttentionNotificationPage, BoardRole } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ interface Props {
   onReload: () => Promise<void>;
   /** Close the bell popover when a row link navigates. */
   onNavigate: () => void;
+  /** The caller's role on a board, used to avoid admin-only deep links. */
+  roleOf: (boardId: string) => BoardRole | undefined;
 }
 
 export function AttentionInbox({
@@ -27,6 +29,7 @@ export function AttentionInbox({
   unavailable,
   onReload,
   onNavigate,
+  roleOf,
 }: Props) {
   const { t, lang } = useI18n();
   const toast = useToast();
@@ -127,7 +130,11 @@ export function AttentionInbox({
       ) : (
         <ul className="max-h-64 divide-y divide-border/60 overflow-y-auto">
           {visible.items.map((item) => {
-            const target = attentionTarget(item, location.pathname);
+            const target = attentionTarget(
+              item,
+              location,
+              item.boardId === null ? undefined : roleOf(item.boardId),
+            );
             const unread = item.readAt === null;
             return (
               <li

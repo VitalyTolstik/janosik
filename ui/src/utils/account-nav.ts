@@ -31,12 +31,23 @@ export function isAccountSection(
 export const ACCOUNT_QUERY_PARAM = "account";
 
 /** Router-relative address of `pathname` with the account panel open. */
-export function accountPath(pathname: string, section: AccountSection): string {
-  const search = new URLSearchParams({ [ACCOUNT_QUERY_PARAM]: section });
-  return `${pathname}?${search.toString()}`;
+export function accountPath(
+  pathname: string,
+  search: string,
+  section: AccountSection,
+): string {
+  // Keep the board's filters/view in the copied or reloaded link; only the
+  // `account` key is ours to add or replace.
+  const params = new URLSearchParams(search);
+  params.set(ACCOUNT_QUERY_PARAM, section);
+  return `${pathname}?${params.toString()}`;
 }
 
 /** Site-root-relative href for a fresh tab or a copied link. */
-export function accountHref(pathname: string, section: AccountSection): string {
-  return appPath(accountPath(pathname, section));
+export function accountHref(
+  pathname: string,
+  search: string,
+  section: AccountSection,
+): string {
+  return appPath(accountPath(pathname, search, section));
 }

@@ -125,6 +125,14 @@ export function AccountDialog({
   }
 
   const name = userLabel(user.displayName, user.email);
+  const selectSection = (next: AccountSection) => {
+    setSection(next);
+    if (searchParams.has(ACCOUNT_QUERY_PARAM)) {
+      const params = new URLSearchParams(searchParams);
+      params.set(ACCOUNT_QUERY_PARAM, next);
+      setSearchParams(params, { replace: true });
+    }
+  };
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next && searchParams.has(ACCOUNT_QUERY_PARAM)) {
@@ -241,7 +249,7 @@ export function AccountDialog({
                 type="button"
                 data-testid={`account-nav-${id}`}
                 aria-current={section === id ? "page" : undefined}
-                onClick={() => setSection(id)}
+                onClick={() => selectSection(id)}
                 className={cn(
                   "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors sm:w-full",
                   section === id

@@ -51,6 +51,7 @@ function invitationError(error: unknown, t: Translate): string {
 export function NotificationsBell() {
   const { t } = useI18n();
   const { user } = useAuth();
+  const { roleOf } = useBoardActions();
   const [invitations, setInvitations] = useState<BoardInvitationDto[] | null>(
     null,
   );
@@ -169,6 +170,7 @@ export function NotificationsBell() {
           unavailable={attentionError}
           onReload={loadAttention}
           onNavigate={() => setOpen(false)}
+          roleOf={roleOf}
         />
         <NotificationsPanel
           invitations={invitations}

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AttentionNotificationDto,
   AttentionNotificationPage,
+  BoardRole,
 } from "@janosik/shared";
 
 import { api } from "@/api/client";
@@ -58,10 +59,15 @@ function LocationProbe() {
 
 function renderInbox(
   data: AttentionNotificationPage,
-  options: { onNavigate?: () => void; entry?: string } = {},
+  options: {
+    onNavigate?: () => void;
+    entry?: string;
+    roleOf?: (boardId: string) => BoardRole | undefined;
+  } = {},
 ) {
   const onNavigate = options.onNavigate ?? vi.fn();
   const onReload = vi.fn().mockResolvedValue(undefined);
+  const roleOf = options.roleOf ?? (() => "ADMIN");
   render(
     <I18nProvider>
       <ToastProvider>
@@ -72,6 +78,7 @@ function renderInbox(
             unavailable={false}
             onReload={onReload}
             onNavigate={onNavigate}
+            roleOf={roleOf}
           />
         </MemoryRouter>
       </ToastProvider>
@@ -161,6 +168,38 @@ describe("AttentionInbox (TASK-177.6)", () => {
     expect(queueUrl.searchParams.has("approval")).toBe(false);
   });
 
+  it("does not send a non-admin to the admin-only approvals tab", () => {
+    renderInbox(
+      page([
+        item({
+          id: "decided",
+          type: "approval.decided",
+          title: "Approval decided",
+          data: { approvalId: "apr-1" },
+        }),
+        item({
+          id: "card-approval",
+          type: "approval.requested",
+          title: "Approval for card",
+          data: { approvalId: "apr-2", cardId: "c-9" },
+        }),
+      ]),
+      { roleOf: () => "MEMBER" },
+    );
+
+    const board = screen.getByRole("link", {
+      name: "Open “Approval decided”",
+    });
+    const boardUrl = new URL(board.getAttribute("href") ?? "", "http://app");
+    expect(boardUrl.pathname).toBe("/board/b-1");
+    expect(boardUrl.searchParams.has("agents")).toBe(false);
+    expect(boardUrl.searchParams.has("approval")).toBe(false);
+
+    expect(
+      screen.getByRole("link", { name: "Open “Approval for card”" }),
+    ).toHaveAttribute("href", cardHref("b-1", "c-9"));
+  });
+
   it("links a board quota to the board and an account quota to the account panel", () => {
     renderInbox(
       page([
@@ -203,12 +242,13 @@ describe("AttentionInbox (TASK-177.6)", () => {
           boardId: null,
         }),
       ]),
-      { entry: "/board/b-1" },
+      { entry: "/board/b-1?f.q=release" },
     );
 
     const link = screen.getByRole("link", { name: "Open “Token revoked”" });
     const url = new URL(link.getAttribute("href") ?? "", "http://app");
     expect(url.pathname).toBe("/board/b-1");
+    expect(url.searchParams.get("f.q")).toBe("release");
     expect(url.searchParams.get("account")).toBe("tokens");
   });
 

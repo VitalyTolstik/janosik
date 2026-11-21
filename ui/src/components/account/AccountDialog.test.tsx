@@ -261,12 +261,55 @@ describe("AccountDialog (TASK-36.1)", () => {
     expect(await screen.findByTestId("account-notify-attention")).toBeChecked();
   });
 
+  it("locks the attention switch while saving and adopts the server value", async () => {
+    const server = new FakeServer();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    renderAccount(server, async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notification-settings") {
+        await gate;
+        // The UI must show what the server stored, even if that differs from
+        // the value the click sent.
+        return Response.json({ notifyDigest: true, notifyAttention: true });
+      }
+      return server.handle(input, init);
+    });
+    await userEvent.click(await screen.findByTestId("account-trigger"));
+    const attention = await screen.findByTestId("account-notify-attention");
+    await userEvent.click(attention);
+    expect(attention).not.toBeChecked();
+
+    await userEvent.click(screen.getByTestId("account-profile-save"));
+    await waitFor(() => expect(attention).toBeDisabled());
+    expect(attention).not.toBeChecked();
+
+    release();
+    await waitFor(() => expect(attention).toBeChecked());
+    expect(attention).not.toBeDisabled();
+  });
+
   it("opens the panel on the section named by an account deep link", async () => {
     const server = new FakeServer();
     renderAccount(server, server.handle, "/board/b-1?account=tokens");
 
     expect(await screen.findByTestId("account-dialog")).toBeVisible();
     expect(await screen.findByTestId("account-tokens")).toBeVisible();
+  });
+
+  it("keeps the account deep link in step with the visible section", async () => {
+    const server = new FakeServer();
+    renderAccount(server, server.handle, "/board/b-1?account=tokens");
+    expect(await screen.findByTestId("account-tokens")).toBeVisible();
+
+    await userEvent.click(screen.getByTestId("account-nav-profile"));
+
+    expect(screen.getByTestId("account-profile")).toBeVisible();
+    expect(screen.getByTestId("account-location")).toHaveTextContent(
+      "/board/b-1?account=profile",
+    );
   });
 
   it("closes the deep-linked panel when Back removes the param", async () => {
