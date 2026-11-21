@@ -951,10 +951,13 @@ export function CalendarView({
           <button
             type="button"
             aria-expanded={unscheduledOpen}
-            aria-label={t("view.calendar.unscheduled")}
+            aria-label={`${t("view.calendar.unscheduled")} (${unscheduled.length})`}
             data-testid="unscheduled-toggle"
             onClick={() => setUnscheduledOpen((o) => !o)}
-            className="flex items-center gap-1.5 border-b border-border/60 px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+            className={cn(
+              "flex items-center gap-1.5 border-b border-border/60 px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground",
+              !unscheduledOpen && "flex-col gap-1 px-1",
+            )}
           >
             {unscheduledOpen ? (
               <ChevronDown className="h-3.5 w-3.5 shrink-0" />
