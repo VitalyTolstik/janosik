@@ -175,7 +175,7 @@ test("each board keeps its own undo history", async ({ page, board }) => {
   const secondTodo = await second.column("Todo");
   await second.card(secondTodo, "B existing");
   await board.open(page);
-  const firstTitle = await page.locator("header h2").innerText();
+  const firstTitle = await page.locator("header h1").innerText();
   await addCard(page, "A task");
   await switchBoard(page, secondTitle);
   await expect(todoCard(page, "B existing")).toBeVisible();

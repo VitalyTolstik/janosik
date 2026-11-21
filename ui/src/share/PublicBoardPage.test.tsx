@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import type { Board, PublicBoardDto } from "@janosik/shared";
@@ -146,6 +147,33 @@ describe("PublicBoardPage", () => {
         .querySelector('meta[name="robots"]')
         ?.getAttribute("content"),
     ).toContain("noindex");
+  });
+
+  it("returns focus to the public card face after closing its dialog", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(
+        new Response(JSON.stringify(dto()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    renderPage("snaptok");
+    const face = (await screen.findByText("Read me")).closest(
+      "article",
+    ) as HTMLElement;
+    expect(face).not.toBeNull();
+    face.focus();
+    await userEvent.click(face);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(face).toHaveFocus());
   });
 
   it("hides the chrome in embed mode", async () => {

@@ -196,7 +196,43 @@ export function CardDialog({
     // for the new card and its Delete button would remove the wrong one.
     setDeleteConfirm(false);
   }
-  const contentRef = useRef<HTMLElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  // The element focused when this card opened (the board card face/handle or
+  // a table/calendar row). Captured in a layout effect so it runs before
+  // Radix's passive auto-focus moves focus into the dialog (U-04).
+  const openerRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+  const pendingFocusReturnRef = useRef(false);
+  useLayoutEffect(() => {
+    if (open && !wasOpenRef.current) {
+      const active = document.activeElement;
+      openerRef.current =
+        active instanceof HTMLElement && active !== document.body
+          ? active
+          : null;
+      pendingFocusReturnRef.current = true;
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+  // Close-path focus return. Radix restores focus from the content's unmount
+  // hook, but the board clears `cardId` in the same update, so the dialog is
+  // replaced by its "nothing to show" branch before that hook can run. One
+  // post-commit timeout (after Radix's own restore attempt) puts the keyboard
+  // position back on the card, or on the board landmark when the card is
+  // gone (deleted/archived while the dialog was open).
+  useEffect(() => {
+    if (open || !pendingFocusReturnRef.current) return;
+    pendingFocusReturnRef.current = false;
+    const opener = openerRef.current;
+    const timer = window.setTimeout(() => {
+      const target =
+        opener?.isConnected === true
+          ? opener
+          : document.querySelector<HTMLElement>('[data-testid="board-main"]');
+      target?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
   const hour12 = useHour12();
   const toast = useToast();
   // Fires the "too long" toast once per crossing (not on every keystroke
@@ -776,6 +812,19 @@ export function CardDialog({
               setLinkEditorCardId(null);
             }
           }}
+          onCloseAutoFocus={(event) => {
+            // Return the keyboard position to the card that opened the dialog
+            // (U-04). Radix only remembers a `DialogTrigger`; a card opened
+            // from the board has none, so its default restore lands on
+            // <body>. The normal board close goes through `cardId = null`
+            // (see the effect above); this hook covers a close that keeps the
+            // dialog mounted. Never guess a fallback here: on unmount the
+            // board may already belong to the next screen.
+            const opener = openerRef.current;
+            if (opener?.isConnected !== true) return;
+            event.preventDefault();
+            opener.focus();
+          }}
         >
           <DialogHeader className="shrink-0 pr-16 text-left">
             <DialogTitle className="sr-only">
@@ -1146,8 +1195,9 @@ export function CardDialog({
                   )}
                 </div>
               </aside>
-              <main
+              <div
                 ref={contentRef}
+                data-testid="card-dialog-content"
                 className="min-w-0 space-y-6 px-6 py-5 md:col-start-1 md:row-start-1"
               >
                 <CollapsibleSection
@@ -1280,7 +1330,7 @@ export function CardDialog({
                   localActivity={card.activity}
                   readOnly={readOnly}
                 />
-              </main>
+              </div>
             </div>
           </div>
         </DialogContent>

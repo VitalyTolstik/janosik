@@ -354,7 +354,7 @@ export function CardAttachments({
                 <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                   {formatSize(attachment.sizeBytes)}
                 </span>
-                <span className="hidden shrink-0 text-[11px] text-muted-foreground/70 sm:inline">
+                <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
                   {formatDateOnly(attachment.createdAt, lang)}
                 </span>
                 <Button
@@ -430,6 +430,7 @@ export function CardAttachments({
           <input
             ref={fileInputRef}
             type="file"
+            aria-label={t("card.attachments.upload")}
             className="hidden"
             data-testid="card-attachments-input"
             onChange={(event) => void onPick(event.target.files?.[0])}

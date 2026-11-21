@@ -124,7 +124,7 @@ function CardBody({
           {labels.map((label) => (
             <span
               key={label.id}
-              className={`rounded px-2 py-0.5 text-xs font-medium text-white ${LABEL_COLOR_CHIP[label.color]}`}
+              className={`rounded px-2 py-0.5 text-xs font-medium ${LABEL_COLOR_CHIP[label.color]}`}
             >
               {label.name}
             </span>

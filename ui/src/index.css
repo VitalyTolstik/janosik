@@ -184,6 +184,51 @@ html.light {
     0 28px 80px -36px rgb(15 23 42 / 0.28), 0 2px 8px rgb(15 23 42 / 0.06);
 }
 
+/* ---------------------------------------------------------------------------
+ * Tinted-surface text (U-04 / TASK-177.15)
+ *
+ * Selected tabs and label chips paint their hue at 15% under their text.
+ * The raw palette hues are tuned for fills and 1px dots, and fail WCAG AA as
+ * 10-12px text on that tint (`--yellow` was 1.61:1, brand blue 3.86:1 in
+ * light). These are the *text* values for those tinted surfaces: deep shades
+ * in light, pastel shades in dark. `theme-contrast.test.ts` checks every pair
+ * (both themes, over card/surface/background) so a palette change cannot
+ * silently drop one below 4.5:1.
+ * ------------------------------------------------------------------------- */
+:root {
+  --tab-text: #93c5fd;
+  --chip-red: #fca5a5;
+  --chip-orange: #fdba74;
+  --chip-yellow: #fde047;
+  --chip-brown: #d6a97a;
+  --chip-green: #6ee7b7;
+  --chip-teal: #5eead4;
+  --chip-cyan: #7dd3fc;
+  --chip-blue: #93c5fd;
+  --chip-indigo: #a5b4fc;
+  --chip-fuchsia: #f0abfc;
+  --chip-pink: #f9a8d4;
+  --chip-slate: #cbd5e1;
+  --chip-warning: #fcd34d;
+}
+
+html.light {
+  --tab-text: #1d4ed8;
+  --chip-red: #991b1b;
+  --chip-orange: #9a3412;
+  --chip-yellow: #854d0e;
+  --chip-brown: #78350f;
+  --chip-green: #065f46;
+  --chip-teal: #115e59;
+  --chip-cyan: #075985;
+  --chip-blue: #1e40af;
+  --chip-indigo: #3730a3;
+  --chip-fuchsia: #86198f;
+  --chip-pink: #9d174d;
+  --chip-slate: #334155;
+  --chip-warning: #92400e;
+}
+
 /* Russian lifecycle/pause labels are wider than the mockup's English column
    (Приостановлена needs the full pill, not an ellipsis). Keep the mockup
    column for EN and give RU enough room; the pill itself never truncates. */
@@ -1144,8 +1189,16 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--hover);
-  color: var(--foreground);
   font-size: var(--text-xs);
+}
+/* The library paints the placeholder with `--baseBorderHover` (a 30% mix of
+ * the foreground), which measured 1.89:1 — nearly invisible (U-04). Use the
+ * AA-checked secondary text on the trigger's own `--hover` surface. */
+.mdxeditor.janosik-mdx
+  .janosik-mdx-toolbar
+  [role="combobox"][data-placeholder]
+  > span:first-child {
+  color: var(--muted-foreground);
 }
 .mdxeditor.janosik-mdx .janosik-mdx-toolbar [role="combobox"]:hover {
   border-color: var(--baseBorderHover);

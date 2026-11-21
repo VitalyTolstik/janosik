@@ -91,7 +91,7 @@ test("reset filters clears every facet, chip and badge", async ({
   await expect(matchCount(page)).toHaveCount(0);
   await expect(facetCount(page)).toHaveCount(0);
   await expect(
-    filterBar(page).getByRole("button", { name: "Filter cards" }),
+    filterBar(page).getByRole("button", { name: /^Filters(?: \d+)?$/ }),
   ).toHaveText("Filters");
   await expect(filterBar(page).getByTestId("filter-chip")).toHaveCount(0);
   expect(new URL(page.url()).search).not.toContain("f.");

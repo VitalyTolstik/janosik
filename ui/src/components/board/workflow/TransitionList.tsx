@@ -165,23 +165,23 @@ export function TransitionList({
                 <ColumnDot color={accent} size={7} />
                 <span className="shrink-0 whitespace-nowrap text-xs font-semibold leading-4 text-foreground">
                   {column.title}
-                </span>
+                </span>{" "}
                 <span
                   className={cn(
                     "shrink-0 rounded-[3px] px-1 py-px text-[11px] leading-4",
                     direction === "forward"
-                      ? "bg-success/15 text-success"
-                      : "bg-warning/15 text-warning",
+                      ? "bg-success/15 text-(--chip-green)"
+                      : "bg-warning/15 text-(--chip-warning)",
                   )}
                 >
                   {directionLabel}
-                </span>
-                <span className="ml-auto hidden min-w-0 truncate text-right text-[11px] leading-4 text-muted-foreground/75 md:block">
+                </span>{" "}
+                <span className="ml-auto hidden min-w-0 truncate text-right text-[11px] leading-4 text-muted-foreground md:block">
                   {transition ? (
                     <>
                       {summary}
                       {transition.enabled === false ? (
-                        <span className="ml-1 text-warning">
+                        <span className="ml-1 text-(--chip-warning)">
                           · {t("workflow.ruleDisabled")}
                         </span>
                       ) : null}

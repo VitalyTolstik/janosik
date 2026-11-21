@@ -340,7 +340,7 @@ function CardItemView({
                   <button
                     type="button"
                     aria-label={t("card.archiveConfirmYes")}
-                    className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                    className="flex h-5 w-5 items-center justify-center rounded-md text-(--chip-red) hover:bg-danger/10"
                     onClick={(e) => {
                       e.stopPropagation();
                       setConfirmArchive(false);
@@ -368,7 +368,7 @@ function CardItemView({
                       type="button"
                       aria-label={t("card.archive")}
                       data-testid="card-archive"
-                      className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-warning group-hover:opacity-100"
+                      className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-(--chip-warning) group-hover:opacity-100"
                       onClick={(e) => {
                         // Don't let the click open the card dialog.
                         e.stopPropagation();
@@ -440,7 +440,9 @@ function CardItemView({
                 title={t("checklist.badgeTooltip", { done, total })}
                 className={cn(
                   "shrink-0 text-[11px] font-medium tabular-nums",
-                  done === total ? "text-success" : "text-muted-foreground",
+                  done === total
+                    ? "text-(--chip-green)"
+                    : "text-muted-foreground",
                 )}
               >
                 {done}/{total}
@@ -528,9 +530,9 @@ function CardItemView({
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
-                          "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-primary",
+                          "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-(--tab-text)",
                           descriptionOnly &&
-                            "border-primary/40 bg-primary/10 text-primary",
+                            "border-primary/40 bg-primary/10 text-(--tab-text)",
                         )}
                         data-testid="card-description-badge"
                         {...(descriptionOnly
@@ -560,8 +562,8 @@ function CardItemView({
                         className={cn(
                           "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
                           done === total
-                            ? "border-success/40 bg-success/10 text-success"
-                            : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-primary",
+                            ? "border-success/40 bg-success/10 text-(--chip-green)"
+                            : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-(--tab-text)",
                         )}
                         data-testid="card-checklist-badge"
                       >

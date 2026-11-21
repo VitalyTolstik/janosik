@@ -41,7 +41,7 @@ test("re-inviting a pending address with a new role revives the invitation", asy
 
   await acceptInvitation(partnerBrowser.page, board.title);
   await expect.poll(() => partner.role()).toBe("ADMIN");
-  await expect(partnerBrowser.page.locator("header h2")).toHaveText(
+  await expect(partnerBrowser.page.locator("header h1")).toHaveText(
     board.title,
   );
 

@@ -31,7 +31,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { userLabel } from "@/utils/avatar";
+import { userInitials, userLabel } from "@/utils/avatar";
 import { ApiTokensSection } from "./ApiTokensSection";
 import { DataPrivacySection } from "./DataPrivacySection";
 import { PreferencesSection } from "./PreferencesSection";
@@ -110,7 +110,10 @@ export function AccountDialog({
               variant="ghost"
               size="sm"
               data-testid="account-trigger"
-              aria-label={t("account.aria")}
+              aria-label={`${t("account.aria")}: ${userInitials(
+                user.displayName,
+                user.email,
+              )} ${name}`}
               className="gap-2 px-1.5 max-md:h-11 max-md:min-w-11 max-md:justify-center max-md:px-0 sm:px-2"
             >
               {/* The 390 mockup has no avatar in the header. Keep the account
@@ -131,6 +134,8 @@ export function AccountDialog({
                   compact && "h-[26px] w-[26px]",
                 )}
               />
+              {/* A real space keeps the avatar's initials from fusing with the
+                  name in the visible-text string (axe label-in-name, U-04). */}{" "}
               <span
                 className={cn(
                   "hidden max-w-28 truncate text-sm",

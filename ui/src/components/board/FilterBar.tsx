@@ -366,10 +366,14 @@ export function FilterBar({
           <Button
             variant={facetCount > 0 ? "secondary" : "outline"}
             size="sm"
-            aria-label={t("filter.filtersAria")}
+            aria-label={
+              facetCount > 0
+                ? `${t("filter.filtersAria")} ${facetCount}`
+                : t("filter.filtersAria")
+            }
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            {t("filter.filters")}
+            {t("filter.filters")}{" "}
             {facetCount > 0 && (
               <span
                 data-testid="filter-facet-count"
@@ -392,6 +396,7 @@ export function FilterBar({
           align="end"
           collisionPadding={8}
           data-testid="filters-popover"
+          aria-label={t("filter.filtersAria")}
           // On short viewports the whole panel (labels + the date calendar)
           // must stay reachable: cap it to the space Radix measured around
           // the trigger and scroll the single surface instead of clipping.
@@ -444,7 +449,7 @@ export function FilterBar({
                     className={cn(
                       "rounded px-2 py-0.5 text-xs transition-colors",
                       filter.labelMatch === mode
-                        ? "bg-primary/15 font-medium text-primary"
+                        ? "bg-primary/15 font-medium text-(--tab-text)"
                         : "text-muted-foreground hover:bg-hover",
                     )}
                   >

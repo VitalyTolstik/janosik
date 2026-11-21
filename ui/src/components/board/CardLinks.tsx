@@ -311,7 +311,7 @@ export function CardLinks({
 
       {groups.length === 0 && !showEmpty ? null : groups.length === 0 ? (
         <p
-          className="text-sm text-muted-foreground/70"
+          className="text-sm text-muted-foreground"
           data-testid="card-links-empty"
         >
           {t("card.links.empty")}
@@ -320,7 +320,7 @@ export function CardLinks({
         <div className="space-y-2">
           {groups.map((group) => (
             <div key={group.key} className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 {t(`card.links.type.${group.key}`)}
               </p>
               <ul className="space-y-1">
@@ -357,7 +357,7 @@ export function CardLinks({
                       ) : (
                         <span
                           aria-disabled="true"
-                          className="flex min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-muted-foreground/70"
+                          className="flex min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-muted-foreground"
                           data-testid="card-link-open"
                         >
                           <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -373,7 +373,7 @@ export function CardLinks({
                             <button
                               type="button"
                               aria-label={t("card.links.remove")}
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 group-hover/row:opacity-100"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-(--chip-red) focus-visible:opacity-100 group-hover/row:opacity-100"
                               data-testid="card-link-remove"
                               onClick={() => remove(row)}
                             >
@@ -443,7 +443,7 @@ export function CardLinks({
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                         index === cursor
-                          ? "bg-primary/10 text-primary"
+                          ? "bg-primary/10 text-(--tab-text)"
                           : "hover:bg-hover",
                       )}
                       onMouseEnter={() => setCursor(index)}
@@ -452,7 +452,7 @@ export function CardLinks({
                     >
                       <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <HighlightedTitle title={hit.title} query={query} />
-                      <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/70">
+                      <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
                         <ColumnChip cardId={hit.id} board={board} />
                         {index === cursor ? (
                           <CornerDownLeft className="h-3 w-3" />
@@ -553,7 +553,7 @@ function DropdownPicker({
             key={entry.option}
             className={cn(
               entry.option === value.option &&
-                "bg-primary/10 font-medium text-primary",
+                "bg-primary/10 font-medium text-(--tab-text)",
             )}
             data-testid={`card-links-type-${entry.option}`}
             onSelect={() => {

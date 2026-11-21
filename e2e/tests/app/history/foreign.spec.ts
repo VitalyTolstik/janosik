@@ -81,7 +81,7 @@ test("undo skips a board rename overtaken by another member", async ({
 }) => {
   await board.open(page);
 
-  await page.locator("header h2").click();
+  await page.locator("header h1").click();
   await page.locator('[name="board-title-edit"]').fill("Local board");
   const saved = page.waitForResponse(
     (response) =>

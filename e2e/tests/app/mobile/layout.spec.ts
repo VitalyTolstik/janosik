@@ -87,7 +87,7 @@ test("header, filters and view controls fit a phone without sideways scroll", as
     ).toBeVisible();
   }
 
-  const filters = page.getByRole("button", { name: "Filter cards" });
+  const filters = page.getByRole("button", { name: /^Filters(?: \d+)?$/ });
   await filters.tap();
   const popover = page.getByTestId("filters-popover");
   await expectDialogFits(page, popover, "filters popover");
@@ -96,7 +96,7 @@ test("header, filters and view controls fit a phone without sideways scroll", as
 
   // Inline board-title editing replaces the truncated heading with a field
   // that must also fit the first header row.
-  await page.locator("header h2").first().tap();
+  await page.locator("header h1").first().tap();
   const titleInput = page.locator('[name="board-title-edit"]');
   await expect(titleInput).toBeVisible();
   await expectNoPageOverflow(page, "board title editor");

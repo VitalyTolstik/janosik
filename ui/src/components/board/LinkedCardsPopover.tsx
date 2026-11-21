@@ -75,7 +75,7 @@ function BlockedBadgeTrigger() {
             type="button"
             aria-label={t("card.links.blockedTooltip")}
             data-testid="card-blocked-badge"
-            className="inline-flex h-5 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-1.5 text-[11px] font-semibold text-danger transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50"
+            className="inline-flex h-5 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-1.5 text-[11px] font-semibold text-(--chip-red) transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50"
             onClick={(event) => {
               // Don't let the click open the card dialog.
               event.stopPropagation();

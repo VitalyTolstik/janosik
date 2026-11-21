@@ -12,7 +12,7 @@ test("card details adapt to desktop and mobile without losing actions", async ({
     .filter({ hasText: "Responsive task" })
     .click();
   const dialog = page.getByRole("dialog", { name: "Card details" });
-  const main = dialog.getByRole("main");
+  const main = dialog.getByTestId("card-dialog-content");
   const sidebar = dialog.getByRole("complementary");
   await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveValue(
     "Responsive task",

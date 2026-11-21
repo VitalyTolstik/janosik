@@ -138,7 +138,7 @@ export const test = boardTest.extend<{
           await expect(
             page.getByRole("button", { name: "Switch board" }),
           ).toBeVisible();
-          await expect(page.locator("header h2")).toHaveText(board.title);
+          await expect(page.locator("header h1")).toHaveText(board.title);
         },
       });
     } finally {

@@ -5,7 +5,7 @@ test("create, rename, switch, archive, restore and delete boards across reloads"
   board,
 }) => {
   await board.open(page);
-  const originalTitle = await page.locator("header h2").innerText();
+  const originalTitle = await page.locator("header h1").innerText();
   await page.getByRole("button", { name: "Switch board" }).click();
   await page.getByRole("button", { name: "New board" }).click();
   await page.getByRole("textbox", { name: "Board name" }).fill("Roadmap board");

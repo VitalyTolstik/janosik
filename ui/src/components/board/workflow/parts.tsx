@@ -70,7 +70,7 @@ export function SectionLabel({
       {aside ? (
         <span
           data-testid={asideTestId}
-          className="shrink-0 font-mono text-[11px] font-normal tracking-[-0.01em] text-muted-foreground/80"
+          className="shrink-0 font-mono text-[11px] font-normal tracking-[-0.01em] text-muted-foreground"
         >
           {aside}
         </span>
@@ -83,7 +83,7 @@ export function GlobalMark() {
   return (
     <span
       aria-hidden
-      className="inline-grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full bg-warning/15 font-mono text-[11px] leading-none text-warning"
+      className="inline-grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full bg-warning/15 font-mono text-[11px] leading-none text-(--chip-warning)"
     >
       *
     </span>

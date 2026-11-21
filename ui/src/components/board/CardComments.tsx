@@ -434,7 +434,7 @@ export function CardComments({
           <CardSectionSkeleton kind="comments" rows={3} />
         </SkeletonRegion>
       ) : items.length === 0 && (readOnly || !serverMode || user === null) ? (
-        <p className="py-1 pl-[36px] text-sm text-muted-foreground/70">
+        <p className="py-1 pl-[36px] text-sm text-muted-foreground">
           {t("comment.empty")}
         </p>
       ) : items.length > 0 ? (
@@ -830,7 +830,7 @@ function CommentRow({
             </span>
           ) : null}
           <time
-            className="shrink-0 text-[11px] text-muted-foreground/70"
+            className="shrink-0 text-[11px] text-muted-foreground"
             dateTime={new Date(comment.createdAt).toISOString()}
             title={formatDate(comment.createdAt, lang, hour12)}
           >
@@ -840,7 +840,7 @@ function CommentRow({
           {comment.editedAt ? (
             <span
               data-testid="comment-edited"
-              className="shrink-0 cursor-help text-[11px] text-muted-foreground/70"
+              className="shrink-0 cursor-help text-[11px] text-muted-foreground"
               title={formatDate(comment.editedAt, lang, hour12)}
             >
               {t("comment.edited")}

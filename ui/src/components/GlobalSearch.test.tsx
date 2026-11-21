@@ -103,9 +103,7 @@ function renderSearch(
 }
 
 async function search(query: string) {
-  fireEvent.click(
-    screen.getByRole("button", { name: "Search cards and boards" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Global search" }));
   const input = await screen.findByTestId("global-search-input");
   await userEvent.type(input, query);
   // Debounce (200 ms) — wait for the first result row.
@@ -137,7 +135,7 @@ describe("GlobalSearch", () => {
   it("keeps the icon-only header trigger at 32x32", () => {
     renderSearch(routes.board("b-1"), { iconOnly: true });
     const trigger = screen.getByRole("button", {
-      name: "Search cards and boards",
+      name: "Global search",
     });
     expect(trigger.className).toContain("w-8");
     expect(trigger.className).toContain("!px-0");
@@ -148,7 +146,7 @@ describe("GlobalSearch", () => {
   it("keeps the labeled trigger wider than the icon-only one", () => {
     renderSearch();
     const trigger = screen.getByRole("button", {
-      name: "Search cards and boards",
+      name: "Global search",
     });
     expect(trigger.className).toContain("pr-2.5");
     expect(trigger.className).not.toContain("!px-0");

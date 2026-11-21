@@ -83,7 +83,7 @@ export async function addChecklistItem(
 }
 
 export function globalSearchButton(page: Page): Locator {
-  return page.getByRole("button", { name: "Search cards and boards" });
+  return page.getByRole("button", { name: "Global search" });
 }
 
 export function globalSearchInput(page: Page): Locator {

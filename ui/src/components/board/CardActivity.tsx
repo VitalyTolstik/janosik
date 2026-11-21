@@ -112,7 +112,7 @@ export function CardActivity({
               className={cn(
                 "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                 view === id
-                  ? "bg-primary/15 text-primary"
+                  ? "bg-primary/15 text-(--tab-text)"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",
               )}
             >

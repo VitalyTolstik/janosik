@@ -94,7 +94,7 @@ test("accepting an invitation opens the shared board", async ({
 
   await acceptInvitation(partnerBrowser.page, board.title);
 
-  await expect(partnerBrowser.page.locator("header h2")).toHaveText(
+  await expect(partnerBrowser.page.locator("header h1")).toHaveText(
     board.title,
   );
   await expect(columnSection(partnerBrowser.page, "Todo")).toBeVisible();

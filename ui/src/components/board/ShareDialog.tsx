@@ -865,7 +865,7 @@ function ShareForm({
       </div>
 
       {similar && (
-        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-(--chip-warning)">
           {t(mode === "snapshot" ? "share.similarSnapshot" : "share.similar")}
         </p>
       )}

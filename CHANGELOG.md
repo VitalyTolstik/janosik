@@ -690,7 +690,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   confirmation sends exactly one request, and different comments can be
   deleted while an earlier request is in flight. EN/RU copy and tests cover
   the excerpt/author, cancel, the no-undo decision and the touch targets.
-
+- TASK-177.15 card accessibility: checklist item toggles are named from the
+  item text and progress bars expose `aria-label`/`aria-valuetext`; closing the
+  card dialog returns keyboard focus to the card (or the board landmark when
+  the card is gone) while the focus trap stays; the public share card panel
+  returns focus the same way. The board title is the page `h1` and columns are
+  `h2`, the card dialog and Board Settings no longer add a second `main`, and
+  insert zones are always list items. The Block type placeholder, column/link
+  and table empty states, due-date and WIP chips, completed-checklist badges,
+  active board/activity/filter/calendar toggles and label chips clear WCAG AA
+  in both themes (new `--chip-*`/`--tab-text` tokens, checked by a contrast-pair
+  test and source guards against raw tints). Axe-core runs with `color-contrast`
+  enabled and relevant `incomplete` results gated on the board, card dialog,
+  filter popover, calendar (month/week), table, watch view and Board Settings in
+  light and dark at 1440/1024/390, using a fixture with overdue/soon/later due
+  dates, an over-limit WIP column, a completed checklist and a high priority.
+  The hidden attachment input, filter popover, table cells and calendar month
+  trigger are named; header controls whose accessible name diverged from their
+  visible text now keep the visible label in the name (Filters, Global search,
+  Account).
 - TASK-177.10 groups global search results before applying the 20-hit cap:
   `Cards` and `Boards` are capped separately, so a board hit stays visible
   under a long card list. The group heading shows `20 of N` (or

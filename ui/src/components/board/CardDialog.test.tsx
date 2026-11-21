@@ -1015,7 +1015,7 @@ describe("CardDialog layout (fixed visual order)", () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
     const title = within(dialog).getByLabelText("Title");
     const labels = within(dialog).getByRole("button", { name: "Labels" });
-    const content = within(dialog).getByRole("main");
+    const content = within(dialog).getByTestId("card-dialog-content");
     const sidebar = within(dialog).getByRole("complementary");
     expect(
       title.compareDocumentPosition(labels) & Node.DOCUMENT_POSITION_FOLLOWING,

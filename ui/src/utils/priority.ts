@@ -54,8 +54,8 @@ export const PRIORITY_META: Record<
   medium: {
     rank: 3,
     icon: Equal,
-    dotClass: "bg-warning/70",
-    iconClass: "text-warning/70",
+    dotClass: "bg-warning",
+    iconClass: "text-warning",
     label: { en: "Medium", ru: "Средний" },
   },
   low: {

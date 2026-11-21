@@ -450,7 +450,7 @@ export function TableView({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-primary hover:bg-primary/20 hover:text-primary"
+                className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-(--tab-text) hover:bg-primary/20 hover:text-(--tab-text)"
                 data-testid="table-add-card"
                 disabled={!anyColumnWithRoom}
                 title={anyColumnWithRoom ? undefined : t("limits.columnsFull")}
@@ -904,7 +904,7 @@ function TableRowBody({
                     <button
                       type="button"
                       aria-label={t("card.archiveConfirmYes")}
-                      className="flex h-5 w-5 items-center justify-center rounded-md text-danger hover:bg-danger/10"
+                      className="flex h-5 w-5 items-center justify-center rounded-md text-(--chip-red) hover:bg-danger/10"
                       onClick={(event) => {
                         event.stopPropagation();
                         onArchiveConfirm(null);
@@ -934,7 +934,7 @@ function TableRowBody({
                       event.stopPropagation();
                       onArchiveConfirm(card.id);
                     }}
-                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover/title:opacity-100"
+                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100"
                   >
                     <Archive className="h-3.5 w-3.5" />
                   </button>
@@ -1046,7 +1046,7 @@ function TableRowBody({
               typeof card.dueDate === "number" ? (
                 <DueBadge dueDate={card.dueDate} />
               ) : (
-                <span className="text-xs text-muted-foreground/60">—</span>
+                <span className="text-xs text-muted-foreground">—</span>
               )
             ) : (
               <Popover>
@@ -1055,14 +1055,12 @@ function TableRowBody({
                     type="button"
                     data-testid="table-due-cell"
                     className="block max-w-full truncate rounded transition-opacity hover:opacity-80"
-                    aria-label={t("dueDate.label")}
                   >
+                    <span className="sr-only">{t("dueDate.label")} </span>
                     {typeof card.dueDate === "number" ? (
                       <DueBadge dueDate={card.dueDate} />
                     ) : (
-                      <span className="text-xs text-muted-foreground/60">
-                        —
-                      </span>
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </button>
                 </PopoverTrigger>
@@ -1097,7 +1095,7 @@ function TableRowBody({
                   </span>
                 ))}
                 {cardLabels.length === 0 ? (
-                  <span className="text-xs text-muted-foreground/60">—</span>
+                  <span className="text-xs text-muted-foreground">—</span>
                 ) : null}
               </span>
             ) : (
@@ -1107,8 +1105,8 @@ function TableRowBody({
                     type="button"
                     data-testid="table-labels-cell"
                     className="max-w-44"
-                    aria-label={t("view.table.labels")}
                   >
+                    <span className="sr-only">{t("view.table.labels")} </span>
                     {card.labelIds.length > 0 ? (
                       <span className="flex flex-wrap gap-1">
                         {cardLabels.map((label) => (
@@ -1128,9 +1126,7 @@ function TableRowBody({
                         ))}
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground/60">
-                        —
-                      </span>
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </button>
                 </PopoverTrigger>
@@ -1180,7 +1176,7 @@ function TableRowBody({
                     {done}/{total}
                   </span>
                 ) : (
-                  <span className="text-xs text-muted-foreground/60">—</span>
+                  <span className="text-xs text-muted-foreground">—</span>
                 );
               })()}
             </td>
@@ -1194,7 +1190,7 @@ function TableRowBody({
                   aria-label={t("view.table.description")}
                 />
               ) : (
-                <span className="text-xs text-muted-foreground/60">—</span>
+                <span className="text-xs text-muted-foreground">—</span>
               )}
             </td>
           ) : null}
@@ -1247,7 +1243,7 @@ function AssigneeCell({
 }) {
   const member = useBoardMember(boardId, assigneeId ?? null);
   if (!assigneeId) {
-    return <span className="text-xs text-muted-foreground/60">—</span>;
+    return <span className="text-xs text-muted-foreground">—</span>;
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
