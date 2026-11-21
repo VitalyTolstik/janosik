@@ -382,12 +382,16 @@ describe("SharesPage", () => {
     await waitFor(() =>
       expect(lastSharesRequest(server)?.query.get("search")).toBe("Board 1"),
     );
+    expect(screen.getByTestId("admin-shares-skeleton")).toBeInTheDocument();
     expect(
       screen.queryByText("No rows match this search or filter."),
     ).not.toBeInTheDocument();
 
     release();
     await screen.findByTestId("admin-shares-table");
+    expect(
+      screen.queryByTestId("admin-shares-skeleton"),
+    ).not.toBeInTheDocument();
     expect(await screen.findByText("Board 1")).toBeInTheDocument();
     expect(
       screen.queryByText("No rows match this search or filter."),
@@ -395,6 +399,9 @@ describe("SharesPage", () => {
   });
 
   it("uses descending ids as the createdAt tiebreaker across a page boundary", async () => {
+    // The production orderBy lives in AdminService.listShares; there is no
+    // DB-backed admin-shares spec, so this UI test pins the same
+    // `createdAt desc, id desc` contract through the fake server.
     const server = new FakeAdminServer();
     server.shares = Array.from({ length: 26 }, (_, index) => {
       const id = String(index).padStart(2, "0");

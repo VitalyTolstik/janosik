@@ -124,7 +124,9 @@ export function SharesPage() {
             <ErrorState onRetry={reload} />
           </div>
         ) : rows.length === 0 ? (
-          list.refreshing ? null : (
+          list.refreshing ? (
+            <EntityListSkeleton columns={7} testId="admin-shares-skeleton" />
+          ) : (
             <p className="p-4 text-sm text-muted-foreground">
               {list.total > 0
                 ? t("admin.filters.emptyPage.moderation")
