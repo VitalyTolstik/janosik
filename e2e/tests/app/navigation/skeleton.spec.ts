@@ -112,7 +112,7 @@ test("announces background hydration outside the board switcher grid", async ({
     release();
     await expect(status).toHaveCount(0);
     await expect(
-      grid.getByRole("gridcell", { name: extra.title }),
+      grid.getByRole("gridcell", { name: extra.title, exact: true }),
     ).toBeVisible();
   } finally {
     release();
