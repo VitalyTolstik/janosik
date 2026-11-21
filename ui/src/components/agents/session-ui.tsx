@@ -904,7 +904,7 @@ export function SessionDetail({
         </section>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-surface/84 px-3.5 py-2.5 max-[760px]:px-3 max-[760px]:pt-[9px] max-[760px]:pb-[max(9px,env(safe-area-inset-bottom))]">
+      <div className="shrink-0 border-t border-border bg-surface/84 px-3.5 py-2.5 pb-[max(10px,env(safe-area-inset-bottom))] max-[760px]:px-3 max-[760px]:pt-[9px]">
         <p
           data-testid={
             !terminal && !canControl ? "agents-session-read-only" : undefined
