@@ -91,14 +91,18 @@ describe("mobile safe areas (TASK-177.18)", () => {
     );
     // Card-dialog header: the close button and the ⋮ menu both respect the
     // status bar/notch. Mobile close is 44 px with a 12 px inset (+4 px gap
-    // → 3rem); from `md` it is 32 px with a 16 px inset (→ 2.25rem).
+    // → 3rem); from `md` it is 32 px with a 16 px inset (→ 2.25rem). The
+    // mobile 32 px trigger drops 6 px so both icons share a centre line.
     expect(cardDialog).toContain(
       "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)]",
     );
     expect(cardDialog).toContain(
       "md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]",
     );
-    expect(cardDialog).toContain("top-[max(0.75rem,env(safe-area-inset-top))]");
+    expect(cardDialog).toContain(
+      "top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)]",
+    );
+    expect(cardDialog).toContain("md:top-[max(1rem,env(safe-area-inset-top))]");
     expect(cardDialog).toContain(
       'closeClassName="right-[max(0.75rem,env(safe-area-inset-right))]',
     );
@@ -142,7 +146,27 @@ describe("mobile safe areas (TASK-177.18)", () => {
     expect(agentControlCss).toContain(
       "padding-bottom: max(9px, env(safe-area-inset-bottom))",
     );
-    // …and the ≤900 media rule re-applies it after its padding shorthand.
+    expect(agentControlCss).toContain(
+      "padding-left: max(12px, env(safe-area-inset-left))",
+    );
+    expect(agentControlCss).toContain(
+      "padding-right: max(12px, env(safe-area-inset-right))",
+    );
+    // …and the ≤900/≤760 media rules re-apply them after their padding
+    // shorthand, so the absolutely positioned footer respects the notch.
+    for (const [maxWidth, pad] of [
+      [900, 10],
+      [760, 9],
+    ] as const) {
+      const media = new RegExp(
+        `@media \\(max-width: ${maxWidth}px\\) \\{[\\s\\S]*?\\.agent-control-surface \\.ac-foot \\{[\\s\\S]*?padding-left: max\\(${pad}px, env\\(safe-area-inset-left\\)\\)`,
+      );
+      expect(agentControlCss).toMatch(media);
+      const right = new RegExp(
+        `@media \\(max-width: ${maxWidth}px\\) \\{[\\s\\S]*?\\.agent-control-surface \\.ac-foot \\{[\\s\\S]*?padding-right: max\\(${pad}px, env\\(safe-area-inset-right\\)\\)`,
+      );
+      expect(agentControlCss).toMatch(right);
+    }
     expect(agentControlCss).toMatch(
       /@media \(max-width: 900px\) \{[\s\S]*?\.agent-control-surface \.ac-foot \{[\s\S]*?padding-bottom: max\(8px, env\(safe-area-inset-bottom\)\)/,
     );

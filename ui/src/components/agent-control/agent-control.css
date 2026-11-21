@@ -869,6 +869,10 @@ html[lang="ru"] .agent-control-surface .ac-title {
   flex: none;
   border-top: 1px solid var(--border);
   padding: 9px 12px;
+  /* The footer is absolutely positioned against the sheet's padding box, so
+     the sheet's notch inset does not reach it; re-apply it here. */
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
   padding-bottom: max(9px, env(safe-area-inset-bottom));
   background: color-mix(in oklab, var(--surface) 82%, var(--background));
   display: flex;
@@ -1042,8 +1046,10 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
   .agent-control-surface .ac-foot {
     padding: 8px 10px;
-    /* Shorthand above resets the base inset; re-apply it for 761–900 px
+    /* Shorthand above resets the base insets; re-apply them for 761–900 px
        landscape phones/tablets. */
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
     padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 }
@@ -1229,6 +1235,8 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-foot {
     min-height: 56px;
     padding: 8px 9px;
+    padding-left: max(9px, env(safe-area-inset-left));
+    padding-right: max(9px, env(safe-area-inset-right));
     padding-bottom: max(8px, env(safe-area-inset-bottom));
     flex-wrap: wrap;
   }
