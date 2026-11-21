@@ -173,16 +173,83 @@ describe("Boards API (e2e)", () => {
       expect(colored.body[0].avatarColor).toBe("indigo");
     });
 
+    it("creates the requested first-run starter with commands", async () => {
+      const res = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Launch plan",
+          template: "starter",
+          templateLocale: "en",
+        })
+        .expect(201);
+
+      const board = res.body as Board;
+      expect(board.title).toBe("Launch plan");
+      expect(board.columns.map((column) => column.title)).toEqual([
+        "To do",
+        "In progress",
+        "Done",
+      ]);
+      const cards = Object.values(board.cards);
+      expect(cards).toHaveLength(1);
+      expect(cards[0]?.title).toBe("Welcome to your board");
+      expect(cards[0]?.checklists?.[0]?.title).toBe("First steps");
+      expect(cards[0]?.checklists?.[0]?.items.map((item) => item.text)).toEqual(
+        [
+          "Rename the board to your project",
+          "Add your first real card",
+          "Invite a teammate",
+        ],
+      );
+      // Starter content is real history: 3 columns + card + checklist + 3 items.
+      const commands = await server()
+        .get(`/api/v1/boards/${board.id}/commands`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(commands.body).toHaveLength(8);
+      expect(commands.body[0]?.action).toMatchObject({ type: "ADD_COLUMN" });
+    });
+
+    it("creates a Russian starter and an empty board without template", async () => {
+      const ru = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Запуск", template: "starter", templateLocale: "ru" })
+        .expect(201);
+      expect(
+        ru.body.columns.map((column: { title: string }) => column.title),
+      ).toEqual(["Сделать", "В работе", "Готово"]);
+      expect(Object.values(ru.body.cards)[0]).toMatchObject({
+        title: "Добро пожаловать на доску",
+      });
+
+      const empty = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Plain" })
+        .expect(201);
+      expect(empty.body.columns).toEqual([]);
+      expect(empty.body.cards).toEqual({});
+    });
+
     it("lists only the boards the caller is a member of", async () => {
       const adminList = await server()
         .get("/api/v1/boards")
         .set(auth(adminToken))
         .expect(200);
-      expect(adminList.body).toHaveLength(1);
-      expect(adminList.body[0]).toMatchObject({
+      const roadmap = adminList.body.find(
+        (board: { title: string }) => board.title === "Roadmap board",
+      );
+      expect(roadmap).toMatchObject({
         title: "Roadmap board",
         counters: { cards: 0, columns: 0 },
       });
+      expect(
+        adminList.body.every(
+          (board: { role: string }) => board.role === "ADMIN",
+        ),
+      ).toBe(true);
 
       const outsiderList = await server()
         .get("/api/v1/boards")

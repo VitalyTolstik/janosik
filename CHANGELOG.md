@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.16 first-run and board metadata. A new account now names its first
+  board instead of silently receiving `New board`, and can choose an empty
+  board or an example with `To do` / `In progress` / `Done`, a welcome card and
+  a checklist (EN/RU, recorded as commands). The header title has a visible
+  pencil button for renaming, while clicking the title still works. The user
+  guide and the `POST /boards` contract document the template.
+
 - TASK-182.1 admin label help and keyed label toast. The Labels heading now has
   an accessible `About labels` popover explaining that labels save immediately,
   click attaches/detaches them, and every change reaches the board history. A

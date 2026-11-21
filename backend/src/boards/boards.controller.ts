@@ -48,6 +48,8 @@ import {
 import { MembershipGuard } from "@/common/membership.guard";
 import { ApprovalsService } from "@/approvals/approvals.service";
 import { plainRecord } from "@/approvals/approval-plan";
+import { CommandsService } from "@/commands/commands.service";
+import { boardStarterCommands } from "./board-starter";
 import { BoardsService } from "./boards.service";
 import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
@@ -67,6 +69,7 @@ export class BoardsController {
     private readonly boards: BoardsService,
     private readonly approvals: ApprovalsService,
     private readonly idempotency: IdempotencyService,
+    private readonly commands: CommandsService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -96,10 +99,27 @@ export class BoardsController {
       scope: "create_board",
       key: normalizeIdempotencyKey(rawKey),
       actorKey: idempotencyActorKey(user.id, principal),
-      requestHash: hashIdempotentRequest({ title: dto.title }),
+      requestHash: hashIdempotentRequest({
+        title: dto.title,
+        // Old clients that omit the template keep their previous hash.
+        ...(dto.template
+          ? { template: dto.template, locale: dto.templateLocale ?? "en" }
+          : {}),
+      }),
       run: async () => {
         const board = await this.boards.createBoard(user.id, dto, principal);
-        return { body: board, status: 201, resourceId: board.id };
+        if (dto.template !== "starter") {
+          return { body: board, status: 201, resourceId: board.id };
+        }
+        // The starter is ordinary content, so it goes through the command log
+        // as one all-or-nothing batch created by the new board's ADMIN.
+        await this.commands.applyBatch(
+          board.id,
+          user.id,
+          boardStarterCommands(board.id, dto.templateLocale ?? "en"),
+        );
+        const withStarter = await this.boards.getAggregate(board.id);
+        return { body: withStarter, status: 201, resourceId: board.id };
       },
     });
     return outcome.body;

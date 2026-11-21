@@ -3851,6 +3851,17 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        template:
+          type: string
+          enum: [starter]
+          description: |
+            First-run example. Adds To do / In progress / Done, a welcome card
+            and a checklist as one command batch. Omit for an empty board.
+        templateLocale:
+          type: string
+          enum: [en, ru]
+          default: en
+          description: Copy language for the starter content.
     BoardEnvelope:
       type: object
       required: [app, schemaVersion, exportedAt, boards]

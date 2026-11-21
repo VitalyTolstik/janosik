@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   createBrowserRouter,
   RouterProvider,
@@ -9,8 +9,10 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { Archive, Loader2, Plus } from "lucide-react";
+import { LIMITS, type BoardStarterLocale } from "@janosik/shared";
 
 import { BoardSection } from "@/components/BoardSection";
+import { LimitCounter } from "@/components/ui/limit-counter";
 import { BoardShellSkeleton } from "@/components/board/BoardSkeleton";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { NotFoundPage } from "@/components/errors/NotFoundPage";
@@ -80,21 +82,33 @@ const PublicBoardPage = lazy(() =>
  * archived boards stay restorable from this screen.
  */
 export function NoBoardRoute() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { boards, addBoard } = useBoard();
   const navigate = useNavigate();
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState<"empty" | "starter" | null>(null);
 
   const allArchived = allBoardsArchived(boards);
-  const handleCreate = () => {
-    void (async () => {
-      const id = await addBoard(t("board.switcher.new"), t("board.untitled"));
-      if (id) navigate(routes.board(id));
-    })();
+  const trimmed = title.trim();
+  const canCreate =
+    trimmed.length > 0 && trimmed.length <= LIMITS.boardTitle && busy === null;
+  const starterLocale: BoardStarterLocale = lang.startsWith("ru") ? "ru" : "en";
+
+  const create = async (template?: "starter") => {
+    if (!canCreate) return;
+    setBusy(template ?? "empty");
+    const id = await addBoard(
+      trimmed,
+      undefined,
+      template ? { template, templateLocale: starterLocale } : undefined,
+    );
+    setBusy(null);
+    if (id) navigate(routes.board(id));
   };
 
   return (
     <main className="flex flex-1 items-center justify-center p-6">
-      <div className="flex max-w-sm flex-col items-center gap-4 text-center">
+      <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
         <span
           aria-hidden
           className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground"
@@ -111,15 +125,67 @@ export function NoBoardRoute() {
               : t("board.emptyNewHint")}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleCreate}
-          data-testid="empty-create-board"
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        <form
+          noValidate
+          className="w-full text-left"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void create();
+          }}
         >
-          <Plus className="h-4 w-4" aria-hidden />
-          {t("board.switcher.new")}
-        </button>
+          <label
+            htmlFor="first-board-name"
+            className="text-sm font-medium text-foreground"
+          >
+            {t("board.firstRun.nameLabel")}
+          </label>
+          <div className="relative mt-1.5">
+            <input
+              id="first-board-name"
+              name="board-title"
+              autoFocus
+              value={title}
+              maxLength={LIMITS.boardTitle}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder={t("board.firstRun.placeholder")}
+              data-testid="empty-board-name"
+              className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+            />
+            <LimitCounter
+              length={title.length}
+              limit={LIMITS.boardTitle}
+              position="below"
+              testId="empty-board-limit"
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <button
+              type="submit"
+              disabled={!canCreate}
+              data-testid="empty-create-board"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              {busy === "empty"
+                ? t("board.firstRun.creating")
+                : t("board.firstRun.emptyCta")}
+            </button>
+            <button
+              type="button"
+              disabled={!canCreate}
+              onClick={() => void create("starter")}
+              data-testid="empty-create-template"
+              className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
+            >
+              {busy === "starter"
+                ? t("board.firstRun.creating")
+                : t("board.firstRun.starterCta")}
+            </button>
+          </div>
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            {t("board.firstRun.starterHint")}
+          </p>
+        </form>
         {allArchived ? <BoardSwitcher archivedEntry /> : null}
       </div>
     </main>

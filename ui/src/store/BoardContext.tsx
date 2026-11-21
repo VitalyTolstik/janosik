@@ -19,8 +19,10 @@ import {
 
 import {
   boardReducer,
+  boardStarterPlan,
   LIMITS,
   type BoardAction,
+  type BoardStarterLocale,
   type BoardState,
   type ColumnSortBy,
   type UpdateCardAction,
@@ -173,6 +175,12 @@ interface BoardAccessValue {
   role: BoardRole | undefined;
 }
 
+/** TASK-177.16 first-run choice: empty board or the example starter. */
+export interface AddBoardOptions {
+  template?: "starter";
+  templateLocale?: BoardStarterLocale;
+}
+
 /**
  * Every way to change the data. The object is built once and never
  * replaced, so `useBoardActions()` consumers never re-render because of it
@@ -289,6 +297,7 @@ interface BoardActionsValue {
   addBoard: (
     title: string,
     fallbackTitle?: string,
+    options?: AddBoardOptions,
   ) => string | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void | Promise<void>;
@@ -1924,10 +1933,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (
       title: string,
       fallbackTitle = "Untitled",
+      options?: AddBoardOptions,
     ): string | Promise<string | null> => {
       const resolved = title.trim() || fallbackTitle;
       if (serverMode) {
-        return trackBoardMutation(() => api.createBoard(resolved))
+        return trackBoardMutation(() => api.createBoard(resolved, options))
           .then((created) => {
             if (!aliveRef.current) return null;
             apply({ type: "ADD_BOARD", board: created, remote: true });
@@ -1949,13 +1959,42 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       const id = createId();
       const now = Date.now();
+      let columns: Board["columns"] = [];
+      let cards: Board["cards"] = {};
+      if (options?.template === "starter") {
+        const plan = boardStarterPlan(options.templateLocale ?? "en", createId);
+        columns = plan.columns.map((column, index) => ({
+          ...column,
+          cardIds: index === 0 ? [plan.card.id] : [],
+          createdAt: now,
+        }));
+        cards = {
+          [plan.card.id]: {
+            id: plan.card.id,
+            title: plan.card.title,
+            labelIds: [],
+            checklists: [
+              {
+                id: plan.checklist.id,
+                title: plan.checklist.title,
+                items: plan.checklist.items.map((item) => ({
+                  ...item,
+                  done: false,
+                })),
+              },
+            ],
+            createdAt: now,
+            updatedAt: now,
+          },
+        };
+      }
       apply({
         type: "ADD_BOARD",
         board: {
           id,
           title: resolved,
-          columns: [],
-          cards: {},
+          columns,
+          cards,
           labels: [],
           createdAt: now,
           updatedAt: now,

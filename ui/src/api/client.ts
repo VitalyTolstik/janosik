@@ -25,6 +25,7 @@ import type {
   BoardMemberDto,
   BoardPendingInvitationDto,
   BoardShareDto,
+  BoardStarterLocale,
   BoardSummary,
   CommandRequest,
   CommandResponse,
@@ -925,10 +926,13 @@ export class ApiClient {
     return this.request<BoardSummary[]>("/boards");
   }
 
-  createBoard(title: string): Promise<BoardAggregate> {
+  createBoard(
+    title: string,
+    options?: { template?: "starter"; templateLocale?: BoardStarterLocale },
+  ): Promise<BoardAggregate> {
     return this.requestIdempotent<BoardAggregate>("/boards", {
       method: "POST",
-      body: { title },
+      body: { title, ...options },
       headers: { "Idempotency-Key": createId() },
     });
   }
