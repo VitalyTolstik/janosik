@@ -1982,15 +1982,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
                   setRoles((prev) => ({ ...prev, [existing!.id]: "ADMIN" }));
                   if (code === "starter_cleanup_failed") {
                     toast.error(t("board.starterIncomplete"));
-                  } else if (code === "board_read_failed") {
-                    toast.error(
-                      t(
-                        options?.template === "starter"
-                          ? "board.starterIncomplete"
-                          : "board.createIncomplete",
-                      ),
-                    );
+                  } else if (
+                    code === "board_read_failed" &&
+                    options?.template === "starter"
+                  ) {
+                    toast.error(t("board.starterIncomplete"));
                   }
+                  // A plain board_read_failed that recovered has nothing to
+                  // report: the GET succeeded and the board is open.
                   return existing.id;
                 }
                 // The server created the board but the aggregate cannot be

@@ -1284,10 +1284,15 @@ describe("BoardProvider server-mode failures and board management", () => {
     expect(posts).toBe(1);
     expect(boardReads).toBe(1);
     expect(
-      await screen.findByText(
+      screen.queryByText(
         "The board was created, but it could not be loaded. Reload the page to open it.",
       ),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "The board was created, but the example could not be added.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the known board when the recovery read also fails", async () => {
