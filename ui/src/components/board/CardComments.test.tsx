@@ -1180,12 +1180,16 @@ describe("CardComments", () => {
 
     const group = screen.getByTestId("comment-kind-filters");
     expect(group).toHaveAttribute("aria-label", "Filter comments by kind");
+    expect(within(group).getAllByRole("button")).toHaveLength(7);
     const all = screen.getByTestId("comment-filter-all");
     const blocker = screen.getByTestId("comment-filter-blocker");
     expect(all).toHaveAttribute("aria-pressed", "true");
     expect(blocker).toHaveAttribute("aria-pressed", "false");
     // 44 px touch target, not just a colour cue.
     expect(blocker).toHaveClass("min-h-11");
+    const live = screen.getByTestId("comment-filter-live");
+    expect(live).toHaveAttribute("role", "status");
+    expect(live).toHaveTextContent("Showing all comments");
 
     fireEvent.click(blocker);
     expect(await screen.findByText("A blocker")).toBeInTheDocument();
@@ -1195,18 +1199,175 @@ describe("CardComments", () => {
     expect(blocker).toHaveAttribute("aria-pressed", "true");
     expect(all).toHaveAttribute("aria-pressed", "false");
     expect(kindQueries).toContain("blocker");
-    expect(screen.getByText("Showing Blocker comments")).toBeInTheDocument();
+    expect(screen.getByTestId("comment-filter-live")).toHaveTextContent(
+      "Showing Blocker comments",
+    );
 
     // A kind with no rows keeps the chip and answers with a specific empty
     // state instead of the generic "No comments yet".
     fireEvent.click(screen.getByTestId("comment-filter-handoff"));
     expect(await screen.findByText("No Handoff comments")).toBeInTheDocument();
     expect(screen.queryByText("No comments yet")).not.toBeInTheDocument();
+    expect(kindQueries).toContain("handoff");
 
     fireEvent.click(all);
     expect(await screen.findByText("A note")).toBeInTheDocument();
     expect(all).toHaveAttribute("aria-pressed", "true");
-    expect(kindQueries).toContain(null);
+    expect(kindQueries.at(-1)).toBeNull();
+  });
+
+  it("keeps the previous chip and offers a retry when a filter load fails", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-n", text: "A note", kind: "note" }),
+      comment({
+        id: "comment-b",
+        text: "A blocker",
+        kind: "blocker",
+        createdAt: 1_700_000_000_100,
+      }),
+    ]);
+    let failBlocker = true;
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (
+        failBlocker &&
+        url.pathname.endsWith("/comments") &&
+        url.searchParams.get("kind") === "blocker"
+      ) {
+        failBlocker = false;
+        return Response.json({ message: "boom" }, { status: 500 });
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("A note");
+
+    fireEvent.click(screen.getByTestId("comment-filter-blocker"));
+    expect(
+      await screen.findByText("Could not apply this filter"),
+    ).toBeInTheDocument();
+    // The failed request never claims the chip: All is still applied, the
+    // note is still visible and no filtered-empty copy is shown.
+    expect(screen.getByTestId("comment-filter-all")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("comment-filter-blocker")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByText("A note")).toBeInTheDocument();
+    expect(screen.queryByText("No Blocker comments")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("A blocker")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText("A note")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("comment-filter-blocker")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.queryByTestId("comment-filter-error"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the unfiltered Comments count truthful under a filter", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({
+        id: "comment-b",
+        text: "Filtered blocker",
+        kind: "blocker",
+        createdAt: 1_700_000_000_100,
+      }),
+      comment({ id: "comment-n", text: "Other note", createdAt: 1 }),
+    ]);
+    const counts: Array<ActivityCount | null | undefined> = [];
+    renderComments(server, false, server.handle, "card-1", (count) => {
+      counts.push(count);
+    });
+    await waitFor(() => expect(counts.at(-1)).toMatchObject({ visible: 2 }));
+
+    fireEvent.click(screen.getByTestId("comment-filter-blocker"));
+    expect(await screen.findByText("Filtered blocker")).toBeInTheDocument();
+    // Loading a filtered page must not flash the visible-page size (1) into
+    // the Comments tab: the unfiltered snapshot (2) stays put.
+    expect(counts.at(-1)).toMatchObject({ visible: 2 });
+
+    // A create while filtered adjusts the snapshot by +1.
+    fireEvent.click(screen.getByTestId("comment-kind"));
+    fireEvent.click(await screen.findByTestId("comment-kind-option-blocker"));
+    expect(screen.getByTestId("comment-kind")).toHaveAttribute(
+      "aria-label",
+      "Comment kind: Blocker",
+    );
+    fireEvent.change(screen.getByTestId("comment-input"), {
+      target: { value: "Fresh blocker" },
+    });
+    expect(screen.getByTestId("comment-send")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("comment-send"));
+    await waitFor(() =>
+      expect(
+        server.requests.filter(
+          (request) =>
+            request.method === "POST" &&
+            request.path === "/api/v1/cards/card-1/comments",
+        ),
+      ).toHaveLength(1),
+    );
+    expect(await screen.findByText("Fresh blocker")).toBeInTheDocument();
+    await waitFor(() => expect(counts.at(-1)).toMatchObject({ visible: 3 }));
+
+    // A delete while filtered adjusts it back down.
+    const created = screen.getByText("Fresh blocker").closest("li");
+    fireEvent.click(
+      within(created as HTMLElement).getByTestId("comment-delete"),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(screen.queryByText("Fresh blocker")).not.toBeInTheDocument(),
+    );
+    expect(counts.at(-1)).toMatchObject({ visible: 2 });
+  });
+
+  it("pages a filtered thread with the kind query", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const blockers = Array.from({ length: 55 }, (_, index) =>
+      comment({
+        id: `comment-${index}`,
+        text: `Blocker ${index}`,
+        kind: "blocker",
+        createdAt: 1_700_000_000_000 + index,
+      }),
+    );
+    server.seedComments("card-1", [
+      comment({ id: "comment-note", text: "A note", kind: "note" }),
+      ...blockers,
+    ]);
+    const queries: URL[] = [];
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/comments")) queries.push(url);
+      return server.handle(input, init);
+    });
+    await screen.findByText("Blocker 0");
+
+    fireEvent.click(screen.getByTestId("comment-filter-blocker"));
+    expect(await screen.findByText("Blocker 0")).toBeInTheDocument();
+    expect(screen.queryByText("A note")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("comments-show-older"));
+    await waitFor(() =>
+      expect(
+        queries.some(
+          (url) =>
+            url.searchParams.get("kind") === "blocker" &&
+            url.searchParams.get("cursor") === "50",
+        ),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("Blocker 54")).toBeInTheDocument();
   });
 
   it("lets the author change the kind while editing", async () => {
@@ -1247,7 +1408,7 @@ describe("CardComments", () => {
           request.method === "PATCH" &&
           request.path === "/api/v1/comments/comment-k",
       )?.body,
-    ).toEqual({ text: "Blocked here", kind: "question" });
+    ).toEqual({ kind: "question" });
   });
 
   it("drops an edited comment from the active kind filter", async () => {

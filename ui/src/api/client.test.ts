@@ -503,11 +503,11 @@ describe("ApiClient", () => {
     });
     client.setAccessToken("t");
 
-    await client.updateComment("comment-1", undefined, "blocker");
-    await client.updateComment("comment-1", "edited", "question");
+    await client.updateComment("comment-1", undefined, "question");
+    await client.updateComment("comment-1", "edited", "blocker");
     expect(bodies).toEqual([
-      { kind: "blocker" },
-      { text: "edited", kind: "question" },
+      { kind: "question" },
+      { text: "edited", kind: "blocker" },
     ]);
   });
 
