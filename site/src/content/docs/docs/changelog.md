@@ -15,6 +15,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- Comment kinds can be edited after posting: the author retypes the kind in
+  the inline editor and the thread shows an `edited` marker. Comments also
+  gain `All` / kind filter chips backed by the server query, so paging stays
+  inside the chosen kind.
 - Snapshot links save independent copies of opted-in comments and files.
   Published copies and the saved roster can stay public after the source
   account is erased, until the snapshot is refreshed or the link is revoked

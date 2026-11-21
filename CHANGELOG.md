@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.11 comment kind edit and filter. An author can now retype a
+  comment's structured kind (note, status, question, blocker, evidence,
+  handoff) in the same inline editor as the text; the change stamps `editedAt`
+  and writes `comment_updated` history, and blocker/handoff attention already
+  sent for that comment is not duplicated. The comments thread also gains
+  `All`/kind filter chips backed by the server's `?kind=` query, with EN/RU
+  copy, accessible pressed state, 44 px touch targets and cursor paging kept
+  inside the selected kind. The PATCH body and the API docs accept `text`
+  and/or `kind`, and an empty body is still a `400`.
+
 - TASK-177.8 small UX batch: pending invitations can be re-roled and given a
   viewer expiry from the members dialog, with past deadlines refused and
   expired invitations flagged; share revocation asks for confirmation and

@@ -847,6 +847,17 @@ export interface BoardCardSearchResult {
   cardIds: string[];
 }
 
+/**
+ * Body of `PATCH /comments/:commentId` (TASK-176.2, TASK-177.11). Author-only.
+ * Both fields are optional, but at least one must be present: `text` replaces
+ * the body, `kind` changes the structured type. An omitted field stays as it
+ * was, and an empty body is a `400`.
+ */
+export interface UpdateCommentRequest {
+  text?: string;
+  kind?: CommentKind;
+}
+
 /** A card comment (plain text, TASK-28; UI in TASK-37). */
 export interface CommentDto {
   id: string;
