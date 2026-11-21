@@ -1237,6 +1237,7 @@
   "notifications.attention.newest": "Новые",
   "notifications.attention.older": "Старые",
   "notifications.attention.olderError": "Не удалось загрузить более ранние уведомления.",
+  "notifications.attention.openAria": "Открыть «{{title}}»",
   "notifications.attention.read": "Отметить прочитанным",
   "notifications.attention.readAll": "Прочитать все",
   "notifications.attention.retry": "Повторить загрузку уведомлений",

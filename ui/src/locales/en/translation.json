@@ -1223,6 +1223,7 @@
   "notifications.attention.newest": "Newest",
   "notifications.attention.older": "Older",
   "notifications.attention.olderError": "Could not load older notifications.",
+  "notifications.attention.openAria": "Open “{{title}}”",
   "notifications.attention.read": "Mark as read",
   "notifications.attention.readAll": "Mark all as read",
   "notifications.attention.retry": "Retry loading notifications",

@@ -167,6 +167,7 @@ export function NotificationsBell() {
           page={attention}
           unavailable={attentionError}
           onReload={loadAttention}
+          onNavigate={() => setOpen(false)}
         />
         <NotificationsPanel
           invitations={invitations}
@@ -255,13 +256,13 @@ function NotificationsPanel({
   };
 
   return (
-    <>
+    <section aria-labelledby="invitations-heading">
       <div className="border-b border-border/60 px-4 py-3">
-        <p className="text-sm font-semibold">
+        <h2 id="invitations-heading" className="text-sm font-semibold">
           {invitations === null
             ? t("notifications.titlePlain")
             : t("notifications.title", { count: invitations.length })}
-        </p>
+        </h2>
       </div>
 
       {unavailable ? (
@@ -354,6 +355,6 @@ function NotificationsPanel({
           })}
         </ul>
       )}
-    </>
+    </section>
   );
 }

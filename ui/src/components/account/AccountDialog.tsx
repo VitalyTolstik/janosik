@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
   Bot,
@@ -32,14 +33,16 @@ import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { userInitials, userLabel } from "@/utils/avatar";
+import {
+  ACCOUNT_QUERY_PARAM,
+  isAccountSection,
+  type AccountSection,
+} from "@/utils/account-nav";
 import { ApiTokensSection } from "./ApiTokensSection";
 import { DataPrivacySection } from "./DataPrivacySection";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 import { SecuritySection } from "./SecuritySection";
-
-type AccountSection =
-  "profile" | "security" | "tokens" | "preferences" | "data";
 
 const SECTIONS: {
   id: AccountSection;
@@ -76,10 +79,22 @@ export function AccountDialog({
 }) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get(ACCOUNT_QUERY_PARAM);
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const externalTrigger = useRef<HTMLElement | null>(null);
+
+  // TASK-177.6: a notification can deep-link to a section through
+  // `?account=tokens|…`; the panel is not a route, so the header-owned
+  // dialog consumes the param instead of inventing an account page.
+  useEffect(() => {
+    if (!isAccountSection(requestedSection)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
+    setSection(requestedSection);
+    setOpen(true);
+  }, [requestedSection]);
 
   useEffect(() => {
     const openTokens = () => {
@@ -100,9 +115,17 @@ export function AccountDialog({
   }
 
   const name = userLabel(user.displayName, user.email);
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next && searchParams.has(ACCOUNT_QUERY_PARAM)) {
+      const params = new URLSearchParams(searchParams);
+      params.delete(ACCOUNT_QUERY_PARAM);
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
