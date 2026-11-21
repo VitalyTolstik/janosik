@@ -56,6 +56,13 @@ function boardInitial(title: string): string {
   return trimmed ? trimmed[0].toUpperCase() : "•";
 }
 
+/** The switcher counts what a user can open — archived cards are not it. */
+function activeCardCount(board: Board): number {
+  return Object.values(board.cards).filter(
+    (card) => card.archivedAt === undefined,
+  ).length;
+}
+
 export function BoardSwitcher({
   archivedEntry = false,
 }: {
@@ -378,6 +385,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
             // Only ADMINs manage a board (the server enforces it too); in
             // local mode every board is ADMIN, so the action stays visible.
             const canManage = roleOf(b.id) === "ADMIN";
+            const cardCount = activeCardCount(b);
             const header =
               showGroupHeaders && index === 0
                 ? "mine"
@@ -509,12 +517,16 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                       </span>
                     ) : (
                       <>
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {
-                            Object.values(b.cards).filter(
-                              (card) => card.archivedAt === undefined,
-                            ).length
-                          }
+                        <span
+                          className="shrink-0 text-xs tabular-nums text-muted-foreground"
+                          aria-label={t("board.switcher.activeCards", {
+                            count: cardCount,
+                          })}
+                          title={t("board.switcher.activeCards", {
+                            count: cardCount,
+                          })}
+                        >
+                          {cardCount}
                         </span>
                         {/* Touch has no hover: the checkmark yields its slot to
                         the row's action (always visible there). A board I do

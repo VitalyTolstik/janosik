@@ -281,6 +281,19 @@ paths:
         `worker`/`reviewer` token gets `403 scope_denied`. The caller becomes
         the first `ADMIN`. A retry with the same `Idempotency-Key` and body
         returns the stored board.
+
+        A `503` from this route has two shapes. When the board exists but the
+        create cannot return it (`starter_cleanup_failed`,
+        `starter_read_failed` or `board_read_failed`), the body is
+        `retryable: false` with `details.boardId`: open that board instead of
+        retrying the create, because a same-key retry answers `409
+        idempotency_in_progress`. `starter_cleanup_failed` means the starter
+        batch failed and the freshly created board could not be removed. When
+        the starter batch fails but the fresh board is removed, the route
+        rethrows the original error (a `500`, for example) and releases the
+        key, so a retry with the same key may create the board (`201`). A busy
+        board answers `503 board_write_timeout` (`retryable: true`, no
+        `boardId`); nothing was saved, so retry.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -302,6 +315,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/CreateBoardUnavailable" }
   /boards/import:
     post:
       tags: [Boards]
@@ -3172,6 +3186,34 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
+    CreateBoardUnavailable:
+      description: |
+        The board may exist; `code` names the cause.
+
+        - `starter_cleanup_failed`: the board was created, its starter batch
+          failed, and the fresh board could not be removed. The body has
+          `retryable: false` and `details.boardId`; open that board.
+        - `starter_read_failed` / `board_read_failed`: the board was created
+          but its aggregate could not be read after retries. The body has
+          `retryable: false` and `details.boardId`; open that board.
+        - `board_write_timeout`: the board write timed out and nothing was
+          saved. The body has `retryable: true` and no `boardId`; retry.
+
+        Codes: `starter_cleanup_failed`, `starter_read_failed`,
+        `board_read_failed`, `board_write_timeout`.
+
+        For the first two cases, reusing the same `Idempotency-Key` answers
+        `409 idempotency_in_progress`; a fresh create would make a second
+        board. A starter failure whose fresh board *was* removed does not
+        return this response: the route rethrows the original error and
+        releases the key, so a retry may create the board.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
     ServiceUnavailable:
       description: Board write lock timed out (`503 board_write_timeout`, safe to retry).
       headers:
@@ -3404,6 +3446,9 @@ components:
         - link_cap
         - link_mismatch
         - board_write_timeout
+        - starter_cleanup_failed
+        - starter_read_failed
+        - board_read_failed
         - invalid_cursor
         - invalid_filter
         - invalid_range
@@ -3900,6 +3945,19 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+        template:
+          type: string
+          enum: [starter]
+          description: |
+            First-run example. Adds To do / In progress / Done, a welcome card
+            and a checklist as one command batch. Omit for an empty board.
+        templateLocale:
+          type: string
+          enum: [en, ru]
+          default: en
+          description: |
+            Copy language for the starter content. Requires `template: starter`;
+            sending it without a starter template is a 400.
     BoardEnvelope:
       type: object
       required: [app, schemaVersion, exportedAt, boards]

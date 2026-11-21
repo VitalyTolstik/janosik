@@ -446,7 +446,54 @@ export class BoardsService {
         });
         throw error;
       });
-    return this.getAggregate(board.id);
+    // The board and membership are committed. A failed read must not look
+    // like a failed create: retry briefly, then hand the caller a recoverable
+    // error with the board id so the UI can open it instead of creating a
+    // second board under a new key.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await this.getAggregate(board.id);
+      } catch {
+        if (attempt === 3) {
+          throw new ServiceUnavailableException({
+            message: "The board was created; open it from details.boardId",
+            code: "board_read_failed",
+            retryable: false,
+            boardId: board.id,
+          });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+      }
+    }
+    // Unreachable; the loop either returns or throws.
+    throw new ServiceUnavailableException({
+      message: "The board was created; open it from details.boardId",
+      code: "board_read_failed",
+      retryable: false,
+      boardId: board.id,
+    });
+  }
+
+  /**
+   * TASK-177.16: remove a board created moments ago when its starter command
+   * batch failed. The starter runs in a second transaction, so without this
+   * the empty board would survive and a retried idempotency key could mint a
+   * duplicate. Membership is removed first because the relation is required.
+   */
+  async discardFreshBoard(boardId: string): Promise<boolean> {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await this.prisma.$transaction([
+          this.prisma.boardMember.deleteMany({ where: { boardId } }),
+          this.prisma.board.deleteMany({ where: { id: boardId } }),
+        ]);
+        return true;
+      } catch {
+        if (attempt === 3) return false;
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+      }
+    }
+    return false;
   }
 
   /** The whole board aggregate in the frontend `Board` shape (§7.4). */

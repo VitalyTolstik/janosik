@@ -78,14 +78,20 @@ test.describe("mobile touch targets", () => {
       .filter({ hasText: "Touch me" });
     await expect(comment).toBeVisible();
 
-    // 177.8 still owns making the hover-revealed action visible on touch; this
-    // check covers only the enlarged target size.
-    const trigger = comment.getByTestId("comment-delete");
-    const triggerBox = await trigger.boundingBox();
-    expect(triggerBox?.width ?? 0).toBeGreaterThanOrEqual(44);
-    expect(triggerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    // Touch has no hover: the action strip must be visible without it.
+    const actions = comment.getByTestId("comment-actions");
+    await expect(actions).toBeVisible();
+    expect(
+      await actions.evaluate((element) => getComputedStyle(element).opacity),
+    ).toBe("1");
+    for (const testId of ["comment-edit", "comment-delete"]) {
+      const button = comment.getByTestId(testId);
+      const box = await button.boundingBox();
+      expect(box?.width ?? 0, `${testId} width`).toBeGreaterThanOrEqual(44);
+      expect(box?.height ?? 0, `${testId} height`).toBeGreaterThanOrEqual(44);
+    }
 
-    await trigger.click({ force: true });
+    await comment.getByTestId("comment-delete").click();
     const confirm = page.getByRole("dialog", {
       name: /^Delete .+’s comment\?$/,
     });
