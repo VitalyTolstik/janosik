@@ -28,7 +28,6 @@
 import { createHash } from "node:crypto";
 import { openSync, closeSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { PrismaClient } from "@prisma/client";
 import argon2 from "argon2";
 import { ids as sceneIds, manifest } from "./fixtures/task176-demo.mjs";
 import {
@@ -37,6 +36,7 @@ import {
   databaseTarget,
   DemoError,
   reportError,
+  shellEnv,
 } from "./task176/target.mjs";
 
 const PASSWORD = "pixel-demo-password";
@@ -1010,7 +1010,7 @@ export function writeSeedSecrets(file) {
 }
 
 async function pixelMain() {
-  const env = process.env;
+  const env = shellEnv;
   if (env.SEED_ALLOW !== "1" || env.NODE_ENV === "production") {
     throw new DemoError(
       "Refusing to seed outside a disposable pixel environment with SEED_ALLOW=1.",
@@ -1024,6 +1024,9 @@ async function pixelMain() {
     "DATABASE_URL",
   );
   const { apiUrl } = apiTarget(requestedApi, "API_URL");
+  // Load Prisma only after the target is validated; its module import loads
+  // backend/.env, which must never influence the guarded target.
+  const { PrismaClient } = await import("@prisma/client");
   const prisma = new PrismaClient({ datasourceUrl: target.databaseUrl });
   try {
     const [identity] =

@@ -1,6 +1,12 @@
 export const demoDatabaseName = "janosik_task176_demo";
 export class DemoError extends Error {}
 
+// Prisma loads backend/.env (and injects DATABASE_URL, JWT_SECRET and friends
+// into process.env) at module import. Any entry point that imports a module
+// which loads Prisma must capture this snapshot first, and only this snapshot
+// may select the demo target, authorize a reset or supply reset secrets.
+export const shellEnv = Object.freeze({ ...process.env });
+
 function parseUrl(value, name) {
   try {
     return new URL(value);
@@ -100,8 +106,8 @@ export function childEnv(target) {
   return {
     ...Object.fromEntries(
       entries
-        .filter((key) => process.env[key] !== undefined)
-        .map((key) => [key, process.env[key]]),
+        .filter((key) => shellEnv[key] !== undefined)
+        .map((key) => [key, shellEnv[key]]),
     ),
     DATABASE_URL: target.databaseUrl,
     ...(target.apiUrl ? { API_URL: target.apiUrl } : {}),

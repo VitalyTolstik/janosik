@@ -1,6 +1,6 @@
 # TASK-183 — Demo fixture hygiene and card label timestamp integrity
 
-**Status:** TASK-183.1 implemented on its feature branch. Label timestamp work is planned.
+**Status:** TASK-183.1 implemented on its feature branch; TASK-183.2 and TASK-183.3 implemented. The manual TASK-176 integration job and the Prisma-process SIGKILL case remain residual checks (see the [residual verification ledger](DEMO-FIXTURES.md#residual-verification-ledger)).
 
 **Priority:** P2 for demo fixture hygiene; P3 for the label timestamp bug  
 **Base:** `main` = `002a31ec`  
@@ -734,6 +734,14 @@ the board reducer/command-writer contract and no schema change.
   points at demo, `DEMO_API_URL` at the reset backend; the reset must prove the
   backend read the demo DB, not dev. A divergent-env seed test sets
   `DATABASE_URL`/`API_URL` to different values and expects refusal.
+- Ambient-env regression: with a real `backend/.env` (and a `.env.local` case)
+  containing a development `DATABASE_URL`, a valid shell
+  `DEMO_DATABASE_URL`/`DEMO_API_URL` still passes target validation. A
+  `DEMO_RESET_ALLOW=1` or `SEED_ALLOW=1` present only in the file must not
+  authorize the reset, and file-only `DEMO_*`, `JWT_SECRET`, `PUBLIC_ORIGIN`,
+  `SETTINGS_SECRET` and `SEED_SECRETS_FILE` values must not reach the target
+  guard, reset authorization or child environment. Prisma-dependent modules
+  are imported only after the pristine shell snapshot validates the target.
 - Direct-overlay test: invoking the TASK-176 seed/overlay without the
   reset-issued nonce is refused; a direct run with `DEMO_DATABASE_URL=demo` and
   `DEMO_API_URL=dev` must fail API-identity or be refused before any write.
