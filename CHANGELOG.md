@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.6 attention inbox deep links and notification preference path.
+  Every attention row now opens its real target: a blocked, hand-off or expired
+  claim row follows the card deep link, an approval opens the board approvals
+  tab focused on the request when its id is known, a board limit opens the
+  board, an account-level limit opens the account panel, and a revoked token
+  opens **Account → API keys**. Links are real anchors, so keyboard, middle
+  click and Cmd/Ctrl-click work, and the bell closes on activation. Rows with
+  no safe target stay plain text; opening a row never marks it read. The profile
+  **Attention emails** switch now loads from the session, saves through
+  `PATCH /users/me/notification-settings`, and reverts with an error toast when
+  the server refuses it. EN/RU copy, component tests and an attention-inbox
+  Playwright case cover the flow; the backend opt-out e-mail suppression was
+  already covered by the existing attention E2E.
+
 - TASK-182.1 admin label help and keyed label toast. The Labels heading now has
   an accessible `About labels` popover explaining that labels save immediately,
   click attaches/detaches them, and every change reaches the board history. A

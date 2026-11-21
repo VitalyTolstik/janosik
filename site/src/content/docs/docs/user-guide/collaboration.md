@@ -69,6 +69,14 @@ Open the bell in the header to see attention notifications and pending board
 invitations. The badge counts unread attention notifications and pending
 invitations. You can browse older notifications and mark one or all as read.
 
+Each attention row is a real link to the place that needs you: a blocked or
+handed-off card opens its card dialog, an approval opens the board's approvals
+tab (the exact request when it is known), a board limit opens that board, and a
+revoked API key opens **Account → API keys**. An account-level limit opens the
+account panel. Rows without a target stay plain text. Links work with the
+keyboard, middle-click and Cmd/Ctrl-click, and opening a row does not mark it
+read — use **Mark as read** or **Mark all as read** explicitly.
+
 To stop immediate emails for these events, open **Account → Profile** and turn
 off **Attention emails**. You can still read events in the bell. Scheduled
 digests and due reminders use the separate digest preference.
