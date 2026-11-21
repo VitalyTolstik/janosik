@@ -151,26 +151,49 @@ describe("Agent review hardening (e2e)", () => {
     ).toBeNull();
   });
 
-  it("preserves the key after an uncertain post-commit failure", async () => {
+  it("recovers a board when the post-commit read fails once", async () => {
     const boards = app.get(BoardsService);
     const original = boards.getAggregate.bind(boards);
     jest
       .spyOn(boards, "getAggregate")
       .mockImplementationOnce(async (...args) => {
         await original(...args);
+        throw new Error("transient after commit");
+      });
+    const title = `recover-${randomUUID()}`;
+    await server()
+      .post("/api/v1/boards")
+      .set(auth(jwt))
+      .send({ title })
+      .expect(201);
+    expect(await db.board.count({ where: { title } })).toBe(1);
+  });
+
+  it("preserves the key when the post-commit read keeps failing", async () => {
+    const boards = app.get(BoardsService);
+    const original = boards.getAggregate.bind(boards);
+    const spy = jest
+      .spyOn(boards, "getAggregate")
+      .mockImplementation(async (...args) => {
+        await original(...args);
         throw new Error("after commit");
       });
-    const title = `once-${randomUUID()}`;
-    const send = () =>
-      server()
-        .post("/api/v1/boards")
-        .set(auth(jwt))
-        .set("Idempotency-Key", "review-post-commit-key")
-        .send({ title });
-    await send().expect(500);
-    const retry = await send().expect(409);
-    expect(retry.body.code).toBe("idempotency_in_progress");
-    expect(await db.board.count({ where: { title } })).toBe(1);
+    try {
+      const title = `once-${randomUUID()}`;
+      const send = () =>
+        server()
+          .post("/api/v1/boards")
+          .set(auth(jwt))
+          .set("Idempotency-Key", "review-post-commit-key")
+          .send({ title });
+      const first = await send().expect(503);
+      expect(first.body.code).toBe("board_read_failed");
+      const retry = await send().expect(409);
+      expect(retry.body.code).toBe("idempotency_in_progress");
+      expect(await db.board.count({ where: { title } })).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("serializes concurrent token edits and validates their final combination", async () => {

@@ -29,7 +29,7 @@ describes the shipped (server) mode.
 The left side is about the board:
 
 - the logo;
-- the **board title** — click it to rename the board;
+- the **board title** and its pencil — either opens the rename editor;
 - the **board switcher** (the chevron) — your boards, a new board, and
   archived boards;
 - the **bell** — your board invitations;
