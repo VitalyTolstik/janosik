@@ -368,6 +368,43 @@ describe("Boards API (e2e)", () => {
       ).toHaveLength(1);
     });
 
+    it("returns the board id when the create read itself fails", async () => {
+      const boards = app.get(BoardsService);
+      const readSpy = jest
+        .spyOn(boards, "getAggregate")
+        .mockRejectedValue(new Error("read failed"));
+      const key = randomUUID();
+      const body = { title: "Create read doom", template: "starter" };
+      const failed = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(503);
+      readSpy.mockRestore();
+      expect(failed.body).toMatchObject({
+        code: "board_read_failed",
+        retryable: true,
+        details: { boardId: expect.any(String) },
+      });
+
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(409);
+      const list = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        list.body.filter(
+          (board: { title: string }) => board.title === "Create read doom",
+        ),
+      ).toHaveLength(1);
+    });
+
     it("creates the starter through an account-wide admin PAT", async () => {
       const tokenResponse = await server()
         .post("/api/v1/users/me/tokens")

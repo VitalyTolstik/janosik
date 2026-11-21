@@ -52,6 +52,29 @@ describe("ApiClient — REST idempotency (TASK-180.2 M17)", () => {
     expect(keys[1]).toBe(keys[0]);
   });
 
+  it("does not retry an actionable starter 503", async () => {
+    let attempts = 0;
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async () => {
+        attempts += 1;
+        return json(
+          {
+            code: "starter_cleanup_failed",
+            retryable: true,
+            details: { boardId: "b-rec" },
+          },
+          503,
+        );
+      },
+    });
+    await expect(client.createBoard("Launch")).rejects.toMatchObject({
+      status: 503,
+      code: "starter_cleanup_failed",
+    });
+    expect(attempts).toBe(1);
+  });
+
   it("sends the first-run starter options in the create body", async () => {
     const bodies: unknown[] = [];
     const client = new ApiClient({

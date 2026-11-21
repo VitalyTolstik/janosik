@@ -1937,14 +1937,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     ): string | null | Promise<string | null> => {
       const resolved = title.trim() || fallbackTitle;
       if (serverMode) {
-        return trackBoardMutation(() => api.createBoard(resolved, options))
-          .then((created) => {
+        return trackBoardMutation(async () => {
+          try {
+            const created = await api.createBoard(resolved, options);
             if (!aliveRef.current) return null;
             apply({ type: "ADD_BOARD", board: created, remote: true });
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
-          })
-          .catch(async (error: unknown) => {
+          } catch (error) {
             // The starter board exists but its response was ambiguous. Open
             // that board instead of leaving the form to mint a second one.
             if (error instanceof ApiError) {
@@ -1953,10 +1953,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
                 boardId?: unknown;
                 details?: { boardId?: unknown } | null;
               } | null;
+              const code = body?.code;
               const boardId = body?.details?.boardId ?? body?.boardId;
               if (
-                (body?.code === "starter_cleanup_failed" ||
-                  body?.code === "starter_read_failed") &&
+                (code === "starter_cleanup_failed" ||
+                  code === "starter_read_failed" ||
+                  code === "board_read_failed") &&
                 typeof boardId === "string"
               ) {
                 try {
@@ -1964,7 +1966,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
                   if (!aliveRef.current) return null;
                   apply({ type: "ADD_BOARD", board: existing, remote: true });
                   setRoles((prev) => ({ ...prev, [existing.id]: "ADMIN" }));
-                  if (body.code === "starter_cleanup_failed") {
+                  if (
+                    code === "starter_cleanup_failed" ||
+                    code === "board_read_failed"
+                  ) {
                     toast.error(t("board.starterIncomplete"));
                   }
                   return existing.id;
@@ -1983,7 +1988,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
                 : t("sync.rejected"),
             );
             return null;
-          });
+          }
+        });
       }
       if (stateRef.current.length >= LIMITS.boardsCount) {
         toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));

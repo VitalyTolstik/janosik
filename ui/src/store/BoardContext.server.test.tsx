@@ -1196,6 +1196,7 @@ describe("BoardProvider server-mode failures and board management", () => {
     const server = new FakeServer([seedBoard()]);
     const recovered = { ...seedBoard(), id: "b-rec", title: "Recovered" };
     let boardReads = 0;
+    let posts = 0;
     vi.stubGlobal(
       "fetch",
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1204,6 +1205,7 @@ describe("BoardProvider server-mode failures and board management", () => {
           "http://api.test",
         );
         if (url.pathname === "/api/v1/boards" && init?.method === "POST") {
+          posts += 1;
           return new Response(
             JSON.stringify({
               code: "starter_cleanup_failed",
@@ -1230,6 +1232,7 @@ describe("BoardProvider server-mode failures and board management", () => {
     await waitFor(() =>
       expect(screen.getByTestId("board-count").textContent).toBe("2"),
     );
+    expect(posts).toBe(1);
     expect(boardReads).toBe(1);
     expect(
       await screen.findByText(

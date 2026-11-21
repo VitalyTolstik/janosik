@@ -398,7 +398,32 @@ export class BoardsService {
         });
         throw error;
       });
-    return this.getAggregate(board.id);
+    // The board and membership are committed. A failed read must not look
+    // like a failed create: retry briefly, then hand the caller a recoverable
+    // error with the board id so the UI can open it instead of creating a
+    // second board under a new key.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await this.getAggregate(board.id);
+      } catch {
+        if (attempt === 3) {
+          throw new ServiceUnavailableException({
+            message: "The board was created; retry the same request",
+            code: "board_read_failed",
+            retryable: true,
+            boardId: board.id,
+          });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+      }
+    }
+    // Unreachable; the loop either returns or throws.
+    throw new ServiceUnavailableException({
+      message: "The board was created; retry the same request",
+      code: "board_read_failed",
+      retryable: true,
+      boardId: board.id,
+    });
   }
 
   /**
