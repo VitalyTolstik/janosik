@@ -187,11 +187,13 @@ export function CardComments({
   const revealedFocusRef = useRef<string | null>(null);
   useEffect(() => {
     if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
-    revealedFocusRef.current = focusId;
     const row = Array.from(
       listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ?? [],
     ).find((element) => element.dataset.commentId === focusId);
     if (!row) return;
+    // Mark only a successful reveal: an older page can still bring the
+    // target later, while a found row must not be scrolled to twice.
+    revealedFocusRef.current = focusId;
     row.scrollIntoView?.({ block: "center" });
     row.focus?.({ preventScroll: true });
   }, [focusId, loaded, items.length]);

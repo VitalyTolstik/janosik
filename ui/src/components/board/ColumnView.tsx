@@ -441,7 +441,7 @@ function ColumnViewBody({
             ) : (
               <ul className="flex flex-col">
                 <li className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">
-                  {isFiltered && filterPending
+                  {isFiltered && filterPending && column.cardIds.length > 0
                     ? t("filter.searchingServer")
                     : isFiltered && column.cardIds.length > 0
                       ? t("filter.noMatch")

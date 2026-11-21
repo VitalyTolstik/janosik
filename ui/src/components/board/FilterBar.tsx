@@ -655,8 +655,6 @@ export function FilterBar({
         <div className="ml-auto flex items-center gap-2">
           <span
             data-testid="filter-match-count"
-            role="status"
-            aria-live="polite"
             className="whitespace-nowrap text-xs text-muted-foreground"
           >
             {matchPending

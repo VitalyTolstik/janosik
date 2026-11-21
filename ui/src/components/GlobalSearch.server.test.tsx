@@ -29,9 +29,13 @@ import { I18nProvider } from "@/i18n";
 const boardsRef = vi.hoisted(() => ({
   current: [] as Board[],
 }));
+const pendingBoardCountRef = vi.hoisted(() => ({ current: 0 }));
 
 vi.mock("@/store/BoardContext", () => ({
-  useBoard: () => ({ boards: boardsRef.current, pendingBoardCount: 0 }),
+  useBoard: () => ({
+    boards: boardsRef.current,
+    pendingBoardCount: pendingBoardCountRef.current,
+  }),
 }));
 
 function workspace(
@@ -105,6 +109,7 @@ async function openAndType(query: string) {
 describe("GlobalSearch server matches (TASK-177.13)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    pendingBoardCountRef.current = 0;
     boardsRef.current = [
       makeBoard([
         { id: "c-1", title: "Landing redesign" },
@@ -259,6 +264,7 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
       await screen.findByTestId("search-server-pending"),
     ).toHaveTextContent("Searching comments and attachments…");
     expect(screen.queryByText("Nothing found.")).toBeNull();
+    expect(screen.queryByTestId("search-results-status")).toBeNull();
 
     await act(async () => {
       release(
@@ -308,7 +314,48 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
     await openAndType("flaky");
     expect(
       await screen.findByTestId("search-server-truncated"),
-    ).toHaveTextContent("Showing the first 1 of 201 comment and file matches.");
+    ).toHaveTextContent("Showing 1 of 201 comment and file matches.");
+  });
+
+  it("does not claim hidden matches are shown while boards load", async () => {
+    pendingBoardCountRef.current = 1;
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace(
+        [
+          {
+            boardId: "b-1",
+            boardTitle: "Alpha",
+            cardId: "c-1",
+            cardTitle: "Landing redesign",
+            matchIn: "comment",
+            text: "flaky deploy",
+            commentId: "cm-1",
+          },
+          {
+            boardId: "b-missing",
+            boardTitle: "Not loaded",
+            cardId: "c-missing",
+            cardTitle: "Hidden hit",
+            matchIn: "attachment",
+            text: "flaky.pdf",
+            attachmentId: "at-hidden",
+          },
+        ],
+        201,
+        true,
+      ),
+    );
+
+    renderPalette();
+    await openAndType("flaky");
+    await screen.findByTestId("search-server-truncated");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByTestId("search-server-truncated")).toHaveTextContent(
+      "The server found 201 comment and file matches; some boards are still loading.",
+    );
+    expect(screen.getByTestId("search-server-truncated")).not.toHaveTextContent(
+      "Showing 1 of 201",
+    );
   });
 
   it("ignores a stale response that lands after a newer query", async () => {

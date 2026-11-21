@@ -988,6 +988,45 @@ describe("CardComments", () => {
     expect(scroll).toHaveBeenCalledTimes(1);
   });
 
+  it("reveals a deep-linked comment when its older page arrives", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments(
+      "card-1",
+      Array.from({ length: 51 }, (_, index) =>
+        comment({
+          id: `comment-${index}`,
+          text: `Comment ${index}`,
+          createdAt: 1_700_000_000_000 + index,
+        }),
+      ),
+    );
+    renderComments(
+      server,
+      false,
+      server.handle,
+      "card-1",
+      undefined,
+      "comment-50",
+    );
+
+    // The first page does not contain the target: no reveal is claimed yet.
+    await screen.findByText("Comment 0");
+    expect(screen.queryByText("Comment 50")).toBeNull();
+    expect(scroll).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByTestId("comments-show-older"));
+
+    const row = await screen.findByText("Comment 50");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(row.closest("li")).toHaveAttribute("data-search-highlight", "true");
+    expect(document.activeElement).toBe(row.closest("li"));
+  });
+
   it("leaves the card intact for an unknown comment deep link", async () => {
     const scroll = vi.fn();
     Object.defineProperty(Element.prototype, "scrollIntoView", {

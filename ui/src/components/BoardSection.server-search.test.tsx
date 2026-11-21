@@ -37,6 +37,12 @@ const SERVER_BOARD: Board = {
       cardIds: ["c-1", "c-2"],
       createdAt: 1,
     },
+    {
+      id: "col-empty",
+      title: "Empty",
+      cardIds: [],
+      createdAt: 1,
+    },
   ],
   cards: {
     "c-1": {
@@ -145,6 +151,13 @@ describe("BoardSection server search (TASK-177.13)", () => {
     expect(screen.getByTestId("filter-match-count")).toHaveTextContent(
       "Searching comments and attachments…",
     );
+    // A column that was empty before the query keeps its neutral copy.
+    expect(screen.getByText("No cards yet")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("status")
+        .filter((node) => node.textContent?.includes("Searching comments")),
+    ).toHaveLength(1);
 
     await act(async () => release(result("c-2")));
 

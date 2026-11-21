@@ -288,6 +288,17 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
       ),
     [boards, query, serverMatches],
   );
+  // Hits whose board is not loaded yet were filtered out by the merge; the
+  // truncation line must describe only what the palette can actually show.
+  const visibleServerMatches = useMemo(
+    () =>
+      rawHits.filter(
+        (hit) =>
+          hit.kind === "card" &&
+          (hit.matchIn === "comment" || hit.matchIn === "attachment"),
+      ).length,
+    [rawHits],
+  );
   // Cap each section separately (TASK-177.10): a board hit stays visible even
   // when the card list alone exceeds the palette cap.
   const groups = useMemo(
@@ -542,13 +553,17 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             data-testid="search-server-truncated"
             className="px-3 py-1.5 text-xs text-muted-foreground"
           >
-            {t("search.serverTruncated", {
-              shown: serverMatches.length,
-              total: serverResult.total,
-            })}
+            {pendingBoardCount > 0
+              ? t("search.serverTruncatedPending", {
+                  total: serverResult.total,
+                })
+              : t("search.serverTruncated", {
+                  shown: visibleServerMatches,
+                  total: serverResult.total,
+                })}
           </p>
         ) : null}
-        {query.trim() !== "" ? (
+        {query.trim() !== "" && !serverPending ? (
           <p
             role="status"
             aria-live="polite"
@@ -573,6 +588,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
               inputRef.current?.focus();
             }}
             data-testid="search-show-all"
+            className="max-sm:min-h-11"
           >
             {t("search.showAll")}
           </Button>

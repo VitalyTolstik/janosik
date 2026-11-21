@@ -164,12 +164,14 @@ export function CardAttachments({
   const revealedFocusRef = useRef<string | null>(null);
   useEffect(() => {
     if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
-    revealedFocusRef.current = focusId;
     const row = Array.from(
       listRef.current?.querySelectorAll<HTMLElement>("[data-attachment-id]") ??
         [],
     ).find((element) => element.dataset.attachmentId === focusId);
     if (!row) return;
+    // Mark only a successful reveal: a later refresh can still bring the
+    // target, while a found row must not be scrolled to twice.
+    revealedFocusRef.current = focusId;
     row.scrollIntoView?.({ block: "center" });
     row.focus?.({ preventScroll: true });
   }, [focusId, loaded, items.length]);

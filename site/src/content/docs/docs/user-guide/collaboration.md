@@ -157,11 +157,11 @@ A visitor to a live link sees `Live · read-only`; a snapshot shows
 ## Global search
 
 `Global search`, or Ctrl+K (Cmd+K on a Mac), searches card titles,
-descriptions, labels, checklist items, comments and attachment file names
-across every board. Comment and file matching needs a server connection; in
-local mode only the data stored in the boards is searched.
-
-![Global search results, grouped into cards and boards.](/screens/search.png)
+descriptions, labels, checklist items, comments and visible attachment file
+names across every board. Detached and inline uploads are not searchable
+because they cannot be revealed in the card's attachment list. Comment and file
+matching needs a server connection; in local mode only the data stored in the
+boards is searched.
 
 Results are grouped into `Cards` and `Boards`, and every row carries a text
 type badge — `Card`, `Board`, `Comment` or `Attachment` — so the reason for the
