@@ -98,6 +98,12 @@ describe("AttentionInbox (TASK-177.6)", () => {
           title: "Claim expired",
           data: { cardId: "c-2" },
         }),
+        item({
+          id: "handoff",
+          type: "agent.needs_human",
+          title: "Agent handed off",
+          data: { cardId: "c-3" },
+        }),
       ]),
     );
 
@@ -107,6 +113,9 @@ describe("AttentionInbox (TASK-177.6)", () => {
     expect(
       screen.getByRole("link", { name: "Open “Claim expired”" }),
     ).toHaveAttribute("href", cardHref("b-1", "c-2"));
+    expect(
+      screen.getByRole("link", { name: "Open “Agent handed off”" }),
+    ).toHaveAttribute("href", cardHref("b-1", "c-3"));
   });
 
   it("links approvals to the board approvals tab and focus one request", () => {
