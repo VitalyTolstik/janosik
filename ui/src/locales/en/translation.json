@@ -798,7 +798,6 @@
   "board.switcher.section.mine": "My boards",
   "board.switcher.section.shared": "Shared with me",
   "board.switcher.titleTooLong": "Board names can have up to {{limit}} characters.",
-  "board.untitled": "Untitled",
   "card.actions": "Card actions",
   "card.archive": "Archive",
   "card.archiveConfirmCancel": "Cancel",

@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { LIMITS } from "@janosik/shared";
 
 import App, { createAppRouter } from "@/App";
 import { STORAGE_KEY } from "@/store/board-persistence";
@@ -124,6 +125,62 @@ describe("App first run", () => {
         "Invite a teammate",
       ]);
     });
+  });
+
+  it("creates only one board when submit fires twice", async () => {
+    seedArchivedBoard();
+    render(<App router={createAppRouter()} />);
+
+    await userEvent.type(
+      await screen.findByTestId("empty-board-name"),
+      "Once only",
+    );
+    const create = screen.getByTestId("empty-create-board");
+    fireEvent.click(create);
+    fireEvent.click(create);
+
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/board\//));
+    await waitFor(() =>
+      expect(
+        storedBoards().filter((board) => board.title === "Once only"),
+      ).toHaveLength(1),
+    );
+  });
+
+  it("shows the local board limit instead of navigating past it", async () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(
+        Array.from({ length: LIMITS.boardsCount }, (_, index) => ({
+          id: `arch-${index}`,
+          title: `Archived ${index}`,
+          columns: [],
+          cards: {},
+          labels: [],
+          createdAt: 1,
+          updatedAt: 1,
+          archivedAt: 2,
+        })),
+      ),
+    );
+    render(<App router={createAppRouter()} />);
+
+    await userEvent.type(
+      await screen.findByTestId("empty-board-name"),
+      "One too many",
+    );
+    await userEvent.click(screen.getByTestId("empty-create-board"));
+
+    expect(
+      await screen.findByText(
+        `You can have at most ${LIMITS.boardsCount} boards`,
+      ),
+    ).toBeVisible();
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByTestId("empty-create-board")).toBeEnabled();
+    expect(
+      storedBoards().filter((board) => board.title === "One too many"),
+    ).toHaveLength(0);
   });
 
   it("renames through the visible pencil and keeps keyboard access", async () => {

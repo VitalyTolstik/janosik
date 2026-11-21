@@ -800,7 +800,6 @@
   "board.switcher.section.mine": "Мои доски",
   "board.switcher.section.shared": "Совместные",
   "board.switcher.titleTooLong": "В названии доски может быть не более {{limit}} символов.",
-  "board.untitled": "Без названия",
   "card.actions": "Действия с карточкой",
   "card.archive": "Архивировать",
   "card.archiveConfirmCancel": "Отмена",

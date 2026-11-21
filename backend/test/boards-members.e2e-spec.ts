@@ -5,6 +5,7 @@ import type { Board, BoardEnvelope } from "@janosik/shared";
 import { normalizeBoards } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
+import { CommandsService } from "@/commands/commands.service";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -231,6 +232,91 @@ describe("Boards API (e2e)", () => {
         .expect(201);
       expect(empty.body.columns).toEqual([]);
       expect(empty.body.cards).toEqual({});
+    });
+
+    it("replays a starter create and rejects invalid template fields", async () => {
+      const key = randomUUID();
+      const body = {
+        title: "Replay starter",
+        template: "starter",
+        templateLocale: "en",
+      };
+      const first = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(201);
+      const second = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(201);
+      expect(second.body).toEqual(first.body);
+
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Bad template", template: "nope" })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Bad locale", templateLocale: "ru" })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Bad locale",
+          template: "starter",
+          templateLocale: "de",
+        })
+        .expect(400);
+    });
+
+    it("discards the fresh board when the starter batch fails and retries the key", async () => {
+      const commands = app.get(CommandsService);
+      const spy = jest
+        .spyOn(commands, "applyBatch")
+        .mockRejectedValueOnce(new Error("starter failure"));
+      const key = randomUUID();
+      const body = { title: "Doomed starter", template: "starter" };
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(500);
+      spy.mockRestore();
+
+      const afterFailure = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        afterFailure.body.some(
+          (board: { title: string }) => board.title === "Doomed starter",
+        ),
+      ).toBe(false);
+
+      const retry = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(201);
+      expect(retry.body.title).toBe("Doomed starter");
+      const afterRetry = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        afterRetry.body.filter(
+          (board: { title: string }) => board.title === "Doomed starter",
+        ),
+      ).toHaveLength(1);
     });
 
     it("lists only the boards the caller is a member of", async () => {

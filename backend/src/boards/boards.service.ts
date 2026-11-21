@@ -401,6 +401,24 @@ export class BoardsService {
     return this.getAggregate(board.id);
   }
 
+  /**
+   * TASK-177.16: remove a board created moments ago when its starter command
+   * batch failed. The starter runs in a second transaction, so without this
+   * the empty board would survive and a retried idempotency key could mint a
+   * duplicate. Membership is removed first because the relation is required.
+   */
+  async discardFreshBoard(boardId: string): Promise<boolean> {
+    try {
+      await this.prisma.$transaction([
+        this.prisma.boardMember.deleteMany({ where: { boardId } }),
+        this.prisma.board.deleteMany({ where: { id: boardId } }),
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** The whole board aggregate in the frontend `Board` shape (§7.4). */
   async getAggregate(boardId: string): Promise<BoardAggregate> {
     const snapshot = await this.getAggregateWithSeq(boardId);

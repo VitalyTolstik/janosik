@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import {
   createBrowserRouter,
   RouterProvider,
@@ -87,6 +87,7 @@ export function NoBoardRoute() {
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState<"empty" | "starter" | null>(null);
+  const submitRef = useRef(false);
 
   const allArchived = allBoardsArchived(boards);
   const trimmed = title.trim();
@@ -95,15 +96,22 @@ export function NoBoardRoute() {
   const starterLocale: BoardStarterLocale = lang.startsWith("ru") ? "ru" : "en";
 
   const create = async (template?: "starter") => {
-    if (!canCreate) return;
+    // Two Enter presses (or a click plus Enter) can arrive before the disabled
+    // state paints; the ref makes the guard synchronous.
+    if (!canCreate || submitRef.current) return;
+    submitRef.current = true;
     setBusy(template ?? "empty");
-    const id = await addBoard(
-      trimmed,
-      undefined,
-      template ? { template, templateLocale: starterLocale } : undefined,
-    );
-    setBusy(null);
-    if (id) navigate(routes.board(id));
+    try {
+      const id = await addBoard(
+        trimmed,
+        undefined,
+        template ? { template, templateLocale: starterLocale } : undefined,
+      );
+      if (id) navigate(routes.board(id));
+    } finally {
+      submitRef.current = false;
+      setBusy(null);
+    }
   };
 
   return (
@@ -143,7 +151,7 @@ export function NoBoardRoute() {
             <input
               id="first-board-name"
               name="board-title"
-              autoFocus
+              autoFocus={!allArchived}
               value={title}
               maxLength={LIMITS.boardTitle}
               onChange={(event) => setTitle(event.target.value)}

@@ -298,7 +298,7 @@ interface BoardActionsValue {
     title: string,
     fallbackTitle?: string,
     options?: AddBoardOptions,
-  ) => string | Promise<string | null>;
+  ) => string | null | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void | Promise<void>;
   /**
@@ -1934,7 +1934,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       title: string,
       fallbackTitle = "Untitled",
       options?: AddBoardOptions,
-    ): string | Promise<string | null> => {
+    ): string | null | Promise<string | null> => {
       const resolved = title.trim() || fallbackTitle;
       if (serverMode) {
         return trackBoardMutation(() => api.createBoard(resolved, options))
@@ -1956,6 +1956,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             );
             return null;
           });
+      }
+      if (stateRef.current.length >= LIMITS.boardsCount) {
+        toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));
+        return null;
       }
       const id = createId();
       const now = Date.now();

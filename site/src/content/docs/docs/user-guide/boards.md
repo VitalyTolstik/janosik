@@ -12,8 +12,9 @@ of cards. The board title lives in the header, next to the board switcher.
 
 ### Create a board
 
-When you have no boards, the home screen asks for a name first and offers two
-choices: `Create empty board` or `Start with an example`. The example adds
+When you have no active boards (or all boards are archived), the home screen
+asks for a name first and offers two choices: `Create empty board` or `Start
+with an example`. The example adds
 `To do`, `In progress` and `Done`, a welcome card and a `First steps`
 checklist, all as ordinary commands. From then on, open the board switcher and
 use the `New board` row. Type a name and press Enter. You can also type a name

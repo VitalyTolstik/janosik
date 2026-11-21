@@ -349,11 +349,10 @@ describe("BoardSwitcher", () => {
       await screen.findByRole("button", { name: "Yes, archive" }),
     );
     // The empty-state screen replaces the board (never stranded on an
-    // archived board). Its autofocused name field closes the header popover,
-    // so restoration uses the empty state's own Archived control.
+    // archived board), and the still-open popover offers restoration. The
+    // form does not autofocus here, so it must not steal focus from it.
     expect(await screen.findByTestId("empty-create-board")).toBeInTheDocument();
     expect(screen.getByText("All boards are archived.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Archived" }));
     const archived = await screen.findByTestId("archived-section");
     expect(archived).toHaveTextContent("Alpha");
     // Restoring brings the board (and the route) back.
