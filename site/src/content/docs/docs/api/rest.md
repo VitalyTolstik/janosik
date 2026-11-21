@@ -840,7 +840,7 @@ The stream carries six event types:
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
 | `command`    | `seq`, `action`, `actorId`, `actorType?`, `commandId`, `touches`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | a committed command                            |
 | `presence`   | `users[]`                                                      | who is connected; no `seq`                     |
-| `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated` or `removed` |
+| `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated`, `removed` (admin) or `left` (voluntary) |
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | non-reducer activity, e.g. a new comment |
 | `agent`      | `op` (`started`, `paused`, `resumed`, `heartbeat`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition; `heartbeat` is a throttled session liveness refresh |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
@@ -854,8 +854,8 @@ token; it is omitted on frames written before the field existed, so treat a
 missing value as `"human"`. The card history marks agent entries with an
 "Agent" badge.
 
-When the removed user is the caller, the server sends the `membership` frame
-as the last one and closes the stream.
+When the caller is removed by an admin or leaves voluntarily, the server sends
+the `membership` frame as the last one and closes the stream.
 
 `POST /boards/:id/presence` is the heartbeat. The SSE stream has no back
 channel, so a tab proves liveness with this ping every 25 seconds; a session
