@@ -98,7 +98,7 @@ describe("CardItem fixed tile layout", () => {
     expect(labels.children.length).toBe(6);
   });
 
-  it("keeps the full title width on a phone when the card has no labels", () => {
+  it("keeps the normal 75% title width on a phone when the card has no labels", () => {
     renderCard(baseCard, []);
     const title = screen.getByTestId("card-title");
     expect(title.className).toContain("w-3/4");

@@ -29,7 +29,7 @@ async function seededCard(page: Page, board: BoardFixture) {
   const labels = card.getByTestId("card-labels");
   const chip = labels.getByText("Design", { exact: true });
   await expect(chip).toBeVisible();
-  return { card, labels, chip };
+  return { card, labels, chip, title };
 }
 
 async function expectLabelInsideLane(
@@ -170,7 +170,7 @@ test.describe("1440 px desktop control", () => {
     page,
     board,
   }) => {
-    const { card, labels, chip } = await seededCard(page, board);
+    const { card, labels, chip, title } = await seededCard(page, board);
     await expectNoPageOverflow(page, "1440 board");
     await card.hover();
 
@@ -180,6 +180,16 @@ test.describe("1440 px desktop control", () => {
     );
     // sm:py-0 — the safe-area padding must not leak into the desktop header.
     expect(paddingTop).toBeCloseTo(0, 0);
+
+    // The desktop face keeps the shipped 75/25 split: a labelled card must
+    // not pick up the phone's 50% title lane.
+    const titleBox = await title.boundingBox();
+    const titleRowBox = await title.locator("xpath=..").boundingBox();
+    expect(titleBox, "title has no box").not.toBeNull();
+    expect(titleRowBox, "title row has no box").not.toBeNull();
+    if (titleBox && titleRowBox) {
+      expect(titleBox.width / titleRowBox.width).toBeCloseTo(0.75, 1);
+    }
 
     await expectLabelInsideLane(labels, chip, { full: false });
     await expectOutsideActions(labels, chip, [

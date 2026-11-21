@@ -76,13 +76,15 @@ html.light .agent-control-surface {
    prototype frame (spec §3.3). */
 @media (min-width: 761px) and (max-width: 1279px) {
   .agent-control-surface.ac-modal {
-    top: 56px;
+    /* TASK-177.18: the header grows by the top safe inset, so the sheet and
+       its scrim start below it; the height subtracts the same inset. */
+    top: calc(56px + env(safe-area-inset-top));
     width: calc(100vw - 20px);
-    height: calc(100dvh - 70px);
-    /* TASK-177.18: a landscape phone/tablet sheet still sits under the
-       notch; keep its content inside the horizontal safe area. */
-    padding-left: max(10px, env(safe-area-inset-left));
-    padding-right: max(10px, env(safe-area-inset-right));
+    height: calc(100dvh - 70px - env(safe-area-inset-top));
+    /* A landscape phone/tablet sheet still sits under the notch; keep its
+       content inside the horizontal safe area. */
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
   }
 }
 
@@ -100,7 +102,7 @@ html.light .ac-scrim {
 
 @media (min-width: 761px) and (max-width: 1279px) {
   .ac-scrim {
-    top: 52px;
+    top: calc(52px + env(safe-area-inset-top));
   }
 }
 
@@ -1009,7 +1011,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 @media (max-width: 1100px) {
   .agent-control-surface.ac-modal {
     width: calc(100vw - 22px);
-    height: min(722px, calc(100dvh - 70px));
+    height: min(722px, calc(100dvh - 70px - env(safe-area-inset-top)));
   }
 }
 

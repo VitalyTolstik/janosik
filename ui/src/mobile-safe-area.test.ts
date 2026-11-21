@@ -71,29 +71,57 @@ describe("mobile safe areas (TASK-177.18)", () => {
       expect(dialog).toContain(`env(safe-area-inset-${side})`);
     }
     expect(accountDialog).toContain("pt-[env(safe-area-inset-top)]");
-    // Unconditional, so a 904 px landscape sheet is covered too.
+    // Below `md` the full-screen sheet owns the top inset; from `md` the
+    // header-aware `top`/height calculation handles it (no double padding).
     expect(boardSettingsShell).toContain(
-      "pt-[max(0px,env(safe-area-inset-top))]",
+      "max-md:pt-[env(safe-area-inset-top)]",
     );
     expect(boardSettingsShell).toContain(
       "pl-[max(0px,env(safe-area-inset-left))]",
+    );
+    expect(boardSettingsShell).toContain(
+      "md:top-[calc(56px_+_env(safe-area-inset-top))]",
+    );
+    expect(boardSettingsShell).toContain(
+      "h-[min(47.25rem,calc(100dvh_-_4.75rem_-_env(safe-area-inset-top)))]",
     );
     expect(agentControlCss).toContain("padding-top: env(safe-area-inset-top)");
     expect(agentControlCss).toContain(
       "padding-right: env(safe-area-inset-right)",
     );
     // Card-dialog header: the close button and the ⋮ menu both respect the
-    // status bar/notch; the menu is offset by the close button's width + gap.
+    // status bar/notch. Mobile close is 44 px (+4 px gap → 3.75rem); from
+    // `md` it is 32 px (+4 px gap → 2.25rem).
     expect(cardDialog).toContain(
-      "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_2.25rem)]",
+      "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3.75rem)]",
+    );
+    expect(cardDialog).toContain(
+      "md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]",
     );
     expect(cardDialog).toContain("top-[max(0.75rem,env(safe-area-inset-top))]");
     expect(cardDialog).toContain(
       'closeClassName="right-[max(0.75rem,env(safe-area-inset-right))]',
     );
-    // Tablet/landscape sheet (761–1279) keeps the horizontal insets.
+    expect(cardDialog).toContain(
+      "flex h-11 w-11 items-center justify-center md:h-8 md:w-8",
+    );
+    // Tablet/landscape sheet (761–1279) keeps the horizontal insets and
+    // starts below the safe-area-aware header; its height subtracts the same
+    // inset, as does the ≤1100 override. The scrim follows the header too.
     expect(agentControlCss).toMatch(
-      /@media \(min-width: 761px\) and \(max-width: 1279px\) \{[\s\S]*?padding-left: max\(10px, env\(safe-area-inset-left\)\)/,
+      /@media \(min-width: 761px\) and \(max-width: 1279px\) \{[\s\S]*?padding-left: max\(0px, env\(safe-area-inset-left\)\)/,
+    );
+    expect(agentControlCss).toContain(
+      "top: calc(56px + env(safe-area-inset-top));",
+    );
+    expect(agentControlCss).toContain(
+      "height: calc(100dvh - 70px - env(safe-area-inset-top));",
+    );
+    expect(agentControlCss).toContain(
+      "top: calc(52px + env(safe-area-inset-top));",
+    );
+    expect(agentControlCss).toContain(
+      "height: min(722px, calc(100dvh - 70px - env(safe-area-inset-top)));",
     );
     // The full-screen command palettes override p-0, so re-add the insets.
     expect(globalSearch).toContain("max-sm:pb-[env(safe-area-inset-bottom)]");
