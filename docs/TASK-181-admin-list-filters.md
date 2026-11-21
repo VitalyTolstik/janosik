@@ -1630,8 +1630,9 @@ already in `main` @ `002a31ec`; do not start 181.2 on an older base. TASK-176.8â
 - Docs match the shipped UI; no dead links; EN/RU parity.
 - `npm run format:check`, lint, typecheck, unit/shared/backend/e2e/browser suites
   green; no test expectations weakened.
-- 390 has no horizontal overflow; keyboard-only flow works; axe/manual a11y
-  checklist has no new violations.
+- 390 has no horizontal overflow; keyboard-only flow works; the manual admin
+  a11y checklist has no new violations. The automated axe suite covers the
+  user app separately.
 - No regressions in existing admin URLs, global search, bulk actions or
   `returnTo`.
 - Pass the 25k moderation and content qualifications before rollout. The

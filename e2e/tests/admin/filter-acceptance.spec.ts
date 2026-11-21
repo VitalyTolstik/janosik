@@ -42,9 +42,6 @@ for (const locale of ["en", "ru"] as const) {
         labelId,
         on: true,
       });
-      // A second card keeps the header pluralization realistic ("2 cards").
-      await board.card(todo, "Filter acceptance other");
-
       await loginAsMaster(page, ownerCredentials());
       await page.setViewportSize({ width, height: 900 });
       const query = new URLSearchParams({

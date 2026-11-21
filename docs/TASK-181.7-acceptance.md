@@ -178,9 +178,10 @@ The behavioural matrix is covered by the existing admin specs:
 1440/1024/390), `content-filters.spec.ts` (boards/columns/labels/checklists/
 links/users), `moderation-filters.spec.ts` (comments/files/inline badges) and
 `audit.spec.ts` (audit/commands/activity, OPERATOR actor resolution). The
-keyboard-only chip removal, focus return and reduced-motion checks remain in
-those suites. The acceptance matrix above additionally asserts the exact chip
-text, URL values, result total and selected period tab at every width/locale.
+keyboard-only chip removal and focus return remain in those suites; the shell's
+reduced-motion path is exercised by `redesign.spec.ts`. The acceptance matrix
+above additionally asserts the chip labels, URL values, result total and
+selected period tab at every width/locale.
 
 Automated axe coverage in this repository targets the user app
 (`e2e/tests/app/a11y/card.spec.ts`). The admin shell has pre-existing contrast

@@ -443,8 +443,8 @@ uploaded to cards`.
 | Column | Value |
 | --- | --- |
 | File | a thumbnail, the file name and a download control |
-| Card | card title, linked |
 | Board | board title, linked |
+| Card | card title, linked |
 | Size | the file size |
 | Type | the MIME type |
 | Encode | the video transcode state: `none`, `pending`, `done` or `failed` |
