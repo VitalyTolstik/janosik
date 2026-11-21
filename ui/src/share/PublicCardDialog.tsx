@@ -286,7 +286,7 @@ function PublicComments({
                 <p className="text-xs text-muted-foreground">
                   {author !== undefined
                     ? userLabel(author.displayName, "")
-                    : t("share.public.anonymous")}
+                    : (comment.authorName ?? t("share.public.anonymous"))}
                 </p>
                 <p className="whitespace-pre-wrap break-words text-sm">
                   {comment.text.slice(0, LIMITS.comment)}

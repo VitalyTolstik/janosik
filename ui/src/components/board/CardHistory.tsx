@@ -273,7 +273,10 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
     entry.actorType === "admin"
       ? t("activity.administrator")
       : entry.actorId
-        ? userLabel(member?.displayName ?? null, member?.email ?? "")
+        ? userLabel(
+            member?.displayName ?? entry.actorName ?? null,
+            member?.email ?? entry.actorEmail ?? "",
+          )
         : "";
 
   // An assignee entry names its subject in the sentence (TASK-49) — the

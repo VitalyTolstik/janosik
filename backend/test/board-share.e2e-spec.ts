@@ -762,12 +762,17 @@ describe("Public board shares (e2e)", () => {
         displayName: author.displayName,
       }),
     );
-    expect(
-      (await server().get(`${base}/cards/${cardId}/comments`).expect(200)).body
-        .items,
-    ).toEqual([
-      expect.objectContaining({ id: comment.id, text: comment.text }),
+    const frozenComments = (
+      await server().get(`${base}/cards/${cardId}/comments`).expect(200)
+    ).body.items;
+    expect(frozenComments).toEqual([
+      expect.objectContaining({
+        id: comment.id,
+        text: comment.text,
+        authorName: expect.any(String),
+      }),
     ]);
+    expect(frozenComments[0]).not.toHaveProperty("authorEmail");
     await server()
       .get(`${base}/attachments/${file.id}/content`)
       .expect(200, "published bytes");
@@ -995,6 +1000,8 @@ describe("Public board shares (e2e)", () => {
       .expect(200);
     expect(page.body.items).toHaveLength(1);
     expect(page.body.items[0].text).toBe("public comment");
+    expect(page.body.items[0]).toHaveProperty("authorName");
+    expect(page.body.items[0]).not.toHaveProperty("authorEmail");
   });
 
   it("serves a shared attachment as a download, never inline (TASK-76)", async () => {

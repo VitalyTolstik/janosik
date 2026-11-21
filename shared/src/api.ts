@@ -415,8 +415,8 @@ export type MembershipChange = "accepted" | "updated" | "removed" | "left";
 
 /**
  * Server-sent event: a board's member directory changed (TASK-36). Open
- * member lists re-read the directory; `removed` for the removed user
- * themselves closes their stream and drops the board.
+ * member lists re-read the directory; `left` (voluntary) and `removed`
+ * (admin action) close that user's stream and drop the board.
  */
 export interface MembershipSseEvent {
   type: "membership";

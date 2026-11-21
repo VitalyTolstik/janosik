@@ -24,7 +24,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   accepted `ADMIN` remains; the last admin gets
   `409 { code: "last_admin", action: "leave" }` and the button explains why it
   is disabled. The route is session-only. The membership row is removed, the
-  feed records `member_left`, and a `membership: removed` SSE frame closes the
+  feed records `member_left`, and a `membership: left` SSE frame closes the
   leaver's stream. The board disappears from the switcher, direct board URLs
   answer `403`, and authored cards/comments keep their original attribution.
   Admin remove-other behaviour (`DELETE /boards/:id/members/:userId`) is

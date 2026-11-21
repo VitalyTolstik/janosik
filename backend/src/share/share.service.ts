@@ -1126,6 +1126,8 @@ function toPublicComment(comment: CommentDto): CommentDto {
   delete copy.apiTokenId;
   delete copy.agentSessionId;
   delete copy.agentName;
+  // The public contour never exposes an email; the display name is enough.
+  delete copy.authorEmail;
   return copy;
 }
 

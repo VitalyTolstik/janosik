@@ -104,7 +104,7 @@ test("a promoted member can manage the member list live", async ({
   await expectStillAlive(partnerBrowser.page);
 });
 
-test("the last admin cannot be demoted or removed", async ({
+test("the last admin cannot be demoted or leave", async ({
   page,
   board,
   partner,
