@@ -61,9 +61,7 @@ function searchUi() {
 }
 
 async function search(query: string) {
-  fireEvent.click(
-    screen.getByRole("button", { name: "Search cards and boards" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Global search" }));
   const input = await screen.findByTestId("global-search-input");
   await userEvent.type(input, query);
   await waitFor(
