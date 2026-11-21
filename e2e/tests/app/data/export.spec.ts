@@ -90,5 +90,5 @@ test("reports a successful export", async ({ page, board }) => {
 
   await exportJsonFromMenu(page);
 
-  await expectToast(page, "Board exported");
+  await expectToast(page, "All boards exported (1)");
 });

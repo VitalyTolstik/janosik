@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -21,7 +22,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
-import { BoardProvider } from "@/store/BoardContext";
+import { BoardProvider, useBoardActions } from "@/store/BoardContext";
 import { FakeServer } from "@/test/fake-server";
 
 /**
@@ -43,6 +44,13 @@ function boardJson(id: string, title: string) {
   });
 }
 
+let boardActions: ReturnType<typeof useBoardActions> | null = null;
+
+function BoardActionsProbe() {
+  boardActions = useBoardActions();
+  return null;
+}
+
 function renderSwitcher(initialUrl = routes.board("b-1")) {
   return render(
     <ThemeProvider>
@@ -54,6 +62,7 @@ function renderSwitcher(initialUrl = routes.board("b-1")) {
                 <BoardProvider>
                   <BoardTitle />
                   <BoardSwitcher />
+                  <BoardActionsProbe />
                   <Routes>
                     <Route path={routes.home} element={<NoBoardRoute />} />
                     <Route
@@ -121,9 +130,38 @@ describe("BoardSwitcher", () => {
     localStorage.setItem("janosik-boards", JSON.stringify([board]));
     renderSwitcher();
     await openSwitcher();
-    expect(screen.getByRole("row", { name: /Alpha/ })).toHaveTextContent(
-      "Alpha1",
-    );
+    const row = screen.getByRole("row", { name: /Alpha/ });
+    expect(row).toHaveTextContent("Alpha1");
+    expect(within(row).getByLabelText("1 active card")).toHaveTextContent("1");
+  });
+
+  it("updates the count when a card is archived and restored", async () => {
+    const board = JSON.parse(boardJson("b-1", "Alpha"));
+    board.columns[0].cardIds = ["active"];
+    board.cards = {
+      active: {
+        id: "active",
+        title: "Active",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    localStorage.setItem("janosik-boards", JSON.stringify([board]));
+    renderSwitcher();
+    await openSwitcher();
+
+    const row = screen.getByRole("row", { name: /Alpha/ });
+    expect(row).toHaveTextContent("Alpha1");
+    expect(within(row).getByLabelText("1 active card")).toHaveTextContent("1");
+
+    act(() => boardActions?.archiveCard("active"));
+    await waitFor(() => expect(row).toHaveTextContent("Alpha0"));
+    expect(within(row).getByLabelText("0 active cards")).toHaveTextContent("0");
+
+    act(() => boardActions?.unarchiveCard("active", "b-1-col"));
+    await waitFor(() => expect(row).toHaveTextContent("Alpha1"));
+    expect(within(row).getByLabelText("1 active card")).toHaveTextContent("1");
   });
 
   it("filters boards by search query", async () => {
