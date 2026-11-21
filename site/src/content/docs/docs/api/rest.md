@@ -55,7 +55,7 @@ design (they are not reducer actions). Content lives in the command log.
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
 | `GET`    | `/boards/search`              | user        | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
-| `GET`    | `/boards/:id/search`          | member      | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[] }` |
+| `GET`    | `/boards/:id/search`          | member      | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[]; matchesTotal: number; matchesTruncated: boolean }` |
 
 `GET /boards` lists the boards where the caller is an accepted member, newest
 first, each with a card and column counter and the caller's role. A pending
@@ -98,8 +98,10 @@ name contains `q` (case-insensitive substring). `cardIds` is complete and stays
 the compact MCP-facing projection; `matches` adds `matchIn`, a short snippet
 for description/checklist/comment/attachment hits and the matched
 `commentId`/`attachmentId` for deep links. The match list is deduped per
-card/kind and capped at 200. `includeMatches=0` (or `false`) keeps `cardIds`
-complete while returning `matches: []`, which is what the board filter uses.
+card/kind and capped at 200; `matchesTotal` and `matchesTruncated` report when
+the explanation list is incomplete while `cardIds` stays complete.
+`includeMatches=0` (or `false`) keeps `cardIds` complete while returning
+`matches: []` and zeroed match totals, which is what the board filter uses.
 It reaches text that is not part of the board aggregate; hidden inline and
 `descriptionDetached` uploads are excluded because they cannot be revealed in
 the card's attachment list. A query longer than 200 characters, or a repeated

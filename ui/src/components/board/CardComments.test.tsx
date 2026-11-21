@@ -1001,7 +1001,7 @@ describe("CardComments", () => {
         comment({
           id: `comment-${index}`,
           text: `Comment ${index}`,
-          createdAt: 1_700_000_000_000 + index,
+          createdAt: 1_700_000_000_000 - index,
         }),
       ),
     );

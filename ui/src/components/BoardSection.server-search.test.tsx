@@ -66,7 +66,12 @@ const SERVER_BOARD: Board = {
 };
 
 function result(cardId: string): BoardCardSearchResult {
-  return { cardIds: [cardId], matches: [] };
+  return {
+    cardIds: [cardId],
+    matches: [],
+    matchesTotal: 0,
+    matchesTruncated: false,
+  };
 }
 
 function renderBoard() {

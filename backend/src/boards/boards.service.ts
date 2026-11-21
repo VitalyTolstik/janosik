@@ -473,7 +473,14 @@ export class BoardsService {
     includeMatches = true,
   ): Promise<BoardCardSearchResult> {
     const query = normalizeSearchQuery(q);
-    if (query === null) return { cardIds: [], matches: [] };
+    if (query === null) {
+      return {
+        cardIds: [],
+        matches: [],
+        matchesTotal: 0,
+        matchesTruncated: false,
+      };
+    }
     const contains = { contains: query, mode: "insensitive" as const };
     const cardWhere = {
       column: { boardId },
@@ -521,13 +528,25 @@ export class BoardsService {
     for (const comment of comments) addId(comment.cardId);
     for (const attachment of attachments) addId(attachment.cardId);
 
-    if (!includeMatches) return { cardIds: ids, matches: [] };
+    if (!includeMatches) {
+      return {
+        cardIds: ids,
+        matches: [],
+        matchesTotal: 0,
+        matchesTruncated: false,
+      };
+    }
 
     const [
       detailCards,
       detailChecklistItems,
       detailComments,
       detailAttachments,
+      titleCards,
+      descriptionCards,
+      checklistMatches,
+      commentMatches,
+      attachmentMatches,
     ] = await Promise.all([
       this.prisma.card.findMany({
         where: {
@@ -562,8 +581,45 @@ export class BoardsService {
         orderBy: { createdAt: "desc" },
         take: BOARD_SEARCH_MATCH_LIMIT,
       }),
+      // Complete per-kind card sets for the truncation signal. They select
+      // ids only, so `cardIds` stays complete while the explanation list can
+      // be honestly marked incomplete when its raw-row cap cut it short.
+      this.prisma.card.findMany({
+        where: { ...cardWhere, title: contains },
+        select: { id: true },
+      }),
+      this.prisma.card.findMany({
+        where: { ...cardWhere, description: contains },
+        select: { id: true },
+      }),
+      this.prisma.checklistItem.findMany({
+        where: {
+          text: contains,
+          deletedAt: null,
+          checklist: { card: cardWhere },
+        },
+        select: { checklist: { select: { cardId: true } } },
+      }),
+      this.prisma.comment.findMany({
+        where: { text: contains, deletedAt: null, card: cardWhere },
+        select: { cardId: true },
+      }),
+      this.prisma.attachment.findMany({
+        where: {
+          fileName: contains,
+          ...CARD_ATTACHMENT_WHERE,
+          card: cardWhere,
+        },
+        select: { cardId: true },
+      }),
     ]);
 
+    const matchesTotal =
+      new Set(titleCards.map((card) => card.id)).size +
+      new Set(descriptionCards.map((card) => card.id)).size +
+      new Set(checklistMatches.map((item) => item.checklist.cardId)).size +
+      new Set(commentMatches.map((comment) => comment.cardId)).size +
+      new Set(attachmentMatches.map((attachment) => attachment.cardId)).size;
     const matches: BoardSearchMatch[] = [];
     const seenMatches = new Set<string>();
     const addMatch = (match: BoardSearchMatch) => {
@@ -610,7 +666,12 @@ export class BoardsService {
         attachmentId: attachment.id,
       });
     }
-    return { cardIds: ids, matches };
+    return {
+      cardIds: ids,
+      matches,
+      matchesTotal,
+      matchesTruncated: matchesTotal > matches.length,
+    };
   }
 
   /**

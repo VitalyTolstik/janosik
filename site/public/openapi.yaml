@@ -449,7 +449,8 @@ paths:
         complete and remains the compact MCP-facing list. `matches` adds the
         match kind, a short snippet and the comment/attachment row id for deep
         links; it is capped at 200 and can be omitted with `includeMatches=0`
-        (the board filter uses ids only).
+        (the board filter uses ids only). `matchesTotal` / `matchesTruncated`
+        say whether the explanation list is complete.
       parameters:
         - name: q
           in: query
@@ -3951,7 +3952,7 @@ components:
           description: Present on an attachment match.
     BoardCardSearchResult:
       type: object
-      required: [cardIds, matches]
+      required: [cardIds, matches, matchesTotal, matchesTruncated]
       properties:
         cardIds:
           type: array
@@ -3963,6 +3964,14 @@ components:
           description: Deduped per card/kind, capped at 200.
           items:
             $ref: "#/components/schemas/BoardSearchMatch"
+        matchesTotal:
+          type: integer
+          description: |
+            Distinct card/kind matches before the bounded detail list. `0`
+            when `includeMatches=0`.
+        matchesTruncated:
+          type: boolean
+          description: Whether `matchesTotal` exceeds the returned `matches`.
     WorkspaceCommentSearchMatch:
       type: object
       required: [matchIn, boardId, boardTitle, cardId, cardTitle, commentId]

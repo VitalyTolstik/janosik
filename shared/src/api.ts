@@ -868,6 +868,10 @@ export interface BoardSearchMatch {
 export interface BoardCardSearchResult {
   cardIds: string[];
   matches: BoardSearchMatch[];
+  /** Distinct card/kind matches before the bounded detail list. */
+  matchesTotal: number;
+  /** Whether `matchesTotal` exceeds the returned `matches`. */
+  matchesTruncated: boolean;
 }
 
 interface WorkspaceSearchMatchBase {

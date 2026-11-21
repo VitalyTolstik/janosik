@@ -276,6 +276,11 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     ? serverResult.matches
     : NO_SERVER_MATCHES;
   const serverTruncated = serverForQuery && serverResult.truncated;
+  // Matches on boards that were not hydrated yet are filtered out of the
+  // rendered list. While hydration is pending the palette is partial, not
+  // empty: the total comes from the server even when no row can be shown.
+  const serverPartial =
+    serverForQuery && pendingBoardCount > 0 && serverResult.total > 0;
 
   // Raw hits are memoized separately from grouping so Show all only
   // re-slices the array instead of re-running the whole cross-board search.
@@ -288,17 +293,6 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
       ),
     [boards, query, serverMatches],
   );
-  // Hits whose board is not loaded yet were filtered out by the merge; the
-  // truncation line must describe only what the palette can actually show.
-  const visibleServerMatches = useMemo(
-    () =>
-      rawHits.filter(
-        (hit) =>
-          hit.kind === "card" &&
-          (hit.matchIn === "comment" || hit.matchIn === "attachment"),
-      ).length,
-    [rawHits],
-  );
   // Cap each section separately (TASK-177.10): a board hit stays visible even
   // when the card list alone exceeds the palette cap.
   const groups = useMemo(
@@ -310,6 +304,11 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     [rawHits, showAll],
   );
   const { cards: cardHits, boards: boardHits } = groups;
+  // The truncation line describes rows the palette actually renders: the
+  // default 20-row cap (or the expanded cap) and only hydrated boards.
+  const visibleServerMatches = cardHits.filter(
+    (hit) => hit.matchIn === "comment" || hit.matchIn === "attachment",
+  ).length;
   const boardOffset = cardHits.length;
   const hits = useMemo(() => [...groups.cards, ...groups.boards], [groups]);
 
@@ -453,7 +452,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
             {t("search.serverPending")}
           </p>
-        ) : hits.length === 0 ? (
+        ) : hits.length === 0 && !serverPartial ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {t("search.empty")}
           </p>
@@ -563,7 +562,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                 })}
           </p>
         ) : null}
-        {query.trim() !== "" && !serverPending ? (
+        {query.trim() !== "" && !serverPending && !serverPartial ? (
           <p
             role="status"
             aria-live="polite"

@@ -58,7 +58,7 @@ REST. Эти операции не являются действиями ред�
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`               | нет               | `{ status: "ok" }` |
 | `GET`    | `/boards/search`              | пользователь          | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
 | `GET`    | `/boards/:id/export`          | участник              | нет               | `BoardEnvelope`    |
-| `GET`    | `/boards/:id/search`          | участник              | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[] }` |
+| `GET`    | `/boards/:id/search`          | участник              | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[]; matchesTotal: number; matchesTruncated: boolean }` |
 
 `GET /boards` перечисляет доски, где вызывающий является принятым участником,
 сначала новые, каждая со счётчиком карточек и колонок и ролью вызывающего.
@@ -96,9 +96,11 @@ JSON-объект, либо как сырую JSON-строку; сервер в
 и остаётся компактной проекцией для MCP; `matches` добавляет `matchIn`,
 короткий фрагмент для описания/чек-листа/комментария/вложения и `commentId` /
 `attachmentId` для глубоких ссылок. Список совпадений дедуплицируется по
-карточке/типу и ограничен 200. `includeMatches=0` (или `false`) сохраняет
-полный `cardIds`, но возвращает `matches: []` — так его запрашивает фильтр
-доски. Эндпоинт достаёт текст, которого нет в агрегате доски; скрытые
+карточке/типу и ограничен 200; `matchesTotal` и `matchesTruncated` сообщают,
+что пояснение неполно, при этом `cardIds` остаётся полным.
+`includeMatches=0` (или `false`) сохраняет полный `cardIds`, но возвращает
+`matches: []` и нулевые счётчики — так его запрашивает фильтр доски.
+Эндпоинт достаёт текст, которого нет в агрегате доски; скрытые
 inline-вложения и `descriptionDetached` исключены, потому что их нельзя
 показать в списке вложений карточки. При длине поисковой строки больше 200
 символов или повторённом `q` (`?q=a&q=b`) сервер возвращает `400`.

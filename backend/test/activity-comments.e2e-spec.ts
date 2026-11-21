@@ -1062,6 +1062,76 @@ describe("Activity & comments API (e2e)", () => {
         .expect(403);
     });
 
+    it("marks a saturated board match list incomplete without losing cardIds", async () => {
+      const { boardId, cardId } = await boardWithCard(
+        "Saturated explanation",
+        "expl",
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-expl-2",
+          columnId: "col-expl",
+          title: "Second card",
+        }),
+      );
+      await prisma.comment.createMany({
+        data: Array.from({ length: 200 }, (_, index) => ({
+          cardId,
+          authorId: adminId,
+          text: `explainneedle ${index}`,
+        })),
+      });
+      const older = new Date(Date.now() - 60_000);
+      await prisma.comment.create({
+        data: {
+          cardId: "card-expl-2",
+          authorId: adminId,
+          text: "explainneedle second card",
+          createdAt: older,
+          updatedAt: older,
+        },
+      });
+      const attachmentId = await addAttachment(
+        boardId,
+        "card-expl-2",
+        "explainneedle-proof.pdf",
+      );
+
+      const detailed = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=explainneedle`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(detailed.body.cardIds).toEqual(
+        expect.arrayContaining([cardId, "card-expl-2"]),
+      );
+      expect(detailed.body.matchesTotal).toBe(3);
+      expect(detailed.body.matchesTruncated).toBe(true);
+      expect(detailed.body.matches).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            cardId: "card-expl-2",
+            matchIn: "attachment",
+            attachmentId,
+          }),
+        ]),
+      );
+
+      const idsOnly = await server()
+        .get(
+          `/api/v1/boards/${boardId}/search?q=explainneedle&includeMatches=0`,
+        )
+        .set(auth(adminToken))
+        .expect(200);
+      expect(idsOnly.body.cardIds).toEqual(
+        expect.arrayContaining([cardId, "card-expl-2"]),
+      );
+      expect(idsOnly.body.matches).toEqual([]);
+      expect(idsOnly.body.matchesTotal).toBe(0);
+      expect(idsOnly.body.matchesTruncated).toBe(false);
+    });
+
     it("scopes the workspace search to a board-scoped PAT", async () => {
       const first = await boardWithCard("Pat scope A", "pat-a");
       const second = await boardWithCard("Pat scope B", "pat-b");

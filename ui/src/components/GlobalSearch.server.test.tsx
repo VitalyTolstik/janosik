@@ -317,6 +317,73 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
     ).toHaveTextContent("Showing 1 of 201 comment and file matches.");
   });
 
+  it("stays partial instead of empty while a matched board hydrates", async () => {
+    pendingBoardCountRef.current = 1;
+    const search = vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace([
+        {
+          boardId: "b-missing",
+          boardTitle: "Not loaded",
+          cardId: "c-missing",
+          cardTitle: "Hidden hit",
+          matchIn: "comment",
+          text: "flaky deploy",
+          commentId: "cm-hidden",
+        },
+      ]),
+    );
+
+    renderPalette();
+    await openAndType("flaky");
+    await waitFor(() => expect(search).toHaveBeenCalledWith("flaky"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("search-server-pending")).toBeNull(),
+    );
+
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(screen.queryByText("Nothing found.")).toBeNull();
+    expect(screen.queryByTestId("search-results-status")).toBeNull();
+    expect(screen.getByTestId("search-boards-loading")).toBeInTheDocument();
+  });
+
+  it("shows only as many truncated hits as the default cap renders", async () => {
+    const cards = Array.from({ length: 200 }, (_, index) => ({
+      id: `c-many-${index}`,
+      title: `Many card ${String(index).padStart(3, "0")}`,
+    }));
+    boardsRef.current = [makeBoard(cards)];
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace(
+        cards.map((card, index) => ({
+          boardId: "b-1",
+          boardTitle: "Alpha",
+          cardId: card.id,
+          cardTitle: card.title,
+          matchIn: "comment" as const,
+          text: `flaky note ${index}`,
+          commentId: `cm-${index}`,
+        })),
+        201,
+        true,
+      ),
+    );
+
+    renderPalette();
+    await openAndType("flaky");
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(20));
+    expect(screen.getByTestId("search-server-truncated")).toHaveTextContent(
+      "Showing 20 of 201 comment and file matches.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all results" }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("option")).toHaveLength(200),
+    );
+    expect(screen.getByTestId("search-server-truncated")).toHaveTextContent(
+      "Showing 200 of 201 comment and file matches.",
+    );
+  });
+
   it("does not claim hidden matches are shown while boards load", async () => {
     pendingBoardCountRef.current = 1;
     vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
