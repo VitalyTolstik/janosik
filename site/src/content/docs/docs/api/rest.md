@@ -53,8 +53,9 @@ design (they are not reducer actions). Content lives in the command log.
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`     | `UpdateMemberDto` | `BoardMemberDto`   |
 | `DELETE` | `/boards/:id/members/me`      | member      | none              | `{ status: "ok" }` |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
+| `GET`    | `/boards/search`              | user        | query `q`         | `{ matches: WorkspaceSearchMatch[] }` |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
-| `GET`    | `/boards/:id/search`          | member      | query `q`         | `{ cardIds: string[] }` |
+| `GET`    | `/boards/:id/search`          | member      | query `q`         | `{ cardIds: string[]; matches: BoardSearchMatch[] }` |
 
 `GET /boards` lists the boards where the caller is an accepted member, newest
 first, each with a card and column counter and the caller's role. A pending
@@ -91,10 +92,18 @@ offer a member the server will refuse. A board `ADMIN` may add
 dialog; other roles get `403` for that query. Pending invitations never appear
 here.
 
-`GET /boards/:id/search?q=` returns `{ cardIds }` — the cards whose title,
-description, a checklist item or a comment contains `q` (case-insensitive
-substring). It reaches comment text, which is not part of the board aggregate.
-A query longer than 200 characters answers `400`.
+`GET /boards/:id/search?q=` returns `{ cardIds, matches }` — the cards whose
+title, description, a checklist item, a comment or an attachment file name
+contains `q` (case-insensitive substring). `cardIds` is the original compact
+projection; `matches` adds `matchIn`, a short snippet and the matched
+`commentId`/`attachmentId` for deep links. It reaches text that is not part of
+the board aggregate. A query longer than 200 characters answers `400`.
+
+`GET /boards/search?q=` is the palette's cross-board companion. It searches
+comment text and attachment file names across every board where the caller has
+an accepted, unexpired membership, returns at most 200 `matches` with the board
+and card titles, and never searches titles/descriptions/checklists (the client
+matches those locally). A board-scoped PAT sees only its own board.
 
 `DELETE /boards/:id` soft-deletes the board and cascades the flag to its
 children and revokes live shares. Memberships stay available for board

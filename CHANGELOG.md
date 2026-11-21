@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.13 search in comments and attachment file names. Board search
+  (`GET /boards/:id/search`) now also matches live attachment names and
+  returns a `matches` list (`title`, `description`, `checklist`, `comment`,
+  `attachment`, with short snippets and comment/attachment ids) while keeping
+  `cardIds` for MCP callers. The global palette asks one bounded
+  `GET /boards/search` for comment/file hits across active memberships
+  instead of searching every board, merges them with the local
+  title/description/label/checklist hits, keeps the `20 of N`/Show all caps
+  per group and labels each row `Card`, `Board`, `Comment` or `Attachment`.
+  A comment/file hit opens the card and carries `?comment=`/`?attachment=`;
+  the dialog scrolls to and highlights the row, and an unknown id falls back
+  to the card alone. The board filter debounces the same server search and
+  keeps comment/attachment-only matches visible under the other facets; local
+  and offline filtering is unchanged. EN/RU copy, board-search e2e coverage
+  and palette/filter unit tests are included.
+
 - TASK-182.1 admin label help and keyed label toast. The Labels heading now has
   an accessible `About labels` popover explaining that labels save immediately,
   click attaches/detaches them, and every change reaches the board history. A
