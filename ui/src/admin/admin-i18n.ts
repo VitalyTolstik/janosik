@@ -148,6 +148,7 @@ const en = {
   "admin.shares.col.flags": "Flags",
   "admin.shares.col.views": "Views",
   "admin.shares.col.created": "Created",
+  "admin.shares.col.expires": "Expires",
   "admin.shares.col.actions": "Actions",
   "admin.shares.mode.live": "Live",
   "admin.shares.mode.snapshot": "Snapshot",
@@ -167,6 +168,8 @@ const en = {
     "Anyone with the link loses access immediately. The board itself is not changed.",
   "admin.shares.revoked": "Link revoked",
   "admin.shares.revokedLabel": "revoked",
+  "admin.shares.expiredLabel": "expired",
+  "admin.shares.noExpiry": "No expiry",
 
   "admin.nav.security": "Security",
   "admin.nav.ops": "Operations",
@@ -1675,6 +1678,7 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.shares.col.flags": "Флаги",
   "admin.shares.col.views": "Просмотры",
   "admin.shares.col.created": "Создана",
+  "admin.shares.col.expires": "Истекает",
   "admin.shares.col.actions": "Действия",
   "admin.shares.mode.live": "Живая",
   "admin.shares.mode.snapshot": "Снапшот",
@@ -1694,6 +1698,8 @@ const ru: Record<AdminMessageKey, string> = {
     "Доступ по ссылке прекратится сразу. Сама доска не изменится.",
   "admin.shares.revoked": "Ссылка отозвана",
   "admin.shares.revokedLabel": "отозвана",
+  "admin.shares.expiredLabel": "истекла",
+  "admin.shares.noExpiry": "Без срока",
 
   "admin.nav.security": "Безопасность",
   "admin.nav.ops": "Эксплуатация",

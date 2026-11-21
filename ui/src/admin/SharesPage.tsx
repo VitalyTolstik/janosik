@@ -15,29 +15,43 @@ import {
   ConfirmDialog,
   ErrorState,
   PageHeader,
+  Pagination,
   Panel,
   SearchInput,
 } from "./ui";
 
+/** `1–50` / `51` / `0` — the visible window inside the server total. */
+function visibleRange(offset: number, count: number): string {
+  if (count === 0) return "0";
+  const start = offset + 1;
+  const end = offset + count;
+  return start === end ? String(start) : `${start}–${end}`;
+}
+
 /**
  * Public shares (TASK-58) — every read-only link minted against any board,
- * with its mode/flags/views and a one-click revoke. The token is shown so an
- * operator can re-copy a link for support; a link whose board is gone is
+ * with its mode/flags/views/expiry and a one-click revoke. The token is shown
+ * so an operator can re-copy a link for support; a link whose board is gone is
  * flagged (a live share of a deleted board no longer resolves).
  *
- * Search mirrors the rest of the panel: the shared `useAdminList` debounce
- * plus `SearchInput`, not a separate button.
+ * The list pages over the server's `total/offset/limit`, so the count always
+ * describes every link, not just the loaded page. Search mirrors the rest of
+ * the panel: the shared `useAdminList` debounce plus `SearchInput`, not a
+ * separate button; the debounced commit resets the offset like every admin
+ * list.
  */
 export function SharesPage() {
   const t = useAdminT();
   const { lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
-  const list = useAdminList<AdminShareRowDto>(
-    (params) => adminApi.listShares({ ...params, limit: 100 }),
-    { limit: 100 },
+  const list = useAdminList<AdminShareRowDto>((params) =>
+    adminApi.listShares(params),
   );
   const { items: rows, reload } = list;
+  // Freeze `now` on mount: an expiry badge must not start ticking while the
+  // table is open (the row data is a snapshot from the last request).
+  const [now] = useState(() => Date.now());
   const [busy, setBusy] = useState<string | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<AdminShareRowDto | null>(
     null,
@@ -81,12 +95,24 @@ export function SharesPage() {
       <PageHeader
         title={t("admin.shares.title")}
         subtitle={t("admin.shares.subtitle")}
+        meta={
+          <span
+            className="tabular-nums"
+            data-testid="admin-shares-total"
+            aria-live="polite"
+          >
+            {t("admin.common.ofTotal", {
+              shown: visibleRange(list.offset, rows.length),
+              total: list.total,
+            })}
+          </span>
+        }
         actions={<SearchInput value={list.search} onChange={list.setSearch} />}
       />
 
       <Panel className="p-0" aria-busy={list.loading || list.refreshing}>
         {list.loading ? (
-          <EntityListSkeleton columns={6} testId="admin-shares-skeleton" />
+          <EntityListSkeleton columns={7} testId="admin-shares-skeleton" />
         ) : list.error ? (
           <div className="p-4">
             <ErrorState onRetry={reload} />
@@ -104,6 +130,7 @@ export function SharesPage() {
                 <th className="px-3 py-2">{t("admin.shares.col.flags")}</th>
                 <th className="px-3 py-2">{t("admin.shares.col.views")}</th>
                 <th className="px-3 py-2">{t("admin.shares.col.created")}</th>
+                <th className="px-3 py-2">{t("admin.shares.col.expires")}</th>
                 <th className="px-3 py-2 text-right">
                   {t("admin.shares.col.actions")}
                 </th>
@@ -175,6 +202,26 @@ export function SharesPage() {
                   <td className="px-3 py-2 text-xs text-muted-foreground">
                     {formatDate(row.createdAt, lang, hour12)}
                   </td>
+                  <td
+                    className="px-3 py-2 text-xs text-muted-foreground"
+                    data-testid={`admin-share-expires-${row.id}`}
+                  >
+                    {row.expiresAt === null ? (
+                      <span title={t("admin.shares.noExpiry")}>—</span>
+                    ) : (
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {formatDate(row.expiresAt, lang, hour12)}
+                        {row.expiresAt <= now ? (
+                          <Badge
+                            variant="danger"
+                            data-testid={`admin-share-expired-${row.id}`}
+                          >
+                            {t("admin.shares.expiredLabel")}
+                          </Badge>
+                        ) : null}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1">
                       <Button
@@ -243,6 +290,15 @@ export function SharesPage() {
             </tbody>
           </table>
         )}
+        {!list.loading && !list.error && rows.length > 0 ? (
+          <Pagination
+            total={list.total}
+            limit={list.limit}
+            offset={list.offset}
+            onChange={list.setOffset}
+            onLimitChange={list.setLimit}
+          />
+        ) : null}
       </Panel>
 
       <ConfirmDialog

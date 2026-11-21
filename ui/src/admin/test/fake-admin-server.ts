@@ -1535,12 +1535,7 @@ export class FakeAdminServer {
 
     // Public shares (TASK-58): listing for any master, revoke for any master.
     if (path === "/admin/shares" && method === "GET") {
-      return this.json({
-        items: this.shares,
-        total: this.shares.length,
-        limit: 100,
-        offset: 0,
-      });
+      return this.json(this.page(this.shares, url));
     }
     const shareRevoke = path.match(/^\/admin\/shares\/([^/]+)\/revoke$/);
     if (shareRevoke && method === "POST") {
