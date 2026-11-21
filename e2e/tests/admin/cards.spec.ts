@@ -388,6 +388,26 @@ test("C7: the card timeline, fields and audit link stay inside 1440/1024/390", a
     await expect(
       page.getByTestId(`admin-card-label-toggle-${longLabelId}`),
     ).toBeVisible();
+    const labelsHelp = page.getByTestId("admin-card-labels-help");
+    const helpTriggerBox = await labelsHelp.boundingBox();
+    expect(helpTriggerBox?.width ?? 0).toBeGreaterThanOrEqual(24);
+    expect(helpTriggerBox?.height ?? 0).toBeGreaterThanOrEqual(24);
+    await labelsHelp.click();
+    const helpDialog = page.getByRole("dialog", { name: "About labels" });
+    await expect(helpDialog).toBeVisible();
+    const helpBox = await helpDialog.boundingBox();
+    expect(helpBox).not.toBeNull();
+    expect(helpBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect(helpBox?.y ?? -1).toBeGreaterThanOrEqual(0);
+    expect((helpBox?.x ?? 0) + (helpBox?.width ?? 0)).toBeLessThanOrEqual(
+      viewport.width + 0.1,
+    );
+    expect((helpBox?.y ?? 0) + (helpBox?.height ?? 0)).toBeLessThanOrEqual(
+      viewport.height + 0.1,
+    );
+    await page.keyboard.press("Escape");
+    await expect(helpDialog).toBeHidden();
+    await expect(labelsHelp).toBeFocused();
     for (const box of [scroller, timeline, fields, relations]) {
       expect(
         await box.evaluate(

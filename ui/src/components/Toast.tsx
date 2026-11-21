@@ -125,7 +125,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = ++nextIdRef.current;
       setToasts((prev) => [...prev, { id, message, variant, key }]);
       const timer = window.setTimeout(() => {
-        timersRef.current.delete(timer);
+        timersRef.current.delete(id);
         remove(id);
       }, DISMISS_AFTER_MS);
       timersRef.current.set(id, timer);

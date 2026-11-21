@@ -188,6 +188,7 @@ function CardCalendarFallback({
 
 function LabelsHelp() {
   const t = useAdminT();
+  const titleId = useId();
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -204,9 +205,12 @@ function LabelsHelp() {
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        aria-labelledby={titleId}
         className="w-72 max-w-[calc(100vw-2rem)] text-xs"
       >
-        <p className="font-medium">{t("admin.cards.fields.labelsHelp")}</p>
+        <h2 id={titleId} className="font-medium">
+          {t("admin.cards.fields.labelsHelp")}
+        </h2>
         <p className="mt-1 text-muted-foreground">
           {t("admin.cards.fields.labelsHelpBody")}
         </p>

@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-182.1 admin label help and keyed label toast. The Labels heading now has
+  an accessible `About labels` popover explaining that labels save immediately,
+  click attaches/detaches them, and every change reaches the board history. A
+  label success toast is keyed per card, so rapid toggles replace it instead of
+  stacking; a failed command clears the old success, and a late response for
+  card A cannot toast, write an error, refresh or reset busy state on card B.
+  EN/RU copy, component tests and a browser check cover the flow.
+
 - TASK-181.7 admin filter docs, rollout evidence and 25k qualification. The
   admin guide (EN/RU) now documents the Filters surface, every offered facet,
   deep-link examples, chip resolution, conflict and unknown states, board/tab
