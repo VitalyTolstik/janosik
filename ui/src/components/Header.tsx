@@ -293,9 +293,14 @@ export function Header() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-3 py-1.5 backdrop-blur-md sm:h-[52px] sm:min-h-[52px] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:px-6 sm:py-0",
+        // TASK-177.18: a standalone iOS window paints under the status bar and
+        // the landscape notch. `max()` keeps the existing spacing whenever
+        // `env()` is 0 (every desktop browser), so nothing gets double padding.
+        // From `sm` up the 52 px row grows by the top inset (iPad standalone)
+        // instead of squeezing its controls.
+        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] sm:pr-[max(1.5rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))]",
         isAgentsRoute &&
-          "min-h-[61px] flex-row flex-nowrap items-center px-[10px] font-agent-surface sm:h-[52px] sm:min-h-[52px] sm:px-[14px]",
+          "min-h-[61px] flex-row flex-nowrap items-center pr-[max(10px,env(safe-area-inset-right))] pl-[max(10px,env(safe-area-inset-left))] font-agent-surface sm:pr-[max(14px,env(safe-area-inset-right))] sm:pl-[max(14px,env(safe-area-inset-left))]",
       )}
     >
       <div

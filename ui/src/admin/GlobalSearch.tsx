@@ -203,7 +203,7 @@ export function GlobalSearchDialog({
   return (
     <Dialog open={open} onOpenChange={props.onOpenChange}>
       <DialogContent
-        className="max-h-[86vh] max-w-[620px] gap-0 overflow-hidden p-0 max-sm:h-screen max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none"
+        className="max-h-[86vh] max-w-[620px] gap-0 overflow-hidden p-0 max-sm:h-screen max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]"
         data-testid="admin-command-palette"
       >
         <DialogTitle className="sr-only">{t("admin.search.title")}</DialogTitle>
