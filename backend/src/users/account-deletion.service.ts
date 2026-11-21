@@ -5,6 +5,11 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
+import {
+  deleteCommentActivitySnapshots,
+  mergeHistoryIncompleteReason,
+  verifyCommentHistory,
+} from "@/comments/comment-history";
 
 /** TASK-166 D22/§12.5: the self-service deletion window. */
 export const ACCOUNT_DELETE_GRACE_DAYS = 7;
@@ -445,6 +450,59 @@ export class AccountDeletionService {
       await tx.notificationMail.deleteMany({ where: { userId } });
       await tx.dataExport.deleteMany({ where: { userId } });
       await tx.attachment.deleteMany({ where: { uploadedById: userId } });
+      // TASK-185.1: history cleanup must happen before the user row (the
+      // editor FK is RESTRICT) and before comments/Activity disappear.
+      const authoredComments = await tx.comment.findMany({
+        where: { authorId: userId },
+        select: { id: true },
+      });
+      const authoredIds = authoredComments.map((row) => row.id);
+      if (authoredIds.length > 0) {
+        await deleteCommentActivitySnapshots(tx, authoredIds);
+        await tx.commentRevision.deleteMany({
+          where: { commentId: { in: authoredIds } },
+        });
+      }
+      const editedCommentIds = await this.commentIdsEditedBy(
+        tx,
+        userId,
+        authoredIds,
+      );
+      for (const commentId of editedCommentIds) {
+        const comment = await tx.comment.findUnique({
+          where: { id: commentId },
+          select: {
+            id: true,
+            cardId: true,
+            kind: true,
+            text: true,
+            editedAt: true,
+            lastRevisionNumber: true,
+            historyCutoverAt: true,
+            historyVerifiedEditedAt: true,
+            historyVerifiedRevisionNumber: true,
+            historyIncompleteReason: true,
+          },
+        });
+        if (comment === null) continue;
+        // A confirmed chain loses its number after the cleanup; an
+        // unconfirmed one keeps the mismatch so the next sweep finds it.
+        const verified = await verifyCommentHistory(tx, comment);
+        await tx.comment.update({
+          where: { id: commentId },
+          data: {
+            historyIncompleteReason: mergeHistoryIncompleteReason(
+              comment.historyIncompleteReason,
+              "gdpr_erase",
+            ),
+            ...(verified ? { historyVerifiedRevisionNumber: null } : {}),
+          },
+        });
+        await tx.commentRevision.deleteMany({ where: { commentId } });
+        await deleteCommentActivitySnapshots(tx, [commentId], {
+          onlyUpdates: true,
+        });
+      }
       await tx.comment.deleteMany({ where: { authorId: userId } });
       await tx.activity.deleteMany({ where: { actorId: userId } });
       // ADR §6.14 purge order: preimages → commands → runs. The preimage
@@ -553,6 +611,39 @@ export class AccountDeletionService {
       exports: exports.length,
       blobs: blobs.length,
     };
+  }
+
+  /**
+   * TASK-185.1: comments by another author that the erased user edited,
+   * detected through immutable revisions or `comment_updated` Activity. The
+   * Activity rows are still present here; they are deleted after this step.
+   */
+  private async commentIdsEditedBy(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    excluded: readonly string[],
+  ): Promise<string[]> {
+    const excludedIds = new Set(excluded);
+    const [revisions, activities] = await Promise.all([
+      tx.commentRevision.findMany({
+        where: { editorId: userId },
+        select: { commentId: true },
+      }),
+      tx.activity.findMany({
+        where: { actorId: userId, type: "comment_updated" },
+        select: { details: true },
+      }),
+    ]);
+    const ids = new Set<string>();
+    for (const revision of revisions) ids.add(revision.commentId);
+    for (const activity of activities) {
+      const details = activity.details;
+      if (details === null || typeof details !== "object") continue;
+      if (Array.isArray(details)) continue;
+      const commentId = (details as Record<string, unknown>).commentId;
+      if (typeof commentId === "string") ids.add(commentId);
+    }
+    return [...ids].filter((id) => !excludedIds.has(id));
   }
 
   private async releaseClaims(

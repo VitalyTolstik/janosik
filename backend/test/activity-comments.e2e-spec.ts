@@ -759,7 +759,7 @@ describe("Activity & comments API (e2e)", () => {
       }
     });
 
-    it("lets the author retype the kind, stamps editedAt and filters by it", async () => {
+    it("lets the author retype the kind without a text revision and filters by it", async () => {
       const { cardId } = await boardWithCard("Edit comment kind", "ek");
       const created = await server()
         .post(`/api/v1/cards/${cardId}/comments`)
@@ -777,8 +777,9 @@ describe("Activity & comments API (e2e)", () => {
         id: created.body.id,
         text: "Needs a decision",
         kind: "question",
-        editedAt: expect.any(Number),
       });
+      // TASK-185.1: `editedAt` belongs to a text edit, not to a kind change.
+      expect(edited.body.editedAt).toBeUndefined();
 
       const filtered = await server()
         .get(`/api/v1/cards/${cardId}/comments?kind=question`)
@@ -799,10 +800,15 @@ describe("Activity & comments API (e2e)", () => {
       const updated = feed.items.find(
         (entry) => entry.type === "comment_updated",
       );
-      expect(updated?.details).toMatchObject({
+      expect(updated?.details).toEqual({
         commentId: created.body.id,
-        text: "Needs a decision",
+        beforeKind: "note",
+        afterKind: "question",
       });
+      const revisions = await prisma.commentRevision.count({
+        where: { commentId: created.body.id as string },
+      });
+      expect(revisions).toBe(0);
     });
 
     it("updates text and kind together and keeps an omitted field", async () => {
@@ -1092,6 +1098,7 @@ describe("Activity & comments API (e2e)", () => {
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();
+    await db.commentRevision.deleteMany();
     await db.comment.deleteMany();
     await db.activity.deleteMany();
     await db.command.deleteMany();

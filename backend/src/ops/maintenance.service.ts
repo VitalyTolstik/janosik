@@ -13,6 +13,10 @@ import {
 } from "@/users/account-deletion.service";
 import { OpsSettingsService } from "./ops-settings.service";
 import { AttentionService } from "@/notifications/attention.service";
+import {
+  COMMENT_ACTIVITY_TYPES,
+  deleteCommentActivitySnapshots,
+} from "@/comments/comment-history";
 
 /**
  * TASK-68 — regular housekeeping. Everything that used to accumulate
@@ -197,11 +201,17 @@ export class MaintenanceService {
           take,
         }),
       async (rows) =>
-        (
-          await this.prisma.comment.deleteMany({
-            where: { id: { in: rows.map((row) => row.id) } },
-          })
-        ).count,
+        this.prisma.$transaction(async (tx) => {
+          const ids = rows.map((row) => row.id);
+          // TASK-185.1: revisions and comment snapshots are children of the
+          // comment and are explicitly removed before the hard delete.
+          await deleteCommentActivitySnapshots(tx, ids);
+          await tx.commentRevision.deleteMany({
+            where: { commentId: { in: ids } },
+          });
+          return (await tx.comment.deleteMany({ where: { id: { in: ids } } }))
+            .count;
+        }),
     );
     count += await this.purgeChunks(
       (take) =>
@@ -269,6 +279,15 @@ export class MaintenanceService {
             where: {
               OR: [{ fromCardId: { in: ids } }, { toCardId: { in: ids } }],
             },
+          }),
+          this.prisma.activity.deleteMany({
+            where: {
+              cardId: { in: ids },
+              type: { in: [...COMMENT_ACTIVITY_TYPES] },
+            },
+          }),
+          this.prisma.commentRevision.deleteMany({
+            where: { comment: { cardId: { in: ids } } },
           }),
           this.prisma.comment.deleteMany({ where: { cardId: { in: ids } } }),
           this.prisma.attachment.deleteMany({ where: { cardId: { in: ids } } }),
@@ -343,6 +362,15 @@ export class MaintenanceService {
                   { toCardId: { in: cardIds } },
                 ],
               },
+            }),
+            this.prisma.activity.deleteMany({
+              where: {
+                cardId: { in: cardIds },
+                type: { in: [...COMMENT_ACTIVITY_TYPES] },
+              },
+            }),
+            this.prisma.commentRevision.deleteMany({
+              where: { comment: { cardId: { in: cardIds } } },
             }),
             this.prisma.comment.deleteMany({
               where: { cardId: { in: cardIds } },
@@ -423,6 +451,9 @@ export class MaintenanceService {
             where: { card: { column: { boardId: { in: ids } } } },
           }),
           this.prisma.cardLink.deleteMany({ where: { boardId: { in: ids } } }),
+          this.prisma.commentRevision.deleteMany({
+            where: { comment: { card: { column: { boardId: { in: ids } } } } },
+          }),
           this.prisma.comment.deleteMany({
             where: { card: { column: { boardId: { in: ids } } } },
           }),

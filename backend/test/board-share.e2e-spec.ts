@@ -41,6 +41,7 @@ async function wipe(db: PrismaService): Promise<void> {
   await db.boardShare.deleteMany();
   await db.command.deleteMany();
   await db.activity.deleteMany();
+  await db.commentRevision.deleteMany();
   await db.comment.deleteMany();
   await db.attachment.deleteMany();
   await db.cardLabel.deleteMany();

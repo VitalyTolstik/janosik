@@ -54,6 +54,7 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     // previous demo run's commands/users cannot block this suite's setup.
     await prisma.command.deleteMany();
     await prisma.activity.deleteMany();
+    await prisma.commentRevision.deleteMany();
     await prisma.comment.deleteMany();
     await prisma.attachment.deleteMany();
     await prisma.cardLabel.deleteMany();

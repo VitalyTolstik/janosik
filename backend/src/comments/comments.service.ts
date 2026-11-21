@@ -29,6 +29,10 @@ import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
 import type { UpdateCommentDto } from "./dto/update-comment.dto";
 import { reconcileDescriptionAttachments } from "@/commands/command-writers";
+import {
+  commentHistoryGapException,
+  writeCommentUpdate,
+} from "./comment-history";
 
 /** Default page size of `GET /cards/:id/comments` (`?limit=`). */
 const DEFAULT_LIMIT = 50;
@@ -338,75 +342,79 @@ export class CommentsService {
       );
     }
     const boardId = comment.card.column.boardId;
-    const nextText = text ?? comment.text;
 
     const updated = await this.boardWrite.run(
       boardId,
       async (tx) => {
-        // `deletedAt: null` makes the write conditional: a comment that was
-        // soft-deleted after the pre-read is a 404, never an edit on a tombstone.
-        const written = await tx.comment.updateMany({
-          where: { id: comment.id, deletedAt: null },
-          data: {
-            ...(textProvided ? { text } : {}),
-            ...(kindProvided ? { kind: dto.kind } : {}),
-            editedAt: new Date(),
-          },
-        });
-        if (written.count === 0) {
-          throw new NotFoundException("Comment not found");
-        }
-        const row = await tx.comment.findUniqueOrThrow({
-          where: { id: comment.id },
-          include: AUTHOR_INCLUDE,
-        });
-        if (textProvided) {
-          await reconcileDescriptionAttachments(
-            tx,
-            boardId,
-            comment.text,
-            nextText,
-          );
-          // Inline pasted media lives outside `reconcileDescriptionAttachments`
-          // (it tracks description embeds only), so the URLs that disappeared
-          // from this comment are unlinked explicitly — like a delete does for
-          // the whole body.
-          const beforeIds = inlineAttachmentIds(comment.text);
-          const afterIds = inlineAttachmentIds(nextText);
-          const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
-          await this.unlinkInlineAttachmentIds(
-            tx,
-            boardId,
-            removedIds,
-            userId,
-            attribution,
-          );
-        }
-        const activity = await tx.activity.create({
-          data: {
-            boardId,
-            cardId: comment.cardId,
-            type: "comment_updated",
-            actorId: userId,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: { commentId: comment.id, text: nextText },
-          },
-        });
-        return {
-          comment: row,
-          activityId: activity.id,
-          at: activity.createdAt.getTime(),
+        // TASK-185.1: the common writer re-reads the live row under the lock,
+        // reconciles the cutover chain before the no-op comparison and writes
+        // one revision + Activity for a real text change.
+        const written = await writeCommentUpdate(tx, {
+          commentId: comment.id,
           boardId,
+          ...(textProvided ? { text } : {}),
+          ...(kindProvided ? { kind: dto.kind } : {}),
+          editorId: userId,
+          attribution,
+          cause: "author_edit",
+          authorize: (current) => {
+            if (current.authorId !== userId) {
+              throw new ForbiddenException({
+                message: "Only the author can edit a comment",
+                code: "scope_denied",
+                requiredScope: "worker",
+                action: "comment.update",
+              });
+            }
+          },
+          reconcileMedia: async (beforeText, afterText) => {
+            await reconcileDescriptionAttachments(
+              tx,
+              boardId,
+              beforeText,
+              afterText,
+            );
+            // Inline pasted media lives outside
+            // `reconcileDescriptionAttachments` (it tracks description embeds
+            // only), so the URLs that disappeared from this comment are
+            // unlinked explicitly — like a delete does for the whole body.
+            const beforeIds = inlineAttachmentIds(beforeText);
+            const afterIds = inlineAttachmentIds(afterText);
+            const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
+            await this.unlinkInlineAttachmentIds(
+              tx,
+              boardId,
+              removedIds,
+              userId,
+              attribution,
+            );
+          },
+        });
+        if (written.status === "gap") return { gap: true as const };
+        if (written.status === "unchanged") {
+          return {
+            gap: false as const,
+            changed: false as const,
+            comment: written.comment,
+          };
+        }
+        return {
+          gap: false as const,
+          changed: true as const,
+          comment: written.comment,
+          activityId: written.activityId,
+          at: written.at,
         };
       },
       pauseGateFor(principal, attribution.agentSessionId),
     );
 
+    // The mark is committed: reconciliation failures answer 409 only now.
+    if (updated.gap) throw commentHistoryGapException();
+    if (!updated.changed) return toCommentDto(updated.comment);
+
     this.publishActivity(
-      updated.boardId,
+      boardId,
       comment.cardId,
       updated.activityId,
       userId,

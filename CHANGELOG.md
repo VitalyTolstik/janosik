@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-185.1 comment history foundation. Every real text edit now writes one
+  immutable `CommentRevision` under the board-write lock, together with one
+  `comment_updated` Activity carrying the before/after text; `editedAt` and the
+  verified pair move with the same timestamp and only a text change moves them.
+  Existing comments are fenced at one migration timestamp, keep their last
+  `editedAt` as a verified point and are marked `legacy_cutover`; no history is
+  reconstructed. The writer keeps the newest 50 revisions, reconciles an old
+  writer before a no-op PATCH and rejects it with `409 comment_history_gap`
+  after persisting `writer_gap`. Attachment deletion scrubs comments through
+  the same writer with `attachment_deleted` attribution and aborts on a gap.
+  Hard purge, demo cleanup and GDPR erase explicitly remove revisions and their
+  Activity snapshots before comments/users; exports still exclude them. The
+  read API and UI remain in later 185.x subtasks. See
+  [the foundation notes](docs/TASK-185.1-comment-history-foundation.md).
+
 - TASK-177.11 comment kind edit and filter. An author can now retype a
   comment's structured kind (note, status, question, blocker, evidence,
   handoff) in the same inline editor as the text; the change stamps `editedAt`

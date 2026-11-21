@@ -31,6 +31,13 @@ import {
   stripAttachmentReference,
 } from "@/commands/command-writers";
 import { RealtimeService } from "@/realtime/realtime.service";
+import {
+  commentHistoryGapException,
+  findCommentHistoryGaps,
+  markHistoryIncomplete,
+  writeCommentUpdate,
+  type CommentHistoryState,
+} from "@/comments/comment-history";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import {
   ATTACHMENT_MIME_ALLOWLIST,
@@ -411,31 +418,70 @@ export class AttachmentsService {
    * this only scrubs the bodies that still point at it and re-runs the
    * existing reconcile so the other embedded files keep their detached
    * state and the card badge stays honest.
+   *
+   * TASK-185.1: every changed live comment goes through the common history
+   * writer (`cause: attachment_deleted`) so the scrub is a normal, auditable
+   * edit. Pre-flight runs before the attachment row is touched: one history
+   * gap aborts the deletion and persists only the `writer_gap` marks.
    */
+  private async preflightCommentHistory(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    attachmentId: string,
+  ): Promise<boolean> {
+    const comments = await this.affectedComments(tx, boardId, attachmentId);
+    const gaps = await findCommentHistoryGaps(tx, comments);
+    for (const commentId of gaps) {
+      await markHistoryIncomplete(tx, commentId, "writer_gap");
+    }
+    return gaps.length > 0;
+  }
+
+  private async affectedComments(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    attachmentId: string,
+  ): Promise<CommentHistoryState[]> {
+    const url = `/attachments/${attachmentId}/content`;
+    return tx.comment.findMany({
+      where: {
+        card: { column: { boardId }, deletedAt: null },
+        deletedAt: null,
+        text: { contains: url },
+      },
+      select: {
+        id: true,
+        cardId: true,
+        text: true,
+        kind: true,
+        editedAt: true,
+        lastRevisionNumber: true,
+        historyCutoverAt: true,
+        historyVerifiedEditedAt: true,
+        historyVerifiedRevisionNumber: true,
+        historyIncompleteReason: true,
+      },
+    });
+  }
+
   private async scrubDeletedAttachment(
     tx: Prisma.TransactionClient,
     boardId: string,
     attachmentId: string,
-  ): Promise<void> {
+    initiatorId: string,
+    attribution: RequestAttribution,
+  ): Promise<
+    Array<{ commentId: string; cardId: string; activityId: string; at: number }>
+  > {
     const url = `/attachments/${attachmentId}/content`;
-    const [cards, comments] = await Promise.all([
-      tx.card.findMany({
-        where: {
-          column: { boardId },
-          deletedAt: null,
-          description: { contains: url },
-        },
-        select: { id: true, description: true },
-      }),
-      tx.comment.findMany({
-        where: {
-          card: { column: { boardId }, deletedAt: null },
-          deletedAt: null,
-          text: { contains: url },
-        },
-        select: { id: true, text: true },
-      }),
-    ]);
+    const cards = await tx.card.findMany({
+      where: {
+        column: { boardId },
+        deletedAt: null,
+        description: { contains: url },
+      },
+      select: { id: true, description: true },
+    });
     for (const card of cards) {
       const before = card.description ?? undefined;
       const after = stripAttachmentReference(before, attachmentId);
@@ -446,15 +492,40 @@ export class AttachmentsService {
       });
       await reconcileDescriptionAttachments(tx, boardId, before, after);
     }
+    const comments = await this.affectedComments(tx, boardId, attachmentId);
+    const updates: Array<{
+      commentId: string;
+      cardId: string;
+      activityId: string;
+      at: number;
+    }> = [];
     for (const comment of comments) {
       const after = stripAttachmentReference(comment.text, attachmentId);
       if (after === comment.text) continue;
-      await tx.comment.update({
-        where: { id: comment.id },
-        data: { text: after ?? "", editedAt: new Date() },
+      const written = await writeCommentUpdate(tx, {
+        commentId: comment.id,
+        boardId,
+        text: after ?? "",
+        editorId: initiatorId,
+        attribution,
+        cause: "attachment_deleted",
+        reconcileMedia: (beforeText, afterText) =>
+          reconcileDescriptionAttachments(tx, boardId, beforeText, afterText),
       });
-      await reconcileDescriptionAttachments(tx, boardId, comment.text, after);
+      // The pre-flight verified this row under the same board lock; a gap
+      // here is a programming/writer error, so rolling the transaction back
+      // is safer than publishing a partially scrubbed attachment.
+      if (written.status === "gap") throw commentHistoryGapException();
+      if (written.status === "written") {
+        updates.push({
+          commentId: comment.id,
+          cardId: comment.cardId,
+          activityId: written.activityId,
+          at: written.at,
+        });
+      }
     }
+    return updates;
   }
 
   async remove(
@@ -524,6 +595,13 @@ export class AttachmentsService {
       this.boardWrite.run(
         row.boardId,
         async (tx) => {
+          // TASK-185.1: verify every affected comment before the attachment
+          // row or any text moves. A gap commits only the marks and aborts.
+          if (
+            await this.preflightCommentHistory(tx, row.boardId, attachmentId)
+          ) {
+            return { kind: "gap" as const };
+          }
           const current = await tx.attachment.findUnique({
             where: { id: attachmentId },
             select: { descriptionDetached: true },
@@ -545,7 +623,13 @@ export class AttachmentsService {
               data: { attachmentCount: { decrement: 1 } },
             });
           }
-          await this.scrubDeletedAttachment(tx, row.boardId, attachmentId);
+          const commentUpdates = await this.scrubDeletedAttachment(
+            tx,
+            row.boardId,
+            attachmentId,
+            user.id,
+            attribution,
+          );
           const activity = await tx.activity.create({
             data: {
               boardId: row.boardId,
@@ -559,7 +643,11 @@ export class AttachmentsService {
               details: { attachmentId, fileName: row.fileName },
             },
           });
-          return activity.id;
+          return {
+            kind: "ok" as const,
+            activityId: activity.id,
+            commentUpdates,
+          };
         },
         pauseGateFor(
           principal,
@@ -574,6 +662,7 @@ export class AttachmentsService {
       ),
     );
     if (!removed) return;
+    if (removed.kind === "gap") throw commentHistoryGapException();
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
         operation: "attachment.delete",
@@ -588,12 +677,23 @@ export class AttachmentsService {
     this.publish(
       row.boardId,
       row.cardId,
-      removed,
+      removed.activityId,
       user.id,
       "attachment_deleted",
       attachmentId,
       attribution,
     );
+    for (const update of removed.commentUpdates) {
+      this.publish(
+        row.boardId,
+        update.cardId,
+        update.activityId,
+        user.id,
+        "comment_updated",
+        update.commentId,
+        attribution,
+      );
+    }
     await touchAgentSessionAfterWrite(
       this.prisma,
       this.realtime,
@@ -606,7 +706,7 @@ export class AttachmentsService {
     cardId: string,
     activityId: string,
     actorId: string,
-    kind: "attachment_added" | "attachment_deleted",
+    kind: "attachment_added" | "attachment_deleted" | "comment_updated",
     detail: string,
     attribution: RequestAttribution,
   ): void {

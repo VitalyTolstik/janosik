@@ -20,41 +20,42 @@ datasource db {
 }
 
 model User {
-  id              String                  @id @default(cuid())
-  email           String                  @unique
+  id               String                  @id @default(cuid())
+  email            String                  @unique
   // Nullable (TASK-54): OAuth-only accounts have no local password — login
   // rejects them until one is adopted via the password change.
-  passwordHash    String?
-  displayName     String?
-  avatarColor     String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
-  avatarPath      String? // TASK-47 stored avatar image name; null → initials
-  disabledAt      DateTime? // master block (TASK-36); login/refresh → 403
-  emailVerifiedAt DateTime? // TASK-53; null → the address is not confirmed yet
+  passwordHash     String?
+  displayName      String?
+  avatarColor      String? // USER_AVATAR_COLORS key (TASK-36.1); null → id-hash default
+  avatarPath       String? // TASK-47 stored avatar image name; null → initials
+  disabledAt       DateTime? // master block (TASK-36); login/refresh → 403
+  emailVerifiedAt  DateTime? // TASK-53; null → the address is not confirmed yet
   // TASK-72: opt-out for scheduled digests/reminders (default on).
-  notifyDigest    Boolean                 @default(true)
+  notifyDigest     Boolean                 @default(true)
   // TASK-166.9: opt-out for immediate attention e-mails (approvals, blocked
   // agents, expired claims, quota warnings). The in-app attention inbox is
   // always written; this switch only controls e-mail delivery.
-  notifyAttention Boolean                 @default(true)
+  notifyAttention  Boolean                 @default(true)
   // Announcement localization: the canonical language for the UI, banners and
   // email. Nullable for accounts created before the feature — treated as "not
   // chosen yet" and adopted from the current UI language on the next sign-in.
-  locale          String?
-  createdAt       DateTime                @default(now())
-  memberships     BoardMember[]
-  invitedMembers  BoardMember[]           @relation("BoardMemberInviter")
-  activity        Activity[]
-  comments        Comment[]
-  apiTokens       ApiToken[]
-  commands        Command[]
-  refreshTokens   RefreshToken[]
-  attachments     Attachment[]
-  assignedCards   Card[]                  @relation("CardAssignee")
-  emailChanges    EmailChangeCode[]
-  verifications   EmailVerificationCode[]
-  passwordReset   PasswordResetToken?
-  oauthIdentities OAuthIdentity[]
-  dismissals      AnnouncementDismissal[]
+  locale           String?
+  createdAt        DateTime                @default(now())
+  memberships      BoardMember[]
+  invitedMembers   BoardMember[]           @relation("BoardMemberInviter")
+  activity         Activity[]
+  comments         Comment[]
+  commentRevisions CommentRevision[]
+  apiTokens        ApiToken[]
+  commands         Command[]
+  refreshTokens    RefreshToken[]
+  attachments      Attachment[]
+  assignedCards    Card[]                  @relation("CardAssignee")
+  emailChanges     EmailChangeCode[]
+  verifications    EmailVerificationCode[]
+  passwordReset    PasswordResetToken?
+  oauthIdentities  OAuthIdentity[]
+  dismissals       AnnouncementDismissal[]
 
   @@index([createdAt]) // admin users period filter
 }
@@ -64,6 +65,7 @@ model OAuthIdentity {
   userId   String
   user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider String
+
   @@unique([userId, provider])
 }
 
@@ -773,24 +775,54 @@ model Activity {
   @@index([runId])
 }
 
+/// TASK-185.1: why a comment's revision chain cannot be shown as complete.
+/// When several apply, the most severe wins:
+/// writer_gap > gdpr_erase > revision_limit > legacy_cutover.
+enum CommentHistoryIncompleteReason {
+  legacy_cutover
+  revision_limit
+  gdpr_erase
+  writer_gap
+}
+
+/// TASK-185.1: what produced an immutable comment revision. `system` is
+/// reserved for future automatic rewrites; current paths pass the real
+/// initiator as `author_edit` or `attachment_deleted`.
+enum CommentRevisionCause {
+  author_edit
+  attachment_deleted
+  system
+}
+
 model Comment {
-  id             String    @id @default(cuid())
-  card           Card      @relation(fields: [cardId], references: [id])
-  cardId         String
-  author         User      @relation(fields: [authorId], references: [id])
-  authorId       String
-  text           String    @db.Text // LIMITS.comment (10000) — plain text
-  kind           String    @default("note") // TASK-157 (D10): note|status|question|blocker|evidence|handoff
+  id                            String                          @id @default(cuid())
+  card                          Card                            @relation(fields: [cardId], references: [id])
+  cardId                        String
+  author                        User                            @relation(fields: [authorId], references: [id])
+  authorId                      String
+  text                          String                          @db.Text // LIMITS.comment (10000) — plain text
+  kind                          String                          @default("note") // TASK-157 (D10): note|status|question|blocker|evidence|handoff
   // TASK-166 attribution: comments live outside the command log, so the
   // actor identity is stored on the row itself.
-  actorType      String    @default("human") // human|agent
-  apiTokenId     String?
-  agentSessionId String?
-  agentName      String?
-  deletedAt      DateTime? // soft-delete (§7.0)
-  editedAt       DateTime? // TASK-176.2: last author edit; null = never edited
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  actorType                     String                          @default("human") // human|agent
+  apiTokenId                    String?
+  agentSessionId                String?
+  agentName                     String?
+  deletedAt                     DateTime? // soft-delete (§7.0)
+  editedAt                      DateTime? // TASK-176.2: last text edit; null = never edited
+  // TASK-185.1 edit history. `historyCutoverAt` fences revisions: a real
+  // revision timestamp must be strictly after it, and a row created after
+  // the migration gets it from the DB default at insert. `editedAt` and the
+  // verified pair are written together with one revision timestamp so a
+  // writer from an older release can be detected by comparing them.
+  lastRevisionNumber            Int                             @default(0)
+  historyCutoverAt              DateTime                        @default(now())
+  historyVerifiedEditedAt       DateTime?
+  historyVerifiedRevisionNumber Int?
+  historyIncompleteReason       CommentHistoryIncompleteReason?
+  revisions                     CommentRevision[]
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime                        @updatedAt
 
   @@index([cardId, createdAt])
   @@index([authorId, createdAt]) // admin author and combined filters
@@ -799,6 +831,30 @@ model Comment {
   @@index([deletedAt]) // purge sweep (TASK-148)
   @@index([apiTokenId, createdAt])
   @@index([agentSessionId, createdAt])
+}
+
+/// TASK-185.1 immutable comment snapshot. A row is written exactly once per
+/// real text edit; `(commentId, revisionNumber)` is unique and numbers stay
+/// monotonic across trimming and GDPR erase. Children are cleaned explicitly
+/// before a comment/user is hard-deleted (the FKs stay RESTRICT).
+model CommentRevision {
+  id             String               @id @default(cuid())
+  comment        Comment              @relation(fields: [commentId], references: [id], onDelete: Restrict)
+  commentId      String
+  revisionNumber Int
+  beforeText     String               @db.Text
+  afterText      String               @db.Text
+  createdAt      DateTime             @default(now())
+  editor         User?                @relation(fields: [editorId], references: [id], onDelete: Restrict)
+  editorId       String?
+  actorType      String               @default("human") // human|agent
+  apiTokenId     String?
+  agentSessionId String?
+  agentName      String?
+  cause          CommentRevisionCause
+
+  @@unique([commentId, revisionNumber])
+  @@index([editorId]) // GDPR erase finds every revision the user edited
 }
 
 // File attachments (TASK-47) — self-hosted blobs on the local disk under

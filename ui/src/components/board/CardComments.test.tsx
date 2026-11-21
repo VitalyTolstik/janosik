@@ -1539,7 +1539,10 @@ describe("CardComments", () => {
       expect(within(saved).getByTestId("comment-kind-badge")).toHaveTextContent(
         "Question",
       );
-      expect(within(saved).getByTestId("comment-edited")).toBeInTheDocument();
+      // TASK-185.1: a kind-only save is not a text edit, so no “Edited” mark.
+      expect(
+        within(saved).queryByTestId("comment-edited"),
+      ).not.toBeInTheDocument();
       expect(saved).toHaveTextContent("Blocked here");
     });
     expect(
