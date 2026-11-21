@@ -39,6 +39,7 @@ import type {
   DeleteAccountResponse,
   EndAgentSessionRequest,
   InviteMemberRequest,
+  NotificationSettingsDto,
   RequestAccountDeletionCodeRequest,
   RequestAccountDeletionCodeResponse,
   RevertPreviewDto,
@@ -49,6 +50,7 @@ import type {
   UpdateBoardAgentPolicyRequest,
   UpdateCommentRequest,
   UpdateMemberRequest,
+  UpdateNotificationSettingsRequest,
   UpdateProfileRequest,
   UpdateShareRequest,
   UpdateUserTokenRequest,
@@ -568,6 +570,19 @@ export class ApiClient {
       method: "PATCH",
       body: patch,
     });
+  }
+
+  /**
+   * `PATCH /users/me/notification-settings` (TASK-166.9): the account-level
+   * email switches. The in-app attention inbox is unaffected.
+   */
+  updateNotificationSettings(
+    patch: UpdateNotificationSettingsRequest,
+  ): Promise<NotificationSettingsDto> {
+    return this.request<NotificationSettingsDto>(
+      "/users/me/notification-settings",
+      { method: "PATCH", body: patch },
+    );
   }
 
   /**

@@ -51,6 +51,7 @@ function invitationError(error: unknown, t: Translate): string {
 export function NotificationsBell() {
   const { t } = useI18n();
   const { user } = useAuth();
+  const { roleOf } = useBoardActions();
   const [invitations, setInvitations] = useState<BoardInvitationDto[] | null>(
     null,
   );
@@ -158,6 +159,7 @@ export function NotificationsBell() {
         align="start"
         sideOffset={8}
         collisionPadding={8}
+        aria-label={t("common.notifications")}
         data-testid="invitations-panel"
         aria-busy={invitations === null && !invitationsError}
         className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
@@ -167,6 +169,8 @@ export function NotificationsBell() {
           page={attention}
           unavailable={attentionError}
           onReload={loadAttention}
+          onNavigate={() => setOpen(false)}
+          roleOf={roleOf}
         />
         <NotificationsPanel
           invitations={invitations}
@@ -255,13 +259,13 @@ function NotificationsPanel({
   };
 
   return (
-    <>
+    <section aria-labelledby="invitations-heading">
       <div className="border-b border-border/60 px-4 py-3">
-        <p className="text-sm font-semibold">
+        <h2 id="invitations-heading" className="text-sm font-semibold">
           {invitations === null
             ? t("notifications.titlePlain")
             : t("notifications.title", { count: invitations.length })}
-        </p>
+        </h2>
       </div>
 
       {unavailable ? (
@@ -354,6 +358,6 @@ function NotificationsPanel({
           })}
         </ul>
       )}
-    </>
+    </section>
   );
 }

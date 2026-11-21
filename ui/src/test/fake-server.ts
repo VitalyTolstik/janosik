@@ -26,6 +26,7 @@ import {
   type PresenceSseEvent,
   type PresenceUser,
   type ResyncSseEvent,
+  type UpdateNotificationSettingsRequest,
   type UpdateProfileRequest,
   type UserAvatarColor,
   type UserTokenDto,
@@ -47,6 +48,7 @@ interface FakeAccount {
   id: string;
   email: string;
   password: string;
+  notifyDigest: boolean;
   notifyAttention: boolean;
   displayName: string | null;
   avatarColor: UserAvatarColor | null;
@@ -89,6 +91,7 @@ export class FakeServer {
     id: "user-1",
     email: "admin@example.com",
     password: "password123",
+    notifyDigest: true,
     notifyAttention: true,
     displayName: "Admin",
     avatarColor: null,
@@ -534,10 +537,29 @@ export class FakeServer {
       if (patch.avatarColor !== undefined) {
         this.account.avatarColor = patch.avatarColor;
       }
+      if (patch.notifyDigest !== undefined) {
+        this.account.notifyDigest = patch.notifyDigest;
+      }
       if (patch.notifyAttention !== undefined) {
         this.account.notifyAttention = patch.notifyAttention;
       }
       return json(200, this.publicUser());
+    }
+    if (
+      path === "/api/v1/users/me/notification-settings" &&
+      method === "PATCH"
+    ) {
+      const patch = (body ?? {}) as UpdateNotificationSettingsRequest;
+      if (typeof patch.notifyDigest === "boolean") {
+        this.account.notifyDigest = patch.notifyDigest;
+      }
+      if (typeof patch.notifyAttention === "boolean") {
+        this.account.notifyAttention = patch.notifyAttention;
+      }
+      return json(200, {
+        notifyDigest: this.account.notifyDigest,
+        notifyAttention: this.account.notifyAttention,
+      });
     }
     if (path === "/api/v1/users/me/tokens" && method === "GET") {
       return json(200, structuredClone(this.apiTokens));

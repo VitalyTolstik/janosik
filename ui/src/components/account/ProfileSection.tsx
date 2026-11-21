@@ -44,30 +44,63 @@ export function ProfileSection() {
   if (user === null) return null;
 
   const trimmed = name.trim();
-  const dirty =
+  const attentionChanged = attention !== (user.notifyAttention ?? true);
+  const profileChanged =
     trimmed !== (user.displayName ?? "") ||
     color !== user.avatarColor ||
-    digest !== (user.notifyDigest ?? true) ||
-    attention !== (user.notifyAttention ?? true);
+    digest !== (user.notifyDigest ?? true);
+  const dirty = profileChanged || attentionChanged;
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!dirty || saving) return;
+    const previousAttention = user.notifyAttention ?? true;
+    let next = user;
     setSaving(true);
     try {
-      const next = await api.updateProfile({
-        displayName: trimmed === "" ? null : trimmed,
-        avatarColor: color,
-        notifyDigest: digest,
-        ...(attention !== (user.notifyAttention ?? true)
-          ? { notifyAttention: attention }
-          : {}),
-      });
-      updateUser(next);
-      setName(next.displayName ?? "");
+      if (profileChanged) {
+        try {
+          next = await api.updateProfile({
+            displayName: trimmed === "" ? null : trimmed,
+            avatarColor: color,
+            notifyDigest: digest,
+          });
+        } catch {
+          setAttention(previousAttention);
+          toast.error(t("account.profile.saveError"));
+          return;
+        }
+        // Apply the profile result at once. A later settings failure must
+        // not hide a profile write the server already accepted.
+        updateUser(next);
+        setName(next.displayName ?? "");
+      }
+      if (attentionChanged) {
+        // TASK-166.9 owns the attention e-mail switch: the dedicated
+        // endpoint keeps it separate from the profile write.
+        try {
+          const settings = await api.updateNotificationSettings({
+            notifyAttention: attention,
+          });
+          setAttention(settings.notifyAttention);
+          updateUser(
+            settings.notifyAttention
+              ? { ...next, notifyAttention: undefined }
+              : { ...next, notifyAttention: false },
+          );
+        } catch {
+          // The checkbox must never claim a setting the server refused.
+          setAttention(previousAttention);
+          updateUser(
+            previousAttention
+              ? { ...next, notifyAttention: undefined }
+              : { ...next, notifyAttention: false },
+          );
+          toast.error(t("account.profile.attentionSaveError"));
+          return;
+        }
+      }
       toast.success(t("account.profile.saved"));
-    } catch {
-      toast.error(t("account.profile.saveError"));
     } finally {
       setSaving(false);
     }
@@ -229,6 +262,7 @@ export function ProfileSection() {
             data-testid="account-notify-digest"
             className="mt-0.5 h-3.5 w-3.5 rounded border-border"
             checked={digest}
+            disabled={saving}
             onChange={(event) => setDigest(event.target.checked)}
           />
           <span>
@@ -245,6 +279,7 @@ export function ProfileSection() {
             data-testid="account-notify-attention"
             className="mt-0.5 h-3.5 w-3.5 rounded border-border"
             checked={attention}
+            disabled={saving}
             onChange={(event) => setAttention(event.target.checked)}
           />
           <span>
