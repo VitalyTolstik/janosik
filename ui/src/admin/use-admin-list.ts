@@ -101,9 +101,15 @@ export function useAdminList<T>(
     limit?: number;
     initialState?: AdminListQueryState;
     surface?: AdminListSurface;
+    /**
+     * Opt-in: rewrite an empty page whose offset is past the server total to
+     * the last real page. URL-backed lists must leave this off so a bad deep
+     * link does not push a correction that Back would undo in a loop.
+     */
+    clampOutOfRange?: boolean;
   } = {},
 ): AdminListState<T> {
-  const { initialState: initial, surface } = options;
+  const { initialState: initial, surface, clampOutOfRange } = options;
   const [limit, setLimitState] = useState(
     initial?.limit ?? options.limit ?? 50,
   );
@@ -188,6 +194,7 @@ export function useAdminList<T>(
               )
             : 0;
         if (
+          clampOutOfRange === true &&
           page.total > 0 &&
           page.items.length === 0 &&
           page.offset > lastPageOffset
@@ -238,6 +245,7 @@ export function useAdminList<T>(
     filters,
     surface,
     filterError,
+    clampOutOfRange,
   ]);
 
   // Keep the last successful page while a search/page request is in flight

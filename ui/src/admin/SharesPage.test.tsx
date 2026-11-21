@@ -214,17 +214,25 @@ describe("SharesPage", () => {
     await waitFor(() =>
       expect(lastSharesRequest(server)?.query.get("offset")).toBe("50"),
     );
-    // The label keeps describing the visible snapshot, so PageHeader does not
-    // reflow and the live region keeps its previous announcement.
+    // The label and pager keep describing the visible snapshot, so PageHeader
+    // does not reflow and the live region keeps its previous announcement.
     expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
       "1–50 of 101",
     );
+    expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+      "Page 1 of 3",
+    );
+    expect(screen.getByTestId("admin-pagination-prev")).toBeDisabled();
+    expect(screen.getByTestId("admin-pagination-next")).toBeEnabled();
 
     release();
     await waitFor(() =>
       expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
         "51–100 of 101",
       ),
+    );
+    expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+      "Page 2 of 3",
     );
   });
 
@@ -286,6 +294,83 @@ describe("SharesPage", () => {
     expect(
       screen.queryByTestId("admin-pagination-prev"),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not show the filtered empty copy while a matching search is pending", async () => {
+    const server = new FakeAdminServer();
+    server.shares = shareRows(3);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    const search = screen.getByRole("textbox", { name: /^Search/ });
+    fireEvent.change(search, { target: { value: "nothing-matches" } });
+    expect(
+      await screen.findByText("No rows match this search or filter."),
+    ).toBeInTheDocument();
+
+    let release!: () => void;
+    server.holdCommands = new Promise((resolve) => {
+      release = resolve;
+    });
+    fireEvent.change(search, { target: { value: "Board 1" } });
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("search")).toBe("Board 1"),
+    );
+    expect(
+      screen.queryByText("No rows match this search or filter."),
+    ).not.toBeInTheDocument();
+
+    release();
+    await screen.findByTestId("admin-shares-table");
+    expect(await screen.findByText("Board 1")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No rows match this search or filter."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses descending ids as the createdAt tiebreaker across a page boundary", async () => {
+    const server = new FakeAdminServer();
+    server.shares = Array.from({ length: 26 }, (_, index) => {
+      const id = String(index).padStart(2, "0");
+      return shareRow({
+        id: `share-${id}`,
+        boardTitle: `Board ${id}`,
+        createdAt: CREATED_AT,
+      });
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    fireEvent.change(screen.getByTestId("admin-page-size"), {
+      target: { value: "25" },
+    });
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("limit")).toBe("25"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+        "1–25 of 26",
+      ),
+    );
+
+    const firstPage = screen.getByTestId("admin-shares-table");
+    expect(within(firstPage).getByText("Board 25")).toBeInTheDocument();
+    expect(within(firstPage).queryByText("Board 00")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("offset")).toBe("25"),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+        "26 of 26",
+      ),
+    );
+    const secondPage = screen.getByTestId("admin-shares-table");
+    expect(within(secondPage).getByText("Board 00")).toBeInTheDocument();
+    expect(within(secondPage).queryByText("Board 25")).not.toBeInTheDocument();
   });
 
   it("resets to the first page when the page size changes", async () => {

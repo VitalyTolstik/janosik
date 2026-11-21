@@ -48,8 +48,9 @@ export function SharesPage() {
   const { lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
-  const list = useAdminList<AdminShareRowDto>((params) =>
-    adminApi.listShares(params),
+  const list = useAdminList<AdminShareRowDto>(
+    (params) => adminApi.listShares(params),
+    { clampOutOfRange: true },
   );
   const { items: rows, reload } = list;
   // Freeze `now` on mount: an expiry badge must not start ticking while the
@@ -123,13 +124,15 @@ export function SharesPage() {
             <ErrorState onRetry={reload} />
           </div>
         ) : rows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            {list.total > 0
-              ? t("admin.filters.emptyPage.moderation")
-              : list.effectiveSearch !== ""
-                ? t("admin.common.emptyFiltered")
-                : t("admin.shares.empty")}
-          </p>
+          list.refreshing ? null : (
+            <p className="p-4 text-sm text-muted-foreground">
+              {list.total > 0
+                ? t("admin.filters.emptyPage.moderation")
+                : list.effectiveSearch !== ""
+                  ? t("admin.common.emptyFiltered")
+                  : t("admin.shares.empty")}
+            </p>
+          )
         ) : (
           <div data-testid="admin-shares-table">
             <Table>
@@ -326,8 +329,8 @@ export function SharesPage() {
         {!list.loading && !list.error && (rows.length > 0 || list.total > 0) ? (
           <Pagination
             total={list.total}
-            limit={list.limit}
-            offset={list.offset}
+            limit={list.pageLimit}
+            offset={list.pageOffset}
             onChange={list.setOffset}
             onLimitChange={list.setLimit}
           />
