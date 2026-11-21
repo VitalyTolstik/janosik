@@ -103,10 +103,18 @@ export async function openCard(
 
 export async function closeCardDialog(page: Page): Promise<void> {
   const dialog = cardDialog(page);
-  await dialog
+  // A preceding Escape (e.g. closing the card-actions menu) may already have
+  // closed the dialog; treat that as success instead of waiting for a button
+  // that no longer exists.
+  if (!(await dialog.isVisible().catch(() => false))) return;
+  const close = dialog
     .getByRole("button", { name: "Close", exact: true })
-    .first()
-    .click();
+    .first();
+  if (await close.isVisible().catch(() => false)) {
+    await close.click();
+  } else {
+    await page.keyboard.press("Escape");
+  }
   await expect(dialog).toBeHidden();
 }
 

@@ -24,8 +24,13 @@ test("submits with Ctrl+Enter and clears the draft with Cancel", async ({
   const cleared = dialog
     .getByTestId("comment-input")
     .locator('[contenteditable="true"]');
+  // Wait for the previous send to clear the composer before typing the next
+  // draft; Cancel stays disabled while the composer is empty or sending.
+  await expect(cleared).toHaveText("");
   await cleared.fill("Discard this draft");
-  await dialog.getByTestId("comment-cancel").click();
+  const cancel = dialog.getByTestId("comment-cancel");
+  await expect(cancel).toBeEnabled();
+  await cancel.click();
   await expect(
     dialog.getByTestId("comment-input").locator('[contenteditable="true"]'),
   ).toHaveText("");

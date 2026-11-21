@@ -960,7 +960,7 @@ export function CalendarView({
             onClick={() => setUnscheduledOpen((o) => !o)}
             className={cn(
               "flex items-center gap-1.5 border-b border-border/60 px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground",
-              !unscheduledOpen && "flex-col gap-1 px-1",
+              !unscheduledOpen && "sm:flex-col sm:gap-1 sm:px-1",
             )}
           >
             {unscheduledOpen ? (
