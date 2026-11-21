@@ -388,7 +388,7 @@ export function Header() {
           </nav>
         ) : null}
         {!isAgentsRoute ? (
-          <div className={cn(isBoardRoute && "max-[720.98px]:hidden")}>
+          <div>
             <NotificationsBell />
           </div>
         ) : null}
