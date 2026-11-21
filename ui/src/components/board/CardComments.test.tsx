@@ -407,13 +407,50 @@ describe("CardComments", () => {
     );
   });
 
+  it("keeps the header readable for an edited, kind-badged comment at 390 px", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({
+        id: "comment-mobile",
+        text: "Long enough body",
+        kind: "blocker",
+        editedAt: Date.now(),
+      }),
+    ]);
+    renderComments(server);
+    await screen.findByText("Long enough body");
+
+    const meta = screen.getByTestId("comment-header-meta");
+    expect(meta).toHaveClass("min-w-0", "flex-wrap");
+    expect(meta.parentElement).toHaveClass("max-sm:flex-col");
+    const author = screen.getByTestId("comment-author");
+    expect(author).toHaveClass("min-w-[6rem]", "truncate");
+    expect(screen.getByTestId("comment-meta")).toHaveClass("max-sm:basis-full");
+    const actions = screen.getByTestId("comment-actions");
+    expect(actions).toHaveClass("max-sm:self-end");
+    expect(within(actions).getByTestId("comment-edit")).toHaveClass(
+      "max-md:h-11",
+      "max-md:w-11",
+    );
+    expect(screen.getByTestId("comment-edited")).toBeInTheDocument();
+    expect(screen.getByTestId("comment-kind-badge")).toHaveTextContent(
+      /blocker/i,
+    );
+  });
+
   it("offers the comment kinds in a themed radio picker", async () => {
     const server = new FakeServer([seedBoard()]);
     renderComments(server);
 
-    fireEvent.click(await screen.findByTestId("comment-kind"));
+    const trigger = await screen.findByTestId("comment-kind");
+    expect(trigger).toHaveClass("max-sm:h-11");
+    fireEvent.click(trigger);
     const group = screen.getByRole("radiogroup", { name: "Comment kind" });
     expect(within(group).getAllByRole("radio")).toHaveLength(6);
+    expect(screen.getByTestId("comment-kind-option-note")).toHaveClass(
+      "max-sm:min-h-11",
+      "max-sm:py-2.5",
+    );
     expect(screen.getByTestId("comment-kind-option-note")).toHaveAttribute(
       "aria-checked",
       "true",

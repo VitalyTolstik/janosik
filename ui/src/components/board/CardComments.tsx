@@ -800,7 +800,7 @@ function CommentKindPicker({
           disabled={disabled}
           aria-label={`${label}: ${kindLabel(kind, t)}`}
           data-testid={testId}
-          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground max-sm:h-11"
         >
           {kindLabel(kind, t)}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -820,7 +820,7 @@ function CommentKindPicker({
                 onChange(option);
               }}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover max-sm:min-h-11 max-sm:py-2.5",
                 option === kind
                   ? "font-medium text-foreground"
                   : "text-foreground/90",
@@ -1057,52 +1057,65 @@ function CommentRow({
         />
       </button>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <button
-            type="button"
-            onClick={() => openProfile(comment.authorId)}
-            className="truncate font-medium hover:underline"
+        <div className="flex min-w-0 items-baseline gap-2 max-sm:flex-col max-sm:items-stretch max-sm:gap-1">
+          <div
+            data-testid="comment-header-meta"
+            className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1"
           >
-            {name}
-          </button>
-          {comment.actorType === "agent" ? (
-            <span
-              data-testid="comment-agent-badge"
-              className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-              title={t("activity.agent")}
+            <button
+              type="button"
+              data-testid="comment-author"
+              onClick={() => openProfile(comment.authorId)}
+              className="min-w-[6rem] max-w-full truncate text-left font-medium hover:underline"
             >
-              {t("activity.agent")}
-            </span>
-          ) : null}
-          <time
-            className="shrink-0 text-[11px] text-muted-foreground"
-            dateTime={new Date(comment.createdAt).toISOString()}
-            title={formatDate(comment.createdAt, lang, hour12)}
-          >
-            {/* eslint-disable-next-line react-hooks/purity -- relative time is refreshed every render on purpose */}
-            {formatRelative(comment.createdAt, lang, Date.now(), hour12)}
-          </time>
-          {comment.editedAt ? (
-            <span
-              data-testid="comment-edited"
-              className="shrink-0 cursor-help text-[11px] text-muted-foreground"
-              title={formatDate(comment.editedAt, lang, hour12)}
+              {name}
+            </button>
+            {comment.actorType === "agent" ? (
+              <span
+                data-testid="comment-agent-badge"
+                className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                title={t("activity.agent")}
+              >
+                {t("activity.agent")}
+              </span>
+            ) : null}
+            <time
+              className="shrink-0 text-[11px] text-muted-foreground"
+              dateTime={new Date(comment.createdAt).toISOString()}
+              title={formatDate(comment.createdAt, lang, hour12)}
             >
-              {t("comment.edited")}
-            </span>
-          ) : null}
-          {comment.kind !== DEFAULT_COMMENT_KIND ? (
-            <span
-              data-testid="comment-kind-badge"
-              className="shrink-0 rounded-full border border-border/70 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              {kindLabel(comment.kind, t)}
-            </span>
-          ) : null}
+              {/* eslint-disable-next-line react-hooks/purity -- relative time is refreshed every render on purpose */}
+              {formatRelative(comment.createdAt, lang, Date.now(), hour12)}
+            </time>
+            {comment.editedAt || comment.kind !== DEFAULT_COMMENT_KIND ? (
+              <span
+                data-testid="comment-meta"
+                className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 max-sm:basis-full"
+              >
+                {comment.editedAt ? (
+                  <span
+                    data-testid="comment-edited"
+                    className="shrink-0 cursor-help text-[11px] text-muted-foreground"
+                    title={formatDate(comment.editedAt, lang, hour12)}
+                  >
+                    {t("comment.edited")}
+                  </span>
+                ) : null}
+                {comment.kind !== DEFAULT_COMMENT_KIND ? (
+                  <span
+                    data-testid="comment-kind-badge"
+                    className="shrink-0 rounded-full border border-border/70 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    {kindLabel(comment.kind, t)}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </div>
           {own && !readOnly && !pending && !editing ? (
             <div
               data-testid="comment-actions"
-              className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 no-hover:opacity-100 group-hover:opacity-100"
+              className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 no-hover:opacity-100 group-hover:opacity-100 max-sm:self-end"
             >
               <button
                 ref={editButtonRef}
