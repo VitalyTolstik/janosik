@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
   Bot,
@@ -32,14 +33,16 @@ import { formatDateOnly, useI18n } from "@/i18n";
 import type { MessageKey } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { userInitials, userLabel } from "@/utils/avatar";
+import {
+  ACCOUNT_QUERY_PARAM,
+  isAccountSection,
+  type AccountSection,
+} from "@/utils/account-nav";
 import { ApiTokensSection } from "./ApiTokensSection";
 import { DataPrivacySection } from "./DataPrivacySection";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
 import { SecuritySection } from "./SecuritySection";
-
-type AccountSection =
-  "profile" | "security" | "tokens" | "preferences" | "data";
 
 const SECTIONS: {
   id: AccountSection;
@@ -76,10 +79,32 @@ export function AccountDialog({
 }) {
   const { user } = useAuth();
   const { t, lang } = useI18n();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get(ACCOUNT_QUERY_PARAM);
+  const deepLinkSection = isAccountSection(requestedSection)
+    ? requestedSection
+    : null;
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const externalTrigger = useRef<HTMLElement | null>(null);
+  // Mirrors Header's `?agents=` handling: Back from a deep-linked panel must
+  // close it, not leave the URL and the dialog disagreeing.
+  const lastDeepLink = useRef<AccountSection | null>(null);
+
+  // TASK-177.6: a notification can deep-link to a section through
+  // `?account=tokens|…`; the panel is not a route, so the header-owned
+  // dialog consumes the param instead of inventing an account page.
+  useEffect(() => {
+    if (deepLinkSection !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
+      setSection(deepLinkSection);
+      setOpen(true);
+    } else if (lastDeepLink.current !== null) {
+      setOpen(false);
+    }
+    lastDeepLink.current = deepLinkSection;
+  }, [deepLinkSection]);
 
   useEffect(() => {
     const openTokens = () => {
@@ -100,9 +125,25 @@ export function AccountDialog({
   }
 
   const name = userLabel(user.displayName, user.email);
+  const selectSection = (next: AccountSection) => {
+    setSection(next);
+    if (searchParams.has(ACCOUNT_QUERY_PARAM)) {
+      const params = new URLSearchParams(searchParams);
+      params.set(ACCOUNT_QUERY_PARAM, next);
+      setSearchParams(params, { replace: true });
+    }
+  };
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next && searchParams.has(ACCOUNT_QUERY_PARAM)) {
+      const params = new URLSearchParams(searchParams);
+      params.delete(ACCOUNT_QUERY_PARAM);
+      setSearchParams(params, { replace: true });
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
@@ -208,7 +249,7 @@ export function AccountDialog({
                 type="button"
                 data-testid={`account-nav-${id}`}
                 aria-current={section === id ? "page" : undefined}
-                onClick={() => setSection(id)}
+                onClick={() => selectSection(id)}
                 className={cn(
                   "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors sm:w-full",
                   section === id
