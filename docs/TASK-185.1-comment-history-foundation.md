@@ -38,6 +38,12 @@ migration into a no-op. After cutover, trimming and purge snapshots are found
 through `details->>'revisionId'` / `details->>'commentId'`; TASK-185.2 replaces
 those expression indexes with the typed `Activity.commentId` column.
 
+A stale board subtree is purged in one transaction per board while holding that
+board's advisory lock. The transaction has a 5-minute timeout and 10-second
+connection wait, so a very large board can block restores/writers of that board
+for up to the lock window; the purge processes boards one at a time and the lock
+is released before the next board.
+
 ## Writer
 
 `backend/src/comments/comment-history.ts` is the only text-edit writer. It

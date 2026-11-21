@@ -2,7 +2,12 @@ import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { StorageService } from "@/attachments/storage.service";
 import type { AccountDeletionService } from "@/users/account-deletion.service";
 import type { OpsSettingsService } from "./ops-settings.service";
-import { MaintenanceService, PURGE_CHUNK } from "./maintenance.service";
+import {
+  MaintenanceService,
+  PURGE_BOARD_TX_MAX_WAIT_MS,
+  PURGE_BOARD_TX_TIMEOUT_MS,
+  PURGE_CHUNK,
+} from "./maintenance.service";
 
 function makePrisma(): PrismaService {
   const purgeable = () => ({
@@ -563,7 +568,7 @@ describe("MaintenanceService", () => {
     // The per-card passes have nothing left; only the board chunk sees rows.
     (prisma.card.findMany as jest.Mock).mockImplementation(
       async (args: { where: { column?: unknown } }) =>
-        args.where.column ? [{ id: "c1" }] : [],
+        args.where.column ? [{ id: "c1", column: { boardId: "b1" } }] : [],
     );
     (prisma.attachment.findMany as jest.Mock).mockImplementation(
       async (args: { where: { cardId?: unknown; card?: unknown } }) =>
@@ -693,8 +698,13 @@ describe("MaintenanceService", () => {
       select: { id: true },
       take: PURGE_CHUNK,
     });
-    // The whole board subtree runs in one board-locked transaction.
+    // The whole board subtree runs in one board-locked transaction with a
+    // generous bound instead of Prisma's 5 s default.
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: PURGE_BOARD_TX_MAX_WAIT_MS,
+      timeout: PURGE_BOARD_TX_TIMEOUT_MS,
+    });
   });
 
   it("deletes expired and long-revoked board shares (TASK-148)", async () => {

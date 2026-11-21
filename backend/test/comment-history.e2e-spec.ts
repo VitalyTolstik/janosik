@@ -1226,14 +1226,27 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     await editComment(comment.id, admin.token, {
       text: "Board comment edited",
     }).expect(200);
+    // Real deleteBoard cascade, then age the rows as if the purge is due.
+    await server()
+      .delete(`/api/v1/boards/${boardId}`)
+      .set(auth(admin.token))
+      .expect(200);
+    const staleAt = new Date(Date.now() - 45 * 86_400_000);
     await prisma.board.update({
       where: { id: boardId },
-      data: { deletedAt: new Date(Date.now() - 45 * 86_400_000) },
+      data: { deletedAt: staleAt },
+    });
+    await prisma.card.update({
+      where: { id: cardId },
+      data: { deletedAt: staleAt },
+    });
+    await prisma.comment.update({
+      where: { id: comment.id },
+      data: { deletedAt: staleAt },
     });
 
     const held = deferred();
     const release = deferred();
-    const staleAt = new Date(Date.now() - 45 * 86_400_000);
     const restore = prisma.$transaction(async (tx) => {
       await lockBoard(tx, boardId);
       held.resolve();
@@ -1273,6 +1286,125 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     expect(
       await prisma.commentRevision.count({ where: { commentId: comment.id } }),
     ).toBe(1);
+  });
+
+  it("keeps a checklist and its items when the checklist is restored during purge", async () => {
+    const { boardId, cardId } = await boardWithCard(
+      "History checklist restore",
+      "hcr",
+    );
+    const checklistId = "cl-hcr";
+    const itemId = "it-hcr";
+    await apply(
+      boardId,
+      scoped(boardId, {
+        type: "ADD_CHECKLIST",
+        cardId,
+        newChecklistId: checklistId,
+        title: "Steps",
+      }),
+      admin.token,
+    );
+    await apply(
+      boardId,
+      scoped(boardId, {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId,
+        checklistId,
+        newItemId: itemId,
+        text: "One",
+      }),
+      admin.token,
+    );
+    const staleAt = new Date(Date.now() - 45 * 86_400_000);
+    await prisma.checklist.update({
+      where: { id: checklistId },
+      data: { deletedAt: staleAt },
+    });
+    await prisma.checklistItem.update({
+      where: { id: itemId },
+      data: { deletedAt: staleAt },
+    });
+
+    const held = deferred();
+    const release = deferred();
+    const restore = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, boardId);
+      held.resolve();
+      await release.promise;
+      await tx.checklist.update({
+        where: { id: checklistId },
+        data: { deletedAt: null },
+      });
+    });
+    await held.promise;
+    const purge = maintenance.purgeSoftDeleted();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release.resolve();
+    await Promise.all([restore, purge]);
+
+    const checklist = await prisma.checklist.findUnique({
+      where: { id: checklistId },
+    });
+    expect(checklist?.deletedAt).toBeNull();
+    expect(
+      await prisma.checklistItem.findUnique({ where: { id: itemId } }),
+    ).not.toBeNull();
+  });
+
+  it("serialises two erasures with crossing board sets", async () => {
+    const left = await boardWithCard("History erase cross left", "hxl");
+    const right = await boardWithCard("History erase cross right", "hxr");
+    const shared = await boardWithCard("History erase cross shared", "hxs");
+    const leftUser = await prisma.user.create({
+      data: { email: "history-cross-left@example.com", displayName: "Cross L" },
+    });
+    const rightUser = await prisma.user.create({
+      data: {
+        email: "history-cross-right@example.com",
+        displayName: "Cross R",
+      },
+    });
+    const accepted = new Date();
+    await prisma.boardMember.createMany({
+      data: [
+        {
+          boardId: left.boardId,
+          userId: leftUser.id,
+          role: "MEMBER",
+          acceptedAt: accepted,
+        },
+        {
+          boardId: shared.boardId,
+          userId: leftUser.id,
+          role: "MEMBER",
+          acceptedAt: accepted,
+        },
+        {
+          boardId: right.boardId,
+          userId: rightUser.id,
+          role: "MEMBER",
+          acceptedAt: accepted,
+        },
+        {
+          boardId: shared.boardId,
+          userId: rightUser.id,
+          role: "MEMBER",
+          acceptedAt: accepted,
+        },
+      ],
+    });
+    const [first, second] = await Promise.all([
+      accountDeletion.deleteAccount(leftUser.id),
+      accountDeletion.deleteAccount(rightUser.id),
+    ]);
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(
+      await prisma.boardMember.count({
+        where: { userId: { in: [leftUser.id, rightUser.id] } },
+      }),
+    ).toBe(0);
   });
 
   it("hard purge removes revisions and comment Activity (comment and card paths)", async () => {

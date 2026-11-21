@@ -71,6 +71,13 @@ export interface MaintenanceRunResult {
 export const PURGE_CHUNK = 500;
 /** Safety bound on chunks per table per run (500 × 200 = 100k rows). */
 const PURGE_MAX_CHUNKS = 200;
+/**
+ * The board-subtree purge runs in one board-locked transaction so a restore
+ * cannot interleave. Prisma's 5 s default is far too short for a 25k-card
+ * board; keep the lock bounded but generous enough for a full subtree.
+ */
+export const PURGE_BOARD_TX_TIMEOUT_MS = 5 * 60_000;
+export const PURGE_BOARD_TX_MAX_WAIT_MS = 10_000;
 
 @Injectable()
 export class MaintenanceService {
@@ -177,7 +184,10 @@ export class MaintenanceService {
     count += await this.purgeChunks(
       (take) =>
         this.prisma.attachment.findMany({
-          where: stale,
+          where: {
+            ...stale,
+            card: { column: { board: { deletedAt: null } } },
+          },
           select: {
             id: true,
             storedName: true,
@@ -191,7 +201,11 @@ export class MaintenanceService {
         for (const row of rows) {
           // A row restored after the chunk query must keep its blob.
           const deleted = await this.prisma.attachment.deleteMany({
-            where: { id: row.id, ...stale },
+            where: {
+              id: row.id,
+              ...stale,
+              card: { column: { board: { deletedAt: null } } },
+            },
           });
           if (deleted.count > 0) removedRows.push(row);
         }
@@ -202,7 +216,10 @@ export class MaintenanceService {
     count += await this.purgeChunks(
       (take) =>
         this.prisma.comment.findMany({
-          where: stale,
+          where: {
+            ...stale,
+            card: { column: { board: { deletedAt: null } } },
+          },
           select: { id: true },
           take,
         }),
@@ -210,7 +227,11 @@ export class MaintenanceService {
         this.prisma.$transaction(async (tx) => {
           const ids = rows.map((row) => row.id);
           const candidates = await tx.comment.findMany({
-            where: { id: { in: ids }, ...stale },
+            where: {
+              id: { in: ids },
+              ...stale,
+              card: { column: { board: { deletedAt: null } } },
+            },
             select: {
               id: true,
               card: { select: { column: { select: { boardId: true } } } },
@@ -225,7 +246,11 @@ export class MaintenanceService {
           );
           const stillIds = (
             await tx.comment.findMany({
-              where: { id: { in: ids }, ...stale },
+              where: {
+                id: { in: ids },
+                ...stale,
+                card: { column: { board: { deletedAt: null } } },
+              },
               select: { id: true },
             })
           ).map((row) => row.id);
@@ -246,55 +271,113 @@ export class MaintenanceService {
     count += await this.purgeChunks(
       (take) =>
         this.prisma.checklistItem.findMany({
-          where: stale,
+          where: {
+            ...stale,
+            checklist: {
+              deletedAt: null,
+              card: { column: { board: { deletedAt: null } } },
+            },
+          },
           select: { id: true },
           take,
         }),
       async (rows) =>
         (
           await this.prisma.checklistItem.deleteMany({
-            where: { id: { in: rows.map((row) => row.id) }, ...stale },
+            where: {
+              id: { in: rows.map((row) => row.id) },
+              ...stale,
+              checklist: {
+                deletedAt: null,
+                card: { column: { board: { deletedAt: null } } },
+              },
+            },
           })
         ).count,
     );
     count += await this.purgeChunks(
       (take) =>
         this.prisma.checklist.findMany({
-          where: stale,
+          where: {
+            ...stale,
+            card: { column: { board: { deletedAt: null } } },
+          },
           select: { id: true },
           take,
         }),
-      async (rows) => {
-        const ids = rows.map((row) => row.id);
-        const [, removed] = await this.prisma.$transaction([
-          this.prisma.checklistItem.deleteMany({
-            where: { checklistId: { in: ids } },
-          }),
-          this.prisma.checklist.deleteMany({
-            where: { id: { in: ids }, ...stale, items: { none: {} } },
-          }),
-        ]);
-        return removed.count;
-      },
+      async (rows) =>
+        this.prisma.$transaction(async (tx) => {
+          const ids = rows.map((row) => row.id);
+          const candidates = await tx.checklist.findMany({
+            where: {
+              id: { in: ids },
+              ...stale,
+              card: { column: { board: { deletedAt: null } } },
+            },
+            select: {
+              id: true,
+              card: { select: { column: { select: { boardId: true } } } },
+            },
+          });
+          if (candidates.length === 0) return 0;
+          await lockBoardWrites(
+            tx,
+            candidates.map((row) => row.card.column.boardId),
+          );
+          const stillIds = (
+            await tx.checklist.findMany({
+              where: {
+                id: { in: ids },
+                ...stale,
+                card: { column: { board: { deletedAt: null } } },
+              },
+              select: { id: true },
+            })
+          ).map((row) => row.id);
+          if (stillIds.length === 0) return 0;
+          await tx.checklistItem.deleteMany({
+            where: { checklistId: { in: stillIds } },
+          });
+          return (
+            await tx.checklist.deleteMany({
+              where: {
+                id: { in: stillIds },
+                ...stale,
+                items: { none: {} },
+              },
+            })
+          ).count;
+        }),
     );
     count += await this.purgeChunks(
       (take) =>
         this.prisma.cardLink.findMany({
-          where: stale,
+          where: { ...stale, board: { deletedAt: null } },
           select: { id: true },
           take,
         }),
       async (rows) =>
         (
           await this.prisma.cardLink.deleteMany({
-            where: { id: { in: rows.map((row) => row.id) }, ...stale },
+            where: {
+              id: { in: rows.map((row) => row.id) },
+              ...stale,
+              board: { deletedAt: null },
+            },
           })
         ).count,
     );
     // Cards with everything that hangs off them, one chunk per transaction.
     count += await this.purgeChunks(
       (take) =>
-        this.prisma.card.findMany({ where: stale, select: { id: true }, take }),
+        this.prisma.card.findMany({
+          where: {
+            ...stale,
+            column: { board: { deletedAt: null } },
+          },
+          select: { id: true },
+          take,
+        }),
       async (rows) => {
         let blobs: Array<{
           storedName: string;
@@ -303,7 +386,11 @@ export class MaintenanceService {
         }> = [];
         const removed = await this.prisma.$transaction(async (tx) => {
           const candidates = await tx.card.findMany({
-            where: { id: { in: rows.map((row) => row.id) }, ...stale },
+            where: {
+              id: { in: rows.map((row) => row.id) },
+              ...stale,
+              column: { board: { deletedAt: null } },
+            },
             select: {
               id: true,
               column: { select: { boardId: true } },
@@ -321,6 +408,7 @@ export class MaintenanceService {
               where: {
                 id: { in: candidates.map((row) => row.id) },
                 ...stale,
+                column: { board: { deletedAt: null } },
               },
               select: { id: true },
             })
@@ -370,12 +458,20 @@ export class MaintenanceService {
     // Containers last, once they no longer hold any card.
     count += (
       await this.prisma.column.deleteMany({
-        where: { ...stale, cards: { none: {} } },
+        where: {
+          ...stale,
+          board: { deletedAt: null },
+          cards: { none: {} },
+        },
       })
     ).count;
     count += (
       await this.prisma.label.deleteMany({
-        where: { ...stale, cards: { none: {} } },
+        where: {
+          ...stale,
+          board: { deletedAt: null },
+          cards: { none: {} },
+        },
       })
     ).count;
     // Boards last: a deleted board keeps its row (and its feed/log/shares)
@@ -416,98 +512,104 @@ export class MaintenanceService {
       thumbnailName: string | null;
       posterName: string | null;
     }> = [];
-    await this.prisma.$transaction(async (tx) => {
-      await lockBoardWrites(tx, [boardId]);
-      const board = await tx.board.findMany({
-        where: { id: boardId, ...stale },
-        select: { id: true },
-        take: 1,
-      });
-      if (board.length === 0) return;
-      blobs = await tx.attachment.findMany({
-        where: { card: { column: { boardId } } },
-        select: {
-          storedName: true,
-          thumbnailName: true,
-          posterName: true,
-        },
-      });
-      // Feed and command log are still paged inside the lock; the pages keep
-      // the transaction's bind-parameter list bounded without releasing the
-      // board lock between them.
-      for (;;) {
-        const page = await tx.activity.findMany({
-          where: { boardId },
-          select: { id: true },
-          take: PURGE_CHUNK,
-        });
-        if (page.length === 0) break;
-        await tx.activity.deleteMany({
-          where: { id: { in: page.map((row) => row.id) } },
-        });
-        if (page.length < PURGE_CHUNK) break;
-      }
-      for (;;) {
-        const page = await tx.commandPreimage.findMany({
-          where: { boardId },
-          select: { commandId: true },
-          take: PURGE_CHUNK,
-        });
-        if (page.length === 0) break;
-        await tx.commandPreimage.deleteMany({
-          where: { commandId: { in: page.map((row) => row.commandId) } },
-        });
-        if (page.length < PURGE_CHUNK) break;
-      }
-      for (;;) {
-        const page = await tx.command.findMany({
-          where: { boardId },
-          select: { id: true },
-          take: PURGE_CHUNK,
-        });
-        if (page.length === 0) break;
-        await tx.command.deleteMany({
-          where: { id: { in: page.map((row) => row.id) } },
-        });
-        if (page.length < PURGE_CHUNK) break;
-      }
-      await tx.checklistItem.deleteMany({
-        where: { checklist: { card: { column: { boardId } } } },
-      });
-      await tx.checklist.deleteMany({
-        where: { card: { column: { boardId } } },
-      });
-      await tx.cardLabel.deleteMany({
-        where: { card: { column: { boardId } } },
-      });
-      await tx.cardLink.deleteMany({ where: { boardId } });
-      await tx.commentRevision.deleteMany({
-        where: { comment: { card: { column: { boardId } } } },
-      });
-      await tx.comment.deleteMany({
-        where: { card: { column: { boardId } } },
-      });
-      await tx.attachment.deleteMany({
-        where: { card: { column: { boardId } } },
-      });
-      await tx.card.deleteMany({ where: { column: { boardId } } });
-      await tx.column.deleteMany({ where: { boardId } });
-      await tx.label.deleteMany({ where: { boardId } });
-      await tx.agentRun.deleteMany({ where: { boardId } });
-      await tx.agentSession.deleteMany({ where: { boardId } });
-      await tx.approvalRequest.deleteMany({ where: { boardId } });
-      // Snapshot shares are detached by the FK (`SET NULL`) and keep
-      // serving; only a live share dies with its board (TASK-156).
-      await tx.boardShare.deleteMany({
-        where: { boardId, mode: "live" },
-      });
-      await tx.boardMember.deleteMany({ where: { boardId } });
-      removed = (
-        await tx.board.deleteMany({
+    await this.prisma.$transaction(
+      async (tx) => {
+        await lockBoardWrites(tx, [boardId]);
+        const board = await tx.board.findMany({
           where: { id: boardId, ...stale },
-        })
-      ).count;
-    });
+          select: { id: true },
+          take: 1,
+        });
+        if (board.length === 0) return;
+        blobs = await tx.attachment.findMany({
+          where: { card: { column: { boardId } } },
+          select: {
+            storedName: true,
+            thumbnailName: true,
+            posterName: true,
+          },
+        });
+        // Feed and command log are still paged inside the lock; the pages keep
+        // the transaction's bind-parameter list bounded without releasing the
+        // board lock between them.
+        for (;;) {
+          const page = await tx.activity.findMany({
+            where: { boardId },
+            select: { id: true },
+            take: PURGE_CHUNK,
+          });
+          if (page.length === 0) break;
+          await tx.activity.deleteMany({
+            where: { id: { in: page.map((row) => row.id) } },
+          });
+          if (page.length < PURGE_CHUNK) break;
+        }
+        for (;;) {
+          const page = await tx.commandPreimage.findMany({
+            where: { boardId },
+            select: { commandId: true },
+            take: PURGE_CHUNK,
+          });
+          if (page.length === 0) break;
+          await tx.commandPreimage.deleteMany({
+            where: { commandId: { in: page.map((row) => row.commandId) } },
+          });
+          if (page.length < PURGE_CHUNK) break;
+        }
+        for (;;) {
+          const page = await tx.command.findMany({
+            where: { boardId },
+            select: { id: true },
+            take: PURGE_CHUNK,
+          });
+          if (page.length === 0) break;
+          await tx.command.deleteMany({
+            where: { id: { in: page.map((row) => row.id) } },
+          });
+          if (page.length < PURGE_CHUNK) break;
+        }
+        await tx.checklistItem.deleteMany({
+          where: { checklist: { card: { column: { boardId } } } },
+        });
+        await tx.checklist.deleteMany({
+          where: { card: { column: { boardId } } },
+        });
+        await tx.cardLabel.deleteMany({
+          where: { card: { column: { boardId } } },
+        });
+        await tx.cardLink.deleteMany({ where: { boardId } });
+        await tx.commentRevision.deleteMany({
+          where: { comment: { card: { column: { boardId } } } },
+        });
+        await tx.comment.deleteMany({
+          where: { card: { column: { boardId } } },
+        });
+        await tx.attachment.deleteMany({
+          where: { card: { column: { boardId } } },
+        });
+        await tx.card.deleteMany({ where: { column: { boardId } } });
+        await tx.column.deleteMany({ where: { boardId } });
+        await tx.label.deleteMany({ where: { boardId } });
+        await tx.agentRun.deleteMany({ where: { boardId } });
+        await tx.agentSession.deleteMany({ where: { boardId } });
+        await tx.approvalRequest.deleteMany({ where: { boardId } });
+        // Snapshot shares are detached by the FK (`SET NULL`) and keep
+        // serving; only a live share dies with its board (TASK-156).
+        await tx.boardShare.deleteMany({
+          where: { boardId, mode: "live" },
+        });
+        await tx.boardMember.deleteMany({ where: { boardId } });
+        removed = (
+          await tx.board.deleteMany({
+            where: { id: boardId, ...stale },
+          })
+        ).count;
+      },
+      {
+        maxWait: PURGE_BOARD_TX_MAX_WAIT_MS,
+        timeout: PURGE_BOARD_TX_TIMEOUT_MS,
+      },
+    );
     await this.removeBlobs(blobs);
     return removed;
   }
