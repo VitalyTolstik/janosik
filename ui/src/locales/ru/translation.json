@@ -735,6 +735,7 @@
   "board.firstRun.creating": "Создание…",
   "board.firstRun.starterHint": "Пример добавит колонки «Сделать», «В работе», «Готово» и карточку-приветствие с чек-листом.",
   "board.starterIncomplete": "Доска создана, но пример добавить не удалось.",
+  "board.createIncomplete": "Доска создана, но загрузить её не удалось. Перезагрузите страницу, чтобы открыть её.",
   "board.members.button": "Участники",
   "board.members.errors.alreadyMember": "Этот пользователь уже участник доски",
   "board.members.errors.forbidden": "Управлять участниками может только админ доски",

@@ -1961,21 +1961,57 @@ export function BoardProvider({ children }: { children: ReactNode }) {
                   code === "board_read_failed") &&
                 typeof boardId === "string"
               ) {
-                try {
-                  const existing = await api.getBoard(boardId);
-                  if (!aliveRef.current) return null;
+                let existing: Board | null = null;
+                for (
+                  let attempt = 1;
+                  attempt <= 3 && existing === null;
+                  attempt += 1
+                ) {
+                  try {
+                    existing = await api.getBoard(boardId);
+                  } catch {
+                    if (attempt === 3) break;
+                    await new Promise((resolve) =>
+                      setTimeout(resolve, 50 * attempt),
+                    );
+                  }
+                }
+                if (!aliveRef.current) return null;
+                if (existing !== null) {
                   apply({ type: "ADD_BOARD", board: existing, remote: true });
-                  setRoles((prev) => ({ ...prev, [existing.id]: "ADMIN" }));
-                  if (
-                    code === "starter_cleanup_failed" ||
-                    code === "board_read_failed"
-                  ) {
+                  setRoles((prev) => ({ ...prev, [existing!.id]: "ADMIN" }));
+                  if (code === "starter_cleanup_failed") {
                     toast.error(t("board.starterIncomplete"));
+                  } else if (code === "board_read_failed") {
+                    toast.error(
+                      t(
+                        options?.template === "starter"
+                          ? "board.starterIncomplete"
+                          : "board.createIncomplete",
+                      ),
+                    );
                   }
                   return existing.id;
-                } catch {
-                  // Fall through to the generic rejection.
                 }
+                // The server created the board but the aggregate cannot be
+                // read right now. Keep the known id in the list so the form
+                // cannot invite a second create; a reload fills the content.
+                apply({
+                  type: "ADD_BOARD",
+                  board: {
+                    id: boardId,
+                    title: resolved,
+                    columns: [],
+                    cards: {},
+                    labels: [],
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                  },
+                  remote: true,
+                });
+                setRoles((prev) => ({ ...prev, [boardId]: "ADMIN" }));
+                toast.error(t("board.createIncomplete"));
+                return boardId;
               }
             }
             const limit =

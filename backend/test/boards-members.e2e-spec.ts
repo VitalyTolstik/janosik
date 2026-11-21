@@ -398,11 +398,11 @@ describe("Boards API (e2e)", () => {
         .get("/api/v1/boards")
         .set(auth(adminToken))
         .expect(200);
-      expect(
-        list.body.filter(
-          (board: { title: string }) => board.title === "Create read doom",
-        ),
-      ).toHaveLength(1);
+      const boardsWithTitle = list.body.filter(
+        (board: { title: string }) => board.title === "Create read doom",
+      );
+      expect(boardsWithTitle).toHaveLength(1);
+      expect(boardsWithTitle[0].id).toBe(failed.body.details.boardId);
     });
 
     it("creates the starter through an account-wide admin PAT", async () => {

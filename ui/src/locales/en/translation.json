@@ -733,6 +733,7 @@
   "board.firstRun.creating": "Creating…",
   "board.firstRun.starterHint": "The example adds To do / In progress / Done and a welcome card with a checklist.",
   "board.starterIncomplete": "The board was created, but the example could not be added.",
+  "board.createIncomplete": "The board was created, but it could not be loaded. Reload the page to open it.",
   "board.members.button": "Members",
   "board.members.errors.alreadyMember": "This user is already a member of the board",
   "board.members.errors.forbidden": "Only board admins can manage members",

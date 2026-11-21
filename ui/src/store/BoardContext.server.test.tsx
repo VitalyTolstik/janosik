@@ -1241,6 +1241,103 @@ describe("BoardProvider server-mode failures and board management", () => {
     ).toBeInTheDocument();
   });
 
+  it("recovers a plain create whose first read failed", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const recovered = { ...seedBoard(), id: "b-read", title: "Read board" };
+    let posts = 0;
+    let boardReads = 0;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        );
+        if (url.pathname === "/api/v1/boards" && init?.method === "POST") {
+          posts += 1;
+          return new Response(
+            JSON.stringify({
+              code: "board_read_failed",
+              retryable: true,
+              details: { boardId: "b-read" },
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.pathname === "/api/v1/boards/b-read") {
+          boardReads += 1;
+          return new Response(JSON.stringify(recovered), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("add-board"));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("2"),
+    );
+    expect(posts).toBe(1);
+    expect(boardReads).toBe(1);
+    expect(
+      await screen.findByText(
+        "The board was created, but it could not be loaded. Reload the page to open it.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the known board when the recovery read also fails", async () => {
+    const server = new FakeServer([seedBoard()]);
+    let posts = 0;
+    let boardReads = 0;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        );
+        if (url.pathname === "/api/v1/boards" && init?.method === "POST") {
+          posts += 1;
+          return new Response(
+            JSON.stringify({
+              code: "board_read_failed",
+              retryable: true,
+              details: { boardId: "b-flaky" },
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.pathname === "/api/v1/boards/b-flaky") {
+          boardReads += 1;
+          return new Response(JSON.stringify({ message: "down" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("add-board"));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("2"),
+    );
+    expect(posts).toBe(1);
+    expect(boardReads).toBe(3);
+    expect(
+      await screen.findByText(
+        "The board was created, but it could not be loaded. Reload the page to open it.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("deletes a board over REST, and keeps it when the server refuses", async () => {
     const server = new FakeServer([
       seedBoard(),
