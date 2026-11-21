@@ -642,6 +642,10 @@ export class FakeAdminServer {
         typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       this.requests.push({ method, path, body, query: url.searchParams });
 
+      const hold = this.holdCommands;
+      this.holdCommands = undefined;
+      if (hold) await hold;
+
       const failure = this.failNext.find((candidate) =>
         path.includes(candidate),
       );
@@ -675,12 +679,12 @@ export class FakeAdminServer {
     return admin;
   }
 
-  private async route(
+  private route(
     method: string,
     path: string,
     body: unknown,
     url: URL,
-  ): Promise<Response> {
+  ): Response {
     const admin = this.principal();
     const jsonBody = body as Record<string, unknown> | undefined;
 
@@ -937,9 +941,6 @@ export class FakeAdminServer {
     }
     const boardCommand = path.match(/^\/admin\/boards\/([^/]+)\/commands$/);
     if (boardCommand && method === "POST") {
-      const hold = this.holdCommands;
-      this.holdCommands = undefined;
-      if (hold) await hold;
       const action = (jsonBody?.action ?? {}) as BoardAction;
       const actionCardId = (action as { cardId?: string }).cardId;
       const requestedCommandId =

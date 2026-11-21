@@ -101,6 +101,8 @@ describe("Toast", () => {
     const third = screen.getByRole("status");
     expect(third.isSameNode(second)).toBe(false);
     expect(screen.getAllByRole("status")).toHaveLength(1);
+    // Only the replacement timer remains; the replaced 4.5 s timer is gone.
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it("keeps unkeyed successes and errors additive", () => {
