@@ -110,6 +110,10 @@ export function CardComments({
   const [requestedKind, setRequestedKind] = useState<CommentKind | undefined>(
     undefined,
   );
+  // Mirrors `requestedKind` for async handlers: a chip can change while a
+  // comment POST is in flight, and the post-await code must see the latest
+  // request, not the render-time snapshot.
+  const requestedKindRef = useRef<CommentKind | undefined>(undefined);
   const [loadedKind, setLoadedKind] = useState<CommentKind | undefined>(
     undefined,
   );
@@ -156,45 +160,47 @@ export function CardComments({
     }
   }, []);
 
-  const loadFirst = useCallback(async () => {
-    if (!serverMode) return;
-    const seq = ++loadSeqRef.current;
-    const kind = requestedKind;
-    try {
-      const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
-      if (!aliveRef.current || seq !== loadSeqRef.current) return;
-      setThread(page);
-      setStatus("ready");
-      loadedKindRef.current = kind;
-      setLoadedKind(kind);
-      setFilterError(false);
-    } catch (error) {
-      if (!aliveRef.current || seq !== loadSeqRef.current) return;
-      markUnavailable(error);
-      // A failed filter fetch keeps the previous thread and chip; only the
-      // first unfiltered load has no previous state to fall back on.
-      if (kind !== loadedKindRef.current) setFilterError(true);
-      toast.error(t("comment.loadError"));
-    } finally {
-      // A failed request still ends the wait: the skeleton must not spin
-      // forever over an error toast.
-      if (aliveRef.current && seq === loadSeqRef.current) {
-        setFiltering(false);
-        setStatus((current) => (current === "loading" ? "error" : current));
+  const loadFirst = useCallback(
+    async (kind: CommentKind | undefined) => {
+      if (!serverMode) return;
+      const seq = ++loadSeqRef.current;
+      try {
+        const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
+        if (!aliveRef.current || seq !== loadSeqRef.current) return;
+        setThread(page);
+        setStatus("ready");
+        loadedKindRef.current = kind;
+        setLoadedKind(kind);
+        setFilterError(false);
+      } catch (error) {
+        if (!aliveRef.current || seq !== loadSeqRef.current) return;
+        markUnavailable(error);
+        // A failed filter fetch keeps the previous thread and chip; only the
+        // first unfiltered load has no previous state to fall back on.
+        if (kind !== loadedKindRef.current) setFilterError(true);
+        toast.error(t("comment.loadError"));
+      } finally {
+        // A failed request still ends the wait: the skeleton must not spin
+        // forever over an error toast.
+        if (aliveRef.current && seq === loadSeqRef.current) {
+          setFiltering(false);
+          setStatus((current) => (current === "loading" ? "error" : current));
+        }
       }
-    }
-  }, [cardId, markUnavailable, requestedKind, serverMode, t, toast]);
+    },
+    [cardId, markUnavailable, serverMode, t, toast],
+  );
 
   // A different card means a different thread: the parent remounts this
   // component with `key={cardId}`, so the initial state is the reset.
   useEffect(() => {
     aliveRef.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the thread lands after the await, not synchronously
-    void loadFirst();
+    void loadFirst(requestedKind);
     return () => {
       aliveRef.current = false;
     };
-  }, [loadFirst]);
+  }, [loadFirst, requestedKind]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -363,7 +369,9 @@ export function CardComments({
   const retryFilter = () => {
     setFilterError(false);
     setFiltering(true);
-    void loadFirst();
+    // Read the live ref, not a render-time state snapshot: a retry can be
+    // started from an old handleSend closure after the chip changed.
+    void loadFirst(requestedKindRef.current);
   };
 
   const handleSend = async () => {
@@ -408,12 +416,13 @@ export function CardComments({
       if (activeKind !== undefined && sentKind !== activeKind) {
         // The author just wrote a comment the active chip excludes: show All
         // so the saved row is not silently hidden by its own filter.
-        if (requestedKind === undefined) {
+        if (requestedKindRef.current === undefined) {
           // The All chip was already requested (a failed revert leaves the
           // requested kind at All), so setting it again cannot trigger the
           // load effect. Retry explicitly and clear the stuck busy state.
           retryFilter();
         } else {
+          requestedKindRef.current = undefined;
           setRequestedKind(undefined);
           setFilterError(false);
           setFiltering(true);
@@ -504,12 +513,13 @@ export function CardComments({
   };
 
   const handleKindFilter = (next: CommentKind | undefined) => {
-    if (next === requestedKind) {
+    if (next === requestedKindRef.current) {
       // Clicking the chip that just failed retries it without a state change.
       if (filterError) retryFilter();
       return;
     }
     setRequestedKind(next);
+    requestedKindRef.current = next;
     setFilterError(false);
     setFiltering(true);
   };

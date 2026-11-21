@@ -1402,6 +1402,76 @@ describe("CardComments", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("reads the requested kind after a gated save", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-b", text: "Filtered blocker", kind: "blocker" }),
+    ]);
+    let failAll = false;
+    let postStarted = false;
+    let releasePost!: () => void;
+    const postGate = new Promise<void>((resolve) => {
+      releasePost = resolve;
+    });
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (
+        init?.method === "POST" &&
+        url.pathname === "/api/v1/cards/card-1/comments"
+      ) {
+        postStarted = true;
+        await postGate;
+      }
+      if (
+        failAll &&
+        (init?.method ?? "GET") === "GET" &&
+        url.pathname.endsWith("/comments") &&
+        url.searchParams.get("kind") === null
+      ) {
+        failAll = false;
+        return Response.json({ message: "boom" }, { status: 500 });
+      }
+      return server.handle(input, init);
+    });
+    await screen.findByText("Filtered blocker");
+    const all = screen.getByTestId("comment-filter-all");
+    const blocker = screen.getByTestId("comment-filter-blocker");
+    const busyRoot = screen
+      .getByTestId("comment-list")
+      .closest("[aria-busy]") as HTMLElement;
+
+    fireEvent.click(blocker);
+    await waitFor(() =>
+      expect(blocker).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    // Hold the POST, then fail the All revert while the save is in flight.
+    failAll = true;
+    fireEvent.change(await screen.findByTestId("comment-input"), {
+      target: { value: "New note" },
+    });
+    expect(screen.getByTestId("comment-send")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("comment-send"));
+    await waitFor(() => expect(postStarted).toBe(true));
+    fireEvent.click(all);
+    expect(
+      await screen.findByText("Could not apply this filter"),
+    ).toBeInTheDocument();
+    expect(blocker).toHaveAttribute("aria-pressed", "true");
+    expect(busyRoot).toHaveAttribute("aria-busy", "false");
+
+    // Releasing the save must observe the latest requested kind (All, though
+    // its fetch failed) and issue a matching reload instead of going dead.
+    act(() => releasePost());
+    await waitFor(() => expect(all).toHaveAttribute("aria-pressed", "true"));
+    expect(blocker).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(busyRoot).toHaveAttribute("aria-busy", "false"));
+    expect(screen.getByText("New note")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("comment-filter-error"),
+    ).not.toBeInTheDocument();
+  });
+
   it("pages a filtered thread with the kind query", async () => {
     const server = new FakeServer([seedBoard()]);
     const blockers = Array.from({ length: 55 }, (_, index) =>
