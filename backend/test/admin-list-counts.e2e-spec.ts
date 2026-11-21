@@ -133,24 +133,24 @@ describe("Admin list card counts (e2e)", () => {
     await prisma.label.createMany({
       data: [
         {
-          id: "counts-label-live",
-          boardId: "counts-board",
-          name: "Live",
-          color: "green",
-          position: 0,
-        },
-        {
           id: "counts-label-empty",
           boardId: "counts-board",
           name: "Empty",
           color: "blue",
-          position: 1,
+          position: 0,
         },
         {
           id: "counts-label-deleted",
           boardId: "counts-board",
           name: "Deleted",
           color: "red",
+          position: 1,
+        },
+        {
+          id: "counts-label-live",
+          boardId: "counts-board",
+          name: "Live",
+          color: "green",
           position: 2,
         },
         {
@@ -223,9 +223,9 @@ describe("Admin list card counts (e2e)", () => {
 
   it("keeps the per-row counts correct across label pages", async () => {
     for (const [offset, id, cardCount] of [
-      [0, "counts-label-live", 2],
-      [1, "counts-label-empty", 0],
-      [2, "counts-label-deleted", 0],
+      [0, "counts-label-empty", 0],
+      [1, "counts-label-deleted", 0],
+      [2, "counts-label-live", 2],
     ] as const) {
       const response = await get(
         `labels?boardId=counts-board&limit=1&offset=${offset}`,

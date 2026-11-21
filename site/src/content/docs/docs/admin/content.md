@@ -459,7 +459,7 @@ selection. The `Filters` button offers:
 | Board | one exact board id | |
 | Card | one exact card id | |
 | Uploader | one exact user id | |
-| File type | `Images`, `Videos`, `PDF`, `Documents`, `Other` | matched case-insensitively against the stored MIME type |
+| File type | `Images`, `Videos`, `PDF`, `Documents`, `Other` | derived case-insensitively from the stored MIME type |
 | Video processing | `Pending`, `Failed`, `Done`, `No transcoding` | `No transcoding` covers non-video files and videos uploaded with transcoding disabled |
 
 The period tabs apply to `createdAt`. Images and videos match their MIME

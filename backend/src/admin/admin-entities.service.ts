@@ -412,7 +412,7 @@ export class AdminEntitiesService {
     ]);
 
     // Count only the columns on this page; a global `_count` would scan every
-    // card before the page is known. See the labels list above.
+    // card before the page is known. See the labels list below.
     const counts =
       items.length === 0
         ? []

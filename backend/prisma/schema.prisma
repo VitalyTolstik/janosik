@@ -586,6 +586,7 @@ model Column {
   cards       Card[]
 
   @@index([boardId, position])
+  @@index([boardId, id]) // board-scoped comments join
   @@index([deletedAt]) // purge sweep (TASK-148)
 }
 
@@ -633,6 +634,7 @@ model Card {
 
   @@index([columnId, position])
   // TASK-181.7 admin list filters and live card counts.
+  @@index([columnId, id]) // board-scoped comments join
   @@index([columnId, deletedAt])
   @@index([id, deletedAt])
   @@index([createdAt])

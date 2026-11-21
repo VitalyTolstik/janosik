@@ -246,6 +246,9 @@ function moderationCases(preset, referenceTime) {
   const boardId = perfId(preset, "board", 0);
   const commentBoard = sql`co."boardId" = ${boardId}`;
   const attachmentBoard = sql`t."boardId" = ${boardId}`;
+  // Board 1 is seeded with image attachments; board 0 cycles through
+  // PDF/document/video and would make the board+MIME case a zero-row no-op.
+  const attachmentBoardImage = sql`t."boardId" = ${perfId(preset, "board", 1)}`;
 
   const base = [
     [
@@ -296,27 +299,19 @@ function moderationCases(preset, referenceTime) {
   );
 
   // Board-scoped moderation is the most common support path (counter links
-  // and the moderation tabs carry boardId), so it gets its own measured cases.
-  // `commentsBoard` is the same Comment relation with the Card/Column join the
-  // shipped board filter needs; its own unfiltered baseline keeps the delta
-  // comparable. It is not a separate admin list.
-  const boardBaseline = {
-    list: "commentsBoard",
-    facet: "unfiltered",
-    model: COMMENTS_BOARD,
-    predicate: unfiltered,
-    extended: true,
-  };
+  // and the moderation tabs carry boardId). The board cases use the shipped
+  // Comment list and its real unfiltered baseline; COMMENTS_BOARD only adds
+  // the Card/Column join the board predicate needs.
   const boardCases = [
-    ["commentsBoard", "board", COMMENTS_BOARD, commentBoard],
+    ["comments", "board", COMMENTS_BOARD, commentBoard],
     [
-      "commentsBoard",
+      "comments",
       "board-period",
       COMMENTS_BOARD,
       sql`${commentBoard} AND ${period}`,
     ],
     [
-      "commentsBoard",
+      "comments",
       "board-kind",
       COMMENTS_BOARD,
       sql`${commentBoard} AND ${kind}`,
@@ -332,7 +327,7 @@ function moderationCases(preset, referenceTime) {
       "attachments",
       "board-mime",
       ATTACHMENTS,
-      sql`${attachmentBoard} AND ${image}`,
+      sql`${attachmentBoardImage} AND ${image}`,
     ],
   ].map(([list, facet, model, predicate]) => ({
     list,
@@ -342,7 +337,7 @@ function moderationCases(preset, referenceTime) {
     extended: true,
   }));
 
-  return [...base, boardBaseline, ...boardCases];
+  return [...base, ...boardCases];
 }
 
 function facetCases(preset, referenceTime) {
@@ -747,16 +742,11 @@ async function main() {
       if (
         moderationOnly &&
         entry.list !== "comments" &&
-        entry.list !== "commentsBoard" &&
         entry.list !== "attachments"
       )
         continue;
       const samples =
-        preset === "small"
-          ? { cold: 1, warm: 3 }
-          : preset === "full" && !entry.extended
-            ? { cold: 5, warm: 20 }
-            : { cold: 3, warm: 10 };
+        preset === "small" ? { cold: 1, warm: 3 } : { cold: 5, warm: 20 };
       for (const pageSize of pageSizes)
         results.push(await measure(db, entry, pageSize, samples));
     }
