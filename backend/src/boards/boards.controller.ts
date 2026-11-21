@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,6 +13,7 @@ import {
   Post,
   Query,
   Res,
+  ServiceUnavailableException,
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
@@ -28,6 +30,7 @@ import type {
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import {
+  actorTypeOf,
   CurrentAgentSession,
   CurrentPrincipal,
   SessionOnlyGuard,
@@ -48,6 +51,9 @@ import {
 import { MembershipGuard } from "@/common/membership.guard";
 import { ApprovalsService } from "@/approvals/approvals.service";
 import { plainRecord } from "@/approvals/approval-plan";
+import { CommandsService } from "@/commands/commands.service";
+import { markGuaranteedRollback } from "@/common/rollback-certainty";
+import { boardStarterCommands } from "./board-starter";
 import { BoardsService } from "./boards.service";
 import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
@@ -67,6 +73,7 @@ export class BoardsController {
     private readonly boards: BoardsService,
     private readonly approvals: ApprovalsService,
     private readonly idempotency: IdempotencyService,
+    private readonly commands: CommandsService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -92,14 +99,88 @@ export class BoardsController {
     // Board creation is account-wide `admin` (TASK-166): a board-scoped or
     // worker/reviewer token cannot mint boards outside its mandate.
     assertAccountWidePreset(principal, "board.create");
+    if (dto.template !== "starter" && dto.templateLocale !== undefined) {
+      throw new BadRequestException({
+        message: "templateLocale requires template=starter",
+        field: "templateLocale",
+      });
+    }
     const outcome = await this.idempotency.run({
       scope: "create_board",
       key: normalizeIdempotencyKey(rawKey),
       actorKey: idempotencyActorKey(user.id, principal),
-      requestHash: hashIdempotentRequest({ title: dto.title }),
+      requestHash: hashIdempotentRequest({
+        title: dto.title,
+        // Old clients that omit the template keep their previous hash.
+        ...(dto.template
+          ? { template: dto.template, locale: dto.templateLocale ?? "en" }
+          : {}),
+      }),
       run: async () => {
         const board = await this.boards.createBoard(user.id, dto, principal);
-        return { body: board, status: 201, resourceId: board.id };
+        if (dto.template !== "starter") {
+          return { body: board, status: 201, resourceId: board.id };
+        }
+        // The starter is ordinary content, so it goes through the command log
+        // as one all-or-nothing batch created by the new board's ADMIN. It is
+        // a separate transaction from the board insert, so a failure must
+        // remove that freshly created board before the idempotency key is
+        // released — otherwise an automatic 503/504 retry duplicates the board.
+        try {
+          await this.commands.applyBatch(
+            board.id,
+            user.id,
+            boardStarterCommands(board.id, dto.templateLocale ?? "en"),
+            {
+              actorType: actorTypeOf(principal),
+              attribution: requestAttribution(principal),
+              principal,
+              ...(principal?.via === "pat"
+                ? { run: { kind: "batch" as const } }
+                : {}),
+            },
+          );
+        } catch (error) {
+          const cleaned = await this.boards.discardFreshBoard(board.id);
+          if (!cleaned) {
+            // The empty board may still exist: keep the idempotency record so
+            // a same-key retry cannot create a second one.
+            throw new ServiceUnavailableException({
+              message:
+                "The board was created, but the example could not be completed; open it from details.boardId",
+              code: "starter_cleanup_failed",
+              retryable: false,
+              boardId: board.id,
+            });
+          }
+          // The board is gone, so this key may safely run again.
+          markGuaranteedRollback(error);
+          throw error;
+        }
+        // The starter committed. A failed read is ambiguous (the board
+        // exists), so retry briefly and otherwise keep the idempotency record
+        // and ask for the same request rather than inviting a second board.
+        let withStarter: BoardAggregate | null = null;
+        for (
+          let attempt = 1;
+          attempt <= 3 && withStarter === null;
+          attempt += 1
+        ) {
+          try {
+            withStarter = await this.boards.getAggregate(board.id);
+          } catch {
+            if (attempt === 3) {
+              throw new ServiceUnavailableException({
+                message: "The board was created; open it from details.boardId",
+                code: "starter_read_failed",
+                retryable: false,
+                boardId: board.id,
+              });
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+          }
+        }
+        return { body: withStarter!, status: 201, resourceId: board.id };
       },
     });
     return outcome.body;

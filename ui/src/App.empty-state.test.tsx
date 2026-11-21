@@ -39,6 +39,7 @@ describe("App empty state (NoBoardRoute)", () => {
       screen.getByText("Restore an archived board, or create a new one."),
     ).toBeInTheDocument();
 
+    await userEvent.type(screen.getByTestId("empty-board-name"), "Fresh board");
     await userEvent.click(screen.getByTestId("empty-create-board"));
 
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/board\//));
