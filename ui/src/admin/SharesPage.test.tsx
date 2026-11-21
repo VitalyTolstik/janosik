@@ -117,6 +117,19 @@ describe("SharesPage", () => {
     await waitFor(() => expect(server.shares[0]?.revokedAt).not.toBeNull());
   });
 
+  it("caps a long board title instead of widening the table", async () => {
+    const title =
+      "A very long board title that would otherwise push the expiry and actions columns off the screen";
+    const server = new FakeAdminServer();
+    server.shares = [shareRow({ id: "long-title", boardTitle: title })];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    const link = await screen.findByRole("link", { name: title });
+    expect(link).toHaveAttribute("title", title);
+    expect(link).toHaveClass("max-w-[20rem]", "truncate");
+  });
+
   it("pages 101 shares, reports the server total and disables the edges", async () => {
     const server = new FakeAdminServer();
     server.shares = shareRows(101);
@@ -181,7 +194,11 @@ describe("SharesPage", () => {
     await waitFor(() =>
       expect(lastSharesRequest(server)?.query.get("offset")).toBe("50"),
     );
-    expect(screen.queryByTestId("admin-shares-total")).not.toBeInTheDocument();
+    // The label keeps describing the visible snapshot, so PageHeader does not
+    // reflow and the live region keeps its previous announcement.
+    expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+      "1–50 of 101",
+    );
 
     release();
     await waitFor(() =>

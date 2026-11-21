@@ -99,7 +99,7 @@ export function SharesPage() {
         title={t("admin.shares.title")}
         subtitle={t("admin.shares.subtitle")}
         meta={
-          list.loading || list.refreshing || list.error ? undefined : (
+          list.loading || list.error ? undefined : (
             <span
               className="tabular-nums"
               data-testid="admin-shares-total"
@@ -176,7 +176,8 @@ export function SharesPage() {
                         ) : (
                           <Link
                             to={`/admin/boards/${row.boardId}`}
-                            className="text-foreground hover:underline"
+                            title={row.boardTitle ?? undefined}
+                            className="block max-w-[20rem] truncate text-foreground hover:underline"
                           >
                             {row.boardTitle ?? row.boardId}
                           </Link>
