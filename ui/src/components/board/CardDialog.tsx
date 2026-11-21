@@ -83,6 +83,7 @@ import {
 import { createId } from "@/utils/id";
 import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
+import { cn } from "@/lib/utils";
 import type { LabelColor } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
@@ -97,6 +98,13 @@ interface CardDialogProps {
   open: boolean;
   /** VIEWER mode (TASK-35): read-only fields, no mutating actions. */
   readOnly?: boolean;
+  /**
+   * Search deep link (TASK-177.13): scroll to and highlight the exact
+   * comment/attachment. An unknown id is ignored, leaving the card dialog as
+   * the fallback.
+   */
+  focusCommentId?: string;
+  focusAttachmentId?: string;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -156,6 +164,8 @@ export function CardDialog({
   cardId,
   open,
   readOnly = false,
+  focusCommentId,
+  focusAttachmentId,
   onOpenChange,
 }: CardDialogProps) {
   const {
@@ -1042,7 +1052,17 @@ export function CardDialog({
               </div>
             </div>
           </DialogHeader>
-          <div className="-mx-6 mt-4 min-h-0 flex-1 overflow-y-auto border-t border-border/60">
+          <div
+            className={cn(
+              "-mx-6 mt-4 min-h-0 flex-1 overflow-y-auto border-t border-border/60",
+              // A deep-linked comment/file sits at the scroll tail; reserving
+              // room below it lets the initial reveal keep the row clear of
+              // the dialog edge after the lazy composer settles.
+              (focusCommentId !== undefined ||
+                focusAttachmentId !== undefined) &&
+                "pb-24",
+            )}
+          >
             <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_280px]">
               <aside
                 aria-label={t("card.properties")}
@@ -1314,6 +1334,7 @@ export function CardDialog({
                   cardId={card.id}
                   boardId={board.id}
                   readOnly={readOnly}
+                  focusId={focusAttachmentId}
                 />
 
                 <CardChecklists
@@ -1331,6 +1352,7 @@ export function CardDialog({
                   updatedAt={card.updatedAt}
                   localActivity={card.activity}
                   readOnly={readOnly}
+                  focusCommentId={focusCommentId}
                 />
               </div>
             </div>

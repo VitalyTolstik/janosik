@@ -118,6 +118,8 @@ interface DndBoardProps {
   filteredCardIds?: Record<string, string[]>;
   /** True while a board filter is active (disables drag & drop). */
   isFiltering?: boolean;
+  /** Server comment/attachment lookup still pending for the current query. */
+  filterPending?: boolean;
   /** Filter/search query highlighted on the card fronts. */
   highlight?: string;
   /** Fired on a card click (and the e/Enter hotkey) — the dialog itself
@@ -132,6 +134,7 @@ interface DndBoardProps {
 export function DndBoard({
   filteredCardIds,
   isFiltering = false,
+  filterPending = false,
   highlight,
   onCardClick,
   density = "full",
@@ -779,6 +782,7 @@ export function DndBoard({
                 linkIndex={linkIndex}
                 overridden={override !== undefined}
                 isFiltered={isFiltering}
+                filterPending={filterPending}
                 highlight={highlight}
                 cursorCardId={cursorCardId}
                 onCardClick={handleCardClick}
