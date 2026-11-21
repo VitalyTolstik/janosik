@@ -280,7 +280,9 @@ paths:
         Requires the account-wide `admin` preset; a board-scoped PAT or a
         `worker`/`reviewer` token gets `403 scope_denied`. The caller becomes
         the first `ADMIN`. A retry with the same `Idempotency-Key` and body
-        returns the stored board.
+        returns the stored board, except after a starter failure: that answers
+        `503` with `details.boardId` and keeps the record in progress, so the
+        client opens/reads the existing board instead of retrying the create.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -302,6 +304,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/StarterBoardUnavailable" }
   /boards/import:
     post:
       tags: [Boards]
@@ -3123,6 +3126,22 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
+    StarterBoardUnavailable:
+      description: |
+        The board was created, but its starter batch or first aggregate read
+        could not be completed. The body is an `ApiErrorEnvelope` with
+        `retryable: false` and `details.boardId`; open or `GET` that board.
+        Reusing the same `Idempotency-Key` answers `409
+        idempotency_in_progress`; a fresh create would make a second board.
+        Codes: `starter_cleanup_failed`, `starter_read_failed`,
+        `board_read_failed`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
     ServiceUnavailable:
       description: Board write lock timed out (`503 board_write_timeout`, safe to retry).
       headers:
@@ -3355,6 +3374,9 @@ components:
         - link_cap
         - link_mismatch
         - board_write_timeout
+        - starter_cleanup_failed
+        - starter_read_failed
+        - board_read_failed
         - invalid_cursor
         - invalid_filter
         - invalid_range

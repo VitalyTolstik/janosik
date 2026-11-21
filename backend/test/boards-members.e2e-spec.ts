@@ -346,7 +346,7 @@ describe("Boards API (e2e)", () => {
       cleanupSpy.mockRestore();
       expect(failed.body).toMatchObject({
         code: "starter_cleanup_failed",
-        retryable: true,
+        retryable: false,
         details: { boardId: expect.any(String) },
       });
 
@@ -384,7 +384,7 @@ describe("Boards API (e2e)", () => {
       readSpy.mockRestore();
       expect(failed.body).toMatchObject({
         code: "board_read_failed",
-        retryable: true,
+        retryable: false,
         details: { boardId: expect.any(String) },
       });
 
@@ -467,7 +467,7 @@ describe("Boards API (e2e)", () => {
       readSpy.mockRestore();
       expect(failed.body).toMatchObject({
         code: "starter_read_failed",
-        retryable: true,
+        retryable: false,
         details: { boardId: expect.any(String) },
       });
 

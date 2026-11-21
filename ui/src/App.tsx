@@ -104,7 +104,6 @@ export function NoBoardRoute() {
     try {
       const id = await addBoard(
         trimmed,
-        undefined,
         template ? { template, templateLocale: starterLocale } : undefined,
       );
       if (id) navigate(routes.board(id));
@@ -151,7 +150,7 @@ export function NoBoardRoute() {
             <input
               id="first-board-name"
               name="board-title"
-              autoFocus={!allArchived}
+              autoFocus={boards.length === 0}
               value={title}
               maxLength={LIMITS.boardTitle}
               onChange={(event) => setTitle(event.target.value)}
@@ -162,7 +161,7 @@ export function NoBoardRoute() {
             <LimitCounter
               length={title.length}
               limit={LIMITS.boardTitle}
-              position="below"
+              position="static"
               testId="empty-board-limit"
             />
           </div>

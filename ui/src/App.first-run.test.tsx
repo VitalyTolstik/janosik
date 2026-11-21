@@ -1,9 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { LIMITS } from "@janosik/shared";
 
-import App, { createAppRouter } from "@/App";
+import App, { createAppRouter, NoBoardRoute } from "@/App";
+import { ToastProvider } from "@/components/Toast";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/hooks/use-theme";
+import { I18nProvider } from "@/i18n";
+import { defaultI18n, ensureLocale } from "@/i18n/i18n";
+import { BoardProvider } from "@/store/BoardContext";
 import { STORAGE_KEY } from "@/store/board-persistence";
 
 /** TASK-177.16 first-run naming, starter template and visible rename. */
@@ -204,13 +211,71 @@ describe("App first run", () => {
     });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(
-      await screen.findByRole("heading", { name: "Renamed through pencil" }),
-    ).toBeInTheDocument();
+    const renamedHeading = await screen.findByRole("heading", {
+      name: "Renamed through pencil",
+    });
+    await waitFor(() => expect(renamedHeading).toHaveFocus());
     await waitFor(() =>
       expect(storedBoards().find((board) => board.id === "b-1")?.title).toBe(
         "Renamed through pencil",
       ),
     );
+
+    // Escape also returns focus to the heading.
+    fireEvent.click(screen.getByTestId("board-rename"));
+    const cancelled = await waitFor(() => {
+      const field = document.querySelector<HTMLInputElement>(
+        '[name="board-title-edit"]',
+      );
+      expect(field).not.toBeNull();
+      return field!;
+    });
+    fireEvent.keyDown(cancelled, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.getByTestId("board-title")).toHaveFocus(),
+    );
+  });
+
+  it("builds the Russian starter in the offline store", async () => {
+    seedArchivedBoard();
+    await ensureLocale("ru");
+    const i18n = defaultI18n.cloneInstance({ lng: "ru" });
+    render(
+      <ThemeProvider>
+        <I18nProvider i18n={i18n}>
+          <ToastProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/"]}>
+                <BoardProvider>
+                  <NoBoardRoute />
+                </BoardProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </ToastProvider>
+        </I18nProvider>
+      </ThemeProvider>,
+    );
+
+    await userEvent.type(
+      await screen.findByTestId("empty-board-name"),
+      "Запуск",
+    );
+    await userEvent.click(screen.getByTestId("empty-create-template"));
+
+    await waitFor(() => {
+      const board = storedBoards().find(
+        (candidate) => candidate.title === "Запуск",
+      );
+      expect(board?.columns.map((column) => column.title)).toEqual([
+        "Сделать",
+        "В работе",
+        "Готово",
+      ]);
+      const card = Object.values(board?.cards ?? {})[0];
+      expect(card?.title).toBe("Добро пожаловать на доску");
+      expect(card?.checklists?.[0]?.items[0]?.text).toBe(
+        "Переименуйте доску под свой проект",
+      );
+    });
   });
 });

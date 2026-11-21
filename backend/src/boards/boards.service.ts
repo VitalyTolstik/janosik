@@ -408,9 +408,9 @@ export class BoardsService {
       } catch {
         if (attempt === 3) {
           throw new ServiceUnavailableException({
-            message: "The board was created; retry the same request",
+            message: "The board was created; open it from details.boardId",
             code: "board_read_failed",
-            retryable: true,
+            retryable: false,
             boardId: board.id,
           });
         }
@@ -419,9 +419,9 @@ export class BoardsService {
     }
     // Unreachable; the loop either returns or throws.
     throw new ServiceUnavailableException({
-      message: "The board was created; retry the same request",
+      message: "The board was created; open it from details.boardId",
       code: "board_read_failed",
-      retryable: true,
+      retryable: false,
       boardId: board.id,
     });
   }

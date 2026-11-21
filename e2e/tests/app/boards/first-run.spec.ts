@@ -32,7 +32,14 @@ test("first run names the board and renames it from the visible pencil", async (
   const renamed = `Renamed ${randomUUID()}`;
   await page.getByRole("button", { name: "Rename board" }).click();
   await page.locator('[name="board-title-edit"]').fill(renamed);
+  const renameSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes("/commands") &&
+      response.ok(),
+  );
   await page.locator('[name="board-title-edit"]').press("Enter");
+  await renameSaved;
   await expect(
     page.getByRole("heading", { name: renamed, exact: true }),
   ).toBeVisible();

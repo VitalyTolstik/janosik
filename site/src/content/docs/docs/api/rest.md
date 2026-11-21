@@ -61,7 +61,12 @@ first, each with a card and column counter and the caller's role. A pending
 invitation does not count.
 
 `POST /boards` creates a board with the caller as its first `ADMIN`. A blank
-title answers `400`.
+title answers `400`. `template: "starter"` adds three columns, a welcome card
+and a checklist; `templateLocale` (`en`/`ru`) picks the copy and requires the
+template. If the starter or the first aggregate read fails after the board was
+created, the answer is `503` with `retryable: false` and
+`details.boardId`; `GET /boards/{details.boardId}` opens the existing board.
+Do not retry the create with a new key: that would make a second board.
 
 `POST /boards/import` accepts an export envelope, either as a parsed JSON
 object or as a raw JSON string; the server validates the parsed object without a

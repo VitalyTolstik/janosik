@@ -147,9 +147,9 @@ export class BoardsController {
             // a same-key retry cannot create a second one.
             throw new ServiceUnavailableException({
               message:
-                "The example board could not be completed; retry the same request",
+                "The board was created, but the example could not be completed; open it from details.boardId",
               code: "starter_cleanup_failed",
-              retryable: true,
+              retryable: false,
               boardId: board.id,
             });
           }
@@ -171,9 +171,9 @@ export class BoardsController {
           } catch {
             if (attempt === 3) {
               throw new ServiceUnavailableException({
-                message: "The board was created; retry the same request",
+                message: "The board was created; open it from details.boardId",
                 code: "starter_read_failed",
-                retryable: true,
+                retryable: false,
                 boardId: board.id,
               });
             }

@@ -290,13 +290,13 @@ interface BoardActionsValue {
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
   /**
-   * Creates an empty board and resolves with its id (for navigation), or
-   * `null` when the server refused the create (a toast was shown). Local
-   * mode resolves synchronously — `await` works for both.
+   * Creates a named board (an optional starter) and resolves with its id for
+   * navigation, or `null` when the create was refused (a toast was shown).
+   * A blank title is never replaced by a default name. Local mode resolves
+   * synchronously — `await` works for both.
    */
   addBoard: (
     title: string,
-    fallbackTitle?: string,
     options?: AddBoardOptions,
   ) => string | null | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
@@ -1932,10 +1932,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const addBoard = useCallback(
     (
       title: string,
-      fallbackTitle = "Untitled",
       options?: AddBoardOptions,
     ): string | null | Promise<string | null> => {
-      const resolved = title.trim() || fallbackTitle;
+      const resolved = title.trim();
+      if (resolved.length === 0) return null;
       if (serverMode) {
         return trackBoardMutation(async () => {
           try {
