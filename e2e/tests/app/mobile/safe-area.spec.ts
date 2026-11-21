@@ -155,11 +155,11 @@ test.describe("390 px hover", () => {
       .toBe("1");
 
     await expectLabelInsideLane(labels, chip);
-    await expectOutsideActions(labels, chip, [
-      archive,
-      duplicate,
-      card.getByTestId("card-archive-confirm"),
-    ]);
+    // The archive confirmation replaces the archive button in the same slot
+    // and only exists after arming it; it adds no coverage to this hover
+    // geometry check, so assert only the two visible quick actions.
+    await expect(card.getByTestId("card-archive-confirm")).toHaveCount(0);
+    await expectOutsideActions(labels, chip, [archive, duplicate]);
   });
 });
 
