@@ -837,14 +837,52 @@ export interface UpdateBoardAgentPolicyRequest {
   version: number;
 }
 
+/** Where a board search query matched a card (TASK-157, TASK-177.13). */
+export type BoardSearchMatchKind =
+  "title" | "description" | "checklist" | "comment" | "attachment";
+
 /**
- * `GET /boards/:id/search?q=` (TASK-157, D11) — the ids of cards whose title,
- * description, a checklist item or a comment contains the query. A server
- * search reaches text that is not in the board aggregate (comments), so the
- * MCP search can span the whole card, not just its title and description.
+ * One reason a card appeared in a board search. A card can appear once per
+ * kind; comments and attachments carry their own row id so the UI can open
+ * the exact entry, and every non-title kind carries a short snippet of the
+ * matching text.
+ */
+export interface BoardSearchMatch {
+  cardId: string;
+  matchIn: BoardSearchMatchKind;
+  /** Short snippet around the match (comment, attachment name, checklist). */
+  text?: string;
+  commentId?: string;
+  attachmentId?: string;
+}
+
+/**
+ * `GET /boards/:id/search?q=` (TASK-157, D11) — cards whose title,
+ * description, a checklist item, a comment or an attachment file name
+ * contains the query. `cardIds` stays the compact MCP-facing projection;
+ * `matches` explains why each id is present and lets the UI deep-link to the
+ * matched comment/attachment.
  */
 export interface BoardCardSearchResult {
   cardIds: string[];
+  matches: BoardSearchMatch[];
+}
+
+/**
+ * One cross-board comment/attachment hit from
+ * `GET /boards/search?q=` (TASK-177.13). Only text that is absent from the
+ * board aggregate is returned: the palette matches titles, descriptions,
+ * labels and checklists locally.
+ */
+export interface WorkspaceSearchMatch extends BoardSearchMatch {
+  boardId: string;
+  boardTitle: string;
+  cardTitle: string;
+}
+
+/** `GET /boards/search?q=` — bounded to live memberships (TASK-177.13). */
+export interface WorkspaceSearchResult {
+  matches: WorkspaceSearchMatch[];
 }
 
 /** A card comment (plain text, TASK-28; UI in TASK-37). */

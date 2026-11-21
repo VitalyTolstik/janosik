@@ -194,6 +194,26 @@ describe("Activity & comments API (e2e)", () => {
     return { boardId, cardId: `card-${prefix}` };
   }
 
+  /** A live attachment row without writing a blob: search reads metadata. */
+  async function addAttachment(
+    boardId: string,
+    cardId: string,
+    fileName: string,
+  ): Promise<string> {
+    const row = await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId,
+        fileName,
+        storedName: `stored-${randomUUID()}`,
+        mimeType: "application/pdf",
+        sizeBytes: 12,
+        uploadedById: adminId,
+      },
+    });
+    return row.id;
+  }
+
   describe("board feed", () => {
     it("shows every mutating command with its actor and merges membership events", async () => {
       const boardId = await createBoard("Feed board");
@@ -840,7 +860,7 @@ describe("Activity & comments API (e2e)", () => {
         .expect(400);
     });
 
-    it("searches a board across title, checklist item and comment text", async () => {
+    it("searches a board across title, checklist item, comment text and attachment names", async () => {
       const { boardId, cardId } = await boardWithCard("Search board", "sr");
       await apply(
         boardId,
@@ -861,35 +881,136 @@ describe("Activity & comments API (e2e)", () => {
           text: "run the widget migration",
         }),
       );
-      await server()
+      const comment = await server()
         .post(`/api/v1/cards/${cardId}/comments`)
         .set(auth(adminToken))
         .send({ text: "the widget is flaky" })
         .expect(201);
+      const attachmentId = await addAttachment(
+        boardId,
+        cardId,
+        "quarterly-report.pdf",
+      );
 
       const byTitle = await server()
         .get(`/api/v1/boards/${boardId}/search?q=card`)
         .set(auth(memberToken))
         .expect(200);
       expect(byTitle.body.cardIds).toContain(cardId);
+      expect(byTitle.body.matches).toContainEqual({
+        cardId,
+        matchIn: "title",
+      });
 
       const byChecklist = await server()
         .get(`/api/v1/boards/${boardId}/search?q=widget%20migration`)
         .set(auth(memberToken))
         .expect(200);
       expect(byChecklist.body.cardIds).toContain(cardId);
+      expect(byChecklist.body.matches).toContainEqual(
+        expect.objectContaining({
+          cardId,
+          matchIn: "checklist",
+          text: expect.stringContaining("widget migration"),
+        }),
+      );
 
       const byComment = await server()
         .get(`/api/v1/boards/${boardId}/search?q=flaky`)
         .set(auth(memberToken))
         .expect(200);
       expect(byComment.body.cardIds).toContain(cardId);
+      expect(byComment.body.matches).toEqual([
+        {
+          cardId,
+          matchIn: "comment",
+          commentId: comment.body.id,
+          text: expect.stringContaining("flaky"),
+        },
+      ]);
+
+      const byAttachment = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=quarterly`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byAttachment.body.cardIds).toContain(cardId);
+      expect(byAttachment.body.matches).toEqual([
+        {
+          cardId,
+          matchIn: "attachment",
+          attachmentId,
+          text: "quarterly-report.pdf",
+        },
+      ]);
+
+      // Cross-board palette endpoint: comment/attachment rows only, scoped
+      // to live memberships.
+      const workspace = await server()
+        .get("/api/v1/boards/search?q=flaky")
+        .set(auth(memberToken))
+        .expect(200);
+      expect(workspace.body.matches).toEqual([
+        expect.objectContaining({
+          boardId,
+          boardTitle: "Search board",
+          cardId,
+          cardTitle: "Card",
+          matchIn: "comment",
+          commentId: comment.body.id,
+        }),
+      ]);
+      const outsider = await server()
+        .get("/api/v1/boards/search?q=flaky")
+        .set(auth(strangerToken))
+        .expect(200);
+      expect(outsider.body.matches).toEqual([]);
 
       const miss = await server()
         .get(`/api/v1/boards/${boardId}/search?q=zzzznope`)
         .set(auth(memberToken))
         .expect(200);
       expect(miss.body.cardIds).toEqual([]);
+      expect(miss.body.matches).toEqual([]);
+
+      // A deleted comment and a deleted attachment stop matching.
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id}`)
+        .set(auth(adminToken))
+        .expect(200);
+      await prisma.attachment.update({
+        where: { id: attachmentId },
+        data: { deletedAt: new Date() },
+      });
+      const afterDelete = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=flaky`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(afterDelete.body.cardIds).toEqual([]);
+      const attachmentGone = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=quarterly`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(attachmentGone.body.cardIds).toEqual([]);
+
+      // A soft-deleted card disappears with its outside-the-aggregate text.
+      const deleted = await boardWithCard("Search deletes", "sdel");
+      await server()
+        .post(`/api/v1/cards/${deleted.cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "vanishing needle" })
+        .expect(201);
+      await apply(
+        deleted.boardId,
+        scoped(deleted.boardId, {
+          type: "DELETE_CARD",
+          cardId: deleted.cardId,
+        }),
+      );
+      const cardGone = await server()
+        .get(`/api/v1/boards/${deleted.boardId}/search?q=vanishing`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(cardGone.body.cardIds).toEqual([]);
 
       await server()
         .get(`/api/v1/boards/${boardId}/search?q=card`)

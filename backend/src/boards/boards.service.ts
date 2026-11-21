@@ -13,10 +13,13 @@ import type {
   BoardAggregate,
   BoardCardSearchResult,
   BoardImportPreviewDto,
+  BoardSearchMatch,
   BoardMemberDto,
   BoardPendingInvitationDto,
   BoardState,
   BoardSummary,
+  WorkspaceSearchMatch,
+  WorkspaceSearchResult,
 } from "@janosik/shared";
 import {
   DEFAULT_BOARD_AGENT_POLICY,
@@ -72,6 +75,42 @@ import type { UpdateMemberDto } from "./dto/update-member.dto";
  * a failure leaves *no* boards behind instead of the first N-1.
  */
 const IMPORT_TIMEOUT_MS = 120_000;
+
+/**
+ * Upper bound for a cross-board comment/attachment search (TASK-177.13).
+ * The palette already caps each visible group at 200, so reading beyond that
+ * only adds query cost; both source queries and the merged list stop here.
+ */
+const WORKSPACE_SEARCH_LIMIT = 200;
+
+/** Characters shown around a comment/checklist/attachment match. */
+const SEARCH_SNIPPET_MAX = 180;
+
+/**
+ * Trim a search query and validate its length. Returns `null` for an empty
+ * query (both search endpoints answer with an empty result, not an error).
+ */
+function normalizeSearchQuery(q: string): string | null {
+  const query = q.trim();
+  if (query.length === 0) return null;
+  if (query.length > LIMITS.query) {
+    throw new BadRequestException(
+      `q is too long (max ${LIMITS.query} characters)`,
+    );
+  }
+  return query;
+}
+
+/** A short snippet around the first case-insensitive match, with ellipses. */
+function searchSnippet(text: string, query: string): string {
+  const index = text.toLowerCase().indexOf(query.toLowerCase());
+  if (index === -1) return text.slice(0, SEARCH_SNIPPET_MAX);
+  const start = Math.max(0, index - 40);
+  const end = Math.min(text.length, start + SEARCH_SNIPPET_MAX);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end)}${
+    end < text.length ? "…" : ""
+  }`;
+}
 
 /**
  * Boards aggregate + membership + import/export (§7.4, TASK-25).
@@ -408,31 +447,29 @@ export class BoardsService {
   }
 
   /**
-   * Cards on a board whose title, description, a checklist item or a comment
-   * matches `q` (case-insensitive substring). Comments live outside the board
-   * aggregate, so this is the only way the MCP search can span the whole card
-   * (TASK-157, D11). Scoped to the board the guard already resolved.
+   * Cards on a board whose title, description, a checklist item, a comment or
+   * an attachment file name matches `q` (case-insensitive substring).
+   * Comments and attachments live outside the board aggregate, so this is the
+   * only way the MCP search can span the whole card (TASK-157, D11).
+   * `cardIds` stays for existing callers; `matches` reports the kind and a
+   * snippet, giving the UI a deep link target (TASK-177.13). Scoped to the
+   * board the guard already resolved.
    */
   async searchCards(
     boardId: string,
     q: string,
   ): Promise<BoardCardSearchResult> {
-    const query = q.trim();
-    if (query.length === 0) return { cardIds: [] };
-    if (query.length > LIMITS.query) {
-      throw new BadRequestException(
-        `q is too long (max ${LIMITS.query} characters)`,
-      );
-    }
+    const query = normalizeSearchQuery(q);
+    if (query === null) return { cardIds: [], matches: [] };
     const contains = { contains: query, mode: "insensitive" as const };
-    const [cards, checklistItems, comments] = await Promise.all([
+    const [cards, checklistItems, comments, attachments] = await Promise.all([
       this.prisma.card.findMany({
         where: {
           column: { boardId },
           deletedAt: null,
           OR: [{ title: contains }, { description: contains }],
         },
-        select: { id: true },
+        select: { id: true, title: true, description: true },
       }),
       this.prisma.checklistItem.findMany({
         where: {
@@ -440,7 +477,10 @@ export class BoardsService {
           deletedAt: null,
           checklist: { card: { column: { boardId }, deletedAt: null } },
         },
-        select: { checklist: { select: { cardId: true } } },
+        select: {
+          text: true,
+          checklist: { select: { cardId: true } },
+        },
       }),
       this.prisma.comment.findMany({
         where: {
@@ -448,14 +488,173 @@ export class BoardsService {
           deletedAt: null,
           card: { column: { boardId }, deletedAt: null },
         },
-        select: { cardId: true },
+        select: { id: true, cardId: true, text: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.prisma.attachment.findMany({
+        where: {
+          fileName: contains,
+          deletedAt: null,
+          card: { column: { boardId }, deletedAt: null },
+        },
+        select: { id: true, cardId: true, fileName: true },
+        orderBy: { createdAt: "desc" },
       }),
     ]);
-    const ids = new Set<string>();
-    for (const card of cards) ids.add(card.id);
-    for (const item of checklistItems) ids.add(item.checklist.cardId);
-    for (const comment of comments) ids.add(comment.cardId);
-    return { cardIds: [...ids] };
+
+    const ids: string[] = [];
+    const matches: BoardSearchMatch[] = [];
+    const seenIds = new Set<string>();
+    const seenMatches = new Set<string>();
+    const addMatch = (match: BoardSearchMatch) => {
+      const key = `${match.cardId}:${match.matchIn}`;
+      if (seenMatches.has(key)) return;
+      seenMatches.add(key);
+      matches.push(match);
+      if (!seenIds.has(match.cardId)) {
+        seenIds.add(match.cardId);
+        ids.push(match.cardId);
+      }
+    };
+    const needle = query.toLowerCase();
+    for (const card of cards) {
+      if (card.title.toLowerCase().includes(needle)) {
+        addMatch({ cardId: card.id, matchIn: "title" });
+      }
+      if (card.description?.toLowerCase().includes(needle)) {
+        addMatch({
+          cardId: card.id,
+          matchIn: "description",
+          text: searchSnippet(card.description, query),
+        });
+      }
+    }
+    for (const item of checklistItems) {
+      addMatch({
+        cardId: item.checklist.cardId,
+        matchIn: "checklist",
+        text: searchSnippet(item.text, query),
+      });
+    }
+    for (const comment of comments) {
+      addMatch({
+        cardId: comment.cardId,
+        matchIn: "comment",
+        text: searchSnippet(comment.text, query),
+        commentId: comment.id,
+      });
+    }
+    for (const attachment of attachments) {
+      addMatch({
+        cardId: attachment.cardId,
+        matchIn: "attachment",
+        text: searchSnippet(attachment.fileName, query),
+        attachmentId: attachment.id,
+      });
+    }
+    return { cardIds: ids, matches };
+  }
+
+  /**
+   * Comment and attachment filename matches across every board the caller is
+   * an active member of (TASK-177.13). One bounded request replaces N+1
+   * per-board searches from the global palette. Only text absent from the
+   * board aggregate is returned; titles, descriptions, labels and checklists
+   * are matched locally. A board-scoped PAT sees only its own board.
+   */
+  async searchMatchesAcrossBoards(
+    userId: string,
+    q: string,
+    boardIdScope?: string | null,
+  ): Promise<WorkspaceSearchResult> {
+    const query = normalizeSearchQuery(q);
+    if (query === null) return { matches: [] };
+    const contains = { contains: query, mode: "insensitive" as const };
+    const board: Prisma.BoardWhereInput = {
+      deletedAt: null,
+      ...(boardIdScope ? { id: boardIdScope } : {}),
+      members: { some: { userId, ...activeMembershipWhere() } },
+    };
+    const cardWhere = {
+      deletedAt: null,
+      column: { board },
+    } satisfies Prisma.CardWhereInput;
+    const [comments, attachments] = await Promise.all([
+      this.prisma.comment.findMany({
+        where: { text: contains, deletedAt: null, card: cardWhere },
+        select: {
+          id: true,
+          cardId: true,
+          text: true,
+          card: {
+            select: {
+              title: true,
+              column: {
+                select: {
+                  boardId: true,
+                  board: { select: { title: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: WORKSPACE_SEARCH_LIMIT,
+      }),
+      this.prisma.attachment.findMany({
+        where: { fileName: contains, deletedAt: null, card: cardWhere },
+        select: {
+          id: true,
+          cardId: true,
+          fileName: true,
+          card: {
+            select: {
+              title: true,
+              column: {
+                select: {
+                  boardId: true,
+                  board: { select: { title: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: WORKSPACE_SEARCH_LIMIT,
+      }),
+    ]);
+
+    const matches: WorkspaceSearchMatch[] = [];
+    const seen = new Set<string>();
+    const add = (match: WorkspaceSearchMatch) => {
+      const key = `${match.boardId}:${match.cardId}:${match.matchIn}`;
+      if (seen.has(key) || matches.length >= WORKSPACE_SEARCH_LIMIT) return;
+      seen.add(key);
+      matches.push(match);
+    };
+    for (const comment of comments) {
+      add({
+        boardId: comment.card.column.boardId,
+        boardTitle: comment.card.column.board.title,
+        cardId: comment.cardId,
+        cardTitle: comment.card.title,
+        matchIn: "comment",
+        text: searchSnippet(comment.text, query),
+        commentId: comment.id,
+      });
+    }
+    for (const attachment of attachments) {
+      add({
+        boardId: attachment.card.column.boardId,
+        boardTitle: attachment.card.column.board.title,
+        cardId: attachment.cardId,
+        cardTitle: attachment.card.title,
+        matchIn: "attachment",
+        text: searchSnippet(attachment.fileName, query),
+        attachmentId: attachment.id,
+      });
+    }
+    return { matches };
   }
 
   /**

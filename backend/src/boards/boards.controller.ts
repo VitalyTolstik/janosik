@@ -24,6 +24,7 @@ import type {
   BoardImportPreviewDto,
   BoardMemberDto,
   BoardSummary,
+  WorkspaceSearchResult,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
@@ -134,6 +135,26 @@ export class BoardsController {
       },
     });
     return outcome.body;
+  }
+
+  /**
+   * Comment/attachment search across the caller's boards (TASK-177.13).
+   * Declared before `:id` so `/boards/search` is not read as a board id.
+   * Authenticated users only; the service scopes the query to active
+   * memberships and to a board-scoped PAT's own board.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get("search")
+  searchAcrossBoards(
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @Query("q") q?: string,
+  ): Promise<WorkspaceSearchResult> {
+    return this.boards.searchMatchesAcrossBoards(
+      user.id,
+      q ?? "",
+      principal?.tokenScope?.boardId,
+    );
   }
 
   @UseGuards(MembershipGuard)

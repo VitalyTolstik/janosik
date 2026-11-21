@@ -352,6 +352,36 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/search:
+    get:
+      tags: [Boards]
+      operationId: searchWorkspaceMatches
+      summary: Search comments and attachment names across boards
+      description: |
+        Case-insensitive substring search over comment text and attachment
+        file names on every board where the caller has an accepted, unexpired
+        membership (TASK-177.13). Text that is part of the board aggregate —
+        titles, descriptions, labels and checklists — is matched by the
+        client. At most 200 rows are returned; a board-scoped PAT sees only
+        its own board. This route is declared before `/boards/{boardId}`.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Query string; longer than 200 characters is `400`.
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: Matching comment and attachment rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSearchResult"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -411,8 +441,9 @@ paths:
       summary: Search cards in a board
       description: |
         Case-insensitive substring search over title, description, checklist
-        items and comments. Returns only card ids; comment matches are not
-        part of the board aggregate.
+        items, comments and attachment file names. `cardIds` is the compact
+        MCP-facing list; `matches` adds the match kind, a short snippet and
+        the comment/attachment row id for deep links.
       parameters:
         - name: q
           in: query
@@ -3881,14 +3912,56 @@ components:
           type: integer
         withinLimit:
           type: boolean
+    BoardSearchMatch:
+      type: object
+      required: [cardId, matchIn]
+      properties:
+        cardId:
+          type: string
+        matchIn:
+          type: string
+          enum: [title, description, checklist, comment, attachment]
+        text:
+          type: string
+          description: Short snippet around the match.
+        commentId:
+          type: string
+          description: Present on a comment match.
+        attachmentId:
+          type: string
+          description: Present on an attachment match.
     BoardCardSearchResult:
       type: object
-      required: [cardIds]
+      required: [cardIds, matches]
       properties:
         cardIds:
           type: array
           items:
             type: string
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardSearchMatch"
+    WorkspaceSearchMatch:
+      allOf:
+        - $ref: "#/components/schemas/BoardSearchMatch"
+        - type: object
+          required: [boardId, boardTitle, cardTitle]
+          properties:
+            boardId:
+              type: string
+            boardTitle:
+              type: string
+            cardTitle:
+              type: string
+    WorkspaceSearchResult:
+      type: object
+      required: [matches]
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceSearchMatch"
     BoardMember:
       type: object
       required:
