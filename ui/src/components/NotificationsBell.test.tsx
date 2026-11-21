@@ -14,6 +14,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { FakeServer } from "@/test/fake-server";
+import { cardHref } from "@/utils/card-nav";
 
 /**
  * Notifications bell (TASK-35 addendum): invitations are opt-in, so the
@@ -268,6 +269,65 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "Notifications" })).toBeVisible();
+  });
+
+  it("keeps attention notifications and invitations distinct under one badge", async () => {
+    const server = new FakeServer();
+    server.invitations.push({ ...INVITATION });
+    let unread = 1;
+    const handler: FetchHandler = async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notifications") {
+        return Response.json({
+          items: [
+            {
+              id: "blocked",
+              type: "agent.blocked",
+              boardId: "b-1",
+              title: "Agent blocked",
+              body: "Review the card",
+              data: { cardId: "c-1" },
+              readAt: unread === 0 ? 1_700_000_000_001 : null,
+              createdAt: 1_700_000_000_000,
+            },
+          ],
+          nextCursor: null,
+          unreadCount: unread,
+        });
+      }
+      if (url.pathname === "/api/v1/users/me/notifications/read-all") {
+        unread = 0;
+        return Response.json({ updated: 1 });
+      }
+      return server.handle(input, init);
+    };
+    renderBell(server, handler);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Notifications (2 unread)",
+      }),
+    );
+
+    expect(await screen.findByText("Agent blocked")).toBeVisible();
+    expect(screen.getByTestId("invitation-row")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Attention inbox" }),
+    ).toBeVisible();
+    expect(screen.getByText("Invitations (1)")).toBeVisible();
+    // The attention row is a real anchor, not a JS-only row.
+    expect(
+      screen.getByRole("link", { name: "Open “Agent blocked”" }),
+    ).toHaveAttribute("href", cardHref("b-1", "c-1"));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mark all as read" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("notifications-badge")).toHaveTextContent("1"),
+    );
+    // Read-all clears attention only: the pending invitation keeps its badge.
+    expect(screen.getByTestId("invitation-row")).toBeVisible();
   });
 
   it("shows a busy skeleton until the invitation list arrives", async () => {

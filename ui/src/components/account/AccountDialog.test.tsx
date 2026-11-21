@@ -19,8 +19,15 @@ import { FakeServer } from "@/test/fake-server";
  * sections, and sign-out moved to the rail behind the usual confirmation.
  */
 
-function renderAccount(server: FakeServer) {
-  vi.stubGlobal("fetch", server.handle);
+function renderAccount(
+  server: FakeServer,
+  handler: (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response> = server.handle,
+  entry = "/",
+) {
+  vi.stubGlobal("fetch", handler);
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -28,7 +35,7 @@ function renderAccount(server: FakeServer) {
           <TooltipProvider>
             <ToastProvider>
               <AuthProvider>
-                <MemoryRouter>
+                <MemoryRouter initialEntries={[entry]}>
                   <AccountDialog />
                 </MemoryRouter>
               </AuthProvider>
@@ -112,7 +119,7 @@ describe("AccountDialog (TASK-36.1)", () => {
     );
   });
 
-  it("saves the immediate attention email opt-out", async () => {
+  it("saves the immediate attention email opt-out through the dedicated endpoint", async () => {
     const server = new FakeServer();
     await openPanel(server);
     const attention = screen.getByTestId("account-notify-attention");
@@ -122,17 +129,62 @@ describe("AccountDialog (TASK-36.1)", () => {
     await userEvent.click(screen.getByTestId("account-profile-save"));
 
     await waitFor(() => expect(server.account.notifyAttention).toBe(false));
-    expect(server.requests).toContainEqual(
-      expect.objectContaining({
-        method: "PATCH",
-        path: "/api/v1/users/me",
-        body: expect.objectContaining({
-          notifyAttention: false,
-          notifyDigest: true,
-        }),
-      }),
-    );
+    expect(server.requests).toContainEqual({
+      method: "PATCH",
+      path: "/api/v1/users/me/notification-settings",
+      body: { notifyAttention: false },
+    });
+    // The attention switch must not ride along in the profile write.
+    expect(
+      server.requests.some(
+        (request) =>
+          request.method === "PATCH" &&
+          request.path === "/api/v1/users/me" &&
+          Object.prototype.hasOwnProperty.call(
+            (request.body ?? {}) as Record<string, unknown>,
+            "notifyAttention",
+          ),
+      ),
+    ).toBe(false);
     expect(attention).not.toBeChecked();
+  });
+
+  it("loads the attention opt-out from the session", async () => {
+    const server = new FakeServer();
+    server.account.notifyAttention = false;
+    await openPanel(server);
+
+    expect(screen.getByTestId("account-notify-attention")).not.toBeChecked();
+  });
+
+  it("reverts the attention switch when the server refuses the save", async () => {
+    const server = new FakeServer();
+    renderAccount(server, async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notification-settings") {
+        return Response.json({ message: "Unavailable" }, { status: 503 });
+      }
+      return server.handle(input, init);
+    });
+    await userEvent.click(await screen.findByTestId("account-trigger"));
+    const attention = await screen.findByTestId("account-notify-attention");
+    expect(attention).toBeChecked();
+
+    await userEvent.click(attention);
+    expect(attention).not.toBeChecked();
+    await userEvent.click(screen.getByTestId("account-profile-save"));
+
+    expect(await screen.findByText("Could not save the profile")).toBeVisible();
+    await waitFor(() => expect(attention).toBeChecked());
+    expect(server.account.notifyAttention).toBe(true);
+  });
+
+  it("opens the panel on the section named by an account deep link", async () => {
+    const server = new FakeServer();
+    renderAccount(server, server.handle, "/board/b-1?account=tokens");
+
+    expect(await screen.findByTestId("account-dialog")).toBeVisible();
+    expect(await screen.findByTestId("account-tokens")).toBeVisible();
   });
 
   it("switches between the sections without closing", async () => {
