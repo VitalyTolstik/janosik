@@ -74,7 +74,9 @@ describe("DataMenu export limit (TASK-166.6)", () => {
       screen.getByRole("button", { name: "Data & backups" }),
     );
     await userEvent.click(await screen.findByText("Export JSON"));
-    expect(await screen.findByText("Board exported")).toBeInTheDocument();
+    expect(
+      await screen.findByText("All boards exported (1)"),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/larger than 25 MB/)).toBeNull();
   });
 

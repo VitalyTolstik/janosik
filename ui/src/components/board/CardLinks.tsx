@@ -373,7 +373,7 @@ export function CardLinks({
                             <button
                               type="button"
                               aria-label={t("card.links.remove")}
-                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-(--chip-red) focus-visible:opacity-100 group-hover/row:opacity-100"
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-danger/10 hover:text-(--chip-red) focus-visible:opacity-100 no-hover:opacity-100 group-hover/row:opacity-100 max-md:h-11 max-md:w-11 no-hover:h-11 no-hover:w-11"
                               data-testid="card-link-remove"
                               onClick={() => remove(row)}
                             >

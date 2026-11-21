@@ -793,17 +793,28 @@ describe("CardComments", () => {
     ).toHaveLength(0);
   });
 
-  it("gives the delete trigger and the confirm action 44 px touch targets", async () => {
+  it("gives both comment actions 44 px touch targets and a focus ring", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [comment({ text: "Touch me" })]);
     renderComments(server);
 
     const trigger = await screen.findByTestId("comment-delete");
-    expect(trigger).toHaveClass(
-      "max-md:h-11",
-      "max-md:w-11",
-      "no-hover:h-11",
-      "no-hover:w-11",
+    const edit = screen.getByTestId("comment-edit");
+    for (const button of [edit, trigger]) {
+      expect(button).toHaveClass(
+        "max-md:h-11",
+        "max-md:w-11",
+        "no-hover:h-11",
+        "no-hover:w-11",
+        "focus-visible:ring-2",
+        "focus-visible:ring-ring",
+      );
+    }
+    // The buttons live in a hover-revealed action strip; touch must keep the
+    // strip visible, and keyboard focus must reveal it too.
+    expect(screen.getByTestId("comment-actions")).toHaveClass(
+      "focus-within:opacity-100",
+      "no-hover:opacity-100",
     );
 
     fireEvent.click(trigger);

@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.8 small UX batch: pending invitations can be re-roled and given a
+  viewer expiry from the members dialog, with past deadlines refused and
+  expired invitations flagged; share revocation asks for confirmation and
+  names the link and mode; the board switcher labels its active-card count;
+  comment and card-link actions stay visible at 44 px on touch; and the
+  all-boards export toast names the workspace and its board count. EN/RU copy,
+  component tests and mobile browser coverage are included.
+
 - TASK-177.6 attention inbox deep links and notification preference path.
   Every attention row now opens its real target: a blocked, hand-off or expired
   claim row follows the card deep link, an approval opens the board approvals
@@ -717,9 +725,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restore reaches the row), so the UI deliberately offers no undo toast rather
   than recreating the comment under a new id. The delete trigger and the
   dialog actions meet the 44 px touch target on small screens and touch-only
-  devices. The trigger is enlarged but still appears only on hover until
-  TASK-177.8 makes it visible on touch. The excerpt collapses whitespace and
-  truncates on grapheme boundaries (code points when `Intl.Segmenter` is
+  devices. TASK-177.8 makes the trigger visible on touch-only devices. The
+  excerpt collapses whitespace and truncates on grapheme boundaries (code points when `Intl.Segmenter` is
   unavailable), so surrogate pairs and ZWJ emoji are never split; the author
   line falls back from display name to email to author id; a non-404 DELETE
   failure restores the comment at its loaded position instead of collapsing

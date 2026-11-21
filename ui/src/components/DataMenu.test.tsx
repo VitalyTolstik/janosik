@@ -119,4 +119,21 @@ describe("DataMenu", () => {
       expect(screen.getByText("Backup restored")).toBeInTheDocument(),
     );
   });
+
+  it("names the all-boards export and counts the boards in it", async () => {
+    const alpha = boardState()[0]!;
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([alpha, { ...alpha, id: "b-2", title: "Beta" }]),
+    );
+    renderMenu();
+    await openMenu();
+
+    await userEvent.click(await screen.findByText("Export JSON"));
+
+    expect(
+      await screen.findByText("All boards exported (2)"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Board exported")).toBeNull();
+  });
 });

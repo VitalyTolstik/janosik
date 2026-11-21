@@ -855,13 +855,16 @@ function CommentRow({
             </span>
           ) : null}
           {own && !readOnly && !pending && !editing ? (
-            <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+            <div
+              data-testid="comment-actions"
+              className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 no-hover:opacity-100 group-hover:opacity-100"
+            >
               <button
                 ref={editButtonRef}
                 type="button"
                 aria-label={t("comment.edit")}
                 data-testid="comment-edit"
-                className="shrink-0 rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground"
+                className="inline-flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:w-11 no-hover:h-11 no-hover:w-11"
                 onClick={startEdit}
               >
                 <Pencil className="h-3.5 w-3.5" />
@@ -870,7 +873,7 @@ function CommentRow({
                 type="button"
                 aria-label={t("comment.delete")}
                 data-testid="comment-delete"
-                className="inline-flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive max-md:h-11 max-md:w-11 no-hover:h-11 no-hover:w-11"
+                className="inline-flex shrink-0 items-center justify-center rounded-sm p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:w-11 no-hover:h-11 no-hover:w-11"
                 onClick={onDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
