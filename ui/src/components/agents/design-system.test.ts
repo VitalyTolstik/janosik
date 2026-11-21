@@ -93,11 +93,19 @@ describe("agent design system (TASK-179.9)", () => {
   });
 
   it("keeps the 390 full-screen shell, the 1024 sheet and safe-area padding", () => {
-    expect(agentControlCss).toContain("top: 56px");
+    // TASK-177.18: the tablet sheet starts below a header that grows by the
+    // iOS top inset. `env()` is 0 on desktop, so the calc still resolves to
+    // the previous 56 px top.
+    expect(agentControlCss).toContain(
+      "top: calc(56px + env(safe-area-inset-top));",
+    );
     expect(agentControlCss).toContain("height: 100dvh");
     expect(agentControlCss).toContain("safe-area-inset-bottom");
     expect(boardSettingsShell).toContain("max-md:h-[100dvh]");
-    expect(boardSettingsShell).toContain("md:top-[56px]");
+    expect(boardSettingsShell).toContain(
+      "md:top-[calc(56px_+_env(safe-area-inset-top))]",
+    );
+    expect(boardSettingsShell).not.toContain("md:top-[56px]");
   });
 
   it("uses the large-screen width caps on the global agents page", () => {
