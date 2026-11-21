@@ -90,10 +90,10 @@ describe("mobile safe areas (TASK-177.18)", () => {
       "padding-right: env(safe-area-inset-right)",
     );
     // Card-dialog header: the close button and the ⋮ menu both respect the
-    // status bar/notch. Mobile close is 44 px (+4 px gap → 3.75rem); from
-    // `md` it is 32 px (+4 px gap → 2.25rem).
+    // status bar/notch. Mobile close is 44 px with a 12 px inset (+4 px gap
+    // → 3rem); from `md` it is 32 px with a 16 px inset (→ 2.25rem).
     expect(cardDialog).toContain(
-      "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3.75rem)]",
+      "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)]",
     );
     expect(cardDialog).toContain(
       "md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]",
