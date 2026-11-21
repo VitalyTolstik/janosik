@@ -186,8 +186,8 @@ selected period tab at every width/locale.
 Automated axe coverage in this repository targets the user app
 (`e2e/tests/app/a11y/card.spec.ts`). The admin shell has pre-existing contrast
 findings outside TASK-181.7; this record does not claim automated admin axe
-coverage. The filter surface's manual keyboard/focus and 390 px checks are part
-of the matrix above.
+coverage. The filter surface's manual keyboard/focus checks and the automated
+390 px matrix above cover this surface.
 
 ## Regression sweep
 

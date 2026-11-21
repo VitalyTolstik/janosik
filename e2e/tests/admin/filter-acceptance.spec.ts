@@ -9,10 +9,10 @@ import { adminPath, loginAsMaster, ownerCredentials } from "@/helpers/admin.js";
  * exact chips/URL/result at 1440, 1024 and 390 in EN/RU and produces the
  * committed screenshots.
  *
- * Automated axe coverage for the admin shell is deliberately not claimed here:
- * the admin redesign has pre-existing shell contrast findings outside this
- * task. The filter surface is covered by the manual keyboard/focus checks and
- * the user-app axe suite.
+ * Automated axe is the separate user-app suite; it does not cover the admin
+ * filter surface. The admin redesign has pre-existing shell contrast findings
+ * outside this task. The filter surface is covered by the manual keyboard and
+ * focus checks plus the 390 px matrix.
  */
 
 const copy = {
