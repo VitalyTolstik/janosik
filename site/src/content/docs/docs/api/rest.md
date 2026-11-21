@@ -63,10 +63,21 @@ invitation does not count.
 `POST /boards` creates a board with the caller as its first `ADMIN`. A blank
 title answers `400`. `template: "starter"` adds three columns, a welcome card
 and a checklist; `templateLocale` (`en`/`ru`) picks the copy and requires the
-template. If the starter or the first aggregate read fails after the board was
-created, the answer is `503` with `retryable: false` and
-`details.boardId`; `GET /boards/{details.boardId}` opens the existing board.
-Do not retry the create with a new key: that would make a second board.
+template.
+
+A `503` from this route has one of two shapes. When the board was created but
+the starter batch failed and the fresh board could not be removed, the answer is
+`503 starter_cleanup_failed` with `retryable: false` and `details.boardId`: the
+board exists, so open it with `GET /boards/{details.boardId}`. A failed first
+aggregate read likewise answers a non-retryable `503` (`starter_read_failed` for
+the starter template, `board_read_failed` for any create) with the same
+`details.boardId`. For these, reusing the same `Idempotency-Key` answers `409
+idempotency_in_progress`; do not retry the create with a new key, which would
+make a second board. A board write that times out answers `503
+board_write_timeout` (`retryable: true`, no `boardId`); nothing was saved, so
+retry. When the starter batch fails but its fresh board is removed successfully,
+the route rethrows the original error (a `500`, for example) and releases the
+key, so a retry with the same key may create the board (`201`).
 
 `POST /boards/import` accepts an export envelope, either as a parsed JSON
 object or as a raw JSON string; the server validates the parsed object without a
@@ -1038,3 +1049,4 @@ names the cause.
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |
 | `429`  | a rate limit was exceeded; `code: "login_backoff"` during a login backoff                                                                                 |
 | `503`  | maintenance mode; a failed health check; `code: "board_write_timeout"` when a board write timed out (safe to retry)                                       |
+| `503`  | `POST /boards` after the board was created: `code: "starter_cleanup_failed"`, `"starter_read_failed"` or `"board_read_failed"` with `retryable: false` and `details.boardId`; open that board instead of creating another |

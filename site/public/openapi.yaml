@@ -280,10 +280,20 @@ paths:
         Requires the account-wide `admin` preset; a board-scoped PAT or a
         `worker`/`reviewer` token gets `403 scope_denied`. The caller becomes
         the first `ADMIN`. A retry with the same `Idempotency-Key` and body
-        returns the stored board, except when the created board's starter
-        batch or first aggregate read fails: that answers `503` with
-        `details.boardId` and keeps the record in progress, so the client
-        opens/reads the existing board instead of retrying the create.
+        returns the stored board.
+
+        A `503` from this route has two shapes. When the board exists but the
+        create cannot return it (`starter_cleanup_failed`,
+        `starter_read_failed` or `board_read_failed`), the body is
+        `retryable: false` with `details.boardId`: open that board instead of
+        retrying the create, because a same-key retry answers `409
+        idempotency_in_progress`. `starter_cleanup_failed` means the starter
+        batch failed and the freshly created board could not be removed. When
+        the starter batch fails but the fresh board is removed, the route
+        rethrows the original error (a `500`, for example) and releases the
+        key, so a retry with the same key may create the board (`201`). A busy
+        board answers `503 board_write_timeout` (`retryable: true`, no
+        `boardId`); nothing was saved, so retry.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -305,7 +315,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
-        "503": { $ref: "#/components/responses/StarterBoardUnavailable" }
+        "503": { $ref: "#/components/responses/CreateBoardUnavailable" }
   /boards/import:
     post:
       tags: [Boards]
@@ -3127,15 +3137,27 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiErrorEnvelope"
-    StarterBoardUnavailable:
+    CreateBoardUnavailable:
       description: |
-        The board was created, but its starter batch or first aggregate read
-        could not be completed. The body is an `ApiErrorEnvelope` with
-        `retryable: false` and `details.boardId`; open or `GET` that board.
-        Reusing the same `Idempotency-Key` answers `409
-        idempotency_in_progress`; a fresh create would make a second board.
+        The board may exist; `code` names the cause.
+
+        - `starter_cleanup_failed`: the board was created, its starter batch
+          failed, and the fresh board could not be removed. The body has
+          `retryable: false` and `details.boardId`; open that board.
+        - `starter_read_failed` / `board_read_failed`: the board was created
+          but its aggregate could not be read after retries. The body has
+          `retryable: false` and `details.boardId`; open that board.
+        - `board_write_timeout`: the board write timed out and nothing was
+          saved. The body has `retryable: true` and no `boardId`; retry.
+
         Codes: `starter_cleanup_failed`, `starter_read_failed`,
-        `board_read_failed`.
+        `board_read_failed`, `board_write_timeout`.
+
+        For the first two cases, reusing the same `Idempotency-Key` answers
+        `409 idempotency_in_progress`; a fresh create would make a second
+        board. A starter failure whose fresh board *was* removed does not
+        return this response: the route rethrows the original error and
+        releases the key, so a retry may create the board.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
