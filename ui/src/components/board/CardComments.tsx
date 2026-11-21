@@ -111,6 +111,8 @@ export function CardComments({
   const { items, nextCursor } = thread;
   const itemsRef = useRef<CommentDto[]>([]);
   const listRef = useRef<HTMLOListElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const settlingFocusRef = useRef<string | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
   const [status, setStatus] = useState<
@@ -194,9 +196,41 @@ export function CardComments({
     // Mark only a successful reveal: an older page can still bring the
     // target later, while a found row must not be scrolled to twice.
     revealedFocusRef.current = focusId;
+    settlingFocusRef.current = focusId;
     row.scrollIntoView?.({ block: "center" });
     row.focus?.({ preventScroll: true });
   }, [focusId, loaded, items.length]);
+
+  // The composer is a lazy chunk: it replaces the reserved fallback after
+  // the first reveal, which can push the target below the dialog edge on a
+  // phone. Re-reveal once when the composer's real height settles; list
+  // growth later in the session does not trigger this observer.
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node || !focusId || !loaded || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let lastHeight: number | null = null;
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height ?? 0;
+      if (lastHeight === null) {
+        lastHeight = height;
+        return;
+      }
+      if (height === lastHeight) return;
+      lastHeight = height;
+      if (settlingFocusRef.current !== focusId) return;
+      const row = Array.from(
+        listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ??
+          [],
+      ).find((element) => element.dataset.commentId === focusId);
+      if (!row) return;
+      settlingFocusRef.current = null;
+      row.scrollIntoView?.({ block: "nearest" });
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [focusId, loaded]);
 
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;
@@ -435,20 +469,22 @@ export function CardComments({
   return (
     <div className="space-y-2" aria-busy={!loaded}>
       {canCompose && user !== null ? (
-        <CommentComposer
-          key={user.id}
-          user={user}
-          cardId={cardId}
-          draft={draft}
-          sending={composer.sending}
-          canSend={canSend}
-          editorNonce={composer.editorNonce}
-          kind={kind}
-          onKindChange={(kind) => composer.update({ kind })}
-          onDraftChange={(text) => composer.update({ text })}
-          onSubmit={() => void handleSend()}
-          onCancel={composer.discard}
-        />
+        <div ref={composerRef}>
+          <CommentComposer
+            key={user.id}
+            user={user}
+            cardId={cardId}
+            draft={draft}
+            sending={composer.sending}
+            canSend={canSend}
+            editorNonce={composer.editorNonce}
+            kind={kind}
+            onKindChange={(kind) => composer.update({ kind })}
+            onDraftChange={(text) => composer.update({ text })}
+            onSubmit={() => void handleSend()}
+            onCancel={composer.discard}
+          />
+        </div>
       ) : null}
 
       {/* An editable empty thread already has the composer as its prompt. */}
@@ -672,9 +708,10 @@ function CommentComposer({
       <div className="min-w-0 flex-1 space-y-2">
         <Suspense
           fallback={
-            /* Same footprint as the single-line editor so the thread
-               doesn't jump while the chunk streams in. */
-            <Skeleton className="h-9 rounded-md" />
+            /* Reserve the lazy composer's real toolbar + one-line surface
+               (36 px + row padding) so a deep-linked row below it is not
+               pushed out of view when the chunk streams in. */
+            <Skeleton className="h-[84px] rounded-md" />
           }
         >
           <CommentComposerEditor

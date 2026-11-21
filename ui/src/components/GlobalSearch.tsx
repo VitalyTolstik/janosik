@@ -410,7 +410,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           }}
           placeholder={t("search.placeholder")}
           aria-label={t("search.aria")}
-          className="h-9 border-0 shadow-none focus-visible:ring-0"
+          className="h-9 border-0 pr-12 shadow-none focus-visible:ring-0"
           data-testid="global-search-input"
         />
         <LimitCounter
