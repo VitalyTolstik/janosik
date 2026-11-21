@@ -310,6 +310,9 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     );
 
     expect(await screen.findByText("Agent blocked")).toBeVisible();
+    expect(screen.getByTestId("invitations-panel")).toHaveAccessibleName(
+      "Notifications",
+    );
     expect(screen.getByTestId("invitation-row")).toBeVisible();
     expect(
       screen.getByRole("heading", { name: "Attention inbox" }),

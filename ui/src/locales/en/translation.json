@@ -50,6 +50,7 @@
   "account.prefs.title": "Preferences",
   "account.profile.attention": "Attention emails",
   "account.profile.attentionHint": "Get an email when an event needs your attention. Your in-app inbox is always available.",
+  "account.profile.attentionSaveError": "Could not save the attention email setting",
   "account.profile.avatarError": "Could not upload the photo",
   "account.profile.avatarHint": "PNG, JPEG, GIF or WebP, up to 2 MB",
   "account.profile.avatarTitle": "Profile photo",

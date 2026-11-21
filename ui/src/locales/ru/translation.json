@@ -50,6 +50,7 @@
   "account.prefs.title": "Настройки",
   "account.profile.attention": "Важные уведомления по почте",
   "account.profile.attentionHint": "Получайте письма о событиях, требующих внимания. Входящие в приложении доступны всегда.",
+  "account.profile.attentionSaveError": "Не удалось сохранить настройку писем о важных уведомлениях",
   "account.profile.avatarError": "Не удалось загрузить фото",
   "account.profile.avatarHint": "PNG, JPEG, GIF или WebP, до 2 МБ",
   "account.profile.avatarTitle": "Фото профиля",

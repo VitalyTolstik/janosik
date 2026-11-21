@@ -155,7 +155,11 @@ export function AttentionInbox({
                     })}
                     className="group -mx-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-1 text-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={(event) => follow(event, target)}
-                    onAuxClick={() => onNavigate()}
+                    onAuxClick={(event) => {
+                      // Auxclick also fires for right-click; only the wheel
+                      // click means "open elsewhere", so only it leaves.
+                      if (event.button === 1) onNavigate();
+                    }}
                   >
                     <span
                       className={

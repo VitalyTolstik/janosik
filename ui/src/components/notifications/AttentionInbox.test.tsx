@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -246,6 +252,26 @@ describe("AttentionInbox (TASK-177.6)", () => {
       "/board/b-1?card=c-1",
     );
     expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it("closes on middle click but leaves right-click alone", () => {
+    const { onNavigate } = renderInbox(
+      page([
+        item({
+          id: "blocked",
+          type: "agent.blocked",
+          title: "Agent blocked",
+          data: { cardId: "c-1" },
+        }),
+      ]),
+    );
+    const link = screen.getByTestId("attention-link");
+
+    fireEvent(link, new MouseEvent("auxclick", { bubbles: true, button: 2 }));
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    fireEvent(link, new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
   it("keeps read and read-all independent of the row links", async () => {

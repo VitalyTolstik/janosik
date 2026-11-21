@@ -81,20 +81,30 @@ export function AccountDialog({
   const { t, lang } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedSection = searchParams.get(ACCOUNT_QUERY_PARAM);
+  const deepLinkSection = isAccountSection(requestedSection)
+    ? requestedSection
+    : null;
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
   const externalTrigger = useRef<HTMLElement | null>(null);
+  // Mirrors Header's `?agents=` handling: Back from a deep-linked panel must
+  // close it, not leave the URL and the dialog disagreeing.
+  const lastDeepLink = useRef<AccountSection | null>(null);
 
   // TASK-177.6: a notification can deep-link to a section through
   // `?account=tokens|…`; the panel is not a route, so the header-owned
   // dialog consumes the param instead of inventing an account page.
   useEffect(() => {
-    if (!isAccountSection(requestedSection)) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
-    setSection(requestedSection);
-    setOpen(true);
-  }, [requestedSection]);
+    if (deepLinkSection !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the deep link is the effect's purpose
+      setSection(deepLinkSection);
+      setOpen(true);
+    } else if (lastDeepLink.current !== null) {
+      setOpen(false);
+    }
+    lastDeepLink.current = deepLinkSection;
+  }, [deepLinkSection]);
 
   useEffect(() => {
     const openTokens = () => {

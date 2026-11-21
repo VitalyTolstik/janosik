@@ -158,6 +158,7 @@ export function NotificationsBell() {
         align="start"
         sideOffset={8}
         collisionPadding={8}
+        aria-label={t("common.notifications")}
         data-testid="invitations-panel"
         aria-busy={invitations === null && !invitationsError}
         className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"

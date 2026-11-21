@@ -1,6 +1,12 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/api/client";
@@ -25,8 +31,9 @@ function renderAccount(
     input: RequestInfo | URL,
     init?: RequestInit,
   ) => Promise<Response> = server.handle,
-  entry = "/",
+  entry: string | string[] = "/",
 ) {
+  const entries = Array.isArray(entry) ? entry : [entry];
   vi.stubGlobal("fetch", handler);
   return render(
     <ThemeProvider>
@@ -35,8 +42,12 @@ function renderAccount(
           <TooltipProvider>
             <ToastProvider>
               <AuthProvider>
-                <MemoryRouter initialEntries={[entry]}>
+                <MemoryRouter
+                  initialEntries={entries}
+                  initialIndex={entries.length - 1}
+                >
                   <AccountDialog />
+                  <HistoryProbe />
                 </MemoryRouter>
               </AuthProvider>
             </ToastProvider>
@@ -44,6 +55,22 @@ function renderAccount(
         </I18nProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
+  );
+}
+
+function HistoryProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <div>
+      <span data-testid="account-location">
+        {location.pathname}
+        {location.search}
+      </span>
+      <button type="button" onClick={() => navigate(-1)}>
+        back
+      </button>
+    </div>
   );
 }
 
@@ -174,9 +201,64 @@ describe("AccountDialog (TASK-36.1)", () => {
     expect(attention).not.toBeChecked();
     await userEvent.click(screen.getByTestId("account-profile-save"));
 
-    expect(await screen.findByText("Could not save the profile")).toBeVisible();
+    expect(
+      await screen.findByText("Could not save the attention email setting"),
+    ).toBeVisible();
     await waitFor(() => expect(attention).toBeChecked());
     expect(server.account.notifyAttention).toBe(true);
+  });
+
+  it("keeps a saved profile change when the attention setting fails", async () => {
+    const server = new FakeServer();
+    renderAccount(server, async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notification-settings") {
+        return Response.json({ message: "Unavailable" }, { status: 503 });
+      }
+      return server.handle(input, init);
+    });
+    await userEvent.click(await screen.findByTestId("account-trigger"));
+    const name = screen.getByTestId("account-display-name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Vera");
+    const attention = screen.getByTestId("account-notify-attention");
+    await userEvent.click(attention);
+    await userEvent.click(screen.getByTestId("account-profile-save"));
+
+    expect(
+      await screen.findByText("Could not save the attention email setting"),
+    ).toBeVisible();
+    await waitFor(() => expect(server.account.displayName).toBe("Vera"));
+    // The successful profile write reached the header even though the
+    // follow-up settings write was refused.
+    expect(screen.getByTestId("account-trigger")).toHaveTextContent("Vera");
+    await waitFor(() => expect(attention).toBeChecked());
+  });
+
+  it("re-enables the attention switch after it was disabled", async () => {
+    const server = new FakeServer();
+    server.account.notifyAttention = false;
+    await openPanel(server);
+    const attention = screen.getByTestId("account-notify-attention");
+    expect(attention).not.toBeChecked();
+
+    await userEvent.click(attention);
+    await userEvent.click(screen.getByTestId("account-profile-save"));
+
+    await waitFor(() => expect(server.account.notifyAttention).toBe(true));
+    expect(server.requests).toContainEqual({
+      method: "PATCH",
+      path: "/api/v1/users/me/notification-settings",
+      body: { notifyAttention: true },
+    });
+    // The returned setting is adopted into the auth state: reopening the
+    // panel must show the enabled switch, not the pre-save value.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+    await userEvent.click(screen.getByTestId("account-trigger"));
+    expect(await screen.findByTestId("account-notify-attention")).toBeChecked();
   });
 
   it("opens the panel on the section named by an account deep link", async () => {
@@ -185,6 +267,42 @@ describe("AccountDialog (TASK-36.1)", () => {
 
     expect(await screen.findByTestId("account-dialog")).toBeVisible();
     expect(await screen.findByTestId("account-tokens")).toBeVisible();
+  });
+
+  it("closes the deep-linked panel when Back removes the param", async () => {
+    const server = new FakeServer();
+    renderAccount(server, server.handle, [
+      "/board/b-1",
+      "/board/b-1?account=tokens",
+    ]);
+
+    expect(await screen.findByTestId("account-dialog")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "back", hidden: true }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+    expect(screen.getByTestId("account-location")).toHaveTextContent(
+      "/board/b-1",
+    );
+  });
+
+  it("closes a deep-linked panel with Escape, clears the param and restores focus", async () => {
+    const server = new FakeServer();
+    renderAccount(server, server.handle, "/board/b-1?account=tokens");
+    expect(await screen.findByTestId("account-dialog")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+    expect(screen.getByTestId("account-location")).toHaveTextContent(
+      "/board/b-1",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("account-trigger")).toHaveFocus(),
+    );
   });
 
   it("switches between the sections without closing", async () => {
