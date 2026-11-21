@@ -23,6 +23,8 @@ import { FakeAdminServer } from "./test/fake-admin-server";
  * by the fake admin API.
  */
 
+const CREATED_AT = Date.UTC(2026, 0, 1);
+
 function shareRow(
   overrides: Partial<AdminShareRowDto> & { id: string },
 ): AdminShareRowDto {
@@ -39,10 +41,27 @@ function shareRow(
     revokedAt: null,
     views: 0,
     lastViewedAt: null,
-    createdAt: Date.UTC(2026, 0, 1),
+    createdAt: CREATED_AT,
     createdBy: "u1",
     ...overrides,
   };
+}
+
+/** Rows are seeded newest-first so the fake's `createdAt desc` order is real. */
+function shareRows(count: number): AdminShareRowDto[] {
+  return Array.from({ length: count }, (_, index) =>
+    shareRow({
+      id: `share-${index}`,
+      boardTitle: `Board ${index}`,
+      createdAt: CREATED_AT - index,
+    }),
+  );
+}
+
+function lastSharesRequest(server: FakeAdminServer) {
+  return server.requests
+    .filter((entry) => entry.path === "/admin/shares")
+    .at(-1);
 }
 
 function renderShares() {
@@ -72,6 +91,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("SharesPage", () => {
@@ -97,46 +117,83 @@ describe("SharesPage", () => {
     await waitFor(() => expect(server.shares[0]?.revokedAt).not.toBeNull());
   });
 
-  it("pages 101 shares and reports the server total", async () => {
+  it("pages 101 shares, reports the server total and disables the edges", async () => {
     const server = new FakeAdminServer();
-    server.shares = Array.from({ length: 101 }, (_, index) =>
-      shareRow({ id: `share-${index}`, boardTitle: `Board ${index}` }),
-    );
+    server.shares = shareRows(101);
     vi.stubGlobal("fetch", server.fetchImpl);
     renderShares();
 
+    expect(screen.queryByTestId("admin-shares-total")).not.toBeInTheDocument();
     const table = await screen.findByTestId("admin-shares-table");
     expect(within(table).getAllByRole("row")).toHaveLength(51);
     expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
       "1–50 of 101",
     );
-    expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
-      "Page 1 of 3",
-    );
+    expect(screen.getByTestId("admin-pagination-prev")).toBeDisabled();
+    expect(screen.getByTestId("admin-pagination-next")).toBeEnabled();
 
     fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("offset")).toBe("50"),
+    );
     await waitFor(() =>
       expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
         "51–100 of 101",
       ),
     );
+    expect(within(table).getByText("Board 50")).toBeInTheDocument();
+    expect(within(table).queryByText("Board 0")).not.toBeInTheDocument();
     expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
       "Page 2 of 3",
     );
 
     fireEvent.click(screen.getByTestId("admin-pagination-next"));
     await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("offset")).toBe("100"),
+    );
+    await waitFor(() =>
       expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
         "101 of 101",
+      ),
+    );
+    expect(within(table).getByText("Board 100")).toBeInTheDocument();
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByTestId("admin-pagination-prev")).toBeEnabled();
+    expect(screen.getByTestId("admin-pagination-next")).toBeDisabled();
+  });
+
+  it("hides the window label while the next page is in flight", async () => {
+    const server = new FakeAdminServer();
+    server.shares = shareRows(101);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+      "1–50 of 101",
+    );
+
+    let release!: () => void;
+    server.holdCommands = new Promise((resolve) => {
+      release = resolve;
+    });
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("offset")).toBe("50"),
+    );
+    expect(screen.queryByTestId("admin-shares-total")).not.toBeInTheDocument();
+
+    release();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+        "51–100 of 101",
       ),
     );
   });
 
   it("resets the page when the search changes", async () => {
     const server = new FakeAdminServer();
-    server.shares = Array.from({ length: 101 }, (_, index) =>
-      shareRow({ id: `share-${index}`, boardTitle: `Board ${index}` }),
-    );
+    server.shares = shareRows(101);
     vi.stubGlobal("fetch", server.fetchImpl);
     renderShares();
 
@@ -153,9 +210,7 @@ describe("SharesPage", () => {
     });
 
     await waitFor(() => {
-      const request = server.requests
-        .filter((entry) => entry.path === "/admin/shares")
-        .at(-1);
+      const request = lastSharesRequest(server);
       expect(request?.query.get("search")).toBe("Board 100");
       expect(request?.query.get("offset")).toBe("0");
     });
@@ -168,7 +223,108 @@ describe("SharesPage", () => {
     expect(screen.getByText("Board 100")).toBeInTheDocument();
   });
 
-  it("marks an expired share and dashes a share with no expiry", async () => {
+  it("shows the filtered empty state for a zero-result search", async () => {
+    const server = new FakeAdminServer();
+    server.shares = shareRows(3);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    fireEvent.change(screen.getByRole("textbox", { name: /^Search/ }), {
+      target: { value: "nothing-matches" },
+    });
+
+    await waitFor(() =>
+      expect(lastSharesRequest(server)?.query.get("search")).toBe(
+        "nothing-matches",
+      ),
+    );
+    expect(
+      await screen.findByText("No rows match this search or filter."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-shares-table")).not.toBeInTheDocument();
+    expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+      "0 of 0",
+    );
+    expect(
+      screen.queryByTestId("admin-pagination-prev"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("resets to the first page when the page size changes", async () => {
+    const server = new FakeAdminServer();
+    server.shares = shareRows(101);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+        "Page 2 of 3",
+      ),
+    );
+
+    fireEvent.change(screen.getByTestId("admin-page-size"), {
+      target: { value: "25" },
+    });
+    await waitFor(() => {
+      const request = lastSharesRequest(server);
+      expect(request?.query.get("limit")).toBe("25");
+      expect(request?.query.get("offset")).toBe("0");
+    });
+    expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+      "1–25 of 101",
+    );
+    expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+      "Page 1 of 5",
+    );
+  });
+
+  it("clamps an out-of-range page after the total shrinks", async () => {
+    const server = new FakeAdminServer();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const all = shareRows(150);
+    let total = all.length;
+    const listShares = vi
+      .spyOn(adminApi, "listShares")
+      .mockImplementation((params = {}) => {
+        const limit = params.limit ?? 50;
+        const offset = params.offset ?? 0;
+        return Promise.resolve({
+          items: offset >= total ? [] : all.slice(offset, offset + limit),
+          total,
+          limit,
+          offset,
+        });
+      });
+    renderShares();
+
+    await screen.findByTestId("admin-shares-table");
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+        "51–100 of 150",
+      ),
+    );
+
+    total = 100;
+    fireEvent.click(screen.getByTestId("admin-pagination-next"));
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-shares-total")).toHaveTextContent(
+        "51–100 of 100",
+      ),
+    );
+    expect(screen.getByTestId("admin-pagination-status")).toHaveTextContent(
+      "Page 2 of 2",
+    );
+    expect(listShares).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 50 }),
+    );
+    expect(screen.queryByText("No public links yet")).not.toBeInTheDocument();
+  });
+
+  it("marks an expired share, but revoked links keep only the revoked badge", async () => {
     const now = Date.now();
     const server = new FakeAdminServer();
     server.shares = [
@@ -181,11 +337,20 @@ describe("SharesPage", () => {
         id: "none",
         boardTitle: "No expiry board",
         expiresAt: null,
+        createdAt: CREATED_AT - 1,
       }),
       shareRow({
         id: "future",
         boardTitle: "Future board",
         expiresAt: now + 60_000,
+        createdAt: CREATED_AT - 2,
+      }),
+      shareRow({
+        id: "revoked-expired",
+        boardTitle: "Revoked board",
+        expiresAt: now - 60_000,
+        revokedAt: now - 30_000,
+        createdAt: CREATED_AT - 3,
       }),
     ];
     vi.stubGlobal("fetch", server.fetchImpl);
@@ -200,6 +365,9 @@ describe("SharesPage", () => {
     expect(screen.getByTestId("admin-share-expires-none")).toHaveTextContent(
       "—",
     );
+    expect(screen.getByTestId("admin-share-expires-none")).toHaveTextContent(
+      "No expiry",
+    );
     expect(
       screen.queryByTestId("admin-share-expired-none"),
     ).not.toBeInTheDocument();
@@ -210,5 +378,13 @@ describe("SharesPage", () => {
     expect(
       screen.queryByTestId("admin-share-expired-future"),
     ).not.toBeInTheDocument();
+
+    expect(
+      screen.getByTestId("admin-share-expires-revoked-expired"),
+    ).not.toHaveTextContent("expired");
+    expect(
+      screen.queryByTestId("admin-share-expired-revoked-expired"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("revoked")).toBeInTheDocument();
   });
 });

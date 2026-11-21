@@ -57,6 +57,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   board and shows its title, Leave is available from the board switcher at
   mobile widths, focus moves into/out of the confirmation, a refused leave
   refreshes the roster, and a last-admin `409` maps to the admin message.
+
+- TASK-177.5 truthful admin shares list: `/admin/shares` now pages over the
+  server's `total/offset/limit` with the shared 25/50/100 pager and shows the
+  visible window as `N of M`. The label is derived from the response snapshot
+  and hidden while a page is pending, so a new offset can never be paired with
+  the previous rows, and an out-of-range page after rows shrink is clamped to
+  the last real page. Each row has an `Expires` column with an `Expired` badge
+  (suppressed for revoked links, which keep their own badge) and an accessible
+  no-expiry dash. Search resets paging, a zero-result search uses the filtered
+  empty state, and the list uses the shared responsive admin table/card layout
+  (including the scrollable panel). The shares query orders by
+  `createdAt desc, id desc` so paging is stable across ties. Component tests
+  cover 101-row paging, a held page request, page-size reset, out-of-range
+  clamping and revoked/expired precedence.
+
 - TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
   read-only verification and master-account commands. The reset uses a
   private backend to verify database identity before schema recreation and
