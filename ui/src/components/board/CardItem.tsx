@@ -133,8 +133,9 @@ const seenCardIds = new Set<string>();
  *
  * The face is a fixed-size uniform grid tile (owner's call): every card
  * shares the same width and height regardless of content. Three rows —
- * the title (~75% of the width) shares the first line with the labels
- * (clipped in the remaining quarter), the due date owns the second, and
+ * the title (~75% of the width on desktop, half below `md` when the card
+ * has labels so a chip stays readable) shares the first line with the
+ * labels (clipped in the remainder), the due date owns the second, and
  * the third packs the meta badges (description / linked cards /
  * checklists) against the priority and the assignee's avatar. Empty
  * slots keep their space so all cards line up.
@@ -294,10 +295,12 @@ function CardItemView({
             keeps them behind the click/dialog. */}
         {!compact ? (
           <>
-            {/* Hover duplicate (Trello quick-edit style): a compact icon in the
-          top-right corner, visible only while hovered. Hidden while dragging
-          and when there is nowhere to put the copy handler. Disabled when
-          the card's column is full — the reducer would refuse the copy.
+            {/* Hover duplicate (Trello quick-edit style): a compact icon on the
+          second row, visible only while hovered. TASK-177.18 moved it off
+          the top-right corner — there it sat on top of the label chips at
+          phone width and made them unreadable. Hidden while dragging and
+          when there is nowhere to put the copy handler. Disabled when the
+          card's column is full — the reducer would refuse the copy.
           Touch devices have no hover: there the button would stay invisible
           yet tappable, so it is removed entirely (`no-hover`) — the card
           dialog owns duplicate/archive on touch. */}
@@ -306,8 +309,9 @@ function CardItemView({
                 <TooltipTrigger asChild>
                   {/* Positioning and hover-visibility live on the wrapper: a
                 disabled button drops pointer events, and the tooltip needs
-                an element that still receives them. */}
-                  <span className="no-hover:hidden absolute right-1.5 top-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                an element that still receives them. `top-8` is the due row
+                (card padding 8 + title row 20 + gap 4), clear of the labels. */}
+                  <span className="no-hover:hidden absolute right-1.5 top-8 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                     <button
                       type="button"
                       aria-label={t("card.duplicate")}
@@ -334,7 +338,7 @@ function CardItemView({
               confirmArchive ? (
                 <span
                   data-testid="card-archive-confirm"
-                  className="absolute right-1.5 top-1.5 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
+                  className="absolute right-1.5 top-8 z-10 flex h-6 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
@@ -368,7 +372,7 @@ function CardItemView({
                       type="button"
                       aria-label={t("card.archive")}
                       data-testid="card-archive"
-                      className="no-hover:hidden absolute right-8 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-(--chip-warning) group-hover:opacity-100"
+                      className="no-hover:hidden absolute right-8 top-8 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity focus-visible:opacity-100 hover:bg-warning/10 hover:text-(--chip-warning) group-hover:opacity-100"
                       onClick={(e) => {
                         // Don't let the click open the card dialog.
                         e.stopPropagation();
@@ -476,8 +480,9 @@ function CardItemView({
                 style={{ background: coverBackground(card.cover) }}
               />
             ) : null}
-            {/* First line: the title owns ~75% of the tile, the labels clip
-          inside the remaining quarter (single line, fade at the cut). */}
+            {/* First line: the title owns ~75% of the tile on desktop; below
+          `md`, a labelled card drops it to half so the label chips keep a
+          readable lane (single line, fade at the cut). TASK-177.18 (U-07). */}
             <div className="flex h-5 shrink-0 items-center gap-2">
               {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
             can't blow out the tile's intrinsic width. The full text stays in
@@ -486,7 +491,13 @@ function CardItemView({
               <p
                 ref={titleRef}
                 title={titleClamped ? card.title : undefined}
-                className="w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
+                className={cn(
+                  "w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
+                  // TASK-177.18: only a labelled card needs the wider label
+                  // lane. `max-md` also covers 640–767 px tablets, where the
+                  // card is still phone-width; 1440 keeps the 75/25 design.
+                  labels.length > 0 && "max-md:w-1/2",
+                )}
                 data-testid="card-title"
               >
                 <HighlightedText text={card.title} query={highlight ?? ""} />
@@ -498,6 +509,7 @@ function CardItemView({
                 {labels.map((label) => (
                   <span
                     key={label.id}
+                    title={label.name}
                     className={cn(
                       "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                       LABEL_COLOR_CHIP[label.color],

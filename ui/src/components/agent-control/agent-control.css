@@ -76,9 +76,15 @@ html.light .agent-control-surface {
    prototype frame (spec §3.3). */
 @media (min-width: 761px) and (max-width: 1279px) {
   .agent-control-surface.ac-modal {
-    top: 56px;
+    /* TASK-177.18: the header grows by the top safe inset, so the sheet and
+       its scrim start below it; the height subtracts the same inset. */
+    top: calc(56px + env(safe-area-inset-top));
     width: calc(100vw - 20px);
-    height: calc(100dvh - 70px);
+    height: calc(100dvh - 70px - env(safe-area-inset-top));
+    /* A landscape phone/tablet sheet still sits under the notch; keep its
+       content inside the horizontal safe area. */
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
   }
 }
 
@@ -96,7 +102,7 @@ html.light .ac-scrim {
 
 @media (min-width: 761px) and (max-width: 1279px) {
   .ac-scrim {
-    top: 52px;
+    top: calc(52px + env(safe-area-inset-top));
   }
 }
 
@@ -863,6 +869,11 @@ html[lang="ru"] .agent-control-surface .ac-title {
   flex: none;
   border-top: 1px solid var(--border);
   padding: 9px 12px;
+  /* The footer is absolutely positioned against the sheet's padding box, so
+     the sheet's notch inset does not reach it; re-apply it here. */
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: max(9px, env(safe-area-inset-bottom));
   background: color-mix(in oklab, var(--surface) 82%, var(--background));
   display: flex;
   align-items: center;
@@ -1004,7 +1015,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 @media (max-width: 1100px) {
   .agent-control-surface.ac-modal {
     width: calc(100vw - 22px);
-    height: min(722px, calc(100dvh - 70px));
+    height: min(722px, calc(100dvh - 70px - env(safe-area-inset-top)));
   }
 }
 
@@ -1035,6 +1046,11 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
   .agent-control-surface .ac-foot {
     padding: 8px 10px;
+    /* Shorthand above resets the base insets; re-apply them for 761–900 px
+       landscape phones/tablets. */
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 }
 
@@ -1046,6 +1062,11 @@ html[lang="ru"] .agent-control-surface .ac-title {
     max-height: 100dvh;
     border: 0;
     border-radius: 0;
+    /* TASK-177.18: the full-screen phone sheet paints under the iOS status
+       bar and landscape notch; the footer keeps its own bottom inset. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-top: env(safe-area-inset-top);
   }
 
   .agent-control-surface .ac-head {
@@ -1214,6 +1235,8 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-foot {
     min-height: 56px;
     padding: 8px 9px;
+    padding-left: max(9px, env(safe-area-inset-left));
+    padding-right: max(9px, env(safe-area-inset-right));
     padding-bottom: max(8px, env(safe-area-inset-bottom));
     flex-wrap: wrap;
   }

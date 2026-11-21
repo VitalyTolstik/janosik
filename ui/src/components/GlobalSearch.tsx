@@ -167,7 +167,7 @@ export function GlobalSearch({
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpenBoth}>
-        <DialogContent className="gap-0 p-0">
+        <DialogContent className="gap-0 p-0 max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]">
           <DialogTitle className="sr-only">{t("search.aria")}</DialogTitle>
           <DialogDescription className="sr-only">
             {t(serverMode ? "search.hint" : "search.hintLocal")}
