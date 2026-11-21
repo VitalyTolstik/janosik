@@ -150,6 +150,7 @@ export class BoardsController {
                 "The example board could not be completed; retry the same request",
               code: "starter_cleanup_failed",
               retryable: true,
+              boardId: board.id,
             });
           }
           // The board is gone, so this key may safely run again.
@@ -173,6 +174,7 @@ export class BoardsController {
                 message: "The board was created; retry the same request",
                 code: "starter_read_failed",
                 retryable: true,
+                boardId: board.id,
               });
             }
             await new Promise((resolve) => setTimeout(resolve, 50 * attempt));

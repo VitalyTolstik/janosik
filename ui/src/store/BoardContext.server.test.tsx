@@ -1192,6 +1192,52 @@ describe("BoardProvider server-mode failures and board management", () => {
     expect(server.boards.size).toBe(1);
   });
 
+  it("opens the existing board when a starter response is ambiguous", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const recovered = { ...seedBoard(), id: "b-rec", title: "Recovered" };
+    let boardReads = 0;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        );
+        if (url.pathname === "/api/v1/boards" && init?.method === "POST") {
+          return new Response(
+            JSON.stringify({
+              code: "starter_cleanup_failed",
+              retryable: true,
+              details: { boardId: "b-rec" },
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.pathname === "/api/v1/boards/b-rec") {
+          boardReads += 1;
+          return new Response(JSON.stringify(recovered), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("add-board"));
+    await waitFor(() =>
+      expect(screen.getByTestId("board-count").textContent).toBe("2"),
+    );
+    expect(boardReads).toBe(1);
+    expect(
+      await screen.findByText(
+        "The board was created, but the example could not be added.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("deletes a board over REST, and keeps it when the server refuses", async () => {
     const server = new FakeServer([
       seedBoard(),

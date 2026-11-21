@@ -1944,7 +1944,35 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
           })
-          .catch((error: unknown) => {
+          .catch(async (error: unknown) => {
+            // The starter board exists but its response was ambiguous. Open
+            // that board instead of leaving the form to mint a second one.
+            if (error instanceof ApiError) {
+              const body = error.body as {
+                code?: unknown;
+                boardId?: unknown;
+                details?: { boardId?: unknown } | null;
+              } | null;
+              const boardId = body?.details?.boardId ?? body?.boardId;
+              if (
+                (body?.code === "starter_cleanup_failed" ||
+                  body?.code === "starter_read_failed") &&
+                typeof boardId === "string"
+              ) {
+                try {
+                  const existing = await api.getBoard(boardId);
+                  if (!aliveRef.current) return null;
+                  apply({ type: "ADD_BOARD", board: existing, remote: true });
+                  setRoles((prev) => ({ ...prev, [existing.id]: "ADMIN" }));
+                  if (body.code === "starter_cleanup_failed") {
+                    toast.error(t("board.starterIncomplete"));
+                  }
+                  return existing.id;
+                } catch {
+                  // Fall through to the generic rejection.
+                }
+              }
+            }
             const limit =
               error instanceof ApiError && error.code === "limit_exceeded"
                 ? (error.body as { limit?: unknown } | null)?.limit

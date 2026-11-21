@@ -336,7 +336,7 @@ describe("Boards API (e2e)", () => {
         .mockResolvedValue(false);
       const key = randomUUID();
       const body = { title: "Cleanup doom", template: "starter" };
-      await server()
+      const failed = await server()
         .post("/api/v1/boards")
         .set(auth(adminToken))
         .set("Idempotency-Key", key)
@@ -344,6 +344,11 @@ describe("Boards API (e2e)", () => {
         .expect(503);
       commandSpy.mockRestore();
       cleanupSpy.mockRestore();
+      expect(failed.body).toMatchObject({
+        code: "starter_cleanup_failed",
+        retryable: true,
+        details: { boardId: expect.any(String) },
+      });
 
       // The empty board may exist; the same key must never mint a second one.
       await server()
@@ -387,11 +392,63 @@ describe("Boards API (e2e)", () => {
         .set(auth(adminToken))
         .expect(200);
       expect(commands.body).toHaveLength(8);
-      expect(commands.body[0]).toMatchObject({
-        actorType: "agent",
-        apiTokenId: tokenResponse.body.apiToken.id,
+      expect(
+        commands.body.every(
+          (command: {
+            actorType?: string;
+            apiTokenId?: string;
+            runId?: string;
+          }) =>
+            command.actorType === "agent" &&
+            command.apiTokenId === tokenResponse.body.apiToken.id &&
+            typeof command.runId === "string",
+        ),
+      ).toBe(true);
+    });
+
+    it("keeps the key and board id when the starter aggregate read fails", async () => {
+      const boards = app.get(BoardsService);
+      const original = boards.getAggregate.bind(boards);
+      let calls = 0;
+      const readSpy = jest
+        .spyOn(boards, "getAggregate")
+        .mockImplementation(async (boardId: string) => {
+          calls += 1;
+          // First call is createBoard's own return; the controller read then
+          // fails three times.
+          if (calls >= 2) throw new Error("read failed");
+          return original(boardId);
+        });
+      const key = randomUUID();
+      const body = { title: "Read doom", template: "starter" };
+      const failed = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(503);
+      readSpy.mockRestore();
+      expect(failed.body).toMatchObject({
+        code: "starter_read_failed",
+        retryable: true,
+        details: { boardId: expect.any(String) },
       });
-      expect(commands.body[0].runId).toEqual(expect.any(String));
+
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(409);
+      const list = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      const boardsWithTitle = list.body.filter(
+        (board: { title: string }) => board.title === "Read doom",
+      );
+      expect(boardsWithTitle).toHaveLength(1);
+      expect(boardsWithTitle[0].id).toBe(failed.body.details.boardId);
     });
 
     it("lists only the boards the caller is a member of", async () => {

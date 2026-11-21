@@ -199,8 +199,10 @@ describe("App first run", () => {
       expect(field).not.toBeNull();
       return field!;
     });
-    await userEvent.clear(input);
-    await userEvent.type(input, "Renamed through pencil{Enter}");
+    fireEvent.change(input, {
+      target: { value: "Renamed through pencil" },
+    });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     expect(
       await screen.findByRole("heading", { name: "Renamed through pencil" }),
