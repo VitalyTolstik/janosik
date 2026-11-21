@@ -21,6 +21,9 @@ test("submits with Ctrl+Enter and clears the draft with Cancel", async ({
     "Sent with the keyboard",
   );
 
+  // The composer disables Cancel while the previous send is in flight; wait
+  // for it to settle before starting the next draft.
+  await expect(dialog.getByTestId("comment-cancel")).toBeEnabled();
   const cleared = dialog
     .getByTestId("comment-input")
     .locator('[contenteditable="true"]');
