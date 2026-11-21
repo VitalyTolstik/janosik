@@ -480,6 +480,37 @@ describe("ApiClient", () => {
     ]);
   });
 
+  /** TASK-177.11: the PATCH body carries only the fields the author changed. */
+  it("edits a comment's kind without resending an unchanged text", async () => {
+    const bodies: unknown[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (_input, init) => {
+        bodies.push(
+          typeof init?.body === "string"
+            ? (JSON.parse(init.body) as unknown)
+            : undefined,
+        );
+        return json({
+          id: "comment-1",
+          cardId: "c-1",
+          authorId: "u-1",
+          text: "kept",
+          kind: "blocker",
+          createdAt: 1,
+        });
+      },
+    });
+    client.setAccessToken("t");
+
+    await client.updateComment("comment-1", undefined, "question");
+    await client.updateComment("comment-1", "edited", "blocker");
+    expect(bodies).toEqual([
+      { kind: "question" },
+      { text: "edited", kind: "blocker" },
+    ]);
+  });
+
   /** TASK-86: keepalive is dropped for a body over the browser's cap. */
   it("sends a large command without keepalive and not as offline", async () => {
     const client = new ApiClient({

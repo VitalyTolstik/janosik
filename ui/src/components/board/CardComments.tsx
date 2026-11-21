@@ -104,6 +104,26 @@ export function CardComments({
   });
   const { items, nextCursor } = thread;
   const itemsRef = useRef<CommentDto[]>([]);
+  // Server-side kind filter (TASK-177.11, G-06). `requestedKind` is the chip
+  // the author clicked; `loadedKind` only moves after that page actually
+  // arrives, so a failed fetch never claims a filter that is not applied.
+  const [requestedKind, setRequestedKind] = useState<CommentKind | undefined>(
+    undefined,
+  );
+  // Mirrors `requestedKind` for async handlers: a chip can change while a
+  // comment POST is in flight, and the post-await code must see the latest
+  // request, not the render-time snapshot.
+  const requestedKindRef = useRef<CommentKind | undefined>(undefined);
+  const [loadedKind, setLoadedKind] = useState<CommentKind | undefined>(
+    undefined,
+  );
+  const loadedKindRef = useRef<CommentKind | undefined>(undefined);
+  const [filtering, setFiltering] = useState(false);
+  const [filterError, setFilterError] = useState(false);
+  // Last exact unfiltered count for the Comments tab. While a filter is
+  // applied the visible thread cannot supply it, so local creates/deletes
+  // adjust this snapshot by ±1.
+  const unfilteredCountRef = useRef<ActivityCount | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
   const [status, setStatus] = useState<
@@ -111,6 +131,9 @@ export function CardComments({
   >(serverMode ? "loading" : "ready");
   const loaded = status !== "loading";
   const aliveRef = useRef(true);
+  // A chip click starts a new first page while the previous request may still
+  // be in flight; only the newest load may land.
+  const loadSeqRef = useRef(0);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const canCompose =
     loaded && serverMode && !readOnly && status !== "unavailable";
@@ -137,36 +160,47 @@ export function CardComments({
     }
   }, []);
 
-  const loadFirst = useCallback(async () => {
-    if (!serverMode) return;
-    try {
-      const page = await api.listComments(cardId, undefined, PAGE_SIZE);
-      if (!aliveRef.current) return;
-      setThread(page);
-      setStatus("ready");
-    } catch (error) {
-      if (!aliveRef.current) return;
-      markUnavailable(error);
-      toast.error(t("comment.loadError"));
-    } finally {
-      // A failed request still ends the wait: the skeleton must not spin
-      // forever over an error toast.
-      if (aliveRef.current) {
-        setStatus((current) => (current === "loading" ? "error" : current));
+  const loadFirst = useCallback(
+    async (kind: CommentKind | undefined) => {
+      if (!serverMode) return;
+      const seq = ++loadSeqRef.current;
+      try {
+        const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
+        if (!aliveRef.current || seq !== loadSeqRef.current) return;
+        setThread(page);
+        setStatus("ready");
+        loadedKindRef.current = kind;
+        setLoadedKind(kind);
+        setFilterError(false);
+      } catch (error) {
+        if (!aliveRef.current || seq !== loadSeqRef.current) return;
+        markUnavailable(error);
+        // A failed filter fetch keeps the previous thread and chip; only the
+        // first unfiltered load has no previous state to fall back on.
+        if (kind !== loadedKindRef.current) setFilterError(true);
+        toast.error(t("comment.loadError"));
+      } finally {
+        // A failed request still ends the wait: the skeleton must not spin
+        // forever over an error toast.
+        if (aliveRef.current && seq === loadSeqRef.current) {
+          setFiltering(false);
+          setStatus((current) => (current === "loading" ? "error" : current));
+        }
       }
-    }
-  }, [cardId, markUnavailable, serverMode, t, toast]);
+    },
+    [cardId, markUnavailable, serverMode, t, toast],
+  );
 
   // A different card means a different thread: the parent remounts this
   // component with `key={cardId}`, so the initial state is the reset.
   useEffect(() => {
     aliveRef.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the thread lands after the await, not synchronously
-    void loadFirst();
+    void loadFirst(requestedKind);
     return () => {
       aliveRef.current = false;
     };
-  }, [loadFirst]);
+  }, [loadFirst, requestedKind]);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -175,6 +209,10 @@ export function CardComments({
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;
   useEffect(() => {
+    // A filtered thread holds only one kind; the Comments tab count belongs
+    // to the whole thread, so keep the last unfiltered snapshot instead of
+    // recomputing it from the visible (and much smaller) list.
+    if (loadedKind !== undefined) return;
     const count =
       serverMode && status === "ready"
         ? {
@@ -184,10 +222,12 @@ export function CardComments({
             total,
           }
         : null;
+    unfilteredCountRef.current = count;
     onCountChange?.(loaded ? count : undefined);
   }, [
     commentCount,
     loaded,
+    loadedKind,
     nextCursor,
     onCountChange,
     serverMode,
@@ -195,21 +235,44 @@ export function CardComments({
     total,
   ]);
 
+  const adjustUnfilteredCount = useCallback(
+    (delta: 1 | -1) => {
+      const current = unfilteredCountRef.current;
+      if (current === null) return;
+      const next: ActivityCount = {
+        ...current,
+        visible: Math.max(0, current.visible + delta),
+        loaded: Math.max(0, current.loaded + delta),
+        ...(current.total !== undefined
+          ? { total: Math.max(0, current.total + delta) }
+          : {}),
+      };
+      unfilteredCountRef.current = next;
+      onCountChange?.(next);
+    },
+    [onCountChange],
+  );
+
   // Live arrival: a foreign comment is not in the frame body (the frame
   // carries its id), so the newest page is re-read and merged — paginated
   // older pages stay untouched. Own echoes land in the same path and are
   // deduplicated by id, whichever wins the race with the POST response.
   const refreshNewest = useCallback(async () => {
     if (!serverMode) return;
+    // SSE can fire while a chip change is in flight; read and merge only for
+    // the kind the visible thread was actually loaded with.
+    const kind = loadedKindRef.current;
     try {
-      const page = await api.listComments(cardId, undefined, PAGE_SIZE);
-      if (!aliveRef.current) return;
+      const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
+      if (!aliveRef.current || kind !== loadedKindRef.current) return;
       setThread((current) =>
         mergeNewestActivity(current, page, isPendingComment),
       );
       setStatus("ready");
     } catch (error) {
-      if (aliveRef.current) markUnavailable(error);
+      if (aliveRef.current && kind === loadedKindRef.current) {
+        markUnavailable(error);
+      }
     }
   }, [cardId, markUnavailable, serverMode]);
 
@@ -221,6 +284,7 @@ export function CardComments({
   const refreshEdited = useCallback(
     async (commentId: string) => {
       if (!serverMode) return;
+      const kind = loadedKindRef.current;
       const loaded = itemsRef.current;
       const target = commentId === "" ? undefined : commentId;
       // An edit of a row this client has not loaded is not rendered here.
@@ -236,7 +300,7 @@ export function CardComments({
         // never turns one SSE frame into an unbounded history scan.
         const maxPages = Math.ceil(loaded.length / PAGE_SIZE) + 1;
         for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-          const page = await api.listComments(cardId, cursor, PAGE_SIZE);
+          const page = await api.listComments(cardId, cursor, PAGE_SIZE, kind);
           for (const comment of page.items) byId.set(comment.id, comment);
           if (target !== undefined && page.items.some((c) => c.id === target)) {
             break;
@@ -245,15 +309,26 @@ export function CardComments({
           if (page.nextCursor === null) break;
           cursor = page.nextCursor;
         }
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || kind !== loadedKindRef.current) return;
         setThread((current) => ({
           ...current,
-          items: current.items.map(
-            (comment) => byId.get(comment.id) ?? comment,
-          ),
+          items: current.items.flatMap((comment) => {
+            // Under a kind filter an edit can move the row out of the
+            // visible page; drop it instead of leaving a stale chip match.
+            if (
+              kind !== undefined &&
+              comment.id === target &&
+              !byId.has(comment.id)
+            ) {
+              return [];
+            }
+            return [byId.get(comment.id) ?? comment];
+          }),
         }));
       } catch (error) {
-        if (aliveRef.current) markUnavailable(error);
+        if (aliveRef.current && kind === loadedKindRef.current) {
+          markUnavailable(error);
+        }
       }
     },
     [cardId, markUnavailable, serverMode],
@@ -291,6 +366,14 @@ export function CardComments({
     trimmed.length > 0 &&
     trimmed.length <= LIMITS.comment;
 
+  const retryFilter = () => {
+    setFilterError(false);
+    setFiltering(true);
+    // Read the live ref, not a render-time state snapshot: a retry can be
+    // started from an old handleSend closure after the chip changed.
+    void loadFirst(requestedKindRef.current);
+  };
+
   const handleSend = async () => {
     if (!canSend || user === null) return;
     const finishSend = composer.startSend();
@@ -327,7 +410,26 @@ export function CardComments({
         ],
         total: undefined,
       }));
-      if (total !== undefined) void refreshNewest();
+      const activeKind = loadedKindRef.current;
+      // The unfiltered tab count cannot be derived from a filtered thread.
+      if (activeKind !== undefined) adjustUnfilteredCount(1);
+      if (activeKind !== undefined && sentKind !== activeKind) {
+        // The author just wrote a comment the active chip excludes: show All
+        // so the saved row is not silently hidden by its own filter.
+        if (requestedKindRef.current === undefined) {
+          // The All chip was already requested (a failed revert leaves the
+          // requested kind at All), so setting it again cannot trigger the
+          // load effect. Retry explicitly and clear the stuck busy state.
+          retryFilter();
+        } else {
+          requestedKindRef.current = undefined;
+          setRequestedKind(undefined);
+          setFilterError(false);
+          setFiltering(true);
+        }
+      } else if (total !== undefined) {
+        void refreshNewest();
+      }
     } catch {
       finishSend(false);
       setThread((current) => ({
@@ -360,11 +462,13 @@ export function CardComments({
     }));
     try {
       await api.deleteComment(comment.id);
+      if (loadedKindRef.current !== undefined) adjustUnfilteredCount(-1);
       if (nextCursor !== null || total !== undefined) void refreshNewest();
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         // The server already deleted it elsewhere: keep the optimistic
         // removal and repair the exact count instead of resurrecting the row.
+        if (loadedKindRef.current !== undefined) adjustUnfilteredCount(-1);
         setThread((current) => ({
           ...current,
           total:
@@ -394,9 +498,11 @@ export function CardComments({
 
   const handleShowOlder = async () => {
     if (nextCursor === null || loadingOlder) return;
+    const kind = loadedKindRef.current;
     setLoadingOlder(true);
     try {
-      const page = await api.listComments(cardId, nextCursor, PAGE_SIZE);
+      const page = await api.listComments(cardId, nextCursor, PAGE_SIZE, kind);
+      if (kind !== loadedKindRef.current) return;
       setThread((current) => appendOlderActivity(current, page, nextCursor));
     } catch (error) {
       markUnavailable(error);
@@ -406,8 +512,20 @@ export function CardComments({
     }
   };
 
+  const handleKindFilter = (next: CommentKind | undefined) => {
+    if (next === requestedKindRef.current) {
+      // Clicking the chip that just failed retries it without a state change.
+      if (filterError) retryFilter();
+      return;
+    }
+    setRequestedKind(next);
+    requestedKindRef.current = next;
+    setFilterError(false);
+    setFiltering(true);
+  };
+
   return (
-    <div className="space-y-2" aria-busy={!loaded}>
+    <div className="space-y-2" aria-busy={!loaded || filtering}>
       {canCompose && user !== null ? (
         <CommentComposer
           key={user.id}
@@ -425,6 +543,28 @@ export function CardComments({
         />
       ) : null}
 
+      {serverMode && loaded && status !== "unavailable" ? (
+        <>
+          <CommentKindFilters active={loadedKind} onChange={handleKindFilter} />
+          {filterError ? (
+            <div
+              role="alert"
+              data-testid="comment-filter-error"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-[36px] text-xs text-muted-foreground"
+            >
+              <span>{t("comment.filter.error")}</span>
+              <button
+                type="button"
+                onClick={retryFilter}
+                className="inline-flex min-h-11 items-center rounded-md px-2 font-medium text-foreground underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+              >
+                {t("comment.filter.retry")}
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
       {/* An editable empty thread already has the composer as its prompt. */}
       {!loaded ? (
         <SkeletonRegion
@@ -433,6 +573,12 @@ export function CardComments({
         >
           <CardSectionSkeleton kind="comments" rows={3} />
         </SkeletonRegion>
+      ) : items.length === 0 && loadedKind !== undefined && !filterError ? (
+        <p className="py-1 pl-[36px] text-sm text-muted-foreground">
+          {t("comment.filter.empty", {
+            kind: kindLabel(loadedKind, t),
+          })}
+        </p>
       ) : items.length === 0 && (readOnly || !serverMode || user === null) ? (
         <p className="py-1 pl-[36px] text-sm text-muted-foreground">
           {t("comment.empty")}
@@ -448,14 +594,24 @@ export function CardComments({
               currentUserId={user?.id}
               readOnly={readOnly}
               onDelete={() => setPendingDelete(comment)}
-              onUpdated={(saved) =>
+              onUpdated={(saved) => {
+                const activeKind = loadedKindRef.current;
+                if (activeKind !== undefined && saved.kind !== activeKind) {
+                  // The row no longer belongs to the visible chip.
+                  setThread((current) => ({
+                    ...current,
+                    items: current.items.filter((item) => item.id !== saved.id),
+                  }));
+                  void refreshNewest();
+                  return;
+                }
                 setThread((current) => ({
                   ...current,
                   items: current.items.map((item) =>
                     item.id === saved.id ? saved : item,
                   ),
-                }))
-              }
+                }));
+              }}
             />
           ))}
         </ol>
@@ -540,6 +696,79 @@ function kindLabel(
 }
 
 /**
+ * Server-side kind filter chips (TASK-177.11, G-06). `All` is no query; every
+ * other chip sends `?kind=` so the cursor pages only that kind. The active
+ * state is text + `aria-pressed` + a check icon, never colour alone; each chip
+ * is a 44 px touch target below `sm` and wraps at 390 px.
+ */
+function CommentKindFilters({
+  active,
+  onChange,
+}: {
+  active: CommentKind | undefined;
+  onChange: (kind: CommentKind | undefined) => void;
+}) {
+  const { t } = useI18n();
+  const label = t("comment.filter.label");
+  const options: Array<{ value: CommentKind | undefined; text: string }> = [
+    { value: undefined, text: t("comment.filter.all") },
+    ...COMMENT_KINDS.map((kind) => ({
+      value: kind,
+      text: kindLabel(kind, t),
+    })),
+  ];
+
+  return (
+    <div className="pl-[36px]">
+      <div
+        role="group"
+        aria-label={label}
+        data-testid="comment-kind-filters"
+        className="flex flex-wrap gap-1"
+      >
+        {options.map(({ value, text }) => {
+          const selected = active === value;
+          return (
+            <button
+              key={value ?? "all"}
+              type="button"
+              aria-pressed={selected}
+              data-testid={`comment-filter-${value ?? "all"}`}
+              onClick={() => onChange(value)}
+              className={cn(
+                "inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
+                selected
+                  ? "border-primary/60 bg-primary/10 text-foreground"
+                  : "border-border/70 text-muted-foreground hover:bg-hover hover:text-foreground",
+              )}
+            >
+              <Check
+                className={cn(
+                  "h-3.5 w-3.5",
+                  selected ? "text-primary" : "invisible",
+                )}
+                aria-hidden
+              />
+              {text}
+            </button>
+          );
+        })}
+      </div>
+      <p
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="comment-filter-live"
+      >
+        {active === undefined
+          ? t("comment.filter.showingAll")
+          : t("comment.filter.showing", { kind: kindLabel(active, t) })}
+      </p>
+    </div>
+  );
+}
+
+/**
  * Structured comment kind: an outline trigger opening the project's
  * radio-list popover. A native `<select>` was used here first, but its
  * option list is drawn by the browser — it ignores the app theme and breaks
@@ -551,10 +780,12 @@ function CommentKindPicker({
   kind,
   disabled,
   onChange,
+  testId = "comment-kind",
 }: {
   kind: CommentKind;
   disabled: boolean;
   onChange: (kind: CommentKind) => void;
+  testId?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -568,7 +799,7 @@ function CommentKindPicker({
           size="sm"
           disabled={disabled}
           aria-label={`${label}: ${kindLabel(kind, t)}`}
-          data-testid="comment-kind"
+          data-testid={testId}
           className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
         >
           {kindLabel(kind, t)}
@@ -583,7 +814,7 @@ function CommentKindPicker({
               type="button"
               role="radio"
               aria-checked={option === kind}
-              data-testid={`comment-kind-option-${option}`}
+              data-testid={`${testId}-option-${option}`}
               onClick={() => {
                 setOpen(false);
                 onChange(option);
@@ -734,10 +965,12 @@ function CommentRow({
   const displayName = comment.authorName ?? member?.displayName ?? null;
   const name = userLabel(displayName, email) || "?";
 
-  // Inline edit (TASK-176.2): the row stays in place; only its body swaps
-  // for the same markdown editor the composer uses.
+  // Inline edit (TASK-176.2, TASK-177.11): the row stays in place; its body
+  // swaps for the same markdown editor the composer uses, and the author may
+  // retype the structured kind alongside the text.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.text);
+  const [editKind, setEditKind] = useState(comment.kind);
   const [saving, setSaving] = useState(false);
   const [editorNonce, setEditorNonce] = useState(0);
   const editButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -750,7 +983,8 @@ function CommentRow({
     wasEditingRef.current = editing;
   }, [editing]);
 
-  const unchanged = draft.trim() === comment.text.trim();
+  const unchanged =
+    draft.trim() === comment.text.trim() && editKind === comment.kind;
   const canSave =
     !saving &&
     !unchanged &&
@@ -760,6 +994,7 @@ function CommentRow({
   const startEdit = () => {
     if (!own || readOnly || pending) return;
     setDraft(comment.text);
+    setEditKind(comment.kind);
     setEditorNonce((nonce) => nonce + 1);
     setEditing(true);
   };
@@ -768,6 +1003,7 @@ function CommentRow({
     if (saving) return;
     setEditing(false);
     setDraft(comment.text);
+    setEditKind(comment.kind);
   };
 
   const saveEdit = async () => {
@@ -775,10 +1011,19 @@ function CommentRow({
     if (!canSave || text.length === 0) return;
     setSaving(true);
     try {
-      const saved = await api.updateComment(comment.id, text);
+      // Send only what changed: a kind-only save keeps the old text (and its
+      // attachment reconciliation) out of the PATCH body.
+      const textChanged = text !== comment.text.trim();
+      const kindChanged = editKind !== comment.kind;
+      const saved = await api.updateComment(
+        comment.id,
+        textChanged ? text : undefined,
+        kindChanged ? editKind : undefined,
+      );
       onUpdated(saved);
       setEditing(false);
       setDraft(saved.text);
+      setEditKind(saved.kind);
     } catch {
       // Keep the editor and the draft: the author can retry without
       // retyping, and the row below still shows the stored text.
@@ -911,6 +1156,12 @@ function CommentRow({
               </Suspense>
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
+                  <CommentKindPicker
+                    kind={editKind}
+                    disabled={saving}
+                    onChange={setEditKind}
+                    testId="comment-edit-kind"
+                  />
                   <Button
                     variant="premium"
                     size="sm"

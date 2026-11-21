@@ -186,12 +186,16 @@ answers `400`, and an unknown `kind` answers `400`. Pages are newest-first and
 `DELETE` removes a comment. Only the author may delete their own comment;
 another author answers `403`.
 
-`PATCH` edits the caller's own comment. The body is `{ "text": "..." }`
-(non-blank, at most 10 000 characters). Only the author may edit; another
-author answers `403`, a deleted comment `404`. `kind`, `authorId`,
-attribution and `createdAt` stay as they were, `editedAt` is stamped (Unix ms
-in `CommentDto`), and inline media removed from the text is soft-deleted.
-The edit writes a `comment_updated` activity row and SSE frame.
+`PATCH` edits the caller's own comment. The body is `{ "text": "...", "kind": "blocker" }`;
+both fields are optional, but at least one must be present or the server
+answers `400` (`text` must still be non-blank and at most 10 000 characters).
+An omitted field keeps its stored value. Only the author may edit; another
+author answers `403`, a deleted comment `404`. `authorId`, attribution and
+`createdAt` stay as they were, `editedAt` is stamped (Unix ms in `CommentDto`),
+and inline media removed from the text is soft-deleted.
+The edit writes a `comment_updated` activity row and SSE frame; changing a
+comment to `blocker`/`handoff` does not repeat attention already raised by the
+original comment.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
 
