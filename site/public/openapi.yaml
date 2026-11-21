@@ -3861,7 +3861,9 @@ components:
           type: string
           enum: [en, ru]
           default: en
-          description: Copy language for the starter content.
+          description: |
+            Copy language for the starter content. Requires `template: starter`;
+            sending it without a starter template is a 400.
     BoardEnvelope:
       type: object
       required: [app, schemaVersion, exportedAt, boards]

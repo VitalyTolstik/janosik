@@ -8,12 +8,12 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  InternalServerErrorException,
   Param,
   Patch,
   Post,
   Query,
   Res,
+  ServiceUnavailableException,
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
@@ -99,9 +99,9 @@ export class BoardsController {
     // Board creation is account-wide `admin` (TASK-166): a board-scoped or
     // worker/reviewer token cannot mint boards outside its mandate.
     assertAccountWidePreset(principal, "board.create");
-    if (dto.template === undefined && dto.templateLocale !== undefined) {
+    if (dto.template !== "starter" && dto.templateLocale !== undefined) {
       throw new BadRequestException({
-        message: "templateLocale requires template",
+        message: "templateLocale requires template=starter",
         field: "templateLocale",
       });
     }
@@ -145,18 +145,40 @@ export class BoardsController {
           if (!cleaned) {
             // The empty board may still exist: keep the idempotency record so
             // a same-key retry cannot create a second one.
-            throw new InternalServerErrorException({
+            throw new ServiceUnavailableException({
               message:
-                "The example board could not be completed; retry with a new request",
+                "The example board could not be completed; retry the same request",
               code: "starter_cleanup_failed",
+              retryable: true,
             });
           }
           // The board is gone, so this key may safely run again.
           markGuaranteedRollback(error);
           throw error;
         }
-        const withStarter = await this.boards.getAggregate(board.id);
-        return { body: withStarter, status: 201, resourceId: board.id };
+        // The starter committed. A failed read is ambiguous (the board
+        // exists), so retry briefly and otherwise keep the idempotency record
+        // and ask for the same request rather than inviting a second board.
+        let withStarter: BoardAggregate | null = null;
+        for (
+          let attempt = 1;
+          attempt <= 3 && withStarter === null;
+          attempt += 1
+        ) {
+          try {
+            withStarter = await this.boards.getAggregate(board.id);
+          } catch {
+            if (attempt === 3) {
+              throw new ServiceUnavailableException({
+                message: "The board was created; retry the same request",
+                code: "starter_read_failed",
+                retryable: true,
+              });
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+          }
+        }
+        return { body: withStarter!, status: 201, resourceId: board.id };
       },
     });
     return outcome.body;

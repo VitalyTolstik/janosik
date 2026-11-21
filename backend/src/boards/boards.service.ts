@@ -408,15 +408,19 @@ export class BoardsService {
    * duplicate. Membership is removed first because the relation is required.
    */
   async discardFreshBoard(boardId: string): Promise<boolean> {
-    try {
-      await this.prisma.$transaction([
-        this.prisma.boardMember.deleteMany({ where: { boardId } }),
-        this.prisma.board.deleteMany({ where: { id: boardId } }),
-      ]);
-      return true;
-    } catch {
-      return false;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await this.prisma.$transaction([
+          this.prisma.boardMember.deleteMany({ where: { boardId } }),
+          this.prisma.board.deleteMany({ where: { id: boardId } }),
+        ]);
+        return true;
+      } catch {
+        if (attempt === 3) return false;
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+      }
     }
+    return false;
   }
 
   /** The whole board aggregate in the frontend `Board` shape (§7.4). */

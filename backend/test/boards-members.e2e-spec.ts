@@ -5,6 +5,7 @@ import type { Board, BoardEnvelope } from "@janosik/shared";
 import { normalizeBoards } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
+import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
@@ -274,6 +275,11 @@ describe("Boards API (e2e)", () => {
           templateLocale: "de",
         })
         .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Bad locale", template: null, templateLocale: "ru" })
+        .expect(400);
     });
 
     it("discards the fresh board when the starter batch fails and retries the key", async () => {
@@ -317,6 +323,75 @@ describe("Boards API (e2e)", () => {
           (board: { title: string }) => board.title === "Doomed starter",
         ),
       ).toHaveLength(1);
+    });
+
+    it("keeps the key when the failed starter cannot be cleaned up", async () => {
+      const commands = app.get(CommandsService);
+      const boards = app.get(BoardsService);
+      const commandSpy = jest
+        .spyOn(commands, "applyBatch")
+        .mockRejectedValueOnce(new Error("starter failure"));
+      const cleanupSpy = jest
+        .spyOn(boards, "discardFreshBoard")
+        .mockResolvedValue(false);
+      const key = randomUUID();
+      const body = { title: "Cleanup doom", template: "starter" };
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(503);
+      commandSpy.mockRestore();
+      cleanupSpy.mockRestore();
+
+      // The empty board may exist; the same key must never mint a second one.
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .set("Idempotency-Key", key)
+        .send(body)
+        .expect(409);
+      const list = await server()
+        .get("/api/v1/boards")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        list.body.filter(
+          (board: { title: string }) => board.title === "Cleanup doom",
+        ),
+      ).toHaveLength(1);
+    });
+
+    it("creates the starter through an account-wide admin PAT", async () => {
+      const tokenResponse = await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(adminToken))
+        .send({
+          name: "starter pat",
+          expiresAt: null,
+          scopePreset: "admin",
+          trustedCi: false,
+        })
+        .expect(201);
+      const pat = tokenResponse.body.token as string;
+      const created = await server()
+        .post("/api/v1/boards")
+        .set(auth(pat))
+        .send({ title: "PAT starter", template: "starter" })
+        .expect(201);
+      expect(created.body.columns).toHaveLength(3);
+
+      const commands = await server()
+        .get(`/api/v1/boards/${created.body.id}/commands`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(commands.body).toHaveLength(8);
+      expect(commands.body[0]).toMatchObject({
+        actorType: "agent",
+        apiTokenId: tokenResponse.body.apiToken.id,
+      });
+      expect(commands.body[0].runId).toEqual(expect.any(String));
     });
 
     it("lists only the boards the caller is a member of", async () => {
