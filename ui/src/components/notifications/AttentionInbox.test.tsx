@@ -177,12 +177,6 @@ describe("AttentionInbox (TASK-177.6)", () => {
           title: "Approval decided",
           data: { approvalId: "apr-1" },
         }),
-        item({
-          id: "card-approval",
-          type: "approval.requested",
-          title: "Approval for card",
-          data: { approvalId: "apr-2", cardId: "c-9" },
-        }),
       ]),
       { roleOf: () => "MEMBER" },
     );
@@ -194,10 +188,6 @@ describe("AttentionInbox (TASK-177.6)", () => {
     expect(boardUrl.pathname).toBe("/board/b-1");
     expect(boardUrl.searchParams.has("agents")).toBe(false);
     expect(boardUrl.searchParams.has("approval")).toBe(false);
-
-    expect(
-      screen.getByRole("link", { name: "Open “Approval for card”" }),
-    ).toHaveAttribute("href", cardHref("b-1", "c-9"));
   });
 
   it("links a board quota to the board and an account quota to the account panel", () => {

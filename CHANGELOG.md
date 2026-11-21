@@ -11,9 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TASK-177.6 attention inbox deep links and notification preference path.
   Every attention row now opens its real target: a blocked, hand-off or expired
   claim row follows the card deep link, an approval opens the board approvals
-  tab focused on the request when its id is known, a board limit opens the
-  board, an account-level limit opens the account panel, and a revoked token
-  opens **Account → API keys**. Links are real anchors, so keyboard, middle
+  tab for a board admin (focused on the request when its id is known) while
+  other recipients land on the board, a board limit opens the board, an
+  account-level limit opens the account panel, and a revoked token opens
+  **Account → API keys**. Links are real anchors, so keyboard, middle
   click and Cmd/Ctrl-click work, and the bell closes on activation. Rows with
   no safe target stay plain text; opening a row never marks it read. The profile
   **Attention emails** switch now loads from the session, saves through

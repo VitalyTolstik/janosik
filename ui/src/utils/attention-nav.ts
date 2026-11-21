@@ -103,9 +103,9 @@ export function attentionTarget(
       return { kind: "approval", path, href: appPath(path) };
     }
     // `AgentControlDialog` opens Pause for a non-admin even when asked for
-    // the approvals tab, so a non-admin gets the board (or the card the
-    // approval is about) instead of a misleading approvals deep link.
-    if (cardId !== null) return cardTarget(boardId, cardId);
+    // the approvals tab, so a non-admin gets the board instead of a
+    // misleading approvals deep link. Approval payloads do not carry a
+    // card id, so there is no card destination to offer here.
     const path = routes.board(boardId);
     return { kind: "board", path, href: appPath(path) };
   }
