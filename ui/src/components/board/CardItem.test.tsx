@@ -87,11 +87,23 @@ describe("CardItem fixed tile layout", () => {
     // Same row container: the labels sit beside the title, not below it.
     expect(title.parentElement).toBe(labels.parentElement);
     expect(title.className).toContain("w-3/4");
+    // TASK-177.18 (U-07): a labelled card gives the chips half the row up to
+    // the `md` breakpoint instead of the desktop quarter, so the first name
+    // stays readable on phones and 640–767 px tablets.
+    expect(title.className).toContain("max-md:w-1/2");
     expect(title.className).toContain("truncate");
     // The label quarter stays on one clipped line.
     expect(labels.className).toContain("whitespace-nowrap");
     expect(labels.className).toContain("overflow-hidden");
     expect(labels.children.length).toBe(6);
+  });
+
+  it("keeps the normal 75% title width on a phone when the card has no labels", () => {
+    renderCard(baseCard, []);
+    const title = screen.getByTestId("card-title");
+    expect(title.className).toContain("w-3/4");
+    // No label lane to protect, so the phone face must not reserve one.
+    expect(title.className).not.toContain("max-md:w-1/2");
   });
 
   it("renders the medium priority badge (the default is no longer hidden)", () => {
@@ -270,6 +282,39 @@ describe("CardItem hover duplicate (column limits)", () => {
     onDuplicate: vi.fn(),
     onArchive: vi.fn(),
   };
+
+  it("keeps the hover actions on the second row, clear of the labels (U-07)", () => {
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={baseCard}
+            {...base}
+            labels={[{ id: "l-1", name: "Design", color: "blue" }]}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const archive = screen.getByTestId("card-archive");
+    const duplicate = screen
+      .getByRole("button", { name: "Duplicate card" })
+      .closest("span");
+    // `top-8` is the due row; the old `top-1.5` put both buttons over the
+    // label chips in the first row at 390 px.
+    expect(archive.className).toContain("top-8");
+    expect(archive.className).not.toContain("top-1.5");
+    expect(duplicate?.className).toContain("top-8");
+    expect(duplicate?.className).not.toContain("top-1.5");
+
+    // The label chips still share the title row, and the buttons are not in
+    // that row — a hover can no longer cover the label.
+    const labels = screen.getByTestId("card-labels");
+    expect(screen.getByTestId("card-title").parentElement).toBe(
+      labels.parentElement,
+    );
+    expect(labels.parentElement?.contains(archive)).toBe(false);
+  });
 
   it("enables the hover duplicate while the column has room", () => {
     render(

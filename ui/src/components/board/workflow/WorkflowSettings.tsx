@@ -520,7 +520,7 @@ export function WorkflowSettings({
         </div>
       ) : null}
 
-      <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:px-3.5 max-md:pb-[max(10px,env(safe-area-inset-bottom))] max-md:pt-2.5">
+      <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] pb-[max(11px,env(safe-area-inset-bottom))] max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:px-3.5 max-md:pt-2.5">
         <div className="flex min-w-0 items-center gap-[7px] text-[11px] text-muted-foreground max-md:w-full">
           <span
             aria-hidden
