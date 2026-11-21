@@ -1033,7 +1033,7 @@ export class BoardsService {
    * untouched — and the feed records `member_left` (not `member_removed`,
    * which says someone else did it).
    *
-   * Publishing `membership: removed` both refreshes open rosters and closes
+   * Publishing `membership: left` both refreshes open rosters and closes
    * the leaver's own SSE stream (see `events.controller.ts`).
    */
   async leaveBoard(
