@@ -702,10 +702,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in both themes (new `--chip-*`/`--tab-text` tokens, checked by a contrast-pair
   test and source guards against raw tints). Axe-core runs with `color-contrast`
   enabled and relevant `incomplete` results gated on the board, card dialog,
-  filter popover, calendar (month/week), table and watch view in light and dark
-  at 1440/1024/390, plus Board Settings at 1440 light, using a fixture with
-  overdue/soon/later due dates, an over-limit WIP column, a completed checklist
-  and a high priority.
+  filter popover, calendar (month/week), table and watch view at 1440 in light
+  and dark, on the board and card dialog at 1024/390 in light, plus Board
+  Settings at 1440 light, using a fixture with overdue/soon/later due dates, an
+  over-limit WIP column, a completed checklist and a high priority.
   The hidden attachment input, filter popover, table cells and calendar month
   trigger are named; header controls whose accessible name diverged from their
   visible text now keep the visible label in the name (Filters, Global search,

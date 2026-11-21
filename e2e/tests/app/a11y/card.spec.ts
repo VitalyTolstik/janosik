@@ -275,6 +275,7 @@ test.describe("card a11y", () => {
     await setTheme(page, "light");
     await page.getByText("A11y card").click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByTestId("comment-kind")).toBeVisible();
 
     await expectNoAxeIssues(page, '[role="dialog"]');
     await page.keyboard.press("Escape");
@@ -282,6 +283,7 @@ test.describe("card a11y", () => {
     await setTheme(page, "dark");
     await page.getByText("A11y card").click();
     await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByTestId("comment-kind")).toBeVisible();
     await expectNoAxeIssues(page, '[role="dialog"]');
   });
 

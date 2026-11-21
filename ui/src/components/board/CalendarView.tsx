@@ -965,14 +965,14 @@ export function CalendarView({
               <span className="truncate">{t("view.calendar.unscheduled")}</span>
             ) : null}
             <span className="ml-auto flex items-center gap-px">
-              {"("}
+              {unscheduledOpen ? "(" : null}
               <span
                 aria-hidden
                 className="flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-[10px] font-medium text-muted-foreground"
               >
                 {unscheduled.length}
               </span>
-              {")"}
+              {unscheduledOpen ? ")" : null}
             </span>
           </button>
           {unscheduledOpen ? (

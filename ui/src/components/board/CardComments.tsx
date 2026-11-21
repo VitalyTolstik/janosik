@@ -567,7 +567,7 @@ function CommentKindPicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          aria-label={label}
+          aria-label={`${label}: ${kindLabel(kind, t)}`}
           data-testid="comment-kind"
           className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
         >
