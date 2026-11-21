@@ -176,7 +176,7 @@ in those suites.
 
 ## Regression sweep
 
-Measured on the final branch commit (before the final full browser pass):
+Measured on the final candidate commit `b2e093a5`:
 
 | Gate | Result |
 | --- | --- |
@@ -192,14 +192,15 @@ Measured on the final branch commit (before the final full browser pass):
 | Prettier / `git diff --check` | clean |
 | Backend build | `tsc` + `tsc-alias` passed |
 | Filter acceptance matrix | 6 / 6 passed, 8 screenshots |
-| Full browser suites | final pass recorded below |
+| Default browser suite | 658 / 658 passed |
+| Admin browser suite | 192 / 192 passed (includes the 6 acceptance cases) |
 
-One backend e2e run hit an SSE profile-change timeout in `events.e2e-spec.ts`;
-the same spec passed 18/18 in isolation and the full suite passed on the next
-run. This is the known load-sensitive SSE flake, not a functional failure.
-
-The final full browser pass is run on the merge candidate; its result is
-appended here before the PR is merged.
+The final browser runs were `bash e2e/run-docker.sh --workers=2` and
+`E2E_ADMIN_TEST=1 bash e2e/run-docker.sh --workers=2` on `b2e093a5`. Both
+exited 0. One earlier backend e2e run hit an SSE profile-change timeout in
+`events.e2e-spec.ts`; the same spec passed 18/18 in isolation and the final
+full e2e run passed 1028 with 1 skipped. This is the known load-sensitive SSE
+flake, not a functional failure.
 
 ## Residuals
 
