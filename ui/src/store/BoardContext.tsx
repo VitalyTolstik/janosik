@@ -19,8 +19,10 @@ import {
 
 import {
   boardReducer,
+  boardStarterPlan,
   LIMITS,
   type BoardAction,
+  type BoardStarterLocale,
   type BoardState,
   type ColumnSortBy,
   type UpdateCardAction,
@@ -173,6 +175,12 @@ interface BoardAccessValue {
   role: BoardRole | undefined;
 }
 
+/** TASK-177.16 first-run choice: empty board or the example starter. */
+export interface AddBoardOptions {
+  template?: "starter";
+  templateLocale?: BoardStarterLocale;
+}
+
 /**
  * Every way to change the data. The object is built once and never
  * replaced, so `useBoardActions()` consumers never re-render because of it
@@ -282,14 +290,15 @@ interface BoardActionsValue {
   sortColumn: (columnId: string, sortBy: ColumnSortBy) => void;
   /* Board management (multi-board) */
   /**
-   * Creates an empty board and resolves with its id (for navigation), or
-   * `null` when the server refused the create (a toast was shown). Local
-   * mode resolves synchronously — `await` works for both.
+   * Creates a named board (an optional starter) and resolves with its id for
+   * navigation, or `null` when the create was refused (a toast was shown).
+   * A blank title is never replaced by a default name. Local mode resolves
+   * synchronously — `await` works for both.
    */
   addBoard: (
     title: string,
-    fallbackTitle?: string,
-  ) => string | Promise<string | null>;
+    options?: AddBoardOptions,
+  ) => string | null | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void | Promise<void>;
   /**
@@ -1923,18 +1932,87 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const addBoard = useCallback(
     (
       title: string,
-      fallbackTitle = "Untitled",
-    ): string | Promise<string | null> => {
-      const resolved = title.trim() || fallbackTitle;
+      options?: AddBoardOptions,
+    ): string | null | Promise<string | null> => {
+      const resolved = title.trim();
+      if (resolved.length === 0) return null;
       if (serverMode) {
-        return trackBoardMutation(() => api.createBoard(resolved))
-          .then((created) => {
+        return trackBoardMutation(async () => {
+          try {
+            const created = await api.createBoard(resolved, options);
             if (!aliveRef.current) return null;
             apply({ type: "ADD_BOARD", board: created, remote: true });
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
-          })
-          .catch((error: unknown) => {
+          } catch (error) {
+            // The starter board exists but its response was ambiguous. Open
+            // that board instead of leaving the form to mint a second one.
+            if (error instanceof ApiError) {
+              const body = error.body as {
+                code?: unknown;
+                boardId?: unknown;
+                details?: { boardId?: unknown } | null;
+              } | null;
+              const code = body?.code;
+              const boardId = body?.details?.boardId ?? body?.boardId;
+              if (
+                (code === "starter_cleanup_failed" ||
+                  code === "starter_read_failed" ||
+                  code === "board_read_failed") &&
+                typeof boardId === "string"
+              ) {
+                let existing: Board | null = null;
+                for (
+                  let attempt = 1;
+                  attempt <= 3 && existing === null;
+                  attempt += 1
+                ) {
+                  try {
+                    existing = await api.getBoard(boardId);
+                  } catch {
+                    if (attempt === 3) break;
+                    await new Promise((resolve) =>
+                      setTimeout(resolve, 50 * attempt),
+                    );
+                  }
+                }
+                if (!aliveRef.current) return null;
+                if (existing !== null) {
+                  apply({ type: "ADD_BOARD", board: existing, remote: true });
+                  setRoles((prev) => ({ ...prev, [existing!.id]: "ADMIN" }));
+                  if (code === "starter_cleanup_failed") {
+                    toast.error(t("board.starterIncomplete"));
+                  } else if (
+                    code === "board_read_failed" &&
+                    options?.template === "starter"
+                  ) {
+                    toast.error(t("board.starterIncomplete"));
+                  }
+                  // A plain board_read_failed that recovered has nothing to
+                  // report: the GET succeeded and the board is open.
+                  return existing.id;
+                }
+                // The server created the board but the aggregate cannot be
+                // read right now. Keep the known id in the list so the form
+                // cannot invite a second create; a reload fills the content.
+                apply({
+                  type: "ADD_BOARD",
+                  board: {
+                    id: boardId,
+                    title: resolved,
+                    columns: [],
+                    cards: {},
+                    labels: [],
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                  },
+                  remote: true,
+                });
+                setRoles((prev) => ({ ...prev, [boardId]: "ADMIN" }));
+                toast.error(t("board.createIncomplete"));
+                return boardId;
+              }
+            }
             const limit =
               error instanceof ApiError && error.code === "limit_exceeded"
                 ? (error.body as { limit?: unknown } | null)?.limit
@@ -1945,17 +2023,51 @@ export function BoardProvider({ children }: { children: ReactNode }) {
                 : t("sync.rejected"),
             );
             return null;
-          });
+          }
+        });
+      }
+      if (stateRef.current.length >= LIMITS.boardsCount) {
+        toast.error(t("limits.maxBoards", { limit: LIMITS.boardsCount }));
+        return null;
       }
       const id = createId();
       const now = Date.now();
+      let columns: Board["columns"] = [];
+      let cards: Board["cards"] = {};
+      if (options?.template === "starter") {
+        const plan = boardStarterPlan(options.templateLocale ?? "en", createId);
+        columns = plan.columns.map((column, index) => ({
+          ...column,
+          cardIds: index === 0 ? [plan.card.id] : [],
+          createdAt: now,
+        }));
+        cards = {
+          [plan.card.id]: {
+            id: plan.card.id,
+            title: plan.card.title,
+            labelIds: [],
+            checklists: [
+              {
+                id: plan.checklist.id,
+                title: plan.checklist.title,
+                items: plan.checklist.items.map((item) => ({
+                  ...item,
+                  done: false,
+                })),
+              },
+            ],
+            createdAt: now,
+            updatedAt: now,
+          },
+        };
+      }
       apply({
         type: "ADD_BOARD",
         board: {
           id,
           title: resolved,
-          columns: [],
-          cards: {},
+          columns,
+          cards,
           labels: [],
           createdAt: now,
           updatedAt: now,
