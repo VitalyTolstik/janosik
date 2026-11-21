@@ -159,8 +159,10 @@ export async function touchDragTo(
 ): Promise<void> {
   await target.scrollIntoViewIfNeeded();
   await source.scrollIntoViewIfNeeded();
-  const from = visibleBox(page, await source.boundingBox(), "source");
+  // Scrolling the source (e.g. the unscheduled panel) can move the grid, so
+  // measure the target only after both scrolls have settled.
   const to = visibleBox(page, await target.boundingBox(), "target");
+  const from = visibleBox(page, await source.boundingBox(), "source");
 
   const start = {
     x: from.x + Math.max(8, from.width * 0.3),
