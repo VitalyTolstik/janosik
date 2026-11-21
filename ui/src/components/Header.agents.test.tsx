@@ -346,8 +346,16 @@ describe("agent entry points in the header", () => {
     const header = container.querySelector("header");
     expect(await screen.findByTestId("agents-trigger")).toBeInTheDocument();
     expect(header?.className).toContain("min-h-[61px]");
-    expect(header?.className).toContain("sm:h-[52px]");
-    expect(header?.className).toContain("sm:min-h-[52px]");
+    // TASK-177.18: the row grows by the iOS top inset. `env()` is 0 on
+    // desktop, so the calc still resolves to the previous 52 px geometry.
+    expect(header?.className).toContain(
+      "sm:h-[calc(52px_+_env(safe-area-inset-top))]",
+    );
+    expect(header?.className).toContain(
+      "sm:min-h-[calc(52px_+_env(safe-area-inset-top))]",
+    );
+    expect(header?.className).toContain("sm:pt-[env(safe-area-inset-top)]");
+    expect(header?.className).not.toContain("sm:h-[52px]");
     const wordmark = screen.getByTestId("agents-wordmark");
     // The tracked prototype uses the Space Grotesk display face for the
     // Latin wordmark; only Cyrillic headings fall back to the body stack.
