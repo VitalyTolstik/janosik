@@ -680,7 +680,9 @@ export class ShareService {
         return {
           items: rows
             .slice(0, size)
-            .map(({ payload }) => payload as unknown as CommentDto),
+            .map(({ payload }) =>
+              toPublicComment(payload as unknown as CommentDto),
+            ),
           nextCursor: last ? `${last.createdAt.getTime()}:${last.id}` : null,
         };
       }
