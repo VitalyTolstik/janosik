@@ -191,13 +191,13 @@ of the matrix above.
 
 ## Regression sweep
 
-Measured on the final code commit `b2e093a5`; `9dc227f5` is the docs-only
-browser-record commit:
+Measured on the code/test commit `82d9ab6d`; later commits are documentation
+only:
 
 | Gate | Result |
 | --- | --- |
 | Backend unit | 625 / 625 passed (83 suites) |
-| Backend e2e | 1028 passed, 1 skipped (1029 total) |
+| Backend e2e | 1028 passed, 1 skipped (73 suites, 1029 total) |
 | Shared | 581 / 581 passed (13 files) |
 | UI unit | 2073 / 2073 passed (211 files) |
 | UI typecheck/build/size | passed; critical bundle, styles and admin page inside their limits |
@@ -212,7 +212,7 @@ browser-record commit:
 | Admin browser suite | 192 / 192 passed (includes the 6 acceptance cases) |
 
 The final browser runs were `bash e2e/run-docker.sh --workers=2` and
-`E2E_ADMIN_TEST=1 bash e2e/run-docker.sh --workers=2` on `b2e093a5`. Both
+`E2E_ADMIN_TEST=1 bash e2e/run-docker.sh --workers=2` on `82d9ab6d`. Both
 exited 0. One earlier backend e2e run hit an SSE profile-change timeout in
 `events.e2e-spec.ts`; the same spec passed 18/18 in isolation and the final
 full e2e run passed 1028 with 1 skipped. This is the known load-sensitive SSE
