@@ -130,9 +130,9 @@ describe("BoardSwitcher", () => {
     localStorage.setItem("janosik-boards", JSON.stringify([board]));
     renderSwitcher();
     await openSwitcher();
-    expect(screen.getByRole("row", { name: /Alpha/ })).toHaveTextContent(
-      "Alpha1",
-    );
+    const row = screen.getByRole("row", { name: /Alpha/ });
+    expect(row).toHaveTextContent("Alpha1");
+    expect(within(row).getByLabelText("1 active card")).toHaveTextContent("1");
   });
 
   it("updates the count when a card is archived and restored", async () => {
@@ -153,12 +153,15 @@ describe("BoardSwitcher", () => {
 
     const row = screen.getByRole("row", { name: /Alpha/ });
     expect(row).toHaveTextContent("Alpha1");
+    expect(within(row).getByLabelText("1 active card")).toHaveTextContent("1");
 
     act(() => boardActions?.archiveCard("active"));
     await waitFor(() => expect(row).toHaveTextContent("Alpha0"));
+    expect(within(row).getByLabelText("0 active cards")).toHaveTextContent("0");
 
     act(() => boardActions?.unarchiveCard("active", "b-1-col"));
     await waitFor(() => expect(row).toHaveTextContent("Alpha1"));
+    expect(within(row).getByLabelText("1 active card")).toHaveTextContent("1");
   });
 
   it("filters boards by search query", async () => {

@@ -385,6 +385,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
             // Only ADMINs manage a board (the server enforces it too); in
             // local mode every board is ADMIN, so the action stays visible.
             const canManage = roleOf(b.id) === "ADMIN";
+            const cardCount = activeCardCount(b);
             const header =
               showGroupHeaders && index === 0
                 ? "mine"
@@ -516,8 +517,16 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                       </span>
                     ) : (
                       <>
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {activeCardCount(b)}
+                        <span
+                          className="shrink-0 text-xs tabular-nums text-muted-foreground"
+                          aria-label={t("board.switcher.activeCards", {
+                            count: cardCount,
+                          })}
+                          title={t("board.switcher.activeCards", {
+                            count: cardCount,
+                          })}
+                        >
+                          {cardCount}
                         </span>
                         {/* Touch has no hover: the checkmark yields its slot to
                         the row's action (always visible there). A board I do

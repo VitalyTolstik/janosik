@@ -396,9 +396,9 @@ describe("ShareDialog", () => {
     const revoke = await screen.findByRole("button", { name: "Revoke" });
     fireEvent.click(revoke);
 
-    const confirm = (await screen.findByText("Revoke “Q3 plan”?")).closest(
-      '[role="dialog"]',
-    ) as HTMLElement;
+    const confirm = (
+      await screen.findByText("Revoke “Q3 plan (tok1)”?")
+    ).closest('[role="dialog"]') as HTMLElement;
     expect(confirm).toHaveTextContent("Live");
     // Cancel is inert: the link is still active and no DELETE left the app.
     fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
@@ -410,9 +410,9 @@ describe("ShareDialog", () => {
     expect(screen.getByTestId("share-row")).toHaveTextContent("Q3 plan");
 
     fireEvent.click(revoke);
-    const confirmed = (await screen.findByText("Revoke “Q3 plan”?")).closest(
-      '[role="dialog"]',
-    ) as HTMLElement;
+    const confirmed = (
+      await screen.findByText("Revoke “Q3 plan (tok1)”?")
+    ).closest('[role="dialog"]') as HTMLElement;
     fireEvent.click(within(confirmed).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() =>

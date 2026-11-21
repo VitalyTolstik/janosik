@@ -113,7 +113,7 @@ describe("DataSafetyBanner", () => {
       screen.getByRole("button", { name: "Download a backup" }),
     );
     expect(
-      await screen.findByText(/^All boards exported \(\d+\)$/),
+      await screen.findByText("All boards exported (1)"),
     ).toBeInTheDocument();
   });
 

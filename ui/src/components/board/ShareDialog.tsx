@@ -127,6 +127,11 @@ function routesShare(token: string): string {
   return `/s/${token}`;
 }
 
+/** Enough of a token to tell two same-named links apart in a confirm title. */
+function shortShareToken(token: string): string {
+  return token.length > 8 ? `${token.slice(0, 8)}…` : token;
+}
+
 type EmbedTheme = "system" | "light" | "dark";
 
 /** Edit-mode TTL sentinel: omit `expiresAt` from PATCH and keep the deadline. */
@@ -335,7 +340,9 @@ function ShareRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const shareLabel = share.title?.trim() ? share.title : `/s/${share.token}`;
+  const shareLabel = share.title?.trim()
+    ? `${share.title} (${shortShareToken(share.token)})`
+    : `/s/${share.token}`;
 
   const revoke = async () => {
     try {

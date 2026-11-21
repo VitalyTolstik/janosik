@@ -1,4 +1,9 @@
-import { test, expect, publicUrl } from "../../../fixtures/sharing.js";
+import {
+  test,
+  expect,
+  confirmShareRevoke,
+  publicUrl,
+} from "../../../fixtures/sharing.js";
 
 test.describe.configure({ timeout: 60_000 });
 
@@ -98,7 +103,7 @@ test("live and snapshot links remain read-only and diverge as the board changes"
     const liveRow = page
       .getByTestId("share-row")
       .filter({ hasText: live.token });
-    await liveRow.getByRole("button", { name: "Revoke" }).click();
+    await confirmShareRevoke(page, liveRow);
     await expect(liveRow.getByText("Revoked")).toBeVisible();
     await livePage.reload();
     await expect(livePage.getByTestId("share-unavailable-code")).toHaveText(

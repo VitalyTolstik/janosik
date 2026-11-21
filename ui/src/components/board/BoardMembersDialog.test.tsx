@@ -18,7 +18,7 @@ import { BoardMembersPanel } from "@/components/board/BoardMembersDialog";
 import { ToastProvider } from "@/components/Toast";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { I18nProvider } from "@/i18n";
+import { I18nProvider, formatDateOnly } from "@/i18n";
 import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
 
 /**
@@ -702,7 +702,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     const row = await screen.findByTestId("board-pending-row");
     fireEvent.click(
       within(row).getByRole("button", {
-        name: "Role of pending@example.com",
+        name: "Role of pending@example.com — currently Viewer",
       }),
     );
     fireEvent.click(screen.getByRole("radio", { name: "Member" }));
@@ -713,14 +713,14 @@ describe("BoardMembersPanel (TASK-35)", () => {
     await waitFor(() =>
       expect(
         within(row).getByRole("button", {
-          name: "Role of pending@example.com",
+          name: "Role of pending@example.com — currently Member",
         }),
       ).toHaveTextContent("Member"),
     );
     // Expiry belongs to VIEWER only — the picker leaves with the role.
     expect(
       within(row).queryByRole("button", {
-        name: "Access until — pending@example.com",
+        name: /^Access until for pending@example\.com/,
       }),
     ).toBeNull();
     expect(await screen.findByText("Role updated")).toBeInTheDocument();
@@ -738,22 +738,27 @@ describe("BoardMembersPanel (TASK-35)", () => {
     };
     vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
     vi.spyOn(api, "listPendingInvitations").mockResolvedValue([invitation]);
-    const update = vi.spyOn(api, "updateMember").mockResolvedValue({
-      userId: invitation.userId,
-      displayName: null,
-      email: invitation.email,
-      role: "VIEWER",
-      expiresAt: 1,
-      avatarColor: null,
-      avatarPath: null,
-    });
+    const update = vi
+      .spyOn(api, "updateMember")
+      .mockImplementation(async (_boardId, _userId, request) => ({
+        userId: invitation.userId,
+        displayName: null,
+        email: invitation.email,
+        role: "VIEWER",
+        expiresAt:
+          request.expiresAt === null || request.expiresAt === undefined
+            ? null
+            : Date.parse(request.expiresAt),
+        avatarColor: null,
+        avatarPath: null,
+      }));
 
     renderPanel(true);
 
     const row = await screen.findByTestId("board-pending-row");
     fireEvent.click(
       within(row).getByRole("button", {
-        name: "Access until — pending@example.com",
+        name: "Access until for pending@example.com — currently no expiry",
       }),
     );
     await screen.findByTestId("expiry-calendar");
@@ -783,6 +788,85 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(update).toHaveBeenCalledWith("board-1", "user-3", {
       expiresAt: chosen.toISOString(),
     });
+    const expiryTrigger = within(row).getByRole("button", {
+      name: /^Access until for pending@example\.com/,
+    });
+    expect(expiryTrigger).toHaveTextContent(
+      formatDateOnly(chosen.getTime(), "en"),
+    );
     expect(await screen.findByText("Expiry updated")).toBeInTheDocument();
+  });
+
+  it("refuses a pending expiry in the past without calling updateMember", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2030, 0, 15, 23, 30));
+    try {
+      const invitation: BoardPendingInvitationDto = {
+        id: "invite-1",
+        userId: "user-3",
+        displayName: null,
+        email: "pending@example.com",
+        role: "VIEWER",
+        expiresAt: null,
+        createdAt: Date.now(),
+      };
+      vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+      vi.spyOn(api, "listPendingInvitations").mockResolvedValue([invitation]);
+      const update = vi.spyOn(api, "updateMember");
+
+      renderPanel(true);
+
+      const row = await screen.findByTestId("board-pending-row");
+      fireEvent.click(
+        within(row).getByRole("button", {
+          name: "Access until for pending@example.com — currently no expiry",
+        }),
+      );
+      await screen.findByTestId("expiry-calendar");
+      await waitFor(
+        () => {
+          expect(
+            document.querySelectorAll("button[data-day]").length,
+          ).toBeGreaterThan(0);
+        },
+        { timeout: 15_000 },
+      );
+      const today = document.querySelector<HTMLElement>(
+        'td[data-day="2030-01-15"] button',
+      );
+      expect(today).not.toBeNull();
+      fireEvent.click(today!);
+
+      expect(
+        await screen.findByText("Pick a deadline in the future"),
+      ).toBeInTheDocument();
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks an expired pending invitation", async () => {
+    const invitation: BoardPendingInvitationDto = {
+      id: "invite-1",
+      userId: "user-3",
+      displayName: null,
+      email: "pending@example.com",
+      role: "VIEWER",
+      expiresAt: Date.now() - 60_000,
+      createdAt: Date.now() - 120_000,
+    };
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    vi.spyOn(api, "listPendingInvitations").mockResolvedValue([invitation]);
+
+    renderPanel(true);
+
+    const row = await screen.findByTestId("board-pending-row");
+    expect(within(row).getByTestId("board-pending-expired")).toHaveTextContent(
+      "Invitation expired",
+    );
+    expect(within(row).getByTestId("board-pending-expired")).toHaveClass(
+      "text-danger",
+    );
   });
 });
