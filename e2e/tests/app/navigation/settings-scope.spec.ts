@@ -19,7 +19,7 @@ test("forced board switch on a phone focuses the board title, not BODY", async (
   await page.setViewportSize({ width: 390, height: 844 });
   await page.keyboard.press("Control+k");
   const search = page.getByRole("combobox", {
-    name: "Global search",
+    name: "Search cards and boards",
   });
   await search.fill(other.title);
   await page.getByRole("option", { name: other.title }).click();
@@ -56,7 +56,7 @@ test("switching boards closes the settings draft before another board can save",
 
   await page.keyboard.press("Control+k");
   const search = page.getByRole("combobox", {
-    name: "Global search",
+    name: "Search cards and boards",
   });
   await search.fill(other.title);
   const option = page.getByRole("option", { name: other.title });

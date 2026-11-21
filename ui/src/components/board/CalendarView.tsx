@@ -964,14 +964,16 @@ export function CalendarView({
             {unscheduledOpen ? (
               <span className="truncate">{t("view.calendar.unscheduled")}</span>
             ) : null}
-            {"("}
-            <span
-              aria-hidden
-              className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-[10px] font-medium text-muted-foreground"
-            >
-              {unscheduled.length}
+            <span className="ml-auto flex items-center gap-px">
+              {"("}
+              <span
+                aria-hidden
+                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-[10px] font-medium text-muted-foreground"
+              >
+                {unscheduled.length}
+              </span>
+              {")"}
             </span>
-            {")"}
           </button>
           {unscheduledOpen ? (
             <>

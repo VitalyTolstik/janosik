@@ -262,6 +262,7 @@ test.describe("card a11y", () => {
 
     await expectNoAxeIssues(page);
     await setTheme(page, "dark");
+    await expect(page.getByTestId("board-title")).toBeVisible();
     await expectNoAxeIssues(page);
   });
 
