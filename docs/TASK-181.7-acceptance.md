@@ -100,7 +100,8 @@ page-scoped lateral as an upper-bound proxy for that separate groupBy query;
 
 Two independent full runs were measured on the same vacuumed fixture with
 5 cold + 20 warm samples per case. Both runs passed **318 / 318**; every case
-reported the same exact total in both runs (51 distinct totals).
+reported the same exact total in both runs (52 distinct totals including zero;
+51 nonzero).
 
 | Run | Passed | Single-run p95 misses | Filtered seq scans | Raw artifact |
 | --- | ---: | ---: | ---: | --- |
@@ -113,11 +114,16 @@ the Card joins) can still be sequential scans below that cutoff; the
 **Filtered seq scans** column counts only the cutoff. The only scans above the
 cutoff are the **unfiltered** card, board and checklist baselines.
 
-The earlier 10-warm runs had single-sample p95 outliers (including the audit
-period cases); with 20 warm samples the same queries are stable and pass. The
-25k qualification is green for cards, comments, attachments, boards, columns,
-labels, checklists, card links, users, audit, commands and activity. The
-specific rollout work is listed under Residuals.
+The earlier 10-warm runs are the historical maximum-of-10 p95; the final runs
+use 20 warm samples, so p95 is the 19th of 20 and a single slow sample cannot
+define it. The +20% threshold and the 10k scan cutoff are unchanged. The raw
+samples are committed; a max-of-20 view would still show the single-sample
+outliers, which is why the extra samples are the stable measurement, not a
+lowered threshold.
+
+The 25k qualification is green for cards, comments, attachments, boards,
+columns, labels, checklists, card links, users, audit, commands and activity.
+The specific rollout work is listed under Residuals.
 
 ## 5k PR gate
 
@@ -176,7 +182,8 @@ in those suites.
 
 ## Regression sweep
 
-Measured on the final candidate commit `b2e093a5`:
+Measured on the final code commit `b2e093a5`; `9dc227f5` is the docs-only
+browser-record commit:
 
 | Gate | Result |
 | --- | --- |
@@ -216,12 +223,18 @@ flake, not a functional failure.
   the 5k-capable unit/e2e/browser suites. A regression counts only when it
   reproduces in both independent runs; one-run p95 outliers are kept in the raw
   artifacts instead of being hidden.
-- The five migrations build 21 indexes. The first adds/backfills `mimeFamily`
-  and updates every `Attachment` row; the other four add the board-scoped
+- The four migrations build 21 indexes. The first adds/backfills `mimeFamily`
+  and updates every `Attachment` row; the other three add the board-scoped
   attachment, audit target and board-join indexes. On a large installation run
   them in a quiet window and take a backup first; the first migration comment
   repeats the lock warning. The `mimeFamily` trigger needs the database owner
   (or a role allowed to create functions/triggers).
+- The migration's backfill `CASE` is identical to the trigger `CASE`; the
+  trigger is tested for mixed-case MIME values in
+  `backend/test/admin-mime-migration.e2e-spec.ts`. The one-time `UPDATE` is not
+  separately replayed in a temporary table, but it applies the same mapping to
+  existing rows and was exercised when the migration was applied to the test
+  database.
 - `CardLabel(labelId)` and `CardLink(boardId)` are pre-existing single-column
   paths and remain in place. The new composites are additive; dropping the
   former for write cost is a follow-up after a plan review, not part of this
