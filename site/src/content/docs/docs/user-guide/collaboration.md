@@ -167,16 +167,26 @@ A visitor to a live link sees `Live · read-only`; a snapshot shows
 
 ## Global search
 
-`Global search`, or Ctrl+K (Cmd+K on a Mac), searches titles, descriptions and
-labels across every board.
+`Global search`, or Ctrl+K (Cmd+K on a Mac), searches card titles,
+descriptions, labels, checklist items, comments and visible attachment file
+names across every board. Detached and inline uploads are not searchable
+because they cannot be revealed in the card's attachment list. Comment and file
+matching needs a server connection; in local mode only the data stored in the
+boards is searched.
 
-![Global search results, grouped into cards and boards.](/screens/search.png)
+Results are grouped into `Cards` and `Boards`, and every row carries a text
+type badge — `Card`, `Board`, `Comment` or `Attachment` — so the reason for the
+hit is visible and announced, not conveyed by colour. A card result shows a
+`Board › Column` breadcrumb, its label chips and a snippet of the matching
+description, checklist item, comment or file name. Archived items carry an
+`Archived` badge. Use the arrow keys to move and Enter to open.
 
-Results are grouped into `Cards` and `Boards`, and a card result shows a
-`Board › Column` breadcrumb, its label chips and a description snippet when
-the match was in the text. Archived items carry an `Archived` badge. Use the
-arrow keys to move and Enter to open; opening a card takes you to its board
-with the card's dialog open.
+Opening a card takes you to its board with the card's dialog open. A comment
+or attachment hit also carries the exact row in the URL (`?card=…&comment=…`
+or `&attachment=…`); the dialog scrolls to and highlights that row. If the row
+is no longer in the loaded thread or attachment list — for example it was
+deleted, or it sits beyond the first page of older comments — the card opens
+normally, so the fallback is always the card itself.
 
 Each group shows up to 20 matches. When a group has more, its heading shows
 `20 of N` and the footer offers `Show all results`; the list then scrolls
@@ -187,13 +197,21 @@ under a long list of card hits.
 keyboard selection and the scroll position. If more than 200 remain, the
 heading keeps showing `shown of N`. While other boards are still loading, the
 heading says `20 of N loaded`, so a partial total is not mistaken for the whole
-workspace.
+workspace. The server lookup for comments and files is also capped at 200
+matches; when more exist, the palette says how many of the total it shows.
 
 ## The board filter bar
 
 The filter bar sits above the board. Its search box matches a card's title,
-description and labels; press `/` anywhere on the board to focus it. Press
-Escape once to clear the query and again to leave the box.
+description, labels and checklist items locally; press `/` anywhere on the
+board to focus it. Press Escape once to clear the query and again to leave the
+box.
+
+In server mode the board search also reaches comments and attachment file
+names: after a short pause the server adds those cards, while every other
+active facet (due date, labels, assignee and so on) still applies. This extra
+lookup is skipped offline and in local mode, where only text stored in the
+board matches and everything keeps working as before.
 
 ![The faceted filters: due date, labels, priority, assignee, links and created.](/screens/filters.png)
 

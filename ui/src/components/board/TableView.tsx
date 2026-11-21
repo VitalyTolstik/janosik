@@ -109,6 +109,8 @@ interface TableViewProps {
   filteredCardIds?: Record<string, string[]>;
   /** True while a board filter is active (chooses the empty-state text). */
   isFiltering?: boolean;
+  /** Server comment/attachment lookup still pending for the current query. */
+  filterPending?: boolean;
   /** Search query highlighted inside titles. */
   highlight?: string;
   /** Fired on a row click — opens the card detail dialog. */
@@ -128,6 +130,7 @@ interface TableViewProps {
 export function TableView({
   filteredCardIds,
   isFiltering = false,
+  filterPending = false,
   highlight,
   onCardClick,
   readOnly = false,
@@ -644,7 +647,11 @@ export function TableView({
                   colSpan={4 + optionalCount}
                   className="px-3 py-8 text-center text-muted-foreground"
                 >
-                  {isFiltering ? t("filter.noMatch") : t("view.table.empty")}
+                  {isFiltering && filterPending
+                    ? t("filter.searchingServer")
+                    : isFiltering
+                      ? t("filter.noMatch")
+                      : t("view.table.empty")}
                 </td>
               </tr>
             ) : (

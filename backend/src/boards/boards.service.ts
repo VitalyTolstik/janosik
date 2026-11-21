@@ -13,10 +13,13 @@ import type {
   BoardAggregate,
   BoardCardSearchResult,
   BoardImportPreviewDto,
+  BoardSearchMatch,
   BoardMemberDto,
   BoardPendingInvitationDto,
   BoardState,
   BoardSummary,
+  WorkspaceSearchMatch,
+  WorkspaceSearchResult,
 } from "@janosik/shared";
 import {
   DEFAULT_BOARD_AGENT_POLICY,
@@ -34,6 +37,7 @@ import {
   assertAgentTokenCanWriteInTransaction,
   pauseGateFor,
 } from "@/auth/agent-pause";
+import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import {
@@ -72,6 +76,50 @@ import type { UpdateMemberDto } from "./dto/update-member.dto";
  * a failure leaves *no* boards behind instead of the first N-1.
  */
 const IMPORT_TIMEOUT_MS = 120_000;
+
+/**
+ * Upper bound for a cross-board comment/attachment search (TASK-177.13).
+ * The palette already caps each visible group at 200, so reading beyond that
+ * only adds query cost; both source queries and the merged list stop here.
+ */
+const WORKSPACE_SEARCH_LIMIT = 200;
+
+/**
+ * Rows read per match source and the final `matches` length on the per-board
+ * endpoint. `cardIds` stays complete: it comes from a separate ids-only read,
+ * so a board with thousands of matching comments still reports every card
+ * while the optional snippet list stays bounded (TASK-177.13 review).
+ */
+const BOARD_SEARCH_MATCH_LIMIT = 200;
+
+/** Characters shown around a comment/checklist/attachment match. */
+const SEARCH_SNIPPET_MAX = 180;
+
+/**
+ * Trim a search query and validate its length. Returns `null` for an empty
+ * query (both search endpoints answer with an empty result, not an error).
+ */
+function normalizeSearchQuery(q: string): string | null {
+  const query = q.trim();
+  if (query.length === 0) return null;
+  if (query.length > LIMITS.query) {
+    throw new BadRequestException(
+      `q is too long (max ${LIMITS.query} characters)`,
+    );
+  }
+  return query;
+}
+
+/** A short snippet around the first case-insensitive match, with ellipses. */
+function searchSnippet(text: string, query: string): string {
+  const index = text.toLowerCase().indexOf(query.toLowerCase());
+  if (index === -1) return text.slice(0, SEARCH_SNIPPET_MAX);
+  const start = Math.max(0, index - 40);
+  const end = Math.min(text.length, start + SEARCH_SNIPPET_MAX);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end)}${
+    end < text.length ? "…" : ""
+  }`;
+}
 
 /**
  * Boards aggregate + membership + import/export (§7.4, TASK-25).
@@ -455,28 +503,40 @@ export class BoardsService {
   }
 
   /**
-   * Cards on a board whose title, description, a checklist item or a comment
-   * matches `q` (case-insensitive substring). Comments live outside the board
-   * aggregate, so this is the only way the MCP search can span the whole card
-   * (TASK-157, D11). Scoped to the board the guard already resolved.
+   * Cards on a board whose title, description, a checklist item, a comment or
+   * a visible attachment file name matches `q` (case-insensitive substring).
+   * Comments and attachments live outside the board aggregate, so this is the
+   * only way the MCP search can span the whole card (TASK-157, D11).
+   *
+   * `cardIds` is always complete (an ids-only read). `matches` is opt-in via
+   * `includeMatches` and bounded: the board filter passes `false` because it
+   * needs ids only, while the API's explanatory list never grows without
+   * limit (TASK-177.13 review). Scoped to the board the guard already
+   * resolved.
    */
   async searchCards(
     boardId: string,
     q: string,
+    includeMatches = true,
   ): Promise<BoardCardSearchResult> {
-    const query = q.trim();
-    if (query.length === 0) return { cardIds: [] };
-    if (query.length > LIMITS.query) {
-      throw new BadRequestException(
-        `q is too long (max ${LIMITS.query} characters)`,
-      );
+    const query = normalizeSearchQuery(q);
+    if (query === null) {
+      return {
+        cardIds: [],
+        matches: [],
+        matchesTotal: 0,
+        matchesTruncated: false,
+      };
     }
     const contains = { contains: query, mode: "insensitive" as const };
-    const [cards, checklistItems, comments] = await Promise.all([
+    const cardWhere = {
+      column: { boardId },
+      deletedAt: null,
+    } satisfies Prisma.CardWhereInput;
+    const [cards, checklistItems, comments, attachments] = await Promise.all([
       this.prisma.card.findMany({
         where: {
-          column: { boardId },
-          deletedAt: null,
+          ...cardWhere,
           OR: [{ title: contains }, { description: contains }],
         },
         select: { id: true },
@@ -485,24 +545,371 @@ export class BoardsService {
         where: {
           text: contains,
           deletedAt: null,
-          checklist: { card: { column: { boardId }, deletedAt: null } },
+          checklist: { card: cardWhere },
         },
         select: { checklist: { select: { cardId: true } } },
       }),
       this.prisma.comment.findMany({
+        where: { text: contains, deletedAt: null, card: cardWhere },
+        select: { cardId: true },
+      }),
+      this.prisma.attachment.findMany({
         where: {
-          text: contains,
-          deletedAt: null,
-          card: { column: { boardId }, deletedAt: null },
+          fileName: contains,
+          ...CARD_ATTACHMENT_WHERE,
+          card: cardWhere,
         },
         select: { cardId: true },
       }),
     ]);
-    const ids = new Set<string>();
-    for (const card of cards) ids.add(card.id);
-    for (const item of checklistItems) ids.add(item.checklist.cardId);
-    for (const comment of comments) ids.add(comment.cardId);
-    return { cardIds: [...ids] };
+
+    const ids: string[] = [];
+    const seenIds = new Set<string>();
+    const addId = (cardId: string) => {
+      if (seenIds.has(cardId)) return;
+      seenIds.add(cardId);
+      ids.push(cardId);
+    };
+    for (const card of cards) addId(card.id);
+    for (const item of checklistItems) addId(item.checklist.cardId);
+    for (const comment of comments) addId(comment.cardId);
+    for (const attachment of attachments) addId(attachment.cardId);
+
+    if (!includeMatches) {
+      return {
+        cardIds: ids,
+        matches: [],
+        matchesTotal: 0,
+        matchesTruncated: false,
+      };
+    }
+
+    const [
+      detailCards,
+      detailChecklistItems,
+      detailComments,
+      detailAttachments,
+      titleCards,
+      descriptionCards,
+      checklistMatches,
+      commentMatches,
+      attachmentMatches,
+    ] = await Promise.all([
+      this.prisma.card.findMany({
+        where: {
+          ...cardWhere,
+          OR: [{ title: contains }, { description: contains }],
+        },
+        select: { id: true, title: true, description: true },
+        take: BOARD_SEARCH_MATCH_LIMIT,
+      }),
+      this.prisma.checklistItem.findMany({
+        where: {
+          text: contains,
+          deletedAt: null,
+          checklist: { card: cardWhere },
+        },
+        select: { text: true, checklist: { select: { cardId: true } } },
+        take: BOARD_SEARCH_MATCH_LIMIT,
+      }),
+      this.prisma.comment.findMany({
+        where: { text: contains, deletedAt: null, card: cardWhere },
+        select: { id: true, cardId: true, text: true },
+        orderBy: { createdAt: "desc" },
+        take: BOARD_SEARCH_MATCH_LIMIT,
+      }),
+      this.prisma.attachment.findMany({
+        where: {
+          fileName: contains,
+          ...CARD_ATTACHMENT_WHERE,
+          card: cardWhere,
+        },
+        select: { id: true, cardId: true, fileName: true },
+        orderBy: { createdAt: "desc" },
+        take: BOARD_SEARCH_MATCH_LIMIT,
+      }),
+      // Complete per-kind card sets for the truncation signal. They select
+      // ids only, so `cardIds` stays complete while the explanation list can
+      // be honestly marked incomplete when its raw-row cap cut it short.
+      this.prisma.card.findMany({
+        where: { ...cardWhere, title: contains },
+        select: { id: true },
+      }),
+      this.prisma.card.findMany({
+        where: { ...cardWhere, description: contains },
+        select: { id: true },
+      }),
+      this.prisma.checklistItem.findMany({
+        where: {
+          text: contains,
+          deletedAt: null,
+          checklist: { card: cardWhere },
+        },
+        select: { checklist: { select: { cardId: true } } },
+      }),
+      this.prisma.comment.findMany({
+        where: { text: contains, deletedAt: null, card: cardWhere },
+        select: { cardId: true },
+      }),
+      this.prisma.attachment.findMany({
+        where: {
+          fileName: contains,
+          ...CARD_ATTACHMENT_WHERE,
+          card: cardWhere,
+        },
+        select: { cardId: true },
+      }),
+    ]);
+
+    const matchesTotal =
+      new Set(titleCards.map((card) => card.id)).size +
+      new Set(descriptionCards.map((card) => card.id)).size +
+      new Set(checklistMatches.map((item) => item.checklist.cardId)).size +
+      new Set(commentMatches.map((comment) => comment.cardId)).size +
+      new Set(attachmentMatches.map((attachment) => attachment.cardId)).size;
+    const matches: BoardSearchMatch[] = [];
+    const seenMatches = new Set<string>();
+    const addMatch = (match: BoardSearchMatch) => {
+      const key = `${match.cardId}:${match.matchIn}`;
+      if (seenMatches.has(key) || matches.length >= BOARD_SEARCH_MATCH_LIMIT) {
+        return;
+      }
+      seenMatches.add(key);
+      matches.push(match);
+    };
+    const needle = query.toLowerCase();
+    for (const card of detailCards) {
+      if (card.title.toLowerCase().includes(needle)) {
+        addMatch({ cardId: card.id, matchIn: "title" });
+      }
+      if (card.description?.toLowerCase().includes(needle)) {
+        addMatch({
+          cardId: card.id,
+          matchIn: "description",
+          text: searchSnippet(card.description, query),
+        });
+      }
+    }
+    for (const item of detailChecklistItems) {
+      addMatch({
+        cardId: item.checklist.cardId,
+        matchIn: "checklist",
+        text: searchSnippet(item.text, query),
+      });
+    }
+    for (const comment of detailComments) {
+      addMatch({
+        cardId: comment.cardId,
+        matchIn: "comment",
+        text: searchSnippet(comment.text, query),
+        commentId: comment.id,
+      });
+    }
+    for (const attachment of detailAttachments) {
+      addMatch({
+        cardId: attachment.cardId,
+        matchIn: "attachment",
+        text: searchSnippet(attachment.fileName, query),
+        attachmentId: attachment.id,
+      });
+    }
+    return {
+      cardIds: ids,
+      matches,
+      matchesTotal,
+      matchesTruncated: matchesTotal > matches.length,
+    };
+  }
+
+  /**
+   * Comment and attachment filename matches across every board the caller is
+   * an active member of (TASK-177.13). One bounded request replaces N+1
+   * per-board searches from the global palette. Only text absent from the
+   * board aggregate is returned; titles, descriptions, labels and checklists
+   * are matched locally. A board-scoped PAT sees only its own board.
+   *
+   * Rows are grouped per card *before* the cap, then the two kinds are merged
+   * newest-first. A single chatty card therefore cannot consume the whole
+   * budget and hide a file hit elsewhere. `total` keeps the truncated answer
+   * honest.
+   */
+  async searchMatchesAcrossBoards(
+    userId: string,
+    q: string,
+    boardIdScope?: string | null,
+  ): Promise<WorkspaceSearchResult> {
+    const query = normalizeSearchQuery(q);
+    if (query === null) return { matches: [], total: 0, truncated: false };
+    const contains = { contains: query, mode: "insensitive" as const };
+    const board: Prisma.BoardWhereInput = {
+      deletedAt: null,
+      ...(boardIdScope ? { id: boardIdScope } : {}),
+      members: { some: { userId, ...activeMembershipWhere() } },
+    };
+    const cardWhere = {
+      deletedAt: null,
+      column: { board },
+    } satisfies Prisma.CardWhereInput;
+    const commentWhere = {
+      text: contains,
+      deletedAt: null,
+      card: cardWhere,
+    } satisfies Prisma.CommentWhereInput;
+    const attachmentWhere = {
+      fileName: contains,
+      ...CARD_ATTACHMENT_WHERE,
+      card: cardWhere,
+    } satisfies Prisma.AttachmentWhereInput;
+
+    // One row per card+kind before the cap: 200 comments on one card become
+    // one comment match, not 200 rows that starve every other card.
+    const [commentGroups, attachmentGroups] = await Promise.all([
+      this.prisma.comment.groupBy({
+        by: ["cardId"],
+        where: commentWhere,
+        _max: { createdAt: true },
+      }),
+      this.prisma.attachment.groupBy({
+        by: ["cardId"],
+        where: attachmentWhere,
+        _max: { createdAt: true },
+      }),
+    ]);
+    const total = commentGroups.length + attachmentGroups.length;
+
+    const picks = [
+      ...commentGroups.map((group) => ({
+        kind: "comment" as const,
+        cardId: group.cardId,
+        at: group._max.createdAt,
+      })),
+      ...attachmentGroups.map((group) => ({
+        kind: "attachment" as const,
+        cardId: group.cardId,
+        at: group._max.createdAt,
+      })),
+    ]
+      .filter((pick): pick is typeof pick & { at: Date } => pick.at !== null)
+      .sort((a, b) => b.at.getTime() - a.at.getTime())
+      .slice(0, WORKSPACE_SEARCH_LIMIT);
+    const commentPicks = picks.filter((pick) => pick.kind === "comment");
+    const attachmentPicks = picks.filter((pick) => pick.kind === "attachment");
+
+    const [comments, attachments] = await Promise.all([
+      commentPicks.length === 0
+        ? Promise.resolve([])
+        : this.prisma.comment.findMany({
+            where: {
+              AND: [
+                commentWhere,
+                {
+                  OR: commentPicks.map((pick) => ({
+                    cardId: pick.cardId,
+                    createdAt: pick.at,
+                  })),
+                },
+              ],
+            },
+            select: {
+              id: true,
+              cardId: true,
+              text: true,
+              createdAt: true,
+              card: {
+                select: {
+                  title: true,
+                  column: {
+                    select: {
+                      boardId: true,
+                      board: { select: { title: true } },
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          }),
+      attachmentPicks.length === 0
+        ? Promise.resolve([])
+        : this.prisma.attachment.findMany({
+            where: {
+              AND: [
+                attachmentWhere,
+                {
+                  OR: attachmentPicks.map((pick) => ({
+                    cardId: pick.cardId,
+                    createdAt: pick.at,
+                  })),
+                },
+              ],
+            },
+            select: {
+              id: true,
+              cardId: true,
+              fileName: true,
+              createdAt: true,
+              card: {
+                select: {
+                  title: true,
+                  column: {
+                    select: {
+                      boardId: true,
+                      board: { select: { title: true } },
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          }),
+    ]);
+
+    const rows = [
+      ...comments.map((comment) => ({
+        at: comment.createdAt.getTime(),
+        boardId: comment.card.column.boardId,
+        boardTitle: comment.card.column.board.title,
+        cardId: comment.cardId,
+        cardTitle: comment.card.title,
+        match: {
+          matchIn: "comment" as const,
+          text: searchSnippet(comment.text, query),
+          commentId: comment.id,
+        },
+      })),
+      ...attachments.map((attachment) => ({
+        at: attachment.createdAt.getTime(),
+        boardId: attachment.card.column.boardId,
+        boardTitle: attachment.card.column.board.title,
+        cardId: attachment.cardId,
+        cardTitle: attachment.card.title,
+        match: {
+          matchIn: "attachment" as const,
+          text: searchSnippet(attachment.fileName, query),
+          attachmentId: attachment.id,
+        },
+      })),
+    ].sort((a, b) => b.at - a.at);
+
+    const matches: WorkspaceSearchMatch[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const key = `${row.boardId}:${row.cardId}:${row.match.matchIn}`;
+      if (seen.has(key) || matches.length >= WORKSPACE_SEARCH_LIMIT) continue;
+      seen.add(key);
+      matches.push({
+        boardId: row.boardId,
+        boardTitle: row.boardTitle,
+        cardId: row.cardId,
+        cardTitle: row.cardTitle,
+        ...row.match,
+      });
+    }
+    return {
+      matches,
+      total,
+      truncated: total > matches.length,
+    };
   }
 
   /**

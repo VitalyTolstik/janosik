@@ -18,6 +18,7 @@ import type {
   BoardAgentPauseDto,
   BoardAgentPolicyStateDto,
   BoardAggregate,
+  BoardCardSearchResult,
   BoardEnvelope,
   BoardInvitationDto,
   AttentionNotificationDto,
@@ -56,6 +57,7 @@ import type {
   UpdateUserTokenRequest,
   UserDataExportDto,
   UserTokenDto,
+  WorkspaceSearchResult,
 } from "@janosik/shared";
 import { DEFAULT_COMMENT_KIND, MAX_IMPORT_BYTES } from "@janosik/shared";
 import { createId } from "@/utils/id";
@@ -977,6 +979,33 @@ export class ApiClient {
       board: data,
       seq: Number.isSafeInteger(seq) && seq >= 0 ? seq : 0,
     };
+  }
+
+  /**
+   * Cards of one board matching `query` (TASK-157, TASK-177.13). The server
+   * reaches comments and attachment filenames that the board aggregate does
+   * not carry; `matches` tells the filter which of those hits to merge.
+   */
+  searchBoardCards(
+    boardId: string,
+    query: string,
+    opts: { includeMatches?: boolean } = {},
+  ): Promise<BoardCardSearchResult> {
+    const params = new URLSearchParams({ q: query });
+    if (opts.includeMatches === false) params.set("includeMatches", "0");
+    return this.request<BoardCardSearchResult>(
+      `/boards/${encodeURIComponent(boardId)}/search?${params.toString()}`,
+    );
+  }
+
+  /**
+   * Comment/attachment matches across every board the caller can see
+   * (TASK-177.13). One request for the palette — never a search per board.
+   */
+  searchWorkspaceMatches(query: string): Promise<WorkspaceSearchResult> {
+    return this.request<WorkspaceSearchResult>(
+      `/boards/search?q=${encodeURIComponent(query)}`,
+    );
   }
 
   deleteBoard(boardId: string): Promise<{ status: "ok" }> {

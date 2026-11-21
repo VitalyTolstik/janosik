@@ -73,6 +73,11 @@ interface CardCommentsProps {
   boardId: string;
   /** VIEWER mode: read the thread, no composer and no delete (TASK-35). */
   readOnly?: boolean;
+  /**
+   * Search deep link (TASK-177.13): the comment to scroll to and highlight.
+   * An id outside the loaded page is ignored — the card stays the fallback.
+   */
+  focusId?: string;
   /** Undefined while loading, null when unavailable. */
   onCountChange?: (count: ActivityCount | null | undefined) => void;
 }
@@ -90,6 +95,7 @@ export function CardComments({
   cardId,
   boardId,
   readOnly = false,
+  focusId,
   onCountChange,
 }: CardCommentsProps) {
   const { t } = useI18n();
@@ -124,6 +130,11 @@ export function CardComments({
   // applied the visible thread cannot supply it, so local creates/deletes
   // adjust this snapshot by ±1.
   const unfilteredCountRef = useRef<ActivityCount | null>(null);
+  // Search deep link (TASK-177.13) scrolls/highlights a comment; the kind
+  // filter above owns the first page, so both features share the same list.
+  const listRef = useRef<HTMLOListElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const settlingFocusRef = useRef<string | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
   const [status, setStatus] = useState<
@@ -205,6 +216,57 @@ export function CardComments({
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  // Deep link from global search (TASK-177.13): reveal the matched comment
+  // once its page has landed. The row is matched by data attribute rather
+  // than a selector so a hand-edited URL cannot inject CSS syntax.
+  // One attempt per focus id: later SSE growth must not steal the reader's
+  // scroll position. An unknown id leaves the card as the fallback.
+  const revealedFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
+    const row = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ?? [],
+    ).find((element) => element.dataset.commentId === focusId);
+    if (!row) return;
+    // Mark only a successful reveal: an older page can still bring the
+    // target later, while a found row must not be scrolled to twice.
+    revealedFocusRef.current = focusId;
+    settlingFocusRef.current = focusId;
+    row.scrollIntoView?.({ block: "center" });
+    row.focus?.({ preventScroll: true });
+  }, [focusId, loaded, items.length]);
+
+  // The composer is a lazy chunk: it replaces the reserved fallback after
+  // the first reveal, which can push the target below the dialog edge on a
+  // phone. Re-reveal once when the composer's real height settles; list
+  // growth later in the session does not trigger this observer.
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node || !focusId || !loaded || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let lastHeight: number | null = null;
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height ?? 0;
+      if (lastHeight === null) {
+        lastHeight = height;
+        return;
+      }
+      if (height === lastHeight) return;
+      lastHeight = height;
+      if (settlingFocusRef.current !== focusId) return;
+      const row = Array.from(
+        listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ??
+          [],
+      ).find((element) => element.dataset.commentId === focusId);
+      if (!row) return;
+      settlingFocusRef.current = null;
+      row.scrollIntoView?.({ block: "nearest" });
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [focusId, loaded]);
 
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;
@@ -527,20 +589,22 @@ export function CardComments({
   return (
     <div className="space-y-2" aria-busy={!loaded || filtering}>
       {canCompose && user !== null ? (
-        <CommentComposer
-          key={user.id}
-          user={user}
-          cardId={cardId}
-          draft={draft}
-          sending={composer.sending}
-          canSend={canSend}
-          editorNonce={composer.editorNonce}
-          kind={kind}
-          onKindChange={(kind) => composer.update({ kind })}
-          onDraftChange={(text) => composer.update({ text })}
-          onSubmit={() => void handleSend()}
-          onCancel={composer.discard}
-        />
+        <div ref={composerRef}>
+          <CommentComposer
+            key={user.id}
+            user={user}
+            cardId={cardId}
+            draft={draft}
+            sending={composer.sending}
+            canSend={canSend}
+            editorNonce={composer.editorNonce}
+            kind={kind}
+            onKindChange={(kind) => composer.update({ kind })}
+            onDraftChange={(text) => composer.update({ text })}
+            onSubmit={() => void handleSend()}
+            onCancel={composer.discard}
+          />
+        </div>
       ) : null}
 
       {serverMode && loaded && status !== "unavailable" ? (
@@ -584,7 +648,7 @@ export function CardComments({
           {t("comment.empty")}
         </p>
       ) : items.length > 0 ? (
-        <ol className="space-y-1" data-testid="comment-list">
+        <ol ref={listRef} className="space-y-1" data-testid="comment-list">
           {items.map((comment) => (
             <CommentRow
               key={comment.id}
@@ -593,6 +657,7 @@ export function CardComments({
               boardId={boardId}
               currentUserId={user?.id}
               readOnly={readOnly}
+              highlighted={comment.id === focusId}
               onDelete={() => setPendingDelete(comment)}
               onUpdated={(saved) => {
                 const activeKind = loadedKindRef.current;
@@ -876,9 +941,10 @@ function CommentComposer({
       <div className="min-w-0 flex-1 space-y-2">
         <Suspense
           fallback={
-            /* Same footprint as the single-line editor so the thread
-               doesn't jump while the chunk streams in. */
-            <Skeleton className="h-9 rounded-md" />
+            /* Reserve the lazy composer's real toolbar + one-line surface
+               (36 px + row padding) so a deep-linked row below it is not
+               pushed out of view when the chunk streams in. */
+            <Skeleton className="h-[84px] rounded-md" />
           }
         >
           <CommentComposerEditor
@@ -937,6 +1003,8 @@ interface CommentRowProps {
   boardId: string;
   currentUserId: string | undefined;
   readOnly: boolean;
+  /** Search deep link target (TASK-177.13). */
+  highlighted?: boolean;
   onDelete: () => void;
   /** Replaces the row after a successful inline edit (TASK-176.2). */
   onUpdated: (comment: CommentDto) => void;
@@ -948,6 +1016,7 @@ function CommentRow({
   boardId,
   currentUserId,
   readOnly,
+  highlighted = false,
   onDelete,
   onUpdated,
 }: CommentRowProps) {
@@ -1035,10 +1104,16 @@ function CommentRow({
 
   return (
     <li
-      className={`group flex items-start gap-2.5 text-sm ${pending ? "opacity-60" : ""}`}
+      className={cn(
+        "group flex items-start gap-2.5 rounded-md text-sm",
+        highlighted && "bg-primary/10 ring-2 ring-primary/40",
+        pending && "opacity-60",
+      )}
       data-testid="comment"
       data-comment-id={comment.id}
+      data-search-highlight={highlighted ? "true" : undefined}
       data-pending={pending ? "true" : undefined}
+      tabIndex={highlighted ? -1 : undefined}
     >
       <button
         type="button"
