@@ -674,4 +674,115 @@ describe("BoardMembersPanel (TASK-35)", () => {
     );
     expect(screen.getByText("Invitation cancelled")).toBeInTheDocument();
   });
+
+  it("changes a pending invitation's role through updateMember", async () => {
+    const invitation: BoardPendingInvitationDto = {
+      id: "invite-1",
+      userId: "user-3",
+      displayName: null,
+      email: "pending@example.com",
+      role: "VIEWER",
+      expiresAt: null,
+      createdAt: Date.now(),
+    };
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    vi.spyOn(api, "listPendingInvitations").mockResolvedValue([invitation]);
+    const update = vi.spyOn(api, "updateMember").mockResolvedValue({
+      userId: invitation.userId,
+      displayName: null,
+      email: invitation.email,
+      role: "MEMBER",
+      expiresAt: null,
+      avatarColor: null,
+      avatarPath: null,
+    });
+
+    renderPanel(true);
+
+    const row = await screen.findByTestId("board-pending-row");
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Role of pending@example.com",
+      }),
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "Member" }));
+
+    expect(update).toHaveBeenCalledWith("board-1", "user-3", {
+      role: "MEMBER",
+    });
+    await waitFor(() =>
+      expect(
+        within(row).getByRole("button", {
+          name: "Role of pending@example.com",
+        }),
+      ).toHaveTextContent("Member"),
+    );
+    // Expiry belongs to VIEWER only — the picker leaves with the role.
+    expect(
+      within(row).queryByRole("button", {
+        name: "Access until — pending@example.com",
+      }),
+    ).toBeNull();
+    expect(await screen.findByText("Role updated")).toBeInTheDocument();
+  });
+
+  it("sets a pending VIEWER invitation's expiry through updateMember", async () => {
+    const invitation: BoardPendingInvitationDto = {
+      id: "invite-1",
+      userId: "user-3",
+      displayName: null,
+      email: "pending@example.com",
+      role: "VIEWER",
+      expiresAt: null,
+      createdAt: Date.now(),
+    };
+    vi.spyOn(api, "listMembers").mockResolvedValue([ADMIN]);
+    vi.spyOn(api, "listPendingInvitations").mockResolvedValue([invitation]);
+    const update = vi.spyOn(api, "updateMember").mockResolvedValue({
+      userId: invitation.userId,
+      displayName: null,
+      email: invitation.email,
+      role: "VIEWER",
+      expiresAt: 1,
+      avatarColor: null,
+      avatarPath: null,
+    });
+
+    renderPanel(true);
+
+    const row = await screen.findByTestId("board-pending-row");
+    fireEvent.click(
+      within(row).getByRole("button", {
+        name: "Access until — pending@example.com",
+      }),
+    );
+    await screen.findByTestId("expiry-calendar");
+    await waitFor(
+      () => {
+        expect(
+          document.querySelectorAll("button[data-day]").length,
+        ).toBeGreaterThan(0);
+      },
+      { timeout: 15_000 },
+    );
+    const days = [
+      ...document.querySelectorAll<HTMLElement>(
+        "td[data-day] button:not([disabled])",
+      ),
+    ].filter((button) => !button.closest("td")?.hasAttribute("data-outside"));
+    const target =
+      days.find((button) => {
+        const value = button.closest("td")?.getAttribute("data-day");
+        return value != null && new Date(`${value}T12:00:00`) > new Date();
+      }) ?? days[days.length - 1];
+    const day = target.closest("td")?.getAttribute("data-day");
+    const chosen = new Date(`${day}T12:00:00`);
+    fireEvent.click(target as HTMLElement);
+
+    await waitFor(() => expect(update).toHaveBeenCalled());
+    expect(update).toHaveBeenCalledWith("board-1", "user-3", {
+      expiresAt: chosen.toISOString(),
+    });
+    expect(await screen.findByText("Expiry updated")).toBeInTheDocument();
+  });
 });

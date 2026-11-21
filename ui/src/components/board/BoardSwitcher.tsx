@@ -56,6 +56,13 @@ function boardInitial(title: string): string {
   return trimmed ? trimmed[0].toUpperCase() : "•";
 }
 
+/** The switcher counts what a user can open — archived cards are not it. */
+function activeCardCount(board: Board): number {
+  return Object.values(board.cards).filter(
+    (card) => card.archivedAt === undefined,
+  ).length;
+}
+
 export function BoardSwitcher({
   archivedEntry = false,
 }: {
@@ -510,11 +517,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                     ) : (
                       <>
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {
-                            Object.values(b.cards).filter(
-                              (card) => card.archivedAt === undefined,
-                            ).length
-                          }
+                          {activeCardCount(b)}
                         </span>
                         {/* Touch has no hover: the checkmark yields its slot to
                         the row's action (always visible there). A board I do

@@ -604,6 +604,54 @@ export function BoardMembersPanel({
     }
   }
 
+  /** Keep a pending row in sync with the member row `PATCH` answers. */
+  const replacePending = (updated: BoardMemberDto) => {
+    setPending((prev) =>
+      prev.map((row) =>
+        row.userId === updated.userId
+          ? { ...row, role: updated.role, expiresAt: updated.expiresAt }
+          : row,
+      ),
+    );
+  };
+
+  async function handlePendingRoleChange(
+    invitation: BoardPendingInvitationDto,
+    next: BoardRole,
+  ) {
+    if (next === invitation.role) return;
+    setPendingUserId(invitation.userId);
+    try {
+      replacePending(
+        await api.updateMember(boardId, invitation.userId, { role: next }),
+      );
+      toast.success(t("board.members.roleChanged"));
+    } catch (error) {
+      toast.error(membershipError(error, t));
+    } finally {
+      setPendingUserId(null);
+    }
+  }
+
+  async function handlePendingExpiryChange(
+    invitation: BoardPendingInvitationDto,
+    value: number | null,
+  ) {
+    setPendingUserId(invitation.userId);
+    try {
+      replacePending(
+        await api.updateMember(boardId, invitation.userId, {
+          expiresAt: value === null ? null : new Date(value).toISOString(),
+        }),
+      );
+      toast.success(t("board.members.expiryChanged"));
+    } catch (error) {
+      toast.error(membershipError(error, t));
+    } finally {
+      setPendingUserId(null);
+    }
+  }
+
   async function handleLeave() {
     if (onLeave === undefined) return;
     setLeaving(true);
@@ -968,27 +1016,47 @@ export function BoardMembersPanel({
               <li
                 key={invitation.id}
                 data-testid="board-pending-row"
-                className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm"
+                className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-1.5 py-1.5 text-sm"
               >
                 <span className="min-w-0 flex-1 truncate">
                   {invitation.email}
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {t(ROLE_KEYS[invitation.role])}
+                <span className="flex shrink-0 items-center gap-1">
+                  {invitation.role === "VIEWER" ? (
+                    <ExpiryPicker
+                      value={invitation.expiresAt}
+                      label={`${t("board.members.invite.expires")} — ${invitation.email}`}
+                      disabled={pendingUserId === invitation.userId}
+                      onChange={(value) =>
+                        void handlePendingExpiryChange(invitation, value)
+                      }
+                    />
+                  ) : null}
+                  <RolePicker
+                    compact
+                    value={invitation.role}
+                    label={t("board.members.roleAria", {
+                      name: invitation.email,
+                    })}
+                    disabled={pendingUserId === invitation.userId}
+                    onChange={(next) =>
+                      void handlePendingRoleChange(invitation, next)
+                    }
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-danger"
+                    aria-label={t("board.members.pending.cancel", {
+                      email: invitation.email,
+                    })}
+                    data-testid="board-pending-cancel"
+                    disabled={pendingUserId === invitation.userId}
+                    onClick={() => void handleCancelInvitation(invitation)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
                 </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-danger"
-                  aria-label={t("board.members.pending.cancel", {
-                    email: invitation.email,
-                  })}
-                  data-testid="board-pending-cancel"
-                  disabled={pendingUserId === invitation.userId}
-                  onClick={() => void handleCancelInvitation(invitation)}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
               </li>
             ))}
           </ul>

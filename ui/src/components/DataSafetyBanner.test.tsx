@@ -108,6 +108,13 @@ describe("DataSafetyBanner", () => {
     expect(
       screen.queryByRole("button", { name: "Dismiss" }),
     ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Download a backup" }),
+    );
+    expect(
+      await screen.findByText(/^All boards exported \(\d+\)$/),
+    ).toBeInTheDocument();
   });
 
   it("quarantines unparsable data and offers to restore a copy", async () => {
@@ -133,6 +140,13 @@ describe("DataSafetyBanner", () => {
       expect(localStorage.getItem(BOARDS_KEY)).not.toBe(CORRUPT),
     );
     expect(localStorage.getItem(quarantined[0]!)).toBe(CORRUPT);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Download damaged data" }),
+    );
+    expect(
+      await screen.findByText("Damaged data downloaded"),
+    ).toBeInTheDocument();
   });
 
   it("treats valid JSON of the wrong shape as damaged data too", async () => {

@@ -333,7 +333,19 @@ function ShareRow({
   const revoked = share.revokedAt !== null;
   const expired = share.expiresAt !== null && share.expiresAt <= now;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const shareLabel = share.title?.trim() ? share.title : `/s/${share.token}`;
+
+  const revoke = async () => {
+    try {
+      await api.revokeShare(boardId, share.id);
+      toast.success(t("share.revokeDone"));
+      await onChanged();
+    } catch {
+      toast.error(t("share.actionError"));
+    }
+  };
 
   return (
     <li
@@ -471,15 +483,7 @@ function ShareRow({
               variant="ghost"
               size="sm"
               className="h-7 gap-1 px-2 text-xs text-destructive"
-              onClick={async () => {
-                try {
-                  await api.revokeShare(boardId, share.id);
-                  toast.success(t("share.revokeDone"));
-                  await onChanged();
-                } catch {
-                  toast.error(t("share.actionError"));
-                }
-              }}
+              onClick={() => setConfirmRevoke(true)}
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
               {t("share.revoke")}
@@ -510,6 +514,18 @@ function ShareRow({
           {t("share.refreshRequired")}
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmRevoke}
+        onOpenChange={setConfirmRevoke}
+        title={t("share.revokeConfirmTitle", { label: shareLabel })}
+        description={t("share.revokeConfirmDescription", {
+          mode: t(`share.mode.${share.mode}`),
+        })}
+        confirmLabel={t("share.revoke")}
+        destructive
+        onConfirm={() => void revoke()}
+      />
     </li>
   );
 }

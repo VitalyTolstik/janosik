@@ -389,12 +389,31 @@ describe("ShareDialog", () => {
     expect(screen.getByTestId("share-ttl")).toHaveTextContent("1 h");
   });
 
-  it("revokes a link", async () => {
-    shares = [share()];
+  it("confirms before revoking a link, naming it and its mode", async () => {
+    shares = [share({ title: "Q3 plan" })];
     renderDialog();
     fireEvent.click(await screen.findByTestId("share-trigger"));
-    const revoke = await screen.findByText("Revoke");
+    const revoke = await screen.findByRole("button", { name: "Revoke" });
     fireEvent.click(revoke);
+
+    const confirm = (await screen.findByText("Revoke “Q3 plan”?")).closest(
+      '[role="dialog"]',
+    ) as HTMLElement;
+    expect(confirm).toHaveTextContent("Live");
+    // Cancel is inert: the link is still active and no DELETE left the app.
+    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(
+      requests.some(
+        (r) => r.method === "DELETE" && r.path === "/boards/b1/shares/sh1",
+      ),
+    ).toBe(false);
+    expect(screen.getByTestId("share-row")).toHaveTextContent("Q3 plan");
+
+    fireEvent.click(revoke);
+    const confirmed = (await screen.findByText("Revoke “Q3 plan”?")).closest(
+      '[role="dialog"]',
+    ) as HTMLElement;
+    fireEvent.click(within(confirmed).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() =>
       expect(

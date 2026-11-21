@@ -855,7 +855,7 @@ function CommentRow({
             </span>
           ) : null}
           {own && !readOnly && !pending && !editing ? (
-            <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+            <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 no-hover:opacity-100 group-hover:opacity-100">
               <button
                 ref={editButtonRef}
                 type="button"

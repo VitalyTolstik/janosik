@@ -805,6 +805,12 @@ describe("CardComments", () => {
       "no-hover:h-11",
       "no-hover:w-11",
     );
+    // The button lives in a hover-revealed action strip; touch must keep the
+    // strip visible, and keyboard focus must reveal it too.
+    expect(trigger.parentElement).toHaveClass(
+      "focus-within:opacity-100",
+      "no-hover:opacity-100",
+    );
 
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("dialog");
