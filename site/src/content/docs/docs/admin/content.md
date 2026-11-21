@@ -243,6 +243,10 @@ priority, cover and labels. Each saved change is its own command —
 sent. Archived cards keep the panel because their fields remain editable;
 deleted cards hide it.
 
+Labels save immediately: clicking one attaches it, clicking it again detaches
+it, and there is no separate Save control. The info button next to the Labels
+heading explains this and notes that every change appears in the board history.
+
 Clearing the assignee sends `assigneeId: null`; clearing the due date or cover
 omits the field. Priority `medium` is the default and is stored as an absent
 value. The assignee list contains accepted, unexpired members; disabled users

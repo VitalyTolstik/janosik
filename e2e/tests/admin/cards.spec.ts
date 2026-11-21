@@ -272,7 +272,11 @@ test("C6: a master edits card fields and every change has a command and audit ro
   await expect(secondLabel).toHaveAttribute("aria-pressed", "false");
   await secondLabel.click();
   await expect(secondLabel).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Label updated")).toBeVisible();
+  await expect(page.getByText("Label updated")).toHaveCount(1);
+  await secondLabel.click();
+  await expect(secondLabel).toHaveAttribute("aria-pressed", "false");
+  // The per-card key replaces the first toast instead of stacking a second.
+  await expect(page.getByText("Label updated")).toHaveCount(1);
 
   const labelsHelp = page.getByTestId("admin-card-labels-help");
   await labelsHelp.click();

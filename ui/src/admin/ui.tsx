@@ -776,7 +776,10 @@ export function Field({
       {label || labelAction ? (
         <div className="flex items-center justify-between gap-2">
           {label ? (
-            <label htmlFor={htmlFor} className="text-muted-foreground">
+            <label
+              htmlFor={htmlFor}
+              className="min-w-0 flex-1 text-muted-foreground"
+            >
               {label}
             </label>
           ) : (
