@@ -863,6 +863,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   flex: none;
   border-top: 1px solid var(--border);
   padding: 9px 12px;
+  padding-bottom: max(9px, env(safe-area-inset-bottom));
   background: color-mix(in oklab, var(--surface) 82%, var(--background));
   display: flex;
   align-items: center;
@@ -1046,6 +1047,11 @@ html[lang="ru"] .agent-control-surface .ac-title {
     max-height: 100dvh;
     border: 0;
     border-radius: 0;
+    /* TASK-177.18: the full-screen phone sheet paints under the iOS status
+       bar and landscape notch; the footer keeps its own bottom inset. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-top: env(safe-area-inset-top);
   }
 
   .agent-control-surface .ac-head {

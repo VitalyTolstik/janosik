@@ -48,13 +48,37 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("pads the content and the close button for iOS safe areas (TASK-177.18)", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    const dialog = await screen.findByRole("dialog");
+    // `max(1.5rem, env(...))` keeps the p-6 fallback on desktop and in
+    // browsers where env() is 0 — no double padding.
+    expect(dialog.className).toContain(
+      "pt-[max(1.5rem,env(safe-area-inset-top))]",
+    );
+    expect(dialog.className).toContain(
+      "pb-[max(1.5rem,env(safe-area-inset-bottom))]",
+    );
+    expect(dialog.className).toContain(
+      "pl-[max(1.5rem,env(safe-area-inset-left))]",
+    );
+    expect(dialog.className).toContain(
+      "pr-[max(1.5rem,env(safe-area-inset-right))]",
+    );
+    const close = dialog.querySelector("[data-testid='dialog-close']");
+    expect(close?.className).toContain("env(safe-area-inset-top)");
+    expect(close?.className).toContain("env(safe-area-inset-right)");
+  });
+
   it("offers a 44 px close hit area on mobile and a compact one on desktop", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: "Open" }));
     const dialog = await screen.findByRole("dialog");
     const close = dialog.querySelector(
-      "[data-radix-dialog-close], button[class*='right-2']",
+      "[data-testid='dialog-close']",
     ) as HTMLButtonElement | null;
     expect(close).not.toBeNull();
     expect(close?.className).toContain("h-11");

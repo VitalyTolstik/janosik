@@ -804,7 +804,7 @@ export function CardDialog({
       >
         <DialogContent
           className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
-          closeClassName="right-3 top-3 flex h-8 w-8 items-center justify-center"
+          closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-8 w-8 items-center justify-center"
           onEscapeKeyDown={(event) => {
             // The inline link editor closes first; the card stays open.
             if (linkEditorCardId === card.id) {
