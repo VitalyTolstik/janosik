@@ -12,10 +12,16 @@ of cards. The board title lives in the header, next to the board switcher.
 
 ### Create a board
 
-Open the board switcher and use the `New board` row. Type a name and press
-Enter. You can also type a name into the switcher's search box first — its
-footer then reads `Create "<name>"` and creates that board. A new board starts
-empty and you are taken straight to it. Board names can have up to 100 characters.
+When you have no active boards (or all boards are archived), the home screen
+asks for a name first and offers two choices: `Create empty board` or `Start
+with an example`. The example adds
+`To do`, `In progress` and `Done`, a welcome card and a `First steps`
+checklist, all as ordinary commands. From then on, open the board switcher and
+use the `New board` row. Type a name and press Enter. You can also type a name
+into the switcher's search box first — its footer then reads
+`Create "<name>"` and creates that board. A new board is created under the name
+you typed and you are taken straight to it. Board names can have up to 100
+characters.
 
 ![The board switcher: your boards with card counts, and a New board row.](/screens/board-switcher.png)
 
@@ -28,8 +34,9 @@ carries a role icon: member (can edit) or viewer (view only).
 
 ### Rename a board
 
-Click the board title in the header, type the new name and press Enter.
-Escape cancels. A viewer sees a plain heading and cannot rename.
+Click the pencil next to the board title in the header, type the new name and
+press Enter. Escape cancels. Clicking the title itself still starts the same
+editor. A viewer sees a plain heading and cannot rename.
 
 ### Archive, restore and delete a board
 

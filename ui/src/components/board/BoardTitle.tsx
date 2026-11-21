@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Pencil } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { useBoardActions, useBoardIdentity } from "@/store/BoardContext";
@@ -20,6 +21,7 @@ export function BoardTitle() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   const startEdit = () => {
     setDraft(title);
@@ -27,12 +29,20 @@ export function BoardTitle() {
     requestAnimationFrame(() => inputRef.current?.select());
   };
 
-  const save = () => {
+  const save = (focusAfter: boolean) => {
     setEditing(false);
     const trimmed = draft.trim();
     if (trimmed && id && trimmed !== title) {
       renameBoard(trimmed);
     }
+    if (focusAfter) {
+      requestAnimationFrame(() => headingRef.current?.focus());
+    }
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    requestAnimationFrame(() => headingRef.current?.focus());
   };
 
   if (!id) return null;
@@ -58,10 +68,10 @@ export function BoardTitle() {
         value={draft}
         maxLength={LIMITS.boardTitle}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={save}
+        onBlur={() => save(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") save();
-          else if (e.key === "Escape") setEditing(false);
+          if (e.key === "Enter") save(true);
+          else if (e.key === "Escape") cancel();
         }}
         aria-label={t("board.editTitleAria")}
         className="h-8 w-36 max-w-[46vw] rounded-md border border-primary/40 bg-background/80 px-2 text-base font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64 sm:text-lg"
@@ -74,20 +84,33 @@ export function BoardTitle() {
       />
     </span>
   ) : (
-    <h1
-      data-testid="board-title"
-      onClick={startEdit}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          startEdit();
-        }
-      }}
-      title={t("board.editTitleHint")}
-      className="max-w-[46vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
-    >
-      {title}
-    </h1>
+    <div className="flex min-w-0 items-center gap-0.5">
+      <h1
+        ref={headingRef}
+        data-testid="board-title"
+        onClick={startEdit}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            startEdit();
+          }
+        }}
+        title={t("board.editTitleHint")}
+        className="max-w-[46vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
+      >
+        {title}
+      </h1>
+      <button
+        type="button"
+        onClick={startEdit}
+        data-testid="board-rename"
+        aria-label={t("board.rename")}
+        title={t("board.editTitleHint")}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <Pencil className="h-3.5 w-3.5" aria-hidden />
+      </button>
+    </div>
   );
 }

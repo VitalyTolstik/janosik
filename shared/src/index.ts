@@ -14,6 +14,7 @@ export * from "./store/invert";
 export * from "./store/migrate";
 export * from "./store/validate";
 export * from "./store/seed-data";
+export * from "./board-starter";
 export * from "./utils/text";
 export * from "./utils/column-limits";
 export * from "./utils/board-serialization";
