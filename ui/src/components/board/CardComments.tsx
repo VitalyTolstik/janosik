@@ -360,6 +360,12 @@ export function CardComments({
     trimmed.length > 0 &&
     trimmed.length <= LIMITS.comment;
 
+  const retryFilter = () => {
+    setFilterError(false);
+    setFiltering(true);
+    void loadFirst();
+  };
+
   const handleSend = async () => {
     if (!canSend || user === null) return;
     const finishSend = composer.startSend();
@@ -402,9 +408,16 @@ export function CardComments({
       if (activeKind !== undefined && sentKind !== activeKind) {
         // The author just wrote a comment the active chip excludes: show All
         // so the saved row is not silently hidden by its own filter.
-        setRequestedKind(undefined);
-        setFilterError(false);
-        setFiltering(true);
+        if (requestedKind === undefined) {
+          // The All chip was already requested (a failed revert leaves the
+          // requested kind at All), so setting it again cannot trigger the
+          // load effect. Retry explicitly and clear the stuck busy state.
+          retryFilter();
+        } else {
+          setRequestedKind(undefined);
+          setFilterError(false);
+          setFiltering(true);
+        }
       } else if (total !== undefined) {
         void refreshNewest();
       }
@@ -488,12 +501,6 @@ export function CardComments({
     } finally {
       setLoadingOlder(false);
     }
-  };
-
-  const retryFilter = () => {
-    setFilterError(false);
-    setFiltering(true);
-    void loadFirst();
   };
 
   const handleKindFilter = (next: CommentKind | undefined) => {
