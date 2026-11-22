@@ -743,6 +743,7 @@
   "board.archivedReadOnly": "Доска в архиве — она доступна только для чтения.",
   "board.archivedAskAdmin": "Попросите администратора доски восстановить её, если нужны изменения.",
   "board.archivedSwitcherHint": "Чтобы покинуть доску, откройте переключатель досок → «Архив» и выберите «Покинуть доску».",
+  "board.archivedOpenArchive": "Открыть архив карточек",
   "board.firstRun.nameLabel": "Название доски",
   "board.firstRun.placeholder": "Например, запуск продукта",
   "board.firstRun.emptyCta": "Создать пустую доску",

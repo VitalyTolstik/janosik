@@ -254,5 +254,17 @@ describe("BoardSection role wiring (TASK-35)", () => {
     expect(
       within(dialogNotice).queryByTestId("archived-board-restore"),
     ).toBeNull();
+
+    // A real control inside the modal replaces the inert header menu.
+    fireEvent.click(within(dialogNotice).getByTestId("archived-open-archive"));
+    const archiveDialog = await screen.findByRole("dialog", {
+      name: "Card archive",
+    });
+    expect(
+      within(archiveDialog).getByTestId("archived-board-notice"),
+    ).toBeVisible();
+    expect(
+      within(archiveDialog).queryByTestId("archived-open-archive"),
+    ).toBeNull();
   });
 });

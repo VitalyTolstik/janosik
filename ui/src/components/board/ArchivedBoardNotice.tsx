@@ -16,11 +16,14 @@ export function ArchivedBoardNotice({
   boardId,
   className,
   onRestored,
+  onOpenArchive,
 }: {
   boardId: string;
   className?: string;
   /** Where focus should land after the restore button unmounts. */
   onRestored?: () => void;
+  /** Real entry to the viewed board's archive while the header is inert. */
+  onOpenArchive?: () => void;
 }) {
   const { t } = useI18n();
   const { unarchiveBoard, roleOf } = useBoardActions();
@@ -56,6 +59,18 @@ export function ArchivedBoardNotice({
     >
       <Archive className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
       <p className="min-w-0 flex-1">{t("board.archivedReadOnly")}</p>
+      {onOpenArchive ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-11 shrink-0 lg:h-8"
+          data-testid="archived-open-archive"
+          onClick={onOpenArchive}
+        >
+          {t("board.archivedOpenArchive")}
+        </Button>
+      ) : null}
       {role === "ADMIN" ? (
         <Button
           type="button"

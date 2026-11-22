@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { CardDescriptionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
@@ -195,6 +196,7 @@ export function CardDialog({
   const card = board && cardId ? board.cards[cardId] : undefined;
   const { t, lang } = useI18n();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [linkEditorCardId, setLinkEditorCardId] = useState<string | null>(null);
   const [previousLinkCardId, setPreviousLinkCardId] = useState(cardId);
@@ -971,6 +973,7 @@ export function CardDialog({
               <ArchivedBoardNotice
                 boardId={board.id}
                 className="mb-2"
+                onOpenArchive={() => setArchiveOpen(true)}
                 onRestored={() =>
                   window.requestAnimationFrame(() => titleRef.current?.focus())
                 }
@@ -1458,6 +1461,14 @@ export function CardDialog({
           onConfirm={handleDelete}
         />
       </Dialog>
+      {/* The header is inert behind this mandatory card dialog, so the
+          archived notice provides the real entry to the viewed board's
+          archive. */}
+      <ArchiveDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        boardId={board.id}
+      />
     </>
   );
 }

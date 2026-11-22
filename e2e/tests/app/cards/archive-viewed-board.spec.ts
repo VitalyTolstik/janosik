@@ -27,30 +27,15 @@ async function command(
 }
 
 /**
- * The card dialog is modal, so header chrome is behind its aria-hidden
- * ancestor. The review found this path through the DOM; open the data menu
- * the same way to exercise the archive dialog on the archived deep link.
+ * The card dialog is modal, so the header data menu is inert. The archived
+ * notice exposes a real control that opens the pinned board's archive.
  */
-async function openArchiveBehindCardDialog(page: Page) {
-  // The header is aria-hidden behind the modal, so role queries cannot see
-  // the trigger; locate it by attribute like the review did.
-  const trigger = page.locator('button[aria-label="Data & backups"]');
-  await expect(trigger).toHaveCount(1);
-  await trigger.evaluate((element) => {
-    element.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        pointerType: "mouse",
-      }),
-    );
-    (element as HTMLElement).click();
-  });
-  const archiveItem = page.getByTestId("data-archive");
-  await expect(archiveItem).toBeVisible();
-  await archiveItem.evaluate((element) => (element as HTMLElement).click());
-  return page.getByRole("dialog", { name: "Card archive" });
+async function openArchiveFromCardDialog(page: Page) {
+  const cardDialog = page.getByRole("dialog", { name: "Card details" });
+  await cardDialog.getByTestId("archived-open-archive").click();
+  const archiveDialog = page.getByRole("dialog", { name: "Card archive" });
+  await expect(archiveDialog).toBeVisible();
+  return archiveDialog;
 }
 
 for (const width of [390, 768]) {
@@ -91,8 +76,7 @@ for (const width of [390, 768]) {
     // The Members trigger used to render behind this dialog's inert header.
     await expect(page.locator('button[aria-label="Members"]')).toHaveCount(0);
 
-    const archiveDialog = await openArchiveBehindCardDialog(page);
-    await expect(archiveDialog).toBeVisible();
+    const archiveDialog = await openArchiveFromCardDialog(page);
     await expect(archiveDialog).toContainText(archivedTitle);
     await expect(archiveDialog).not.toContainText(board.title);
     await expect(
