@@ -884,11 +884,11 @@ describe("CardComments", () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("button", { name: "Delete" })).toHaveClass(
-      "max-md:min-h-11",
+      "max-lg:h-11",
       "no-hover:min-h-11",
     );
     expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveClass(
-      "max-md:min-h-11",
+      "max-lg:h-11",
       "no-hover:min-h-11",
     );
   });

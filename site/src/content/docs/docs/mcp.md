@@ -350,7 +350,8 @@ Three tools let a swarm share one board without stepping on itself:
   agent reads directly instead of parsing prose. Each field is independent (omit
   it to leave it unchanged, pass an empty list to clear it), and each list holds
   up to 50 items of at most 500 characters each. `janosik_get_card` returns the
-  contract, and the card dialog shows it read-only.
+  contract, and a board ADMIN or MEMBER can edit or clear it in the card dialog
+  (VIEWERs see it read-only).
 
 ### Ready to work, and the Definition-of-Done gate
 
