@@ -58,6 +58,8 @@ REST. Эти операции не являются действиями ред�
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`               | нет               | `{ status: "ok" }` |
 | `GET`    | `/boards/search`              | пользователь          | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
 | `GET`    | `/boards/:id/export`          | участник              | нет               | `BoardEnvelope`    |
+| `GET`    | `/boards/:id/deleted`         | `ADMIN`/`MEMBER`      | нет               | `DeletedBoardItemsDto` |
+| `POST`   | `/boards/:id/deleted/:type/:itemId/restore` | `ADMIN`/`MEMBER` | нет | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/search`          | участник              | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[]; matchesTotal: number; matchesTruncated: boolean }` |
 
 `GET /boards` перечисляет доски, где вызывающий является принятым участником,
@@ -100,6 +102,20 @@ JSON-объект, либо как сырую JSON-строку; сервер в
 политики). Импорт создаёт новые id
 колонок и карточек и переназначает ссылки процесса; переход, чья колонка
 отсутствует, отбрасывается, а не ломает импорт.
+
+`GET /boards/:id/export` отдаёт один `BoardEnvelope` (`schemaVersion: 3`) и
+отклоняет экспорт больше `MAX_BOARD_EXPORT_BYTES` с `413`. `GET
+/boards/:id/deleted` перечисляет мягко удалённые карточки, колонки, комментарии
+и файлы карточки в пределах срока хранения, сначала новые; тело —
+`{ retentionDays, limit, items, truncated }`, элемент — `{ type, id, title,
+deletedAt, purgeAt, columnTitle?, cardId?, cardTitle?, authorName?,
+sizeBytes? }`. `POST /boards/:id/deleted/:type/:itemId/restore` восстанавливает
+элемент (`type`: `cards`, `columns`, `comments` или `attachments`). Карточки и
+колонки возвращаются через журнал команд; комментарии и файлы
+восстанавливаются на месте и публикуют Activity/SSE. Оба маршрута требуют
+роль `ADMIN` или `MEMBER` доски — `VIEWER` получает `403`. Карточка, чья
+колонка ещё удалена, отвечает `409 column_deleted`; элемент старше срока
+хранения скрыт из списка и отвечает `410 retention_expired`.
 
 `GET /boards/:id` возвращает агрегат доски и устанавливает заголовок ответа
 `X-Board-Seq`, несущий `seq` команды, который отражает агрегат. Клиент
@@ -1086,6 +1102,10 @@ historyIncompleteReason }`; последние два поля описываю�
   `includeComments`, `includeAttachments`. Участники — это `{ id, displayName,
   avatarColor, avatarPath }` без email.
 - `BoardEnvelope`: `{ app, schemaVersion, exportedAt, boards[] }`.
+- `DeletedBoardItemsDto`: `{ retentionDays, limit, items[], truncated }`.
+  `items[]` — `{ type, id, title, deletedAt, purgeAt, columnTitle?, cardId?,
+  cardTitle?, authorName?, sizeBytes? }`; `type` — `cards`, `columns`,
+  `comments` или `attachments`.
 - `PlanPreviewDto`: `{ dryRun: true, schemaVersion: 1, boardId, planHash,
   plan, commandCount, cardCreates, limits, requirement, diff, warnings,
   conflicts, canApply }`; `plan` — `ApprovalPlan` с массивом `commands`.

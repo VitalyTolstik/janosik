@@ -43,8 +43,9 @@ editor. A viewer sees a plain heading and cannot rename.
 In the switcher, hover a board you administer and click the archive icon. The
 row asks `Archive?`; confirm with the check mark. Archived boards drop into an
 `Archived` section at the bottom, where an admin can restore them or delete
-them for good. Deleting is offered only for archived boards and removes the
-board and its cards permanently.
+them. Deleting is offered only for archived boards and removes the board and
+its cards from the board list; an administrator can restore them during the
+retention period.
 
 ## Columns
 
@@ -74,8 +75,9 @@ Open the menu with the `⋮` button in the column header. It holds `Rename`,
 - **Archive all cards** moves every card in the column to the archive, where
   you can restore it later.
 - **Delete column** removes the column and its cards after a confirmation
-  that names the column and the number of cards. Undo restores the column and
-  its cards.
+  that names the column and the number of cards. An administrator can restore
+  the column and its cards together during the retention period; they also
+  appear in `Recently deleted` for a board member.
 
 ### WIP limits
 

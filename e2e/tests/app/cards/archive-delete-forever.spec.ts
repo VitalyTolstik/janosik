@@ -111,6 +111,44 @@ test("keeps the archive row and inline confirm usable at 768", async ({
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
   }
+  const rowBox = await row.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(768);
   await row.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(row.getByTestId("archive-delete")).toBeVisible();
+});
+
+test("keeps the archive inline confirm readable at 390", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Archive phone");
+  const cardId = await board.card(column, "Phone archive row");
+  await board.command({ type: "ARCHIVE_CARD", cardId });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await board.open(page);
+
+  await page.getByRole("button", { name: "Data & backups" }).click();
+  await page.getByTestId("data-archive").click();
+  const row = page
+    .getByTestId("archive-row")
+    .filter({ hasText: "Phone archive row" });
+  await expect(row).toBeVisible();
+  await row.getByTestId("archive-delete").click();
+  await expect(row).toContainText("administrator can restore");
+  const buttons = [
+    row.getByRole("button", { name: "Yes, delete" }),
+    row.getByRole("button", { name: "Cancel", exact: true }),
+  ];
+  for (const button of buttons) {
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }
+  const rowBox = await row.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.x).toBeGreaterThanOrEqual(0);
+  expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(390);
 });

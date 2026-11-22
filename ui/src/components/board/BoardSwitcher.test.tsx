@@ -338,7 +338,7 @@ describe("BoardSwitcher", () => {
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
   });
 
-  it("deletes an archived board for good after confirm", async () => {
+  it("soft-deletes an archived board after confirm", async () => {
     localStorage.setItem(
       "janosik-boards",
       JSON.stringify([

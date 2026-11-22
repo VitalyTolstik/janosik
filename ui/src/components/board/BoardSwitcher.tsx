@@ -630,7 +630,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
               return (
                 <div
                   key={b.id}
-                  className="group/archived flex items-center gap-2.5 rounded-lg px-2 py-1.5"
+                  className="group/archived flex flex-wrap items-center gap-2.5 rounded-lg px-2 py-1.5"
                 >
                   <span
                     aria-hidden
@@ -672,8 +672,8 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                       </button>
                     </span>
                   ) : isConfirming ? (
-                    <span className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">
+                    <span className="flex w-full min-w-0 items-center justify-end gap-1">
+                      <span className="min-w-0 whitespace-normal break-words text-right text-xs leading-tight text-muted-foreground">
                         {t("board.switcher.deleteConfirm")}
                       </span>
                       <button

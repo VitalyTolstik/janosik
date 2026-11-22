@@ -39,6 +39,7 @@ export const COMMENT_ACTIVITY_TYPES = [
   "comment_added",
   "comment_updated",
   "comment_deleted",
+  "comment_restored",
 ] as const;
 
 /**
@@ -224,8 +225,8 @@ export async function deleteCommentActivitySnapshots(
 ): Promise<void> {
   if (commentIds.length === 0) return;
   const types = options.onlyUpdates
-    ? Prisma.sql`"type" = 'comment_updated'`
-    : Prisma.sql`"type" IN ('comment_added', 'comment_updated', 'comment_deleted')`;
+    ? Prisma.sql`"type" IN ('comment_updated', 'comment_restored')`
+    : Prisma.sql`"type" IN ('comment_added', 'comment_updated', 'comment_deleted', 'comment_restored')`;
   const ids = Prisma.join([...commentIds]);
   // TASK-185.6 review: a row written before the typed column may still carry
   // the comment id only in `details`. Matching both closes the window where a

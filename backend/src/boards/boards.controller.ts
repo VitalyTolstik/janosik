@@ -26,6 +26,7 @@ import type {
   BoardImportPreviewDto,
   BoardMemberDto,
   BoardSummary,
+  DeletedBoardItemsDto,
   WorkspaceSearchResult,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
@@ -56,6 +57,7 @@ import { CommandsService } from "@/commands/commands.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
 import { boardStarterCommands } from "./board-starter";
 import { BoardsService } from "./boards.service";
+import { DeletedItemsService } from "./deleted-items.service";
 import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
@@ -93,6 +95,7 @@ function includeMatches(value: unknown): boolean {
 export class BoardsController {
   constructor(
     private readonly boards: BoardsService,
+    private readonly deletedItems: DeletedItemsService,
     private readonly approvals: ApprovalsService,
     private readonly idempotency: IdempotencyService,
     private readonly commands: CommandsService,
@@ -525,6 +528,39 @@ export class BoardsController {
       });
     }
     return { status: "ok" };
+  }
+
+  /** TASK-177.7: soft-deleted content still inside the retention window. */
+  @UseGuards(MembershipGuard)
+  @BoardRoles(Role.ADMIN, Role.MEMBER)
+  @Get(":id/deleted")
+  deleted(@Param("id") id: string): Promise<DeletedBoardItemsDto> {
+    return this.deletedItems.list(id);
+  }
+
+  /** TASK-177.7: user restore from "Recently deleted" (no true purge here). */
+  @UseGuards(MembershipGuard)
+  @BoardRoles(Role.ADMIN, Role.MEMBER)
+  @Post(":id/deleted/:type/:itemId/restore")
+  @HttpCode(HttpStatus.OK)
+  restoreDeleted(
+    @Param("id") id: string,
+    @Param("type") type: string,
+    @Param("itemId") itemId: string,
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @CurrentAgentSession() session: AgentSessionContext | undefined,
+    @CurrentMembership() membership: BoardMember,
+  ): Promise<{ status: "ok" }> {
+    return this.deletedItems.restore(
+      id,
+      type,
+      itemId,
+      user,
+      membership.role,
+      requestAttribution(principal, session?.id),
+      principal,
+    );
   }
 
   @UseGuards(MembershipGuard)

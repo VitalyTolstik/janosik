@@ -519,6 +519,72 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/deleted:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: listDeletedBoardItems
+      summary: List recently deleted board content
+      description: |
+        Soft-deleted cards, columns, comments and card-face files that are
+        still inside the retention window, newest first. Board `ADMIN` and
+        `MEMBER` only; a `VIEWER` is refused with `403`. The response is
+        bounded and `truncated` says whether older rows were omitted.
+      responses:
+        "200":
+          description: Recently deleted items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletedBoardItems"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/deleted/{itemType}/{itemId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - name: itemType
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/DeletedItemType"
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [Boards]
+      operationId: restoreDeletedBoardItem
+      summary: Restore a recently deleted item
+      description: |
+        Restores one soft-deleted card, column, comment or card-face file.
+        Board `ADMIN` and `MEMBER` only. A card whose column is still deleted
+        answers `409 column_deleted`; an item past the retention cutoff
+        answers `410 retention_expired`. Cards and columns return through the
+        command log; comments and files are restored in place and emit an
+        Activity/SSE event.
+      responses:
+        "200":
+          description: Restored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/members:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -3650,6 +3716,59 @@ components:
               type: integer
         role:
           $ref: "#/components/schemas/BoardRole"
+    DeletedItemType:
+      type: string
+      enum: [cards, columns, comments, attachments]
+    DeletedBoardItem:
+      type: object
+      required: [type, id, title, deletedAt, purgeAt]
+      properties:
+        type:
+          $ref: "#/components/schemas/DeletedItemType"
+        id:
+          type: string
+        title:
+          type: string
+          description: Card/column title, comment excerpt or attachment file name.
+        deletedAt:
+          type: integer
+          description: Unix ms when the item was soft-deleted.
+        purgeAt:
+          type: integer
+          description: Unix ms after which the purge sweep may remove it.
+        columnTitle:
+          type: string
+          description: Present on cards.
+        cardId:
+          type: string
+          description: Present on comments and attachments.
+        cardTitle:
+          type: string
+          description: Present on comments and attachments.
+        authorName:
+          type: string
+          nullable: true
+          description: Present on comments.
+        sizeBytes:
+          type: integer
+          description: Present on attachments.
+    DeletedBoardItems:
+      type: object
+      required: [retentionDays, limit, items, truncated]
+      properties:
+        retentionDays:
+          type: integer
+          description: Operator retention window in days.
+        limit:
+          type: integer
+          description: Maximum rows returned in this response.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeletedBoardItem"
+        truncated:
+          type: boolean
+          description: True when older rows fall outside this page.
     BoardAggregate:
       type: object
       description: The frontend `Board` model.
