@@ -3,8 +3,9 @@ import { createRequire } from "node:module";
 
 import type { Locator, Page } from "@playwright/test";
 
-import { test, expect } from "@/fixtures/board.js";
+import { test, expect, loginMasterApi } from "@/fixtures/admin.js";
 import { cardDialog, openCard } from "@/helpers/history.js";
+import { appUrl } from "@/helpers/urls.js";
 
 /**
  * TASK-185.4 card-facing edit history. The backend writer is covered by
@@ -157,6 +158,162 @@ test.describe("comment edit history at 390 px", () => {
     await expect(dialog).toBeHidden();
     await expect(cardDialog(page)).toBeVisible();
     await expect(trigger).toBeFocused();
+
+    // The card History view at the same width: the long multi-line edit is
+    // escaped, wrapped and paged inside the viewport.
+    await cardDialog(page).getByTestId("activity-tab-history").click();
+    const historyEntry = cardDialog(page)
+      .getByTestId("history-entry")
+      .filter({ hasText: "Edited a comment" })
+      .first();
+    await expect(historyEntry).toBeVisible();
+    const diff = historyEntry.getByTestId("history-diff");
+    await expect(diff).toBeVisible();
+    await expect(diff).toContainText("Line two");
+    expect(
+      await historyEntry.evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      await cardDialog(page).evaluate(
+        (element) => element.scrollWidth - element.clientWidth,
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      ),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  test("renders the revision list in Russian", async ({ page, board }) => {
+    const column = await board.column("История");
+    const cardId = await board.card(column, "Русская история");
+    const created = await board.api.post(`/api/v1/cards/${cardId}/comments`, {
+      data: { text: "Первый текст" },
+    });
+    const commentId = ((await created.json()) as { id: string }).id;
+    expect(
+      (
+        await board.api.patch(`/api/v1/comments/${commentId}`, {
+          data: { text: "Второй текст" },
+        })
+      ).ok(),
+    ).toBeTruthy();
+
+    await board.open(page);
+    await page.goto(new URL(`board/${board.id}?lng=ru`, appUrl).href);
+    await page
+      .getByTestId("card-title")
+      .filter({ hasText: "Русская история" })
+      .click();
+    const card = page.getByRole("dialog", { name: "Детали карточки" });
+    await expect(card).toBeVisible();
+    const row = card.locator(
+      `[data-testid="comment"][data-comment-id="${commentId}"]`,
+    );
+    await expect(row.getByTestId("comment-edited")).toContainText("изменён");
+    await row.getByTestId("comment-edited").click();
+    const dialog = commentHistory(page);
+    await expect(
+      page.getByRole("dialog", { name: "История правок" }),
+    ).toBeVisible();
+    await expect(dialog.getByTestId("comment-history-revision")).toHaveCount(1);
+    await expect(dialog).toContainText("Правка 1");
+    await expect(dialog).toContainText("Редактор");
+    await expect(dialog).toContainText("Было");
+    await expect(dialog).toContainText("Стало");
+    // A complete chain carries no release/cutover banner.
+    await expect(dialog.getByTestId("comment-history-banner")).toHaveCount(0);
+    expect(
+      await dialog.evaluate((el) => el.scrollWidth - el.clientWidth),
+    ).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe("live comment history over SSE", () => {
+  test("refreshes the row, History and open revisions over SSE; delete clears them", async ({
+    page,
+    board,
+    operator,
+    testIp,
+    playwright,
+  }) => {
+    const column = await board.column("Live");
+    const cardId = await board.card(column, "Live history");
+    const created = await board.api.post(`/api/v1/cards/${cardId}/comments`, {
+      data: { text: "Live first" },
+    });
+    expect(created.status()).toBe(201);
+    const commentId = ((await created.json()) as { id: string }).id;
+    expect(
+      (
+        await board.api.patch(`/api/v1/comments/${commentId}`, {
+          data: { text: "Live second" },
+        })
+      ).ok(),
+    ).toBeTruthy();
+
+    await board.open(page);
+    await openCard(page, "Live history");
+    const row = cardDialog(page).locator(
+      `[data-testid="comment"][data-comment-id="${commentId}"]`,
+    );
+    await row.getByTestId("comment-edited").click();
+    const dialog = commentHistory(page);
+    await expect(dialog.getByTestId("comment-history-revision")).toHaveCount(1);
+
+    // A live edit from another session reaches the open row and marks the
+    // open revision list stale instead of silently shifting it.
+    expect(
+      (
+        await board.api.patch(`/api/v1/comments/${commentId}`, {
+          data: { text: "Live third from another session" },
+        })
+      ).ok(),
+    ).toBeTruthy();
+    await expect(row).toContainText("Live third from another session");
+    await expect(dialog.getByTestId("comment-history-stale")).toBeVisible();
+    await dialog.getByTestId("comment-history-refresh").click();
+    await expect(dialog.getByTestId("comment-history-revision")).toHaveCount(2);
+
+    // Author delete cleans the row and closes the open list.
+    expect(
+      (await board.api.delete(`/api/v1/comments/${commentId}`)).ok(),
+    ).toBeTruthy();
+    await expect(dialog).toBeHidden();
+    await expect(row).toBeHidden();
+
+    // A master delete is published without attribution; the open list still
+    // closes and the row disappears for an ordinary member tab.
+    const secondComment = await board.api.post(
+      `/api/v1/cards/${cardId}/comments`,
+      { data: { text: "Master will remove" } },
+    );
+    const secondId = ((await secondComment.json()) as { id: string }).id;
+    expect(
+      (
+        await board.api.patch(`/api/v1/comments/${secondId}`, {
+          data: { text: "Master will remove, edited" },
+        })
+      ).ok(),
+    ).toBeTruthy();
+    const secondRow = cardDialog(page).locator(
+      `[data-testid="comment"][data-comment-id="${secondId}"]`,
+    );
+    await secondRow.getByTestId("comment-edited").click();
+    await expect(dialog).toBeVisible();
+    const master = await loginMasterApi(playwright, operator, testIp);
+    try {
+      expect(
+        (await master.delete(`/api/v1/admin/comments/${secondId}`)).ok(),
+      ).toBeTruthy();
+    } finally {
+      await master.dispose();
+    }
+    await expect(dialog).toBeHidden();
+    await expect(secondRow).toBeHidden();
   });
 });
 

@@ -269,7 +269,14 @@ reconciliation sweep persists the reason. `CommentRevisionDto` exposes `id`,
 public display name and is `null` when the editor or the name is unavailable.
 Token and session identifiers are never returned. A master reads the same
 projection at `GET /admin/comments/:commentId/revisions` with the admin JWT and
-no board membership; both routes are read-only. Public share comment
+no board membership; both routes are read-only. The writer keeps the newest 50
+revisions per comment: older rows and their Activity copies are removed and
+the comment reports `revision_limit`. A mismatch with the writer's verified
+pair reports `writer_gap`; the `sweep-comment-history` maintenance job adopts
+the current text as a new verified point and strips unconfirmed Activity
+snapshots. Observability exposes revision/Activity counts and text byte sizes,
+trims, incomplete histories and over-budget comments, never the text itself.
+Public share comment
 projections and frozen snapshots never include revisions, revision IDs,
 before/after text, counters, history flags/reasons or cutover/verified fields,
 and a share token does not open the revisions routes.

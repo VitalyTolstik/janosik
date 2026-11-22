@@ -90,7 +90,8 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     expect(close).not.toBeNull();
     expect(close?.className).toContain("h-11");
     expect(close?.className).toContain("w-11");
-    // TASK-177.7: tablet widths keep the 44 px target; only desktop compacts.
+    // TASK-177.7/TASK-185.6: tablets keep the 44 px target; only desktop
+    // compacts to 32 px.
     expect(close?.className).toContain("lg:h-8");
     expect(close?.className).toContain("lg:w-8");
   });

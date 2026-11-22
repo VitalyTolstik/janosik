@@ -477,7 +477,7 @@ export function CommentHistoryDialog({
         closeClassName="h-11 w-11 md:h-11 md:w-11"
         className="max-w-2xl gap-3 overflow-x-hidden outline-none"
       >
-        <DialogHeader className="pr-8">
+        <DialogHeader className="pr-12">
           <DialogTitle>{t("comment.history.title")}</DialogTitle>
           <DialogDescription>
             {editedAt === undefined

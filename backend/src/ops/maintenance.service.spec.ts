@@ -39,6 +39,7 @@ function makePrisma(): PrismaService {
     adminAuditLog: sweepable(0),
     securityAuditLog: sweepable(0),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     emailVerificationCode: sweepable(2),
     emailChangeCode: sweepable(1),
     passwordResetToken: sweepable(0),

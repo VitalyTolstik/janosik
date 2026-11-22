@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { I18nProvider } from "@/i18n";
@@ -133,5 +133,143 @@ describe("ObservabilityPage", () => {
     const panel = await screen.findByTestId("admin-observability-frontend");
     expect(panel).toHaveTextContent(t("admin.observability.frontend.build"));
     expect(await screen.findAllByText("—")).not.toHaveLength(0);
+  });
+
+  it("wraps a 40-character build commit instead of overflowing its cell", async () => {
+    const long = "abcdef1234567890abcdef1234567890abcdef12";
+    const server = new FakeAdminServer();
+    server.observability.deploy.commit = long;
+    const fetchWithLongCommit = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/version.json")) {
+        return new Response(
+          JSON.stringify({
+            version: "9.9.9",
+            commit: long,
+            build: "janosik-deadbeef",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return server.fetchImpl(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal("fetch", fetchWithLongCommit);
+    renderObservability();
+
+    const values = await screen.findAllByText(long);
+    expect(values.length).toBeGreaterThanOrEqual(2);
+    for (const value of values) {
+      expect(value).toHaveClass("break-words");
+      expect(value.className).toContain("[overflow-wrap:anywhere]");
+    }
+  });
+
+  it("shows comment-history counts, bytes and every reason without text", async () => {
+    const server = new FakeAdminServer();
+    server.observability.commentHistory = {
+      available: true,
+      revisions: { count: 51, bytes: 2_048 },
+      activity: { count: 50, bytes: 3_072 },
+      derivedTrimmedRevisions: 3,
+      incompleteComments: 10,
+      reasons: {
+        legacy_cutover: 1,
+        revision_limit: 2,
+        gdpr_erase: 3,
+        writer_gap: 4,
+      },
+      overBudget: { revisions: 2, activity: 1 },
+    };
+    vi.stubGlobal("fetch", fetchWithManifest(server));
+    renderObservability();
+
+    const panel = await screen.findByTestId(
+      "admin-observability-comment-history",
+    );
+    expect(
+      within(panel).getByTestId("admin-observability-history-cache"),
+    ).toHaveTextContent(t("admin.observability.history.cache"));
+    expect(within(panel).getByTestId("history-revisions")).toHaveClass(
+      "flex",
+      "items-baseline",
+      "justify-between",
+    );
+    expect(
+      within(panel).getByTestId("history-revisions").parentElement,
+    ).toHaveClass("grid-cols-1", "sm:grid-cols-2");
+    // The baseline row is scoped to the history panel; runtime fields keep
+    // the stacked layout that lets long commits and versions wrap.
+    expect(
+      screen.getByText(t("admin.observability.version")).parentElement,
+    ).not.toHaveClass("flex");
+    const value = (id: string) =>
+      within(panel).getByTestId(`${id}-value`).textContent ?? "";
+    expect(value("history-revisions")).toBe("51");
+    expect(value("history-revision-bytes")).toBe("2.0 KB");
+    expect(value("history-activity")).toBe("50");
+    expect(value("history-activity-bytes")).toBe("3.0 KB");
+    expect(value("history-derived-trims")).toBe("3");
+    expect(value("history-incomplete")).toBe("10");
+    expect(value("history-over-budget")).toBe("2 / 1");
+    expect(value("history-reason-legacy_cutover")).toBe("1");
+    expect(value("history-reason-revision_limit")).toBe("2");
+    expect(value("history-reason-gdpr_erase")).toBe("3");
+    expect(value("history-reason-writer_gap")).toBe("4");
+    for (const label of [
+      "admin.observability.history.derivedTrims",
+      "admin.observability.history.overBudget",
+      "admin.observability.history.reason.legacy_cutover",
+      "admin.observability.history.reason.revision_limit",
+      "admin.observability.history.reason.gdpr_erase",
+      "admin.observability.history.reason.writer_gap",
+    ] as const) {
+      expect(within(panel).getByText(t(label))).toBeVisible();
+    }
+    expect(panel).not.toHaveTextContent("SECRET COMMENT BODY");
+  });
+
+  it("shows unavailable history metrics as dashes, never as zeros", async () => {
+    const server = new FakeAdminServer();
+    server.observability.commentHistory = {
+      available: false,
+      revisions: { count: 51, bytes: 2_048 },
+      activity: { count: 50, bytes: 3_072 },
+      derivedTrimmedRevisions: 3,
+      incompleteComments: 10,
+      reasons: {
+        legacy_cutover: 1,
+        revision_limit: 2,
+        gdpr_erase: 3,
+        writer_gap: 4,
+      },
+      overBudget: { revisions: 2, activity: 1 },
+    };
+    vi.stubGlobal("fetch", fetchWithManifest(server));
+    renderObservability();
+
+    const panel = await screen.findByTestId(
+      "admin-observability-comment-history",
+    );
+    expect(
+      within(panel).getByTestId("admin-observability-history-unavailable"),
+    ).toBeVisible();
+    for (const id of [
+      "history-revisions",
+      "history-revision-bytes",
+      "history-activity",
+      "history-activity-bytes",
+      "history-derived-trims",
+      "history-incomplete",
+      "history-over-budget",
+      "history-reason-legacy_cutover",
+      "history-reason-revision_limit",
+      "history-reason-gdpr_erase",
+      "history-reason-writer_gap",
+    ]) {
+      expect(within(panel).getByTestId(`${id}-value`)).toHaveTextContent("—");
+    }
   });
 });
