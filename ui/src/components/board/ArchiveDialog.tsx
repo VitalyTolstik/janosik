@@ -392,7 +392,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                 <li
                   key={card.id}
                   data-testid="archive-row"
-                  className="flex items-center gap-2 px-2.5 py-2 transition-colors hover:bg-hover/60"
+                  className="flex flex-wrap items-center gap-2 px-2.5 py-2 transition-colors hover:bg-hover/60"
                 >
                   {canManage && (
                     <Checkbox
@@ -439,8 +439,8 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                   </div>
                   {canManage ? (
                     confirming ? (
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        <span className="text-xs text-muted-foreground">
+                      <div className="mt-1 flex w-full min-w-0 items-center justify-end gap-0.5 lg:mt-0 lg:w-auto">
+                        <span className="min-w-0 whitespace-normal break-words text-right text-xs leading-tight text-muted-foreground">
                           {t("archive.deleteConfirm")}
                         </span>
                         <Button

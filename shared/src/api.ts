@@ -1038,7 +1038,8 @@ export interface DeletedBoardItemDto {
   deletedAt: number;
   /** Unix ms after which the purge sweep may remove it for good. */
   purgeAt: number;
-  /** Cards and attachments name their card; columns do not. */
+  /** Cards name their column; comments/attachments name their card. */
+  columnTitle?: string;
   cardId?: string;
   cardTitle?: string;
   /** Comments keep the author's display name for the row. */
@@ -1051,6 +1052,8 @@ export interface DeletedBoardItemDto {
 export interface DeletedBoardItemsDto {
   /** Operator retention window, in days. */
   retentionDays: number;
+  /** Maximum rows returned by this page, for honest truncation copy. */
+  limit: number;
   /** Newest deletion first; capped so the dialog stays bounded. */
   items: DeletedBoardItemDto[];
   /** True when older rows fall outside the returned page. */

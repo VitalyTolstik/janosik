@@ -637,19 +637,19 @@ export class CommentsService {
     const preRead = await this.prisma.comment.findFirst({
       where: {
         id: commentId,
-        deletedAt: { not: null },
         card: { column: { boardId } },
       },
-      select: { cardId: true },
+      select: { cardId: true, deletedAt: true },
     });
     if (!preRead) throw new NotFoundException("Comment not found");
+    // Repeated restore after a lost response is a no-op, not a 404.
+    if (preRead.deletedAt === null) return;
 
     const restored = await this.boardWrite.run(boardId, async (tx) => {
       await assertBoardAcceptsWrites(tx, boardId);
       const comment = await tx.comment.findFirst({
         where: {
           id: commentId,
-          deletedAt: { not: null },
           card: {
             deletedAt: null,
             column: { boardId, deletedAt: null },
@@ -658,7 +658,8 @@ export class CommentsService {
         select: { id: true, cardId: true, text: true, deletedAt: true },
       });
       if (!comment) throw new NotFoundException("Comment not found");
-      if (comment.deletedAt! < deletedAfter) {
+      if (comment.deletedAt === null) return null;
+      if (comment.deletedAt < deletedAfter) {
         throw new GoneException({
           message:
             "This comment is past the retention period and can no longer be restored",
@@ -688,6 +689,7 @@ export class CommentsService {
         at: activity.createdAt.getTime(),
       };
     });
+    if (restored === null) return;
 
     this.publishActivity(
       boardId,

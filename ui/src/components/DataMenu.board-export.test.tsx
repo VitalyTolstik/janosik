@@ -20,8 +20,10 @@ const hoisted = vi.hoisted(() => ({
     updatedAt: 1,
   },
   exportBoard: vi.fn(),
+  listDeleted: vi.fn(),
   download: vi.fn(),
   noBoard: false,
+  viewer: false,
 }));
 
 vi.mock("@/api/client", async (importOriginal) => {
@@ -29,7 +31,10 @@ vi.mock("@/api/client", async (importOriginal) => {
   return {
     ...actual,
     isApiEnabled: () => true,
-    api: { exportBoard: hoisted.exportBoard },
+    api: {
+      exportBoard: hoisted.exportBoard,
+      listDeleted: hoisted.listDeleted,
+    },
   };
 });
 
@@ -37,6 +42,7 @@ vi.mock("@/store/BoardContext", () => ({
   useBoard: () => ({
     boards: hoisted.noBoard ? [] : [hoisted.board],
     board: hoisted.noBoard ? undefined : hoisted.board,
+    roleOf: () => (hoisted.viewer ? "VIEWER" : "ADMIN"),
     importBoards: vi.fn(),
     exportBoards: vi.fn(async () => [hoisted.board] as BoardState),
     exportBoard: hoisted.exportBoard,
@@ -75,7 +81,9 @@ async function openMenu() {
 describe("DataMenu per-board export", () => {
   beforeEach(() => {
     hoisted.noBoard = false;
+    hoisted.viewer = false;
     hoisted.exportBoard.mockReset();
+    hoisted.listDeleted.mockReset();
     hoisted.download.mockReset();
   });
 
@@ -110,6 +118,38 @@ describe("DataMenu per-board export", () => {
     expect(await screen.findByText(/larger than 25 MB/)).toBeInTheDocument();
     expect(screen.queryByText("Board exported")).toBeNull();
     expect(hoisted.download).not.toHaveBeenCalled();
+  });
+
+  it("returns focus to the Data trigger after Recently deleted closes", async () => {
+    hoisted.listDeleted.mockResolvedValue({
+      retentionDays: 30,
+      limit: 200,
+      items: [],
+      truncated: false,
+    });
+    renderMenu("/board/b-1");
+    const trigger = screen.getByRole("button", { name: "Data & backups" });
+    await openMenu();
+    await userEvent.click(screen.getByTestId("data-deleted"));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Recently deleted",
+    });
+    expect(dialog).toBeVisible();
+    // The title owns focus immediately, so an immediate Escape works.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+  });
+
+  it("hides Recently deleted from a VIEWER instead of offering a 403", async () => {
+    hoisted.viewer = true;
+    renderMenu("/board/b-1");
+    await openMenu();
+
+    expect(screen.queryByTestId("data-deleted")).toBeNull();
+    // Export stays available to a viewer.
+    expect(screen.getByTestId("data-export-board")).toBeVisible();
   });
 
   it("disables per-board actions when no board is open", async () => {

@@ -750,9 +750,11 @@ export class AttachmentsService {
       where: { id: attachmentId, boardId },
       select: { cardId: true, deletedAt: true },
     });
-    if (!preRead || preRead.deletedAt === null) {
+    if (!preRead) {
       throw new NotFoundException("Attachment not found");
     }
+    // Repeated restore after a lost response is a no-op, not a 404.
+    if (preRead.deletedAt === null) return;
 
     const restored = await this.boardWrite.run(boardId, async (tx) => {
       await assertBoardAcceptsWrites(tx, boardId);
@@ -760,7 +762,6 @@ export class AttachmentsService {
         where: {
           id: attachmentId,
           boardId,
-          deletedAt: { not: null },
           isInline: false,
           descriptionEmbed: false,
           descriptionDetached: false,
@@ -774,7 +775,8 @@ export class AttachmentsService {
         },
       });
       if (!row) throw new NotFoundException("Attachment not found");
-      if (row.deletedAt! < deletedAfter) {
+      if (row.deletedAt === null) return null;
+      if (row.deletedAt < deletedAfter) {
         throw new GoneException({
           message:
             "This file is past the retention period and can no longer be restored",
@@ -818,6 +820,7 @@ export class AttachmentsService {
         at: activity.createdAt.getTime(),
       };
     });
+    if (restored === null) return;
 
     this.publish(
       boardId,

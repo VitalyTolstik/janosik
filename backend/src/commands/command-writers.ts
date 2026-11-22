@@ -1,4 +1,5 @@
 import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
+import { ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
   Board,
@@ -1009,6 +1010,15 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       // The reducer only inserts into a column when the command names one
       // that exists; then the aggregate must list the card in that column.
       const column = after.columns.find((c) => c.cardIds.includes(card.id));
+      // A caller that named a column is restoring a live card. If the column
+      // vanished between the pre-check and this board write, refuse instead
+      // of parking the card in the internal orphan column (TASK-177.7).
+      if (action.columnId !== undefined && column === undefined) {
+        throw new ConflictException({
+          message: "Restore the card's column before restoring the card",
+          code: "column_deleted",
+        });
+      }
       if (column) {
         await upsertCard(
           tx,

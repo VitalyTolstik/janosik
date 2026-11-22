@@ -1143,6 +1143,7 @@ describe("Boards API (e2e)", () => {
           .expect(200)
       ).body as {
         retentionDays: number;
+        limit: number;
         truncated: boolean;
         items: Array<{ type: string; id: string; title: string }>;
       };
@@ -1206,6 +1207,11 @@ describe("Boards API (e2e)", () => {
       expect((await deleted(boardId)).items.map((row) => row.id)).not.toContain(
         cardId,
       );
+      // A retry after a lost response is idempotent, not a 404.
+      await server()
+        .post(`/api/v1/boards/${boardId}/deleted/cards/${cardId}/restore`)
+        .set(auth(memberToken))
+        .expect(200);
 
       // A deleted column takes its cards with it and brings them back.
       await applyCommand(boardId, {
@@ -1219,6 +1225,11 @@ describe("Boards API (e2e)", () => {
         ]),
       );
       expect(page.items.map((row) => row.id)).not.toContain(secondCardId);
+      const cardInDeletedColumn = await server()
+        .post(`/api/v1/boards/${boardId}/deleted/cards/${secondCardId}/restore`)
+        .set(auth(memberToken))
+        .expect(409);
+      expect(cardInDeletedColumn.body.code).toBe("column_deleted");
       await server()
         .post(
           `/api/v1/boards/${boardId}/deleted/columns/${secondColumnId}/restore`,
@@ -1264,6 +1275,20 @@ describe("Boards API (e2e)", () => {
       expect(thread.body.items.map((row: { id: string }) => row.id)).toContain(
         comment.body.id,
       );
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/comments/${comment.body.id}/restore`,
+        )
+        .set(auth(memberToken))
+        .expect(200);
+      expect(
+        await prisma.activity.count({
+          where: {
+            type: "comment_restored",
+            details: { path: ["commentId"], equals: comment.body.id },
+          },
+        }),
+      ).toBe(1);
 
       // File: delete → restore → list + blob are back.
       const file = await server()
@@ -1300,13 +1325,100 @@ describe("Boards API (e2e)", () => {
         .get(`/api/v1/attachments/${file.body.id}/content`)
         .set(auth(adminToken))
         .expect(200);
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/attachments/${file.body.id}/restore`,
+        )
+        .set(auth(memberToken))
+        .expect(200);
+      expect(
+        await prisma.activity.count({
+          where: {
+            type: "attachment_restored",
+            details: { path: ["attachmentId"], equals: file.body.id },
+          },
+        }),
+      ).toBe(1);
+    });
+
+    it("hides the internal orphan column from the list and restore route", async () => {
+      const boardId = await createBoard("Orphan filter");
+      const columnId = randomUUID();
+      const cardId = randomUUID();
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "To do",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Archived once",
+      }).expect(200);
+      await applyCommand(boardId, { type: "ARCHIVE_CARD", cardId }).expect(200);
+      await applyCommand(boardId, { type: "DELETE_CARD", cardId }).expect(200);
+      await server()
+        .post(`/api/v1/boards/${boardId}/deleted/cards/${cardId}/restore`)
+        .set(auth(adminToken))
+        .expect(200);
+
+      const orphan = await prisma.column.findFirstOrThrow({
+        where: { boardId, id: { startsWith: "orphan:" } },
+        select: { id: true },
+      });
+      const page = await deleted(boardId);
+      expect(page.items.map((row) => row.id)).not.toContain(orphan.id);
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/columns/${encodeURIComponent(orphan.id)}/restore`,
+        )
+        .set(auth(adminToken))
+        .expect(404);
+    });
+
+    it("caps the list at 200 rows and reports truncation", async () => {
+      const boardId = await createBoard("Deleted page");
+      const columnId = randomUUID();
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "To do",
+      }).expect(200);
+      const now = new Date();
+      await prisma.card.createMany({
+        data: Array.from({ length: 201 }, (_, index) => ({
+          id: `deleted-${index}`,
+          title: `Deleted ${index}`,
+          columnId,
+          position: index,
+          deletedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      });
+
+      const page = await deleted(boardId);
+      expect(page.limit).toBe(200);
+      expect(page.items).toHaveLength(200);
+      expect(page.truncated).toBe(true);
     });
 
     it("keeps the view behind board membership and refuses an expired row", async () => {
       const boardId = await createBoard("Deleted permissions");
       await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: VIEWER_EMAIL, role: "VIEWER" })
+        .expect(201);
+      await acceptInvitation(viewerToken, boardId);
+      await server()
         .get(`/api/v1/boards/${boardId}/deleted`)
         .set(auth(outsiderToken))
+        .expect(403);
+      await server()
+        .get(`/api/v1/boards/${boardId}/deleted`)
+        .set(auth(viewerToken))
         .expect(403);
 
       const columnId = randomUUID();

@@ -155,6 +155,9 @@ export function CardAttachments({
   const [pendingDelete, setPendingDelete] = useState<AttachmentDto | null>(
     null,
   );
+  // A detached description file is not offered in Recently deleted, so its
+  // warning must not promise that recovery path.
+  const [pendingDeleteDetached, setPendingDeleteDetached] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   // Search deep link (TASK-177.13): reveal the matched file once the first
@@ -314,6 +317,7 @@ export function CardAttachments({
   const onConfirmDelete = async () => {
     const target = pendingDelete;
     setPendingDelete(null);
+    setPendingDeleteDetached(false);
     if (!target) return;
     try {
       await api.deleteAttachment(target.id);
@@ -409,7 +413,10 @@ export function CardAttachments({
                     variant="ghost"
                     size="icon"
                     aria-label={t("card.attachments.remove")}
-                    onClick={() => setPendingDelete(attachment)}
+                    onClick={() => {
+                      setPendingDeleteDetached(false);
+                      setPendingDelete(attachment);
+                    }}
                     className="h-6 w-6 text-muted-foreground hover:text-danger"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -452,7 +459,10 @@ export function CardAttachments({
                     size="icon"
                     className="h-6 w-6"
                     aria-label={t("card.attachments.remove")}
-                    onClick={() => setPendingDelete(attachment)}
+                    onClick={() => {
+                      setPendingDeleteDetached(true);
+                      setPendingDelete(attachment);
+                    }}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -498,14 +508,21 @@ export function CardAttachments({
         title={t("card.attachments.deleteTitle")}
         description={
           pendingDelete
-            ? `${pendingDelete.fileName} — ${t("card.attachments.deleteWarning")}`
+            ? `${pendingDelete.fileName} — ${t(
+                pendingDeleteDetached
+                  ? "card.attachments.deleteDetachedWarning"
+                  : "card.attachments.deleteWarning",
+              )}`
             : undefined
         }
         confirmLabel={t("card.attachments.remove")}
         destructive
         onConfirm={() => void onConfirmDelete()}
         onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
+          if (!open) {
+            setPendingDelete(null);
+            setPendingDeleteDetached(false);
+          }
         }}
       />
     </CollapsibleSection>

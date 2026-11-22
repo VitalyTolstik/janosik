@@ -67,7 +67,7 @@ describe("ApiClient — per-board export + Recently deleted", () => {
           JSON.stringify(
             init?.method === "POST"
               ? { status: "ok" }
-              : { retentionDays: 30, items: [], truncated: false },
+              : { retentionDays: 30, limit: 200, items: [], truncated: false },
           ),
           {
             status: 200,
@@ -79,6 +79,7 @@ describe("ApiClient — per-board export + Recently deleted", () => {
 
     await expect(client.listDeleted("b-1")).resolves.toEqual({
       retentionDays: 30,
+      limit: 200,
       items: [],
       truncated: false,
     });

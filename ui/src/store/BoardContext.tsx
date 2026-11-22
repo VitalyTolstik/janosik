@@ -1307,11 +1307,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         return serializeExport([target]);
       }
       const boardEpoch = boardMutationsRef.current.epoch;
+      const failures = sync.failureCount;
+      // Wait for the queue instead of refusing an export started right after
+      // an edit; the post-drain checks below still require a stable board.
+      await sync.drain();
       if (boardMutationsRef.current.pending > 0) {
         throw new Error("Board changes are still being saved");
       }
-      const failures = sync.failureCount;
-      await sync.drain();
       if (sync.failureCount !== failures) {
         throw new Error("A board change could not be saved");
       }
@@ -1325,7 +1327,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         boardMutationsRef.current.epoch !== boardEpoch ||
         sync.failureCount !== failures ||
         sync.isBusy(boardId) ||
-        (seqsRef.current.get(boardId) ?? 0) < seq
+        (seqsRef.current.get(boardId) ?? 0) !== seq
       ) {
         throw new Error("Board changed while preparing the export");
       }

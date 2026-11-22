@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   ArchiveRestore,
   FileText,
@@ -8,10 +14,11 @@ import {
   Rows3,
   StickyNote,
 } from "lucide-react";
-import type {
-  DeletedBoardItemDto,
-  DeletedBoardItemsDto,
-  DeletedItemType,
+import {
+  LIMITS,
+  type DeletedBoardItemDto,
+  type DeletedBoardItemsDto,
+  type DeletedItemType,
 } from "@janosik/shared";
 import { ApiError, api } from "@/api/client";
 import { useToast } from "@/components/Toast";
@@ -44,6 +51,8 @@ interface RecentlyDeletedDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   boardId?: string;
+  /** Data & backups trigger, so closing returns focus there. */
+  returnFocusRef?: RefObject<HTMLElement>;
 }
 
 /**
@@ -59,23 +68,51 @@ export function RecentlyDeletedDialog({
   open,
   onOpenChange,
   boardId,
+  returnFocusRef,
 }: RecentlyDeletedDialogProps) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] flex-col sm:max-w-2xl">
+      <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] flex-col sm:max-w-2xl"
+        // Focus the title ourselves so an immediate Escape reaches the
+        // dialog, and return focus to the Data menu trigger on close (the
+        // Radix menu item that opened us has unmounted by then).
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          titleRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         {boardId === undefined ? null : (
-          <RecentlyDeletedContent boardId={boardId} />
+          <RecentlyDeletedContent boardId={boardId} titleRef={titleRef} />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function RecentlyDeletedContent({ boardId }: { boardId: string }) {
+function RecentlyDeletedContent({
+  boardId,
+  titleRef,
+}: {
+  boardId: string;
+  titleRef: RefObject<HTMLHeadingElement>;
+}) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const toast = useToast();
   const aliveRef = useRef(true);
+  const listRef = useRef<HTMLDivElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  // "first"/"title" or a `type:id` key to focus once the refetched list has
+  // rendered. Restore and retry are async, so focus is applied after data.
+  const pendingFocusRef = useRef<string | null>(null);
   const [data, setData] = useState<DeletedBoardItemsDto | null>(null);
   const [error, setError] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -93,6 +130,7 @@ function RecentlyDeletedContent({ boardId }: { boardId: string }) {
 
   const retry = () => {
     setError(false);
+    pendingFocusRef.current = "first";
     void load();
   };
 
@@ -105,39 +143,71 @@ function RecentlyDeletedContent({ boardId }: { boardId: string }) {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (data === null) return;
+    const pending = pendingFocusRef.current;
+    if (pending === null) return;
+    pendingFocusRef.current = null;
+    const root = listRef.current;
+    let target: HTMLButtonElement | null = null;
+    if (root !== null && pending !== "title") {
+      const buttons = Array.from(
+        root.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="deleted-restore"]',
+        ),
+      );
+      target =
+        pending === "first"
+          ? (buttons[0] ?? null)
+          : (buttons.find((button) => button.dataset.deletedKey === pending) ??
+            null);
+    }
+    (target ?? titleRef.current)?.focus();
+  }, [data, titleRef]);
+
+  useEffect(() => {
+    if (error) retryRef.current?.focus();
+  }, [error]);
+
   const restore = async (item: DeletedBoardItemDto) => {
     const key = `${item.type}:${item.id}`;
+    const all = TYPE_ORDER.flatMap((type) =>
+      (data?.items ?? []).filter((row) => row.type === type),
+    );
+    const index = all.findIndex(
+      (row) => row.type === item.type && row.id === item.id,
+    );
+    const next = all[index + 1] ?? all[index - 1];
+    const nextFocus = next === undefined ? "title" : `${next.type}:${next.id}`;
     setBusyKey(key);
     try {
       await api.restoreDeleted(boardId, item.type, item.id);
       if (!aliveRef.current) return;
-      setData((current) =>
-        current === null
-          ? current
-          : {
-              ...current,
-              items: current.items.filter(
-                (row) => !(row.type === item.type && row.id === item.id),
-              ),
-            },
-      );
       toast.success(t("deleted.restored"));
+      // Refetch, so a restored comment/file can surface newly eligible rows
+      // instead of only removing the restored one locally.
+      pendingFocusRef.current = nextFocus;
+      await load();
     } catch (cause) {
       if (!aliveRef.current) return;
-      if (cause instanceof ApiError && cause.status === 410) {
-        setData((current) =>
-          current === null
-            ? current
-            : {
-                ...current,
-                items: current.items.filter(
-                  (row) => !(row.type === item.type && row.id === item.id),
-                ),
-              },
+      if (
+        cause instanceof ApiError &&
+        (cause.status === 410 || cause.status === 404)
+      ) {
+        toast.error(
+          t(cause.status === 410 ? "deleted.expired" : "deleted.stale"),
         );
-        toast.error(t("deleted.expired"));
+        pendingFocusRef.current = nextFocus;
+        await load();
       } else if (cause instanceof ApiError && cause.code === "column_deleted") {
         toast.error(t("deleted.restoreColumnFirst"));
+      } else if (
+        cause instanceof ApiError &&
+        cause.code === "attachment_limit"
+      ) {
+        toast.error(
+          t("deleted.attachmentLimit", { limit: LIMITS.attachmentsPerCard }),
+        );
       } else {
         toast.error(t("deleted.restoreError"));
       }
@@ -154,24 +224,43 @@ function RecentlyDeletedContent({ boardId }: { boardId: string }) {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{t("deleted.title")}</DialogTitle>
+        <DialogTitle
+          ref={titleRef}
+          tabIndex={-1}
+          className="focus:outline-none"
+        >
+          {t("deleted.title")}
+        </DialogTitle>
         <DialogDescription>
-          {data === null
-            ? t("deleted.loading")
-            : t("deleted.description", { days: data.retentionDays })}
+          {error
+            ? t("deleted.unavailable")
+            : data === null
+              ? t("deleted.loading")
+              : t("deleted.description", { days: data.retentionDays })}
         </DialogDescription>
       </DialogHeader>
 
+      <span role="status" aria-live="polite" className="sr-only">
+        {busyKey === null ? "" : t("deleted.restoring")}
+      </span>
+
       <div
+        ref={listRef}
         className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6"
         data-testid="deleted-list"
+        aria-busy={data === null || busyKey !== null}
       >
         {error ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-sm text-muted-foreground">
               {t("deleted.loadError")}
             </p>
-            <Button variant="outline" className="max-lg:h-11" onClick={retry}>
+            <Button
+              ref={retryRef}
+              variant="outline"
+              className="max-lg:h-11"
+              onClick={retry}
+            >
               <RotateCcw className="h-4 w-4" />
               {t("deleted.retry")}
             </Button>
@@ -232,9 +321,11 @@ function RecentlyDeletedContent({ boardId }: { boardId: string }) {
                             size="sm"
                             className="max-lg:h-11 shrink-0"
                             data-testid="deleted-restore"
+                            data-deleted-key={key}
                             aria-label={t("deleted.restoreItem", {
                               title: item.title || t("deleted.untitled"),
                             })}
+                            aria-busy={busyKey === key}
                             disabled={busyKey !== null}
                             onClick={() => void restore(item)}
                           >
@@ -254,7 +345,7 @@ function RecentlyDeletedContent({ boardId }: { boardId: string }) {
             })}
             {data.truncated ? (
               <p className="px-1 py-2 text-xs text-muted-foreground">
-                {t("deleted.truncated")}
+                {t("deleted.truncated", { limit: data.limit })}
               </p>
             ) : null}
           </>
@@ -271,19 +362,28 @@ function rowMeta(
   hour12: boolean,
 ): string {
   const parts = [
-    item.cardTitle !== undefined
-      ? t("deleted.inCard", { title: item.cardTitle })
-      : null,
+    item.columnTitle !== undefined
+      ? t("deleted.inColumn", { title: item.columnTitle })
+      : item.cardTitle !== undefined
+        ? t("deleted.inCard", { title: item.cardTitle })
+        : null,
     item.authorName ? t("deleted.byAuthor", { name: item.authorName }) : null,
-    item.sizeBytes !== undefined ? formatSize(item.sizeBytes) : null,
+    item.sizeBytes !== undefined ? formatSize(item.sizeBytes, t) : null,
     t("deleted.deletedAt", { date: formatDate(item.deletedAt, lang, hour12) }),
   ].filter((part): part is string => part !== null);
   return parts.join(" · ");
 }
 
-function formatSize(bytes: number): string {
+function formatSize(
+  bytes: number,
+  t: (key: MessageKey, params?: Record<string, string | number>) => string,
+): string {
   if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return t("deleted.sizeMb", {
+      value: (bytes / (1024 * 1024)).toFixed(1),
+    });
   }
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return t("deleted.sizeKb", {
+    value: Math.max(1, Math.round(bytes / 1024)),
+  });
 }

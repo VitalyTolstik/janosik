@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import {
   act,
   fireEvent,
@@ -55,9 +55,17 @@ function seedBoard(): Board {
 }
 
 function Probe() {
-  const { board, boards, pendingBoardCount, syncStatus, canUndo, canRedo } =
-    useBoard();
+  const {
+    board,
+    boards,
+    pendingBoardCount,
+    syncStatus,
+    canUndo,
+    canRedo,
+    exportBoard,
+  } = useBoard();
   const actions = useBoardActions();
+  const [exported, setExported] = useState("");
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const presence = useBoardPresence(board?.id);
@@ -114,6 +122,14 @@ function Probe() {
         data-testid="edit"
         onClick={() => actions.updateCard("c-1", { title: "Mine" })}
       />
+      <button
+        type="button"
+        data-testid="export-board"
+        onClick={() => {
+          void exportBoard("b-1").then(setExported);
+        }}
+      />
+      <div data-testid="exported">{exported}</div>
       <button
         type="button"
         data-testid="quiet-edit"
@@ -247,6 +263,31 @@ describe("BoardProvider in server mode", () => {
     const paths = server.requests.map((r) => `${r.method} ${r.path}`);
     expect(paths).toContain("GET /api/v1/boards");
     expect(paths).toContain("GET /api/v1/boards/b-1");
+  });
+
+  it("exports one board after the pending command queue drains", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+
+    fireEvent.click(screen.getByTestId("edit"));
+    fireEvent.click(screen.getByTestId("export-board"));
+    await waitFor(() =>
+      expect(screen.getByTestId("exported").textContent).toContain("janosik"),
+    );
+
+    const payload = JSON.parse(
+      screen.getByTestId("exported").textContent ?? "{}",
+    ) as { app: string; boards: Board[] };
+    expect(payload.app).toBe("janosik");
+    expect(payload.boards).toHaveLength(1);
+    expect(payload.boards[0]?.cards["c-1"]?.title).toBe("Mine");
+    const paths = server.requests.map((r) => `${r.method} ${r.path}`);
+    expect(paths.indexOf("POST /api/v1/boards/b-1/commands")).toBeLessThan(
+      paths.indexOf("GET /api/v1/boards/b-1/export"),
+    );
   });
 
   it("applies a command optimistically and stores it on the server", async () => {

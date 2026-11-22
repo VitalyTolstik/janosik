@@ -79,7 +79,14 @@ export class DeletedItemsService {
         take,
       }),
       this.prisma.column.findMany({
-        where: { boardId, deletedAt: { gte: cutoff } },
+        where: {
+          boardId,
+          deletedAt: { gte: cutoff },
+          // The command writer parks a restored archived card in an internal
+          // `orphan:<board>` column. It is not board content and must never be
+          // offered as a restorable column.
+          NOT: { id: { startsWith: "orphan:" } },
+        },
         select: { id: true, title: true, deletedAt: true },
         orderBy: { deletedAt: "desc" },
         take,
@@ -130,8 +137,7 @@ export class DeletedItemsService {
         title: row.title,
         deletedAt: row.deletedAt!.getTime(),
         purgeAt: row.deletedAt!.getTime() + retentionDays * DAY_MS,
-        cardId: row.id,
-        cardTitle: row.title,
+        columnTitle: row.column.title,
       })),
       ...columns.map((row) => ({
         type: "columns" as const,
@@ -166,6 +172,7 @@ export class DeletedItemsService {
 
     return {
       retentionDays,
+      limit: DELETED_PAGE_SIZE,
       items: items.slice(0, DELETED_PAGE_SIZE),
       truncated: items.length > DELETED_PAGE_SIZE,
     };
@@ -214,9 +221,12 @@ export class DeletedItemsService {
         where: { id: itemId, column: { boardId } },
         select: { deletedAt: true, column: { select: { deletedAt: true } } },
       });
-      if (!card || card.deletedAt === null) {
+      if (!card) {
         throw new NotFoundException("Card not found in Recently deleted");
       }
+      // A repeated restore (lost response, double click) is a successful
+      // no-op rather than a 404: the caller's intent is already satisfied.
+      if (card.deletedAt === null) return { status: "ok" };
       if (card.deletedAt < cutoff) throw retentionExpired("card");
       if (card.column.deletedAt !== null) {
         throw new ConflictException({
@@ -246,13 +256,17 @@ export class DeletedItemsService {
       return { status: "ok" };
     }
 
+    if (itemId.startsWith("orphan:")) {
+      throw new NotFoundException("Column not found in Recently deleted");
+    }
     const column = await this.prisma.column.findFirst({
       where: { id: itemId, boardId },
       select: { deletedAt: true },
     });
-    if (!column || column.deletedAt === null) {
+    if (!column) {
       throw new NotFoundException("Column not found in Recently deleted");
     }
+    if (column.deletedAt === null) return { status: "ok" };
     if (column.deletedAt < cutoff) throw retentionExpired("column");
     const snapshot = await loadColumnRestore(this.prisma, itemId);
     if (!snapshot) throw new NotFoundException("Column not found");

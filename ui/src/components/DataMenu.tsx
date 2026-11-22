@@ -4,6 +4,7 @@ import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   Archive,
   Download,
+  FileDown,
   HardDrive,
   HardDriveDownload,
   Undo2,
@@ -54,7 +55,8 @@ export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const location = useLocation();
-  const { boards, board, importBoards, exportBoards, exportBoard } = useBoard();
+  const { boards, board, roleOf, importBoards, exportBoards, exportBoard } =
+    useBoard();
   // The data menu acts on the board in the URL, not on "the active board":
   // an archived board is only reachable through a `?card=` deep link, and its
   // archive must not silently become the active board's archive.
@@ -77,7 +79,9 @@ export function DataMenu() {
   // export/import; the local "save a copy" / automatic-backup browser is a
   // localStorage-only safety net and must not imply server backups.
   const serverMode = isApiEnabled();
+  const menuRole = menuBoard === undefined ? undefined : roleOf(menuBoard.id);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const dataTriggerRef = useRef<HTMLButtonElement>(null);
   const [backupCount, setBackupCount] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -213,6 +217,7 @@ export function DataMenu() {
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button
+                ref={dataTriggerRef}
                 variant="ghost"
                 size="icon"
                 aria-label={t("data.tooltip")}
@@ -229,30 +234,46 @@ export function DataMenu() {
         <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuLabel>{t("data.tooltip")}</DropdownMenuLabel>
           <DropdownMenuItem
+            className="max-lg:h-11"
             data-testid="data-export-board"
             disabled={menuBoard === undefined}
+            title={
+              menuBoard === undefined
+                ? t("data.exportBoardDisabled")
+                : undefined
+            }
             onClick={() => void handleExportBoard()}
           >
-            <Download className="h-4 w-4" />
+            <FileDown className="h-4 w-4" />
             {t("data.exportBoard")}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void handleExport()}>
+          <DropdownMenuItem
+            className="max-lg:h-11"
+            onClick={() => void handleExport()}
+          >
             <Download className="h-4 w-4" />
             {t("data.export")}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => inputRef.current?.click()}>
+          <DropdownMenuItem
+            className="max-lg:h-11"
+            onSelect={() => inputRef.current?.click()}
+          >
             <Upload className="h-4 w-4" />
             {t("data.import")}
           </DropdownMenuItem>
           {!serverMode ? (
             <>
-              <DropdownMenuItem onClick={handleBackupNow}>
+              <DropdownMenuItem
+                className="max-lg:h-11"
+                onClick={handleBackupNow}
+              >
                 <HardDriveDownload className="h-4 w-4" />
                 {t("data.backupNow")}
               </DropdownMenuItem>
             </>
           ) : null}
           <DropdownMenuItem
+            className="max-lg:h-11"
             data-testid="data-archive"
             onClick={() => setArchiveOpen(true)}
           >
@@ -261,10 +282,16 @@ export function DataMenu() {
               ? `${t("data.archiveTitle")} · ${archivedCount}`
               : t("data.archiveTitle")}
           </DropdownMenuItem>
-          {serverMode ? (
+          {serverMode && menuRole !== "VIEWER" ? (
             <DropdownMenuItem
+              className="max-lg:h-11"
               data-testid="data-deleted"
-              disabled={menuBoard === undefined}
+              disabled={menuBoard === undefined || menuRole === undefined}
+              title={
+                menuBoard === undefined || menuRole === undefined
+                  ? t("data.exportBoardDisabled")
+                  : undefined
+              }
               onClick={() => setDeletedOpen(true)}
             >
               <Undo2 className="h-4 w-4" />
@@ -272,6 +299,7 @@ export function DataMenu() {
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem
+            className="max-lg:h-11"
             data-testid="data-workflow-rules"
             onClick={() => setRulesOpen(true)}
           >
@@ -280,6 +308,7 @@ export function DataMenu() {
           </DropdownMenuItem>
           {!serverMode ? (
             <DropdownMenuItem
+              className="max-lg:h-11"
               data-testid="data-backups"
               onClick={() => setBackupsOpen(true)}
             >
@@ -319,6 +348,7 @@ export function DataMenu() {
         open={deletedOpen && menuBoard !== undefined}
         onOpenChange={setDeletedOpen}
         boardId={menuBoard?.id}
+        returnFocusRef={dataTriggerRef}
       />
       {!serverMode ? (
         <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
