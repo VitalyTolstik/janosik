@@ -1,10 +1,40 @@
-import { test, expect } from "@/fixtures/board.js";
+import { test, expect, type BoardFixture } from "@/fixtures/board.js";
 import {
   cardDialog,
   closeCardDialog,
   descriptionEditor,
   openCard,
 } from "@/helpers/history.js";
+
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8//8/AwAFAgEAmmHRGwAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/** Upload named description files and remove their references again. */
+async function seedDetachedFiles(
+  board: BoardFixture,
+  cardId: string,
+  names: string[],
+): Promise<void> {
+  const references: string[] = [];
+  for (const name of names) {
+    const uploaded = await board.api.post(
+      `/api/v1/cards/${cardId}/attachments?description=1`,
+      { multipart: { file: { name, mimeType: "image/png", buffer: PNG } } },
+    );
+    const body = await uploaded.text();
+    expect(uploaded.status(), body).toBe(201);
+    const { id } = JSON.parse(body) as { id: string };
+    references.push(`![${name}](/api/v1/attachments/${id}/content)`);
+  }
+  await board.command({
+    type: "UPDATE_CARD",
+    cardId,
+    description: references.join("\n\n"),
+  });
+  await board.command({ type: "UPDATE_CARD", cardId, description: "" });
+}
 
 /**
  * G-13: a file removed from the description can be restored after a reload,
@@ -91,4 +121,74 @@ test("restores a removed description image after reload and renders it", async (
     "restored.png",
   );
   await expect(dialog.getByTestId("card-detached-attachments")).toHaveCount(0);
+});
+
+test("hands focus to the surviving row after a keyboard restore", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Files");
+  const cardId = await board.card(column, "Focus detached restore");
+  await seedDetachedFiles(board, cardId, ["first.png", "second.png"]);
+  await board.open(page);
+  await openCard(page, "Focus detached restore");
+  const group = cardDialog(page).getByTestId("card-detached-attachments");
+  await group.locator("summary").click();
+  const rows = group.getByTestId("card-detached-attachment-row");
+  await expect(rows).toHaveCount(2);
+
+  // Restore the second row from the keyboard. Chrome moves focus to the
+  // dialog container when the row unmounts; the first row's restore button
+  // must still receive focus.
+  await rows.nth(1).getByTestId("card-attachment-restore").focus();
+  await page.keyboard.press("Enter");
+  await expect(rows).toHaveCount(1);
+  await expect(
+    rows.nth(0).getByTestId("card-attachment-restore"),
+  ).toBeFocused();
+});
+
+test("clamps a long detached filename to two lines at 390 and 768", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Files");
+  const cardId = await board.card(column, "Long detached filename");
+  const longName =
+    "this-is-a-very-long-attachment-filename-that-must-clamp-to-two-lines-on-mobile.png";
+  await seedDetachedFiles(board, cardId, [longName]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await board.open(page);
+  await openCard(page, "Long detached filename");
+  const group = cardDialog(page).getByTestId("card-detached-attachments");
+  await group.locator("summary").click();
+  const name = group.getByTestId("card-detached-file-name");
+  await expect(name).toBeVisible();
+
+  const measured = async () => {
+    expect(
+      await name.evaluate((element) =>
+        getComputedStyle(element).getPropertyValue("-webkit-line-clamp"),
+      ),
+    ).toBe("2");
+    return name.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const lineHeight = Number.parseFloat(style.lineHeight) || 16;
+      return {
+        display: style.display,
+        height: element.getBoundingClientRect().height,
+        lineHeight,
+      };
+    });
+  };
+
+  const narrow = await measured();
+  expect(narrow.display).toBe("-webkit-box");
+  expect(narrow.height).toBeLessThanOrEqual(narrow.lineHeight * 2 + 1);
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await expect(name).toBeVisible();
+  const tablet = await measured();
+  expect(tablet.display).toBe("-webkit-box");
+  expect(tablet.height).toBeLessThanOrEqual(tablet.lineHeight * 2 + 1);
 });

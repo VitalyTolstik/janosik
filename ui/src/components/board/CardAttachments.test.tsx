@@ -480,6 +480,8 @@ describe("CardAttachments", () => {
       "max-lg:w-full",
     );
     expect(screen.getByText("spec.pdf")).toHaveClass("line-clamp-2");
+    expect(screen.getByText("spec.pdf")).not.toHaveClass("block");
+    expect(group.querySelector(".sr-only")).toHaveTextContent("File");
     expect(group.querySelector("summary")).toHaveClass("min-h-11");
     // Read-only means no restore and no delete.
     expect(screen.queryByTestId("card-attachment-restore")).toBeNull();
@@ -649,7 +651,7 @@ describe("CardAttachments", () => {
     );
   });
 
-  it("moves focus to the bin summary when the second row is restored", async () => {
+  it("moves focus to the previous row when the second row is restored", async () => {
     const user = userEvent.setup();
     const first = attachment({ id: "att-1", fileName: "first.pdf" });
     const second = attachment({ id: "att-2", fileName: "second.pdf" });
@@ -668,7 +670,11 @@ describe("CardAttachments", () => {
       expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
     );
     await waitFor(() =>
-      expect(document.activeElement).toBe(group.querySelector("summary")),
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore first.pdf to description",
+        }),
+      ),
     );
   });
 

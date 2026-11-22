@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
-import { formatDateOnly, useI18n } from "@/i18n";
+import { formatDateOnly, useI18n, type MessageKey } from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { downloadBlob } from "@/utils/download";
@@ -57,6 +57,23 @@ function mimeIcon(mimeType: string) {
     return FileText;
   }
   return FileIcon;
+}
+
+/** Screen-reader label for the type glyph (the glyph itself is decorative). */
+function mimeLabelKey(mimeType: string): MessageKey {
+  if (mimeType.startsWith("image/")) return "card.attachments.typeImage";
+  if (mimeType.startsWith("video/")) return "card.attachments.typeVideo";
+  if (mimeType.startsWith("audio/")) return "card.attachments.typeAudio";
+  if (/zip|compressed|tar/.test(mimeType)) {
+    return "card.attachments.typeArchive";
+  }
+  if (/sheet|excel|csv/.test(mimeType)) {
+    return "card.attachments.typeSpreadsheet";
+  }
+  if (mimeType.startsWith("text/") || mimeType === "application/json") {
+    return "card.attachments.typeText";
+  }
+  return "card.attachments.typeFile";
 }
 
 /**
@@ -91,10 +108,15 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
 
   if (!isImage) {
     const Icon = mimeIcon(attachment.mimeType);
-    return createElement(Icon, {
-      className: "h-4 w-4 shrink-0 text-muted-foreground",
-      "aria-hidden": true,
-    });
+    return (
+      <>
+        {createElement(Icon, {
+          className: "h-4 w-4 shrink-0 text-muted-foreground",
+          "aria-hidden": true,
+        })}
+        <span className="sr-only">{t(mimeLabelKey(attachment.mimeType))}</span>
+      </>
+    );
   }
   if (url === null) {
     return (
@@ -108,11 +130,14 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
     );
   }
   return (
-    <img
-      src={url}
-      alt={attachment.fileName}
-      className="h-6 w-6 shrink-0 rounded border border-border object-cover"
-    />
+    <>
+      <img
+        src={url}
+        alt={attachment.fileName}
+        className="h-6 w-6 shrink-0 rounded border border-border object-cover"
+      />
+      <span className="sr-only">{t("card.attachments.typeImage")}</span>
+    </>
   );
 }
 
@@ -120,6 +145,16 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
 export type RestoreAttachmentOutcome =
   | { ok: true; alreadyReferenced?: true }
   | { ok: false; reason: "conflict" | "limit" | "error" | "stale" };
+
+/** Where focus came from and where it may go after a detached-row action. */
+interface BinFocusTarget {
+  section: HTMLElement | null;
+  row: HTMLElement | null;
+  nextRow: HTMLElement | null;
+  prevRow: HTMLElement | null;
+  /** The acted-on row owned focus when the action started. */
+  hadFocus: boolean;
+}
 
 interface CardAttachmentsProps {
   cardId: string;
@@ -211,30 +246,32 @@ export function CardAttachments({
   useLayoutEffect(() => {
     onRestoreRef.current = onRestoreToDescription;
   }, [onRestoreToDescription]);
-  const pendingDeleteFocusRef = useRef<{
-    row: HTMLElement | null;
-    nextRow: HTMLElement | null;
-    section: HTMLElement | null;
-  } | null>(null);
+  const pendingDeleteFocusRef = useRef<BinFocusTarget | null>(null);
 
   /**
-   * After an action, hand focus on only if it was in the affected row and the
-   * user has not moved it elsewhere meanwhile. Prefer the next sibling row's
-   * restore action, then the bin summary, then the section header.
+   * After an action, hand focus on only if the acted-on row owned focus when
+   * the action started. Chrome moves focus to the dialog container when the
+   * row unmounts, so that fallback counts as "lost", not as a user move.
+   * Prefer the next sibling row's restore action, then the previous sibling,
+   * then the bin summary, then the section header.
    */
-  const focusAfterBinChange = (
-    section: HTMLElement | null,
-    row: HTMLElement | null,
-    nextRow: HTMLElement | null,
-  ) => {
-    if (row === null) return;
+  const focusAfterBinChange = (target: BinFocusTarget) => {
+    if (target.row === null || !target.hadFocus) return;
     window.requestAnimationFrame(() => {
       if (!aliveRef.current) return;
       const active = document.activeElement;
+      const row = target.row!;
+      // Chrome focuses the dialog container (or a Radix focus guard) after
+      // the focused row unmounts.
+      const dialogFallback =
+        active instanceof HTMLElement &&
+        (active.getAttribute("role") === "dialog" ||
+          active.hasAttribute("data-radix-focus-guard"));
       // A real control outside the row owns focus: don't steal it.
       const userMoved =
         active instanceof HTMLElement &&
         active !== document.body &&
+        !dialogFallback &&
         !row.contains(active);
       if (userMoved) return;
       if (row.isConnected) {
@@ -243,22 +280,22 @@ export function CardAttachments({
           ?.focus();
         return;
       }
-      const nextRestore =
-        nextRow?.isConnected === true
-          ? nextRow.querySelector<HTMLElement>(
-              '[data-testid="card-attachment-restore"]',
-            )
-          : null;
-      if (nextRestore) {
-        nextRestore.focus();
-        return;
+      for (const sibling of [target.nextRow, target.prevRow]) {
+        if (sibling?.isConnected !== true) continue;
+        const restore = sibling.querySelector<HTMLElement>(
+          '[data-testid="card-attachment-restore"]',
+        );
+        if (restore) {
+          restore.focus();
+          return;
+        }
       }
-      const summary = section?.querySelector<HTMLElement>("summary");
+      const summary = target.section?.querySelector<HTMLElement>("summary");
       if (summary) {
         summary.focus();
         if (document.activeElement === summary) return;
       }
-      section
+      target.section
         ?.querySelector<HTMLElement>('[data-testid="card-attachments-toggle"]')
         ?.focus();
     });
@@ -451,10 +488,26 @@ export function CardAttachments({
         '[data-testid="card-detached-attachment-row"]',
       ) ?? null;
     const nextRow = (row?.nextElementSibling as HTMLElement | null) ?? null;
+    const prevRow = (row?.previousElementSibling as HTMLElement | null) ?? null;
     const section =
       row?.closest("section") ??
       detachedRef.current?.closest("section") ??
       null;
+    // Capture focus ownership before the row or its disabled button can move
+    // it: Chrome falls back to the dialog container, not <body>.
+    const activeAtStart = document.activeElement;
+    const hadFocus =
+      row !== null &&
+      (row.contains(activeAtStart) ||
+        activeAtStart === trigger ||
+        activeAtStart === document.body);
+    const focusTarget: BinFocusTarget = {
+      section,
+      row,
+      nextRow,
+      prevRow,
+      hadFocus,
+    };
     const targetCardId = cardId;
     const stillCurrent = () =>
       aliveRef.current && cardIdRef.current === targetCardId;
@@ -474,7 +527,7 @@ export function CardAttachments({
         await refreshNewest();
         if (!stillCurrent()) return;
         toast.error(t("card.attachments.restoreUnavailable"));
-        focusAfterBinChange(section, row, nextRow);
+        focusAfterBinChange(focusTarget);
         return;
       }
       const outcome = await latest(attachment);
@@ -495,14 +548,14 @@ export function CardAttachments({
         // both lists so the bin and the normal list match the server again.
         await refreshNewest();
         if (!stillCurrent()) return;
-        focusAfterBinChange(section, row, nextRow);
+        focusAfterBinChange(focusTarget);
         return;
       }
       if (outcome.alreadyReferenced === true) {
         toast.info(t("card.attachments.alreadyReferenced"));
         await refreshNewest();
         if (!stillCurrent()) return;
-        focusAfterBinChange(section, row, nextRow);
+        focusAfterBinChange(focusTarget);
         return;
       }
       setDetachedItems((prev) =>
@@ -518,7 +571,7 @@ export function CardAttachments({
       toast.success(
         t("card.attachments.restored", { name: attachment.fileName }),
       );
-      focusAfterBinChange(section, row, nextRow);
+      focusAfterBinChange(focusTarget);
     } catch (error) {
       if (!stillCurrent()) return;
       await refreshNewest();
@@ -531,7 +584,7 @@ export function CardAttachments({
       } else {
         toast.error(t("card.attachments.restoreError"));
       }
-      focusAfterBinChange(section, row, nextRow);
+      focusAfterBinChange(focusTarget);
     } finally {
       // Also clears a stale busy row if the same mounted section was
       // repointed at another card before the answer arrived.
@@ -552,11 +605,7 @@ export function CardAttachments({
       setDetachedItems((prev) => prev.filter((item) => item.id !== target.id));
       setTotalCount((prev) => (prev === null ? prev : Math.max(0, prev - 1)));
       if (focusTarget !== null) {
-        focusAfterBinChange(
-          focusTarget.section,
-          focusTarget.row,
-          focusTarget.nextRow,
-        );
+        focusAfterBinChange(focusTarget);
       }
     } catch {
       toast.error(t("card.attachments.deleteError"));
@@ -698,8 +747,9 @@ export function CardAttachments({
                     <AttachmentPreview attachment={attachment} />
                     <div className="min-w-0 flex-1">
                       <span
-                        className="line-clamp-2 block break-words"
+                        className="line-clamp-2 break-words"
                         title={attachment.fileName}
+                        data-testid="card-detached-file-name"
                       >
                         {attachment.fileName}
                       </span>
@@ -785,12 +835,20 @@ export function CardAttachments({
                           const row = event.currentTarget.closest<HTMLElement>(
                             '[data-testid="card-detached-attachment-row"]',
                           );
+                          const activeAtClick = document.activeElement;
                           pendingDeleteFocusRef.current = {
                             row,
                             nextRow:
                               (row?.nextElementSibling as HTMLElement | null) ??
                               null,
+                            prevRow:
+                              (row?.previousElementSibling as HTMLElement | null) ??
+                              null,
                             section: row?.closest("section") ?? null,
+                            hadFocus:
+                              row !== null &&
+                              (row.contains(activeAtClick) ||
+                                activeAtClick === document.body),
                           };
                           setPendingDeleteDetached(true);
                           setPendingDelete(attachment);
