@@ -418,9 +418,9 @@ export function WatchView({ boardId }: WatchViewProps) {
         </span>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(14rem,20rem)_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(14rem,20rem)_1fr]">
         {/* Left rail: column status + who is online. */}
-        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 md:border-b-0 md:border-r">
+        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 lg:border-b-0 lg:border-r">
           <Section title={t("watch.columnList")}>
             <ul data-testid="watch-column-list">
               {board.columns.map((column) => {
@@ -867,16 +867,42 @@ function WatchRow({
   return (
     <li
       data-testid="watch-entry"
-      className="grid grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] divide-x divide-muted-foreground/40 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 [&>*]:px-2 [&>*:first-child]:pl-0 [&>*:last-child]:pr-0"
+      className="max-w-full border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:items-start"
     >
+      {/* Below lg the time/actor pair sits above the sentence: three fixed
+          columns at 768 px used to leave ~78 px for the story. */}
+      <div className="mb-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground lg:hidden">
+        <time
+          className="whitespace-nowrap tabular-nums"
+          dateTime={new Date(entry.at).toISOString()}
+          data-testid="watch-entry-time"
+        >
+          {clock}
+        </time>
+        <span
+          className="flex min-w-0 max-w-full items-center gap-1.5 text-foreground/80"
+          title={actorName}
+          data-testid="watch-entry-actor"
+        >
+          <span className="truncate">{actorName}</span>
+          {entry.actorType === "agent" ? (
+            <span
+              className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              title={t("activity.agent")}
+            >
+              {t("activity.agent")}
+            </span>
+          ) : null}
+        </span>
+      </div>
       <time
-        className="whitespace-nowrap tabular-nums text-muted-foreground"
+        className="hidden whitespace-nowrap pl-0 tabular-nums text-muted-foreground lg:block lg:border-r lg:border-muted-foreground/40 lg:px-2"
         dateTime={new Date(entry.at).toISOString()}
       >
         {clock}
       </time>
       <span
-        className="flex min-w-0 items-center gap-1.5 text-foreground/80"
+        className="hidden min-w-0 items-center gap-1.5 text-foreground/80 lg:flex lg:border-r lg:border-muted-foreground/40 lg:px-2"
         title={actorName}
       >
         <span className="truncate">{actorName}</span>
@@ -890,7 +916,10 @@ function WatchRow({
           </span>
         ) : null}
       </span>
-      <span className="min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere]">
+      <div
+        data-testid="watch-entry-body"
+        className="min-w-0 max-w-full break-words text-foreground/90 [overflow-wrap:anywhere] lg:px-2 lg:pr-0"
+      >
         {card ? (
           <span
             className="text-muted-foreground [overflow-wrap:anywhere]"
@@ -901,7 +930,7 @@ function WatchRow({
         ) : null}
         {t(sentence.key, sentence.params)}
         {details.length > 0 ? (
-          <span className="ml-2 inline-flex flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
+          <span className="ml-2 inline-flex max-w-[calc(100%_-_0.5rem)] min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
             {details.map((detail, index) => (
               <span key={`${detail.label}-${index}`} className="min-w-0">
                 {detail.label ? (
@@ -918,12 +947,12 @@ function WatchRow({
                   </>
                 ) : null}
                 {detail.sides !== undefined ? (
-                  <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1 [overflow-wrap:anywhere]">
-                    <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                  <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1 [overflow-wrap:anywhere]">
+                    <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
                       <DiffSegments segments={detail.sides.left} />
                     </span>
                     <span className="text-muted-foreground">→</span>
-                    <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
                       <DiffSegments segments={detail.sides.right} />
                     </span>
                   </span>
@@ -955,7 +984,7 @@ function WatchRow({
             {t(expanded ? "watch.showLess" : "watch.showMore")}
           </button>
         ) : null}
-      </span>
+      </div>
     </li>
   );
 }

@@ -241,7 +241,7 @@ describe("WatchView (TASK-142)", () => {
     expect(feed).toHaveTextContent("Looks good");
   });
 
-  it("shows deleted comment text as the previous value", async () => {
+  it("renders a deleted comment as a text-free tombstone", async () => {
     hoisted.enabled.value = true;
     hoisted.boardActivity.mockResolvedValue({
       items: [
@@ -252,16 +252,16 @@ describe("WatchView (TASK-142)", () => {
           type: "comment_deleted",
           actorId: "u-1",
           cardId: "card-1",
-          changes: [{ field: "comment", from: "Old text", to: null }],
+          commentId: "comment-1",
         },
       ],
       nextCursor: null,
     });
     renderWatch();
     const entry = await screen.findByTestId("watch-entry");
-    expect(entry).toHaveTextContent("Old text");
-    expect(entry.querySelector(".line-through")).toHaveTextContent("Old text");
-    expect(entry).toHaveTextContent("→—");
+    expect(entry).toHaveTextContent("Deleted a comment");
+    expect(entry.querySelector(".line-through")).toBeNull();
+    expect(entry).not.toHaveTextContent("comment-1");
   });
 
   it("renders a comment edit as a character-level diff and truncates it", async () => {

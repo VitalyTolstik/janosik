@@ -696,6 +696,42 @@ describe("BoardProvider realtime (SSE, TASK-30)", () => {
     );
   });
 
+  it("accepts an actor-less master activity frame without stamping attribution", async () => {
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp();
+    await waitReady();
+    await waitStreamOpen(server);
+    expect(screen.getByTestId("attr").textContent).toBe("");
+
+    // TASK-185.2: a master deletion omits `actorId`; even a comment_added
+    // frame without one must not reach `attribution.stamp` with undefined.
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-master",
+        boardId: "b-1",
+        cardId: "c-1",
+        at: Date.now(),
+        kind: "comment_added",
+        commentId: "comment-master",
+      });
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-master-deleted",
+        boardId: "b-1",
+        cardId: "c-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-master",
+      });
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(screen.getByTestId("attr").textContent).toBe("");
+  });
+
   it("catches up the commands missed while the stream was down", async () => {
     const server = new FakeServer([seedBoard()]);
     vi.stubGlobal("fetch", server.handle);
