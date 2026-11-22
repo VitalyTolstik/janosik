@@ -264,6 +264,57 @@ describe("WatchView (TASK-142)", () => {
     expect(entry).toHaveTextContent("→—");
   });
 
+  it("renders a comment edit as a character-level diff and truncates it", async () => {
+    hoisted.enabled.value = true;
+    const before = `${"Long context ".repeat(20)}old ending`;
+    const after = `${"Long context ".repeat(20)}new ending`;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "edit",
+          at: Date.now(),
+          type: "comment_updated",
+          actorId: "u-1",
+          cardId: "card-1",
+          changes: [{ field: "comment", from: before, to: after }],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry.querySelector('[data-diff="removed"]')).toHaveTextContent(
+      "old",
+    );
+    expect(entry.querySelector('[data-diff="added"]')).toHaveTextContent("new");
+    // The feed is a snippet: the full repeated context is not rendered.
+    expect(entry.textContent?.length).toBeLessThan(before.length);
+    expect(entry.querySelector(".whitespace-pre-wrap")).not.toBeNull();
+  });
+
+  it("never falls back to a raw comment id", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "update",
+          at: Date.now(),
+          type: "comment_updated",
+          actorId: "u-1",
+          cardId: "card-1",
+          detail: "comment-raw-id",
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry).not.toHaveTextContent("comment-raw-id");
+    expect(entry).toHaveTextContent("Edited a comment");
+  });
+
   it("does not drop fields when an entry has more than three changes", async () => {
     hoisted.enabled.value = true;
     hoisted.boardActivity.mockResolvedValue({

@@ -1800,4 +1800,67 @@ describe("CardComments", () => {
     expect(await screen.findByText("Edited on page two")).toBeInTheDocument();
     expect(screen.queryByText("Comment 55")).not.toBeInTheDocument();
   });
+
+  it("invalidates by commentId on an actor-less master deletion and closes the preview", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-9", text: "Delete me" }),
+    ]);
+    renderComments(server);
+    await screen.findByText("Delete me");
+    await waitStream(server);
+
+    fireEvent.click(screen.getByTestId("comment-delete"));
+    expect(
+      await screen.findByTestId("comment-delete-preview"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      server.seedComments("card-1", []);
+      // Master moderation: no actor and no legacy detail — only commentId.
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-master",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-9",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete me")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByTestId("comment-delete-preview"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-reads the thread on focus to catch access loss or a remote delete", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-focus", text: "Before focus" }),
+    ]);
+    let denied = false;
+    const handler: FetchHandler = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (denied && url.includes("/cards/card-1/comments")) {
+        return new Response(null, { status: 403 });
+      }
+      return server.handle(input, init);
+    };
+    renderComments(server, false, handler);
+    await screen.findByText("Before focus");
+    await waitStream(server);
+
+    act(() => {
+      denied = true;
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Before focus")).not.toBeInTheDocument(),
+    );
+  });
 });

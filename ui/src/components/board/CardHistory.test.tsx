@@ -378,4 +378,80 @@ describe("CardHistory", () => {
       expect(screen.getAllByTestId("history-entry")).toHaveLength(2),
     );
   });
+
+  it("drops a cached comment diff when a comment is deleted over SSE", async () => {
+    const server = new FakeServer();
+    const commentEntry = {
+      source: "activity" as const,
+      id: "comment-update",
+      at: AT,
+      type: "comment_updated",
+      actorId: "user-2",
+      cardId: "card-1",
+      commentId: "comment-1",
+      changes: [{ field: "comment", from: "Old secret", to: "New secret" }],
+    };
+    server.seedActivity("card-1", [commentEntry]);
+    const live = createBoardLive();
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <BoardLiveProvider live={live}>
+          <TooltipProvider>
+            <CardHistory cardId="card-1" boardId="b-1" updatedAt={1} />
+          </TooltipProvider>
+        </BoardLiveProvider>
+      </I18nProvider>,
+    );
+    expect(await screen.findByTestId("history-diff")).toHaveTextContent(
+      "Old secret",
+    );
+
+    // The server now returns only text-free tombstones, and the master frame
+    // carries no actor — invalidation keys on the typed comment id.
+    server.seedActivity("card-1", [
+      {
+        source: "activity",
+        id: "comment-added",
+        at: AT - 1,
+        type: "comment_added",
+        actorId: "user-2",
+        cardId: "card-1",
+        commentId: "comment-1",
+      },
+      {
+        source: "activity",
+        id: "comment-deleted",
+        at: AT + 1,
+        type: "comment_deleted",
+        actorId: "user-2",
+        cardId: "card-1",
+        commentId: "comment-1",
+      },
+    ]);
+    const seen: string[] = [];
+    const off = live.activity.subscribe((event) =>
+      seen.push(event.type === "activity" ? event.kind : event.type),
+    );
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: AT + 1,
+        kind: "comment_deleted",
+        commentId: "comment-1",
+      });
+    });
+    expect(seen).toEqual(["comment_deleted"]);
+    off();
+    await waitFor(() =>
+      expect(screen.queryByTestId("history-diff")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Old secret")).not.toBeInTheDocument();
+    expect(screen.queryByText("New secret")).not.toBeInTheDocument();
+    expect(screen.getByText("Added a comment")).toBeInTheDocument();
+    expect(screen.getByText("Deleted a comment")).toBeInTheDocument();
+  });
 });

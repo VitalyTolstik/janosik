@@ -1041,7 +1041,7 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     expect(await commentUpdates(created.id)).toHaveLength(0);
   });
 
-  it("serialises PATCH and delete and re-reads the tombstone text under the lock", async () => {
+  it("serialises PATCH and delete and writes a text-free tombstone", async () => {
     const { boardId, cardId } = await boardWithCard(
       "History delete race",
       "hdr",
@@ -1070,7 +1070,8 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       expect(raceRow.text).toBe("Race start");
     }
 
-    // The tombstone snapshot must use the edited body, not the pre-lock read.
+    // The tombstone is text-free (TASK-185.2) and typed by commentId; the
+    // locked re-read is exercised by the PATCH/delete race above.
     const edited = await createComment(cardId, author.token, "Before edit");
     await editComment(edited.id, author.token, { text: "After edit" }).expect(
       200,
@@ -1080,12 +1081,9 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       .set(auth(author.token))
       .expect(200);
     const tombstone = await prisma.activity.findFirstOrThrow({
-      where: {
-        type: "comment_deleted",
-        details: { path: ["commentId"], equals: edited.id },
-      },
+      where: { type: "comment_deleted", commentId: edited.id },
     });
-    expect(tombstone.details).toMatchObject({ text: "After edit" });
+    expect(tombstone.details).toEqual({ commentId: edited.id });
     await server()
       .delete(`/api/v1/comments/${edited.id}`)
       .set(auth(author.token))
