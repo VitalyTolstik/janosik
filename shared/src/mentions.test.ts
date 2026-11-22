@@ -100,12 +100,31 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(
       parseCommentMentions(`- parent\n\n    continuation ${token}`),
     ).toEqual(mentioned);
+    // A parent continuation after a nested child returns to the parent level.
+    expect(
+      parseCommentMentions(
+        `- parent\n\n    - child\n\n    continuation ${token}`,
+      ),
+    ).toEqual(mentioned);
+    expect(
+      parseCommentMentions(
+        `> - parent\n>\n>     - child\n>\n>     continuation ${token}`,
+      ),
+    ).toEqual(mentioned);
     // A normal list item mention stays live.
     expect(parseCommentMentions(`- ${token}`)).toEqual(mentioned);
+    // The separator width moves the item content; a six-space continuation
+    // under `-   parent` is still live.
+    expect(
+      parseCommentMentions(`-   parent\n\n      continuation ${token}`),
+    ).toEqual(mentioned);
     // Code *inside* a list is still code.
     expect(parseCommentMentions(`- parent\n\n      ${token}`)).toEqual([]);
     expect(
       parseCommentMentions(`- parent\n\n    ~~~\n    ${token}\n    ~~~`),
+    ).toEqual([]);
+    expect(
+      parseCommentMentions(`- parent\n\n    \`\`\`\n    ${token}\n    \`\`\``),
     ).toEqual([]);
   });
 
@@ -113,6 +132,11 @@ describe("comment mentions (TASK-177.12)", () => {
     const token = mentionMarkdown("Alice", "user-1");
     expect(parseCommentMentions(`> ~~~\n> ${token}\n> ~~~`)).toEqual([]);
     expect(parseCommentMentions(`> \`\`\`\n> ${token}\n> \`\`\``)).toEqual([]);
+    // A deeper quoted fence line is code content, not a closer.
+    expect(parseCommentMentions(`~~~\n> ~~~\n${token}\n~~~`)).toEqual([]);
+    expect(parseCommentMentions(`> ~~~\n> > ~~~\n> ${token}\n> ~~~`)).toEqual(
+      [],
+    );
   });
 
   it("ignores escaped tokens and keeps a double-escaped link live", () => {

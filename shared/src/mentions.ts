@@ -55,14 +55,26 @@ function maskHtmlComments(chars: string[]): void {
   }
 }
 
-/** Remove repeated blockquote markers so their indented code is visible. */
-function unquoteLine(line: string): string {
-  let current = line;
-  for (;;) {
-    const match = /^ {0,3}> ?/.exec(current);
-    if (match === null) return current;
-    current = current.slice(match[0].length);
+interface UnquotedLine {
+  content: string;
+  /** Number of blockquote containers stripped from the opening line. */
+  depth: number;
+}
+
+/** Remove up to `limit` blockquote markers, preserving the rest verbatim. */
+function removeQuoteMarkers(
+  line: string,
+  limit = Number.POSITIVE_INFINITY,
+): UnquotedLine {
+  let content = line;
+  let depth = 0;
+  while (depth < limit) {
+    const match = /^ {0,3}> ?/.exec(content);
+    if (match === null) break;
+    content = content.slice(match[0].length);
+    depth += 1;
   }
+  return { content, depth };
 }
 
 const LIST_ITEM = /^( *)([-+*]|\d+[.)])(?:[ \t]+|$)/;
@@ -78,14 +90,46 @@ function leadingIndent(line: string): number {
   return width;
 }
 
-/** Strip up to the open list item's content indent from a line. */
+/**
+ * Where the item's content starts: marker indent + marker length + the
+ * separator width (one to four columns, tab-stop aware; five or more spaces
+ * leave the remainder as content and cap at four).
+ */
+function contentIndentAfterMarker(
+  content: string,
+  markerIndent: number,
+  markerLength: number,
+): number {
+  const start = markerIndent + markerLength;
+  let column = start;
+  let index = start;
+  let width = 0;
+  while (index < content.length && width < 4) {
+    const char = content[index];
+    const advance = char === " " ? 1 : char === "\t" ? 4 - (column % 4) : 0;
+    if (advance === 0) break;
+    const used = Math.min(advance, 4 - width);
+    width += used;
+    column += used;
+    index += 1;
+  }
+  return start + (width === 0 ? 1 : width);
+}
+
+/** Strip up to `listIndent` columns, respecting tab stops. */
 function stripListIndent(line: string, listIndent: number | null): string {
   if (listIndent === null) return line;
   let removed = 0;
   let index = 0;
   while (index < line.length && removed < listIndent) {
-    if (line[index] === " ") {
+    const char = line[index];
+    if (char === " ") {
       removed += 1;
+      index += 1;
+    } else if (char === "\t") {
+      const advance = 4 - (removed % 4);
+      if (removed + advance > listIndent) break;
+      removed += advance;
       index += 1;
     } else {
       break;
@@ -97,30 +141,36 @@ function stripListIndent(line: string, listIndent: number | null): string {
 /**
  * TASK-177.12 — code masking for both indented and fenced blocks.
  *
- * A single `listOpen` flag was too coarse: it kept six-space code inside a
- * list live. Track the open item's content indent instead. A marker at up to
- * `contentIndent + 3` is a nested/sibling item (and moves the indent); a
- * non-marker line at `contentIndent + 4` or deeper is code. Fences are
- * detected after stripping blockquote and list indentation and mask through
- * their closing fence.
+ * Track the content indent of every open list item, not one flag: a parent
+ * continuation after a nested child pops back to the parent level instead of
+ * becoming top-level code. A marker at up to `contentIndent + 3` is a nested
+ * or sibling item; a non-marker line at `contentIndent + 4` or deeper is code.
+ * Fences are detected after stripping blockquote and list indentation and
+ * mask through their closing fence.
  */
 function maskCodeBlocks(chars: string[]): void {
   const text = chars.join("");
   let offset = 0;
-  let listIndent: number | null = null;
+  const listIndents: number[] = [];
   let fenceChar: string | null = null;
   let fenceLength = 0;
+  let fenceQuoteDepth = 0;
   while (offset < text.length) {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
     const line = text.slice(offset, newline === -1 ? text.length : newline);
     // Blockquote containers prefix every line with `>`; indentation and
     // fences are judged on the content, while the whole line is masked.
-    const content = unquoteLine(line);
+    const unquoted = removeQuoteMarkers(line);
+    const content = unquoted.content;
     const indent = leadingIndent(content);
-    const fenceContent = stripListIndent(content, listIndent);
+    const currentIndent = listIndents.at(-1) ?? null;
 
     if (fenceChar !== null) {
+      // Inside a fence, strip only the opening container's quote depth:
+      // a deeper `> ~~~` line is code content, not a closer.
+      const fenceLine = removeQuoteMarkers(line, fenceQuoteDepth).content;
+      const fenceContent = stripListIndent(fenceLine, currentIndent);
       const close = FENCE_CLOSE.exec(fenceContent);
       if (
         close !== null &&
@@ -130,6 +180,7 @@ function maskCodeBlocks(chars: string[]): void {
         maskRange(chars, offset, end);
         fenceChar = null;
         fenceLength = 0;
+        fenceQuoteDepth = 0;
       } else {
         maskRange(chars, offset, end);
       }
@@ -142,43 +193,56 @@ function maskCodeBlocks(chars: string[]): void {
     }
 
     const marker = LIST_ITEM.exec(content);
-    const markerIndent = marker === null ? 0 : marker[1]!.length;
-    const markerAllowed =
-      marker !== null &&
-      (listIndent === null
-        ? markerIndent <= 3
-        : markerIndent <= listIndent + 3);
-    if (marker !== null && markerAllowed) {
-      // `marker length + the separating space` is where the item's content
-      // begins; nested list items live within +3 of it.
-      listIndent = markerIndent + marker[2]!.length + 1;
-      offset = end;
-      continue;
+    if (marker !== null) {
+      const markerIndent = marker[1]!.length;
+      while (
+        listIndents.length > 0 &&
+        markerIndent < listIndents[listIndents.length - 1]!
+      ) {
+        listIndents.pop();
+      }
+      const parentIndent = listIndents.at(-1) ?? null;
+      const allowed =
+        parentIndent === null
+          ? markerIndent <= 3
+          : markerIndent <= parentIndent + 3;
+      if (allowed) {
+        listIndents.push(
+          contentIndentAfterMarker(content, markerIndent, marker[2]!.length),
+        );
+        offset = end;
+        continue;
+      }
     }
 
-    if (listIndent !== null && indent < listIndent) {
-      // A genuinely non-indented paragraph closes the list container.
-      listIndent = null;
+    // A non-marker dedent returns to the nearest open parent item.
+    while (
+      listIndents.length > 0 &&
+      indent < listIndents[listIndents.length - 1]!
+    ) {
+      listIndents.pop();
     }
-    if (listIndent !== null && indent >= listIndent + 4) {
+    const levelIndent = listIndents.at(-1) ?? null;
+    if (levelIndent !== null && indent >= levelIndent + 4) {
       maskRange(chars, offset, end);
       offset = end;
       continue;
     }
 
-    const codeLine = stripListIndent(content, listIndent);
+    const codeLine = stripListIndent(content, levelIndent);
     const open = FENCE_OPEN.exec(codeLine);
     // CommonMark: the info string of a backtick fence may not carry a
     // backtick; such a line is a paragraph, not a code fence.
     if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
       fenceChar = open[1]![0]!;
       fenceLength = open[1]!.length;
+      fenceQuoteDepth = unquoted.depth;
       maskRange(chars, offset, end);
       offset = end;
       continue;
     }
 
-    if (listIndent === null && indent >= 4) {
+    if (levelIndent === null && indent >= 4) {
       maskRange(chars, offset, end);
     }
     offset = end;
