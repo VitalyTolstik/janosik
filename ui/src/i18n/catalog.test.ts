@@ -52,3 +52,40 @@ describe("TASK-156 conflict and access announcements", () => {
     }
   });
 });
+
+describe("TASK-185.4 comment history", () => {
+  it("has every card history string in EN and RU", () => {
+    for (const key of [
+      "comment.history.title",
+      "comment.history.description",
+      "comment.history.subtitle",
+      "comment.history.open",
+      "comment.history.listLabel",
+      "comment.history.loading",
+      "comment.history.loadError",
+      "comment.history.retry",
+      "comment.history.empty",
+      "comment.history.showOlder",
+      "comment.history.olderError",
+      "comment.history.end",
+      "comment.history.revision",
+      "comment.history.editorUnavailable",
+      "comment.history.cause.author_edit",
+      "comment.history.cause.attachment_deleted",
+      "comment.history.cause.system",
+      "comment.history.before",
+      "comment.history.after",
+      "comment.history.showSnapshot",
+      "comment.history.hideSnapshot",
+      "comment.history.fullVersion",
+      "comment.history.banner.legacy",
+      "comment.history.banner.generic",
+      "comment.history.stale",
+      "comment.history.refresh",
+    ]) {
+      for (const [locale, catalog] of Object.entries(CATALOGS)) {
+        expect(catalog[key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+});
