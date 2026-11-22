@@ -1011,7 +1011,7 @@ describe("agent control (TASK-166.14)", () => {
     const boardStatus = await screen.findByTestId("board-pause-status");
     expect(boardStatus).toHaveAttribute("data-paused", "false");
 
-    await userEvent.click(screen.getByTestId("board-pause"));
+    await userEvent.click(screen.getByTestId("live-status-pause"));
     expect(await screen.findByTestId("board-pause-dialog")).toBeInTheDocument();
     await userEvent.type(
       screen.getByTestId("board-pause-reason"),
@@ -1026,7 +1026,7 @@ describe("agent control (TASK-166.14)", () => {
       "true",
     );
 
-    await userEvent.click(screen.getByTestId("board-resume"));
+    await userEvent.click(screen.getByTestId("live-status-resume"));
     expect(
       await screen.findByTestId("board-resume-dialog"),
     ).toBeInTheDocument();
@@ -1217,7 +1217,7 @@ describe("agent control (TASK-166.14)", () => {
 
     renderDialog();
     await userEvent.click(screen.getByTestId("agent-pause-tab"));
-    await userEvent.click(await screen.findByTestId("board-pause"));
+    await userEvent.click(await screen.findByTestId("live-status-pause"));
     await userEvent.click(await screen.findByTestId("board-pause-confirm"));
 
     expect(await screen.findByTestId("board-pause-error")).toHaveTextContent(
@@ -1367,6 +1367,68 @@ describe("agent control (TASK-166.14)", () => {
 
     expect(await screen.findByTestId("approval-queue")).toBeInTheDocument();
     expect(search).toHaveValue("");
+  });
+
+  it("keeps a single board pause control when Live has sessions", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    expect(await screen.findByTestId("live-status-card")).toBeInTheDocument();
+    expect(screen.getByTestId("live-status-pause")).toBeInTheDocument();
+    // The footer fallback is only for the empty/error states; showing it
+    // next to the status card duplicated the same board action on phones.
+    expect(screen.queryByTestId("board-pause")).toBeNull();
+    expect(screen.queryByTestId("board-resume")).toBeNull();
+    const footer = screen.getByTestId("board-pause-status");
+    expect(footer).toHaveAttribute("data-live-status", "true");
+    expect(footer).toHaveAttribute("data-admin", "true");
+  });
+
+  it("keeps the member Close in the Live footer beside the status card", async () => {
+    mocks.role = "MEMBER";
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([session()]);
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+
+    expect(await screen.findByTestId("live-status-card")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-live-close")).toBeInTheDocument();
+    expect(screen.getByTestId("board-pause-status")).toHaveAttribute(
+      "data-admin",
+      "false",
+    );
+    expect(screen.queryByTestId("board-pause")).toBeNull();
+  });
+
+  it("explains a paused board in the zero-session Live state", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue([]);
+    vi.spyOn(api, "pauseBoardAgents").mockResolvedValue({
+      scope: "board",
+      boardId: "board-1",
+      paused: true,
+      pausedAt: Date.now(),
+      pausedBy: "user-1",
+      reason: "Release freeze",
+    });
+
+    renderDialog();
+    await userEvent.click(screen.getByTestId("agent-pause-tab"));
+    expect(await screen.findByTestId("agent-live-empty")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("board-pause"));
+    await userEvent.type(
+      screen.getByTestId("board-pause-reason"),
+      "Release freeze",
+    );
+    await userEvent.click(screen.getByTestId("board-pause-confirm"));
+
+    expect(
+      await screen.findByTestId("agent-live-empty-paused"),
+    ).toHaveTextContent("Release freeze");
+    expect(screen.getByTestId("board-pause-status")).toHaveAttribute(
+      "data-paused",
+      "true",
+    );
+    expect(screen.getByTestId("board-resume")).toBeInTheDocument();
   });
 
   it("shows the prototype empty Live state and pause footer", async () => {

@@ -2083,10 +2083,13 @@ paths:
       operationId: updateComment
       summary: Edit a comment
       description: |
-        Author only. Replaces the text and stamps `editedAt`; `kind`,
+        Author only. Replaces the text and/or kind, stamps `editedAt`; a field
+        omitted from the body keeps its value, and an empty body answers `400`.
         `authorId`, attribution and `createdAt` do not change. Another author
         answers `403`, a deleted comment `404`. Inline media removed from the
-        text is soft-deleted under the same transaction.
+        text is soft-deleted under the same transaction. A kind change writes
+        `comment_updated` activity and never re-sends blocker/handoff attention
+        for a comment whose event was already delivered.
       parameters:
         - $ref: "#/components/parameters/AgentSession"
       requestBody:
@@ -6126,12 +6129,17 @@ components:
           pattern: "^[A-Za-z0-9_-]+$"
     UpdateCommentRequest:
       type: object
-      required: [text]
+      description: |
+        At least one of `text` or `kind` is required; an empty body answers
+        `400`. An omitted field keeps its stored value.
+      minProperties: 1
       properties:
         text:
           type: string
           minLength: 1
           maxLength: 10000
+        kind:
+          $ref: "#/components/schemas/CommentKind"
     Attachment:
       type: object
       required:

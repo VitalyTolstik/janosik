@@ -262,11 +262,16 @@ export class CommentsService {
   }
 
   /**
-   * Edit the caller's own comment (TASK-176.2). Author-only, like delete:
-   * the text and `editedAt` change; kind, attribution and the original
-   * `createdAt` stay untouched. Inline media removed from the text is
-   * soft-deleted under the same board lock, and the change lands in the
-   * activity feed / SSE stream as `comment_updated`.
+   * Edit the caller's own comment (TASK-176.2, TASK-177.11). Author-only, like
+   * delete: the text and/or structured kind change and `editedAt` moves;
+   * attribution and the original `createdAt` stay untouched. Inline media
+   * removed from the text is soft-deleted under the same board lock, and the
+   * change lands in the activity feed / SSE stream as `comment_updated`.
+   *
+   * A kind change never re-sends blocker/handoff attention for a comment whose
+   * notification was already delivered: the create path keys attention on
+   * `agent.blocked:<commentId>` / `agent.needs_human:<commentId>`, so the
+   * update path asks the same store before fanning out a first-time event.
    */
   async update(
     commentId: string,
@@ -275,8 +280,28 @@ export class CommentsService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
   ): Promise<CommentDto> {
-    const text = dto.text.trim();
-    if (text.length === 0) {
+    const textProvided = dto.text !== undefined;
+    const kindProvided = dto.kind !== undefined;
+    if (!textProvided && !kindProvided) {
+      throw beforeWrite(
+        new BadRequestException({
+          message: "text or kind is required",
+          field: "text",
+        }),
+      );
+    }
+    if (
+      kindProvided &&
+      !(COMMENT_KINDS as readonly string[]).includes(dto.kind as string)
+    ) {
+      throw beforeWrite(
+        new BadRequestException(
+          `kind must be one of: ${COMMENT_KINDS.join(", ")}`,
+        ),
+      );
+    }
+    const text = textProvided ? dto.text?.trim() : undefined;
+    if (textProvided && (text === undefined || text.length === 0)) {
       throw beforeWrite(
         new BadRequestException({
           message: "text must not be blank",
@@ -292,6 +317,9 @@ export class CommentsService {
           authorId: true,
           cardId: true,
           text: true,
+          kind: true,
+          actorType: true,
+          agentName: true,
           card: { select: { column: { select: { boardId: true } } } },
         },
       }),
@@ -310,6 +338,7 @@ export class CommentsService {
       );
     }
     const boardId = comment.card.column.boardId;
+    const nextText = text ?? comment.text;
 
     const updated = await this.boardWrite.run(
       boardId,
@@ -318,7 +347,11 @@ export class CommentsService {
         // soft-deleted after the pre-read is a 404, never an edit on a tombstone.
         const written = await tx.comment.updateMany({
           where: { id: comment.id, deletedAt: null },
-          data: { text, editedAt: new Date() },
+          data: {
+            ...(textProvided ? { text } : {}),
+            ...(kindProvided ? { kind: dto.kind } : {}),
+            editedAt: new Date(),
+          },
         });
         if (written.count === 0) {
           throw new NotFoundException("Comment not found");
@@ -327,21 +360,28 @@ export class CommentsService {
           where: { id: comment.id },
           include: AUTHOR_INCLUDE,
         });
-        await reconcileDescriptionAttachments(tx, boardId, comment.text, text);
-        // Inline pasted media lives outside `reconcileDescriptionAttachments`
-        // (it tracks description embeds only), so the URLs that disappeared
-        // from this comment are unlinked explicitly — like a delete does for
-        // the whole body.
-        const beforeIds = inlineAttachmentIds(comment.text);
-        const afterIds = inlineAttachmentIds(text);
-        const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
-        await this.unlinkInlineAttachmentIds(
-          tx,
-          boardId,
-          removedIds,
-          userId,
-          attribution,
-        );
+        if (textProvided) {
+          await reconcileDescriptionAttachments(
+            tx,
+            boardId,
+            comment.text,
+            nextText,
+          );
+          // Inline pasted media lives outside `reconcileDescriptionAttachments`
+          // (it tracks description embeds only), so the URLs that disappeared
+          // from this comment are unlinked explicitly — like a delete does for
+          // the whole body.
+          const beforeIds = inlineAttachmentIds(comment.text);
+          const afterIds = inlineAttachmentIds(nextText);
+          const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
+          await this.unlinkInlineAttachmentIds(
+            tx,
+            boardId,
+            removedIds,
+            userId,
+            attribution,
+          );
+        }
         const activity = await tx.activity.create({
           data: {
             boardId,
@@ -352,7 +392,7 @@ export class CommentsService {
             apiTokenId: attribution.apiTokenId,
             agentSessionId: attribution.agentSessionId,
             agentName: attribution.agentName,
-            details: { commentId: comment.id, text },
+            details: { commentId: comment.id, text: nextText },
           },
         });
         return {
@@ -380,6 +420,25 @@ export class CommentsService {
       this.realtime,
       attribution.agentSessionId,
     );
+    // TASK-166.9 + TASK-177.11: type changed to blocker/handoff on an
+    // agent-authored comment. If the original comment already raised the flag,
+    // the dedup store has it and nothing is re-sent; a previously quiet note
+    // gets its first (and only) attention event.
+    if (
+      kindProvided &&
+      (dto.kind === "blocker" || dto.kind === "handoff") &&
+      dto.kind !== comment.kind &&
+      comment.actorType === "agent" &&
+      !(await this.attention.hasCommentAttention(comment.id))
+    ) {
+      await this.attention.notifyCommentAttention({
+        boardId,
+        cardId: comment.cardId,
+        commentId: comment.id,
+        kind: dto.kind,
+        agentName: comment.agentName,
+      });
+    }
     return toCommentDto(updated.comment);
   }
 

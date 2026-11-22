@@ -2369,7 +2369,7 @@ export class AdminService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.boardShare.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: offset,
         take: limit,
         select: {

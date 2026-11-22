@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.11 comment kind edit and filter. An author can now retype a
+  comment's structured kind (note, status, question, blocker, evidence,
+  handoff) in the same inline editor as the text; the change stamps `editedAt`
+  and writes `comment_updated` history, and blocker/handoff attention already
+  sent for that comment is not duplicated. The comments thread also gains
+  `All`/kind filter chips backed by the server's `?kind=` query, with EN/RU
+  copy, accessible pressed state, 44 px touch targets and cursor paging kept
+  inside the selected kind. The PATCH body and the API docs accept `text`
+  and/or `kind`, and an empty body is still a `400`.
+
 - TASK-177.8 small UX batch: pending invitations can be re-roled and given a
   viewer expiry from the members dialog, with past deadlines refused and
   expired invitations flagged; share revocation asks for confirmation and
@@ -109,6 +119,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   board and shows its title, Leave is available from the board switcher at
   mobile widths, focus moves into/out of the confirmation, a refused leave
   refreshes the roster, and a last-admin `409` maps to the admin message.
+
+- TASK-177.5 truthful admin shares list: `/admin/shares` now pages over the
+  server's `total/offset/limit` with the shared 25/50/100 pager and shows the
+  visible window as `N of M`. The label comes from the same response as the
+  rows, so it stays on the last completed page while the next request is
+  pending and never pairs a new offset with the previous rows; an
+  out-of-range page after rows shrink is clamped to the last real page. Each
+  row has an `Expires` column with an `Expired` badge
+  (suppressed for revoked links, which keep their own badge) and an accessible
+  no-expiry dash. Search resets paging, a zero-result search uses the filtered
+  empty state, and the list uses the shared responsive admin table/card layout
+  (including the scrollable panel). The shares query orders by
+  `createdAt desc, id desc` so paging is stable across ties. Component tests
+  cover 101-row paging, a held page request, page-size reset, out-of-range
+  clamping and revoked/expired precedence.
+
 - TASK-183.1 adds a reproducible TASK-176 demo fixture and guarded reset,
   read-only verification and master-account commands. The reset uses a
   private backend to verify database identity before schema recreation and

@@ -1,10 +1,28 @@
-import { IsNotEmpty, IsString, MaxLength } from "class-validator";
-import { LIMITS } from "@janosik/shared";
+import {
+  IsIn,
+  IsNotEmpty,
+  IsString,
+  MaxLength,
+  ValidateIf,
+} from "class-validator";
+import { COMMENT_KINDS, LIMITS, type CommentKind } from "@janosik/shared";
 
-/** Body of `PATCH /comments/:commentId` (TASK-176.2, plain text). */
+/**
+ * Body of `PATCH /comments/:commentId` (TASK-176.2, TASK-177.11).
+ *
+ * Both fields are optional so the author can fix the text, retype the kind,
+ * or do both in one save. `@ValidateIf` (not `@IsOptional`) makes an explicit
+ * `null` fail validation instead of silently acting as "omitted"; the service
+ * rejects an empty body.
+ */
 export class UpdateCommentDto {
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @IsNotEmpty()
   @MaxLength(LIMITS.comment)
-  text!: string;
+  text?: string;
+
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsIn(COMMENT_KINDS)
+  kind?: CommentKind;
 }

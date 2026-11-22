@@ -49,6 +49,7 @@ import type {
   RunListQuery,
   RunSummaryDto,
   UpdateBoardAgentPolicyRequest,
+  UpdateCommentRequest,
   UpdateMemberRequest,
   UpdateNotificationSettingsRequest,
   UpdateProfileRequest,
@@ -1240,13 +1241,23 @@ export class ApiClient {
   }
 
   /**
-   * Edits the caller's own comment (TASK-176.2). Only the author may edit;
-   * the server answers 403 otherwise and 404 for a deleted comment.
+   * Edits the caller's own comment (TASK-176.2, TASK-177.11). Only the author
+   * may edit; the server answers 403 otherwise and 404 for a deleted comment.
+   * `text` and `kind` are both optional on the wire, but the UI always sends
+   * the text it is editing and adds `kind` only when the author changed it.
    */
-  updateComment(commentId: string, text: string): Promise<CommentDto> {
+  updateComment(
+    commentId: string,
+    text?: string,
+    kind?: CommentKind,
+  ): Promise<CommentDto> {
+    const body: UpdateCommentRequest = {
+      ...(text !== undefined ? { text } : {}),
+      ...(kind !== undefined ? { kind } : {}),
+    };
     return this.request<CommentDto>(
       `/comments/${encodeURIComponent(commentId)}`,
-      { method: "PATCH", body: { text } },
+      { method: "PATCH", body },
     );
   }
 

@@ -27,6 +27,7 @@ const header = source("src/components/Header.tsx");
 const dialog = source("src/components/ui/dialog.tsx");
 const globalSearch = source("src/components/GlobalSearch.tsx");
 const adminSearch = source("src/admin/GlobalSearch.tsx");
+const publicBoardPage = source("src/share/PublicBoardPage.tsx");
 const agentControlCss = source(
   "src/components/agent-control/agent-control.css",
 );
@@ -64,6 +65,41 @@ describe("mobile safe areas (TASK-177.18)", () => {
     expect(header).toContain(
       "sm:min-h-[calc(52px_+_env(safe-area-inset-top))]",
     );
+  });
+
+  it("pads both public share headers and the shell for safe areas", () => {
+    // The public contour mounts outside the app shell, so it cannot inherit
+    // the header's safe-area classes. F3: the brand used to sit at y=13.5
+    // under a 47 px status bar; both the ready state and the pre-payload
+    // chrome must grow by the top inset and keep the notch insets.
+    const headers = publicBoardPage.match(
+      /<header className="sticky top-0[^"]*"/g,
+    );
+    expect(headers).toHaveLength(2);
+    // Both ready and loading/error shells use the dynamic viewport unit and
+    // leave the home indicator clear at the bottom.
+    expect(publicBoardPage.match(/className="flex h-dvh /g)).toHaveLength(2);
+    expect(
+      publicBoardPage.match(/pb-\[env\(safe-area-inset-bottom\)\]/g),
+    ).toHaveLength(2);
+    for (const headerClassName of headers ?? []) {
+      expect(headerClassName).toContain("pt-[env(safe-area-inset-top)]");
+      expect(headerClassName).toContain(
+        "h-[calc(3.5rem_+_env(safe-area-inset-top))]",
+      );
+      expect(headerClassName).toContain(
+        "pl-[max(1rem,env(safe-area-inset-left))]",
+      );
+      expect(headerClassName).toContain(
+        "pr-[max(1rem,env(safe-area-inset-right))]",
+      );
+      expect(headerClassName).toContain(
+        "sm:pl-[max(1.5rem,env(safe-area-inset-left))]",
+      );
+      expect(headerClassName).toContain(
+        "sm:pr-[max(1.5rem,env(safe-area-inset-right))]",
+      );
+    }
   });
 
   it("keeps dialog bodies and full-screen sheets inside the safe area", () => {

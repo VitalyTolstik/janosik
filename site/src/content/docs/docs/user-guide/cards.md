@@ -178,13 +178,15 @@ The `Activity` section is the last part of the dialog. It has two tabs,
 
 Comments are written in the same Markdown editor as the description, with
 `Save` and `Cancel`. Press Ctrl+Enter (or Cmd+Enter) to save. Comments are
-listed newest first, with `Show older comments` to page back. You can delete
-your own comments after a confirmation that names the author and quotes the
-comment; the deletion cannot be undone. Edit a comment with the pencil next
-to the delete icon: `Save` or Ctrl/Cmd+Enter applies the change, `Escape`
-cancels. An edited comment keeps its place in the thread and shows an
-`edited` marker; only the author can edit or delete a comment. Comments need
-server mode.
+listed newest first, with `Show older comments` to page back. Filter chips
+above the thread narrow it to `All`, `Note`, `Status`, `Question`, `Blocker`,
+`Evidence` or `Handoff`; the filter asks the server, so paging stays inside
+the chosen kind. You can delete your own comments after a confirmation that
+names the author and quotes the comment; the deletion cannot be undone. Edit a
+comment with the pencil next to the delete icon: the same editor and kind
+picker appear, `Save` or Ctrl/Cmd+Enter applies the change, `Escape` cancels.
+An edited comment keeps its place in the thread and shows an `edited` marker;
+only the author can edit or delete a comment. Comments need server mode.
 
 ### History
 
