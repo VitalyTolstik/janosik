@@ -61,6 +61,44 @@ async function openDataMenu(page: Page) {
   await expect(page.getByTestId("data-archive")).toBeVisible();
 }
 
+test("the notifications bell is reachable on the phone board", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+
+  const bell = page.getByTestId("notifications-bell");
+  await expect(bell).toBeVisible();
+  await expectInsideViewport(bell, "notifications bell");
+  await expectNoPageOverflow(page, "phone board with the notifications bell");
+
+  await bell.tap();
+  const panel = page.getByTestId("invitations-panel");
+  await expect(panel).toBeVisible();
+  await expectInsideViewport(panel, "notifications panel");
+
+  // The two-row phone header must end above the panel: a hard-coded offset
+  // measured from the first-row bell would cover the account trigger.
+  const headerBox = await page.locator("header").first().boundingBox();
+  const panelBox = await panel.boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(panelBox).not.toBeNull();
+  expect(panelBox!.y).toBeGreaterThanOrEqual(
+    headerBox!.y + headerBox!.height - 1,
+  );
+  const covered = await page
+    .getByTestId("account-trigger")
+    .evaluate((trigger) => {
+      const rect = trigger.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return hit !== null && !trigger.contains(hit);
+    });
+  expect(covered).toBe(false);
+});
+
 test("header, filters and view controls fit a phone without sideways scroll", async ({
   page,
   board,

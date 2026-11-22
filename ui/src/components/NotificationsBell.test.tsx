@@ -375,6 +375,20 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     expect(within(row).getByText(/Member/)).toBeInTheDocument();
   });
 
+  it("keeps a long invitation board title readable", async () => {
+    const server = new FakeServer();
+    const title =
+      "A very long board title that should wrap instead of clipping";
+    server.invitations.push({ ...INVITATION, boardTitle: title });
+
+    renderBell(server);
+    await userEvent.click(await screen.findByTestId("notifications-bell"));
+
+    const heading = await screen.findByText(title);
+    expect(heading).toHaveAttribute("title", title);
+    expect(heading).toHaveClass("line-clamp-2");
+  });
+
   it("accepts an invitation and refreshes the board list", async () => {
     const server = new FakeServer();
     server.invitations.push({ ...INVITATION });

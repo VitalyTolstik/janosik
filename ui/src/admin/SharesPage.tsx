@@ -15,6 +15,7 @@ import {
   ConfirmDialog,
   ErrorState,
   PageHeader,
+  Pagination,
   Panel,
   SearchInput,
   Table,
@@ -22,14 +23,25 @@ import {
   Th,
 } from "./ui";
 
+/** `1–50` / `51` / `0` — the visible window inside the server total. */
+function visibleRange(offset: number, count: number): string {
+  if (count === 0) return "0";
+  const start = offset + 1;
+  const end = offset + count;
+  return start === end ? String(start) : `${start}–${end}`;
+}
+
 /**
  * Public shares (TASK-58) — every read-only link minted against any board,
- * with its mode/flags/views and a one-click revoke. The token is shown so an
- * operator can re-copy a link for support; a link whose board is gone is
+ * with its mode/flags/views/expiry and a one-click revoke. The token is shown
+ * so an operator can re-copy a link for support; a link whose board is gone is
  * flagged (a live share of a deleted board no longer resolves).
  *
- * Search mirrors the rest of the panel: the shared `useAdminList` debounce
- * plus `SearchInput`, not a separate button.
+ * The list pages over the server's `total/offset/limit`, so the count always
+ * describes every link, not just the loaded page. Search mirrors the rest of
+ * the panel: the shared `useAdminList` debounce plus `SearchInput`, not a
+ * separate button; the debounced commit resets the offset like every admin
+ * list.
  */
 export function SharesPage() {
   const t = useAdminT();
@@ -37,10 +49,13 @@ export function SharesPage() {
   const hour12 = useHour12();
   const toast = useToast();
   const list = useAdminList<AdminShareRowDto>(
-    (params) => adminApi.listShares({ ...params, limit: 100 }),
-    { limit: 100 },
+    (params) => adminApi.listShares(params),
+    { clampOutOfRange: true },
   );
   const { items: rows, reload } = list;
+  // Freeze `now` on mount: an expiry badge must not start ticking while the
+  // table is open (the row data is a snapshot from the last request).
+  const [now] = useState(() => Date.now());
   const [busy, setBusy] = useState<string | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<AdminShareRowDto | null>(
     null,
@@ -80,34 +95,56 @@ export function SharesPage() {
   );
 
   return (
-    <div className="w-full max-w-5xl space-y-4 p-4">
+    <div className="w-full max-w-6xl space-y-4 p-4 xl:px-2">
       <PageHeader
         title={t("admin.shares.title")}
         subtitle={t("admin.shares.subtitle")}
-        actionsClassName="max-sm:w-full"
+        actionsClassName="max-w-full max-sm:w-full"
+        meta={
+          list.loading || list.error ? undefined : (
+            <span
+              className="tabular-nums"
+              data-testid="admin-shares-total"
+              aria-live="polite"
+            >
+              {t("admin.common.ofTotal", {
+                shown: visibleRange(list.pageOffset, rows.length),
+                total: list.total,
+              })}
+            </span>
+          )
+        }
         actions={
           <SearchInput
             value={list.search}
             onChange={list.setSearch}
-            className="max-sm:w-full"
+            className="max-sm:h-11 max-sm:min-h-11 max-sm:min-w-0 max-sm:flex-1 max-sm:basis-40"
           />
         }
       />
 
       <Panel className="p-0" aria-busy={list.loading || list.refreshing}>
         {list.loading ? (
-          <EntityListSkeleton columns={6} testId="admin-shares-skeleton" />
+          <EntityListSkeleton columns={7} testId="admin-shares-skeleton" />
         ) : list.error ? (
           <div className="p-4">
             <ErrorState onRetry={reload} />
           </div>
         ) : rows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            {t("admin.shares.empty")}
-          </p>
+          list.refreshing ? (
+            <EntityListSkeleton columns={7} testId="admin-shares-skeleton" />
+          ) : (
+            <p className="p-4 text-sm text-muted-foreground">
+              {list.total > 0
+                ? t("admin.filters.emptyPage.moderation")
+                : list.effectiveSearch !== ""
+                  ? t("admin.common.emptyFiltered")
+                  : t("admin.shares.empty")}
+            </p>
+          )
         ) : (
           <div data-testid="admin-shares-table">
-            <Table maxHeight="none">
+            <Table>
               <thead>
                 <tr>
                   <Th>{t("admin.shares.col.board")}</Th>
@@ -115,6 +152,7 @@ export function SharesPage() {
                   <Th>{t("admin.shares.col.flags")}</Th>
                   <Th>{t("admin.shares.col.views")}</Th>
                   <Th>{t("admin.shares.col.created")}</Th>
+                  <Th>{t("admin.shares.col.expires")}</Th>
                   <Th className="text-right">
                     {t("admin.shares.col.actions")}
                   </Th>
@@ -124,13 +162,18 @@ export function SharesPage() {
                 {rows.map((row) => (
                   <tr key={row.id}>
                     <Td label={t("admin.shares.col.board")}>
-                      <div className="flex min-w-0 flex-col">
+                      <div className="flex min-w-0 flex-1 flex-col">
                         {row.boardDeleted ? (
-                          <span className="text-muted-foreground">
-                            {row.boardTitle ?? row.boardId}
+                          <div className="flex max-w-[20rem] min-w-0 items-center gap-2 text-muted-foreground max-sm:max-w-full">
+                            <span
+                              className="min-w-0 truncate"
+                              title={row.boardTitle ?? undefined}
+                            >
+                              {row.boardTitle ?? row.boardId}
+                            </span>
                             {row.revokedAt === null ? (
                               <span
-                                className="ml-2 inline-flex"
+                                className="inline-flex shrink-0"
                                 title={
                                   row.mode === "live"
                                     ? t("admin.shares.boardGone.hint")
@@ -146,16 +189,17 @@ export function SharesPage() {
                                 </Badge>
                               </span>
                             ) : null}
-                          </span>
+                          </div>
                         ) : (
                           <Link
                             to={`/admin/boards/${row.boardId}`}
-                            className="text-foreground hover:underline"
+                            title={row.boardTitle ?? undefined}
+                            className="block max-w-[20rem] truncate text-foreground hover:underline max-sm:max-w-full"
                           >
                             {row.boardTitle ?? row.boardId}
                           </Link>
                         )}
-                        <code className="font-mono text-[11px] text-muted-foreground">
+                        <code className="block max-w-full truncate font-mono text-[11px] text-muted-foreground">
                           /s/{row.token}
                         </code>
                       </div>
@@ -195,12 +239,39 @@ export function SharesPage() {
                     >
                       {formatDate(row.createdAt, lang, hour12)}
                     </Td>
-                    <Td label="">
+                    <Td
+                      label={t("admin.shares.col.expires")}
+                      className="text-xs text-muted-foreground"
+                    >
+                      <span data-testid={`admin-share-expires-${row.id}`}>
+                        {row.expiresAt === null ? (
+                          <span title={t("admin.shares.noExpiry")}>
+                            <span aria-hidden>—</span>
+                            <span className="sr-only">
+                              {t("admin.shares.noExpiry")}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            {formatDate(row.expiresAt, lang, hour12)}
+                            {row.revokedAt === null && row.expiresAt <= now ? (
+                              <Badge
+                                variant="danger"
+                                data-testid={`admin-share-expired-${row.id}`}
+                              >
+                                {t("admin.shares.expiredLabel")}
+                              </Badge>
+                            ) : null}
+                          </span>
+                        )}
+                      </span>
+                    </Td>
+                    <Td className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 max-sm:h-11 max-sm:w-11 p-0"
+                          className="h-7 w-7 p-0 max-sm:h-11 max-sm:w-11"
                           aria-label={t("admin.shares.copy")}
                           title={t("admin.shares.copy")}
                           data-testid={`admin-share-copy-${row.id}`}
@@ -227,7 +298,7 @@ export function SharesPage() {
                           rel="noreferrer"
                           aria-label={t("admin.shares.open")}
                           title={t("admin.shares.open")}
-                          className="inline-flex h-7 w-7 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
                         >
                           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         </a>
@@ -239,7 +310,7 @@ export function SharesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 max-sm:h-11 max-sm:w-11 p-0 text-destructive"
+                            className="h-7 w-7 p-0 text-destructive max-sm:h-11 max-sm:w-11"
                             aria-label={t("admin.shares.revoke")}
                             title={t("admin.shares.revoke")}
                             disabled={busy === row.id}
@@ -264,6 +335,17 @@ export function SharesPage() {
             </Table>
           </div>
         )}
+        {!list.loading && !list.error && (rows.length > 0 || list.total > 0) ? (
+          <Pagination
+            total={list.total}
+            limit={list.limit}
+            offset={list.offset}
+            statusLimit={list.pageLimit}
+            statusOffset={list.pageOffset}
+            onChange={list.setOffset}
+            onLimitChange={list.setLimit}
+          />
+        ) : null}
       </Panel>
 
       <ConfirmDialog

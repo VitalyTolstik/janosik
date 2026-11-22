@@ -31,7 +31,7 @@ import {
   type UserAvatarColor,
   type UserTokenDto,
 } from "@janosik/shared";
-import { LIMITS } from "@janosik/shared";
+import { COMMENT_KINDS, LIMITS } from "@janosik/shared";
 
 /**
  * In-memory stand-in for the NestJS API (TASK-29 UI tests).
@@ -879,10 +879,22 @@ export class FakeServer {
     }
     const deleteCommentMatch = /^\/api\/v1\/comments\/([^/]+)$/.exec(path);
     if (deleteCommentMatch !== null && method === "PATCH") {
-      const { text } = (body ?? {}) as { text?: string };
-      const trimmed = (text ?? "").trim();
-      if (trimmed.length === 0 || trimmed.length > LIMITS.comment) {
+      const { text, kind } = (body ?? {}) as {
+        text?: string;
+        kind?: CommentKind;
+      };
+      if (text === undefined && kind === undefined) {
+        return json(400, { message: "text or kind is required" });
+      }
+      const trimmed = text === undefined ? undefined : text.trim();
+      if (
+        trimmed !== undefined &&
+        (trimmed.length === 0 || trimmed.length > LIMITS.comment)
+      ) {
         return json(400, { message: "text is invalid", field: "text" });
+      }
+      if (kind !== undefined && !COMMENT_KINDS.includes(kind)) {
+        return json(400, { message: "kind is invalid", field: "kind" });
       }
       for (const list of this.commentsByCard.values()) {
         const comment = list.find((item) => item.id === deleteCommentMatch[1]);
@@ -893,7 +905,8 @@ export class FakeServer {
             code: "scope_denied",
           });
         }
-        comment.text = trimmed;
+        if (trimmed !== undefined) comment.text = trimmed;
+        if (kind !== undefined) comment.kind = kind;
         comment.editedAt = Date.now();
         return json(200, structuredClone(comment));
       }

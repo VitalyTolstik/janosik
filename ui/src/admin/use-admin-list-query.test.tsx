@@ -71,6 +71,36 @@ describe("URL-backed admin lists", () => {
     },
   );
 
+  it("does not auto-correct an out-of-range URL offset", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue({ items: [], total: 100, limit: 50, offset: 150 });
+    const { result } = renderHook(
+      () => ({
+        list: useAdminListQuery(fetcher),
+        location: useLocation(),
+      }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <MemoryRouter initialEntries={["/admin/audit?tab=audit&offset=150"]}>
+            {children}
+          </MemoryRouter>
+        ),
+      },
+    );
+
+    await waitFor(() => expect(result.current.list.loading).toBe(false));
+    await waitFor(() =>
+      expect(result.current.location.search).toBe("?tab=audit&offset=150"),
+    );
+    expect(result.current.list.offset).toBe(150);
+    expect(result.current.list.pageOffset).toBe(150);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 150 }),
+    );
+  });
+
   it("sends repeated audit facets and the target from the canonical deep link", async () => {
     const { result, fetcher } = setup(
       "/admin/audit?tab=audit&adminId=a-2&adminId=a-1&action=board.command&targetId=scope:b-1&offset=2",
