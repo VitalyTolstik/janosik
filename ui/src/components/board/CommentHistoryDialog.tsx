@@ -111,6 +111,12 @@ export function CommentHistoryDialog({
   // Synchronous mirror of `status`: a focus recheck can resolve between the
   // first page's `setStatus` and its effect, so the ref is updated with it.
   const statusRef = useRef<Status>("loading");
+  // Newest revision a recheck saw while page 1 was still in flight. The
+  // first page consumes it when deciding whether to show the stale warning.
+  const latestRecheckRevisionRef = useRef(0);
+  // Open/close generation: a recheck from an earlier opening must not clear a
+  // newly opened history even if its privacy response arrives late.
+  const sessionRef = useRef(0);
   // Transient controls (Refresh, retry, Show older) unmount when their state
   // lands. Move focus to the dialog first so it never falls to <body>, then
   // return it to the still-mounted Show older button on an intermediate page
@@ -131,6 +137,7 @@ export function CommentHistoryDialog({
 
   const reset = useCallback(() => {
     itemsRef.current = [];
+    latestRecheckRevisionRef.current = 0;
     setItems([]);
     setNextCursor(null);
     setReason(null);
@@ -145,20 +152,22 @@ export function CommentHistoryDialog({
 
   /**
    * Drop every loaded revision after an erase/gap and invalidate any first or
-   * older page still in flight. If focus was inside the list or an expanded
-   * snapshot, move it to the dialog before those nodes unmount.
+   * older page still in flight. If focus was on any dialog descendant that is
+   * about to unmount (rows, snapshots, paging/retry/refresh controls), move it
+   * to the dialog; the dialog container and its close button stay mounted.
    */
   const clearHistory = useCallback(
     (nextReason: CommentHistoryIncompleteReason | null) => {
       const active = document.activeElement;
       const focusWillUnmount =
         active instanceof HTMLElement &&
-        (active.closest('[data-testid="comment-history-list"]') !== null ||
-          active.closest(
-            '[role="region"][data-testid^="comment-history-snapshot-"]',
-          ) !== null);
+        dialogRef.current !== null &&
+        active !== dialogRef.current &&
+        dialogRef.current.contains(active) &&
+        active.closest('[data-testid="dialog-close"]') === null;
       if (focusWillUnmount) dialogRef.current?.focus();
       seqRef.current += 1;
+      latestRecheckRevisionRef.current = 0;
       itemsRef.current = [];
       setItems([]);
       setNextCursor(null);
@@ -184,6 +193,7 @@ export function CommentHistoryDialog({
       setOlderError(false);
       focusOlderRef.current = false;
       focusEndRef.current = false;
+      latestRecheckRevisionRef.current = 0;
       itemsRef.current = [];
       setItems([]);
       setNextCursor(null);
@@ -197,9 +207,12 @@ export function CommentHistoryDialog({
           PAGE_SIZE,
         );
         if (seq !== seqRef.current) return;
+        itemsRef.current = page.items;
         setItems(page.items);
         setNextCursor(page.nextCursor);
         setReason(page.historyIncompleteReason);
+        const pageNewest = page.items[0]?.revisionNumber ?? 0;
+        if (latestRecheckRevisionRef.current > pageNewest) setStale(true);
         statusRef.current = "ready";
         setStatus("ready");
       } catch (error) {
@@ -218,6 +231,10 @@ export function CommentHistoryDialog({
     },
     [commentId, onOpenChange, reset],
   );
+
+  useEffect(() => {
+    sessionRef.current += 1;
+  }, [commentId, open]);
 
   // Opening starts a fresh first page; closing invalidates any response that
   // is still in flight. The dialog content unmounts when closed, so no text
@@ -267,10 +284,14 @@ export function CommentHistoryDialog({
       }
       setItems((current) => {
         const seen = new Set(current.map((revision) => revision.id));
-        return [
+        const next = [
           ...current,
           ...page.items.filter((revision) => !seen.has(revision.id)),
         ];
+        // Keep the recheck comparison in sync without waiting for the
+        // passive items effect.
+        itemsRef.current = next;
+        return next;
       });
       setNextCursor(page.nextCursor);
       // The reason describes the live comment and is repeated on every page;
@@ -328,23 +349,33 @@ export function CommentHistoryDialog({
   // the overlay, a transient failure leaves the loaded page alone.
   const recheckAccess = useCallback(async () => {
     const seq = seqRef.current;
+    const session = sessionRef.current;
     try {
       const page = await api.listCommentRevisions(commentId, undefined, 1);
-      if (seq !== seqRef.current) return;
+      if (session !== sessionRef.current) return;
       if (clearsHistory(page)) {
-        // A focus/reconnect recheck can be the first place an erase or writer
-        // gap becomes visible; drop every retained snapshot and invalidate an
-        // in-flight first page so it cannot restore the erased rows.
+        // A privacy clear wins even if a page load started after this recheck
+        // and bumped `seqRef`: clearHistory advances it again, invalidating
+        // that load so it cannot restore the erased rows.
         clearHistory(page.historyIncompleteReason);
         return;
       }
+      if (seq !== seqRef.current) return;
       setReason(page.historyIncompleteReason);
+      const newest = page.items[0]?.revisionNumber ?? 0;
       if (statusRef.current === "ready") {
-        const newest = page.items[0]?.revisionNumber ?? 0;
         const loadedNewest = itemsRef.current[0]?.revisionNumber ?? 0;
         if (newest > loadedNewest) setStale(true);
+      } else {
+        // The first page is still in flight. Remember the newest revision the
+        // recheck saw so that page can mark itself stale once it lands.
+        latestRecheckRevisionRef.current = Math.max(
+          latestRecheckRevisionRef.current,
+          newest,
+        );
       }
     } catch (error) {
+      if (session !== sessionRef.current) return;
       if (seq !== seqRef.current) return;
       if (isGone(error)) {
         seqRef.current += 1;

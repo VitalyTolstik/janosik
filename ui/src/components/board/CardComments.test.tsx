@@ -2738,7 +2738,7 @@ describe("CardComments", () => {
     ).toHaveAttribute("data-reason", "gdpr_erase");
   });
 
-  it("does not mark an in-flight first page stale from a newer recheck", async () => {
+  it("remembers a newer recheck revision for an in-flight first page", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [
       comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
@@ -2794,7 +2794,162 @@ describe("CardComments", () => {
     expect(
       await within(dialog).findByTestId("comment-history-revision"),
     ).toBeVisible();
-    // The older first page lands without a stale marker it never earned.
+    // The captured page is one revision behind what the recheck saw.
+    expect(await screen.findByTestId("comment-history-stale")).toBeVisible();
+  });
+
+  it("does not warn when the first page already has the new recheck revision", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions("comment-1", [revision()]);
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstStarted = false;
+    let recheckDone = false;
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/revisions")) {
+        if (url.searchParams.get("limit") === "20") {
+          firstStarted = true;
+          await firstGate;
+          return server.handle(input, init);
+        }
+        if (url.searchParams.get("limit") === "1") {
+          const response = await server.handle(input, init);
+          recheckDone = true;
+          return response;
+        }
+      }
+      return server.handle(input, init);
+    });
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    await waitFor(() => expect(firstStarted).toBe(true));
+
+    server.seedRevisions("comment-1", [
+      revision({
+        id: "revision-2",
+        revisionNumber: 2,
+        beforeText: "First, edited",
+        afterText: "Second edit",
+      }),
+      revision(),
+    ]);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(recheckDone).toBe(true));
+
+    await act(async () => {
+      releaseFirst();
+      await Promise.resolve();
+    });
+
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    expect(
+      await within(dialog).findAllByTestId("comment-history-revision"),
+    ).toHaveLength(2);
+    expect(screen.queryByTestId("comment-history-stale")).toBeNull();
+  });
+
+  it("applies an erase recheck that started before a later refresh", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions("comment-1", [revision()]);
+    let releaseRecheck!: () => void;
+    const recheckGate = new Promise<void>((resolve) => {
+      releaseRecheck = resolve;
+    });
+    let recheckStarted = false;
+    let pageLoads = 0;
+    let refreshDone = false;
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/revisions")) {
+        if (url.searchParams.get("limit") === "20") {
+          const response = await server.handle(input, init);
+          pageLoads += 1;
+          if (pageLoads === 2) refreshDone = true;
+          return response;
+        }
+        if (url.searchParams.get("limit") === "1") {
+          const response = await server.handle(input, init);
+          recheckStarted = true;
+          await recheckGate;
+          return response;
+        }
+      }
+      return server.handle(input, init);
+    });
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    await screen.findByTestId("comment-history-revision");
+    await waitStream(server);
+
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-refresh-ready",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_updated",
+        commentId: "comment-1",
+        revisionId: "revision-1",
+      });
+    });
+    await screen.findByTestId("comment-history-refresh");
+
+    // The recheck captures the erased page, then a later refresh starts.
+    server.seedRevisions("comment-1", []);
+    server.seedHistoryReason("comment-1", "gdpr_erase");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(recheckStarted).toBe(true));
+
+    server.seedRevisions("comment-1", [revision()]);
+    server.seedHistoryReason("comment-1", null);
+    fireEvent.click(screen.getByTestId("comment-history-refresh"));
+    await waitFor(() => expect(refreshDone).toBe(true));
+
+    act(() => releaseRecheck());
+
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    expect(
+      await within(dialog).findByTestId("comment-history-empty"),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByTestId("comment-history-revision"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByTestId("comment-history-banner"),
+    ).toHaveAttribute("data-reason", "gdpr_erase");
+  });
+
+  it("does not stale a recheck that lands right after the first page", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions("comment-1", [revision()]);
+    renderComments(server);
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+
+    await screen.findByTestId("comment-history-revision");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("comment-history-revision"),
+      ).toBeInTheDocument(),
+    );
     expect(screen.queryByTestId("comment-history-stale")).toBeNull();
   });
 
@@ -2830,6 +2985,47 @@ describe("CardComments", () => {
       await within(dialog).findByTestId("comment-history-empty"),
     ).toBeVisible();
     // The snapshot unmounted; focus must not be on <body>.
+    expect(document.activeElement).toBe(dialog);
+  });
+
+  it("moves focus out of Show older when a recheck erases history", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions(
+      "comment-1",
+      Array.from({ length: 25 }, (_, index) =>
+        revision({
+          id: `revision-${index + 1}`,
+          revisionNumber: index + 1,
+          beforeText: `Before ${index + 1}`,
+          afterText: `After ${index + 1}`,
+        }),
+      ),
+    );
+    renderComments(server);
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getAllByTestId("comment-history-revision"),
+      ).toHaveLength(20),
+    );
+    const older = within(dialog).getByTestId("comment-history-show-older");
+    older.focus();
+    expect(document.activeElement).toBe(older);
+
+    server.seedRevisions("comment-1", []);
+    server.seedHistoryReason("comment-1", "gdpr_erase");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(
+      await within(dialog).findByTestId("comment-history-empty"),
+    ).toBeVisible();
+    // The paging control unmounted; focus stays in the dialog.
     expect(document.activeElement).toBe(dialog);
   });
 
