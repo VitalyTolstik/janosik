@@ -41,6 +41,13 @@ export { PERIOD_WINDOWS_MS };
 export interface AdminListState<T> {
   items: T[];
   total: number;
+  /**
+   * Offset/limit echoed by the response that produced `items` — not the
+   * pending request. A count label can pair these with `items.length` without
+   * mixing a new page number with the previous page's rows.
+   */
+  pageOffset: number;
+  pageLimit: number;
   /** First response has not arrived yet — show the table skeleton. */
   loading: boolean;
   /** A newer request is in flight while the previous rows stay on screen. */
@@ -80,6 +87,9 @@ interface ListResult<T> {
   key: string;
   items: T[];
   total: number;
+  /** Offset/limit echoed by the server for this page. */
+  offset: number;
+  limit: number;
   error: boolean;
   errorStatus?: number | null;
   errorBody?: unknown;
@@ -91,9 +101,15 @@ export function useAdminList<T>(
     limit?: number;
     initialState?: AdminListQueryState;
     surface?: AdminListSurface;
+    /**
+     * Opt-in: rewrite an empty page whose offset is past the server total to
+     * the last real page. URL-backed lists must leave this off so a bad deep
+     * link does not push a correction that Back would undo in a loop.
+     */
+    clampOutOfRange?: boolean;
   } = {},
 ): AdminListState<T> {
-  const { initialState: initial, surface } = options;
+  const { initialState: initial, surface, clampOutOfRange } = options;
   const [limit, setLimitState] = useState(
     initial?.limit ?? options.limit ?? 50,
   );
@@ -166,10 +182,32 @@ export function useAdminList<T>(
       })
       .then((page) => {
         if (cancelled) return;
+        // A page can fall out of range when rows are removed between
+        // requests. Clamp to the last real page instead of showing an empty
+        // page whose offset is past the server total.
+        const lastPageOffset =
+          page.total > 0
+            ? Math.max(
+                0,
+                Math.floor((page.total - 1) / Math.max(1, page.limit)) *
+                  page.limit,
+              )
+            : 0;
+        if (
+          clampOutOfRange === true &&
+          page.total > 0 &&
+          page.items.length === 0 &&
+          page.offset > lastPageOffset
+        ) {
+          setOffset(lastPageOffset);
+          return;
+        }
         setResult({
           key: requestKey,
           items: page.items,
           total: page.total,
+          offset: page.offset,
+          limit: page.limit,
           error: false,
           errorStatus: null,
         });
@@ -187,6 +225,8 @@ export function useAdminList<T>(
           key: requestKey,
           items: [],
           total: 0,
+          offset: 0,
+          limit,
           error: true,
           errorStatus: status,
           errorBody: error instanceof ApiError ? error.body : undefined,
@@ -205,6 +245,7 @@ export function useAdminList<T>(
     filters,
     surface,
     filterError,
+    clampOutOfRange,
   ]);
 
   // Keep the last successful page while a search/page request is in flight
@@ -301,6 +342,8 @@ export function useAdminList<T>(
   return {
     items: filterError === undefined ? (result?.items ?? []) : [],
     total: filterError === undefined ? (result?.total ?? 0) : 0,
+    pageOffset: filterError === undefined ? (result?.offset ?? 0) : 0,
+    pageLimit: filterError === undefined ? (result?.limit ?? limit) : limit,
     loading,
     refreshing,
     // Keep a previous failure on screen while its retry is in flight; the
