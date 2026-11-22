@@ -94,14 +94,19 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(parseCommentMentions(`- parent\n\n    - ${token}`)).toEqual(
       mentioned,
     );
-    expect(parseCommentMentions(`- parent\n\n        - ${token}`)).toEqual(
-      mentioned,
-    );
+    expect(
+      parseCommentMentions(`- parent\n\n    - child\n\n        - ${token}`),
+    ).toEqual(mentioned);
     expect(
       parseCommentMentions(`- parent\n\n    continuation ${token}`),
     ).toEqual(mentioned);
     // A normal list item mention stays live.
     expect(parseCommentMentions(`- ${token}`)).toEqual(mentioned);
+    // Code *inside* a list is still code.
+    expect(parseCommentMentions(`- parent\n\n      ${token}`)).toEqual([]);
+    expect(
+      parseCommentMentions(`- parent\n\n    ~~~\n    ${token}\n    ~~~`),
+    ).toEqual([]);
   });
 
   it("masks blockquote fenced code with tilde and backtick fences", () => {

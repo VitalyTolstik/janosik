@@ -65,60 +65,63 @@ function unquoteLine(line: string): string {
   }
 }
 
-const LIST_ITEM = /^ {0,3}(?:[-+*]|\d+[.)])(?:\s|$)/;
+const LIST_ITEM = /^( *)([-+*]|\d+[.)])(?:[ \t]+|$)/;
 
-/**
- * Four-space/tab indented code blocks are inert like fenced ones. Blockquote
- * markers are stripped first. A line with a list marker opens a list context:
- * nested list items and continuation paragraphs stay live, while indented
- * code outside a list (including one whose first line is `- …`) is masked.
- */
-function maskIndentedCode(chars: string[]): void {
-  const text = chars.join("");
-  let offset = 0;
-  let listOpen = false;
-  while (offset < text.length) {
-    const newline = text.indexOf("\n", offset);
-    const end = newline === -1 ? text.length : newline + 1;
-    const line = text.slice(offset, newline === -1 ? text.length : newline);
-    const content = unquoteLine(line);
-    if (content.trim() === "") {
-      // Blank lines neither open nor close a list; a nested item may follow.
-      offset = end;
-      continue;
-    }
-    if (LIST_ITEM.test(content)) {
-      listOpen = true;
-      offset = end;
-      continue;
-    }
-    const indented = /^(?: {4}|\t)/.test(content);
-    if (indented) {
-      if (!listOpen) maskRange(chars, offset, end);
-      offset = end;
-      continue;
-    }
-    // A normal paragraph ends the list container.
-    listOpen = false;
-    offset = end;
+/** Visual leading-space width; a tab advances to the next four-column stop. */
+function leadingIndent(line: string): number {
+  let width = 0;
+  for (const char of line) {
+    if (char === " ") width += 1;
+    else if (char === "\t") width += 4 - (width % 4);
+    else break;
   }
+  return width;
 }
 
-/** Fenced code is inert markdown: a mention-looking string inside is text. */
-function maskFencedCode(chars: string[]): void {
+/** Strip up to the open list item's content indent from a line. */
+function stripListIndent(line: string, listIndent: number | null): string {
+  if (listIndent === null) return line;
+  let removed = 0;
+  let index = 0;
+  while (index < line.length && removed < listIndent) {
+    if (line[index] === " ") {
+      removed += 1;
+      index += 1;
+    } else {
+      break;
+    }
+  }
+  return line.slice(index);
+}
+
+/**
+ * TASK-177.12 — code masking for both indented and fenced blocks.
+ *
+ * A single `listOpen` flag was too coarse: it kept six-space code inside a
+ * list live. Track the open item's content indent instead. A marker at up to
+ * `contentIndent + 3` is a nested/sibling item (and moves the indent); a
+ * non-marker line at `contentIndent + 4` or deeper is code. Fences are
+ * detected after stripping blockquote and list indentation and mask through
+ * their closing fence.
+ */
+function maskCodeBlocks(chars: string[]): void {
   const text = chars.join("");
   let offset = 0;
+  let listIndent: number | null = null;
   let fenceChar: string | null = null;
   let fenceLength = 0;
   while (offset < text.length) {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
     const line = text.slice(offset, newline === -1 ? text.length : newline);
-    // Blockquote containers prefix every line with `>`; fence detection and
-    // closing rules apply to the content, while the whole line is masked.
+    // Blockquote containers prefix every line with `>`; indentation and
+    // fences are judged on the content, while the whole line is masked.
     const content = unquoteLine(line);
+    const indent = leadingIndent(content);
+    const fenceContent = stripListIndent(content, listIndent);
+
     if (fenceChar !== null) {
-      const close = FENCE_CLOSE.exec(content);
+      const close = FENCE_CLOSE.exec(fenceContent);
       if (
         close !== null &&
         close[1]![0] === fenceChar &&
@@ -130,15 +133,53 @@ function maskFencedCode(chars: string[]): void {
       } else {
         maskRange(chars, offset, end);
       }
-    } else {
-      const open = FENCE_OPEN.exec(content);
-      // CommonMark: the info string of a backtick fence may not carry a
-      // backtick; such a line is a paragraph, not a code fence.
-      if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
-        fenceChar = open[1]![0]!;
-        fenceLength = open[1]!.length;
-        maskRange(chars, offset, end);
-      }
+      offset = end;
+      continue;
+    }
+    if (content.trim() === "") {
+      offset = end;
+      continue;
+    }
+
+    const marker = LIST_ITEM.exec(content);
+    const markerIndent = marker === null ? 0 : marker[1]!.length;
+    const markerAllowed =
+      marker !== null &&
+      (listIndent === null
+        ? markerIndent <= 3
+        : markerIndent <= listIndent + 3);
+    if (marker !== null && markerAllowed) {
+      // `marker length + the separating space` is where the item's content
+      // begins; nested list items live within +3 of it.
+      listIndent = markerIndent + marker[2]!.length + 1;
+      offset = end;
+      continue;
+    }
+
+    if (listIndent !== null && indent < listIndent) {
+      // A genuinely non-indented paragraph closes the list container.
+      listIndent = null;
+    }
+    if (listIndent !== null && indent >= listIndent + 4) {
+      maskRange(chars, offset, end);
+      offset = end;
+      continue;
+    }
+
+    const codeLine = stripListIndent(content, listIndent);
+    const open = FENCE_OPEN.exec(codeLine);
+    // CommonMark: the info string of a backtick fence may not carry a
+    // backtick; such a line is a paragraph, not a code fence.
+    if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
+      fenceChar = open[1]![0]!;
+      fenceLength = open[1]!.length;
+      maskRange(chars, offset, end);
+      offset = end;
+      continue;
+    }
+
+    if (listIndent === null && indent >= 4) {
+      maskRange(chars, offset, end);
     }
     offset = end;
   }
@@ -219,8 +260,7 @@ interface MentionMatch {
 function mentionMatches(text: string): MentionMatch[] {
   const chars = text.split("");
   maskHtmlComments(chars);
-  maskFencedCode(chars);
-  maskIndentedCode(chars);
+  maskCodeBlocks(chars);
   maskInlineCode(chars);
   maskEscapes(chars);
   const masked = chars.join("");
