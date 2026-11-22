@@ -279,7 +279,7 @@ Source: `design/ui-roast/REVIEW.md` (live 1440/1024/390 + axe-core). These are *
 - Reuse attention infrastructure; deep links; read/read-all via 177.6.
 - Product decision: scope can be split into follow-up waves, but the item stays in TASK-177.
 - Decision: shareable filter URLs and assignment notifications ship now (with due-email card links); named/team saved views are deferred. Card follow/watch is deferred until after TASK-200; board follow/watch and in-app due rows are closed for now — membership plus digest already covers board follow, due e-mail plus shareable filter URLs covers due visibility.
-- Tests: follow/unfollow, notification on change, saved view restore, opt-out.
+- Tests: assignment attention (self/batch/last-wins/coalescing/opt-out/replay), due-email card links and dedupe, and card/board deep links. Card follow/watch and named/team saved views are deferred, so no follow/unfollow or saved-view-restore tests are claimed for this slice.
 - Files: follow model/API or attention subscription, board filter state, NotificationsBell.
 
 ### 9.3 Already covered / duplicates

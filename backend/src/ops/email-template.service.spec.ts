@@ -30,11 +30,32 @@ describe("EmailTemplateService assignment default", () => {
       "en",
     );
 
-    expect(rendered.text).toContain("Card assignment from Alice");
+    expect(rendered.text).toContain("Card assignment on board");
     expect(rendered.text).toContain("Ship it");
     expect(rendered.text).toContain("Open the card or board");
     expect(rendered.text).not.toContain("1 cards");
     expect(rendered.text).not.toContain("{{count}}");
+  });
+
+  it("renders the saved default without an empty actor phrase", async () => {
+    const rendered = await service().attentionEmail(
+      "card.assigned",
+      { board: "Board", cards: "Ship it", count: 1 },
+      "en",
+    );
+
+    expect(rendered.text).toContain("Card assignment on board");
+    expect(rendered.text).not.toContain("from  on");
+    expect(rendered.text).not.toContain("{{actor}}");
+  });
+
+  it("does not advertise the removed count placeholder", () => {
+    expect(
+      EMAIL_TEMPLATE_DEFAULTS.attention_card_assigned!.placeholders,
+    ).not.toContain("count");
+    expect(
+      EMAIL_TEMPLATE_DEFAULTS.attention_card_assigned!.bodyHtml,
+    ).not.toContain("{{count}}");
   });
 
   it("keeps an escaped anchor in a saved default literal", async () => {

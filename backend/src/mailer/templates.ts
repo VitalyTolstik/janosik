@@ -1005,14 +1005,14 @@ const cardAssignedDefault = (() => {
     "New card assignment",
     `${BRAND}: new card assignment on "{{board}}"`,
     [
-      "Card assignment from {{actor}} on board <b>{{board}}</b>: {{cards}}.",
+      "Card assignment on board <b>{{board}}</b>: {{cards}}.",
       "Open the card or board in Janosik to see the details.",
     ],
   );
   return {
     subject: letter.subject,
     bodyHtml: letter.html.replace("<html>", '<html lang="en">'),
-    placeholders: ["board", "cards", "count", "actor"],
+    placeholders: ["board", "cards", "actor"],
   };
 })();
 const claimExpiredDefault = attentionDefault(

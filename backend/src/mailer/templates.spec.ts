@@ -275,6 +275,14 @@ describe("attentionEmail", () => {
     expect(mail.text).toContain("\n");
   });
 
+  it("decodes entities in a trusted href before the plain-text URL", () => {
+    const html =
+      '<p><a href="https://kb.example/app/board/b-1?card=c-1&amp;comment=x">Ship it</a></p>';
+    expect(htmlToText(html)).toContain(
+      "Ship it (https://kb.example/app/board/b-1?card=c-1&comment=x)",
+    );
+  });
+
   it("never turns an escaped user anchor into a trusted link", () => {
     const escapedTitle =
       '&lt;a href="https://evil.example"&gt;Evil card&lt;/a&gt;';

@@ -2101,8 +2101,9 @@ export interface AttentionNotificationDto {
   title: string;
   body: string | null;
   /**
-   * Small, non-sensitive context: ids, risk, action, limit, current, and
-   * `actorName` for rows that name a human (mentions and assignments).
+   * Small, non-sensitive context: ids, risk, action, limit, current.
+   * Assignment rows name the actor in `actorName`; mention rows name the
+   * comment author in `authorName`.
    */
   data: Record<string, unknown> | null;
   /** Unix ms; null while unread. */
