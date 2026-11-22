@@ -23,7 +23,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   over-budget comments in the observability snapshot
   (counts only, never text), and covered delete/restore feeds, the 50-revision
   window on both APIs, public-share SSE allowlists, command catch-up/resync,
-  the 390 px card History view, the second-tab SSE refresh and EN/RU dialog
+  the 390 px card History view, the live SSE refresh and EN/RU dialog
   coverage.
 
 - TASK-185.4 card comment history. An edited comment’s `edited` marker is now

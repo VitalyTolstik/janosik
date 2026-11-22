@@ -232,7 +232,7 @@ test.describe("comment edit history at 390 px", () => {
   });
 });
 
-test.describe("live comment history with a second tab open", () => {
+test.describe("live comment history over SSE", () => {
   test("refreshes the row, History and open revisions over SSE; delete clears them", async ({
     page,
     board,
@@ -264,22 +264,16 @@ test.describe("live comment history with a second tab open", () => {
     const dialog = commentHistory(page);
     await expect(dialog.getByTestId("comment-history-revision")).toHaveCount(1);
 
-    // A second board tab stays open on the same account. The edit itself is
-    // issued through the shared API context; the second tab's role is to keep
-    // an independent viewer session attached while this tab receives SSE.
-    const second = await page.context().newPage();
-    await second.goto(page.url());
-    await expect(
-      second.getByRole("button", { name: "Switch board" }),
-    ).toBeVisible();
+    // A live edit from another session reaches the open row and marks the
+    // open revision list stale instead of silently shifting it.
     expect(
       (
         await board.api.patch(`/api/v1/comments/${commentId}`, {
-          data: { text: "Live third from the other tab" },
+          data: { text: "Live third from another session" },
         })
       ).ok(),
     ).toBeTruthy();
-    await expect(row).toContainText("Live third from the other tab");
+    await expect(row).toContainText("Live third from another session");
     await expect(dialog.getByTestId("comment-history-stale")).toBeVisible();
     await dialog.getByTestId("comment-history-refresh").click();
     await expect(dialog.getByTestId("comment-history-revision")).toHaveCount(2);
@@ -290,7 +284,6 @@ test.describe("live comment history with a second tab open", () => {
     ).toBeTruthy();
     await expect(dialog).toBeHidden();
     await expect(row).toBeHidden();
-    await second.close();
 
     // A master delete is published without attribution; the open list still
     // closes and the row disappears for an ordinary member tab.
