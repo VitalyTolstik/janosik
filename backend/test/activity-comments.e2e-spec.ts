@@ -540,8 +540,7 @@ describe("Activity & comments API (e2e)", () => {
       );
       expect(added).toHaveLength(3);
       expect(added[0].actorId).toBe(memberId);
-      expect(added[0].details).toMatchObject({ text: "Third comment" });
-      expect(added[0].detail).toBe(third.body.id);
+      expect(added[0].details).toBeUndefined();
       expect(added[0].changes).toEqual([
         { field: "comment", from: null, to: "Third comment" },
       ]);
@@ -562,11 +561,10 @@ describe("Activity & comments API (e2e)", () => {
       const deleted = afterFeed.items.find(
         (entry) => entry.type === "comment_deleted",
       );
-      expect(deleted?.details).toMatchObject({ commentId: second.body.id });
-      expect(deleted?.detail).toBe(second.body.id);
-      expect(deleted?.changes).toEqual([
-        { field: "comment", from: "Second comment", to: null },
-      ]);
+      expect(deleted?.details).toBeUndefined();
+      expect(deleted?.detail).toBeUndefined();
+      expect(deleted?.changes).toBeUndefined();
+      expect(JSON.stringify(deleted)).not.toContain("Second comment");
 
       // The board feed sees them too, but scoped to the board.
       const boardPage = await boardFeed(boardId);
@@ -755,25 +753,27 @@ describe("Activity & comments API (e2e)", () => {
           (entry) => entry.type === "comment_updated",
         );
         expect(updated?.actorId).toBe(memberId);
-        expect(updated?.details).toMatchObject({
-          commentId: created.body.id,
-          text: "Edited text",
-        });
-        expect(updated?.detail).toBe(created.body.id);
+        expect(updated?.details).toBeUndefined();
+        expect(updated?.detail).toBeUndefined();
+        expect(updated?.changes).toEqual([
+          { field: "comment", from: "First draft", to: "Edited text" },
+        ]);
 
-        // The live stream carries the id; the body comes from the list.
+        // The live stream carries the ids; the body comes from the list.
         await new Promise((resolve) => setTimeout(resolve, 50));
         const frame = events.find(
           (event) =>
             event.type === "activity" &&
             event.kind === "comment_updated" &&
-            event.detail === created.body.id,
+            event.commentId === created.body.id,
         );
         expect(frame).toMatchObject({
           boardId,
           cardId,
           actorId: memberId,
           kind: "comment_updated",
+          commentId: created.body.id,
+          revisionId: expect.any(String),
           detail: created.body.id,
         });
       } finally {
@@ -822,11 +822,9 @@ describe("Activity & comments API (e2e)", () => {
       const updated = feed.items.find(
         (entry) => entry.type === "comment_updated",
       );
-      expect(updated?.details).toEqual({
-        commentId: created.body.id,
-        beforeKind: "note",
-        afterKind: "question",
-      });
+      expect(updated?.details).toBeUndefined();
+      expect(updated?.detail).toBeUndefined();
+      expect(updated?.changes).toBeUndefined();
       const revisions = await prisma.commentRevision.count({
         where: { commentId: created.body.id as string },
       });

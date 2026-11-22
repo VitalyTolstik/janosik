@@ -115,6 +115,60 @@ const MEMBERSHIP_KEYS: Record<string, MessageKey> = {
   agent_policy_changed: "activity.agent-policy-changed",
 };
 
+/**
+ * TASK-185.2: an in-flight feed response can land after the `comment_deleted`
+ * SSE frame that removed the row. `deletedIds` maps each id to the deletion
+ * generation; a response that started after that generation is authoritative
+ * (the comment may have been restored), so only older responses are stale.
+ */
+export type DeletedCommentTombstones = Map<string, number>;
+
+function commentActivityId(
+  entry: Pick<ActivityFeedEntry, "commentId" | "detail">,
+): string | undefined {
+  return entry.commentId ?? entry.detail;
+}
+
+/**
+ * Drop tombstones for ids a fresh response still contains: the server only
+ * returns a live row after a restore, so the local deleted marker must not
+ * keep hiding it.
+ */
+export function reconcileRestoredComments<T>(
+  items: readonly T[],
+  deletedIds: DeletedCommentTombstones,
+  requestGeneration: number,
+  idOf: (item: T) => string | undefined,
+): void {
+  for (const item of items) {
+    const id = idOf(item);
+    if (id === undefined) continue;
+    const deletedAt = deletedIds.get(id);
+    if (deletedAt !== undefined && deletedAt <= requestGeneration) {
+      deletedIds.delete(id);
+    }
+  }
+}
+
+export function isStaleDeletedCommentEntry(
+  entry: Pick<
+    ActivityFeedEntry,
+    "type" | "commentId" | "detail" | "changes" | "details"
+  >,
+  deletedIds: DeletedCommentTombstones,
+  requestGeneration: number,
+): boolean {
+  const id = commentActivityId(entry);
+  if (id === undefined || entry.type === "comment_deleted") return false;
+  const deletedAt = deletedIds.get(id);
+  if (deletedAt === undefined || deletedAt <= requestGeneration) return false;
+  return (
+    entry.type === "comment_updated" ||
+    (entry.changes?.length ?? 0) > 0 ||
+    entry.details != null
+  );
+}
+
 /** Field label keys for the "from → to" lines. */
 export const FIELD_KEYS: Record<string, MessageKey> = {
   title: "history.field.title",

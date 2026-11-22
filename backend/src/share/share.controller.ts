@@ -40,28 +40,251 @@ import { ShareAccessGuard } from "./share-access.guard";
 import { ShareThrottlerGuard } from "./share-throttler.guard";
 import { ShareService } from "./share.service";
 
+/** Comment kinds the public contour may announce (still id-only). */
+const PUBLIC_ACTIVITY_KINDS = new Set([
+  "comment_added",
+  "comment_updated",
+  "comment_deleted",
+]);
+
+/** Touches safe to repeat on the public wire (`card:<id>`, …). */
+const PUBLIC_TOUCH =
+  /^(board|column|card|label|checklist|checklistItem):[\w-]{1,64}$/;
+
 /**
- * Anonymous share streams must not leak TASK-166 token attribution: the
- * internal command/activity frames carry `apiTokenId`, `agentSessionId`,
- * `runId` and the token-name snapshot (`agentName`). Strip those before the
- * frame crosses the public boundary; everything else stays wire-compatible.
+ * Explicit public action projection (TASK-185.2). Only the fields the
+ * anonymous board reducer reads are copied; token/session/run attribution,
+ * command ids, inverse metadata and unknown action types never cross. An
+ * action that cannot be reconstructed safely becomes a `resync`, so the
+ * public page re-reads the authoritative snapshot instead of half-applying
+ * it.
  */
-function sanitizePublicFrame(data: object | string): object | string {
-  if (typeof data === "string") return data;
-  const event = data as {
-    type?: string;
-    apiTokenId?: unknown;
-    agentSessionId?: unknown;
-    runId?: unknown;
-    agentName?: unknown;
+const PUBLIC_ACTION_FIELDS: Record<string, readonly string[]> = {
+  ADD_COLUMN: ["newColumnId", "title"],
+  RENAME_COLUMN: ["columnId", "title"],
+  DELETE_COLUMN: ["columnId"],
+  RENAME_BOARD: ["title"],
+  ADD_CARD: ["newCardId", "columnId", "title", "labelIds", "atIndex"],
+  UPDATE_CARD: ["cardId", "title", "description", "quiet"],
+  TOUCH_CARD: ["cardId"],
+  DELETE_CARD: ["cardId"],
+  ARCHIVE_CARD: ["cardId", "archivedAt"],
+  UNARCHIVE_CARD: ["cardId", "columnId", "index"],
+  ARCHIVE_COLUMN_CARDS: ["columnId"],
+  SET_CARD_LABEL: ["cardId", "labelId", "on", "index"],
+  ADD_LABEL: ["label"],
+  RENAME_LABEL: ["labelId", "name"],
+  SET_LABEL_COLOR: ["labelId", "color"],
+  DELETE_LABEL: ["labelId"],
+  ADD_CHECKLIST: ["cardId", "newChecklistId", "title"],
+  RENAME_CHECKLIST: ["cardId", "checklistId", "title"],
+  DELETE_CHECKLIST: ["cardId", "checklistId"],
+  ADD_CHECKLIST_ITEM: ["cardId", "checklistId", "newItemId", "text"],
+  SET_CHECKLIST_ITEM_DONE: ["cardId", "checklistId", "itemId", "done"],
+  RENAME_CHECKLIST_ITEM: ["cardId", "checklistId", "itemId", "text"],
+  DELETE_CHECKLIST_ITEM: ["cardId", "checklistId", "itemId"],
+  SET_CARD_DUE_DATE: ["cardId", "dueDate"],
+  SET_CARD_PRIORITY: ["cardId", "priority"],
+  SET_CARD_ASSIGN: ["cardId", "assigneeId"],
+  CLAIM_CARD: ["cardId", "claimedBy", "leaseUntil"],
+  SET_CARD_TASK_SPEC: ["cardId", "acceptanceCriteria", "definitionOfDone"],
+  ADD_CARD_LINK: ["cardId", "linkId", "targetCardId", "linkType"],
+  REMOVE_CARD_LINK: ["cardId", "linkId", "targetCardId", "linkType"],
+  SET_CARD_COVER: ["cardId", "cover"],
+  DUPLICATE_CARD: ["cardId", "newCardId", "title"],
+  DUPLICATE_COLUMN: ["columnId", "newColumnId", "newCardIds", "title"],
+  MOVE_CARD: ["cardId", "fromColumnId", "fromIndex", "toColumnId", "toIndex"],
+  MOVE_COLUMN: ["columnId", "fromIndex", "toIndex"],
+  SORT_COLUMN: ["columnId", "sortBy"],
+  SET_COLUMN_CARD_ORDER: ["columnId", "cardIds"],
+  SET_COLUMN_WIP_LIMIT: ["columnId", "wipLimit"],
+  SET_COLUMN_ACCENT: ["columnId", "accent"],
+  SET_BOARD_COLUMN_STYLE: ["columnStyle"],
+  SET_BOARD_WORKFLOW: ["workflow"],
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function publicString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function publicNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+/** Copy one projected action field, dropping free-form nested extras. */
+function publicActionValue(field: string, value: unknown): unknown {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string"
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.filter(
+      (item) =>
+        typeof item === "string" ||
+        typeof item === "number" ||
+        typeof item === "boolean",
+    );
+  }
+  const record = asRecord(value);
+  if (record === null) return undefined;
+  if (field === "label") {
+    return {
+      ...(publicString(record.id) !== undefined
+        ? { id: publicString(record.id) }
+        : {}),
+      ...(publicString(record.name) !== undefined
+        ? { name: publicString(record.name) }
+        : {}),
+      ...(publicString(record.color) !== undefined
+        ? { color: publicString(record.color) }
+        : {}),
+    };
+  }
+  if (field === "checklist") {
+    const items = Array.isArray(record.items) ? record.items : [];
+    return {
+      ...(publicString(record.id) !== undefined
+        ? { id: publicString(record.id) }
+        : {}),
+      ...(publicString(record.title) !== undefined
+        ? { title: publicString(record.title) }
+        : {}),
+      items: items.flatMap((item) => {
+        const row = asRecord(item);
+        if (row === null) return [];
+        return [
+          {
+            ...(publicString(row.id) !== undefined
+              ? { id: publicString(row.id) }
+              : {}),
+            ...(publicString(row.text) !== undefined
+              ? { text: publicString(row.text) }
+              : {}),
+            ...(typeof row.done === "boolean" ? { done: row.done } : {}),
+          },
+        ];
+      }),
+    };
+  }
+  if (field === "cover" || field === "accent") {
+    return {
+      ...(publicString(record.type) !== undefined
+        ? { type: publicString(record.type) }
+        : {}),
+      ...(publicString(record.value) !== undefined
+        ? { value: publicString(record.value) }
+        : {}),
+    };
+  }
+  if (field === "workflow") {
+    // Board workflow is already part of the public aggregate; a plain JSON
+    // clone keeps its nested transition/condition shape intact.
+    return JSON.parse(JSON.stringify(record)) as unknown;
+  }
+  return undefined;
+}
+
+function projectPublicAction(value: unknown): Record<string, unknown> | null {
+  const action = asRecord(value);
+  if (action === null) return null;
+  const type = publicString(action.type);
+  if (type === undefined) return null;
+  const fields = PUBLIC_ACTION_FIELDS[type];
+  if (fields === undefined) return null;
+  const projected: Record<string, unknown> = {
+    type,
+    at: publicNumber(action.at) ?? 0,
+    ...(publicString(action.boardId) !== undefined
+      ? { boardId: publicString(action.boardId) }
+      : {}),
   };
-  if (event.type !== "command" && event.type !== "activity") return data;
-  const copy = { ...event };
-  delete copy.apiTokenId;
-  delete copy.agentSessionId;
-  delete copy.runId;
-  delete copy.agentName;
-  return copy;
+  for (const field of fields) {
+    const copy = publicActionValue(field, action[field]);
+    if (copy !== undefined) projected[field] = copy;
+  }
+  return projected;
+}
+
+function publicTouches(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (touch): touch is string =>
+      typeof touch === "string" && PUBLIC_TOUCH.test(touch),
+  );
+}
+
+/**
+ * Anonymous share streams are a separate wire contract, not "the member
+ * frame minus secrets". TASK-185.2 builds every activity and command frame
+ * from an allowlist, drops the rest and degrades an unprojectable command to
+ * `resync`. Service frames are only a literal `ping` and `{type:"resync"}`.
+ */
+export function sanitizePublicFrame(
+  data: object | string,
+): object | string | null {
+  if (typeof data === "string") return data === "ping" ? data : null;
+  const event = asRecord(data);
+  if (event === null) return null;
+  if (event.type === "resync") return { type: "resync" };
+
+  if (event.type === "activity") {
+    const kind = publicString(event.kind);
+    if (kind === undefined || !PUBLIC_ACTIVITY_KINDS.has(kind)) return null;
+    const id = publicString(event.id);
+    const boardId = publicString(event.boardId);
+    const at = publicNumber(event.at);
+    // New frames use `commentId`; a legacy frame may still carry the id in
+    // `detail` (the only transitional field accepted by this contract).
+    const commentId =
+      publicString(event.commentId) ?? publicString(event.detail);
+    if (
+      id === undefined ||
+      boardId === undefined ||
+      at === undefined ||
+      commentId === undefined
+    ) {
+      return null;
+    }
+    const cardId = publicString(event.cardId);
+    return {
+      type: "activity",
+      id,
+      boardId,
+      ...(cardId !== undefined ? { cardId } : {}),
+      at,
+      kind,
+      commentId,
+      detail: commentId,
+    };
+  }
+
+  if (event.type === "command") {
+    const seq = publicNumber(event.seq);
+    const action = projectPublicAction(event.action);
+    if (seq === undefined || action === null) return { type: "resync" };
+    return {
+      type: "command",
+      seq,
+      touches: publicTouches(event.touches),
+      action,
+    };
+  }
+
+  // Presence, membership, approval, agent, run, keepalive and any unknown
+  // frame never cross the public boundary.
+  return null;
 }
 
 /**
@@ -142,9 +365,10 @@ export class ShareController {
       // value captured at connect time.
       let includeComments = share.includeComments;
       const send = (data: object | string): void => {
-        if (!subscriber.closed) {
-          subscriber.next({ data: sanitizePublicFrame(data) } as MessageEvent);
-        }
+        if (subscriber.closed) return;
+        const frame = sanitizePublicFrame(data);
+        if (frame === null) return;
+        subscriber.next({ data: frame } as MessageEvent);
       };
       const sequencer = new CommandStreamSequencer(
         this.commands,
