@@ -139,6 +139,8 @@ describe("ArchiveDialog", () => {
     expect(list).toHaveTextContent("Created");
     expect(list).toHaveTextContent("archived");
     expect(list).not.toHaveTextContent("Active thing");
+    // Singular count for exactly one archived card.
+    expect(screen.getByText("Alpha · 1 card")).toBeVisible();
   });
 
   it("filters rows by search and shows the empty result", async () => {
