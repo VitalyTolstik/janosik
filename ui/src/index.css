@@ -1277,17 +1277,26 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 /* TASK-177.12: avatar initials on the name-bearing picker/comment tiles.
    Dark ink passes on the light palette hues; the deeper light-theme hues
    below invert to white. This keeps every avatar tile at AA or better. */
-[data-testid="user-avatar"] {
+[data-testid="user-avatar"],
+[data-testid="public-avatar"] {
   color: var(--avatar-ink);
 }
 html.light [data-testid="user-avatar"].bg-primary,
+html.light [data-testid="public-avatar"].bg-primary,
 html.light [data-testid="user-avatar"].bg-secondary,
+html.light [data-testid="public-avatar"].bg-secondary,
 html.light [data-testid="user-avatar"].bg-blue,
+html.light [data-testid="public-avatar"].bg-blue,
 html.light [data-testid="user-avatar"].bg-indigo,
+html.light [data-testid="public-avatar"].bg-indigo,
 html.light [data-testid="user-avatar"].bg-danger,
+html.light [data-testid="public-avatar"].bg-danger,
 html.light [data-testid="user-avatar"].bg-fuchsia,
+html.light [data-testid="public-avatar"].bg-fuchsia,
 html.light [data-testid="user-avatar"].bg-pink,
-html.light [data-testid="user-avatar"].bg-slate {
+html.light [data-testid="public-avatar"].bg-pink,
+html.light [data-testid="user-avatar"].bg-slate,
+html.light [data-testid="public-avatar"].bg-slate {
   color: var(--avatar-ink-inverse);
 }
 

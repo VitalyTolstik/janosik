@@ -46,7 +46,7 @@ import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { AgentAttribution } from "@/components/agents/AgentAttribution";
-import { userLabel } from "@/utils/avatar";
+import { userInitials, userLabel } from "@/utils/avatar";
 import { createId } from "@/utils/id";
 
 // MDXEditor rides the description's lazy boundary (TASK-19): both comment
@@ -1367,6 +1367,7 @@ function CommentRow({
   const email = comment.authorEmail ?? member?.email ?? "";
   const displayName = comment.authorName ?? member?.displayName ?? null;
   const name = userLabel(displayName, email) || "?";
+  const initials = userInitials(displayName, email);
 
   // Inline edit (TASK-176.2, TASK-177.11): the row stays in place; its body
   // swaps for the same markdown editor the composer uses, and the author may
@@ -1451,7 +1452,7 @@ function CommentRow({
     >
       <button
         type="button"
-        aria-label={t("profile.open", { name })}
+        aria-label={t("profile.openInitials", { name, initials })}
         onClick={() => openProfile(comment.authorId)}
         className="ml-0.5 mt-0.5 inline-flex shrink-0 rounded-full"
       >

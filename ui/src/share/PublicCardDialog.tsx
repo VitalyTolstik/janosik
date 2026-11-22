@@ -201,7 +201,8 @@ function PublicAvatar({
   const initials = userInitials(displayName, "");
   return (
     <span
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${userAvatarColor(
+      data-testid="public-avatar"
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-[var(--avatar-ink)] ${userAvatarColor(
         id,
         color,
       )}`}

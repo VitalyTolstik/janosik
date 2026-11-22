@@ -1330,6 +1330,7 @@
   "profile.offline": "Not on the board",
   "profile.online": "On the board now",
   "profile.open": "Open {{name}}'s profile",
+  "profile.openInitials": "{{name}} ({{initials}}) — open profile",
   "profile.role": "Role",
   "profile.title": "Profile",
   "profile.you": "This is you",

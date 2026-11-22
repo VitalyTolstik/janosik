@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board, BoardMemberDto, CommentDto } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
@@ -534,6 +535,29 @@ describe("CardComments", () => {
     expect(send).toBeDisabled();
     fireEvent.change(input, { target: { value: "ok" } });
     expect(send).toBeEnabled();
+  });
+
+  it("names the comment avatar with its visible initials and passes axe", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({
+        authorId: "user-vk",
+        authorName: "Vitaliy Kowalczyk-Shcherbakovsky",
+      }),
+    ]);
+    renderComments(server);
+
+    const profile = await screen.findByRole("button", {
+      name: "Vitaliy Kowalczyk-Shcherbakovsky (VK) — open profile",
+    });
+    expect(profile).toBeVisible();
+
+    const results = await axe.run(screen.getByTestId("comment-list"), {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(results.violations.map((violation) => violation.id)).not.toContain(
+      "label-content-name-mismatch",
+    );
   });
 
   it("clears the draft with Cancel and sends nothing", async () => {
