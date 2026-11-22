@@ -275,18 +275,26 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     return { promise, resolve };
   }
 
-  /** Wait until some transaction is queued on a transaction-scoped lock. */
-  async function waitForAdvisoryWaiter(): Promise<void> {
+  /** Wait until a transaction is queued on this board's advisory lock. */
+  async function waitForAdvisoryWaiter(boardId: string): Promise<void> {
     for (let attempt = 0; attempt < 80; attempt += 1) {
       const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
         SELECT count(*)::bigint AS "count"
           FROM pg_locks
-         WHERE locktype = 'advisory' AND NOT granted
+         WHERE locktype = 'advisory'
+           AND NOT granted
+           AND objsubid = 1
+           AND classid = (
+                 (hashtextextended(${boardId}, 0) >> 32) & 4294967295
+               )::oid
+           AND objid = (
+                 hashtextextended(${boardId}, 0) & 4294967295
+               )::oid
       `;
       if ((rows[0]?.count ?? 0n) > 0n) return;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    throw new Error("erase never queued on the board lock");
+    throw new Error(`erase never queued on board ${boardId}`);
   }
 
   /** A valid revision chain without going through the HTTP writer. */
@@ -1443,9 +1451,21 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       held.resolve();
       await release.promise;
     });
-    await held.promise;
-    const erase = accountDeletion.deleteAccount(user.id);
-    await waitForAdvisoryWaiter();
+    const lateHeld = deferred();
+    const lateRelease = deferred();
+    const holdLate = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, late.boardId);
+      lateHeld.resolve();
+      await lateRelease.promise;
+    });
+    await Promise.all([held.promise, lateHeld.promise]);
+
+    let settled = false;
+    const erase = accountDeletion.deleteAccount(user.id).then((result) => {
+      settled = true;
+      return result;
+    });
+    await waitForAdvisoryWaiter(first.boardId);
 
     // This lands after the erase took its candidate union and locks. The
     // retry must replay with the late board in the sorted lock set.
@@ -1465,7 +1485,12 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       },
     });
     release.resolve();
-    await Promise.all([hold, erase]);
+    // Only the replay attempts the late board's lock. It must block here
+    // until we release that lock, proving the first attempt rolled back.
+    await waitForAdvisoryWaiter(late.boardId);
+    expect(settled).toBe(false);
+    lateRelease.resolve();
+    await Promise.all([hold, holdLate, erase]);
 
     expect(
       await prisma.comment.findUnique({ where: { id: lateComment.id } }),

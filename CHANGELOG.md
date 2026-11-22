@@ -25,9 +25,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - TASK-185.1 hardening. An attachment-delete gap now releases its claimed
   destructive approval instead of burning it; repeated attachment deletion is
-  an idempotent no-op; GDPR erase collects the board union, takes one sorted
-  board-lock set behind a global erase key, re-reads the verified chain and
-  replays if a late board appears, then merges `gdpr_erase` atomically. Every
+  an idempotent no-op. Under one global erase key, GDPR erase collects the
+  board union and takes the sorted board-lock set, re-reads the verified chain,
+  and replays on a late board before merging `gdpr_erase` atomically. Every
   purge pass re-checks the soft-deleted flag in its delete predicate,
   attachments remove only blobs of rows that actually went, and the board
   subtree is purged one board at a time in its board-locked transaction so a
