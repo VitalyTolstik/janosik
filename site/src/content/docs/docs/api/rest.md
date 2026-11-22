@@ -215,6 +215,15 @@ text answers `400`, and an unknown `kind` answers `400`. When `commandId` is
 supplied, a retry that reuses it returns the first comment instead of appending
 a duplicate. A `commandId` already used on another card answers `409`.
 
+Mentions are explicit Markdown links to the reserved
+`https://janosik.invalid/mention/<userId>` address, for example
+`[@Alice](https://janosik.invalid/mention/clx…)`. The server resolves every
+link at write time, rejects an id outside the board's active roster with
+`400 mention_not_member`, and returns the resolved ids in
+`CommentDto.mentionedUserIds` (first-mention order, duplicates collapsed).
+Mention-shaped text in fenced/inline code, escaped text and larger URLs is
+plain text; a hand-typed `@Alice` notifies nobody.
+
 `GET` accepts `?cursor=` (opaque), `?limit=` and `?kind=` (one comment kind).
 The default limit is 50, the maximum is 100; a limit outside `1` to `100`
 answers `400`, and an unknown `kind` answers `400`. Pages are newest-first and
@@ -977,7 +986,7 @@ Field presence and nullability are specified separately:
 
 | Field       | Type   | Required | Constraints                                                |
 | ----------- | ------ | -------- | ---------------------------------------------------------- |
-| `text`      | string | required | non-empty, at most 10000 characters                        |
+| `text`      | string | required | non-empty, at most 10000 characters; may contain explicit mention links |
 | `kind`      | string | optional | one of `note`, `status`, `question`, `blocker`, `evidence`, `handoff` (default `note`) |
 | `commandId` | string | optional | at most 64 characters, `^[A-Za-z0-9_-]+$`; idempotency key |
 

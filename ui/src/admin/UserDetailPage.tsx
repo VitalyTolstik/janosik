@@ -18,7 +18,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { ADMIN_DETAIL_LIMITS } from "@janosik/shared";
+import { ADMIN_DETAIL_LIMITS, stripMentionMarkup } from "@janosik/shared";
 import type {
   AdminActivityRowDto,
   AdminCommandRowDto,
@@ -1204,7 +1204,7 @@ export function UserDetailPage() {
                       >
                         <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
                           <div className="w-full min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
-                            {comment.text}
+                            {stripMentionMarkup(comment.text)}
                           </div>
                           <AdminCommentHistoryButton comment={comment} />
                         </div>

@@ -9,7 +9,7 @@ import type {
   CommentDto,
   PublicBoardMemberDto,
 } from "@janosik/shared";
-import { LABEL_COLOR_CHIP, LIMITS } from "@janosik/shared";
+import { LABEL_COLOR_CHIP, LIMITS, stripMentionMarkup } from "@janosik/shared";
 import { DueBadge } from "@/components/board/DueBadge";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import {
@@ -359,7 +359,7 @@ function PublicComments({
                     : (comment.authorName ?? t("share.public.anonymous"))}
                 </p>
                 <p className="whitespace-pre-wrap break-words text-sm">
-                  {comment.text.slice(0, LIMITS.comment)}
+                  {stripMentionMarkup(comment.text).slice(0, LIMITS.comment)}
                 </p>
               </div>
             </li>

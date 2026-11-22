@@ -135,6 +135,10 @@ export function CardComments({
   const listRef = useRef<HTMLOListElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const settlingFocusRef = useRef<string | null>(null);
+  // TASK-177.12: a mention deep link may point past the first page. The
+  // thread loads older pages until the target appears (or the cursor ends).
+  const focusAutoLoadRef = useRef<string | null>(null);
+  const focusAutoStuckRef = useRef<string | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
   const [status, setStatus] = useState<
@@ -688,14 +692,14 @@ export function CardComments({
     }
   };
 
-  const handleShowOlder = async () => {
-    if (nextCursor === null || loadingOlder) return;
+  const handleShowOlder = useCallback(async (): Promise<boolean> => {
+    if (nextCursor === null || loadingOlder) return false;
     const kind = loadedKindRef.current;
     const generation = deletionGenerationRef.current;
     setLoadingOlder(true);
     try {
       const page = await api.listComments(cardId, nextCursor, PAGE_SIZE, kind);
-      if (kind !== loadedKindRef.current) return;
+      if (kind !== loadedKindRef.current) return false;
       const cleanPage = scrubPage(page, generation);
       setThread((current) => {
         const merged = appendOlderActivity(current, cleanPage, nextCursor);
@@ -708,13 +712,66 @@ export function CardComments({
             : {}),
         };
       });
+      return true;
     } catch (error) {
       markUnavailable(error);
       toast.error(t("comment.loadError"));
+      return false;
     } finally {
       setLoadingOlder(false);
     }
-  };
+  }, [
+    cardId,
+    loadingOlder,
+    markUnavailable,
+    nextCursor,
+    scrubItems,
+    scrubPage,
+    t,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!focusId || !loaded || status !== "ready" || nextCursor === null) {
+      return;
+    }
+    if (
+      revealedFocusRef.current === focusId ||
+      items.some((comment) => comment.id === focusId)
+    ) {
+      return;
+    }
+    if (
+      loadingOlder ||
+      focusAutoLoadRef.current === focusId ||
+      focusAutoStuckRef.current === focusId
+    ) {
+      return;
+    }
+    focusAutoLoadRef.current = focusId;
+    void handleShowOlder().then((ok) => {
+      if (focusAutoLoadRef.current !== focusId) return;
+      focusAutoLoadRef.current = null;
+      // A failed page must not turn the deep link into a retry loop.
+      if (!ok) focusAutoStuckRef.current = focusId;
+    });
+  }, [
+    focusId,
+    handleShowOlder,
+    items,
+    loaded,
+    loadingOlder,
+    nextCursor,
+    status,
+  ]);
+
+  const focusMissing =
+    focusId !== undefined &&
+    loaded &&
+    status === "ready" &&
+    nextCursor === null &&
+    !loadingOlder &&
+    !items.some((comment) => comment.id === focusId);
 
   const handleKindFilter = (next: CommentKind | undefined) => {
     if (next === requestedKindRef.current) {
@@ -823,6 +880,16 @@ export function CardComments({
             />
           ))}
         </ol>
+      ) : null}
+
+      {focusMissing ? (
+        <p
+          role="status"
+          data-testid="comment-focus-missing"
+          className="py-1 pl-[36px] text-xs text-muted-foreground"
+        >
+          {t("comment.focusNotFound")}
+        </p>
       ) : null}
 
       {nextCursor !== null ? (

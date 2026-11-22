@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
+import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardMemberDto } from "@janosik/shared";
 
@@ -36,33 +38,81 @@ const MEMBERS: BoardMemberDto[] = [
   },
 ];
 
+function manyMembers(count: number): BoardMemberDto[] {
+  return Array.from({ length: count }, (_, index) => ({
+    userId: `user-${index}`,
+    displayName: `Member ${index}`,
+    email: `member-${index}@example.com`,
+    role: "MEMBER" as const,
+    expiresAt: null,
+    avatarColor: null,
+    avatarPath: null,
+  }));
+}
+
+function PickerHarness({
+  members = MEMBERS,
+  onSelect,
+  onCancel,
+  onActiveChange = vi.fn(),
+}: {
+  members?: BoardMemberDto[];
+  onSelect: (member: BoardMemberDto) => void;
+  onCancel: (query: string) => void;
+  onActiveChange?: (id: string | null) => void;
+}) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={anchorRef} data-testid="mention-anchor">
+      <MentionPicker
+        members={members}
+        anchorRef={anchorRef}
+        idPrefix="test-mention"
+        onSelect={onSelect}
+        onCancel={onCancel}
+        onActiveChange={onActiveChange}
+      />
+    </div>
+  );
+}
+
 function renderPicker(
   overrides: {
     members?: BoardMemberDto[];
-    onSelect?: () => void;
-    onCancel?: () => void;
+    onSelect?: (member: BoardMemberDto) => void;
+    onCancel?: (query: string) => void;
+    onActiveChange?: (id: string | null) => void;
   } = {},
 ) {
   const onSelect = vi.fn();
   const onCancel = vi.fn();
+  const onActiveChange = vi.fn();
   render(
     <I18nProvider>
       <TooltipProvider>
-        <MentionPicker
-          members={overrides.members ?? MEMBERS}
+        <PickerHarness
+          members={overrides.members}
           onSelect={overrides.onSelect ?? onSelect}
           onCancel={overrides.onCancel ?? onCancel}
+          onActiveChange={overrides.onActiveChange ?? onActiveChange}
         />
       </TooltipProvider>
     </I18nProvider>,
   );
-  return { onSelect, onCancel };
+  return { onSelect, onCancel, onActiveChange };
 }
 
 function type(text: string) {
   for (const key of text) {
     fireEvent.keyDown(document, { key });
   }
+}
+
+async function axeViolations(context: Element | Document) {
+  const results = await axe.run(context, {
+    rules: { "color-contrast": { enabled: false } },
+  });
+  return results.violations.map((violation) => violation.id);
 }
 
 describe("MentionPicker (TASK-177.12)", () => {
@@ -94,6 +144,21 @@ describe("MentionPicker (TASK-177.12)", () => {
     fireEvent.keyDown(document, { key: "Enter" });
     expect(onSelect).toHaveBeenLastCalledWith(
       expect.objectContaining({ userId: "user-bob" }),
+    );
+  });
+
+  it("resets the active row when the query changes", () => {
+    renderPicker();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
+      "Анна",
+    );
+
+    type("bo");
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
+      "Bob",
     );
   });
 
@@ -130,12 +195,13 @@ describe("MentionPicker (TASK-177.12)", () => {
     );
   });
 
-  it("dismisses without restoring on an outside click", () => {
+  it("dismisses without swallowing the typed query", () => {
     const { onCancel } = renderPicker();
 
+    type("bo");
     fireEvent.pointerDown(document.body);
 
-    expect(onCancel).toHaveBeenCalledWith(undefined);
+    expect(onCancel).toHaveBeenCalledWith("bo");
   });
 
   it("keeps a member-less roster inert instead of accepting free text", () => {
@@ -146,5 +212,40 @@ describe("MentionPicker (TASK-177.12)", () => {
 
     expect(onSelect).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledWith("anyone");
+  });
+
+  it("announces the true total while rendering at most eight rows", () => {
+    renderPicker({ members: manyMembers(11) });
+
+    expect(screen.getAllByRole("option")).toHaveLength(8);
+    expect(screen.getByRole("status")).toHaveTextContent("11 matching members");
+  });
+
+  it("keeps the active option in sync and scrolls it into view", () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const { onActiveChange } = renderPicker({ members: manyMembers(8) });
+
+    for (let index = 0; index < 5; index += 1) {
+      fireEvent.keyDown(document, { key: "ArrowDown" });
+    }
+
+    expect(screen.getByRole("option", { selected: true })).toHaveAttribute(
+      "id",
+      "test-mention-option-user-5",
+    );
+    expect(onActiveChange).toHaveBeenLastCalledWith(
+      "test-mention-option-user-5",
+    );
+    expect(scroll).toHaveBeenCalled();
+  });
+
+  it("has no axe violations with the picker open", async () => {
+    renderPicker({ members: manyMembers(5) });
+
+    expect(await axeViolations(document.body)).toEqual([]);
   });
 });

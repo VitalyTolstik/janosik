@@ -21,8 +21,13 @@ import {
   notificationMailId,
 } from "@/mailer/notification-delivery.service";
 import type { MailLocale } from "@/mailer/mail.types";
-import { attentionEmail, type AttentionEmailVars } from "@/mailer/templates";
+import {
+  attentionEmail,
+  mentionInboxBody,
+  type AttentionEmailVars,
+} from "@/mailer/templates";
 import { EmailTemplateService } from "@/ops/email-template.service";
+import { escapeLikePrefix } from "./mention-attention";
 
 /** Default/maximum page size of the in-app attention inbox. */
 const DEFAULT_LIMIT = 50;
@@ -54,10 +59,14 @@ interface AttentionRecipient {
 interface AttentionInput {
   type: AttentionNotificationType;
   boardId: string | null;
+  /** Exact comment target for comment-scoped categories. */
+  commentId?: string | null;
   /** Stable base key; the recipient id is appended by the service. */
   dedupKey: string;
   recipients: AttentionRecipient[];
   emailVars: (locale: MailLocale) => AttentionEmailVars;
+  /** Localized in-app body when it must differ from the private e-mail body. */
+  inboxBody?: (locale: MailLocale) => string;
   data?: Record<string, unknown>;
 }
 
@@ -336,6 +345,7 @@ export class AttentionService {
       await this.notify({
         type,
         boardId: input.boardId,
+        commentId: input.commentId,
         dedupKey: `${type}:${input.commentId}`,
         recipients,
         emailVars: () => ({
@@ -396,14 +406,24 @@ export class AttentionService {
       await this.notify({
         type: "comment.mention",
         boardId: input.boardId,
+        commentId: input.commentId,
         dedupKey: `comment.mention:${input.commentId}`,
         recipients,
         emailVars: () => ({
           board,
           card: card.title,
           actor: input.actorName ?? "",
-          excerpt: input.excerpt,
         }),
+        inboxBody: (locale) =>
+          mentionInboxBody(
+            {
+              board,
+              card: card.title,
+              actor: input.actorName,
+              excerpt: input.excerpt,
+            },
+            locale,
+          ),
         data: {
           cardId: input.cardId,
           commentId: input.commentId,
@@ -417,62 +437,6 @@ export class AttentionService {
   }
 
   /**
-   * TASK-177.12 — deleting the source removes its mention rows (and their
-   * still-queued letters) so a poll or a board restore cannot bring a dead
-   * notification back.
-   */
-  async removeCommentMentions(commentId: string): Promise<void> {
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        const rows = await tx.attentionNotification.findMany({
-          where: { dedupKey: { startsWith: `comment.mention:${commentId}:` } },
-          select: { id: true, attentionMailId: true },
-        });
-        if (rows.length === 0) return;
-        await tx.attentionNotification.deleteMany({
-          where: { id: { in: rows.map((row) => row.id) } },
-        });
-        const mailIds = rows.flatMap((row) =>
-          row.attentionMailId === null ? [] : [row.attentionMailId],
-        );
-        if (mailIds.length > 0) {
-          await tx.notificationMail.deleteMany({
-            where: { id: { in: mailIds }, finishedAt: null },
-          });
-        }
-      });
-    } catch (error) {
-      this.warn("remove comment mentions", error);
-    }
-  }
-
-  /** TASK-177.12 — a deleted board drops every mention row it produced. */
-  async removeBoardMentions(boardId: string): Promise<void> {
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        const rows = await tx.attentionNotification.findMany({
-          where: { boardId, type: "comment.mention" },
-          select: { id: true, attentionMailId: true },
-        });
-        if (rows.length === 0) return;
-        await tx.attentionNotification.deleteMany({
-          where: { id: { in: rows.map((row) => row.id) } },
-        });
-        const mailIds = rows.flatMap((row) =>
-          row.attentionMailId === null ? [] : [row.attentionMailId],
-        );
-        if (mailIds.length > 0) {
-          await tx.notificationMail.deleteMany({
-            where: { id: { in: mailIds }, finishedAt: null },
-          });
-        }
-      });
-    } catch (error) {
-      this.warn("remove board mentions", error);
-    }
-  }
-
-  /**
    * TASK-177.11: has this comment already raised blocker/handoff attention?
    * The create path keys rows on `agent.blocked:<commentId>` or
    * `agent.needs_human:<commentId>` plus the recipient, so either prefix means
@@ -481,11 +445,17 @@ export class AttentionService {
    */
   async hasCommentAttention(commentId: string): Promise<boolean> {
     try {
+      const escaped = escapeLikePrefix(commentId);
       const count = await this.prisma.attentionNotification.count({
         where: {
           OR: [
-            { dedupKey: { startsWith: `agent.blocked:${commentId}:` } },
-            { dedupKey: { startsWith: `agent.needs_human:${commentId}:` } },
+            {
+              commentId,
+              type: { in: ["agent.blocked", "agent.needs_human"] },
+            },
+            // Legacy rows written before the exact column existed.
+            { dedupKey: { startsWith: `agent.blocked:${escaped}:` } },
+            { dedupKey: { startsWith: `agent.needs_human:${escaped}:` } },
           ],
         },
       });
@@ -811,7 +781,7 @@ export class AttentionService {
         locale,
       );
       const [title = "Attention", ...rest] = letter.text.split("\n");
-      const body = rest.join("\n").trim();
+      const body = (input.inboxBody?.(locale) ?? rest.join("\n")).trim();
       const dedupKey = `${input.dedupKey}:${recipient.id}`;
       const attentionMailId = recipient.notifyAttention
         ? notificationMailId("attention", dedupKey)
@@ -820,6 +790,7 @@ export class AttentionService {
         userId: recipient.id,
         boardId: input.boardId,
         type: input.type,
+        commentId: input.commentId ?? null,
         dedupKey,
         title,
         body: body === "" ? null : body,

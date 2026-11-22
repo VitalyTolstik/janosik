@@ -350,6 +350,8 @@ describe("AttentionService", () => {
       "mentioned-2",
     ]);
     expect(rows.every((row) => row.type === "comment.mention")).toBe(true);
+    expect(rows.every((row) => row.commentId === "comment-1")).toBe(true);
+    expect(rows[0]!.body).toContain("Ping @Bob");
     expect((rows[0]!.data as { authorName: string }).authorName).toBe("Alice");
     expect(mail.create).toHaveBeenCalledTimes(2);
   });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   commentPlainExcerpt,
   extractMentionUserIds,
+  isMentionHref,
   mentionHref,
   mentionIdFromHref,
   mentionMarkdown,
@@ -50,6 +51,63 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(extractMentionUserIds(text)).toEqual([]);
   });
 
+  it("ignores mention-shaped text in fenced and inline code", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    const text = [
+      `Ping ${token}`,
+      "",
+      "```md",
+      `~~~text ${token}~~~`,
+      "```",
+      "",
+      "Inline `" + token + "` stays text.",
+    ].join("\n");
+
+    expect(parseCommentMentions(text)).toEqual([
+      expect.objectContaining({ userId: "user-1", label: "Alice" }),
+    ]);
+  });
+
+  it("ignores escaped tokens and keeps a double-escaped link live", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`Literal \\${token}`)).toEqual([]);
+    expect(
+      parseCommentMentions(
+        `Escaped ping \\[@Alice\\](${mentionHref("user-1")})`,
+      ),
+    ).toEqual([]);
+    expect(parseCommentMentions(`Slash \\\\${token}`)).toEqual([
+      expect.objectContaining({ userId: "user-1" }),
+    ]);
+  });
+
+  it("ignores mention lookalikes embedded in a larger URL", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`https://evil.test/${token} trailing`)).toEqual(
+      [],
+    );
+    expect(parseCommentMentions(`${mentionHref("user-1")}?next=evil`)).toEqual(
+      [],
+    );
+    expect(parseCommentMentions(`${mentionHref("user-1")}#fragment`)).toEqual(
+      [],
+    );
+    expect(
+      parseCommentMentions(`${mentionHref("user-1")} and ${token}`),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
+  });
+
+  it("classifies the whole reserved prefix as a mention href", () => {
+    expect(isMentionHref(mentionHref("user-1"))).toBe(true);
+    expect(isMentionHref(`${mentionHref("user-1")}?next=evil`)).toBe(true);
+    expect(isMentionHref(`${mentionHref("user-1")}#x`)).toBe(true);
+    expect(isMentionHref("https://example.com/mention/user-1")).toBe(false);
+    expect(isMentionHref("https://janosik.invalid/mentioning/user-1")).toBe(
+      false,
+    );
+    expect(isMentionHref(null)).toBe(false);
+  });
+
   it("rejects malformed ids and lookalike links", () => {
     expect(
       parseCommentMentions(
@@ -81,6 +139,10 @@ describe("comment mentions (TASK-177.12)", () => {
     const text = `Ping ${mentionMarkdown("Alice", "user-1")} — see [the plan](https://example.com)`;
     expect(stripMentionMarkup(text)).toContain("@Alice");
     expect(commentPlainExcerpt(text)).toBe("Ping @Alice — see the plan");
+    // Preview surfaces also hide a token a code sample keeps inert.
+    expect(
+      stripMentionMarkup(`Code: \`${mentionMarkdown("Bob", "u2")}\``),
+    ).toBe("Code: `@Bob`");
   });
 
   it("bounds an excerpt and removes HTML so a row stays plain text", () => {

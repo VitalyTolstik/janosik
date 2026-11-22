@@ -13,6 +13,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import { commentPlainExcerpt } from "@janosik/shared";
 import type { AdminGlobalSearchDto } from "@janosik/shared";
 import {
   Dialog,
@@ -151,10 +152,7 @@ export function buildSearchLines(
       key: `comment-${comment.id}`,
       icon: MessageSquare,
       group: groupLabels.comments,
-      label:
-        comment.text.length > 90
-          ? `${comment.text.slice(0, 90)}…`
-          : comment.text,
+      label: commentPlainExcerpt(comment.text, 90),
       secondary: comment.cardTitle
         ? `${comment.cardTitle} · ${comment.authorEmail}`
         : comment.authorEmail,

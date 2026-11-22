@@ -11,11 +11,13 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { notificationMailId } from "@/mailer/notification-delivery.service";
+import { AccountDeletionService } from "@/users/account-deletion.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "mention-owner@example.com";
 const MEMBER_EMAIL = "mention-member@example.com";
 const OUTSIDER_EMAIL = "mention-outsider@example.com";
+const ERASED_EMAIL = "mention-erased@example.com";
 const PASSWORD = "correct horse battery";
 
 /**
@@ -33,6 +35,7 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
   let owner: { token: string; id: string };
   let member: { token: string; id: string };
   let outsider: { token: string; id: string };
+  let erasedAuthor: { token: string; id: string };
   let boardId: string;
   let cardId: string;
 
@@ -49,6 +52,7 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
     owner = await register(OWNER_EMAIL, "Owner");
     member = await register(MEMBER_EMAIL, "Member");
     outsider = await register(OUTSIDER_EMAIL, "Outsider");
+    erasedAuthor = await register(ERASED_EMAIL, "Erased author");
 
     boardId = await server()
       .post("/api/v1/boards")
@@ -57,6 +61,7 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
       .expect(201)
       .then((res) => res.body.id as string);
     await invite(MEMBER_EMAIL, member.token);
+    await invite(ERASED_EMAIL, erasedAuthor.token);
     await command({ type: "ADD_COLUMN", newColumnId: "col-1", title: "Todo" });
     cardId = await createCard("Release checklist");
   });
@@ -145,11 +150,12 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
     text: string,
     targetCard = cardId,
     token = owner.token,
+    commandId: string = randomUUID(),
   ) {
     return server()
       .post(`/api/v1/cards/${targetCard}/comments`)
       .set(auth(token))
-      .send({ text, commandId: randomUUID() });
+      .send({ text, commandId });
   }
 
   function mentionRow(commentId: string, userId: string) {
@@ -211,6 +217,11 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
     expect(row.body).toContain("Owner mentioned you");
     expect(row.body).toContain("Hi @Member");
     expect(row.attentionMailId).not.toBeNull();
+    const letter = await prisma.notificationMail.findUnique({
+      where: { id: row.attentionMailId! },
+    });
+    expect(letter).not.toBeNull();
+    expect(JSON.stringify(letter?.message)).not.toContain("Hi @Member");
     // The author is never notified for mentioning themselves.
     expect(await mentionRow(comment.id, owner.id)).toBeNull();
 
@@ -250,7 +261,7 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
     expect(await prisma.comment.count({ where: { cardId } })).toBe(before);
   });
 
-  it("notifies once when an edit adds a mention, and dedupes repeat edits", async () => {
+  it("adds, withdraws and re-adds a mention notification on edits", async () => {
     const created = await createComment("First draft without a ping.").expect(
       201,
     );
@@ -273,17 +284,59 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
 
     expect(
       await prisma.attentionNotification.count({
-        where: {
-          dedupKey: { startsWith: `comment.mention:${commentId}:` },
-        },
+        where: { commentId, type: "comment.mention" },
       }),
     ).toBe(1);
+
+    // Removing the token withdraws the row; re-adding it sends a fresh one.
+    await server()
+      .patch(`/api/v1/comments/${commentId}`)
+      .set(auth(owner.token))
+      .send({ text: "No ping now." })
+      .expect(200);
+    await waitFor(
+      async () => (await mentionRow(commentId, member.id)) === null,
+    );
+
+    await server()
+      .patch(`/api/v1/comments/${commentId}`)
+      .set(auth(owner.token))
+      .send({ text })
+      .expect(200);
+    await waitForRow(commentId, member.id);
 
     await server()
       .patch(`/api/v1/comments/${commentId}`)
       .set(auth(owner.token))
       .send({ text: `Hello ${mentionMarkdown("Outsider", outsider.id)}` })
       .expect(400);
+  });
+
+  it("does not treat a comment id as a LIKE wildcard during cleanup", async () => {
+    const doomed = await createComment(
+      `Wildcard ${mentionMarkdown("Member", member.id)}`,
+      cardId,
+      owner.token,
+      "mention_a",
+    ).expect(201);
+    const survivor = await createComment(
+      `Survivor ${mentionMarkdown("Member", member.id)}`,
+      cardId,
+      owner.token,
+      "mentionXa",
+    ).expect(201);
+    const doomedId = (doomed.body as CommentDto).id;
+    const survivorId = (survivor.body as CommentDto).id;
+    await waitForRow(doomedId, member.id);
+    await waitForRow(survivorId, member.id);
+
+    await server()
+      .delete(`/api/v1/comments/${doomedId}`)
+      .set(auth(owner.token))
+      .expect(200);
+
+    await waitFor(async () => (await mentionRow(doomedId, member.id)) === null);
+    expect(await mentionRow(survivorId, member.id)).not.toBeNull();
   });
 
   it("keeps the inbox row but sends no letter after the member opts out", async () => {
@@ -338,6 +391,36 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
           },
         })) === 0,
     );
+  });
+
+  it("erases mention rows and letters owned by other recipients on GDPR erase", async () => {
+    const created = await createComment(
+      `Bye ${mentionMarkdown("Member", member.id)}`,
+      cardId,
+      erasedAuthor.token,
+    ).expect(201);
+    const commentId = (created.body as CommentDto).id;
+    const row = await waitForRow(commentId, member.id);
+    const staged = notificationMailId(
+      "attention",
+      `comment.mention:${commentId}:${member.id}`,
+    );
+    expect(
+      await prisma.notificationMail.findUnique({ where: { id: staged } }),
+    ).not.toBeNull();
+
+    await app.get(AccountDeletionService).deleteAccount(erasedAuthor.id);
+
+    await waitFor(
+      async () =>
+        (await prisma.attentionNotification.count({ where: { commentId } })) ===
+        0,
+    );
+    expect(await mentionRow(commentId, member.id)).toBeNull();
+    expect(
+      await prisma.notificationMail.findUnique({ where: { id: staged } }),
+    ).toBeNull();
+    expect(row.userId).toBe(member.id);
   });
 
   it("removes mention rows when the board is deleted", async () => {

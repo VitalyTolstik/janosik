@@ -1062,13 +1062,8 @@ describe("CardComments", () => {
       "comment-50",
     );
 
-    // The first page does not contain the target: no reveal is claimed yet.
+    // The deep link loads older pages by itself until the target arrives.
     await screen.findByText("Comment 0");
-    expect(screen.queryByText("Comment 50")).toBeNull();
-    expect(scroll).not.toHaveBeenCalled();
-
-    fireEvent.click(await screen.findByTestId("comments-show-older"));
-
     const row = await screen.findByText("Comment 50");
     await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
     expect(row.closest("li")).toHaveAttribute("data-search-highlight", "true");
@@ -1095,6 +1090,9 @@ describe("CardComments", () => {
     const row = await screen.findByTestId("comment");
     expect(row).not.toHaveAttribute("data-search-highlight");
     expect(scroll).not.toHaveBeenCalled();
+    expect(
+      await screen.findByTestId("comment-focus-missing"),
+    ).toHaveTextContent("That comment is not in this thread.");
   });
 
   it("drops a comment deleted elsewhere", async () => {

@@ -434,8 +434,6 @@ export interface AttentionEmailVars {
   action?: string;
   actor?: string;
   agent?: string;
-  /** Short plain-text preview of a mentioning comment. */
-  excerpt?: string;
   comment?: string;
   limit?: string | number;
   current?: string | number;
@@ -499,6 +497,9 @@ export function attentionEmail(
     const letter = attentionLetterBase(title, subject, paragraphs);
     return {
       ...letter,
+      // Subjects are headers, not HTML: a board named `A "B"` must not ship
+      // `&quot;` in the mailbox list.
+      subject: decodeHtmlEntities(letter.subject),
       html: letter.html.replace("<html>", `<html lang="${locale}">`),
     };
   };
@@ -511,7 +512,6 @@ export function attentionEmail(
   const action = escapeHtml(vars.action ?? "");
   const expiresAt = escapeHtml(vars.expiresAt ?? "");
   const comment = escapeHtml(vars.comment ?? "");
-  const excerpt = escapeHtml(vars.excerpt ?? "");
   const limit = String(vars.limit ?? "");
   const current = String(vars.current ?? "");
   const runId = escapeHtml(vars.runId ?? "");
@@ -666,7 +666,6 @@ export function attentionEmail(
             `${BRAND}: вас упомянули на доске «${board}»`,
             [
               `${who} упомянул(а) вас в комментарии к карточке <b>${card}</b> на доске <b>${board}</b>.`,
-              ...(excerpt !== "" ? [`«${excerpt}»`] : []),
               "Откройте карточку, чтобы ответить в обсуждении.",
             ],
           )
@@ -675,7 +674,6 @@ export function attentionEmail(
             `${BRAND}: you were mentioned on "${board}"`,
             [
               `${who} mentioned you in a comment on card <b>${card}</b> on board <b>${board}</b>.`,
-              ...(excerpt !== "" ? [`“${excerpt}”`] : []),
               "Open the card to reply in the discussion.",
             ],
           );
@@ -745,6 +743,43 @@ export function attentionEmail(
           );
     }
   }
+}
+
+/**
+ * TASK-177.12 in-app mention body. The attention letter deliberately omits
+ * the comment text (forwarding/leak contract); the authenticated inbox row
+ * still gets the actor, card, board and a short excerpt.
+ */
+export function mentionInboxBody(
+  vars: { board: string; card: string; actor: string | null; excerpt: string },
+  locale: MailLocale,
+): string {
+  const ru = locale === "ru";
+  const who = vars.actor?.trim() || (ru ? "Участник доски" : "A board member");
+  const lines = ru
+    ? [
+        `${who} упомянул(а) вас в комментарии к карточке «${vars.card}» на доске «${vars.board}».`,
+        ...(vars.excerpt === "" ? [] : [`«${vars.excerpt}»`]),
+        "Откройте карточку, чтобы ответить в обсуждении.",
+      ]
+    : [
+        `${who} mentioned you in a comment on card “${vars.card}” on board “${vars.board}”.`,
+        ...(vars.excerpt === "" ? [] : [`“${vars.excerpt}”`]),
+        "Open the card to reply in the discussion.",
+      ];
+  return lines.join("\n\n");
+}
+
+/** Decode the HTML entities the letter builders emit into visible text. */
+export function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*34;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 /** One attention template default, with its editable placeholder list. */
@@ -910,13 +945,8 @@ const agentNeedsHumanDefault = attentionDefault(
 );
 const commentMentionDefault = attentionDefault(
   "comment.mention",
-  {
-    board: "{{board}}",
-    card: "{{card}}",
-    actor: "{{actor}}",
-    excerpt: "{{excerpt}}",
-  },
-  ["board", "card", "actor", "excerpt"],
+  { board: "{{board}}", card: "{{card}}", actor: "{{actor}}" },
+  ["board", "card", "actor"],
 );
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
@@ -988,14 +1018,11 @@ export function fillTemplate(
 
 /** A readable plain-text alternative from the HTML body. */
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .trim();
+  return decodeHtmlEntities(
+    html
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<[^>]+>/g, ""),
+  ).trim();
 }

@@ -23,6 +23,10 @@ import { assertBoardAcceptsWrites } from "@/common/archived-board";
 import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
 import {
+  deleteCommentMentionAttention,
+  deleteCommentMentionAttentionForUsers,
+} from "@/notifications/mention-attention";
+import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
 } from "@/auth/request-attribution";
@@ -367,11 +371,21 @@ export class CommentsService {
       );
     }
     const boardId = comment.card.column.boardId;
-    // TASK-177.12: a text edit can add a mention. Validate the new recipient
-    // set before the write, exactly like create.
+    // TASK-177.12: a text edit can add or remove a mention. Validate the new
+    // recipient set before the write, exactly like create; the diff decides
+    // which notifications are created and which are withdrawn.
+    const previousMentionIds = extractMentionUserIds(comment.text);
     const mentionUserIds = textProvided
       ? await this.assertMentionMembers(boardId, text ?? comment.text)
       : [];
+    const previousMentionSet = new Set(previousMentionIds);
+    const nextMentionSet = new Set(mentionUserIds);
+    const addedMentionIds = mentionUserIds.filter(
+      (id) => !previousMentionSet.has(id),
+    );
+    const removedMentionIds = previousMentionIds.filter(
+      (id) => !nextMentionSet.has(id),
+    );
 
     const updated = await this.boardWrite.run(
       boardId,
@@ -429,6 +443,15 @@ export class CommentsService {
             comment: written.comment,
           };
         }
+        // A mention removed by this edit commits together with the text and
+        // its still-queued letter, so a re-add can notify again later.
+        if (textProvided) {
+          await deleteCommentMentionAttentionForUsers(
+            tx,
+            comment.id,
+            removedMentionIds,
+          );
+        }
         return {
           gap: false as const,
           changed: true as const,
@@ -480,16 +503,17 @@ export class CommentsService {
         agentName: comment.agentName,
       });
     }
-    // TASK-177.12: a newly added mention raises its (deduplicated) row; an
-    // unchanged mention in the same comment is already in the store.
-    if (textProvided && mentionUserIds.length > 0) {
+    // TASK-177.12: only newly added mentions raise a row; unchanged mentions
+    // are already in the store, and removed ones were withdrawn in the same
+    // transaction as the edit.
+    if (textProvided && addedMentionIds.length > 0) {
       await this.attention.notifyCommentMention({
         boardId,
         cardId: comment.cardId,
         commentId: comment.id,
         authorId: userId,
         actorName: commentActorName(updated.comment, comment.agentName),
-        mentionedUserIds: mentionUserIds,
+        mentionedUserIds: addedMentionIds,
         excerpt: commentPlainExcerpt(updated.comment.text),
       });
     }
@@ -636,6 +660,9 @@ export class CommentsService {
             details: { commentId: comment.id },
           },
         });
+        // TASK-177.12: mention rows and their queued letters go with the
+        // tombstone in the same transaction.
+        await deleteCommentMentionAttention(tx, comment.id);
         return {
           activityId: activity.id,
           boardId: preRead.card.column.boardId,
@@ -660,9 +687,6 @@ export class CommentsService {
       this.realtime,
       attribution.agentSessionId,
     );
-    // TASK-177.12: a deleted comment must not leave a live mention row that
-    // a later poll would "resurrect" with a dead deep link.
-    await this.attention.removeCommentMentions(commentId);
   }
 
   /**

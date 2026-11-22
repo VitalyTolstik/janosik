@@ -2,7 +2,9 @@ import "@mdxeditor/editor/style.css";
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -21,7 +23,11 @@ import { useBoardMembersList } from "@/store/board-live";
 import { sanitizeMarkdownForImport } from "@/utils/sanitizeMarkdown";
 import { autolinkMarkdown } from "@/utils/linkify";
 import { emojify } from "@/utils/emoji";
-import { mentionMemberLabel } from "@/utils/mentions";
+import {
+  canOpenMentionAt,
+  isMentionTrigger,
+  mentionMemberLabel,
+} from "@/utils/mentions";
 import {
   embedMarkdown,
   handleAttachmentImageOpen,
@@ -29,6 +35,7 @@ import {
 } from "@/utils/embedAttachments";
 import {
   LIMITS,
+  isMentionHref,
   mentionIdFromHref,
   mentionMarkdown,
   type BoardMemberDto,
@@ -93,21 +100,70 @@ export const CommentComposerEditor = forwardRef<
   const toast = useToast();
   const openProfile = useOpenProfile();
   const methodsRef = useRef<MDXEditorMethods | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const members = useBoardMembersList(boardId);
+  const mentionListId = useId();
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionActiveId, setMentionActiveId] = useState<string | null>(null);
 
   const insertMention = (member: BoardMemberDto) => {
     methodsRef.current?.insertMarkdown(
       `${mentionMarkdown(mentionMemberLabel(member), member.userId)} `,
     );
     setMentionOpen(false);
+    setMentionActiveId(null);
   };
 
-  const cancelMention = (query: string | undefined) => {
+  const cancelMention = useCallback((query: string) => {
     setMentionOpen(false);
-    // Escape/no-match restores the literal text the author typed; an outside
-    // click discards it, so clicking Send cannot inject a stray `@`.
-    if (query !== undefined) methodsRef.current?.insertMarkdown(`@${query}`);
+    setMentionActiveId(null);
+    // Dismissal restores the literal text the author typed; nothing is
+    // silently discarded, including an outside click or Send.
+    methodsRef.current?.insertMarkdown(`@${query}`);
+  }, []);
+
+  const reportMentionActive = useCallback((optionId: string | null) => {
+    setMentionActiveId((current) =>
+      current === optionId ? current : optionId,
+    );
+  }, []);
+
+  useEffect(() => {
+    const editable = editorRef.current?.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    if (!editable) return;
+    if (!mentionOpen) {
+      editable.removeAttribute("aria-haspopup");
+      editable.removeAttribute("aria-expanded");
+      editable.removeAttribute("aria-controls");
+      editable.removeAttribute("aria-activedescendant");
+      return;
+    }
+    editable.setAttribute("aria-haspopup", "listbox");
+    editable.setAttribute("aria-expanded", "true");
+    editable.setAttribute("aria-controls", `${mentionListId}-listbox`);
+    if (mentionActiveId !== null) {
+      editable.setAttribute("aria-activedescendant", mentionActiveId);
+    } else {
+      editable.removeAttribute("aria-activedescendant");
+    }
+  }, [mentionActiveId, mentionListId, mentionOpen]);
+
+  /** Character immediately before the caret, or null when unknown. */
+  const charBeforeCaret = (): string | null => {
+    const root = editorRef.current;
+    const selection = window.getSelection();
+    if (root === null || selection === null || selection.rangeCount === 0) {
+      return null;
+    }
+    const range = selection.getRangeAt(0);
+    if (!root.contains(range.startContainer)) return null;
+    const before = range.cloneRange();
+    before.selectNodeContents(root);
+    before.setEnd(range.startContainer, range.startOffset);
+    const chars = [...before.toString()];
+    return chars[chars.length - 1] ?? null;
   };
 
   useImperativeHandle(
@@ -159,20 +215,31 @@ export const CommentComposerEditor = forwardRef<
 
   return (
     <div
+      ref={editorRef}
       data-testid="comment-input"
       className="relative"
       onKeyDown={(event) => {
+        const inCode =
+          (event.target as HTMLElement | null)?.closest?.(
+            "code, pre, textarea, [class*='code']",
+          ) != null;
         if (
-          event.key === "@" &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey
+          !inCode &&
+          isMentionTrigger({
+            key: event.key,
+            isComposing: event.nativeEvent.isComposing,
+            metaKey: event.metaKey,
+            ctrlKey: event.ctrlKey,
+            altKey: event.altKey,
+          }) &&
+          canOpenMentionAt(charBeforeCaret())
         ) {
           // The picker owns the following keystrokes; the literal `@` is
           // restored on Escape/no match and the token inserted on selection.
           event.preventDefault();
           event.stopPropagation();
           setMentionOpen(true);
+          setMentionActiveId(null);
           return;
         }
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -190,14 +257,22 @@ export const CommentComposerEditor = forwardRef<
       onPasteCapture={onPasteCapture}
       onClickCapture={(event: ReactMouseEvent) => {
         const anchor = (event.target as HTMLElement | null)?.closest?.("a");
-        const mentionId = mentionIdFromHref(anchor?.getAttribute("href"));
-        if (mentionId !== null) {
+        const href = anchor?.getAttribute("href");
+        if (isMentionHref(href)) {
           event.preventDefault();
           event.stopPropagation();
-          openProfile(mentionId);
+          const mentionId = mentionIdFromHref(href);
+          if (mentionId !== null) openProfile(mentionId);
           return;
         }
         handleAttachmentLinkClick(event);
+      }}
+      onAuxClickCapture={(event: ReactMouseEvent) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+        if (isMentionHref(anchor?.getAttribute("href"))) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
       onDoubleClickCapture={(event: ReactMouseEvent) =>
         handleAttachmentImageOpen(event)
@@ -224,8 +299,11 @@ export const CommentComposerEditor = forwardRef<
       {mentionOpen ? (
         <MentionPicker
           members={members}
+          anchorRef={editorRef}
+          idPrefix={mentionListId}
           onSelect={insertMention}
           onCancel={cancelMention}
+          onActiveChange={reportMentionActive}
         />
       ) : null}
     </div>
@@ -262,18 +340,26 @@ export function CommentBody({
     <div
       onClickCapture={(event) => {
         const anchor = (event.target as HTMLElement | null)?.closest?.("a");
-        const mentionId = mentionIdFromHref(anchor?.getAttribute("href"));
-        if (mentionId !== null) {
+        const href = anchor?.getAttribute("href");
+        if (isMentionHref(href)) {
           // A mention is a profile link inside the board, not a URL. The
           // reserved `.invalid` address never reaches the browser's
-          // navigation.
+          // navigation; malformed lookalikes are swallowed without a profile.
           event.preventDefault();
           event.stopPropagation();
-          openProfile(mentionId);
+          const mentionId = mentionIdFromHref(href);
+          if (mentionId !== null) openProfile(mentionId);
           return;
         }
         handleAttachmentLinkClick(event);
         handleAttachmentImageOpen(event);
+      }}
+      onAuxClickCapture={(event) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+        if (isMentionHref(anchor?.getAttribute("href"))) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
       onDoubleClickCapture={(event) => handleAttachmentImageOpen(event)}
     >

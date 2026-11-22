@@ -53,6 +53,7 @@ import {
   rollbackOnThrow,
 } from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
+import { deleteBoardMentionAttention } from "@/notifications/mention-attention";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
   loadBoardAggregate,
@@ -1052,6 +1053,8 @@ export class BoardsService {
           where: { id: boardId },
           data: { deletedAt: now },
         });
+        // TASK-177.12: mention notifications are part of the tombstone.
+        await deleteBoardMentionAttention(tx, boardId);
         // TASK-166: a board delete is account-contour accountability, not a
         // board content event. The row survives the soft-delete + purge.
         await tx.securityAuditLog.create({
@@ -1073,9 +1076,6 @@ export class BoardsService {
         approvalApplied,
       }),
     );
-    // TASK-177.12: a deleted board takes its mention notifications with it,
-    // so a later restore cannot resurrect a dead comment link.
-    await this.attention.removeBoardMentions(boardId);
   }
 
   /**

@@ -31,6 +31,164 @@ const MENTION_TOKEN = new RegExp(
   "g",
 );
 
+const BARE_URL = /https?:\/\/[^\s<>"'`)\]]+/gi;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
+const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
+
+/**
+ * Replace a range with spaces while preserving its length. Every parser index
+ * therefore stays valid on the original text.
+ */
+function maskRange(chars: string[], start: number, end: number): void {
+  for (let index = start; index < end; index += 1) {
+    if (chars[index] !== "\n") chars[index] = " ";
+  }
+}
+
+/** Fenced code is inert markdown: a mention-looking string inside is text. */
+function maskFencedCode(chars: string[]): void {
+  const text = chars.join("");
+  let offset = 0;
+  let fenceChar: string | null = null;
+  let fenceLength = 0;
+  while (offset < text.length) {
+    const newline = text.indexOf("\n", offset);
+    const end = newline === -1 ? text.length : newline + 1;
+    const line = text.slice(offset, newline === -1 ? text.length : newline);
+    if (fenceChar !== null) {
+      const close = FENCE_CLOSE.exec(line);
+      if (
+        close !== null &&
+        close[1]![0] === fenceChar &&
+        close[1]!.length >= fenceLength
+      ) {
+        maskRange(chars, offset, end);
+        fenceChar = null;
+        fenceLength = 0;
+      } else {
+        maskRange(chars, offset, end);
+      }
+    } else {
+      const open = FENCE_OPEN.exec(line);
+      // CommonMark: the info string of a backtick fence may not carry a
+      // backtick; such a line is a paragraph, not a code fence.
+      if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
+        fenceChar = open[1]![0]!;
+        fenceLength = open[1]!.length;
+        maskRange(chars, offset, end);
+      }
+    }
+    offset = end;
+  }
+}
+
+/** Inline code spans (matching backtick runs) are inert as well. */
+function maskInlineCode(chars: string[]): void {
+  for (let index = 0; index < chars.length; index += 1) {
+    if (chars[index] !== "`") continue;
+    let run = 1;
+    while (chars[index + run] === "`") run += 1;
+    let cursor = index + run;
+    let close = -1;
+    while (cursor < chars.length) {
+      if (chars[cursor] !== "`") {
+        cursor += 1;
+        continue;
+      }
+      let closingRun = 1;
+      while (chars[cursor + closingRun] === "`") closingRun += 1;
+      if (closingRun === run) {
+        close = cursor + closingRun;
+        break;
+      }
+      cursor += closingRun;
+    }
+    if (close === -1) {
+      index += run - 1;
+      continue;
+    }
+    maskRange(chars, index, close);
+    index = close - 1;
+  }
+}
+
+/** A backslash-escaped `[`/`@`/`(` starts literal text, not a link. */
+function maskEscapes(chars: string[]): void {
+  for (let index = 0; index < chars.length - 1; index += 1) {
+    if (chars[index] !== "\\") continue;
+    const next = chars[index + 1]!;
+    if (ASCII_PUNCTUATION.test(next)) {
+      maskRange(chars, index, index + 2);
+      index += 1;
+    }
+  }
+}
+
+/**
+ * A candidate is a real mention only when it is not part of a larger bare
+ * URL. The token's own destination is the single allowed URL overlap, so
+ * `https://evil.test/[@A](…)` and `…/mention/id?next=…` never gain a
+ * recipient.
+ */
+function isUrlEmbeddedLookalike(
+  text: string,
+  index: number,
+  length: number,
+  destinationStart: number,
+  destinationEnd: number,
+): boolean {
+  for (const url of text.matchAll(BARE_URL)) {
+    const start = url.index ?? 0;
+    const end = start + url[0].length;
+    if (start >= index + length || end <= index) continue;
+    if (start === destinationStart && end === destinationEnd) continue;
+    return true;
+  }
+  return false;
+}
+
+interface MentionMatch {
+  userId: string;
+  label: string;
+  index: number;
+  length: number;
+}
+
+function mentionMatches(text: string): MentionMatch[] {
+  const chars = text.split("");
+  maskFencedCode(chars);
+  maskInlineCode(chars);
+  maskEscapes(chars);
+  const masked = chars.join("");
+  const matches: MentionMatch[] = [];
+  for (const match of masked.matchAll(MENTION_TOKEN)) {
+    const userId = match[2];
+    if (userId === undefined) continue;
+    const index = match.index ?? 0;
+    const destinationStart = index + match[0].lastIndexOf(MENTION_URL_PREFIX);
+    const destinationEnd = destinationStart + mentionHref(userId).length;
+    if (
+      isUrlEmbeddedLookalike(
+        masked,
+        index,
+        match[0].length,
+        destinationStart,
+        destinationEnd,
+      )
+    ) {
+      continue;
+    }
+    matches.push({
+      userId,
+      label: match[1] ?? "",
+      index,
+      length: match[0].length,
+    });
+  }
+  return matches;
+}
+
 /** One parsed mention token, in source order. */
 export interface CommentMentionToken {
   /** Mentioned user id carried by the link. */
@@ -71,6 +229,25 @@ export function mentionHref(userId: string): string {
   return `${MENTION_URL_PREFIX}${userId}`;
 }
 
+/**
+ * True for every URL under the reserved mention prefix, including malformed
+ * ids, queries, fragments and traversal. The UI uses this to swallow the whole
+ * family before the browser can navigate, while only an exact id opens a
+ * profile.
+ */
+export function isMentionHref(href: string | null | undefined): boolean {
+  if (!href) return false;
+  try {
+    const url = new URL(href);
+    return (
+      url.origin === "https://janosik.invalid" &&
+      (url.pathname === "/mention" || url.pathname.startsWith("/mention/"))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Parse a mention anchor href; anything else (including lookalikes) is null. */
 export function mentionIdFromHref(
   href: string | null | undefined,
@@ -92,28 +269,22 @@ export function mentionIdFromHref(
 
 /** Every well-formed mention token in source order. */
 export function parseCommentMentions(text: string): CommentMentionToken[] {
-  const tokens: CommentMentionToken[] = [];
-  for (const match of text.matchAll(MENTION_TOKEN)) {
-    const userId = match[2];
-    if (userId === undefined) continue;
-    tokens.push({
-      userId,
-      label: match[1] ?? "",
-      index: match.index ?? 0,
-      length: match[0].length,
-    });
-  }
-  return tokens;
+  return mentionMatches(text);
 }
 
 /** Unique mentioned user ids in first-mention order. */
 export function extractMentionUserIds(text: string): string[] {
   const ids = new Set<string>();
-  for (const token of parseCommentMentions(text)) ids.add(token.userId);
+  for (const token of mentionMatches(text)) ids.add(token.userId);
   return [...ids];
 }
 
-/** Markdown tokens replaced by their visible `@Label` for previews/excerpts. */
+/**
+ * Markdown tokens replaced by their visible `@Label` for previews/excerpts.
+ * Unlike parsing, this replaces every syntactic token — including one a code
+ * sample or larger URL hides — so a non-MDX surface never leaks the reserved
+ * URL.
+ */
 export function stripMentionMarkup(text: string): string {
   return text.replace(MENTION_TOKEN, (_match, label: string) => `@${label}`);
 }
