@@ -148,11 +148,11 @@ function OverviewRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2">
-      <dt className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+    <div className="flex min-w-0 items-center justify-between gap-3 px-3 py-2">
+      <dt className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </dt>
-      <dd className="min-w-0 truncate text-right text-xs text-foreground">
+      <dd className="min-w-0 max-w-full truncate text-right text-xs text-foreground">
         {children}
       </dd>
     </div>
@@ -571,7 +571,12 @@ export function UserDetailPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
-        <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          asChild
+        >
           <Link to={backTo} aria-label={t("admin.common.back")}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
@@ -878,17 +883,17 @@ export function UserDetailPage() {
       >
         {tab === "overview" ? (
           <div className="grid gap-3 p-4 lg:grid-cols-2">
-            <section className="space-y-2">
+            <section className="min-w-0 space-y-2">
               <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.userDetail.overview.account")}
               </h2>
-              <dl className="divide-y divide-border/60 rounded-lg border border-border/70 bg-background/40 text-xs">
+              <dl className="min-w-0 divide-y divide-border/60 rounded-lg border border-border/70 bg-background/40 text-xs">
                 <OverviewRow label={t("admin.common.id")}>
                   <IdCell id={user.id} />
                 </OverviewRow>
                 <OverviewRow label={t("admin.users.column.email")}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="truncate">{user.email}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate">{user.email}</span>
                   </span>
                 </OverviewRow>
                 <OverviewRow label={t("admin.users.column.name")}>
@@ -911,7 +916,7 @@ export function UserDetailPage() {
               </dl>
             </section>
 
-            <section className="space-y-2">
+            <section className="min-w-0 space-y-2">
               <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.userDetail.overview.access")}
               </h2>
@@ -1010,7 +1015,7 @@ export function UserDetailPage() {
               <tbody>
                 {detail.memberships.map((membership) => (
                   <tr key={membership.id}>
-                    <Td>
+                    <Td label={t("admin.userDetail.col.board")}>
                       <EntityLink to={boardHref(membership.boardId)}>
                         {membership.boardTitle}
                       </EntityLink>
@@ -1020,10 +1025,10 @@ export function UserDetailPage() {
                         </Badge>
                       ) : null}
                     </Td>
-                    <Td>
+                    <Td label={t("admin.userDetail.col.role")}>
                       <RoleBadge role={membership.role} />
                     </Td>
-                    <Td>
+                    <Td label={t("admin.userDetail.col.accepted")}>
                       {membership.acceptedAt === null ? (
                         <Badge variant="warning">
                           {t("admin.status.pending")}
@@ -1032,10 +1037,10 @@ export function UserDetailPage() {
                         <DateCell value={membership.acceptedAt} />
                       )}
                     </Td>
-                    <Td>
+                    <Td label={t("admin.userDetail.col.expires")}>
                       <DateCell value={membership.expiresAt} />
                     </Td>
-                    <Td>
+                    <Td label={t("admin.userDetail.col.invitedBy")}>
                       <IdentityLink
                         id={membership.invitedById}
                         label={membership.invitedByEmail}
@@ -1043,7 +1048,7 @@ export function UserDetailPage() {
                         testId={`admin-user-invited-by-${membership.id}`}
                       />
                     </Td>
-                    <Td>
+                    <Td label={t("admin.userDetail.col.created")}>
                       <DateCell value={membership.createdAt} />
                     </Td>
                   </tr>
@@ -1078,23 +1083,23 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.createdCards.map((card) => (
                     <tr key={card.id}>
-                      <Td>
+                      <Td label={t("admin.cards.column.title")}>
                         <EntityLink to={cardHref(card.id)}>
                           {card.title}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.board")}>
                         <EntityLink to={boardHref(card.boardId)}>
                           {card.boardTitle}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.columnRef")}>
                         <TextCell value={card.columnTitle} maxWidth="10rem" />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.updated")}>
                         <DateCell value={card.updatedAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.status")}>
                         <StatusBadge
                           deletedAt={card.deletedAt}
                           archivedAt={card.archivedAt}
@@ -1133,23 +1138,23 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.assignedCards.map((card) => (
                     <tr key={card.id}>
-                      <Td>
+                      <Td label={t("admin.cards.column.title")}>
                         <EntityLink to={cardHref(card.id)}>
                           {card.title}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.board")}>
                         <EntityLink to={boardHref(card.boardId)}>
                           {card.boardTitle}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.columnRef")}>
                         <TextCell value={card.columnTitle} maxWidth="10rem" />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.updated")}>
                         <DateCell value={card.updatedAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.cards.column.status")}>
                         <StatusBadge
                           deletedAt={card.deletedAt}
                           archivedAt={card.archivedAt}
@@ -1192,18 +1197,21 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.comments.map((comment) => (
                     <tr key={comment.id}>
-                      <Td className="max-w-[26rem]">
+                      <Td
+                        label={t("admin.comments.column.text")}
+                        className="max-w-[26rem]"
+                      >
                         <TextCell value={comment.text} maxWidth="26rem" />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.card")}>
                         <EntityLink to={cardHref(comment.cardId)}>
                           {comment.cardTitle}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.created")}>
                         <DateCell value={comment.createdAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.status")}>
                         {comment.deletedAt !== null ? (
                           <Badge variant="danger">
                             {t("admin.status.deleted")}
@@ -1214,7 +1222,7 @@ export function UserDetailPage() {
                           </Badge>
                         )}
                       </Td>
-                      <Td className="text-right">
+                      <Td label="" className="text-right">
                         <RowActions
                           testId={`admin-user-comment-actions-${comment.id}`}
                           actions={
@@ -1268,21 +1276,21 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.attachments.map((file) => (
                     <tr key={file.id}>
-                      <Td>
+                      <Td label={t("admin.attachments.column.file")}>
                         <TextCell value={file.fileName} maxWidth="16rem" />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.card")}>
                         <EntityLink to={cardHref(file.cardId)}>
                           {file.cardTitle}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.size")}>
                         <span className="tabular-nums">{file.sizeBytes}</span>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.created")}>
                         <DateCell value={file.createdAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.status")}>
                         {file.deletedAt !== null ? (
                           <Badge variant="danger">
                             {t("admin.status.deleted")}
@@ -1329,16 +1337,16 @@ export function UserDetailPage() {
                     const expired = session.expiresAt <= Date.now();
                     return (
                       <tr key={session.id}>
-                        <Td>
+                        <Td label={t("admin.sessions.column.created")}>
                           <DateCell value={session.createdAt} />
                         </Td>
-                        <Td>
+                        <Td label={t("admin.sessions.column.expires")}>
                           <DateCell value={session.expiresAt} />
                         </Td>
-                        <Td>
+                        <Td label={t("admin.sessions.column.id")}>
                           <IdCell id={session.id} />
                         </Td>
-                        <Td>
+                        <Td label={t("admin.common.status")}>
                           {session.revokedAt !== null ? (
                             <Badge variant="danger">
                               {t("admin.status.revoked")}
@@ -1414,19 +1422,19 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.tokens.map((token) => (
                     <tr key={token.id}>
-                      <Td>
+                      <Td label={t("admin.tokens.column.name")}>
                         <TextCell value={token.name} maxWidth="12rem" />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.tokens.column.created")}>
                         <DateCell value={token.createdAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.tokens.column.lastUsed")}>
                         <DateCell value={token.lastUsedAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.tokens.column.expires")}>
                         <DateCell value={token.expiresAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.tokens.column.status")}>
                         <StatusBadge
                           deletedAt={token.revokedAt}
                           labels={{
@@ -1486,20 +1494,20 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.recentCommands.map((command: AdminCommandRowDto) => (
                     <tr key={command.id}>
-                      <Td>
+                      <Td label={t("admin.commands.column.type")}>
                         <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                           {command.type}
                         </span>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.commands.column.board")}>
                         <EntityLink to={boardHref(command.boardId)}>
                           {command.boardTitle}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.commands.column.seq")}>
                         <span className="tabular-nums">{command.seq}</span>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.commands.column.created")}>
                         <DateCell value={command.createdAt} />
                       </Td>
                     </tr>
@@ -1529,17 +1537,17 @@ export function UserDetailPage() {
                 <tbody>
                   {detail.recentActivity.map((entry: AdminActivityRowDto) => (
                     <tr key={entry.id}>
-                      <Td>
+                      <Td label={t("admin.activity.column.type")}>
                         <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                           {entry.type}
                         </span>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.activity.column.board")}>
                         <EntityLink to={boardHref(entry.boardId)}>
                           {entry.boardTitle}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.activity.column.card")}>
                         {entry.cardId ? (
                           <EntityLink to={cardHref(entry.cardId)}>
                             {entry.cardTitle ?? entry.cardId.slice(0, 8)}
@@ -1548,7 +1556,7 @@ export function UserDetailPage() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </Td>
-                      <Td>
+                      <Td label={t("admin.activity.column.created")}>
                         <DateCell value={entry.createdAt} />
                       </Td>
                     </tr>

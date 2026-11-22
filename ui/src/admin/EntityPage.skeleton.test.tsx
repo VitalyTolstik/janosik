@@ -59,4 +59,18 @@ describe("EntityPage skeleton", () => {
     // make this 3 and force a horizontal jump when the table mounts.
     expect(container.querySelectorAll("thead th")).toHaveLength(2);
   });
+
+  it("keeps the pagination footer when the total is non-zero but this page is empty", async () => {
+    vi.mocked(adminApi.listEntity).mockResolvedValue({
+      items: [],
+      total: 25,
+      limit: 50,
+      offset: 0,
+    });
+    renderPage();
+
+    expect(
+      await screen.findByTestId("admin-pagination-status"),
+    ).toHaveTextContent("Page 1 of 1");
+  });
 });

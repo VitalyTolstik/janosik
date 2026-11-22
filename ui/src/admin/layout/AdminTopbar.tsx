@@ -59,7 +59,7 @@ export function AdminTopbar({
               type="button"
               data-testid="admin-sidebar-toggle"
               aria-label={t("admin.nav.toggleSidebar")}
-              className="admin-sidebar-toggle inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+              className="admin-sidebar-toggle inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
               aria-expanded={mobile ? undefined : !collapsed}
               onClick={onToggleSidebar}
             >
@@ -106,8 +106,10 @@ export function AdminTopbar({
         <button
           type="button"
           data-testid="admin-global-search"
+          aria-label={t("admin.search.title")}
+          title={t("admin.search.title")}
           onClick={onOpenPalette}
-          className="inline-flex h-7 items-center gap-2 rounded-md border border-border bg-background/50 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+          className="inline-flex h-7 items-center gap-2 rounded-md border border-border bg-background/50 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11 max-sm:justify-center max-sm:px-0"
         >
           <Search className="h-3.5 w-3.5" aria-hidden />
           <span className="hidden sm:inline">{t("admin.search.title")}</span>
@@ -150,7 +152,7 @@ export function AdminTopbar({
               aria-label={t("admin.nav.toggleTheme")}
               aria-pressed={theme === "dark"}
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
             >
               {theme === "dark" ? (
                 <Sun className="h-3.5 w-3.5" aria-hidden />
@@ -181,7 +183,9 @@ export function AdminTopbar({
           type="button"
           onClick={() => void logout()}
           data-testid="admin-logout"
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background/50 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+          aria-label={t("admin.nav.logout")}
+          title={t("admin.nav.logout")}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background/50 px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11 max-sm:justify-center max-sm:px-0"
         >
           <LogOut className="h-3.5 w-3.5" aria-hidden />
           <span className="hidden sm:inline">{t("admin.nav.logout")}</span>

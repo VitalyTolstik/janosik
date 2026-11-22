@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
-import { AdminApiClient } from "./admin-client";
+import {
+  AdminApiClient,
+  AdminRequestTimeoutError,
+  withAdminRequestTimeout,
+} from "./admin-client";
 
 /**
  * Admin transport (TASK-36): token handling, single-flight refresh, retry
@@ -58,6 +62,27 @@ function client(
 }
 
 describe("AdminApiClient", () => {
+  it("aborts a held one-time request on timeout", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      let signal: AbortSignal | undefined;
+      const request = withAdminRequestTimeout((next) => {
+        signal = next;
+        return new Promise<never>(() => {
+          /* held */
+        });
+      }, 1000);
+      const rejected = expect(request).rejects.toBeInstanceOf(
+        AdminRequestTimeoutError,
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      await rejected;
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   let onAuthLost: () => void;
   let lostCalls = 0;
 
@@ -146,6 +171,24 @@ describe("AdminApiClient", () => {
     await expect(api.metrics()).rejects.toBeInstanceOf(ApiError);
     expect(lostCalls).toBe(1);
     expect(api.getAccessToken()).toBeNull();
+  });
+
+  it("keeps the session and surfaces a throttled refresh instead of logging out (QA-A3)", async () => {
+    const { api } = client((call) => {
+      if (call.url.endsWith("/admin/auth/login")) {
+        return json({ accessToken: "token-1", admin: ADMIN });
+      }
+      if (call.url.endsWith("/admin/auth/refresh")) {
+        return json({ message: "Too Many Requests" }, 429);
+      }
+      return json({ message: "expired" }, 401);
+    });
+    api.onAuthLost = onAuthLost;
+    await api.login("master@example.com", "secret");
+    await expect(api.metrics()).rejects.toMatchObject({ status: 429 });
+    expect(lostCalls).toBe(0);
+    // A transient throttle must not discard the in-memory session.
+    expect(api.getAccessToken()).toBe("token-1");
   });
 
   it("maps transport failures to offline ApiError", async () => {

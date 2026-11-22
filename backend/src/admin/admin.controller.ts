@@ -129,6 +129,8 @@ import {
   AdminUpdateFeatureFlagDto,
   AdminUpdateOpsDto,
   AdminSetupTotpDto,
+  AdminRetentionPurgeDto,
+  AdminRetentionQueryDto,
   AdminUpdateSecurityDto,
   AdminVerifyTotpDto,
 } from "./dto/admin-v3.dto";
@@ -944,15 +946,18 @@ export class AdminController {
   // --------------------------------------------- data/compliance (TASK-63)
 
   @Get("retention")
-  getRetention(): Promise<AdminRetentionDto> {
-    return this.admin.getRetention();
+  getRetention(
+    @Query() query: AdminRetentionQueryDto,
+  ): Promise<AdminRetentionDto> {
+    return this.admin.getRetention(query.retentionDays);
   }
 
   @Post("retention/purge")
   purgeSoftDeleted(
     @CurrentAdmin() admin: AdminPrincipal,
+    @Body() dto: AdminRetentionPurgeDto,
   ): Promise<AdminBulkResultDto> {
-    return this.admin.purgeSoftDeleted(admin);
+    return this.admin.purgeSoftDeleted(admin, dto.retentionDays);
   }
 
   // ------------------------------------------------ queues (TASK-73)

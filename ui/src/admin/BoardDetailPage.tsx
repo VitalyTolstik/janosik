@@ -222,7 +222,12 @@ export function BoardDetailPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
-        <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          asChild
+        >
           <Link
             to={readReturnTo(searchParams) ?? "/admin/boards"}
             aria-label={t("admin.common.back")}
@@ -434,7 +439,7 @@ export function BoardDetailPage() {
           <tbody>
             {detail.members.map((member) => (
               <tr key={member.id}>
-                <Td>
+                <Td label={t("admin.userDetail.col.member")}>
                   <EntityLink to={userHref(member.userId)}>
                     {member.userEmail}
                   </EntityLink>
@@ -442,20 +447,20 @@ export function BoardDetailPage() {
                     <Badge variant="danger">{t("admin.status.disabled")}</Badge>
                   ) : null}
                 </Td>
-                <Td>
+                <Td label={t("admin.userDetail.col.role")}>
                   <RoleBadge role={member.role} />
                 </Td>
-                <Td>
+                <Td label={t("admin.userDetail.col.accepted")}>
                   {member.acceptedAt === null ? (
                     <Badge variant="warning">{t("admin.status.pending")}</Badge>
                   ) : (
                     <DateCell value={member.acceptedAt} />
                   )}
                 </Td>
-                <Td>
+                <Td label={t("admin.userDetail.col.expires")}>
                   <DateCell value={member.expiresAt} />
                 </Td>
-                <Td>
+                <Td label={t("admin.userDetail.col.invitedBy")}>
                   <IdentityLink
                     id={member.invitedById}
                     label={member.invitedByEmail}
@@ -463,13 +468,13 @@ export function BoardDetailPage() {
                     testId={`admin-board-member-invited-by-${member.id}`}
                   />
                 </Td>
-                <Td>
+                <Td label={t("admin.common.actions")}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 p-0"
+                        className="h-7 w-7 max-sm:h-11 max-sm:w-11 p-0"
                         data-testid={`admin-member-actions-${member.id}`}
                         aria-label={t("admin.common.actions")}
                       >
@@ -604,7 +609,7 @@ export function BoardDetailPage() {
           <tbody>
             {detail.columns.map((column) => (
               <tr key={column.id}>
-                <Td>
+                <Td label={t("admin.columns.column.title")}>
                   <EntityLink
                     to={withReturnTo(
                       adminCardsHref({ columnId: column.id }),
@@ -616,16 +621,16 @@ export function BoardDetailPage() {
                     {column.title}
                   </EntityLink>
                 </Td>
-                <Td>
+                <Td label={t("admin.columns.column.position")}>
                   <NumberCell value={column.position} />
                 </Td>
-                <Td>
+                <Td label={t("admin.columns.column.wip")}>
                   <NumberCell value={column.wipLimit} />
                 </Td>
-                <Td>
+                <Td label={t("admin.columns.column.cards")}>
                   <NumberCell value={column.cardCount} />
                 </Td>
-                <Td>
+                <Td label={t("admin.columns.column.status")}>
                   {column.deletedAt !== null ? (
                     <Badge variant="danger">{t("admin.status.deleted")}</Badge>
                   ) : (

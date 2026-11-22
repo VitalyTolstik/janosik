@@ -64,7 +64,9 @@ describe("useAdminList", () => {
   });
 
   it("keeps a page chosen right after mount when the initial search debounce settles", async () => {
-    const fetcher = vi.fn().mockResolvedValue(page([{ id: "a" }]));
+    // A real server only returns offset 25 when the result set is larger than
+    // one page; a smaller total is now clamped by QA-A4.
+    const fetcher = vi.fn().mockResolvedValue(page([{ id: "a" }], 100));
     const { result } = renderHook(() => useAdminList<Row>(fetcher));
 
     act(() => result.current.setOffset(25));
@@ -101,6 +103,32 @@ describe("useAdminList", () => {
       limit: 50,
       offset: 0,
     });
+  });
+
+  it("clamps to the last real page when the total shrinks (QA-A4)", async () => {
+    const fetcher = vi.fn(async ({ offset }: { offset?: number }) =>
+      offset === 25
+        ? { items: [], total: 25, limit: 25, offset: 25 }
+        : { items: [{ id: "a" }], total: 25, limit: 25, offset: 0 },
+    );
+    const { result } = renderHook(() =>
+      useAdminList<Row>(fetcher, {
+        initialState: {
+          search: "",
+          status: "all",
+          period: "any",
+          limit: 25,
+          offset: 25,
+          filters: EMPTY_ADMIN_LIST_FILTERS,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(result.current.offset).toBe(0));
+    await waitFor(() => expect(result.current.items).toEqual([{ id: "a" }]));
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, limit: 25 }),
+    );
   });
 
   it("reports errors only after the refresh settles", async () => {
@@ -150,18 +178,22 @@ describe("useAdminList", () => {
     );
   });
 
-  it("leaves an out-of-range page alone unless clamping is opted in", async () => {
+  it("clamps a manually chosen out-of-range page (QA-A4)", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(page([], 100, 0, 50))
-      .mockResolvedValueOnce(page([], 100, 150, 50));
+      .mockResolvedValueOnce(page([], 100, 150, 50))
+      .mockResolvedValueOnce(page([], 100, 50, 50));
     const { result } = renderHook(() => useAdminList<Row>(fetcher));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => result.current.setOffset(150));
-    await waitFor(() => expect(result.current.pageOffset).toBe(150));
-    expect(result.current.offset).toBe(150);
+    await waitFor(() => expect(result.current.pageOffset).toBe(50));
+    expect(result.current.offset).toBe(50);
     expect(result.current.items).toEqual([]);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 50, limit: 50 }),
+    );
   });
 });
