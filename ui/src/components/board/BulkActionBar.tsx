@@ -138,6 +138,7 @@ export function BulkActionBar() {
   const boardIdRef = useRef(board?.id);
   const shouldRestoreFocusRef = useRef(false);
   const pendingBarFocusRef = useRef<BarFocusTarget | null>(null);
+  const hadBarFocusRef = useRef(false);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -446,6 +447,12 @@ export function BulkActionBar() {
       successKey?: "bulk.unassigned",
     ) => {
       if (!aliveRef.current) return;
+      // Calendar/Watch remove Cancel when the run ends. If the run took the
+      // focus (Cancel, or confirmation's onClosed), land on Dismiss even when
+      // a transient busy→result commit briefly closed the bar first.
+      if (hadBarFocusRef.current && !selection.enabled) {
+        pendingBarFocusRef.current = "dismiss";
+      }
       setLastRun({
         kind,
         changed: result.changed,
@@ -726,6 +733,17 @@ export function BulkActionBar() {
       role="region"
       aria-label={t("bulk.region")}
       data-testid="bulk-bar"
+      onFocusCapture={() => {
+        hadBarFocusRef.current = true;
+      }}
+      onBlurCapture={(event) => {
+        const next = event.relatedTarget as Node | null;
+        // A removed control drops focus to <body> with no related target:
+        // keep the marker so the report can move focus to Dismiss.
+        if (next !== null && !event.currentTarget.contains(next)) {
+          hadBarFocusRef.current = false;
+        }
+      }}
       className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/95 p-2 shadow-lg outline-none backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-ring sm:p-3"
     >
       <span

@@ -1091,7 +1091,9 @@ describe("bulk card actions", () => {
       ),
     );
     expect(screen.getByTestId("bulk-bar")).toBeVisible();
-    expect(screen.getByTestId("bulk-dismiss")).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-dismiss")).toHaveFocus(),
+    );
   });
 
   it("keeps progress and partial results after switching to Calendar", async () => {
