@@ -78,11 +78,23 @@ export class CardAccessGuard extends MembershipGuard {
         where: { id: commentId, deletedAt: null },
         select: {
           card: {
-            select: { deletedAt: true, column: { select: { boardId: true } } },
+            select: {
+              deletedAt: true,
+              // A deleted parent has no accessible board: answer 404 before
+              // membership so a non-member cannot turn it into 403 (TASK-185.3).
+              column: {
+                select: { boardId: true, deletedAt: true },
+              },
+            },
           },
         },
       });
-      if (!comment || comment.card.deletedAt !== null) return undefined;
+      if (
+        !comment ||
+        comment.card.deletedAt !== null ||
+        comment.card.column.deletedAt !== null
+      )
+        return undefined;
       return comment.card.column.boardId;
     }
 

@@ -206,6 +206,7 @@ owning board from the card or comment and enforces membership.
 | -------- | ------------------------- | ------------------ | ------------------ | ------------------ |
 | `POST`   | `/cards/:cardId/comments` | `ADMIN` / `MEMBER` | `CreateCommentDto` | `CommentDto`       |
 | `GET`    | `/cards/:cardId/comments` | member             | query `cursor`, `limit`, `kind` | `CommentPage`      |
+| `GET`    | `/comments/:commentId/revisions` | `ADMIN` / `MEMBER` / active `VIEWER` | query `cursor`, `limit` | `CommentRevisionPage` |
 | `PATCH`  | `/comments/:commentId`    | `ADMIN` / `MEMBER` | `UpdateCommentDto` | `CommentDto`       |
 | `DELETE` | `/comments/:commentId`    | `ADMIN` / `MEMBER` | none               | `{ status: "ok" }` |
 
@@ -233,6 +234,29 @@ media removed from the text is soft-deleted.
 The edit writes a `comment_updated` activity row and SSE frame; changing a
 comment to `blocker`/`handoff` does not repeat attention already raised by the
 original comment.
+
+`GET /comments/:commentId/revisions` returns the immutable text history,
+newest first (`revisionNumber` descending). Board `ADMIN`, `MEMBER` and an
+active `VIEWER` may read it with a JWT or a read-scoped PAT; a non-member or an
+expired membership answers `403`, and a missing or deleted comment, card,
+column or board answers `404`. `?limit=` defaults to 20 and caps at 100.
+`?cursor=` is opaque and bound to the comment: a malformed or foreign cursor
+answers `400` after the access check, and it keeps working after the row it
+pointed at was trimmed. Every page, including an empty one, carries
+`historyIncomplete` and `historyIncompleteReason` (`legacy_cutover`,
+`revision_limit`, `gdpr_erase`, `writer_gap`, or `null` for a complete
+history). If the saved text contradicts the writer's verified pair, the route
+returns an empty page with `writer_gap` immediately, even before the
+reconciliation sweep persists the reason. `CommentRevisionDto` exposes `id`,
+`revisionNumber`, `createdAt`, `editorId`, `editorName`, `actorType`,
+`agentName`, `cause`, `beforeText` and `afterText`; `editorName` is the current
+public display name and is `null` when the editor or the name is unavailable.
+Token and session identifiers are never returned. A master reads the same
+projection at `GET /admin/comments/:commentId/revisions` with the admin JWT and
+no board membership; both routes are read-only. Public share comment
+projections and frozen snapshots never include revisions, revision IDs,
+before/after text, counters, history flags/reasons or cutover/verified fields,
+and a share token does not open the revisions routes.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
 
@@ -960,6 +984,25 @@ Field presence and nullability are specified separately:
 ```json
 { "text": "Looks good", "kind": "evidence", "commandId": "c-1" }
 ```
+
+### CommentRevisionDto
+
+| Field            | Type           | Required | Constraints                                                   |
+| ---------------- | -------------- | -------- | ------------------------------------------------------------- |
+| `id`             | string         | required | revision id                                                   |
+| `revisionNumber` | integer        | required | at least 1, monotonic per comment                             |
+| `createdAt`      | integer        | required | Unix ms                                                       |
+| `editorId`       | string or null | required | nullable                                                      |
+| `editorName`     | string or null | required | current public display name; `null` if absent                 |
+| `actorType`      | string         | required | `human`, `agent` or `admin`                                   |
+| `agentName`      | string or null | required | nullable                                                      |
+| `cause`          | string         | required | `author_edit`, `attachment_deleted` or `system`               |
+| `beforeText`     | string         | required | snapshot before the edit                                      |
+| `afterText`      | string         | required | snapshot after the edit                                       |
+
+`CommentRevisionPage` is `{ items, nextCursor, historyIncomplete,
+historyIncompleteReason }`; the last two fields describe the live comment on
+every page.
 
 ### CreateShareDto
 
