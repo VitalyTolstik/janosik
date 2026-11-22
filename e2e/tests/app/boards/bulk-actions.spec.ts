@@ -27,7 +27,7 @@ test("selects cards across columns, moves them and undoes one step", async ({
   await page.getByTestId("bulk-move").click();
   await page.getByTestId(`bulk-move-${done}`).click();
   await expect(page.getByTestId("bulk-status")).toContainText(
-    "2 of 2 cards changed",
+    "Changed: 2 of 2.",
   );
   await expect
     .poll(async () => {
@@ -73,7 +73,7 @@ test("reports a per-card WIP failure and keeps successful moves", async ({
   await page.getByTestId(`bulk-move-${doing}`).click();
 
   await expect(page.getByTestId("bulk-status")).toContainText(
-    "1 of 2 cards changed",
+    "Changed: 1 of 2.",
   );
   await expect(page.getByTestId("bulk-errors")).toContainText("Bravo");
   await expect(page.getByTestId("bulk-errors")).toContainText(

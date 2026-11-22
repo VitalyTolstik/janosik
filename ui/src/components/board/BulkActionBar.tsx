@@ -132,6 +132,7 @@ export function BulkActionBar() {
   const barRef = useRef<HTMLElement | null>(null);
   const wasVisibleRef = useRef(false);
   const boardIdRef = useRef(board?.id);
+  const resultSelectionRef = useRef<string | null>(null);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -139,11 +140,15 @@ export function BulkActionBar() {
     };
   }, []);
 
+  // A running batch is a board task, not a view task: Calendar/Watch disable
+  // selection but must still show progress, Cancel and Escape while the
+  // commands continue in the background.
   const visible =
-    selection.enabled &&
-    (busy !== null || selection.mode || selection.count > 0);
+    busy !== null ||
+    (selection.enabled && (selection.mode || selection.count > 0));
   const role = board ? roleOf(board.id) : undefined;
   const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
+  const selectionKey = selection.selectedIds.join("\u0000");
 
   const requestCancel = useCallback(() => {
     if (busy === null) return false;
@@ -166,24 +171,46 @@ export function BulkActionBar() {
     document.querySelector<HTMLElement>('[data-testid="board-main"]')?.focus();
   }, []);
 
+  const resetResults = useCallback(() => {
+    setFailures((previous) => (previous.length === 0 ? previous : []));
+    setLastRun((previous) => (previous === null ? previous : null));
+    setLiveMessage((previous) => (previous === "" ? previous : ""));
+    setCountAnnouncement((previous) => (previous === "" ? previous : ""));
+  }, []);
+
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
       barRef.current?.focus();
     } else if (!visible && wasVisibleRef.current) {
-      focusToggleOrMain();
+      resetResults();
+      // A view switch disables selection and may unmount the bar; the view
+      // switcher keeps focus. Only an explicit close returns focus.
+      if (selection.enabled) focusToggleOrMain();
     }
     wasVisibleRef.current = visible;
-  }, [focusToggleOrMain, visible]);
+  }, [focusToggleOrMain, resetResults, selection.enabled, visible]);
 
-  // Stale failure/summary text must never leak into the next selection or
-  // another board. A cancelled run keeps its selection, so it is not reset.
+  // Any user selection change invalidates the previous run's errors and
+  // summary. A report updates the selection itself, so its exact key is
+  // exempted once; a board switch always resets.
   useEffect(() => {
-    if (selection.count === 0 || board?.id !== boardIdRef.current) {
-      setFailures([]);
-      setLastRun(null);
+    if (busy !== null) return;
+    if (board?.id !== boardIdRef.current) {
+      boardIdRef.current = board?.id;
+      resultSelectionRef.current = null;
+      resetResults();
+      return;
     }
-    boardIdRef.current = board?.id;
-  }, [board?.id, selection.count]);
+    if (resultSelectionRef.current === selectionKey) {
+      resultSelectionRef.current = null;
+      return;
+    }
+    resultSelectionRef.current = null;
+    resetResults();
+    // `busy` is intentionally not a dependency: a run ending is not a user
+    // selection change, and the report keeps its own failures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board?.id, resetResults, selectionKey]);
 
   // Announce the selection count once it settles; a checkbox storm must not
   // turn into a stream of live-region messages.
@@ -243,7 +270,7 @@ export function BulkActionBar() {
       setFailures([]);
       setLastRun(null);
       setBusy({ done: 0, total: ids.length });
-      setLiveMessage(t("bulk.started", { count: ids.length }));
+      setLiveMessage(tp("bulk.started", ids.length));
       const cardFailures: Failure[] = [];
       let changed = 0;
       let done = 0;
@@ -287,7 +314,7 @@ export function BulkActionBar() {
       }
       return result;
     },
-    [board, t],
+    [board, t, tp],
   );
 
   const report = useCallback(
@@ -317,21 +344,26 @@ export function BulkActionBar() {
                 : ""
             }`,
       );
+      let nextSelection: string[] | null = null;
       if (result.cancelled) {
         // Cancel keeps both the refused cards and everything the run never
         // reached; successful earlier cards are not silently re-included.
         const failed = new Set(
           result.failures.map((failure) => failure.cardId),
         );
-        selection.replace(
-          result.ids.filter(
-            (id, index) => index >= result.done || failed.has(id),
-          ),
+        nextSelection = result.ids.filter(
+          (id, index) => index >= result.done || failed.has(id),
         );
       } else if (destructive) {
-        if (result.failures.length === 0) selection.clear();
-        else
-          selection.replace(result.failures.map((failure) => failure.cardId));
+        nextSelection =
+          result.failures.length === 0
+            ? []
+            : result.failures.map((failure) => failure.cardId);
+      }
+      if (nextSelection !== null) {
+        resultSelectionRef.current = nextSelection.join("\u0000");
+        if (nextSelection.length === 0) selection.clear();
+        else selection.replace(nextSelection);
       }
       if (result.changed > 0) {
         toast.success(
@@ -537,13 +569,15 @@ export function BulkActionBar() {
     .filter((card) => card !== undefined);
   const allUnassigned =
     selectedCards.length > 0 && selectedCards.every((card) => !card.assigneeId);
+  const someUnassigned = selectedCards.some((card) => !card.assigneeId);
   const allSelectedIn = (column: Column) =>
     selectedIds.size > 0 &&
     column.cardIds.filter((id) => selectedIds.has(id)).length ===
       selectedIds.size;
 
-  if (!board || !visible || readOnly) return null;
+  if (!board || !visible || (readOnly && busy === null)) return null;
 
+  const displayedCount = busy?.total ?? selection.count;
   const busyLabel =
     busy === null
       ? null
@@ -571,7 +605,6 @@ export function BulkActionBar() {
       tabIndex={-1}
       role="region"
       aria-label={t("bulk.region")}
-      aria-busy={busy !== null}
       data-testid="bulk-bar"
       className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/95 p-2 shadow-lg outline-none backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-ring sm:p-3"
     >
@@ -596,7 +629,7 @@ export function BulkActionBar() {
           data-testid="bulk-count"
           className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-sm font-semibold tabular-nums text-primary"
         >
-          {t("bulk.selected", { count: selection.count })}
+          {t("bulk.selected", { count: displayedCount })}
         </span>
 
         <Button
@@ -747,14 +780,24 @@ export function BulkActionBar() {
               >
                 <DropdownMenuLabel>{t("bulk.assignAction")}</DropdownMenuLabel>
                 <DropdownMenuCheckboxItem
-                  checked={allUnassigned}
+                  checked={
+                    allUnassigned
+                      ? true
+                      : someUnassigned
+                        ? "indeterminate"
+                        : false
+                  }
                   onCheckedChange={() => void applyAssignee(null)}
                 >
                   <span className="min-w-0 flex-1 truncate">
                     {t("bulk.unassign")}
                   </span>
                   <span className="sr-only">
-                    {allUnassigned ? t("bulk.applied") : t("bulk.notApplied")}
+                    {allUnassigned
+                      ? t("bulk.applied")
+                      : someUnassigned
+                        ? t("bulk.partiallyApplied")
+                        : t("bulk.notApplied")}
                   </span>
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuSeparator />
@@ -765,15 +808,28 @@ export function BulkActionBar() {
                     selectedCards.every(
                       (card) => card.assigneeId === member.userId,
                     );
+                  const someAssigned = selectedCards.some(
+                    (card) => card.assigneeId === member.userId,
+                  );
                   return (
                     <DropdownMenuCheckboxItem
                       key={member.userId}
-                      checked={allAssigned}
+                      checked={
+                        allAssigned
+                          ? true
+                          : someAssigned
+                            ? "indeterminate"
+                            : false
+                      }
                       onCheckedChange={() => void applyAssignee(member.userId)}
                     >
                       <span className="min-w-0 flex-1 truncate">{name}</span>
                       <span className="sr-only">
-                        {allAssigned ? t("bulk.applied") : t("bulk.notApplied")}
+                        {allAssigned
+                          ? t("bulk.applied")
+                          : someAssigned
+                            ? t("bulk.partiallyApplied")
+                            : t("bulk.notApplied")}
                       </span>
                     </DropdownMenuCheckboxItem>
                   );
@@ -865,7 +921,12 @@ export function BulkActionBar() {
           className="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-xs text-(--chip-red)"
         >
           <p className="font-semibold">{tp("bulk.failed", failures.length)}</p>
-          <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto overscroll-contain pr-1">
+          <ul
+            tabIndex={0}
+            aria-label={t("bulk.failureList")}
+            data-testid="bulk-failure-list"
+            className="mt-1 max-h-40 space-y-0.5 overflow-y-auto overscroll-contain rounded pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             {failures.map((failure) => (
               <li key={failure.cardId} className="break-words">
                 <span className="font-medium">{failure.title}</span>
