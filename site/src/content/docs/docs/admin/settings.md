@@ -298,6 +298,22 @@ expiry. Open sessions and requests still within their decision or apply
 window are kept until they become eligible or the board is purged. `AdminAuditLog` and `SecurityAuditLog` use
 `AUDIT_RETENTION_DAYS` (365 by default).
 
+Comment edit history has its own per-comment window: the newest 50 revisions
+are kept. Older rows and the Activity copies that belong to them are removed
+together, and the comment is marked `revision_limit`; a comment whose history
+is incomplete for any reason (`legacy_cutover`, `revision_limit`, `gdpr_erase`
+or `writer_gap`) keeps that reason until a more severe one replaces it. The raw
+UTF-8 text budgets are 4 MB in revisions and 6 MB in their Activity copies per
+comment; they are reported, not enforced by deleting a live chain. A normal
+`sweep-activity` run may remove old Activity before the revisions, which is
+safe: revisions are independent. `sweep-comment-history` reconciles a comment
+written by an older release, adopts its current text as the new verified
+point, strips post-cutover Activity text that no revision backs and preserves
+the confirmed revisions and the monotonic number. Hard purge and GDPR erase
+remove revisions and their Activity explicitly; GDPR exports never include
+them. Metrics and logs count rows and bytes only and never contain comment
+text.
+
 The backup line is deliberately honest: `BACKUP_DIR` is only a location you
 configured, not a backup Janosik creates. The API reports
 `{mode, automatic: false, lastBackupAt: null, verified: false}` and the UI says
@@ -332,6 +348,7 @@ are:
 | `sweep-agent-sessions` | agent sessions that ended before the retention cutoff |
 | `sweep-approvals` | marks overdue pending requests expired, then removes rejected, cancelled, expired, lapsed approved and consumed requests past the retention window |
 | `sweep-reminders` | stale due-reminder dedupe rows |
+| `sweep-comment-history` | reconciles old-writer comment chains, marks `writer_gap`, adopts the current text and strips unconfirmed Activity snapshots |
 | `sweep-activity` | membership/comment feed rows past the retention window |
 | `sweep-audit` | master audit-log rows older than `AUDIT_RETENTION_DAYS` |
 | `sweep-security-audit` | `SecurityAuditLog` rows older than `AUDIT_RETENTION_DAYS` (deletion lifecycle and `board.cleanup_failed` markers are kept) |
