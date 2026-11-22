@@ -77,6 +77,28 @@ function renderSection(
   );
 }
 
+/** The real card dialog container, which is Chrome's focus fallback. */
+function renderSectionInDialog(
+  props: Partial<Parameters<typeof CardAttachments>[0]> = {},
+) {
+  return render(
+    <I18nProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <div
+            role="dialog"
+            aria-label="Card details"
+            tabIndex={-1}
+            data-testid="owner-dialog"
+          >
+            <CardAttachments cardId="card-1" boardId="b-1" {...props} />
+          </div>
+        </AuthProvider>
+      </ToastProvider>
+    </I18nProvider>,
+  );
+}
+
 describe("CardAttachments", () => {
   const clipboardDescriptor = Object.getOwnPropertyDescriptor(
     navigator,
@@ -627,7 +649,7 @@ describe("CardAttachments", () => {
     );
     vi.spyOn(api, "listAttachments").mockResolvedValue([]);
     vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
-    renderSection({ onRestoreToDescription: onRestore });
+    renderSectionInDialog({ onRestoreToDescription: onRestore });
 
     const group = await screen.findByTestId("card-detached-attachments");
     await user.click(group.querySelector("summary")!);
@@ -637,6 +659,7 @@ describe("CardAttachments", () => {
       expect(firstRestore).toHaveAttribute("aria-busy", "true"),
     );
     expect(firstRestore).toBeDisabled();
+    screen.getByTestId("owner-dialog").focus();
 
     resolveSave({ ok: true });
     await waitFor(() =>
@@ -655,16 +678,29 @@ describe("CardAttachments", () => {
     const user = userEvent.setup();
     const first = attachment({ id: "att-1", fileName: "first.pdf" });
     const second = attachment({ id: "att-2", fileName: "second.pdf" });
+    let resolveSave!: (outcome: { ok: true }) => void;
     vi.spyOn(api, "listAttachments").mockResolvedValue([]);
     vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
-    renderSection({
-      onRestoreToDescription: vi.fn(() => ({ ok: true as const })),
+    renderSectionInDialog({
+      onRestoreToDescription: vi.fn(
+        () =>
+          new Promise<{ ok: true }>((resolve) => {
+            resolveSave = resolve;
+          }),
+      ),
     });
 
     const group = await screen.findByTestId("card-detached-attachments");
     await user.click(group.querySelector("summary")!);
     const restores = screen.getAllByTestId("card-attachment-restore");
     await user.click(restores[1]!);
+    await waitFor(() =>
+      expect(restores[1]).toHaveAttribute("aria-busy", "true"),
+    );
+    screen.getByTestId("owner-dialog").focus();
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
@@ -879,7 +915,7 @@ describe("CardAttachments", () => {
     expect(document.activeElement).toBe(upload);
   });
 
-  it("ignores a focus guard from another dialog", async () => {
+  it("ignores a foreign body-level focus guard", async () => {
     const user = userEvent.setup();
     let resolveSave!: (outcome: { ok: true }) => void;
     vi.spyOn(api, "listAttachments").mockResolvedValue([]);
@@ -899,13 +935,6 @@ describe("CardAttachments", () => {
                 }
               />
             </div>
-            <div role="dialog" aria-label="Another dialog" tabIndex={-1}>
-              <span
-                data-radix-focus-guard=""
-                tabIndex={0}
-                data-testid="foreign-guard"
-              />
-            </div>
           </AuthProvider>
         </ToastProvider>
       </I18nProvider>,
@@ -920,19 +949,28 @@ describe("CardAttachments", () => {
         "true",
       ),
     );
-    const guard = screen.getByTestId("foreign-guard");
+    // A global Radix guard from a menu/select lives directly under <body>;
+    // it must not be mistaken for the card dialog's lost focus.
+    const guard = document.createElement("span");
+    guard.setAttribute("data-radix-focus-guard", "");
+    guard.tabIndex = 0;
+    document.body.appendChild(guard);
     guard.focus();
     expect(document.activeElement).toBe(guard);
 
-    await act(async () => {
-      resolveSave({ ok: true });
-    });
-    await waitFor(() =>
-      expect(
-        screen.queryByTestId("card-detached-attachments"),
-      ).not.toBeInTheDocument(),
-    );
-    expect(document.activeElement).toBe(guard);
+    try {
+      await act(async () => {
+        resolveSave({ ok: true });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId("card-detached-attachments"),
+        ).not.toBeInTheDocument(),
+      );
+      expect(document.activeElement).toBe(guard);
+    } finally {
+      guard.remove();
+    }
   });
 
   it("does not steal focus moved away from the row during the restore", async () => {
@@ -967,10 +1005,15 @@ describe("CardAttachments", () => {
 
   it("moves focus to the section after deleting the last detached row", async () => {
     const user = userEvent.setup();
+    let resolveDelete!: (value: { status: "ok" }) => void;
     vi.spyOn(api, "listAttachments").mockResolvedValue([]);
     vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
-    vi.spyOn(api, "deleteAttachment").mockResolvedValue({ status: "ok" });
-    renderSection();
+    vi.spyOn(api, "deleteAttachment").mockReturnValue(
+      new Promise<{ status: "ok" }>((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    renderSectionInDialog();
 
     const group = await screen.findByTestId("card-detached-attachments");
     await user.click(group.querySelector("summary")!);
@@ -980,6 +1023,10 @@ describe("CardAttachments", () => {
     await user.click(
       await screen.findByRole("button", { name: "Delete file" }),
     );
+    screen.getByTestId("owner-dialog").focus();
+    await act(async () => {
+      resolveDelete({ status: "ok" });
+    });
 
     await waitFor(() =>
       expect(

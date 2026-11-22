@@ -261,37 +261,12 @@ export function CardAttachments({
       if (!aliveRef.current) return;
       const active = document.activeElement;
       const row = target.row!;
-      // Only the dialog that owns this section may count as the post-unmount
-      // fallback. A label picker, confirm or another dialog opened while the
-      // request was pending owns focus and must keep it.
+      // Only the CardDialog container itself is Chrome's post-unmount
+      // fallback. Any focused control, body, focus guard or foreign dialog
+      // means the user or an overlay owns focus: never take it away.
       const ownerDialog =
         target.section?.closest<HTMLElement>('[role="dialog"]') ?? null;
-      const openDialogs = ownerDialog
-        ? Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
-        : [];
-      const ownerIsTop =
-        ownerDialog !== null &&
-        openDialogs[openDialogs.length - 1] === ownerDialog;
-      // Only the container itself (Chrome's fallback) or a body-level Radix
-      // guard while this dialog is the sole open dialog count as lost focus.
-      // A focusable control inside the dialog is a deliberate user move.
-      const guardBelongsToOwner =
-        ownerIsTop &&
-        openDialogs.length === 1 &&
-        active instanceof HTMLElement &&
-        active.hasAttribute("data-radix-focus-guard") &&
-        active.parentElement === document.body &&
-        (document.body.firstElementChild === active ||
-          document.body.lastElementChild === active);
-      const dialogFallback =
-        ownerIsTop && (active === ownerDialog || guardBelongsToOwner);
-      // A real control outside the row owns focus: don't steal it.
-      const userMoved =
-        active instanceof HTMLElement &&
-        active !== document.body &&
-        !dialogFallback &&
-        !row.contains(active);
-      if (userMoved) return;
+      if (ownerDialog === null || active !== ownerDialog) return;
       if (row.isConnected) {
         row
           .querySelector<HTMLElement>('[data-testid="card-attachment-restore"]')
