@@ -15,7 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the human's attribution, and the MCP DoD gate reads the saved contract on the
   next move. Cards with a lease show `Claimed by … until …`; the claim owner
   and board ADMINs can release it with confirmation, which writes Activity and
-  frees the card without ending the agent session. EN/RU copy, 44 px touch
+  frees the card without ending the agent session. Escape keeps an open
+  task-spec draft and the card dialog open, long unbroken values wrap, and
+  claim releases stay out of the undo stack so undo can never re-claim the
+  card for the wrong identity. EN/RU copy, 44 px touch
   targets, keyboard focus/Escape handling, component tests and backend/MCP
   coverage are included.
 

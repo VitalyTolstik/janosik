@@ -47,6 +47,10 @@ const BOARD: Board = {
       title: "A11y card",
       description: "A card used by the accessibility suite.",
       labelIds: ["label-yellow", "label-brand"],
+      acceptanceCriteria: ["Runs the accessibility suite"],
+      definitionOfDone: ["No axe violations in the dialog"],
+      claimedBy: "u-a11y",
+      leaseUntil: Date.now() + 900_000,
       createdAt: 1,
       updatedAt: 1,
       checklists: [

@@ -1777,9 +1777,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       // A command the reducer turned into a no-op (a guard, a limit, an
       // edit that changed nothing) is not a step: it would cost the user an
-      // undo press that does nothing visible.
+      // undo press that does nothing visible. Claim changes are deliberately
+      // never undoable (TASK-177.4): `invert(CLAIM_CARD)` restores the holder
+      // as the local user, not the agent/token identity that held the lease,
+      // so an undo would steal the claim instead of restoring it.
+      const undoable = scoped.type !== "CLAIM_CARD";
       const after = stateRef.current.find((b) => b.id === boardId);
-      if (before !== undefined && after !== before) {
+      if (undoable && before !== undefined && after !== before) {
         recordStep(boardId, before, scoped);
       }
       if (!serverMode) return;

@@ -214,6 +214,18 @@ export function CardDialog({
     setDeleteConfirm(false);
   }
   const contentRef = useRef<HTMLDivElement>(null);
+  // TASK-177.4 UX fix: Radix listens on document capture, so the inline task
+  // spec editor must announce itself before Escape reaches the dialog. A ref
+  // is enough here: the guard is read from the event handler, never rendered.
+  const taskSpecEditingRef = useRef(false);
+  const handleTaskSpecEditing = useCallback((editing: boolean) => {
+    taskSpecEditingRef.current = editing;
+  }, []);
+  const focusTaskSpecControl = useCallback(() => {
+    contentRef.current
+      ?.querySelector<HTMLButtonElement>('[data-testid="card-task-spec-edit"]')
+      ?.focus();
+  }, []);
   // The element focused when this card opened (the board card face/handle or
   // a table/calendar row). Captured in a layout effect so it runs before
   // Radix's passive auto-focus moves focus into the dialog (U-04).
@@ -873,6 +885,13 @@ export function CardDialog({
           className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
           closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center md:h-8 md:w-8"
           onEscapeKeyDown={(event) => {
+            // The inline task-spec editor owns Escape: keep the dialog and
+            // its staged draft open. Radix runs this on document capture, so
+            // a bubble-phase stopPropagation in the form would be too late.
+            if (taskSpecEditingRef.current) {
+              event.preventDefault();
+              return;
+            }
             // The inline link editor closes first; the card stays open.
             if (linkEditorCardId === card.id) {
               event.preventDefault();
@@ -1404,6 +1423,7 @@ export function CardDialog({
                   role={role}
                   userId={user?.id}
                   readOnly={readOnly}
+                  onReleased={focusTaskSpecControl}
                 />
 
                 <CardTaskSpec
@@ -1412,6 +1432,7 @@ export function CardDialog({
                   acceptanceCriteria={card.acceptanceCriteria}
                   definitionOfDone={card.definitionOfDone}
                   canEdit={canEditCardTaskSpec(role, readOnly)}
+                  onEditingChange={handleTaskSpecEditing}
                 />
 
                 <CardLinks

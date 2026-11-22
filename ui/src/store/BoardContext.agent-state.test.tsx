@@ -4,7 +4,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { I18nProvider } from "@/i18n";
 import { routes } from "@/routes";
-import { BoardProvider, useBoard, useBoardActions } from "@/store/BoardContext";
+import {
+  BoardProvider,
+  useBoard,
+  useBoardActions,
+  useBoardHistory,
+} from "@/store/BoardContext";
 import type { Board } from "@janosik/shared";
 
 /**
@@ -45,11 +50,13 @@ function seedBoard() {
 
 let latestBoard: Board | undefined;
 let latestActions: ReturnType<typeof useBoardActions>;
+let latestHistory: ReturnType<typeof useBoardHistory>;
 
 function Probe() {
   const { board } = useBoard();
   latestBoard = board;
   latestActions = useBoardActions();
+  latestHistory = useBoardHistory();
   return null;
 }
 
@@ -87,6 +94,8 @@ describe("BoardContext agent-owned card state (TASK-177.4)", () => {
     expect(card?.acceptanceCriteria).toEqual(["runs", "passes CI"]);
     expect(card?.definitionOfDone).toEqual(["tests green"]);
     expect(card?.activity?.at(-1)?.type).toBe("task-spec-changed");
+    // Task-spec edits are ordinary undoable work.
+    expect(latestHistory.canUndo).toBe(true);
   });
 
   it("clears a field with an empty list and leaves the other intact", () => {
@@ -104,8 +113,9 @@ describe("BoardContext agent-owned card state (TASK-177.4)", () => {
     expect(card?.definitionOfDone).toEqual(["tests green"]);
   });
 
-  it("releaseCardClaim clears the lease and records the release", () => {
+  it("releaseCardClaim clears the lease, records the release and is not undoable", () => {
     renderProbe();
+    expect(latestHistory.canUndo).toBe(false);
 
     act(() => latestActions.releaseCardClaim("c-1"));
 
@@ -113,5 +123,10 @@ describe("BoardContext agent-owned card state (TASK-177.4)", () => {
     expect(card?.claimedBy).toBeUndefined();
     expect(card?.leaseUntil).toBeUndefined();
     expect(card?.activity?.at(-1)?.type).toBe("claim-released");
+    // `invert(CLAIM_CARD)` would restore the holder as the local human; a
+    // claim is a coordination lease, not an undoable content edit.
+    expect(latestHistory.canUndo).toBe(false);
+    act(() => latestActions.undo());
+    expect(latestBoard?.cards["c-1"]?.claimedBy).toBeUndefined();
   });
 });

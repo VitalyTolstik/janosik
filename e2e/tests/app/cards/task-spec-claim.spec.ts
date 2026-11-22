@@ -54,8 +54,18 @@ test("an agent contract survives a human edit and the claim releases without end
     await expect(dialog.getByTestId("card-claim")).toContainText("Claimed by");
     await expect(dialog.getByTestId("card-claim-release")).toBeVisible();
 
-    // Human edit: both lists are replaced through the dialog.
+    // Human edit: Escape must not close the dialog or discard the draft.
     await dialog.getByTestId("card-task-spec-edit").click();
+    await dialog
+      .getByTestId("card-task-spec-criteria-input")
+      .fill("draft survives escape");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId("card-task-spec-form")).toBeVisible();
+    await expect(
+      dialog.getByTestId("card-task-spec-criteria-input"),
+    ).toHaveValue("draft survives escape");
+
     await dialog
       .getByTestId("card-task-spec-criteria-input")
       .fill("human criterion");
@@ -94,6 +104,7 @@ test("an agent contract survives a human edit and the claim releases without end
       .getByRole("button", { name: "Release claim", exact: true })
       .click();
     await expect(dialog.getByTestId("card-claim")).toHaveCount(0);
+    await expect(dialog.getByTestId("card-task-spec-edit")).toBeFocused();
 
     const session = await readAgentSession(
       board.api,
@@ -111,6 +122,7 @@ test("an agent contract survives a human edit and the claim releases without end
       .getByRole("button", { name: "Clear", exact: true })
       .click();
     await expect(dialog.getByTestId("card-task-spec-empty")).toBeVisible();
+    await expect(dialog.getByTestId("card-task-spec-edit")).toBeFocused();
 
     const cleared = await board.api.get(`/api/v1/boards/${board.id}`);
     expect(cleared.ok()).toBeTruthy();

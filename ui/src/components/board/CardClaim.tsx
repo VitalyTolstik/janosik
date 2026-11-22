@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LockKeyhole } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
@@ -23,6 +23,7 @@ export function CardClaim({
   role,
   userId,
   readOnly = false,
+  onReleased,
 }: {
   boardId: string;
   cardId: string;
@@ -32,12 +33,16 @@ export function CardClaim({
   role: BoardRole | undefined;
   userId: string | null | undefined;
   readOnly?: boolean;
+  /** Focus target after a confirmed release (the pill itself unmounts). */
+  onReleased?: () => void;
 }) {
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const { releaseCardClaim } = useBoardActions();
   const members = useBoardMembersList(boardId);
   const [confirm, setConfirm] = useState(false);
+  const releaseButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmed = useRef(false);
   // Freeze the clock for this render; the pill is reopened with the card, and
   // an expiry that lapses while the dialog is open can wait for the next open.
   const [mountedAt] = useState(() => Date.now());
@@ -45,7 +50,9 @@ export function CardClaim({
   if (claimedBy === undefined) return null;
 
   const member = members.find((entry) => entry.userId === claimedBy);
-  const name = member ? userLabel(member.displayName, member.email) : claimedBy;
+  const name = member
+    ? userLabel(member.displayName, member.email)
+    : t("card.claim.unknownHolder", { id: claimedBy });
   const expired = leaseUntil !== undefined && leaseUntil <= mountedAt;
   const date =
     leaseUntil !== undefined
@@ -57,27 +64,51 @@ export function CardClaim({
     claimedBy,
     readOnly,
   });
+  const releaseLabel = expired
+    ? t("card.claim.clearExpired")
+    : t("card.claim.release");
 
   return (
     <>
       <div
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+        className={
+          expired
+            ? "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground"
+            : "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+        }
         data-testid="card-claim"
       >
         <LockKeyhole
-          className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+          className={
+            expired
+              ? "h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              : "h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+          }
           aria-hidden="true"
         />
-        <span className="font-medium">
+        <span
+          className="min-w-0 break-words font-medium [overflow-wrap:anywhere]"
+          title={name}
+        >
           {t("card.claim.claimedBy", { name })}
         </span>
-        <span className="text-muted-foreground">
-          {expired
-            ? t("card.claim.expired", { date })
-            : t("card.claim.until", { date })}
+        <span aria-hidden="true" className="text-muted-foreground/60">
+          ·
+        </span>
+        <span className="min-w-0 break-words text-muted-foreground [overflow-wrap:anywhere]">
+          {leaseUntil !== undefined ? (
+            <time dateTime={new Date(leaseUntil).toISOString()}>
+              {expired
+                ? t("card.claim.expired", { date })
+                : t("card.claim.until", { date })}
+            </time>
+          ) : (
+            date
+          )}
         </span>
         {canRelease ? (
           <Button
+            ref={releaseButtonRef}
             type="button"
             variant="outline"
             size="sm"
@@ -85,17 +116,36 @@ export function CardClaim({
             data-testid="card-claim-release"
             onClick={() => setConfirm(true)}
           >
-            {t("card.claim.release")}
+            {releaseLabel}
           </Button>
         ) : null}
       </div>
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}
-        title={t("card.claim.releaseTitle")}
-        description={t("card.claim.releaseDescription", { name })}
-        confirmLabel={t("card.claim.release")}
-        onConfirm={() => releaseCardClaim(cardId)}
+        onClosed={() => {
+          if (confirmed.current) {
+            onReleased?.();
+          } else {
+            releaseButtonRef.current?.focus();
+          }
+          confirmed.current = false;
+        }}
+        title={
+          expired
+            ? t("card.claim.clearExpiredTitle")
+            : t("card.claim.releaseTitle")
+        }
+        description={
+          expired
+            ? t("card.claim.clearExpiredDescription", { date })
+            : t("card.claim.releaseDescription", { name })
+        }
+        confirmLabel={releaseLabel}
+        onConfirm={() => {
+          confirmed.current = true;
+          releaseCardClaim(cardId);
+        }}
       />
     </>
   );

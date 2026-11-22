@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CardClaim } from "@/components/board/CardClaim";
@@ -63,13 +69,30 @@ function renderClaim(
 describe("CardClaim (TASK-177.4)", () => {
   beforeEach(() => releaseCardClaim.mockClear());
 
-  it("renders the claimant and the lease for every member", () => {
-    renderClaim();
+  it("renders the claimant, the lease inside a time element, and a separator", () => {
+    const leaseUntil = Date.now() + 900_000;
+    renderClaim({ leaseUntil });
     const pill = screen.getByTestId("card-claim");
     expect(pill).toHaveTextContent("Claimed by Alice");
     expect(pill).toHaveTextContent("until");
+    expect(pill).toHaveTextContent("·");
+    expect(pill.querySelector("time")).toHaveAttribute(
+      "datetime",
+      new Date(leaseUntil).toISOString(),
+    );
     // A different MEMBER sees the claim but gets no release control.
     expect(screen.queryByTestId("card-claim-release")).toBeNull();
+  });
+
+  it("shows a named fallback and wraps a missing holder's raw id", () => {
+    const unknown = "3f6e8a4c-8d2b-4a7d-9c2c-7f8e9d0a1b2c";
+    renderClaim({ claimedBy: unknown });
+    const pill = screen.getByTestId("card-claim");
+    expect(pill).toHaveTextContent(`Unknown member (${unknown})`);
+    expect(pill.querySelector("span")).toHaveClass(
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
   });
 
   it("offers release to the claim owner", () => {
@@ -90,8 +113,9 @@ describe("CardClaim (TASK-177.4)", () => {
     expect(screen.queryByTestId("card-claim-release")).toBeNull();
   });
 
-  it("confirms before releasing and never ends the session implicitly", () => {
-    renderClaim({ userId: "u-alice" });
+  it("confirms before releasing, reports the focus target and never ends the session", async () => {
+    const onReleased = vi.fn();
+    renderClaim({ userId: "u-alice", onReleased });
     fireEvent.click(screen.getByTestId("card-claim-release"));
     expect(releaseCardClaim).not.toHaveBeenCalled();
 
@@ -104,11 +128,37 @@ describe("CardClaim (TASK-177.4)", () => {
     );
 
     expect(releaseCardClaim).toHaveBeenCalledWith("card-1");
+    await waitFor(() => expect(onReleased).toHaveBeenCalledTimes(1));
   });
 
-  it("shows an expired lease honestly", () => {
-    renderClaim({ leaseUntil: Date.now() - 1_000 });
-    expect(screen.getByTestId("card-claim")).toHaveTextContent(/expired/i);
+  it("returns focus to the release control when its confirmation is cancelled", async () => {
+    renderClaim({ userId: "u-alice" });
+    const release = screen.getByTestId("card-claim-release");
+    fireEvent.click(release);
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(release).toHaveFocus());
+    expect(releaseCardClaim).not.toHaveBeenCalled();
+  });
+
+  it("shows an expired lease muted with explicit clear copy", () => {
+    renderClaim({ role: "ADMIN", leaseUntil: Date.now() - 1_000 });
+    const pill = screen.getByTestId("card-claim");
+    expect(pill).toHaveTextContent(/expired/i);
+    expect(pill).toHaveClass("bg-muted/40");
+    expect(screen.getByTestId("card-claim-release")).toHaveTextContent(
+      "Clear expired claim",
+    );
+  });
+
+  it("uses the expired copy in the confirmation", () => {
+    renderClaim({ role: "ADMIN", leaseUntil: Date.now() - 1_000 });
+    fireEvent.click(screen.getByTestId("card-claim-release"));
+    const dialog = screen.getByRole("dialog", {
+      name: "Clear this expired claim?",
+    });
+    expect(dialog).toHaveTextContent(/lease expired/i);
   });
 
   it("renders nothing without a claim", () => {

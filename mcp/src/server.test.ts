@@ -1598,6 +1598,14 @@ describe("janosik MCP server", () => {
         updatedAt: 2,
       },
     };
+    // The MCP read shows the human's item, not the agent's original one.
+    const read = await client.callTool({
+      name: "janosik_get_card",
+      arguments: { boardId: "b1", cardId: "k1" },
+    });
+    expect(firstText(read)).toContain("human-edited item");
+    expect(firstText(read)).not.toContain("agent item");
+
     const blocked = await client.callTool({
       name: "janosik_move_card",
       arguments: { boardId: "b1", cardId: "k1", toColumnId: "col2" },

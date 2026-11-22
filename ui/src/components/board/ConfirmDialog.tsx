@@ -23,6 +23,12 @@ interface ConfirmDialogProps {
   destructive?: boolean;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Runs after the dialog closes, with Radix's default body-focus prevented.
+   * Callers use it to restore focus to a control that survives the action
+   * (the trigger is often unmounted by the command itself).
+   */
+  onClosed?: () => void;
 }
 
 /**
@@ -38,6 +44,7 @@ export function ConfirmDialog({
   destructive = false,
   onConfirm,
   onOpenChange,
+  onClosed,
 }: ConfirmDialogProps) {
   const { t } = useI18n();
 
@@ -48,7 +55,14 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent
+        className="sm:max-w-sm"
+        onCloseAutoFocus={(event) => {
+          if (onClosed === undefined) return;
+          event.preventDefault();
+          onClosed();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? (

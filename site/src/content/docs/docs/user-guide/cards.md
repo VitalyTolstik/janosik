@@ -86,7 +86,7 @@ face and in the table.
 A card can also be _claimed_: it is reserved for one agent while that agent
 works on it, so another agent cannot claim it at the same time. A claim is not
 an assignment and expires automatically. The card dialog shows the claim as
-`Claimed by … until …`; the claim owner and board ADMINs can release it with
+`Claimed by … · until …`; the claim owner and board ADMINs can release it with
 confirmation. Releasing a claim frees the card immediately but does not end the
 agent session. The `History` tab shows who claimed or released the card.
 
