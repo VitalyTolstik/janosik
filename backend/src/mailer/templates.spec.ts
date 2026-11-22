@@ -107,6 +107,8 @@ describe("attentionEmail", () => {
     risk: "high",
     status: "approved",
     agent: "builder",
+    actor: "Alice",
+    excerpt: "Ping @Bob about the release",
     limit: 2,
     current: 2,
     expiresAt: "2026-11-10T12:00:00.000Z",
@@ -123,6 +125,7 @@ describe("attentionEmail", () => {
       "approval.expired",
       "agent.blocked",
       "agent.needs_human",
+      "comment.mention",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -143,6 +146,7 @@ describe("attentionEmail", () => {
       "approval.expired",
       "agent.blocked",
       "agent.needs_human",
+      "comment.mention",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -189,6 +193,15 @@ describe("attentionEmail", () => {
     );
     expect(attentionEmail("token.revoked", vars, "ru").subject).toContain(
       "API-ключ отозван",
+    );
+    expect(attentionEmail("comment.mention", vars, "en").text).toContain(
+      "Alice mentioned you",
+    );
+    expect(attentionEmail("comment.mention", vars, "en").text).toContain(
+      "Ping @Bob",
+    );
+    expect(attentionEmail("comment.mention", vars, "ru").subject).toContain(
+      "вас упомянули",
     );
   });
 });

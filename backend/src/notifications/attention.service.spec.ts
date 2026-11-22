@@ -59,21 +59,33 @@ function makePrisma(admins: RecipientFixture[]) {
     findFirst: jest.fn().mockResolvedValue(null),
     count: jest.fn().mockResolvedValue(0),
     updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
   };
-  const notificationMail = { create: jest.fn().mockResolvedValue({}) };
+  const notificationMail = {
+    create: jest.fn().mockResolvedValue({}),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+  };
   const prisma = {
     notificationMail,
     $transaction: async (work: (tx: PrismaService) => Promise<unknown>) =>
       work(prisma),
     board: { findFirst: jest.fn().mockResolvedValue({ title: "Board" }) },
     boardMember: {
-      findMany: jest.fn().mockResolvedValue(admins.map((user) => ({ user }))),
+      findMany: jest.fn(
+        async (args?: { where?: { userId?: { in?: string[] } } }) => {
+          const ids = args?.where?.userId?.in;
+          return admins
+            .filter((user) => ids === undefined || ids.includes(user.id))
+            .map((user) => ({ user }));
+        },
+      ),
     },
     user: { findFirst: jest.fn().mockResolvedValue(admins[0] ?? null) },
     card: {
       findFirst: jest.fn().mockResolvedValue({ title: "Card" }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    comment: { findFirst: jest.fn().mockResolvedValue({ id: "comment-1" }) },
     agentSession: { findUnique: jest.fn().mockResolvedValue(null) },
     attentionNotification,
   } as unknown as PrismaService & {
@@ -310,6 +322,55 @@ describe("AttentionService", () => {
         boardId: null,
       }),
     );
+  });
+
+  it("notifies each mentioned member once and never the author (TASK-177.12)", async () => {
+    const { prisma, rows } = makePrisma([
+      recipient("author"),
+      recipient("mentioned-1"),
+      recipient("mentioned-2"),
+    ]);
+    const { service, mail } = makeService(prisma);
+    const input = {
+      boardId: "board-1",
+      cardId: "card-1",
+      commentId: "comment-1",
+      authorId: "author",
+      actorName: "Alice",
+      mentionedUserIds: ["mentioned-1", "mentioned-2", "author", "mentioned-1"],
+      excerpt: "Ping @Bob",
+    };
+
+    await service.notifyCommentMention(input);
+    await service.notifyCommentMention(input);
+    await flush();
+
+    expect(rows.map((row) => row.userId).sort()).toEqual([
+      "mentioned-1",
+      "mentioned-2",
+    ]);
+    expect(rows.every((row) => row.type === "comment.mention")).toBe(true);
+    expect((rows[0]!.data as { authorName: string }).authorName).toBe("Alice");
+    expect(mail.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not resurrect a mention row after the comment is deleted", async () => {
+    const { prisma, rows } = makePrisma([recipient("mentioned-1")]);
+    const { service } = makeService(prisma);
+    (prisma.comment.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await service.notifyCommentMention({
+      boardId: "board-1",
+      cardId: "card-1",
+      commentId: "comment-deleted",
+      authorId: "author",
+      actorName: "Alice",
+      mentionedUserIds: ["mentioned-1"],
+      excerpt: "gone",
+    });
+    await flush();
+
+    expect(rows).toHaveLength(0);
   });
 
   it("ignores other 409 codes and never throws from a failed fan-out", async () => {

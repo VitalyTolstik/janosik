@@ -70,6 +70,7 @@ function renderComposer() {
       <ToastProvider>
         <CommentComposerEditor
           cardId="card-1"
+          boardId="board-1"
           value=""
           onChange={() => undefined}
           onSubmit={() => undefined}
