@@ -130,7 +130,7 @@ export function AdminCommentHistoryButton({
         data-testid={`admin-comment-history-${comment.id}`}
         onClick={() => setOpen(true)}
         className={cn(
-          "group inline-flex max-w-full shrink-0 items-center gap-1 rounded align-middle hover:bg-hover/60 hover:underline focus-visible:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11 max-lg:px-2",
+          "inline-flex max-w-full shrink-0 items-center gap-1 rounded align-middle hover:bg-hover/60 hover:underline focus-visible:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11",
           className,
         )}
       >
@@ -154,10 +154,7 @@ export function AdminCommentHistoryButton({
             !
           </span>
         ) : null}
-        <ChevronRight
-          aria-hidden
-          className="h-3 w-3 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-        />
+        <ChevronRight aria-hidden className="h-3 w-3 text-muted-foreground" />
       </button>
       <AdminCommentHistoryDialog
         comment={comment}

@@ -1203,11 +1203,9 @@ export function UserDetailPage() {
                         className="max-w-[26rem] break-words [overflow-wrap:anywhere]"
                       >
                         <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
-                          <TextCell
-                            value={comment.text}
-                            maxWidth="26rem"
-                            className="min-w-0 max-w-full"
-                          />
+                          <div className="w-full min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
+                            {comment.text}
+                          </div>
                           <AdminCommentHistoryButton comment={comment} />
                         </div>
                       </Td>

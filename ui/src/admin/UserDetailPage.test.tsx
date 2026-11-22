@@ -459,6 +459,13 @@ describe("UserDetailPage identity links and per-row moderation", () => {
       "admin-comment-history-comment-1",
     );
     expect(trigger.parentElement?.className).toContain("flex-col");
+    expect(trigger.parentElement?.firstElementChild?.className).toContain(
+      "whitespace-normal",
+    );
+    expect(trigger.parentElement?.firstElementChild?.className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
+    expect(trigger.parentElement?.querySelector(".truncate")).toBeNull();
     expect(trigger).toHaveClass("max-lg:min-h-11");
     await user.click(trigger);
     expect(
