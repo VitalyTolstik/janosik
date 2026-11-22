@@ -26,6 +26,13 @@ describe("EntityLink phone cards", () => {
     expect(link.parentElement).toHaveClass("min-w-0", "max-w-full");
     expect(
       screen.getByTestId("admin-copy-long-address@example.com"),
-    ).toHaveClass("shrink-0");
+    ).toHaveClass(
+      "shrink-0",
+      "h-3",
+      "w-3",
+      "max-sm:h-11",
+      "max-sm:w-11",
+      "max-sm:justify-center",
+    );
   });
 });

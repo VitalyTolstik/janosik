@@ -100,7 +100,7 @@ export function CopyButton({
           .then(() => setCopied(true))
           .catch(() => setCopied(false));
       }}
-      className="inline-flex shrink-0 items-center text-muted-foreground transition-colors hover:text-foreground"
+      className="inline-flex h-3 w-3 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground max-sm:h-11 max-sm:w-11 max-sm:justify-center"
     >
       {copied ? (
         <Check className="h-3 w-3 text-success" aria-hidden />
