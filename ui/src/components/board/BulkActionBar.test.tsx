@@ -321,6 +321,28 @@ describe("bulk card actions", () => {
     expect(screen.getByTestId("bulk-count")).toHaveTextContent("1 selected");
   });
 
+  it("announces a new selection while the previous results are shown", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Alpha");
+    await user.click(screen.getByTestId("bulk-move"));
+    await user.click(screen.getByTestId("bulk-move-col-done"));
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+        "Changed: 1 of 1.",
+      ),
+    );
+
+    await selectByClick(user, "Bravo");
+    expect(screen.getByTestId("bulk-count")).toHaveTextContent("2 selected");
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-count-announcement")).toHaveTextContent(
+        "2 selected",
+      ),
+    );
+  });
+
   it("clears the selection when Select is switched off", async () => {
     const user = userEvent.setup();
     tree(<SelectionHarness />);

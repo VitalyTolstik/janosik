@@ -271,7 +271,10 @@ export function BulkActionBar() {
   // Announce the selection count once it settles; a checkbox storm must not
   // turn into a stream of live-region messages.
   useEffect(() => {
-    if (!visible || busy !== null || hasResults) return;
+    if (!visible || busy !== null) return;
+    // A destructive result may leave no selection; do not announce "0
+    // selected" over the run summary. A fresh selection still announces.
+    if (hasResults && selection.count === 0) return;
     const timer = window.setTimeout(() => {
       setCountAnnouncement(t("bulk.selected", { count: selection.count }));
     }, 350);
