@@ -63,6 +63,8 @@ export function NotificationsBell() {
   const [attentionError, setAttentionError] = useState(false);
   const [open, setOpen] = useState(false);
   const [inboxSession, setInboxSession] = useState(0);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const [sideOffset, setSideOffset] = useState(12);
 
   const load = useCallback(async () => {
     const request = ++invitationRequest.current;
@@ -85,6 +87,33 @@ export function NotificationsBell() {
       setAttentionError(true);
     }
   }, []);
+
+  /**
+   * The phone board header stacks two rows, so the bell in the first row sits
+   * ~50 px above the header's bottom edge. Measure both boxes instead of
+   * hard-coding one offset: the popover must clear the header on every layout,
+   * while a single-row desktop header keeps the usual 12 px gap.
+   */
+  const updateSideOffset = useCallback(() => {
+    const trigger = bellRef.current;
+    const header = trigger?.closest("header");
+    if (!trigger || !header) {
+      setSideOffset(12);
+      return;
+    }
+    const triggerRect = trigger.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    setSideOffset(
+      Math.max(12, Math.ceil(headerRect.bottom - triggerRect.bottom + 6)),
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updateSideOffset();
+    window.addEventListener("resize", updateSideOffset);
+    return () => window.removeEventListener("resize", updateSideOffset);
+  }, [open, updateSideOffset]);
 
   useEffect(() => {
     if (!isApiEnabled() || user === null) return;
@@ -121,6 +150,7 @@ export function NotificationsBell() {
       onOpenChange={(next) => {
         setOpen(next);
         if (next) {
+          updateSideOffset();
           setInboxSession((session) => session + 1);
           void loadAttention();
         }
@@ -128,6 +158,7 @@ export function NotificationsBell() {
     >
       <PopoverTrigger asChild>
         <Button
+          ref={bellRef}
           variant="ghost"
           size="icon"
           aria-label={
@@ -157,7 +188,7 @@ export function NotificationsBell() {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        sideOffset={8}
+        sideOffset={sideOffset}
         collisionPadding={8}
         aria-label={t("common.notifications")}
         data-testid="invitations-panel"
@@ -311,7 +342,10 @@ function NotificationsPanel({
                 className="space-y-3 px-4 py-3"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
+                  <p
+                    className="line-clamp-2 break-words text-sm font-medium"
+                    title={invitation.boardTitle}
+                  >
                     {invitation.boardTitle}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
@@ -336,7 +370,7 @@ function NotificationsPanel({
                     data-testid="invitation-accept"
                     disabled={pending || expired}
                     onClick={() => void handleAccept(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs"
+                    className="h-8 flex-1 gap-1.5 text-xs max-md:min-h-11"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t("notifications.accept")}
@@ -347,7 +381,7 @@ function NotificationsPanel({
                     data-testid="invitation-decline"
                     disabled={pending}
                     onClick={() => void handleDecline(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-md:min-h-11"
                   >
                     <X className="h-3.5 w-3.5" />
                     {t("notifications.decline")}
