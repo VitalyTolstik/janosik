@@ -1,5 +1,7 @@
 import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import {
+  Check,
+  Copy,
   FileArchive,
   FileAudio,
   FileImage,
@@ -9,6 +11,7 @@ import {
   File as FileIcon,
   Download,
   Loader2,
+  RotateCcw,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -27,6 +30,7 @@ import { formatDateOnly, useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { downloadBlob } from "@/utils/download";
+import { attachmentContentUrl } from "@/utils/embedAttachments";
 
 /** Total attachments counted across all sizes for a compact badge. */
 function formatSize(bytes: number): string {
@@ -105,6 +109,10 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
   );
 }
 
+/** Outcome of the parent's append-to-description attempt (TASK-177.9). */
+export type RestoreAttachmentOutcome =
+  { ok: true } | { ok: false; reason: "conflict" | "limit" | "error" };
+
 interface CardAttachmentsProps {
   cardId: string;
   boardId: string;
@@ -117,6 +125,15 @@ interface CardAttachmentsProps {
   focusId?: string;
   /** Live attachment count for the section badge. */
   onCountChange?: (count: number) => void;
+  /**
+   * TASK-177.9 (G-13): append the file's inline markdown to the description.
+   * The card dialog owns the description draft/conflict state, so it performs
+   * the save through the normal `UPDATE_CARD` path; the server then clears
+   * `descriptionDetached` and the file returns to the normal list.
+   */
+  onRestoreToDescription?: (
+    attachment: AttachmentDto,
+  ) => RestoreAttachmentOutcome;
 }
 
 /**
@@ -132,6 +149,7 @@ export function CardAttachments({
   readOnly = false,
   focusId,
   onCountChange,
+  onRestoreToDescription,
 }: CardAttachmentsProps) {
   const { t, lang } = useI18n();
   const toast = useToast();
@@ -142,6 +160,16 @@ export function CardAttachments({
 
   const [items, setItems] = useState<AttachmentDto[]>([]);
   const [detachedItems, setDetachedItems] = useState<AttachmentDto[]>([]);
+  // Detached-bin actions are per row; one restore at a time is enough.
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current !== null) clearTimeout(copiedTimerRef.current);
+    },
+    [],
+  );
   // Server-owned live total (includes inline/description media the lists
   // hide). `null` falls back to the loaded rows until the first header.
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -314,6 +342,84 @@ export function CardAttachments({
     }
   };
 
+  /**
+   * TASK-177.9: a detached file stays downloadable and linkable without
+   * re-embedding it. The canonical content URL opens through the same
+   * authenticated route as the download action.
+   */
+  const onCopyUrl = async (attachment: AttachmentDto) => {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      const url = new URL(
+        attachmentContentUrl(attachment.id),
+        window.location.origin,
+      ).href;
+      await navigator.clipboard.writeText(url);
+      setCopiedId(attachment.id);
+      if (copiedTimerRef.current !== null) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopiedId(null), 2000);
+      toast.success(t("card.attachments.urlCopied"));
+    } catch {
+      toast.error(t("card.attachments.urlCopyError"));
+    }
+  };
+
+  const onRestore = async (attachment: AttachmentDto) => {
+    if (onRestoreToDescription === undefined || restoringId !== null) return;
+    setRestoringId(attachment.id);
+    try {
+      // Re-read the bin first: a file deleted in another tab (or by another
+      // member) is no longer restorable, and its old markdown would only
+      // leave a dead link in the description.
+      const fresh = await api.listDetachedAttachments(cardId);
+      setDetachedItems(fresh);
+      if (!fresh.some((item) => item.id === attachment.id)) {
+        toast.error(t("card.attachments.restoreDeleted"));
+        return;
+      }
+      const outcome = onRestoreToDescription(attachment);
+      if (!outcome.ok) {
+        toast.error(
+          t(
+            outcome.reason === "conflict"
+              ? "card.attachments.restoreConflict"
+              : outcome.reason === "limit"
+                ? "card.attachments.restoreLimit"
+                : "card.attachments.restoreError",
+          ),
+        );
+        return;
+      }
+      setDetachedItems((prev) =>
+        prev.filter((item) => item.id !== attachment.id),
+      );
+      // The server list is newest-first by upload date; the restored file
+      // keeps its original date, so keep that order rather than prepending.
+      setItems((prev) =>
+        prev.some((item) => item.id === attachment.id)
+          ? prev
+          : [...prev, attachment].sort((a, b) => b.createdAt - a.createdAt),
+      );
+      toast.success(
+        t("card.attachments.restored", { name: attachment.fileName }),
+      );
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 404 || error.status === 410)
+      ) {
+        setDetachedItems((prev) =>
+          prev.filter((item) => item.id !== attachment.id),
+        );
+        toast.error(t("card.attachments.restoreDeleted"));
+      } else {
+        toast.error(t("card.attachments.restoreError"));
+      }
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   const onConfirmDelete = async () => {
     const target = pendingDelete;
     setPendingDelete(null);
@@ -428,7 +534,7 @@ export function CardAttachments({
         </ul>
       )}
 
-      {detachedItems.length > 0 && !readOnly ? (
+      {detachedItems.length > 0 ? (
         <details
           className="text-xs text-muted-foreground"
           data-testid="card-detached-attachments"
@@ -440,35 +546,85 @@ export function CardAttachments({
           </summary>
           <p className="mt-1">{t("card.attachments.removedHelp")}</p>
           <ul className="space-y-1">
-            {detachedItems.map((attachment) => (
-              <li
-                key={attachment.id}
-                className="flex items-center gap-2 py-1"
-                data-testid="card-detached-attachment-row"
-              >
-                <span
-                  className="min-w-0 flex-1 truncate"
-                  title={attachment.fileName}
+            {detachedItems.map((attachment) => {
+              const canRestore =
+                canWrite && onRestoreToDescription !== undefined;
+              const canDelete =
+                !readOnly &&
+                (user?.id === attachment.uploadedById || me?.role === "ADMIN");
+              const restoring = restoringId === attachment.id;
+              return (
+                <li
+                  key={attachment.id}
+                  className="flex items-center gap-2 py-1"
+                  data-testid="card-detached-attachment-row"
                 >
-                  {attachment.fileName}
-                </span>
-                {user?.id === attachment.uploadedById ||
-                me?.role === "ADMIN" ? (
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    title={attachment.fileName}
+                  >
+                    {attachment.fileName}
+                  </span>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-6 w-6"
-                    aria-label={t("card.attachments.remove")}
-                    onClick={() => {
-                      setPendingDeleteDetached(true);
-                      setPendingDelete(attachment);
-                    }}
+                    aria-label={t("card.attachments.download")}
+                    title={t("card.attachments.download")}
+                    onClick={() => void onDownload(attachment)}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Download className="h-3.5 w-3.5" />
                   </Button>
-                ) : null}
-              </li>
-            ))}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    aria-label={t("card.attachments.copyUrl")}
+                    title={t("card.attachments.copyUrl")}
+                    onClick={() => void onCopyUrl(attachment)}
+                  >
+                    {copiedId === attachment.id ? (
+                      <Check className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  {canRestore ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      aria-label={t("card.attachments.restoreToDescription")}
+                      title={t("card.attachments.restoreToDescription")}
+                      disabled={restoringId !== null}
+                      onClick={() => void onRestore(attachment)}
+                      data-testid="card-attachment-restore"
+                    >
+                      {restoring ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  ) : null}
+                  {canDelete ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      aria-label={t("card.attachments.remove")}
+                      title={t("card.attachments.remove")}
+                      onClick={() => {
+                        setPendingDeleteDetached(true);
+                        setPendingDelete(attachment);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </details>
       ) : null}

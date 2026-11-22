@@ -26,7 +26,10 @@ import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { CardDescriptionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
-import { CardAttachments } from "@/components/board/CardAttachments";
+import {
+  CardAttachments,
+  type RestoreAttachmentOutcome,
+} from "@/components/board/CardAttachments";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardPriority } from "@/components/board/CardPriority";
@@ -76,7 +79,10 @@ import {
 } from "@/components/ui/dialog";
 import { api, ApiError } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-import { embedMarkdown } from "@/utils/embedAttachments";
+import {
+  embedMarkdown,
+  appendAttachmentMarkdown,
+} from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
 import {
@@ -89,7 +95,7 @@ import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
 import { cn } from "@/lib/utils";
 import { canEditCardTaskSpec } from "@/utils/card-permissions";
-import type { LabelColor } from "@janosik/shared";
+import type { AttachmentDto, LabelColor } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
 import {
@@ -791,6 +797,42 @@ export function CardDialog({
     descriptionChangeRef.current = commitDescriptionChange;
   });
 
+  /**
+   * TASK-177.9 (G-13): put a detached description file back by appending its
+   * inline markdown to the description. The staged draft (if the user was
+   * typing) is the base, so restoring never drops unsaved text. One
+   * `UPDATE_CARD` persists the body; the server's description reconcile then
+   * clears `descriptionDetached` and the file returns to the normal list.
+   * The editor remounts from the committed value through the description
+   * epoch, so the image/file renders immediately.
+   */
+  const restoreAttachmentToDescription = (
+    attachment: AttachmentDto,
+  ): RestoreAttachmentOutcome => {
+    if (!card || readOnly) return { ok: false, reason: "error" };
+    // An unresolved foreign edit owns the description: appending now would
+    // silently overwrite the other writer's text.
+    if (descriptionSync.conflict) return { ok: false, reason: "conflict" };
+    const current =
+      descriptionDraftRef.current?.value ?? card.description ?? "";
+    const next = appendAttachmentMarkdown(current, attachment);
+    if (next.length > LIMITS.description) {
+      return { ok: false, reason: "limit" };
+    }
+    descriptionDraftRef.current = null;
+    conflictedDrafts.delete(conflictedKey(boardId, card.id));
+    setHeldDraft(null);
+    setDescriptionSync((prev) => ({
+      ...prev,
+      seen: next,
+      dirty: false,
+      conflict: false,
+      epoch: prev.epoch + 1,
+    }));
+    updateCard(card.id, { description: next });
+    return { ok: true };
+  };
+
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
     return (
@@ -1465,6 +1507,9 @@ export function CardDialog({
                   boardId={board.id}
                   readOnly={readOnly}
                   focusId={focusAttachmentId}
+                  onRestoreToDescription={
+                    readOnly ? undefined : restoreAttachmentToDescription
+                  }
                 />
 
                 <CardChecklists

@@ -136,11 +136,16 @@ directly stay until explicitly deleted. Older uploads are not automatically
 classified as description uploads.
 
 For undo and saved snapshots, hidden files remain stored and count toward the
-20-file limit. Expand `Removed from descriptions` to delete one and free
-space; that action is not offered in `Recently deleted`, so treat it as final
-unless a platform administrator restores the row. Deleting a file explicitly
-can make it unavailable wherever it is referenced; a regular file can be
-restored from `Recently deleted` during the retention period.
+20-file limit. Expand `Removed from descriptions` to restore a file: `Restore
+to description` appends the same image/file reference at the end of the
+description and saves it, so the file returns to the normal list and renders
+again. You can also `Download` a hidden file or `Copy file link` without
+re-embedding it; both stay available to VIEWERs. Restoring does not create a
+new file, so it works even when the card is at the 20-file limit. Deleting a
+hidden file frees space; that action is not offered in `Recently deleted`, so
+treat it as final unless a platform administrator restores the row. Deleting a
+file explicitly can make it unavailable wherever it is referenced; a regular
+file can be restored from `Recently deleted` during the retention period.
 
 When video processing is enabled, uploaded videos are converted in the
 background to H.264/AAC MP4. An MP4 original is kept if the result is no
