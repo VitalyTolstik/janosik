@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { appPath } from "@/utils/app-path";
 import { docsPageUrl } from "@/utils/docs-url";
 import { adminApi } from "./admin-client";
+import { AdminCommentHistoryButton } from "./CommentHistoryDialog";
 import { readReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -1202,6 +1203,10 @@ export function UserDetailPage() {
                         className="max-w-[26rem]"
                       >
                         <TextCell value={comment.text} maxWidth="26rem" />
+                        <AdminCommentHistoryButton
+                          comment={comment}
+                          className="ml-1.5"
+                        />
                       </Td>
                       <Td label={t("admin.comments.column.card")}>
                         <EntityLink to={cardHref(comment.cardId)}>

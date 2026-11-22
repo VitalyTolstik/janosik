@@ -21,6 +21,7 @@ import type {
 } from "@janosik/shared";
 import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
+import { AdminCommentHistoryButton } from "./CommentHistoryDialog";
 import {
   adminAuditEntryHref,
   adminCardsHref,
@@ -900,6 +901,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
               <div className="flex flex-wrap items-center gap-1.5">
                 <TextCell value={comment.text} maxWidth="26rem" />
                 <Badge>{t(`admin.filters.kind.${comment.kind}`)}</Badge>
+                <AdminCommentHistoryButton comment={comment} />
               </div>
             ),
             className: "max-w-[26rem]",

@@ -14,7 +14,6 @@ import type {
   AdminChecklistRowDto,
   AdminColumnRowDto,
   AdminCommandRowDto,
-  AdminCommentRowDto,
   AdminDetailWindowDto,
   AdminEntity,
   AdminEntityRowMap,
@@ -42,6 +41,10 @@ import type {
 } from "./dto/admin-detail-query.dto";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { auditIdsForCommands } from "./audit-correlation";
+import {
+  ADMIN_COMMENT_ROW_SELECT,
+  toAdminCommentRow,
+} from "./admin-comment-row";
 import { AdminService } from "./admin.service";
 import { CommsService } from "./comms.service";
 
@@ -1053,7 +1056,7 @@ export class AdminEntitiesService {
           },
           orderBy: { createdAt: "desc" },
           take: 5,
-          select: COMMENT_SELECT,
+          select: ADMIN_COMMENT_ROW_SELECT,
         }),
         this.prisma.attachment.findMany({
           where: {
@@ -1113,7 +1116,7 @@ export class AdminEntitiesService {
         deletedAt: MS(board.deletedAt),
       })),
       cards: cards.map(toCardRow),
-      comments: comments.map(toCommentRow),
+      comments: comments.map(toAdminCommentRow),
       attachments: attachments.map(toAttachmentRow),
       labels: labels.map((label) => ({
         id: label.id,
@@ -1285,7 +1288,7 @@ export class AdminEntitiesService {
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             skip: offset,
             take: limit,
-            select: COMMENT_SELECT,
+            select: ADMIN_COMMENT_ROW_SELECT,
           })
         : Promise.resolve([]),
       wants("attachments")
@@ -1480,7 +1483,7 @@ export class AdminEntitiesService {
       })),
       createdCards,
       assignedCards: assignedCards.map(toCardRow),
-      comments: comments.map(toCommentRow),
+      comments: comments.map(toAdminCommentRow),
       attachments: attachments.map(toAttachmentRow),
       sessions: sessions.map(toSessionRow),
       tokens: tokens.map(toTokenRow),
@@ -1714,7 +1717,7 @@ export class AdminEntitiesService {
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             skip: commentsOffset,
             take: limit,
-            select: COMMENT_SELECT,
+            select: ADMIN_COMMENT_ROW_SELECT,
           })
         : Promise.resolve([]),
       wants("attachments")
@@ -1923,7 +1926,7 @@ export class AdminEntitiesService {
         comments: commentsDeleted,
         attachments: attachmentsDeleted,
       },
-      comments: comments.map(toCommentRow),
+      comments: comments.map(toAdminCommentRow),
       attachments: attachments.map(toAttachmentRow),
       timeline: timelineWithAudit,
       createdBy,
@@ -2110,50 +2113,6 @@ export class AdminEntitiesService {
 
   // -------------------------------------------------------------- mappings
 }
-
-type CommentJoin = {
-  id: string;
-  text: string;
-  kind: string;
-  createdAt: Date;
-  updatedAt: Date;
-  editedAt: Date | null;
-  deletedAt: Date | null;
-  cardId: string;
-  authorId: string;
-  card: { title: string };
-  author: { email: string };
-};
-
-function toCommentRow(comment: CommentJoin): AdminCommentRowDto {
-  return {
-    id: comment.id,
-    cardId: comment.cardId,
-    cardTitle: comment.card.title,
-    authorId: comment.authorId,
-    authorEmail: comment.author.email,
-    text: comment.text,
-    kind: comment.kind as AdminCommentRowDto["kind"],
-    createdAt: comment.createdAt.getTime(),
-    updatedAt: comment.updatedAt.getTime(),
-    editedAt: MS(comment.editedAt),
-    deletedAt: MS(comment.deletedAt),
-  };
-}
-
-const COMMENT_SELECT = {
-  id: true,
-  text: true,
-  kind: true,
-  createdAt: true,
-  updatedAt: true,
-  editedAt: true,
-  deletedAt: true,
-  cardId: true,
-  authorId: true,
-  card: { select: { title: true } },
-  author: { select: { email: true } },
-} satisfies Prisma.CommentSelect;
 
 type AttachmentJoin = {
   id: string;
