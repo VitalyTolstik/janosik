@@ -413,7 +413,9 @@ function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium">{value}</p>
+      <p className="font-medium break-words [overflow-wrap:anywhere]">
+        {value}
+      </p>
     </div>
   );
 }

@@ -135,6 +135,38 @@ describe("ObservabilityPage", () => {
     expect(await screen.findAllByText("—")).not.toHaveLength(0);
   });
 
+  it("wraps a 40-character build commit instead of overflowing its cell", async () => {
+    const long = "abcdef1234567890abcdef1234567890abcdef12";
+    const server = new FakeAdminServer();
+    server.observability.deploy.commit = long;
+    const fetchWithLongCommit = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/version.json")) {
+        return new Response(
+          JSON.stringify({
+            version: "9.9.9",
+            commit: long,
+            build: "janosik-deadbeef",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return server.fetchImpl(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal("fetch", fetchWithLongCommit);
+    renderObservability();
+
+    const values = await screen.findAllByText(long);
+    expect(values.length).toBeGreaterThanOrEqual(2);
+    for (const value of values) {
+      expect(value).toHaveClass("break-words");
+      expect(value.className).toContain("[overflow-wrap:anywhere]");
+    }
+  });
+
   it("shows comment-history counts, bytes and every reason without text", async () => {
     const server = new FakeAdminServer();
     server.observability.commentHistory = {
