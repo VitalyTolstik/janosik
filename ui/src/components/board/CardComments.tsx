@@ -732,6 +732,18 @@ export function CardComments({
   ]);
 
   useEffect(() => {
+    if (focusId === undefined || requestedKindRef.current === undefined) {
+      return;
+    }
+    // A deep link may point at a comment the active kind chip excludes.
+    // Reset to All once per focus id; the user can still filter afterwards.
+    requestedKindRef.current = undefined;
+    setRequestedKind(undefined);
+    setFilterError(false);
+    setFiltering(true);
+  }, [focusId]);
+
+  useEffect(() => {
     if (!focusId || !loaded || status !== "ready" || nextCursor === null) {
       return;
     }

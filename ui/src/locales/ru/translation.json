@@ -1092,7 +1092,7 @@
   "comment.loading": "Загружаем комментарии…",
   "comment.mention.empty": "Нет подходящих участников доски",
   "comment.mention.active": "Выбран {{name}}",
-  "comment.mention.hint": "Введите имя · ↑↓ Home End Tab — выбор · Enter — вставить · Esc — отмена",
+  "comment.mention.hint": "Введите имя · ↑↓ Home End Tab/Shift+Tab — выбор · Enter — вставить · Esc — отмена",
   "comment.mention.label": "Упомянуть участника доски",
   "comment.mention.listbox": "Участники доски",
   "comment.mention.matches_few": "{{count}} подходящих участника",

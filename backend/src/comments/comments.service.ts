@@ -371,21 +371,13 @@ export class CommentsService {
       );
     }
     const boardId = comment.card.column.boardId;
-    // TASK-177.12: a text edit can add or remove a mention. Validate the new
-    // recipient set before the write, exactly like create; the diff decides
-    // which notifications are created and which are withdrawn.
-    const previousMentionIds = extractMentionUserIds(comment.text);
-    const mentionUserIds = textProvided
-      ? await this.assertMentionMembers(boardId, text ?? comment.text)
-      : [];
-    const previousMentionSet = new Set(previousMentionIds);
-    const nextMentionSet = new Set(mentionUserIds);
-    const addedMentionIds = mentionUserIds.filter(
-      (id) => !previousMentionSet.has(id),
-    );
-    const removedMentionIds = previousMentionIds.filter(
-      (id) => !nextMentionSet.has(id),
-    );
+    // TASK-177.12: validate the new recipient set before the write. The
+    // added/removed diff is computed again inside the board lock from the
+    // actual before/after text, so a concurrent edit cannot leave stale rows.
+    if (textProvided) {
+      await this.assertMentionMembers(boardId, text ?? comment.text);
+    }
+    let addedMentionIds: string[] = [];
 
     const updated = await this.boardWrite.run(
       boardId,
@@ -419,6 +411,23 @@ export class CommentsService {
               beforeText,
               afterText,
             );
+            // The under-lock texts are the source of truth for the mention
+            // diff; the pre-read copy may already be stale.
+            const beforeMentionIds = extractMentionUserIds(beforeText);
+            const afterMentionIds = extractMentionUserIds(afterText);
+            const beforeSet = new Set(beforeMentionIds);
+            const afterSet = new Set(afterMentionIds);
+            addedMentionIds = afterMentionIds.filter(
+              (id) => !beforeSet.has(id),
+            );
+            const removedMentionIds = beforeMentionIds.filter(
+              (id) => !afterSet.has(id),
+            );
+            await deleteCommentMentionAttentionForUsers(
+              tx,
+              comment.id,
+              removedMentionIds,
+            );
             // Inline pasted media lives outside
             // `reconcileDescriptionAttachments` (it tracks description embeds
             // only), so the URLs that disappeared from this comment are
@@ -442,15 +451,6 @@ export class CommentsService {
             changed: false as const,
             comment: written.comment,
           };
-        }
-        // A mention removed by this edit commits together with the text and
-        // its still-queued letter, so a re-add can notify again later.
-        if (textProvided) {
-          await deleteCommentMentionAttentionForUsers(
-            tx,
-            comment.id,
-            removedMentionIds,
-          );
         }
         return {
           gap: false as const,

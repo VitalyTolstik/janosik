@@ -69,6 +69,48 @@ interface CommentComposerEditorProps {
   placeholder?: string;
 }
 
+const BLOCK_TAGS = new Set([
+  "ADDRESS",
+  "ARTICLE",
+  "ASIDE",
+  "BLOCKQUOTE",
+  "DIV",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "LI",
+  "OL",
+  "P",
+  "PRE",
+  "SECTION",
+  "TABLE",
+  "UL",
+]);
+
+/**
+ * The last visible character before the caret, or null when the caret starts
+ * a block/list item or follows a `<br>`. `Range.toString()` hides those
+ * boundaries (it concatenates blocks), so the cloned fragment is inspected
+ * structurally.
+ */
+function lastCaretChar(node: Node | null): string | null {
+  if (node === null) return null;
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent ?? "";
+    return text === "" ? null : ([...text].pop() ?? null);
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const element = node as HTMLElement;
+  if (element.tagName === "BR") return null;
+  const last = lastCaretChar(element.lastChild);
+  if (last !== null) return last;
+  if (BLOCK_TAGS.has(element.tagName)) return null;
+  return lastCaretChar(element.previousSibling);
+}
+
 /**
  * The WYSIWYG markdown editor for writing card comments (TASK-37): the
  * description's MDXEditor in a compact footprint — same chrome, same
@@ -114,12 +156,12 @@ export const CommentComposerEditor = forwardRef<
     setMentionActiveId(null);
   };
 
-  const cancelMention = useCallback((query: string) => {
+  const cancelMention = useCallback((query: string | undefined) => {
     setMentionOpen(false);
     setMentionActiveId(null);
-    // Dismissal restores the literal text the author typed; nothing is
-    // silently discarded, including an outside click or Send.
-    methodsRef.current?.insertMarkdown(`@${query}`);
+    // A dismissal restores the literal text the author typed; an explicit
+    // Send passes `undefined` so the draft is not polluted with `@query`.
+    if (query !== undefined) methodsRef.current?.insertMarkdown(`@${query}`);
   }, []);
 
   const reportMentionActive = useCallback((optionId: string | null) => {
@@ -133,37 +175,58 @@ export const CommentComposerEditor = forwardRef<
       '[contenteditable="true"]',
     );
     if (!editable) return;
+    // ARIA 1.2 combobox: the editor is a textbox *with autocomplete*, so
+    // every combobox attribute is valid only after the role is switched.
+    editable.setAttribute("role", "combobox");
+    editable.setAttribute("aria-autocomplete", "list");
+    editable.setAttribute("aria-haspopup", "listbox");
+    editable.setAttribute("aria-expanded", mentionOpen ? "true" : "false");
     if (!mentionOpen) {
-      editable.removeAttribute("aria-haspopup");
-      editable.removeAttribute("aria-expanded");
       editable.removeAttribute("aria-controls");
       editable.removeAttribute("aria-activedescendant");
       return;
     }
-    editable.setAttribute("aria-haspopup", "listbox");
-    editable.setAttribute("aria-expanded", "true");
     editable.setAttribute("aria-controls", `${mentionListId}-listbox`);
     if (mentionActiveId !== null) {
       editable.setAttribute("aria-activedescendant", mentionActiveId);
     } else {
       editable.removeAttribute("aria-activedescendant");
     }
-  }, [mentionActiveId, mentionListId, mentionOpen]);
+  }, [lang, mentionActiveId, mentionListId, mentionOpen]);
 
-  /** Character immediately before the caret, or null when unknown. */
-  const charBeforeCaret = (): string | null => {
+  /** Caret context used by the `@` trigger (block boundaries are openings). */
+  const caretContext = (): { previous: string | null; inCode: boolean } => {
     const root = editorRef.current;
     const selection = window.getSelection();
     if (root === null || selection === null || selection.rangeCount === 0) {
-      return null;
+      return { previous: null, inCode: false };
     }
     const range = selection.getRangeAt(0);
-    if (!root.contains(range.startContainer)) return null;
+    if (!root.contains(range.startContainer)) {
+      return { previous: null, inCode: false };
+    }
+    const startElement =
+      range.startContainer.nodeType === Node.TEXT_NODE
+        ? range.startContainer.parentElement
+        : (range.startContainer as HTMLElement);
+    const inCode =
+      startElement?.closest("code, pre, textarea, [class*='code']") != null;
+    if (range.startContainer.nodeType === Node.TEXT_NODE) {
+      const text = range.startContainer.textContent ?? "";
+      if (range.startOffset > 0) {
+        return {
+          previous: [...text.slice(0, range.startOffset)].pop() ?? null,
+          inCode,
+        };
+      }
+    }
+    // `Range.toString()` concatenates block text without separators, so walk
+    // the cloned fragment to the last meaningful node instead. A block, list
+    // item or `<br>` boundary means the caret starts fresh and `@` opens.
     const before = range.cloneRange();
     before.selectNodeContents(root);
     before.setEnd(range.startContainer, range.startOffset);
-    const chars = [...before.toString()];
-    return chars[chars.length - 1] ?? null;
+    return { previous: lastCaretChar(before.cloneContents()), inCode };
   };
 
   useImperativeHandle(
@@ -219,12 +282,9 @@ export const CommentComposerEditor = forwardRef<
       data-testid="comment-input"
       className="relative"
       onKeyDown={(event) => {
-        const inCode =
-          (event.target as HTMLElement | null)?.closest?.(
-            "code, pre, textarea, [class*='code']",
-          ) != null;
+        const context = caretContext();
         if (
-          !inCode &&
+          !context.inCode &&
           isMentionTrigger({
             key: event.key,
             isComposing: event.nativeEvent.isComposing,
@@ -232,7 +292,7 @@ export const CommentComposerEditor = forwardRef<
             ctrlKey: event.ctrlKey,
             altKey: event.altKey,
           }) &&
-          canOpenMentionAt(charBeforeCaret())
+          canOpenMentionAt(context.previous)
         ) {
           // The picker owns the following keystrokes; the literal `@` is
           // restored on Escape/no match and the token inserted on selection.
@@ -245,6 +305,9 @@ export const CommentComposerEditor = forwardRef<
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
           event.stopPropagation();
+          // Submit discards an uncommitted picker query, like the Send click.
+          setMentionOpen(false);
+          setMentionActiveId(null);
           onSubmit();
           return;
         }

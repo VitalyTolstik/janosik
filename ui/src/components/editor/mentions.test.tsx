@@ -5,6 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import axe from "axe-core";
 import { describe, expect, it } from "vitest";
 
 import { mentionMarkdown } from "@janosik/shared";
@@ -14,7 +15,7 @@ import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 import { BoardLiveProvider, createBoardLive } from "@/store/board-live";
-import { CommentBody } from "./CommentEditor";
+import { CommentBody, CommentComposerEditor } from "./CommentEditor";
 
 // Lexical needs these when it commits a selection in jsdom.
 if (typeof Range !== "undefined") {
@@ -106,6 +107,66 @@ describe("comment mention rendering (TASK-177.12)", () => {
     fireEvent(anchor, event);
     expect(event.defaultPrevented).toBe(true);
     expect(screen.queryByTestId("user-profile-dialog")).toBeNull();
+
+    const middle = new MouseEvent("auxclick", {
+      bubbles: true,
+      button: 1,
+      cancelable: true,
+    });
+    fireEvent(anchor, middle);
+    expect(middle.defaultPrevented).toBe(true);
+  });
+
+  it("gives the real composer a valid combobox relationship and passes axe", async () => {
+    const live = createBoardLive();
+    live.members.set("b-1", [
+      {
+        userId: "user-1",
+        displayName: "Alice",
+        email: "alice@example.com",
+        role: "MEMBER",
+        expiresAt: null,
+        avatarColor: null,
+        avatarPath: null,
+      },
+    ]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <main>
+              <BoardLiveProvider live={live}>
+                <CommentComposerEditor
+                  cardId="card-1"
+                  boardId="b-1"
+                  value=""
+                  onChange={() => undefined}
+                  onSubmit={() => undefined}
+                />
+              </BoardLiveProvider>
+            </main>
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByTestId("comment-input"), {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+    expect(await screen.findByTestId("mention-picker")).toBeVisible();
+    const editable = document.querySelector<HTMLElement>(
+      '[contenteditable="true"]',
+    );
+    expect(editable).toHaveAttribute("role", "combobox");
+    expect(editable).toHaveAttribute("aria-autocomplete", "list");
+    expect(editable).toHaveAttribute("aria-expanded", "true");
+    expect(editable?.getAttribute("aria-controls")).toMatch(/-listbox$/);
+
+    const results = await axe.run(document.body, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(results.violations.map((violation) => violation.id)).toEqual([]);
   });
 
   it("does not execute or render raw HTML around a mention", async () => {

@@ -119,7 +119,7 @@ function renderComments(
   focusId?: string,
 ) {
   vi.stubGlobal("fetch", handler);
-  const tree = (open: boolean) => (
+  const tree = (open: boolean, currentFocus = focusId) => (
     <I18nProvider>
       <ToastProvider>
         <AuthProvider>
@@ -132,7 +132,7 @@ function renderComments(
                       cardId={cardId}
                       boardId="b-1"
                       readOnly={readOnly}
-                      focusId={focusId}
+                      focusId={currentFocus}
                       onCountChange={onCountChange}
                     />
                   )}
@@ -145,7 +145,11 @@ function renderComments(
     </I18nProvider>
   );
   const result = render(tree(true));
-  return { ...result, setOpen: (open: boolean) => result.rerender(tree(open)) };
+  return {
+    ...result,
+    setOpen: (open: boolean) => result.rerender(tree(open)),
+    setFocus: (next: string | undefined) => result.rerender(tree(true, next)),
+  };
 }
 
 /**
@@ -1068,6 +1072,46 @@ describe("CardComments", () => {
     await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
     expect(row.closest("li")).toHaveAttribute("data-search-highlight", "true");
     expect(document.activeElement).toBe(row.closest("li"));
+  });
+
+  it("resets an active kind filter for a deep link outside it", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments(
+      "card-1",
+      Array.from({ length: 51 }, (_, index) =>
+        comment({
+          id: `comment-${index}`,
+          text: `Comment ${index}`,
+          kind: index === 50 ? "blocker" : "note",
+          createdAt: 1_700_000_000_000 - index,
+        }),
+      ),
+    );
+    const view = renderComments(server);
+
+    await screen.findByText("Comment 0");
+    fireEvent.click(screen.getByTestId("comment-filter-note"));
+    await waitFor(() =>
+      expect(screen.getByTestId("comment-filter-note")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    expect(screen.queryByText("Comment 50")).toBeNull();
+
+    act(() => view.setFocus("comment-50"));
+
+    expect(await screen.findByText("Comment 50")).toBeInTheDocument();
+    expect(screen.getByTestId("comment-filter-all")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
   });
 
   it("leaves the card intact for an unknown comment deep link", async () => {

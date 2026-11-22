@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardMemberDto } from "@janosik/shared";
 
 /**
@@ -73,7 +73,7 @@ function Harness() {
       />
       <button
         type="button"
-        data-testid="composer-send"
+        data-testid="comment-send"
         onClick={() => setSubmitted(draft)}
       >
         Send
@@ -83,7 +83,83 @@ function Harness() {
   );
 }
 
+function setCaret(node: Node, offset: number) {
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  window.getSelection()?.removeAllRanges();
+  window.getSelection()?.addRange(range);
+}
+
 describe("comment composer mentions (TASK-177.12)", () => {
+  afterEach(() => {
+    window.getSelection()?.removeAllRanges();
+  });
+
+  it.each([
+    [
+      "new paragraph",
+      "<p>First</p><p><br></p>",
+      (editor: HTMLElement) => editor.querySelectorAll("p")[1]!,
+      1,
+    ],
+    [
+      "list item",
+      "<ul><li>One</li><li><br></li></ul>",
+      (editor: HTMLElement) => editor.querySelectorAll("li")[1]!,
+      1,
+    ],
+    [
+      "line break",
+      "<p>First<br><br></p>",
+      (editor: HTMLElement) => editor.querySelector("p")!,
+      3,
+    ],
+  ])("opens at a %s boundary", async (_label, html, pickNode, offset) => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+    const editor = screen.getByTestId("mock-comment-editor");
+    editor.innerHTML = html;
+    setCaret(pickNode(editor), offset);
+
+    fireEvent.keyDown(editor, {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(await screen.findByTestId("mention-picker")).toBeVisible();
+  });
+
+  it("does not open inside inline code at the caret", () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+    const editor = screen.getByTestId("mock-comment-editor");
+    editor.innerHTML = "<p><code>alice</code></p>";
+    const code = editor.querySelector("code")!.firstChild!;
+    setCaret(code, 5);
+
+    fireEvent.keyDown(editor, {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+  });
+
   it("opens on @, inserts the chosen member and submits the token", async () => {
     render(
       <I18nProvider>
@@ -121,10 +197,82 @@ describe("comment composer mentions (TASK-177.12)", () => {
     );
     expect(document.querySelector('[aria-expanded="true"]')).toBeNull();
 
-    fireEvent.click(screen.getByTestId("composer-send"));
+    fireEvent.click(screen.getByTestId("comment-send"));
     expect(screen.getByTestId("composer-submitted")).toHaveTextContent(
       "[@Alice Smith](https://janosik.invalid/mention/user-alice)",
     );
+  });
+
+  it("restores the literal @query on Escape and outside dismissal", async () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByTestId("comment-input"), {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+    expect(await screen.findByTestId("mention-picker")).toBeVisible();
+    fireEvent.keyDown(document, { key: "b" });
+    fireEvent.keyDown(document, { key: "o" });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+    expect(screen.getByTestId("mock-comment-editor")).toHaveTextContent("@bo");
+  });
+
+  it("restores the literal @query on an outside click", async () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByTestId("comment-input"), {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+    expect(await screen.findByTestId("mention-picker")).toBeVisible();
+    fireEvent.keyDown(document, { key: "b" });
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+    expect(screen.getByTestId("mock-comment-editor")).toHaveTextContent("@b");
+  });
+
+  it("discards a typed picker query when Send is pressed", async () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByTestId("comment-input"), {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+    expect(await screen.findByTestId("mention-picker")).toBeVisible();
+    fireEvent.keyDown(document, { key: "a" });
+    fireEvent.keyDown(document, { key: "l" });
+
+    const send = screen.getByTestId("comment-send");
+    fireEvent.pointerDown(send);
+    fireEvent.click(send);
+
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+    expect(screen.getByTestId("composer-submitted").textContent).toBe("");
   });
 
   it("does not open inside an email address", () => {
@@ -140,11 +288,8 @@ describe("comment composer mentions (TASK-177.12)", () => {
 
     const editor = screen.getByTestId("mock-comment-editor");
     editor.textContent = "alice@";
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    window.getSelection()?.removeAllRanges();
-    window.getSelection()?.addRange(range);
+    const text = editor.firstChild!;
+    setCaret(text, "alice@".length);
 
     fireEvent.keyDown(editor, {
       key: "@",

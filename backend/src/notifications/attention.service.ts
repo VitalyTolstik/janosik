@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, Role } from "@prisma/client";
+import { extractMentionUserIds } from "@janosik/shared";
 import type {
   AttentionNotificationDto,
   AttentionNotificationListQuery,
@@ -27,7 +28,10 @@ import {
   type AttentionEmailVars,
 } from "@/mailer/templates";
 import { EmailTemplateService } from "@/ops/email-template.service";
-import { escapeLikePrefix } from "./mention-attention";
+import {
+  deleteCommentMentionAttentionForUsers,
+  escapeLikePrefix,
+} from "./mention-attention";
 
 /** Default/maximum page size of the in-app attention inbox. */
 const DEFAULT_LIMIT = 50;
@@ -431,6 +435,30 @@ export class AttentionService {
           ...(input.actorName !== null ? { authorName: input.actorName } : {}),
         },
       });
+      // The fan-out is post-commit. A concurrent edit may have replaced the
+      // text after our under-lock diff: re-read once and withdraw any row for
+      // an id the committed text no longer carries.
+      const live = await this.prisma.comment.findFirst({
+        where: {
+          id: input.commentId,
+          deletedAt: null,
+          cardId: input.cardId,
+          card: {
+            deletedAt: null,
+            column: { boardId: input.boardId, deletedAt: null },
+          },
+        },
+        select: { text: true },
+      });
+      const liveIds = new Set(extractMentionUserIds(live?.text ?? ""));
+      const staleIds = input.mentionedUserIds.filter((id) => !liveIds.has(id));
+      if (staleIds.length > 0) {
+        await deleteCommentMentionAttentionForUsers(
+          this.prisma,
+          input.commentId,
+          staleIds,
+        );
+      }
     } catch (error) {
       this.warn("comment mention", error);
     }

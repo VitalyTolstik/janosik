@@ -24,8 +24,11 @@ interface MentionPickerProps {
   idPrefix: string;
   /** Insert the chosen member's explicit mention token. */
   onSelect: (member: BoardMemberDto) => void;
-  /** Dismiss without a selection and restore the literal `@query`. */
-  onCancel: (query: string) => void;
+  /**
+   * Dismiss without a selection. A string restores `@query`; `undefined`
+   * discards it because the click was an explicit Send.
+   */
+  onCancel: (query: string | undefined) => void;
   /** The active option id for the editor's `aria-activedescendant`. */
   onActiveChange: (optionId: string | null) => void;
 }
@@ -136,7 +139,17 @@ export function MentionPicker({
         );
         return;
       }
-      if (key === "Enter" || key === "Tab") {
+      if (key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (candidates.length === 0) return;
+        const direction = event.shiftKey ? -1 : 1;
+        setActive(
+          (activeIndex + direction + candidates.length) % candidates.length,
+        );
+        return;
+      }
+      if (key === "Enter") {
         event.preventDefault();
         event.stopPropagation();
         const member = candidates[activeIndex];
@@ -180,8 +193,14 @@ export function MentionPicker({
         event.stopImmediatePropagation();
         return;
       }
-      // A dismissal never swallows what the author typed: restore `@query`.
-      onCancel(query);
+      // Send is an explicit submit: discard the query instead of injecting
+      // `@query` into the draft. Any other dismissal restores what was typed.
+      const element = target instanceof Element ? target : null;
+      const submitted =
+        element?.closest(
+          '[data-testid="comment-send"], [data-testid="comment-edit-save"]',
+        ) !== null;
+      onCancel(submitted ? undefined : query);
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
@@ -203,7 +222,7 @@ export function MentionPicker({
         ...(placement.top === undefined ? {} : { top: placement.top }),
         ...(placement.bottom === undefined ? {} : { bottom: placement.bottom }),
       }}
-      className="z-[60] flex flex-col overflow-hidden rounded-lg border bg-popover shadow-xl"
+      className="pointer-events-auto z-[60] flex flex-col overflow-hidden rounded-lg border bg-popover shadow-xl"
     >
       <div className="border-b border-border/60 px-3 py-2">
         <p className="text-xs font-medium text-foreground">

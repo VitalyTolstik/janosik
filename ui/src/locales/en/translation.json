@@ -1070,7 +1070,7 @@
   "comment.loading": "Loading comments…",
   "comment.mention.empty": "No board members match",
   "comment.mention.active": "Selected {{name}}",
-  "comment.mention.hint": "Type to filter · ↑↓ Home End Tab to move · Enter to insert · Esc to cancel",
+  "comment.mention.hint": "Type to filter · ↑↓ Home End Tab/Shift+Tab to move · Enter to insert · Esc to cancel",
   "comment.mention.label": "Mention a board member",
   "comment.mention.listbox": "Board members",
   "comment.mention.matches_one": "{{count}} matching member",

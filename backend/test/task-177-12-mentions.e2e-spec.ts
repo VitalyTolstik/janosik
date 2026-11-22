@@ -4,7 +4,7 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import type { AttentionNotification } from "@prisma/client";
 import type { CommentDto } from "@janosik/shared";
-import { mentionMarkdown } from "@janosik/shared";
+import { extractMentionUserIds, mentionMarkdown } from "@janosik/shared";
 
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -337,6 +337,37 @@ describe("Comment mentions (TASK-177.12, e2e)", () => {
 
     await waitFor(async () => (await mentionRow(doomedId, member.id)) === null);
     expect(await mentionRow(survivorId, member.id)).not.toBeNull();
+  });
+
+  it("reconciles the mention diff under the board lock on concurrent edits", async () => {
+    const created = await createComment("Concurrent base.").expect(201);
+    const commentId = (created.body as CommentDto).id;
+    const textA = `A ${mentionMarkdown("Member", member.id)}`;
+    const textB = `B ${mentionMarkdown("Erased", erasedAuthor.id)}`;
+
+    await Promise.all([
+      server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(owner.token))
+        .send({ text: textA })
+        .expect(200),
+      server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(owner.token))
+        .send({ text: textB })
+        .expect(200),
+    ]);
+
+    const final = await prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { text: true },
+    });
+    const expected = extractMentionUserIds(final!.text).sort();
+    const rows = await prisma.attentionNotification.findMany({
+      where: { commentId, type: "comment.mention" },
+      select: { userId: true },
+    });
+    expect(rows.map((row) => row.userId).sort()).toEqual(expected);
   });
 
   it("keeps the inbox row but sends no letter after the member opts out", async () => {

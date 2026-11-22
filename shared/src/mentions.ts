@@ -46,6 +46,47 @@ function maskRange(chars: string[], start: number, end: number): void {
   }
 }
 
+/** HTML comments are not rendered and never carry recipients. */
+function maskHtmlComments(chars: string[]): void {
+  const text = chars.join("");
+  for (const match of text.matchAll(/<!--[\s\S]*?-->/g)) {
+    const start = match.index ?? 0;
+    maskRange(chars, start, start + match[0].length);
+  }
+}
+
+/** Four-space/tab indented code blocks are inert like fenced ones. */
+function maskIndentedCode(chars: string[]): void {
+  const text = chars.join("");
+  let offset = 0;
+  let previousBlank = true;
+  let inIndented = false;
+  while (offset < text.length) {
+    const newline = text.indexOf("\n", offset);
+    const end = newline === -1 ? text.length : newline + 1;
+    const line = text.slice(offset, newline === -1 ? text.length : newline);
+    const blank = line.trim() === "";
+    const indented = /^(?: {4}|\t)/.test(line);
+    if (inIndented) {
+      if (indented || blank) {
+        maskRange(chars, offset, end);
+        offset = end;
+        previousBlank = blank;
+        continue;
+      }
+      inIndented = false;
+    }
+    if (previousBlank && indented) {
+      maskRange(chars, offset, end);
+      inIndented = true;
+      previousBlank = false;
+    } else {
+      previousBlank = blank;
+    }
+    offset = end;
+  }
+}
+
 /** Fenced code is inert markdown: a mention-looking string inside is text. */
 function maskFencedCode(chars: string[]): void {
   const text = chars.join("");
@@ -157,7 +198,9 @@ interface MentionMatch {
 
 function mentionMatches(text: string): MentionMatch[] {
   const chars = text.split("");
+  maskHtmlComments(chars);
   maskFencedCode(chars);
+  maskIndentedCode(chars);
   maskInlineCode(chars);
   maskEscapes(chars);
   const masked = chars.join("");
@@ -237,15 +280,9 @@ export function mentionHref(userId: string): string {
  */
 export function isMentionHref(href: string | null | undefined): boolean {
   if (!href) return false;
-  try {
-    const url = new URL(href);
-    return (
-      url.origin === "https://janosik.invalid" &&
-      (url.pathname === "/mention" || url.pathname.startsWith("/mention/"))
-    );
-  } catch {
-    return false;
-  }
+  // Raw prefix, not normalised `URL.pathname`: `…/mention/../etc` must be
+  // swallowed even though the URL parser would collapse the traversal.
+  return /^https:\/\/janosik\.invalid\/mention(?:[/?#%]|$)/i.test(href);
 }
 
 /** Parse a mention anchor href; anything else (including lookalikes) is null. */

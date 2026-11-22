@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardMemberDto } from "@janosik/shared";
 
 import { MentionPicker } from "@/components/board/MentionPicker";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 
@@ -58,7 +59,7 @@ function PickerHarness({
 }: {
   members?: BoardMemberDto[];
   onSelect: (member: BoardMemberDto) => void;
-  onCancel: (query: string) => void;
+  onCancel: (query: string | undefined) => void;
   onActiveChange?: (id: string | null) => void;
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -80,7 +81,7 @@ function renderPicker(
   overrides: {
     members?: BoardMemberDto[];
     onSelect?: (member: BoardMemberDto) => void;
-    onCancel?: (query: string) => void;
+    onCancel?: (query: string | undefined) => void;
     onActiveChange?: (id: string | null) => void;
   } = {},
 ) {
@@ -118,6 +119,7 @@ async function axeViolations(context: Element | Document) {
 describe("MentionPicker (TASK-177.12)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   });
 
   it("filters by name or email and inserts the keyboard-selected member", () => {
@@ -144,6 +146,38 @@ describe("MentionPicker (TASK-177.12)", () => {
     fireEvent.keyDown(document, { key: "Enter" });
     expect(onSelect).toHaveBeenLastCalledWith(
       expect.objectContaining({ userId: "user-bob" }),
+    );
+  });
+
+  it("wraps backwards with ArrowUp", () => {
+    const { onSelect } = renderPicker();
+
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
+      "Анна",
+    );
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userId: "user-anna" }),
+    );
+  });
+
+  it("moves with Tab and Shift+Tab without inserting", () => {
+    const { onSelect } = renderPicker();
+
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
+      "Bob",
+    );
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("option", { selected: true })).toHaveTextContent(
+      "Alice Smith",
+    );
+    expect(onSelect).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-alice" }),
     );
   });
 
@@ -241,6 +275,35 @@ describe("MentionPicker (TASK-177.12)", () => {
       "test-mention-option-user-5",
     );
     expect(scroll).toHaveBeenCalled();
+  });
+
+  it("stays clickable inside a modal dialog layer", () => {
+    const onSelect = vi.fn();
+    render(
+      <I18nProvider>
+        <TooltipProvider>
+          <Dialog open>
+            <DialogContent aria-describedby={undefined}>
+              <DialogTitle>Card</DialogTitle>
+              <PickerHarness
+                onSelect={onSelect}
+                onCancel={vi.fn()}
+                onActiveChange={vi.fn()}
+              />
+            </DialogContent>
+          </Dialog>
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+
+    const picker = screen.getByTestId("mention-picker");
+    expect(picker).toHaveClass("pointer-events-auto");
+    const option = screen.getByTestId("mention-option-user-alice");
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-alice" }),
+    );
   });
 
   it("has no axe violations with the picker open", async () => {

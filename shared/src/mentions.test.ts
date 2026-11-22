@@ -68,6 +68,21 @@ describe("comment mentions (TASK-177.12)", () => {
     ]);
   });
 
+  it("ignores indented code and HTML comments", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    const text = [
+      `Ping ${token}`,
+      "",
+      `    indented code ${token}`,
+      "",
+      `<!-- hidden ${token} -->`,
+    ].join("\n");
+
+    expect(parseCommentMentions(text)).toEqual([
+      expect.objectContaining({ userId: "user-1", label: "Alice" }),
+    ]);
+  });
+
   it("ignores escaped tokens and keeps a double-escaped link live", () => {
     const token = mentionMarkdown("Alice", "user-1");
     expect(parseCommentMentions(`Literal \\${token}`)).toEqual([]);
@@ -101,6 +116,12 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(isMentionHref(mentionHref("user-1"))).toBe(true);
     expect(isMentionHref(`${mentionHref("user-1")}?next=evil`)).toBe(true);
     expect(isMentionHref(`${mentionHref("user-1")}#x`)).toBe(true);
+    expect(isMentionHref("https://janosik.invalid/mention/../etc/passwd")).toBe(
+      true,
+    );
+    expect(isMentionHref("https://janosik.invalid/mention%2f..%2fetc")).toBe(
+      true,
+    );
     expect(isMentionHref("https://example.com/mention/user-1")).toBe(false);
     expect(isMentionHref("https://janosik.invalid/mentioning/user-1")).toBe(
       false,
