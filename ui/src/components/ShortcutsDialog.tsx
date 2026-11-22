@@ -83,6 +83,10 @@ export function ShortcutsDialog({
                 action={t("shortcuts.redo")}
                 keys={[`${mod}⇧Z`, `${mod}Y`]}
               />
+              <ShortcutRow
+                action={t("shortcuts.selectAll")}
+                keys={[`${mod}A`]}
+              />
             </>
           ) : null}
           {kanban ? (
@@ -96,6 +100,9 @@ export function ShortcutsDialog({
               <ShortcutRow action={t("shortcuts.moveDown")} keys={["J"]} />
               <ShortcutRow action={t("shortcuts.moveUp")} keys={["K"]} />
               <ShortcutRow action={t("shortcuts.openCard")} keys={["E", "↵"]} />
+              {canEdit ? (
+                <ShortcutRow action={t("shortcuts.selectCard")} keys={["X"]} />
+              ) : null}
             </>
           ) : null}
           <ShortcutRow action={t("shortcuts.help")} keys={["?"]} />

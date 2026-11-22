@@ -50,6 +50,27 @@ Inside the table you can:
   optional columns are edited from the card dialog;
 - **right-click a row** for the quick menu.
 
+## Bulk actions
+
+Board and table views support multi-select for ADMIN and MEMBER. A VIEWER, an
+archived board and the calendar/watch views stay read-only.
+
+- Click **Select** next to the view switcher, then click cards to toggle them.
+  The checkbox on a card or table row does the same, and Shift-click extends a
+  range across columns. `X` selects the card under the `J`/`K` keyboard cursor;
+  `Ctrl/⌘+A` selects all visible cards.
+- The bar at the bottom shows the count and the available actions: move to a
+  column, add or remove a label, assign a member, archive or delete. Archive
+  and delete ask for confirmation.
+- One run changes at most **100** visible cards. A filter narrows the set;
+  archived and deleted cards drop out of the selection automatically.
+- Moves respect the board workflow, its definition-of-done conditions, WIP
+  limits and the cards-per-column cap. If one card is refused, the other cards
+  still change and the bar lists the failed card with the reason.
+- Commands are applied one card at a time, so undo also works one card at a
+  time. `Cancel` stops a run after the current card; `Clear selection` exits
+  the mode.
+
 ## Watch
 
 The watch view is for **observing** a board — a swarm of agents at work, or a

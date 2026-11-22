@@ -41,6 +41,7 @@ import { LabelPicker } from "@/components/board/LabelPicker";
 import { DueDatePickerContent } from "@/components/board/CardDueDate";
 import { HighlightedText } from "@/components/ui/highlight";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   DropdownMenu,
@@ -76,6 +77,7 @@ import { isColumnFull } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import { useCardSelection } from "@/store/board-selection";
 import {
   LABEL_COLOR_CHIP,
   type BoardRole,
@@ -149,6 +151,7 @@ export function TableView({
     deleteLabel,
   } = useBoard();
   const { role } = useBoardAccess();
+  const selection = useCardSelection();
   const { t, lang } = useI18n();
   const toast = useToast();
   const labelsOf = useCardLabels(board?.labels ?? NO_LABELS);
@@ -405,6 +408,9 @@ export function TableView({
       readOnly={readOnly}
       isEditingTitle={editingTitleId === card.id}
       isArchiveConfirm={archiveConfirmId === card.id}
+      selected={selection.selectedSet.has(card.id)}
+      selectionMode={selection.enabled && selection.mode}
+      onToggleSelect={selection.enabled ? selection.toggle : undefined}
       onOpen={onCardClick}
       onStartTitleEdit={setEditingTitleId}
       onSubmitTitle={submitTitleEdit}
@@ -687,6 +693,12 @@ interface TableRowProps {
   readOnly?: boolean;
   isEditingTitle: boolean;
   isArchiveConfirm: boolean;
+  /** True while the row is part of a bulk selection. */
+  selected?: boolean;
+  /** Checkbox mode: a plain row click toggles the selection. */
+  selectionMode?: boolean;
+  /** Toggles this row in the bulk selection (shift extends the range). */
+  onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
   onOpen: (cardId: string) => void;
   onStartTitleEdit: (cardId: string) => void;
   /** Commits the inline editor's own (uncontrolled) value. */
@@ -738,6 +750,9 @@ function TableRowBody({
   readOnly = false,
   isEditingTitle,
   isArchiveConfirm,
+  selected = false,
+  selectionMode = false,
+  onToggleSelect,
   onOpen,
   onStartTitleEdit,
   onSubmitTitle,
@@ -808,6 +823,17 @@ function TableRowBody({
           }
           onTouchStart={onTouchStart}
           onClick={(event) => {
+            // Checkbox mode turns the row into the selection target; Shift
+            // extends the range instead of opening a new tab, while Ctrl/Cmd
+            // keeps the browser's new-tab gesture.
+            if (
+              onToggleSelect &&
+              (selectionMode || (event.shiftKey && !event.ctrlKey))
+            ) {
+              event.preventDefault();
+              onToggleSelect(card.id, event.shiftKey);
+              return;
+            }
             // Ctrl/Cmd/Shift/Alt and non-primary clicks are the browser's
             // "open elsewhere" gestures; the row is a <tr>, so bridge the
             // deep link ourselves instead of opening the dialog in place.
@@ -842,9 +868,11 @@ function TableRowBody({
             }
           }}
           data-testid="table-row"
+          data-card-selected={selected || undefined}
           data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
           className={cn(
             "cursor-pointer touch-manipulation border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40",
+            selected && "bg-primary/5",
             attribution?.highlight === true && "janosik-foreign-row",
             isTouchDragging && "opacity-60",
             isTouchOver && "bg-primary/10 ring-1 ring-inset ring-primary/40",
@@ -855,7 +883,35 @@ function TableRowBody({
               : undefined
           }
         >
-          <td className="relative min-w-0 px-2 py-2 sm:px-3">
+          <td
+            className={cn(
+              "relative min-w-0 px-2 py-2 sm:px-3",
+              onToggleSelect && (selectionMode || selected) && "pl-8 sm:pl-9",
+            )}
+          >
+            {onToggleSelect && (selectionMode || selected) ? (
+              <span
+                data-testid="table-select"
+                className="absolute left-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center"
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <Checkbox
+                  checked={selected}
+                  aria-label={
+                    selected
+                      ? t("bulk.deselectCard", { title: card.title })
+                      : t("bulk.selectCard", { title: card.title })
+                  }
+                  className="bg-card"
+                  onCheckedChange={() => undefined}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleSelect(card.id, event.shiftKey);
+                  }}
+                />
+              </span>
+            ) : null}
             {isEditingTitle ? (
               <Input
                 autoFocus
@@ -885,10 +941,14 @@ function TableRowBody({
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
                     event.stopPropagation();
+                    if (selectionMode && onToggleSelect) {
+                      onToggleSelect(card.id);
+                      return;
+                    }
                     onOpen(card.id);
                   }}
                   onDoubleClick={
-                    readOnly
+                    readOnly || selectionMode
                       ? undefined
                       : (event) => {
                           cancelPendingOpen();

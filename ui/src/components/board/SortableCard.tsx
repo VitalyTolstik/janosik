@@ -32,6 +32,12 @@ interface SortableCardProps {
   compact?: boolean;
   /** VIEWER mode: the card's context menu keeps read-only actions only. */
   readOnly?: boolean;
+  /** True while the card is part of a bulk selection. */
+  selected?: boolean;
+  /** Checkbox mode: a plain click toggles the selection. */
+  selectionMode?: boolean;
+  /** Toggles this card in the bulk selection (shift extends the range). */
+  onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
 }
 
 /**
@@ -53,6 +59,9 @@ function SortableCardView({
   duplicateDisabledReason,
   compact = false,
   readOnly = false,
+  selected = false,
+  selectionMode = false,
+  onToggleSelect,
 }: SortableCardProps) {
   const {
     attributes,
@@ -106,6 +115,10 @@ function SortableCardView({
           return;
         }
         event.preventDefault();
+        if (selectionMode && onToggleSelect) {
+          onToggleSelect(card.id);
+          return;
+        }
         onCardClick?.(card.id);
       }}
     >
@@ -124,6 +137,9 @@ function SortableCardView({
         duplicateDisabledReason={duplicateDisabledReason}
         compact={compact}
         readOnly={readOnly}
+        selected={selected}
+        selectionMode={selectionMode}
+        onToggleSelect={onToggleSelect}
       />
     </div>
   );

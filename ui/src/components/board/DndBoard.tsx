@@ -32,6 +32,7 @@ import { useCardList } from "@/hooks/use-card-list";
 import type { BoardDensity } from "@/hooks/use-board-density";
 import { useI18n } from "@/i18n";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import { useCardSelection } from "@/store/board-selection";
 import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
 import { blockedMoveMessage, workflowBlockReason } from "@/utils/workflow";
@@ -142,6 +143,7 @@ export function DndBoard({
 }: DndBoardProps) {
   const { board, addColumn, moveCard, moveColumn } = useBoard();
   const { role } = useBoardAccess();
+  const selection = useCardSelection();
   const columnStyle = board?.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE;
   const { tp, t } = useI18n();
   const toast = useToast();
@@ -645,6 +647,13 @@ export function DndBoard({
             total - 1,
           );
         });
+      } else if (
+        (code === "KeyX" || shortcutLetterCode(event) === "KeyX") &&
+        focusedCardId &&
+        !readOnly
+      ) {
+        event.preventDefault();
+        selection.toggle(focusedCardId, event.shiftKey);
       } else if ((code === "KeyE" || key === "Enter") && focusedCardId) {
         // Enter belongs to the focused control (a card's own keyboard
         // handler, a button, a menu item). Only an unhandled Enter falls
@@ -686,7 +695,7 @@ export function DndBoard({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [board, draft, cursor, filteredCardIds, onCardClick, readOnly]);
+  }, [board, draft, cursor, filteredCardIds, onCardClick, readOnly, selection]);
 
   // Render columns in the live draft order while a column drag is active.
   // Both memoized because `columnOrder` feeds `SortableContext items`:

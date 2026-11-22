@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.19 bulk card actions (U-08). Board and table views gain a
+  selection mode with checkboxes, Shift ranges across columns, `X` on the
+  keyboard cursor and `Ctrl/⌘+A` for all visible cards, capped at 100. The
+  bottom bar moves, labels, assigns, archives and deletes selected cards with
+  a count, progress, cancellation and a per-card error summary. Archive and
+  delete confirm first. Every card still travels through the normal command
+  path, so workflow, definition-of-done conditions, WIP limits and column caps
+  are enforced and undo stays one step per card. Partial failures leave the
+  successful cards changed; VIEWERs and archived boards keep the read-only
+  surface. EN/RU copy, the user guide, component tests and focused e2e coverage
+  are included.
+
 - TASK-185.5/185.6 comment history in the admin panel and closeout. Every
   admin comment row (card detail, user detail and the comments entity table)
   now carries `revisionCount` and `historyIncomplete`; a live row opens the
