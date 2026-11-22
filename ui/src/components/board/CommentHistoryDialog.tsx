@@ -52,14 +52,13 @@ function isGone(error: unknown): boolean {
 }
 
 /**
- * An empty live page that must replace the visible list with the empty state.
- * A page that still carries current revisions is handled by reloading the
- * first page instead; only a chain with no rows becomes "no revisions".
+ * A recheck page with no rows replaces the visible list: the live history is
+ * empty whether the reason is an erase/gap, a cutover, a trim, or `null`.
+ * The older-page path checks only `erasesHistory` so a trimmed tail keeps
+ * page 1.
  */
 function clearsHistory(page: CommentRevisionPage): boolean {
-  return (
-    page.items.length === 0 && (erasesHistory(page) || page.historyIncomplete)
-  );
+  return page.items.length === 0;
 }
 
 /** Reasons that invalidate every loaded snapshot, including page 1. */
@@ -130,6 +129,21 @@ export function CommentHistoryDialog({
   const keepFocusInDialog = useCallback(() => {
     dialogRef.current?.focus();
   }, []);
+  /**
+   * The loaded rows, snapshots and paging/retry controls unmount on reload or
+   * clear. If focus is on any such descendant, move it to the dialog first;
+   * the container and its close button stay mounted.
+   */
+  const keepFocusOutOfUnmountingContent = useCallback(() => {
+    const active = document.activeElement;
+    const focusWillUnmount =
+      active instanceof HTMLElement &&
+      dialogRef.current !== null &&
+      active !== dialogRef.current &&
+      dialogRef.current.contains(active) &&
+      active.closest('[data-testid="dialog-close"]') === null;
+    if (focusWillUnmount) dialogRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -158,14 +172,7 @@ export function CommentHistoryDialog({
    */
   const clearHistory = useCallback(
     (nextReason: CommentHistoryIncompleteReason | null) => {
-      const active = document.activeElement;
-      const focusWillUnmount =
-        active instanceof HTMLElement &&
-        dialogRef.current !== null &&
-        active !== dialogRef.current &&
-        dialogRef.current.contains(active) &&
-        active.closest('[data-testid="dialog-close"]') === null;
-      if (focusWillUnmount) dialogRef.current?.focus();
+      keepFocusOutOfUnmountingContent();
       seqRef.current += 1;
       latestRecheckRevisionRef.current = 0;
       itemsRef.current = [];
@@ -180,11 +187,12 @@ export function CommentHistoryDialog({
       focusOlderRef.current = false;
       focusEndRef.current = false;
     },
-    [],
+    [keepFocusOutOfUnmountingContent],
   );
 
   const loadFirst = useCallback(
     async (keepBanner = false) => {
+      keepFocusOutOfUnmountingContent();
       const seq = ++seqRef.current;
       statusRef.current = "loading";
       setStatus("loading");
@@ -229,7 +237,7 @@ export function CommentHistoryDialog({
         setStatus("error");
       }
     },
-    [commentId, onOpenChange, reset],
+    [commentId, keepFocusOutOfUnmountingContent, onOpenChange, reset],
   );
 
   useEffect(() => {
@@ -379,17 +387,11 @@ export function CommentHistoryDialog({
         return;
       }
       if (erasesHistory(page) && page.items.length > 0) {
-        // Current revisions survive the erase/gap; replace the stale loaded
-        // list with the current first page and keep the reason banner.
+        // Current revisions survive the erase/gap; replace any loaded or
+        // in-flight first page with the current first page and keep the
+        // reason banner. Always reload: the old page may land afterwards.
         setReason(page.historyIncompleteReason);
-        if (statusRef.current === "loading") {
-          latestRecheckRevisionRef.current = Math.max(
-            latestRecheckRevisionRef.current,
-            page.items[0]?.revisionNumber ?? 0,
-          );
-        } else {
-          void loadFirst(true);
-        }
+        void loadFirst(true);
         return;
       }
       if (seq !== seqRef.current) return;

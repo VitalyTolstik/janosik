@@ -2727,6 +2727,155 @@ describe("CardComments", () => {
     },
   );
 
+  it("reloads current revisions when an erase recheck lands during page 1", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({
+        id: "comment-1",
+        text: "Live body",
+        editedAt: 1_700_000_100_000,
+      }),
+    ]);
+    server.seedRevisions("comment-1", [
+      revision({
+        id: "revision-old",
+        revisionNumber: 1,
+        beforeText: "Before",
+        afterText: "Old secret",
+      }),
+    ]);
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstCaptured = false;
+    let pageLoads = 0;
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (
+        url.pathname.endsWith("/revisions") &&
+        url.searchParams.get("limit") === "20"
+      ) {
+        pageLoads += 1;
+        if (pageLoads === 1) {
+          const response = await server.handle(input, init);
+          firstCaptured = true;
+          await firstGate;
+          return response;
+        }
+      }
+      return server.handle(input, init);
+    });
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    await waitFor(() => expect(firstCaptured).toBe(true));
+    const dialog = await screen.findByTestId("comment-history-dialog");
+
+    server.seedRevisions("comment-1", [
+      revision({
+        id: "revision-2",
+        revisionNumber: 2,
+        beforeText: "Old secret",
+        afterText: "Current revision",
+      }),
+    ]);
+    server.seedHistoryReason("comment-1", "gdpr_erase");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(
+      await within(dialog).findByText("Current revision"),
+    ).toBeInTheDocument();
+    await act(async () => {
+      releaseFirst();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const revisions = within(dialog).getAllByTestId("comment-history-revision");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]).toHaveAttribute("data-revision-number", "2");
+    expect(
+      within(dialog).getByTestId("comment-history-banner"),
+    ).toHaveAttribute("data-reason", "gdpr_erase");
+  });
+
+  it("clears loaded rows when a recheck reports an empty complete history", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions("comment-1", [revision()]);
+    renderComments(server);
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    await within(dialog).findByTestId("comment-history-revision");
+
+    // The live chain is now empty and complete: the old rows cannot stay.
+    server.seedRevisions("comment-1", []);
+    server.seedHistoryReason("comment-1", null);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(
+      await within(dialog).findByTestId("comment-history-empty"),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByTestId("comment-history-revision"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByTestId("comment-history-banner"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps focus inside when a non-empty erase recheck reloads", async () => {
+    const server = new FakeServer([seedBoard()]);
+    const beforeText = `<b>old</b> ${"a".repeat(400)}`;
+    const afterText = `<b>new</b> ${"b".repeat(400)}`;
+    server.seedComments("card-1", [
+      comment({
+        id: "comment-1",
+        text: afterText,
+        editedAt: 1_700_000_100_000,
+      }),
+    ]);
+    server.seedRevisions("comment-1", [revision({ beforeText, afterText })]);
+    renderComments(server);
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    fireEvent.click(
+      await within(dialog).findByTestId("comment-history-snapshot-toggle-1"),
+    );
+    const snapshot = within(dialog).getByTestId("comment-history-snapshot-1");
+    snapshot.focus();
+    expect(document.activeElement).toBe(snapshot);
+
+    // Current rows survive the erase, but the snapshot is replaced by the
+    // refreshed first page; focus must stay in the dialog.
+    server.seedRevisions("comment-1", [
+      revision({
+        id: "revision-2",
+        revisionNumber: 2,
+        beforeText: "Earlier",
+        afterText: "Current revision",
+      }),
+    ]);
+    server.seedHistoryReason("comment-1", "gdpr_erase");
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByTestId("comment-history-revision"),
+      ).toHaveAttribute("data-revision-number", "2"),
+    );
+    expect(
+      within(dialog).getByTestId("comment-history-banner"),
+    ).toHaveAttribute("data-reason", "gdpr_erase");
+    expect(document.activeElement).toBe(dialog);
+  });
+
   it.each(["gdpr_erase", "writer_gap"] as const)(
     "reloads current revisions when an older page answers %s with rows",
     async (reason) => {
