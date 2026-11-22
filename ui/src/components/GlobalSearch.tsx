@@ -12,6 +12,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { shortcutLetterCode } from "@/utils/keyboard";
 
+import { api, isApiEnabled } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/Toast";
 import {
@@ -29,7 +30,12 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { LABEL_COLOR_DOT, LIMITS, type Label } from "@janosik/shared";
+import {
+  LABEL_COLOR_DOT,
+  LIMITS,
+  type Label,
+  type WorkspaceSearchMatch,
+} from "@janosik/shared";
 import { routes } from "@/routes";
 import { useBoard } from "@/store/BoardContext";
 import { LimitCounter } from "@/components/ui/limit-counter";
@@ -37,7 +43,9 @@ import { showRemaining } from "@/utils/limit-format";
 import {
   descriptionSnippet,
   groupSearchHits,
+  mergeWorkspaceSearchHits,
   searchBoards,
+  searchHitBadge,
   type SearchHit,
 } from "@/utils/filter";
 import { isMacPlatform } from "@/utils/platform";
@@ -61,6 +69,14 @@ function searchHitKey(hit: SearchHit): string {
 }
 
 const isMac = isMacPlatform();
+const NO_SERVER_MATCHES: WorkspaceSearchMatch[] = [];
+
+const SEARCH_TYPE_KEYS = {
+  card: "search.typeCard",
+  board: "search.typeBoard",
+  comment: "search.typeComment",
+  attachment: "search.typeAttachment",
+} as const;
 
 interface GlobalSearchProps {
   /** Exposed for tests (open via a normal click instead of the shortcut). */
@@ -84,6 +100,7 @@ export function GlobalSearch({
   labelClassName,
 }: GlobalSearchProps) {
   const { t } = useI18n();
+  const serverMode = isApiEnabled();
 
   const [open, setOpen] = useState(false);
 
@@ -150,10 +167,10 @@ export function GlobalSearch({
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpenBoth}>
-        <DialogContent className="gap-0 p-0">
+        <DialogContent className="gap-0 p-0 max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]">
           <DialogTitle className="sr-only">{t("search.aria")}</DialogTitle>
           <DialogDescription className="sr-only">
-            {t("search.hint")}
+            {t(serverMode ? "search.hint" : "search.hintLocal")}
           </DialogDescription>
           {/* Query/results state lives in the palette body, which Radix
               unmounts on close — every open starts clean with no `open`
@@ -208,9 +225,74 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
+  const serverMode = isApiEnabled();
+  // Comment/attachment text is not in the board aggregate, so the palette
+  // asks for it in one bounded cross-board request (TASK-177.13) after the
+  // same debounce as the local query. The query travels with the result so a
+  // late answer for an older query can never repaint the current list.
+  const [serverResult, setServerResult] = useState<{
+    query: string;
+    matches: WorkspaceSearchMatch[];
+    total: number;
+    truncated: boolean;
+  }>({ query: "", matches: [], total: 0, truncated: false });
+  useEffect(() => {
+    const needle = query.trim();
+    if (!serverMode || needle === "") return;
+    let alive = true;
+    api
+      .searchWorkspaceMatches(needle)
+      .then((result) => {
+        if (alive) {
+          setServerResult({
+            query: needle,
+            matches: result.matches,
+            total: result.total,
+            truncated: result.truncated,
+          });
+        }
+      })
+      .catch(() => {
+        // Search is an enhancement: an old server without the route or a
+        // transient failure leaves the local results untouched. Resolving
+        // the query with no matches lets the palette leave its pending state.
+        if (alive) {
+          setServerResult({
+            query: needle,
+            matches: [],
+            total: 0,
+            truncated: false,
+          });
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [serverMode, query]);
+  const serverPending =
+    serverMode && query.trim() !== "" && serverResult.query !== query.trim();
+  const serverForQuery = serverResult.query === query.trim();
+  const serverMatches = serverForQuery
+    ? serverResult.matches
+    : NO_SERVER_MATCHES;
+  const serverTruncated = serverForQuery && serverResult.truncated;
+  // Matches on boards that were not hydrated yet are filtered out of the
+  // rendered list. While hydration is pending the palette is partial, not
+  // empty: the total comes from the server even when no row can be shown.
+  const serverPartial =
+    serverForQuery && pendingBoardCount > 0 && serverResult.total > 0;
+
   // Raw hits are memoized separately from grouping so Show all only
   // re-slices the array instead of re-running the whole cross-board search.
-  const rawHits = useMemo(() => searchBoards(boards, query), [boards, query]);
+  const rawHits = useMemo(
+    () =>
+      mergeWorkspaceSearchHits(
+        searchBoards(boards, query),
+        boards,
+        serverMatches,
+      ),
+    [boards, query, serverMatches],
+  );
   // Cap each section separately (TASK-177.10): a board hit stays visible even
   // when the card list alone exceeds the palette cap.
   const groups = useMemo(
@@ -222,6 +304,11 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     [rawHits, showAll],
   );
   const { cards: cardHits, boards: boardHits } = groups;
+  // The truncation line describes rows the palette actually renders: the
+  // default 20-row cap (or the expanded cap) and only hydrated boards.
+  const visibleServerMatches = cardHits.filter(
+    (hit) => hit.matchIn === "comment" || hit.matchIn === "attachment",
+  ).length;
   const boardOffset = cardHits.length;
   const hits = useMemo(() => [...groups.cards, ...groups.boards], [groups]);
 
@@ -247,11 +334,19 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
       return;
     }
     onClose();
-    navigate(
-      hit.kind === "card"
-        ? `${routes.board(hit.boardId)}?card=${hit.card.id}`
-        : routes.board(hit.boardId),
-    );
+    if (hit.kind === "board") {
+      navigate(routes.board(hit.boardId));
+      return;
+    }
+    // The dialog opens on the card; a comment/attachment hit additionally
+    // names the row so the dialog can reveal it. Without that id (older
+    // server, row gone) the card alone is still a useful destination.
+    const params = new URLSearchParams({ card: hit.card.id });
+    if (hit.commentId !== undefined) params.set("comment", hit.commentId);
+    else if (hit.attachmentId !== undefined) {
+      params.set("attachment", hit.attachmentId);
+    }
+    navigate(`${routes.board(hit.boardId)}?${params.toString()}`);
   };
 
   // While background hydration is still streaming boards, every total is a
@@ -315,7 +410,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           }}
           placeholder={t("search.placeholder")}
           aria-label={t("search.aria")}
-          className="h-9 border-0 shadow-none focus-visible:ring-0"
+          className="h-9 border-0 pr-12 shadow-none focus-visible:ring-0"
           data-testid="global-search-input"
         />
         <LimitCounter
@@ -345,9 +440,19 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
         ) : null}
         {query.trim() === "" ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            {t("search.hint")}
+            {t(serverMode ? "search.hint" : "search.hintLocal")}
           </p>
-        ) : hits.length === 0 ? (
+        ) : serverPending ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-server-pending"
+            className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            {t("search.serverPending")}
+          </p>
+        ) : hits.length === 0 && !serverPartial ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
             {t("search.empty")}
           </p>
@@ -372,6 +477,8 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                       <HighlightedText text={hit.card.title} query={query} />
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <ResultTypeBadge hit={hit} />
+                      <span className="sr-only">, </span>
                       <span className="truncate">
                         {hit.boardTitle}
                         {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
@@ -386,14 +493,25 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                     />
                     <Snippet
                       text={
-                        hit.matchIn === "checklist"
+                        hit.matchIn === "checklist" ||
+                        hit.matchIn === "comment" ||
+                        hit.matchIn === "attachment"
                           ? (hit.matchText ?? "")
                           : (hit.card.description ?? "")
+                      }
+                      label={
+                        hit.matchIn === "comment"
+                          ? t("search.inComment")
+                          : hit.matchIn === "attachment"
+                            ? t("search.inAttachment")
+                            : undefined
                       }
                       query={query}
                       show={
                         hit.matchIn === "description" ||
-                        hit.matchIn === "checklist"
+                        hit.matchIn === "checklist" ||
+                        hit.matchIn === "comment" ||
+                        hit.matchIn === "attachment"
                       }
                     />
                   </div>
@@ -414,17 +532,49 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                     <div className="truncate text-sm font-medium text-foreground">
                       <HighlightedText text={hit.boardTitle} query={query} />
                     </div>
-                    {hit.boardArchived ? (
-                      <div className="mt-0.5">
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <ResultTypeBadge hit={hit} />
+                      <span className="sr-only">, </span>
+                      {hit.boardArchived ? (
                         <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </div>
                   </div>
                 </ResultRow>
               ))}
             </SearchSection>
           ) : null}
         </div>
+        {serverTruncated ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-server-truncated"
+            className="px-3 py-1.5 text-xs text-muted-foreground"
+          >
+            {pendingBoardCount > 0
+              ? t("search.serverTruncatedPending", {
+                  total: serverResult.total,
+                })
+              : t("search.serverTruncated", {
+                  shown: visibleServerMatches,
+                  total: serverResult.total,
+                })}
+          </p>
+        ) : null}
+        {query.trim() !== "" && !serverPending && !serverPartial ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="search-results-status"
+            className="sr-only"
+          >
+            {t("search.resultsStatus", {
+              cards: groups.totalCards,
+              boards: groups.totalBoards,
+            })}
+          </p>
+        ) : null}
       </div>
       {groups.capped && !showAll ? (
         <div className="flex justify-end border-t border-border p-2">
@@ -437,6 +587,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
               inputRef.current?.focus();
             }}
             data-testid="search-show-all"
+            className="max-sm:min-h-11"
           >
             {t("search.showAll")}
           </Button>
@@ -512,6 +663,25 @@ function ResultRow({
   );
 }
 
+/**
+ * Text type badge on every row (TASK-177.13). It is always a visible word,
+ * never a colour-only cue, so screen readers and colour-blind users get the
+ * same information: Card, Board, Comment or Attachment.
+ */
+function ResultTypeBadge({ hit }: { hit: SearchHit }) {
+  const { t } = useI18n();
+  const badge = searchHitBadge(hit);
+  return (
+    <span
+      data-testid="search-type-badge"
+      data-type={badge}
+      className="inline-flex shrink-0 items-center rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+    >
+      {t(SEARCH_TYPE_KEYS[badge])}
+    </span>
+  );
+}
+
 function LabelChips({
   labels,
   cardLabelIds,
@@ -548,10 +718,13 @@ function Snippet({
   text,
   query,
   show,
+  label,
 }: {
   text: string;
   query: string;
   show: boolean;
+  /** Spoken/visible context for a comment or attachment snippet. */
+  label?: string;
 }) {
   const snippet = useMemo(
     () => (show ? descriptionSnippet(text, query) : null),
@@ -560,6 +733,7 @@ function Snippet({
   if (!snippet) return null;
   return (
     <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+      {label ? <span className="font-medium">{label}: </span> : null}
       {snippet.map((segment, index) =>
         typeof segment === "string" ? (
           <Fragment key={index}>{segment}</Fragment>

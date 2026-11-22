@@ -194,6 +194,28 @@ describe("Activity & comments API (e2e)", () => {
     return { boardId, cardId: `card-${prefix}` };
   }
 
+  /** A live attachment row without writing a blob: search reads metadata. */
+  async function addAttachment(
+    boardId: string,
+    cardId: string,
+    fileName: string,
+    overrides: { isInline?: boolean; descriptionDetached?: boolean } = {},
+  ): Promise<string> {
+    const row = await prisma.attachment.create({
+      data: {
+        cardId,
+        boardId,
+        fileName,
+        storedName: `stored-${randomUUID()}`,
+        mimeType: "application/pdf",
+        sizeBytes: 12,
+        uploadedById: adminId,
+        ...overrides,
+      },
+    });
+    return row.id;
+  }
+
   describe("board feed", () => {
     it("shows every mutating command with its actor and merges membership events", async () => {
       const boardId = await createBoard("Feed board");
@@ -960,7 +982,7 @@ describe("Activity & comments API (e2e)", () => {
         .expect(400);
     });
 
-    it("searches a board across title, checklist item and comment text", async () => {
+    it("searches a board across title, checklist item, comment text and attachment names", async () => {
       const { boardId, cardId } = await boardWithCard("Search board", "sr");
       await apply(
         boardId,
@@ -981,40 +1003,385 @@ describe("Activity & comments API (e2e)", () => {
           text: "run the widget migration",
         }),
       );
-      await server()
+      const comment = await server()
         .post(`/api/v1/cards/${cardId}/comments`)
         .set(auth(adminToken))
         .send({ text: "the widget is flaky" })
         .expect(201);
+      const attachmentId = await addAttachment(
+        boardId,
+        cardId,
+        "quarterly-report.pdf",
+      );
 
       const byTitle = await server()
         .get(`/api/v1/boards/${boardId}/search?q=card`)
         .set(auth(memberToken))
         .expect(200);
       expect(byTitle.body.cardIds).toContain(cardId);
+      expect(byTitle.body.matches).toContainEqual({
+        cardId,
+        matchIn: "title",
+      });
 
       const byChecklist = await server()
         .get(`/api/v1/boards/${boardId}/search?q=widget%20migration`)
         .set(auth(memberToken))
         .expect(200);
       expect(byChecklist.body.cardIds).toContain(cardId);
+      expect(byChecklist.body.matches).toContainEqual(
+        expect.objectContaining({
+          cardId,
+          matchIn: "checklist",
+          text: expect.stringContaining("widget migration"),
+        }),
+      );
 
       const byComment = await server()
         .get(`/api/v1/boards/${boardId}/search?q=flaky`)
         .set(auth(memberToken))
         .expect(200);
       expect(byComment.body.cardIds).toContain(cardId);
+      expect(byComment.body.matches).toEqual([
+        {
+          cardId,
+          matchIn: "comment",
+          commentId: comment.body.id,
+          text: expect.stringContaining("flaky"),
+        },
+      ]);
+
+      const byAttachment = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=quarterly`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byAttachment.body.cardIds).toContain(cardId);
+      expect(byAttachment.body.matches).toEqual([
+        {
+          cardId,
+          matchIn: "attachment",
+          attachmentId,
+          text: "quarterly-report.pdf",
+        },
+      ]);
+
+      // The board filter asks for ids only; cardIds stays complete.
+      const idsOnly = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=flaky&includeMatches=0`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(idsOnly.body.cardIds).toContain(cardId);
+      expect(idsOnly.body.matches).toEqual([]);
+
+      // Hidden uploads cannot be revealed in the card's attachment list.
+      await addAttachment(boardId, cardId, "hidden-inline.pdf", {
+        isInline: true,
+      });
+      await addAttachment(boardId, cardId, "hidden-detached.pdf", {
+        descriptionDetached: true,
+      });
+      const hidden = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=hidden`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(hidden.body.cardIds).toEqual([]);
+      const hiddenWorkspace = await server()
+        .get("/api/v1/boards/search?q=hidden")
+        .set(auth(memberToken))
+        .expect(200);
+      expect(hiddenWorkspace.body.matches).toEqual([]);
+
+      // Cross-board palette endpoint: comment/attachment rows only, scoped
+      // to live memberships.
+      const workspace = await server()
+        .get("/api/v1/boards/search?q=flaky")
+        .set(auth(memberToken))
+        .expect(200);
+      expect(workspace.body.matches).toEqual([
+        expect.objectContaining({
+          boardId,
+          boardTitle: "Search board",
+          cardId,
+          cardTitle: "Card",
+          matchIn: "comment",
+          commentId: comment.body.id,
+        }),
+      ]);
+      expect(workspace.body.total).toBe(1);
+      expect(workspace.body.truncated).toBe(false);
+      const outsider = await server()
+        .get("/api/v1/boards/search?q=flaky")
+        .set(auth(strangerToken))
+        .expect(200);
+      expect(outsider.body).toEqual({
+        matches: [],
+        total: 0,
+        truncated: false,
+      });
+
+      // Repeated query parameters are ambiguous, not a single string.
+      await server()
+        .get(`/api/v1/boards/${boardId}/search?q=a&q=b`)
+        .set(auth(memberToken))
+        .expect(400);
+      await server()
+        .get("/api/v1/boards/search?q=a&q=b")
+        .set(auth(memberToken))
+        .expect(400);
 
       const miss = await server()
         .get(`/api/v1/boards/${boardId}/search?q=zzzznope`)
         .set(auth(memberToken))
         .expect(200);
       expect(miss.body.cardIds).toEqual([]);
+      expect(miss.body.matches).toEqual([]);
+
+      // A deleted comment and a deleted attachment stop matching.
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id}`)
+        .set(auth(adminToken))
+        .expect(200);
+      await prisma.attachment.update({
+        where: { id: attachmentId },
+        data: { deletedAt: new Date() },
+      });
+      const afterDelete = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=flaky`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(afterDelete.body.cardIds).toEqual([]);
+      const attachmentGone = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=quarterly`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(attachmentGone.body.cardIds).toEqual([]);
+
+      // A soft-deleted card disappears with its outside-the-aggregate text.
+      const deleted = await boardWithCard("Search deletes", "sdel");
+      await server()
+        .post(`/api/v1/cards/${deleted.cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "vanishing needle" })
+        .expect(201);
+      await apply(
+        deleted.boardId,
+        scoped(deleted.boardId, {
+          type: "DELETE_CARD",
+          cardId: deleted.cardId,
+        }),
+      );
+      const cardGone = await server()
+        .get(`/api/v1/boards/${deleted.boardId}/search?q=vanishing`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(cardGone.body.cardIds).toEqual([]);
 
       await server()
         .get(`/api/v1/boards/${boardId}/search?q=card`)
         .set(auth(strangerToken))
         .expect(403);
+    });
+
+    it("marks a saturated board match list incomplete without losing cardIds", async () => {
+      const { boardId, cardId } = await boardWithCard(
+        "Saturated explanation",
+        "expl",
+      );
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-expl-2",
+          columnId: "col-expl",
+          title: "Second card",
+        }),
+      );
+      await prisma.comment.createMany({
+        data: Array.from({ length: 200 }, (_, index) => ({
+          cardId,
+          authorId: adminId,
+          text: `explainneedle ${index}`,
+        })),
+      });
+      const older = new Date(Date.now() - 60_000);
+      await prisma.comment.create({
+        data: {
+          cardId: "card-expl-2",
+          authorId: adminId,
+          text: "explainneedle second card",
+          createdAt: older,
+          updatedAt: older,
+        },
+      });
+      const attachmentId = await addAttachment(
+        boardId,
+        "card-expl-2",
+        "explainneedle-proof.pdf",
+      );
+
+      const detailed = await server()
+        .get(`/api/v1/boards/${boardId}/search?q=explainneedle`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(detailed.body.cardIds).toEqual(
+        expect.arrayContaining([cardId, "card-expl-2"]),
+      );
+      expect(detailed.body.matchesTotal).toBe(3);
+      expect(detailed.body.matchesTruncated).toBe(true);
+      expect(detailed.body.matches).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            cardId: "card-expl-2",
+            matchIn: "attachment",
+            attachmentId,
+          }),
+        ]),
+      );
+
+      const idsOnly = await server()
+        .get(
+          `/api/v1/boards/${boardId}/search?q=explainneedle&includeMatches=0`,
+        )
+        .set(auth(adminToken))
+        .expect(200);
+      expect(idsOnly.body.cardIds).toEqual(
+        expect.arrayContaining([cardId, "card-expl-2"]),
+      );
+      expect(idsOnly.body.matches).toEqual([]);
+      expect(idsOnly.body.matchesTotal).toBe(0);
+      expect(idsOnly.body.matchesTruncated).toBe(false);
+    });
+
+    it("scopes the workspace search to a board-scoped PAT", async () => {
+      const first = await boardWithCard("Pat scope A", "pat-a");
+      const second = await boardWithCard("Pat scope B", "pat-b");
+      for (const board of [first, second]) {
+        await server()
+          .post(`/api/v1/cards/${board.cardId}/comments`)
+          .set(auth(adminToken))
+          .send({ text: "patneedle in a comment" })
+          .expect(201);
+      }
+      const created = await server()
+        .post("/api/v1/users/me/tokens")
+        .set(auth(adminToken))
+        .send({
+          name: "search-scope",
+          boardId: first.boardId,
+          scopePreset: "admin",
+          expiresAt: null,
+        })
+        .expect(201);
+      const scopedToken = created.body.token as string;
+
+      const result = await server()
+        .get("/api/v1/boards/search?q=patneedle")
+        .set(auth(scopedToken))
+        .expect(200);
+      expect(result.body.matches).toHaveLength(1);
+      expect(result.body.matches[0].boardId).toBe(first.boardId);
+    });
+
+    it("omits a soft-deleted board from the workspace search", async () => {
+      const gone = await boardWithCard("Deleted search board", "gone");
+      await server()
+        .post(`/api/v1/cards/${gone.cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "goneboardneedle" })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/boards/${gone.boardId}`)
+        .set(auth(adminToken))
+        .expect(200);
+
+      const result = await server()
+        .get("/api/v1/boards/search?q=goneboardneedle")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(result.body).toEqual({
+        matches: [],
+        total: 0,
+        truncated: false,
+      });
+    });
+
+    it("dedupes comments per card before the workspace cap", async () => {
+      const { boardId, cardId } = await boardWithCard("Saturated", "sat");
+      await apply(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: "card-sat-2",
+          columnId: "col-sat",
+          title: "Second card",
+        }),
+      );
+      await prisma.comment.createMany({
+        data: Array.from({ length: 200 }, (_, index) => ({
+          cardId,
+          authorId: adminId,
+          text: `saturneedle ${index}`,
+        })),
+      });
+      const older = new Date(Date.now() - 60_000);
+      await prisma.comment.create({
+        data: {
+          cardId: "card-sat-2",
+          authorId: adminId,
+          text: "saturneedle older",
+          createdAt: older,
+          updatedAt: older,
+        },
+      });
+
+      const result = await server()
+        .get("/api/v1/boards/search?q=saturneedle")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(result.body.total).toBe(2);
+      expect(result.body.truncated).toBe(false);
+      expect(
+        new Set(
+          (result.body.matches as Array<{ cardId: string }>).map(
+            (match) => match.cardId,
+          ),
+        ),
+      ).toEqual(new Set([cardId, "card-sat-2"]));
+    });
+
+    it("caps the workspace matches and reports the complete total", async () => {
+      const { boardId } = await boardWithCard("Cap board", "cap");
+      const cardIds = Array.from(
+        { length: 201 },
+        (_, index) => `cap-card-${index}`,
+      );
+      await prisma.card.createMany({
+        data: cardIds.map((id, index) => ({
+          id,
+          columnId: "col-cap",
+          title: `Cap card ${index}`,
+          position: index + 1,
+        })),
+      });
+      await prisma.attachment.createMany({
+        data: cardIds.map((cardId, index) => ({
+          cardId,
+          boardId,
+          fileName: `capneedle-${index}.pdf`,
+          storedName: `cap-stored-${index}-${randomUUID()}`,
+          mimeType: "application/pdf",
+          sizeBytes: 1,
+          uploadedById: adminId,
+        })),
+      });
+
+      const result = await server()
+        .get("/api/v1/boards/search?q=capneedle")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(result.body.matches).toHaveLength(200);
+      expect(result.body.total).toBe(201);
+      expect(result.body.truncated).toBe(true);
     });
   });
 

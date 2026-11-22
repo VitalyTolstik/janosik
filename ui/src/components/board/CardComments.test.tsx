@@ -116,6 +116,7 @@ function renderComments(
   handler: FetchHandler = server.handle,
   cardId = "card-1",
   onCountChange?: (count: ActivityCount | null | undefined) => void,
+  focusId?: string,
 ) {
   vi.stubGlobal("fetch", handler);
   const tree = (open: boolean) => (
@@ -131,6 +132,7 @@ function renderComments(
                       cardId={cardId}
                       boardId="b-1"
                       readOnly={readOnly}
+                      focusId={focusId}
                       onCountChange={onCountChange}
                     />
                   )}
@@ -170,6 +172,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
 });
 
 describe("CardComments", () => {
@@ -407,13 +410,50 @@ describe("CardComments", () => {
     );
   });
 
+  it("keeps the header readable for an edited, kind-badged comment at 390 px", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({
+        id: "comment-mobile",
+        text: "Long enough body",
+        kind: "blocker",
+        editedAt: Date.now(),
+      }),
+    ]);
+    renderComments(server);
+    await screen.findByText("Long enough body");
+
+    const meta = screen.getByTestId("comment-header-meta");
+    expect(meta).toHaveClass("min-w-0", "flex-wrap");
+    expect(meta.parentElement).toHaveClass("max-sm:flex-col");
+    const author = screen.getByTestId("comment-author");
+    expect(author).toHaveClass("min-w-[6rem]", "truncate");
+    expect(screen.getByTestId("comment-meta")).toHaveClass("max-sm:basis-full");
+    const actions = screen.getByTestId("comment-actions");
+    expect(actions).toHaveClass("max-sm:self-end");
+    expect(within(actions).getByTestId("comment-edit")).toHaveClass(
+      "max-md:h-11",
+      "max-md:w-11",
+    );
+    expect(screen.getByTestId("comment-edited")).toBeInTheDocument();
+    expect(screen.getByTestId("comment-kind-badge")).toHaveTextContent(
+      /blocker/i,
+    );
+  });
+
   it("offers the comment kinds in a themed radio picker", async () => {
     const server = new FakeServer([seedBoard()]);
     renderComments(server);
 
-    fireEvent.click(await screen.findByTestId("comment-kind"));
+    const trigger = await screen.findByTestId("comment-kind");
+    expect(trigger).toHaveClass("max-sm:h-11");
+    fireEvent.click(trigger);
     const group = screen.getByRole("radiogroup", { name: "Comment kind" });
     expect(within(group).getAllByRole("radio")).toHaveLength(6);
+    expect(screen.getByTestId("comment-kind-option-note")).toHaveClass(
+      "max-sm:min-h-11",
+      "max-sm:py-2.5",
+    );
     expect(screen.getByTestId("comment-kind-option-note")).toHaveAttribute(
       "aria-checked",
       "true",
@@ -948,6 +988,113 @@ describe("CardComments", () => {
     });
 
     expect(await screen.findByText("Live one")).toBeInTheDocument();
+  });
+
+  it("reveals a deep-linked comment once, focuses it and keeps the position", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-7", text: "Target comment" }),
+    ]);
+    renderComments(
+      server,
+      false,
+      server.handle,
+      "card-1",
+      undefined,
+      "comment-7",
+    );
+    await waitStream(server);
+
+    const row = await screen.findByTestId("comment");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(row).toHaveAttribute("data-search-highlight", "true");
+    expect(document.activeElement).toBe(row);
+
+    // A later SSE addition must not move the reader again.
+    act(() => {
+      server.seedComments("card-1", [
+        comment({ id: "comment-8", authorId: "user-2", text: "Live growth" }),
+        comment({ id: "comment-7", text: "Target comment" }),
+      ]);
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-growth",
+        boardId: "b-1",
+        cardId: "card-1",
+        actorId: "user-2",
+        at: Date.now(),
+        kind: "comment_added",
+        detail: "comment-8",
+      });
+    });
+    expect(await screen.findByText("Live growth")).toBeInTheDocument();
+    expect(scroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("reveals a deep-linked comment when its older page arrives", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments(
+      "card-1",
+      Array.from({ length: 51 }, (_, index) =>
+        comment({
+          id: `comment-${index}`,
+          text: `Comment ${index}`,
+          createdAt: 1_700_000_000_000 - index,
+        }),
+      ),
+    );
+    renderComments(
+      server,
+      false,
+      server.handle,
+      "card-1",
+      undefined,
+      "comment-50",
+    );
+
+    // The first page does not contain the target: no reveal is claimed yet.
+    await screen.findByText("Comment 0");
+    expect(screen.queryByText("Comment 50")).toBeNull();
+    expect(scroll).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByTestId("comments-show-older"));
+
+    const row = await screen.findByText("Comment 50");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(row.closest("li")).toHaveAttribute("data-search-highlight", "true");
+    expect(document.activeElement).toBe(row.closest("li"));
+  });
+
+  it("leaves the card intact for an unknown comment deep link", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [comment({ text: "Plain thread" })]);
+    renderComments(
+      server,
+      false,
+      server.handle,
+      "card-1",
+      undefined,
+      "missing-comment",
+    );
+
+    const row = await screen.findByTestId("comment");
+    expect(row).not.toHaveAttribute("data-search-highlight");
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it("drops a comment deleted elsewhere", async () => {

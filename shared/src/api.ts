@@ -840,14 +840,80 @@ export interface UpdateBoardAgentPolicyRequest {
   version: number;
 }
 
+/** Where a board search query matched a card (TASK-157, TASK-177.13). */
+export type BoardSearchMatchKind =
+  "title" | "description" | "checklist" | "comment" | "attachment";
+
 /**
- * `GET /boards/:id/search?q=` (TASK-157, D11) — the ids of cards whose title,
- * description, a checklist item or a comment contains the query. A server
- * search reaches text that is not in the board aggregate (comments), so the
- * MCP search can span the whole card, not just its title and description.
+ * One reason a card appeared in a board search. A card can appear once per
+ * kind; comments and attachments carry their own row id so the UI can open
+ * the exact entry, and description/checklist/comment/attachment matches
+ * carry a short snippet. A title-only match omits `text`.
+ */
+export interface BoardSearchMatch {
+  cardId: string;
+  matchIn: BoardSearchMatchKind;
+  /** Short snippet for description/checklist/comment/attachment matches. */
+  text?: string;
+  commentId?: string;
+  attachmentId?: string;
+}
+
+/**
+ * `GET /boards/:id/search?q=` (TASK-157, D11) — cards whose title,
+ * description, a checklist item, a comment or a visible attachment file name
+ * contains the query. `cardIds` is complete and remains the compact
+ * MCP-facing projection; `matches` explains why each id is present and lets
+ * the UI deep-link to the matched comment/attachment. The match list is
+ * deduped per card/kind and capped at 200; `includeMatches=0` returns
+ * `matches: []` while keeping `cardIds` complete.
  */
 export interface BoardCardSearchResult {
   cardIds: string[];
+  matches: BoardSearchMatch[];
+  /** Distinct card/kind matches before the bounded detail list. */
+  matchesTotal: number;
+  /** Whether `matchesTotal` exceeds the returned `matches`. */
+  matchesTruncated: boolean;
+}
+
+interface WorkspaceSearchMatchBase {
+  boardId: string;
+  boardTitle: string;
+  cardId: string;
+  cardTitle: string;
+  /** Short snippet around the matched comment text or file name. */
+  text?: string;
+}
+
+/** A comment hit from `GET /boards/search?q=` (TASK-177.13). */
+export interface WorkspaceCommentSearchMatch extends WorkspaceSearchMatchBase {
+  matchIn: "comment";
+  commentId: string;
+}
+
+/** An attachment file-name hit from `GET /boards/search?q=`. */
+export interface WorkspaceAttachmentSearchMatch extends WorkspaceSearchMatchBase {
+  matchIn: "attachment";
+  attachmentId: string;
+}
+
+/**
+ * One cross-board comment/attachment hit. Only text that is absent from the
+ * board aggregate is returned: the palette matches titles, descriptions,
+ * labels and checklists locally.
+ */
+export type WorkspaceSearchMatch =
+  WorkspaceCommentSearchMatch | WorkspaceAttachmentSearchMatch;
+
+/** `GET /boards/search?q=` — bounded to live memberships (TASK-177.13). */
+export interface WorkspaceSearchResult {
+  /** Newest first, deduped per board/card/kind, capped at 200. */
+  matches: WorkspaceSearchMatch[];
+  /** Distinct board/card/kind matches before the cap. */
+  total: number;
+  /** Whether `total` exceeds the returned `matches`. */
+  truncated: boolean;
 }
 
 /**

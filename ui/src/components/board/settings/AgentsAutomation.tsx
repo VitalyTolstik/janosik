@@ -911,7 +911,7 @@ export function AgentsAutomation({
 
       <footer
         data-testid="agents-automation-footer"
-        className="flex min-h-12 shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-[9px] max-md:flex-col max-md:items-stretch max-md:gap-2.5 max-md:px-2.5 max-md:pb-[max(8px,env(safe-area-inset-bottom))] max-md:pt-2"
+        className="flex min-h-12 shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-[9px] pb-[max(9px,env(safe-area-inset-bottom))] max-md:flex-col max-md:items-stretch max-md:gap-2.5 max-md:px-2.5 max-md:pt-2"
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] leading-[1.45] text-muted-foreground max-md:w-full max-md:flex-wrap">
           <span

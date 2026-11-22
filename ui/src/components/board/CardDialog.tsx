@@ -83,6 +83,7 @@ import {
 import { createId } from "@/utils/id";
 import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
+import { cn } from "@/lib/utils";
 import type { LabelColor } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
@@ -97,6 +98,13 @@ interface CardDialogProps {
   open: boolean;
   /** VIEWER mode (TASK-35): read-only fields, no mutating actions. */
   readOnly?: boolean;
+  /**
+   * Search deep link (TASK-177.13): scroll to and highlight the exact
+   * comment/attachment. An unknown id is ignored, leaving the card dialog as
+   * the fallback.
+   */
+  focusCommentId?: string;
+  focusAttachmentId?: string;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -156,6 +164,8 @@ export function CardDialog({
   cardId,
   open,
   readOnly = false,
+  focusCommentId,
+  focusAttachmentId,
   onOpenChange,
 }: CardDialogProps) {
   const {
@@ -804,7 +814,7 @@ export function CardDialog({
       >
         <DialogContent
           className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
-          closeClassName="right-3 top-3 flex h-8 w-8 items-center justify-center"
+          closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center md:h-8 md:w-8"
           onEscapeKeyDown={(event) => {
             // The inline link editor closes first; the card stays open.
             if (linkEditorCardId === card.id) {
@@ -833,7 +843,9 @@ export function CardDialog({
             <DialogDescription className="sr-only">
               {t("card.detailsSubtitle")}
             </DialogDescription>
-            <div className="absolute right-12 top-3">
+            {/* The mobile close is 44 px while this 32 px trigger is not:
+                offset the top by 6 px so both icons share a centre line. */}
+            <div className="absolute right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)] top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)] md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)] md:top-[max(1rem,env(safe-area-inset-top))]">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -1040,7 +1052,17 @@ export function CardDialog({
               </div>
             </div>
           </DialogHeader>
-          <div className="-mx-6 mt-4 min-h-0 flex-1 overflow-y-auto border-t border-border/60">
+          <div
+            className={cn(
+              "-mx-6 mt-4 min-h-0 flex-1 overflow-y-auto border-t border-border/60",
+              // A deep-linked comment/file sits at the scroll tail; reserving
+              // room below it lets the initial reveal keep the row clear of
+              // the dialog edge after the lazy composer settles.
+              (focusCommentId !== undefined ||
+                focusAttachmentId !== undefined) &&
+                "pb-24",
+            )}
+          >
             <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_280px]">
               <aside
                 aria-label={t("card.properties")}
@@ -1312,6 +1334,7 @@ export function CardDialog({
                   cardId={card.id}
                   boardId={board.id}
                   readOnly={readOnly}
+                  focusId={focusAttachmentId}
                 />
 
                 <CardChecklists
@@ -1329,6 +1352,7 @@ export function CardDialog({
                   updatedAt={card.updatedAt}
                   localActivity={card.activity}
                   readOnly={readOnly}
+                  focusCommentId={focusCommentId}
                 />
               </div>
             </div>

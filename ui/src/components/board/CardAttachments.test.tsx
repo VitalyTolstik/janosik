@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AttachmentDto } from "@janosik/shared";
 
@@ -75,6 +75,39 @@ describe("CardAttachments", () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  it("reveals and focuses a deep-linked attachment", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([attachment()]);
+    renderSection({ focusId: "att-1" });
+
+    const row = await screen.findByTestId("card-attachment-row");
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+    expect(row).toHaveAttribute("data-search-highlight", "true");
+    expect(document.activeElement).toBe(row);
+  });
+
+  it("leaves the card intact for an unknown attachment deep link", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([attachment()]);
+    renderSection({ focusId: "missing" });
+
+    const row = await screen.findByTestId("card-attachment-row");
+    expect(row).not.toHaveAttribute("data-search-highlight");
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it("ignores a stale response after switching cards", async () => {

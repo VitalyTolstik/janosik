@@ -131,8 +131,8 @@ export function BoardSettingsShell({
       <DialogContent
         hideClose
         className={cn(
-          "h-[min(47.25rem,calc(100dvh-4.75rem))] max-h-[calc(100dvh-4.75rem)] w-[calc(100vw-1.75rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[56px] md:bottom-auto",
-          "max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0! max-md:pb-[env(safe-area-inset-bottom)]",
+          "h-[min(47.25rem,calc(100dvh_-_4.75rem_-_env(safe-area-inset-top)))] max-h-[calc(100dvh_-_4.75rem_-_env(safe-area-inset-top))] w-[calc(100vw-1.75rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[calc(56px_+_env(safe-area-inset-top))] md:bottom-auto",
+          "pl-[max(0px,env(safe-area-inset-left))] pr-[max(0px,env(safe-area-inset-right))] max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0! max-md:pt-[env(safe-area-inset-top)]",
         )}
         data-testid="board-settings-dialog"
       >
@@ -171,7 +171,7 @@ export function BoardSettingsShell({
           </span>
           <button
             type="button"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:absolute max-md:right-2 max-md:top-2 max-md:z-[3] max-md:h-11 max-md:w-11 max-md:bg-popover"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:absolute max-md:right-[max(0.5rem,env(safe-area-inset-right))] max-md:top-[max(0.5rem,env(safe-area-inset-top))] max-md:z-[3] max-md:h-11 max-md:w-11 max-md:bg-popover"
             aria-label={t("common.close")}
             data-testid={closeTestId}
             onClick={() => requestOpenChange(false)}

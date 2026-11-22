@@ -22,6 +22,7 @@ import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { Button } from "@/components/ui/button";
 import { Skeleton, SkeletonRegion } from "@/components/ui/skeleton";
 import { useToast } from "@/components/Toast";
+import { cn } from "@/lib/utils";
 import { formatDateOnly, useI18n } from "@/i18n";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
@@ -109,6 +110,11 @@ interface CardAttachmentsProps {
   boardId: string;
   /** VIEWER mode: list + download only (TASK-35). */
   readOnly?: boolean;
+  /**
+   * Search deep link (TASK-177.13): opens the section, scrolls to the row and
+   * highlights it. An unknown id is ignored, leaving the card as the fallback.
+   */
+  focusId?: string;
   /** Live attachment count for the section badge. */
   onCountChange?: (count: number) => void;
 }
@@ -124,6 +130,7 @@ export function CardAttachments({
   cardId,
   boardId,
   readOnly = false,
+  focusId,
   onCountChange,
 }: CardAttachmentsProps) {
   const { t, lang } = useI18n();
@@ -149,6 +156,25 @@ export function CardAttachments({
     null,
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  // Search deep link (TASK-177.13): reveal the matched file once the first
+  // list page lands. Row identity is read from data attributes, not spliced
+  // into a selector, so a hand-edited URL is only ever an id comparison.
+  // One attempt per focus id keeps later list refreshes from moving the page.
+  const revealedFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
+    const row = Array.from(
+      listRef.current?.querySelectorAll<HTMLElement>("[data-attachment-id]") ??
+        [],
+    ).find((element) => element.dataset.attachmentId === focusId);
+    if (!row) return;
+    // Mark only a successful reveal: a later refresh can still bring the
+    // target, while a found row must not be scrolled to twice.
+    revealedFocusRef.current = focusId;
+    row.scrollIntoView?.({ block: "center" });
+    row.focus?.({ preventScroll: true });
+  }, [focusId, loaded, items.length]);
 
   const load = useCallback(async () => {
     if (!serverMode) return;
@@ -324,16 +350,27 @@ export function CardAttachments({
           {t("card.attachments.empty")}
         </p>
       ) : (
-        <ul className="space-y-1" data-testid="card-attachments-list">
+        <ul
+          ref={listRef}
+          className="space-y-1"
+          data-testid="card-attachments-list"
+        >
           {items.map((attachment) => {
             const canDelete =
               !readOnly &&
               (user?.id === attachment.uploadedById || me?.role === "ADMIN");
+            const highlighted = attachment.id === focusId;
             return (
               <li
                 key={attachment.id}
-                className="group flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-hover/60"
+                className={cn(
+                  "group flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-hover/60",
+                  highlighted && "bg-primary/10 ring-2 ring-primary/40",
+                )}
                 data-testid="card-attachment-row"
+                data-attachment-id={attachment.id}
+                data-search-highlight={highlighted ? "true" : undefined}
+                tabIndex={highlighted ? -1 : undefined}
               >
                 <AttachmentPreview attachment={attachment} />
                 <span
