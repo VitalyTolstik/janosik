@@ -53,12 +53,14 @@ function maskHtmlComments(chars: string[]): void {
   }
 }
 
+type FencePrefixKind = "list" | "task";
+
 interface FencePrefixes {
   content: string;
   /** Blockquote depth after the whole interleaved prefix chain. */
   quoteDepth: number;
-  /** List-item + task-marker prefixes stripped from the chain. */
-  prefixCount: number;
+  /** Ordered list/task prefixes stripped from the chain. */
+  kinds: FencePrefixKind[];
 }
 
 /**
@@ -69,7 +71,7 @@ interface FencePrefixes {
 function stripFencePrefixes(line: string): FencePrefixes {
   let content = line.trimStart();
   let quoteDepth = 0;
-  let prefixCount = 0;
+  const kinds: FencePrefixKind[] = [];
   let listOpen = false;
   for (let guard = 0; guard < 64; guard += 1) {
     const quote = /^ {0,3}> ?/.exec(content);
@@ -81,19 +83,19 @@ function stripFencePrefixes(line: string): FencePrefixes {
     const list = LIST_MARKER_PREFIX.exec(content);
     if (list !== null) {
       listOpen = true;
-      prefixCount += 1;
+      kinds.push("list");
       content = content.slice(list[0].length).trimStart();
       continue;
     }
     const task = listOpen ? TASK_MARKER_PREFIX.exec(content) : null;
     if (task !== null) {
-      prefixCount += 1;
+      kinds.push("task");
       content = content.slice(task[0].length).trimStart();
       continue;
     }
     break;
   }
-  return { content, quoteDepth, prefixCount };
+  return { content, quoteDepth, kinds };
 }
 
 /** Expand tabs to their visual 4-column stops before parsing indentation. */
@@ -125,7 +127,7 @@ function fenceOpener(line: string): {
   char: string;
   length: number;
   quoteDepth: number;
-  prefixCount: number;
+  kinds: readonly FencePrefixKind[];
 } | null {
   const prefixes = stripFencePrefixes(line);
   const match = /^(`{3,}|~{3,})(.*)$/.exec(prefixes.content);
@@ -137,7 +139,7 @@ function fenceOpener(line: string): {
     char: run[0]!,
     length: run.length,
     quoteDepth: prefixes.quoteDepth,
-    prefixCount: prefixes.prefixCount,
+    kinds: prefixes.kinds,
   };
 }
 
@@ -146,13 +148,19 @@ function fenceCloser(
   char: string,
   length: number,
   quoteDepth: number,
-  prefixCount: number,
+  openerKinds: readonly FencePrefixKind[],
 ): boolean {
   const prefixes = stripFencePrefixes(line);
   if (prefixes.quoteDepth !== quoteDepth) return false;
-  // A list-contained fence may close on a thinner indented line, but a
-  // top-level fence must not close on a list-prefixed code line.
-  if (prefixes.prefixCount > prefixCount) return false;
+  // A list fence may close on a thin/indented line; the closer's kind
+  // sequence must be a prefix of the opener's (`["list","task"]` closes with
+  // `["list"]` but never with `["list","list"]` or a substituted task).
+  if (
+    prefixes.kinds.length > openerKinds.length ||
+    !prefixes.kinds.every((kind, index) => kind === openerKinds[index])
+  ) {
+    return false;
+  }
   const match = /^(`{3,}|~{3,})\s*$/.exec(prefixes.content);
   return match !== null && match[1]![0] === char && match[1]!.length >= length;
 }
@@ -169,7 +177,7 @@ function maskCodeBlocks(chars: string[]): void {
   let fenceChar: string | null = null;
   let fenceLength = 0;
   let fenceQuoteDepth = 0;
-  let fencePrefixCount = 0;
+  let fenceKinds: readonly FencePrefixKind[] = [];
   while (offset < text.length) {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
@@ -185,14 +193,14 @@ function maskCodeBlocks(chars: string[]): void {
           fenceChar,
           fenceLength,
           fenceQuoteDepth,
-          fencePrefixCount,
+          fenceKinds,
         )
       ) {
         maskRange(chars, offset, end);
         fenceChar = null;
         fenceLength = 0;
         fenceQuoteDepth = 0;
-        fencePrefixCount = 0;
+        fenceKinds = [];
       } else {
         maskRange(chars, offset, end);
       }
@@ -205,7 +213,7 @@ function maskCodeBlocks(chars: string[]): void {
       fenceChar = opener.char;
       fenceLength = opener.length;
       fenceQuoteDepth = opener.quoteDepth;
-      fencePrefixCount = opener.prefixCount;
+      fenceKinds = opener.kinds;
       maskRange(chars, offset, end);
     }
     offset = end;

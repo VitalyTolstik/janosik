@@ -114,10 +114,28 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual([]);
     expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
     expect(parseCommentMentions(`- ~~~\n  ${token}\n- ~~~`)).toEqual([]);
+    // Same prefix count but a different kind shape is content, not a closer.
+    expect(
+      parseCommentMentions(`- [ ] ~~~\n  ${token}\n- - ~~~\n${token}`),
+    ).toEqual([]);
+    expect(
+      parseCommentMentions(`- - ~~~\n  ${token}\n- [ ] ~~~\n${token}`),
+    ).toEqual([]);
+    // A thin list closer is a prefix of the opener's shape and closes.
+    expect(
+      parseCommentMentions(`- [ ] ~~~\n  ${token}\n- ~~~\n${token}`),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
     // `[ ]` without an open list item is not a task prefix.
     expect(parseCommentMentions(`> [ ] ~~~\n${token}`)).toEqual([
       expect.objectContaining({ userId: "user-1" }),
     ]);
+    // The bounded prefix loop still handles exactly 64 nested markers.
+    const thick = "- ".repeat(64);
+    expect(
+      parseCommentMentions(
+        [`${thick}~~~`, `${thick}${token}`, `${thick}~~~`, token].join("\n"),
+      ),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
   });
 
   it("chains interleaved fence containers and leaves following mentions live", () => {
