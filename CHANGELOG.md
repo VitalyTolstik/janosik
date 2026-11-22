@@ -18,11 +18,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   verified point, strips Activity snapshots that no revision backs and lets
   the next edit continue under a fresh number. It also verified both GDPR
   export paths (sync and background) exclude revision snapshots and another
-  author's edits, exposed revision count/bytes, related Activity bytes, trims,
-  incomplete histories and over-budget comments in the observability snapshot
+  author's edits, exposed revision count/bytes, related Activity bytes,
+  derived revisions beyond the 50-revision window, incomplete histories and
+  over-budget comments in the observability snapshot
   (counts only, never text), and covered delete/restore feeds, the 50-revision
   window on both APIs, public-share SSE allowlists, command catch-up/resync,
-  the 390 px card History view and the second-tab live refresh in EN/RU.
+  the 390 px card History view, the second-tab SSE refresh and EN/RU dialog
+  coverage.
 
 - TASK-185.4 card comment history. An edited comment’s `edited` marker is now
   a keyboard-accessible button that opens its read-only revision list:

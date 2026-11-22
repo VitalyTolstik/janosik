@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { I18nProvider } from "@/i18n";
@@ -135,20 +135,21 @@ describe("ObservabilityPage", () => {
     expect(await screen.findAllByText("—")).not.toHaveLength(0);
   });
 
-  it("shows comment-history counts and bytes without any comment text", async () => {
+  it("shows comment-history counts, bytes and every reason without text", async () => {
     const server = new FakeAdminServer();
     server.observability.commentHistory = {
+      available: true,
       revisions: { count: 51, bytes: 2_048 },
       activity: { count: 50, bytes: 3_072 },
-      trimmedRevisions: 3,
-      incompleteComments: 2,
+      derivedTrimmedRevisions: 3,
+      incompleteComments: 10,
       reasons: {
         legacy_cutover: 1,
-        revision_limit: 1,
-        gdpr_erase: 0,
-        writer_gap: 0,
+        revision_limit: 2,
+        gdpr_erase: 3,
+        writer_gap: 4,
       },
-      overBudget: { revisions: 0, activity: 1 },
+      overBudget: { revisions: 2, activity: 1 },
     };
     vi.stubGlobal("fetch", fetchWithManifest(server));
     renderObservability();
@@ -156,12 +157,71 @@ describe("ObservabilityPage", () => {
     const panel = await screen.findByTestId(
       "admin-observability-comment-history",
     );
-    expect(panel).toHaveTextContent(t("admin.observability.history"));
-    expect(panel).toHaveTextContent("51");
-    expect(panel).toHaveTextContent("2.0 KB");
-    expect(panel).toHaveTextContent("3.0 KB");
-    expect(panel).toHaveTextContent("3");
-    expect(panel).toHaveTextContent("2");
-    expect(panel).toHaveTextContent("0 / 1");
+    const value = (id: string) =>
+      within(panel).getByTestId(`${id}-value`).textContent ?? "";
+    expect(value("history-revisions")).toBe("51");
+    expect(value("history-revision-bytes")).toBe("2.0 KB");
+    expect(value("history-activity")).toBe("50");
+    expect(value("history-activity-bytes")).toBe("3.0 KB");
+    expect(value("history-derived-trims")).toBe("3");
+    expect(value("history-incomplete")).toBe("10");
+    expect(value("history-over-budget")).toBe("2 / 1");
+    expect(value("history-reason-legacy_cutover")).toBe("1");
+    expect(value("history-reason-revision_limit")).toBe("2");
+    expect(value("history-reason-gdpr_erase")).toBe("3");
+    expect(value("history-reason-writer_gap")).toBe("4");
+    for (const label of [
+      "admin.observability.history.derivedTrims",
+      "admin.observability.history.overBudget",
+      "admin.observability.history.reason.legacy_cutover",
+      "admin.observability.history.reason.revision_limit",
+      "admin.observability.history.reason.gdpr_erase",
+      "admin.observability.history.reason.writer_gap",
+    ] as const) {
+      expect(within(panel).getByText(t(label))).toBeVisible();
+    }
+    expect(panel).not.toHaveTextContent("SECRET COMMENT BODY");
+  });
+
+  it("shows unavailable history metrics as dashes, never as zeros", async () => {
+    const server = new FakeAdminServer();
+    server.observability.commentHistory = {
+      available: false,
+      revisions: { count: 51, bytes: 2_048 },
+      activity: { count: 50, bytes: 3_072 },
+      derivedTrimmedRevisions: 3,
+      incompleteComments: 10,
+      reasons: {
+        legacy_cutover: 1,
+        revision_limit: 2,
+        gdpr_erase: 3,
+        writer_gap: 4,
+      },
+      overBudget: { revisions: 2, activity: 1 },
+    };
+    vi.stubGlobal("fetch", fetchWithManifest(server));
+    renderObservability();
+
+    const panel = await screen.findByTestId(
+      "admin-observability-comment-history",
+    );
+    expect(
+      within(panel).getByTestId("admin-observability-history-unavailable"),
+    ).toBeVisible();
+    for (const id of [
+      "history-revisions",
+      "history-revision-bytes",
+      "history-activity",
+      "history-activity-bytes",
+      "history-derived-trims",
+      "history-incomplete",
+      "history-over-budget",
+      "history-reason-legacy_cutover",
+      "history-reason-revision_limit",
+      "history-reason-gdpr_erase",
+      "history-reason-writer_gap",
+    ]) {
+      expect(within(panel).getByTestId(`${id}-value`)).toHaveTextContent("—");
+    }
   });
 });

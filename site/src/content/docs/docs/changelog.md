@@ -20,9 +20,9 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   revision count. A comment keeps its newest 50 revisions, and a comment
   edited with an old writer is reconciled by the `sweep-comment-history`
   maintenance job. The observability page shows revision/Activity counts and
-  text sizes, trims, incomplete histories and over-budget comments, without
-  collecting the text. GDPR exports (sync and background) exclude revisions
-  and another author's edits.
+  text sizes, revisions beyond the latest-50 window (derived), incomplete
+  histories and over-budget comments, without collecting the text. GDPR
+  exports (sync and background) exclude revisions and another author's edits.
 - The `edited` marker on a comment opens its read-only edit history: every
   saved revision with its time, editor, cause and before/after diff, cursor
   paging for older revisions, and a full-text view of any revision. An

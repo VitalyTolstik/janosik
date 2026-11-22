@@ -687,9 +687,10 @@ export class FakeAdminServer {
     },
     health: [{ name: "database", ok: true, detail: "ok" }],
     commentHistory: {
+      available: true,
       revisions: { count: 0, bytes: 0 },
       activity: { count: 0, bytes: 0 },
-      trimmedRevisions: 0,
+      derivedTrimmedRevisions: 0,
       incompleteComments: 0,
       reasons: {
         legacy_cutover: 0,

@@ -232,8 +232,8 @@ test.describe("comment edit history at 390 px", () => {
   });
 });
 
-test.describe("live comment history in a second tab", () => {
-  test("refreshes the row, History and open revisions on edit; delete clears them", async ({
+test.describe("live comment history with a second tab open", () => {
+  test("refreshes the row, History and open revisions over SSE; delete clears them", async ({
     page,
     board,
     operator,
@@ -264,8 +264,9 @@ test.describe("live comment history in a second tab", () => {
     const dialog = commentHistory(page);
     await expect(dialog.getByTestId("comment-history-revision")).toHaveCount(1);
 
-    // A second tab on the same account: its edit reaches the open row and
-    // marks the open revision list stale instead of silently shifting it.
+    // A second board tab stays open on the same account. The edit itself is
+    // issued through the shared API context; the second tab's role is to keep
+    // an independent viewer session attached while this tab receives SSE.
     const second = await page.context().newPage();
     await second.goto(page.url());
     await expect(

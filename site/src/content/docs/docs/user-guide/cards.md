@@ -194,7 +194,9 @@ An edited comment keeps its place in the thread and shows an `edited` marker;
 only the author can edit or delete a comment. Click the `edited` marker to open
 the read-only edit history: every saved revision with its time, editor, cause
 and before/after diff. Long revisions can reveal their full saved text, and
-`Show older revisions` pages the chain back. Comments need server mode.
+`Show older revisions` pages the chain back. The newest 50 revisions are
+kept; an older chain or a legacy/erased/gap state shows an incomplete-history
+banner instead of pretending the list is complete. Comments need server mode.
 
 ### History
 

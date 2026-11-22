@@ -16,6 +16,7 @@ import { env } from "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
+import { AccountDeletionService } from "@/users/account-deletion.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "1856-owner@example.com";
@@ -41,6 +42,7 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
   let maintenance: MaintenanceService;
   let adminService: AdminService;
   let exportsService: ExportsService;
+  let accountDeletion: AccountDeletionService;
   const jwt = new JwtService({ secret: env.JWT_SECRET });
 
   let owner: { token: string; id: string };
@@ -61,6 +63,7 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     maintenance = app.get(MaintenanceService);
     adminService = app.get(AdminService);
     exportsService = app.get(ExportsService);
+    accountDeletion = app.get(AccountDeletionService);
     await wipeAll(prisma);
 
     owner = await createUser(OWNER_EMAIL, "Owner");
@@ -199,6 +202,7 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     query = "",
   ): Promise<{
     items: Array<{
+      id?: string;
       type: string;
       changes?: unknown;
       commentId?: string;
@@ -268,6 +272,15 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
         details: { commentId: comment.id, text: "Clean" },
       },
     });
+    const nonStringLink = await prisma.activity.create({
+      data: {
+        boardId,
+        cardId,
+        type: "comment_added",
+        actorId: owner.id,
+        details: { commentId: 12345, text: "Not a string id" },
+      },
+    });
 
     // Before the sweep both routes refuse the unverified chain.
     const before = await revisions(comment.id).expect(200);
@@ -278,7 +291,14 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     expect(adminBefore.body.historyIncompleteReason).toBe("writer_gap");
 
     const sweep = await maintenance.run("sweep-comment-history");
-    expect(sweep).toEqual([{ job: "sweep-comment-history", removed: 1 }]);
+    expect(sweep).toEqual([
+      {
+        job: "sweep-comment-history",
+        removed: 4,
+        detail:
+          "1 comments reconciled; 2 Activity links filled; 1 snapshots stripped",
+      },
+    ]);
 
     const adopted = await prisma.comment.findUniqueOrThrow({
       where: { id: comment.id },
@@ -305,6 +325,10 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
       where: { id: legacyAdd.id },
     });
     expect(filled.commentId).toBe(comment.id);
+    const notFilled = await prisma.activity.findUniqueOrThrow({
+      where: { id: nonStringLink.id },
+    });
+    expect(notFilled.commentId).toBeNull();
 
     // The confirmed revision is available again, with the persisted reason.
     const after = await revisions(comment.id).expect(200);
@@ -333,7 +357,14 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
 
     // Idempotent second run.
     const again = await maintenance.run("sweep-comment-history");
-    expect(again).toEqual([{ job: "sweep-comment-history", removed: 0 }]);
+    expect(again).toEqual([
+      {
+        job: "sweep-comment-history",
+        removed: 0,
+        detail:
+          "0 comments reconciled; 0 Activity links filled; 0 snapshots stripped",
+      },
+    ]);
 
     // Soft-deleted rows are part of the sweep too: a restore must not bring
     // back an unreconciled chain.
@@ -348,7 +379,12 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
       data: { text: "Deleted old writer", editedAt: new Date() },
     });
     expect(await maintenance.run("sweep-comment-history")).toEqual([
-      { job: "sweep-comment-history", removed: 1 },
+      {
+        job: "sweep-comment-history",
+        removed: 1,
+        detail:
+          "1 comments reconciled; 0 Activity links filled; 0 snapshots stripped",
+      },
     ]);
     const deletedRow = await prisma.comment.findUniqueOrThrow({
       where: { id: removed.id },
@@ -414,6 +450,17 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     await editComment(firstComment.id, "After edit").expect(200);
     const secondComment = await createComment(cardId, "Second before");
     await editComment(secondComment.id, "Second after").expect(200);
+    // A non-null reason and the revision number must survive delete/restore.
+    await prisma.comment.update({
+      where: { id: firstComment.id },
+      data: { historyIncompleteReason: "legacy_cutover" },
+    });
+    const secondAddId = (
+      await prisma.activity.findFirstOrThrow({
+        where: { commentId: secondComment.id, type: "comment_added" },
+        select: { id: true },
+      })
+    ).id;
     for (const comment of [firstComment, secondComment]) {
       await server()
         .delete(`/api/v1/comments/${comment.id}`)
@@ -509,16 +556,21 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     expect(restoredAdded?.changes).toEqual([
       { field: "comment", from: null, to: "Before delete" },
     ]);
-    // The still-deleted comment's add row is a metadata tombstone.
-    const otherAdded = added.items.find(
-      (entry: { commentId?: string }) => entry.commentId !== firstComment.id,
-    );
+    // The still-deleted comment's add row is a metadata tombstone, matched by
+    // its own Activity id (the tombstone has no typed comment id).
+    const otherAdded = added.items.find((entry) => entry.id === secondAddId);
     expect(otherAdded).toBeDefined();
     expect(otherAdded).not.toHaveProperty("changes");
 
     const history = await revisions(firstComment.id).expect(200);
     expect(history.body.items).toHaveLength(1);
-    expect(history.body.historyIncompleteReason).toBeNull();
+    expect(history.body.historyIncompleteReason).toBe("legacy_cutover");
+    const restoredRow = await prisma.comment.findUniqueOrThrow({
+      where: { id: firstComment.id },
+    });
+    expect(restoredRow.lastRevisionNumber).toBe(1);
+    expect(restoredRow.historyVerifiedRevisionNumber).toBe(1);
+    expect(restoredRow.historyIncompleteReason).toBe("legacy_cutover");
   });
 
   it("hides a deleted parent's edit and brings it back after the parent restore", async () => {
@@ -563,6 +615,82 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     expect(update?.changes).toEqual([
       { field: "comment", from: "Parent body", to: "Parent edit" },
     ]);
+  });
+
+  it("purges legacy null-typed comment Activity with the comment", async () => {
+    const stale = new Date(Date.now() - 40 * 86_400_000);
+
+    const allRun = await newBoard("purge-legacy-all");
+    const allComment = await createComment(allRun.cardId, "Purge all");
+    await editComment(allComment.id, "Purge all edited").expect(200);
+    await prisma.comment.update({
+      where: { id: allComment.id },
+      data: { deletedAt: stale },
+    });
+    const allActivity = await prisma.activity.create({
+      data: {
+        boardId: allRun.boardId,
+        cardId: allRun.cardId,
+        type: "comment_updated",
+        actorId: owner.id,
+        details: {
+          commentId: allComment.id,
+          beforeText: "LEGACY PURGE SECRET",
+          afterText: "LEGACY PURGE SECRET",
+          text: "LEGACY PURGE SECRET",
+        },
+      },
+    });
+
+    // `all` repairs and fills the typed link before the purge.
+    await maintenance.run("all");
+    expect(
+      await prisma.comment.findUnique({ where: { id: allComment.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.activity.findUnique({ where: { id: allActivity.id } }),
+    ).toBeNull();
+
+    // A direct purge must not rely on the sweep having run first: the delete
+    // helper matches the legacy `details.commentId` too.
+    const direct = await newBoard("purge-legacy-direct");
+    const directComment = await createComment(direct.cardId, "Purge direct");
+    await editComment(directComment.id, "Purge direct edited").expect(200);
+    await prisma.comment.update({
+      where: { id: directComment.id },
+      data: { deletedAt: stale },
+    });
+    const directActivity = await prisma.activity.create({
+      data: {
+        boardId: direct.boardId,
+        cardId: direct.cardId,
+        type: "comment_updated",
+        actorId: owner.id,
+        details: {
+          commentId: directComment.id,
+          beforeText: "LEGACY DIRECT SECRET",
+          afterText: "LEGACY DIRECT SECRET",
+          text: "LEGACY DIRECT SECRET",
+        },
+      },
+    });
+    expect(await maintenance.run("purge-soft-deleted")).toBeDefined();
+    expect(
+      await prisma.comment.findUnique({ where: { id: directComment.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.activity.findUnique({ where: { id: directActivity.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.activity.count({
+        where: {
+          OR: [
+            { details: { path: ["commentId"], equals: allComment.id } },
+            { details: { path: ["commentId"], equals: directComment.id } },
+          ],
+        },
+      }),
+    ).toBe(0);
   });
 
   it("returns revision_limit on both routes and keeps revisions when Activity is swept", async () => {
@@ -724,24 +852,207 @@ describe("Comment history acceptance (TASK-185.6, e2e)", () => {
     expect(backgroundJson).not.toMatch(/beforeText|afterText|revisionId/);
   });
 
+  it("returns gdpr_erase on both routes after an editor erase", async () => {
+    const { boardId, cardId } = await newBoard("erase-api");
+    const victim = await createUser("1856-erase-victim@example.com", "Victim");
+    const author = await createUser("1856-erase-author@example.com", "Author");
+    await prisma.boardMember.createMany({
+      data: [victim.id, author.id].map((userId) => ({
+        boardId,
+        userId,
+        role: "MEMBER" as const,
+        acceptedAt: new Date(),
+      })),
+    });
+
+    const foreign = await createComment(cardId, "Foreign body", author.token);
+    const editedAt = new Date(Date.now() + 1_000);
+    await prisma.comment.update({
+      where: { id: foreign.id },
+      data: {
+        text: "Foreign edited",
+        editedAt,
+        historyVerifiedEditedAt: editedAt,
+        historyVerifiedRevisionNumber: 1,
+        lastRevisionNumber: 1,
+      },
+    });
+    await prisma.commentRevision.create({
+      data: {
+        commentId: foreign.id,
+        revisionNumber: 1,
+        beforeText: "Foreign body",
+        afterText: "Foreign edited",
+        createdAt: editedAt,
+        editorId: victim.id,
+        cause: "author_edit",
+      },
+    });
+    await prisma.activity.create({
+      data: {
+        boardId,
+        cardId,
+        type: "comment_updated",
+        commentId: foreign.id,
+        actorId: victim.id,
+        details: {
+          commentId: foreign.id,
+          beforeText: "Foreign body",
+          afterText: "Foreign edited",
+          text: "Foreign edited",
+        },
+      },
+    });
+
+    // The victim's own comment has a legacy snapshot created by someone else;
+    // erasing the author must still remove it by `details.commentId`.
+    const own = await createComment(cardId, "Victim own", victim.token);
+    const legacy = await prisma.activity.create({
+      data: {
+        boardId,
+        cardId,
+        type: "comment_added",
+        actorId: author.id,
+        details: {
+          commentId: own.id,
+          text: "ERASE LEGACY SECRET",
+        },
+      },
+    });
+
+    expect(await accountDeletion.deleteAccount(victim.id)).not.toBeNull();
+    expect(
+      await prisma.activity.findUnique({ where: { id: legacy.id } }),
+    ).toBeNull();
+
+    for (const response of [
+      await revisions(foreign.id, author.token).expect(200),
+      await adminRevisions(foreign.id).expect(200),
+    ]) {
+      expect(response.body.items).toEqual([]);
+      expect(response.body.historyIncomplete).toBe(true);
+      expect(response.body.historyIncompleteReason).toBe("gdpr_erase");
+    }
+
+    await editComment(foreign.id, "Author continues", author.token).expect(200);
+    for (const response of [
+      await revisions(foreign.id, author.token).expect(200),
+      await adminRevisions(foreign.id).expect(200),
+    ]) {
+      expect(response.body.items).toHaveLength(1);
+      expect(response.body.items[0]).toMatchObject({
+        revisionNumber: 2,
+        beforeText: "Foreign edited",
+        afterText: "Author continues",
+      });
+      expect(response.body.historyIncompleteReason).toBe("gdpr_erase");
+    }
+  });
+
   it("exposes revision counters without collecting any comment text", async () => {
-    const { cardId } = await newBoard("metrics");
+    const { boardId, cardId } = await newBoard("metrics");
     const comment = await createComment(cardId, "METRIC SECRET BODY");
     await editComment(comment.id, "METRIC SECRET EDIT").expect(200);
+
+    // A legacy oversized chain: 4.2 MB of revision text and 6.3 MB of related
+    // Activity text push both budgets over their decimal limits.
+    const big = "Z".repeat(2_100_000);
+    const editedAt = new Date();
+    const bigComment = await prisma.comment.create({
+      data: {
+        cardId,
+        authorId: owner.id,
+        text: big,
+        editedAt,
+        historyCutoverAt: new Date(editedAt.getTime() - 60_000),
+        historyVerifiedEditedAt: editedAt,
+        historyVerifiedRevisionNumber: 1,
+        lastRevisionNumber: 1,
+      },
+    });
+    const bigRevision = await prisma.commentRevision.create({
+      data: {
+        commentId: bigComment.id,
+        revisionNumber: 1,
+        beforeText: big,
+        afterText: big,
+        createdAt: editedAt,
+        editorId: owner.id,
+        cause: "author_edit",
+      },
+    });
+    await prisma.activity.create({
+      data: {
+        boardId,
+        cardId,
+        type: "comment_updated",
+        commentId: bigComment.id,
+        actorId: owner.id,
+        details: {
+          commentId: bigComment.id,
+          revisionId: bigRevision.id,
+          beforeText: big,
+          afterText: big,
+          text: big,
+        },
+      },
+    });
+
+    // One comment per reason, plus a chain beyond the window.
+    for (const reason of [
+      "legacy_cutover",
+      "gdpr_erase",
+      "writer_gap",
+    ] as const) {
+      await prisma.comment.create({
+        data: {
+          cardId,
+          authorId: owner.id,
+          text: `reason ${reason}`,
+          historyIncompleteReason: reason,
+        },
+      });
+    }
+    await prisma.comment.create({
+      data: {
+        cardId,
+        authorId: owner.id,
+        text: "derived trims",
+        historyIncompleteReason: "revision_limit",
+        lastRevisionNumber: 70,
+      },
+    });
 
     const res = await server()
       .get("/api/v1/admin/observability")
       .set(auth(masterToken))
       .expect(200);
     const history = res.body.commentHistory as {
+      available: boolean;
       revisions: { count: number; bytes: number };
       activity: { count: number; bytes: number };
+      derivedTrimmedRevisions: number;
+      incompleteComments: number;
+      reasons: Record<string, number>;
+      overBudget: { revisions: number; activity: number };
     };
-    expect(history.revisions.count).toBeGreaterThanOrEqual(1);
-    expect(history.revisions.bytes).toBeGreaterThan(0);
-    expect(history.activity.count).toBeGreaterThanOrEqual(1);
+    expect(history.available).toBe(true);
+    expect(history.revisions.count).toBeGreaterThanOrEqual(2);
+    expect(history.revisions.bytes).toBeGreaterThan(4_000_000);
+    expect(history.activity.count).toBeGreaterThanOrEqual(2);
+    expect(history.activity.bytes).toBeGreaterThan(6_000_000);
+    // The trim suite also leaves one chain at revision 51 (+1).
+    expect(history.derivedTrimmedRevisions).toBeGreaterThanOrEqual(21);
+    expect(history.incompleteComments).toBeGreaterThanOrEqual(4);
+    expect(history.reasons.legacy_cutover).toBeGreaterThanOrEqual(1);
+    expect(history.reasons.revision_limit).toBeGreaterThanOrEqual(1);
+    expect(history.reasons.gdpr_erase).toBeGreaterThanOrEqual(1);
+    expect(history.reasons.writer_gap).toBeGreaterThanOrEqual(1);
+    expect(history.overBudget.revisions).toBeGreaterThanOrEqual(1);
+    expect(history.overBudget.activity).toBeGreaterThanOrEqual(1);
     const json = JSON.stringify(res.body);
     expect(json).not.toContain("METRIC SECRET");
+    expect(json).not.toContain(big.slice(0, 200));
     expect(json).not.toContain("beforeText");
     expect(json).not.toContain("afterText");
   });

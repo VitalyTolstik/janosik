@@ -91,6 +91,10 @@ export function ObservabilityPage() {
     return <ErrorState onRetry={load} />;
   }
 
+  // A failed/timed-out aggregate must not look like a healthy zero.
+  const historyValue = (value: string): string =>
+    data.commentHistory.available ? value : "—";
+
   return (
     <div className="w-full max-w-4xl space-y-4 p-4">
       <PageHeader
@@ -238,38 +242,86 @@ export function ObservabilityPage() {
             {t("admin.observability.history.hint")}
           </span>
         </div>
+        {!data.commentHistory.available ? (
+          <p
+            className="mb-3 rounded border border-border p-2 text-xs text-muted-foreground"
+            data-testid="admin-observability-history-unavailable"
+          >
+            {t("admin.observability.history.unavailable")}
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <Field
+            testId="history-revisions"
             label={t("admin.observability.history.revisions")}
-            value={String(data.commentHistory.revisions.count)}
+            value={historyValue(String(data.commentHistory.revisions.count))}
           />
           <Field
+            testId="history-revision-bytes"
             label={t("admin.observability.history.revisionBytes")}
-            value={formatBytes(data.commentHistory.revisions.bytes)}
+            value={historyValue(
+              formatBytes(data.commentHistory.revisions.bytes),
+            )}
           />
           <Field
+            testId="history-activity"
             label={t("admin.observability.history.activity")}
-            value={String(data.commentHistory.activity.count)}
+            value={historyValue(String(data.commentHistory.activity.count))}
           />
           <Field
+            testId="history-activity-bytes"
             label={t("admin.observability.history.activityBytes")}
-            value={formatBytes(data.commentHistory.activity.bytes)}
+            value={historyValue(
+              formatBytes(data.commentHistory.activity.bytes),
+            )}
           />
           <Field
-            label={t("admin.observability.history.trimmed")}
-            value={String(data.commentHistory.trimmedRevisions)}
+            testId="history-derived-trims"
+            label={t("admin.observability.history.derivedTrims")}
+            value={historyValue(
+              String(data.commentHistory.derivedTrimmedRevisions),
+            )}
           />
           <Field
+            testId="history-incomplete"
             label={t("admin.observability.history.incomplete")}
-            value={String(data.commentHistory.incompleteComments)}
+            value={historyValue(String(data.commentHistory.incompleteComments))}
           />
           <Field
-            label={t("admin.observability.history.writerGap")}
-            value={String(data.commentHistory.reasons.writer_gap)}
-          />
-          <Field
+            testId="history-over-budget"
             label={t("admin.observability.history.overBudget")}
-            value={`${data.commentHistory.overBudget.revisions} / ${data.commentHistory.overBudget.activity}`}
+            value={historyValue(
+              `${data.commentHistory.overBudget.revisions} / ${data.commentHistory.overBudget.activity}`,
+            )}
+          />
+        </div>
+        <div
+          className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"
+          data-testid="admin-observability-history-reasons"
+        >
+          <Field
+            testId="history-reason-legacy_cutover"
+            label={t("admin.observability.history.reason.legacy_cutover")}
+            value={historyValue(
+              String(data.commentHistory.reasons.legacy_cutover),
+            )}
+          />
+          <Field
+            testId="history-reason-revision_limit"
+            label={t("admin.observability.history.reason.revision_limit")}
+            value={historyValue(
+              String(data.commentHistory.reasons.revision_limit),
+            )}
+          />
+          <Field
+            testId="history-reason-gdpr_erase"
+            label={t("admin.observability.history.reason.gdpr_erase")}
+            value={historyValue(String(data.commentHistory.reasons.gdpr_erase))}
+          />
+          <Field
+            testId="history-reason-writer_gap"
+            label={t("admin.observability.history.reason.writer_gap")}
+            value={historyValue(String(data.commentHistory.reasons.writer_gap))}
           />
         </div>
       </Panel>
@@ -351,11 +403,24 @@ export function ObservabilityPage() {
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({
+  label,
+  value,
+  testId,
+}: {
+  label: string;
+  value: string;
+  testId?: string;
+}) {
   return (
-    <div>
+    <div data-testid={testId}>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="font-medium">{value}</p>
+      <p
+        className="font-medium"
+        data-testid={testId !== undefined ? `${testId}-value` : undefined}
+      >
+        {value}
+      </p>
     </div>
   );
 }

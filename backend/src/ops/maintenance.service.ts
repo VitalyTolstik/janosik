@@ -31,6 +31,10 @@ import {
  * can show what a run actually removed; every sweep is idempotent.
  */
 export const MAINTENANCE_JOBS = [
+  // TASK-185.6 review: repair legacy Activity links before the purge can
+  // delete a comment. The purge also matches `details.commentId`, so a direct
+  // `purge-soft-deleted` run is safe too.
+  "sweep-comment-history",
   "purge-soft-deleted",
   "sweep-codes",
   "sweep-tokens",
@@ -43,7 +47,6 @@ export const MAINTENANCE_JOBS = [
   "sweep-agent-sessions",
   "sweep-approvals",
   "sweep-reminders",
-  "sweep-comment-history",
   "sweep-activity",
   "sweep-audit",
   "sweep-accounts",
@@ -105,12 +108,18 @@ export class MaintenanceService {
       }
       return results;
     }
-    const removed = await this.dispatch(job);
-    this.logger.log(`maintenance ${job}: removed ${removed}`);
-    return [{ job, removed }];
+    const outcome = await this.dispatch(job);
+    const removed = typeof outcome === "number" ? outcome : outcome.removed;
+    const detail = typeof outcome === "number" ? undefined : outcome.detail;
+    this.logger.log(
+      `maintenance ${job}: removed ${removed}${detail ? ` (${detail})` : ""}`,
+    );
+    return [{ job, removed, ...(detail !== undefined ? { detail } : {}) }];
   }
 
-  private async dispatch(job: MaintenanceJobName): Promise<number> {
+  private async dispatch(
+    job: MaintenanceJobName,
+  ): Promise<number | { removed: number; detail: string }> {
     switch (job) {
       case "purge-soft-deleted":
         return this.purgeSoftDeleted();
@@ -1183,7 +1192,10 @@ export class MaintenanceService {
    * adoption. Every pass is idempotent; a row repaired between the SELECT and
    * the lock is simply skipped.
    */
-  async sweepCommentHistory(): Promise<number> {
+  async sweepCommentHistory(): Promise<{
+    removed: number;
+    detail: string;
+  }> {
     let reconciled = 0;
     for (;;) {
       const candidates = await this.prisma.$queryRaw<
@@ -1249,72 +1261,118 @@ export class MaintenanceService {
       if (changedInPass === 0) break;
     }
 
-    await this.repairCommentHistoryActivity();
-    return reconciled;
+    const activity = await this.repairCommentHistoryActivity();
+    return {
+      removed: reconciled + activity.filled + activity.stripped,
+      detail:
+        `${reconciled} comments reconciled; ` +
+        `${activity.filled} Activity links filled; ` +
+        `${activity.stripped} snapshots stripped`,
+    };
   }
 
   /**
    * The Activity half of the history sweep: fill typed comment ids from a
    * verified legacy link and strip post-cutover text that no revision backs.
-   * Both statements run in bounded batches; neither touches a confirmed
-   * pre-cutover snapshot.
+   * Candidates are re-checked under the same board-write lock the purge and
+   * writers take, so a concurrent hard delete cannot interleave between the
+   * query and the update. Neither statement touches a confirmed pre-cutover
+   * snapshot.
    */
-  private async repairCommentHistoryActivity(): Promise<void> {
-    // Bounded passes: a live database drains each statement to zero, while a
-    // faulty batch predicate cannot turn one sweep into an endless loop.
+  private async repairCommentHistoryActivity(): Promise<{
+    filled: number;
+    stripped: number;
+  }> {
+    let filled = 0;
     for (let pass = 0; pass < 200; pass += 1) {
-      const filled = await this.prisma.$executeRaw(Prisma.sql`
-        WITH batch AS (
-          SELECT a."id"
-            FROM "Activity" a
-            JOIN "Comment" c ON c."id" = a."details"->>'commentId'
-            JOIN "Card" card ON card."id" = c."cardId"
-            JOIN "Column" col ON col."id" = card."columnId"
-           WHERE a."commentId" IS NULL
-             AND a."type" IN ('comment_added', 'comment_updated', 'comment_deleted')
-             AND jsonb_typeof(a."details") = 'object'
-             AND a."details" ? 'commentId'
-             AND a."cardId" = c."cardId"
-             AND a."boardId" = col."boardId"
-           LIMIT 500
-        )
-        UPDATE "Activity" a
-           SET "commentId" = a."details"->>'commentId'
-          FROM batch
-         WHERE a."id" = batch."id"
+      const candidates = await this.prisma.$queryRaw<
+        Array<{ id: string; boardId: string }>
+      >(Prisma.sql`
+        SELECT a."id", a."boardId"
+          FROM "Activity" a
+          JOIN "Comment" c ON c."id" = a."details"->>'commentId'
+          JOIN "Card" card ON card."id" = c."cardId"
+          JOIN "Column" col ON col."id" = card."columnId"
+         WHERE a."commentId" IS NULL
+           AND a."type" IN ('comment_added', 'comment_updated', 'comment_deleted')
+           AND jsonb_typeof(a."details") = 'object'
+           AND jsonb_typeof(a."details"->'commentId') = 'string'
+           AND a."cardId" = c."cardId"
+           AND a."boardId" = col."boardId"
+         LIMIT 500
       `);
-      if (filled === 0) break;
+      if (candidates.length === 0) break;
+      const changed = await this.prisma.$transaction(
+        async (tx) => {
+          await lockBoardWrites(
+            tx,
+            candidates.map((row) => row.boardId),
+          );
+          return Number(
+            await tx.$executeRaw(Prisma.sql`
+              UPDATE "Activity"
+                 SET "commentId" = "details"->>'commentId'
+               WHERE "id" IN (${Prisma.join(candidates.map((row) => row.id))})
+                 AND "commentId" IS NULL
+                 AND jsonb_typeof("details"->'commentId') = 'string'
+            `),
+          );
+        },
+        { timeout: 30_000 },
+      );
+      filled += changed;
+      if (changed === 0) break;
     }
 
+    let stripped = 0;
     for (let pass = 0; pass < 200; pass += 1) {
-      const stripped = await this.prisma.$executeRaw(Prisma.sql`
-        WITH batch AS (
-          SELECT a."id"
-            FROM "Activity" a
-            JOIN "Comment" c
-              ON c."id" = COALESCE(a."commentId", a."details"->>'commentId')
-            LEFT JOIN "CommentRevision" r
-              ON r."id" = a."details"->>'revisionId'
-             AND r."commentId" = c."id"
-           WHERE a."type" = 'comment_updated'
-             AND a."createdAt" >= c."historyCutoverAt"
-             AND (a."details" ? 'text'
-                  OR a."details" ? 'beforeText'
-                  OR a."details" ? 'afterText')
-             AND (
-               r."id" IS NULL
-               OR r."beforeText" IS DISTINCT FROM a."details"->>'beforeText'
-               OR r."afterText" IS DISTINCT FROM a."details"->>'afterText'
-             )
-           LIMIT 500
-        )
-        UPDATE "Activity" a
-           SET "details" = a."details" - 'text' - 'beforeText' - 'afterText'
-          FROM batch
-         WHERE a."id" = batch."id"
+      const candidates = await this.prisma.$queryRaw<
+        Array<{ id: string; boardId: string }>
+      >(Prisma.sql`
+        SELECT a."id", a."boardId"
+          FROM "Activity" a
+          JOIN "Comment" c
+            ON c."id" = COALESCE(a."commentId", a."details"->>'commentId')
+          LEFT JOIN "CommentRevision" r
+            ON r."id" = a."details"->>'revisionId'
+           AND r."commentId" = c."id"
+         WHERE a."type" = 'comment_updated'
+           AND a."createdAt" >= c."historyCutoverAt"
+           AND (a."details" ? 'text'
+                OR a."details" ? 'beforeText'
+                OR a."details" ? 'afterText')
+           AND (
+             r."id" IS NULL
+             OR r."beforeText" IS DISTINCT FROM a."details"->>'beforeText'
+             OR r."afterText" IS DISTINCT FROM a."details"->>'afterText'
+           )
+         LIMIT 500
       `);
-      if (stripped === 0) break;
+      if (candidates.length === 0) break;
+      const changed = await this.prisma.$transaction(
+        async (tx) => {
+          await lockBoardWrites(
+            tx,
+            candidates.map((row) => row.boardId),
+          );
+          return Number(
+            await tx.$executeRaw(Prisma.sql`
+              UPDATE "Activity"
+                 SET "details" = "details" - 'text' - 'beforeText' - 'afterText'
+               WHERE "id" IN (${Prisma.join(candidates.map((row) => row.id))})
+                 AND ("details" ? 'text'
+                      OR "details" ? 'beforeText'
+                      OR "details" ? 'afterText')
+            `),
+          );
+        },
+        { timeout: 30_000 },
+      );
+      stripped += changed;
+      if (changed === 0) break;
     }
+
+    return { filled, stripped };
   }
 
   /**

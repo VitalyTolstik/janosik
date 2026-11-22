@@ -1796,10 +1796,16 @@ export interface AdminObservabilityDto {
   };
   /** TASK-185.6 §3.5: counts and text bytes only — never comment text. */
   commentHistory: {
+    /** False when the aggregate queries failed or timed out; values are zeros. */
+    available: boolean;
     revisions: { count: number; bytes: number };
     activity: { count: number; bytes: number };
-    /** Revision rows removed by the 50-per-comment window (all time). */
-    trimmedRevisions: number;
+    /**
+     * Derived from `lastRevisionNumber - 50`; it counts every number issued
+     * beyond the window, including chains later erased, so it is not an exact
+     * per-trim event counter.
+     */
+    derivedTrimmedRevisions: number;
     incompleteComments: number;
     reasons: {
       legacy_cutover: number;
@@ -1807,7 +1813,7 @@ export interface AdminObservabilityDto {
       gdpr_erase: number;
       writer_gap: number;
     };
-    /** Comments over the 4 MB revision / 6 MB Activity text budgets. */
+    /** Comments over the 4,000,000 / 6,000,000-byte text budgets. */
     overBudget: { revisions: number; activity: number };
   };
   health: Array<{ name: string; ok: boolean; detail: string }>;

@@ -303,7 +303,8 @@ are kept. Older rows and the Activity copies that belong to them are removed
 together, and the comment is marked `revision_limit`; a comment whose history
 is incomplete for any reason (`legacy_cutover`, `revision_limit`, `gdpr_erase`
 or `writer_gap`) keeps that reason until a more severe one replaces it. The raw
-UTF-8 text budgets are 4 MB in revisions and 6 MB in their Activity copies per
+UTF-8 text budgets are 4,000,000 bytes (4 MB) in revisions and 6,000,000
+bytes (6 MB) in their Activity copies per
 comment; they are reported, not enforced by deleting a live chain. A normal
 `sweep-activity` run may remove old Activity before the revisions, which is
 safe: revisions are independent. `sweep-comment-history` reconciles a comment
@@ -507,6 +508,16 @@ every translation, not just the source text. Row actions:
 - The `Biggest tables` table lists up to 12 tables with row counts and sizes.
 - The health panel lists `database` (`SELECT 1` and its latency), `realtime`
   (board channels) and `maintenance` (on or off).
+- The `Comment history` panel reports saved revisions and their UTF-8 text
+  bytes, related Activity rows and bytes, revisions beyond the latest 50
+  (derived from the monotonic counter, not an exact trim-event count),
+  incomplete histories broken down by `legacy_cutover`, `revision_limit`,
+  `gdpr_erase` and `writer_gap`, and the number of comments over the
+  4,000,000-byte revision / 6,000,000-byte Activity text budgets. It never
+  collects comment text. These six aggregates scan large tables, so the
+  admin-only response is cached for 30 seconds and bounded by a 10-second
+  transaction timeout; on failure the panel says the metrics are unavailable
+  and shows dashes instead of healthy zeros.
 
 ## The user-facing announcements banner
 
