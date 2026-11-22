@@ -60,7 +60,8 @@ views; those views otherwise keep their existing behaviour.
   The checkbox on a card or table row does the same, and Shift-click extends a
   range across columns. In the table the range follows the visible sort order,
   not the underlying board order. `X` selects the card under the `J`/`K`
-  keyboard cursor; `Ctrl/⌘+A` selects all visible cards.
+  keyboard cursor; `Ctrl/⌘+A` turns Select mode on when needed and selects all
+  visible cards.
 - The bar at the bottom shows the count and the available actions: move to a
   column, add or remove a label, assign a member, archive or delete. Archive
   and delete ask for confirmation.

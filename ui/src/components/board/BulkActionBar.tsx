@@ -229,6 +229,29 @@ export function BulkActionBar() {
     if (focusSurvivingBarControl(target)) pendingBarFocusRef.current = null;
   });
 
+  // Keep the fixed toast stack above the in-flow result bar. The bar can
+  // wrap to several rows on phones, so measure it and publish the reserved
+  // height as a CSS variable consumed by the toast viewport.
+  useEffect(() => {
+    const root = document.documentElement;
+    const bar = barRef.current;
+    if (!visible || bar === null) {
+      root.style.removeProperty("--janosik-bulk-bar-inset");
+      return;
+    }
+    const update = () => {
+      const height = Math.ceil(bar.getBoundingClientRect().height);
+      root.style.setProperty("--janosik-bulk-bar-inset", `${height + 12}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--janosik-bulk-bar-inset");
+    };
+  }, [board?.id, visible]);
+
   const resetResults = useCallback(() => {
     setFailures((previous) => (previous.length === 0 ? previous : []));
     setLastRun((previous) => (previous === null ? previous : null));
@@ -297,7 +320,9 @@ export function BulkActionBar() {
   }, [busy, selection.count, t, visible]);
 
   useEffect(() => {
-    if (!visible || readOnly) return;
+    // Listen while the board/table can select (so Ctrl+A can enter the mode)
+    // and while any result bar is visible in Calendar/Watch (Escape dismiss).
+    if (readOnly || (!visible && !selection.enabled)) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
       if (isEditableTarget(event.target) || isOverlayOpen()) return;
@@ -320,10 +345,12 @@ export function BulkActionBar() {
       }
       if (
         busy === null &&
+        selection.enabled &&
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === "a"
       ) {
         event.preventDefault();
+        if (!selection.mode) selection.setMode(true);
         selection.selectAllVisible();
       }
     };

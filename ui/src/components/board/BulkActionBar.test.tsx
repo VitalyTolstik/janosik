@@ -518,6 +518,45 @@ describe("bulk card actions", () => {
     );
   });
 
+  it("reserves toast space above the visible result bar", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    expect(
+      document.documentElement.style.getPropertyValue(
+        "--janosik-bulk-bar-inset",
+      ),
+    ).toBe("");
+    await enterSelectionMode(user);
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue(
+          "--janosik-bulk-bar-inset",
+        ),
+      ).not.toBe(""),
+    );
+    await user.click(screen.getByTestId("bulk-select-toggle"));
+    await waitFor(() =>
+      expect(
+        document.documentElement.style.getPropertyValue(
+          "--janosik-bulk-bar-inset",
+        ),
+      ).toBe(""),
+    );
+  });
+
+  it("Ctrl+A enters selection mode and selects every visible card", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    expect(screen.queryByTestId("bulk-bar")).toBeNull();
+    await user.keyboard("{Control>}a{/Control}");
+    expect(screen.getByTestId("bulk-bar")).toBeVisible();
+    expect(screen.getByTestId("bulk-select-toggle")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 selected");
+  });
+
   it("clears the selection when Select is switched off", async () => {
     const user = userEvent.setup();
     tree(<SelectionHarness />);

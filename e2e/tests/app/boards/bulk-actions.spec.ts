@@ -5,6 +5,18 @@ function cardTitles(page: import("@playwright/test").Page, title: string) {
   return page.getByTestId("card-title").filter({ hasText: title });
 }
 
+function overlaps(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) {
+  return !(
+    a.x + a.width <= b.x ||
+    b.x + b.width <= a.x ||
+    a.y + a.height <= b.y ||
+    b.y + b.height <= a.y
+  );
+}
+
 test("selects cards across columns, moves them and undoes one step", async ({
   page,
   board,
@@ -89,6 +101,61 @@ test("reports a per-card WIP failure and keeps successful moves", async ({
     snapshot.columns.find((column) => column.id === todo)?.cardIds,
   ).toHaveLength(1);
 });
+
+for (const width of [390, 1920] as const) {
+  test(`toasts never cover the result bar at ${width} px`, async ({
+    page,
+    board,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const todo = await board.column("Todo");
+    const doing = await board.column("Doing");
+    await board.command({
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: doing,
+      wipLimit: 1,
+    });
+    await board.card(todo, "Alpha");
+    await board.card(todo, "Bravo");
+    await board.open(page);
+
+    await page.getByTestId("bulk-select-toggle").click();
+    await cardTitles(page, "Alpha").click();
+    await cardTitles(page, "Bravo").click();
+    await page.getByTestId("bulk-move").click();
+    await page.getByTestId(`bulk-move-${doing}`).click();
+
+    await expect(page.getByTestId("bulk-errors")).toBeVisible();
+    await expect(page.getByTestId("bulk-failure-list")).toBeVisible();
+    await expect(page.locator(".janosik-toast").first()).toBeVisible();
+
+    await expect
+      .poll(async () => {
+        const dismiss = await page.getByTestId("bulk-dismiss").boundingBox();
+        const failureList = await page
+          .getByTestId("bulk-failure-list")
+          .boundingBox();
+        if (!dismiss || !failureList) return -1;
+        const toasts = await page
+          .locator(".janosik-toast")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const rect = node.getBoundingClientRect();
+              return {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+              };
+            }),
+          );
+        return toasts.filter(
+          (toast) => overlaps(toast, dismiss) || overlaps(toast, failureList),
+        ).length;
+      })
+      .toBe(0);
+  });
+}
 
 for (const width of [390, 768] as const) {
   test(`bulk actions keep 44 px targets at ${width} px`, async ({

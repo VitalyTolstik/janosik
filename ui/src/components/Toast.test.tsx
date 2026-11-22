@@ -64,7 +64,7 @@ describe("Toast", () => {
     const region = screen.getByRole("region", { name: "Notifications" });
     expect(region.className).toContain("janosik-toast-region");
     expect(region.className).toContain(
-      "bottom-[calc(1rem_+_env(safe-area-inset-bottom))]",
+      "bottom-[calc(1rem_+_env(safe-area-inset-bottom)_+_var(--janosik-bulk-bar-inset,0px))]",
     );
     // The surface-aware offset is a bottom lift, not a top move: staying at
     // the top covered the phone sheet's close button.

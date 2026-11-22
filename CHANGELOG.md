@@ -19,8 +19,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   WIP limits, column caps and the per-card label cap are enforced and undo
   stays one step per card. A running batch and its result stay visible after
   switching to Calendar or Watch until dismissed, and cancelling keeps failed
-  and never-processed cards selected. VIEWERs and archived boards keep the
-  read-only surface. EN/RU copy, the user guide,
+  and never-processed cards selected. The toast stack is lifted above the
+  visible result bar, so Dismiss and the failure list stay reachable. VIEWERs
+  and archived boards keep the read-only surface. EN/RU copy, the user guide,
   component tests and focused e2e coverage are included.
 
 - TASK-185.5/185.6 comment history in the admin panel and closeout. Every
