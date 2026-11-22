@@ -104,6 +104,20 @@ describe("comment mentions (TASK-177.12)", () => {
         ["- outer", "", "  - ~~~", `    ${token}`, "    ~~~"].join("\n"),
       ),
     ).toEqual([]);
+    // A deeper list/task prefix cannot close a top-level fence early.
+    expect(parseCommentMentions(`~~~\n- ~~~\n${token}\n~~~`)).toEqual([]);
+    expect(parseCommentMentions(`~~~\n- [ ] ~~~\n${token}\n~~~`)).toEqual([]);
+  });
+
+  it("closes a list fence on an indented or marker line without over-matching", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual([]);
+    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
+    expect(parseCommentMentions(`- ~~~\n  ${token}\n- ~~~`)).toEqual([]);
+    // `[ ]` without an open list item is not a task prefix.
+    expect(parseCommentMentions(`> [ ] ~~~\n${token}`)).toEqual([
+      expect.objectContaining({ userId: "user-1" }),
+    ]);
   });
 
   it("chains interleaved fence containers and leaves following mentions live", () => {

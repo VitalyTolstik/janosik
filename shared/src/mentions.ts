@@ -57,6 +57,8 @@ interface FencePrefixes {
   content: string;
   /** Blockquote depth after the whole interleaved prefix chain. */
   quoteDepth: number;
+  /** List-item + task-marker prefixes stripped from the chain. */
+  prefixCount: number;
 }
 
 /**
@@ -67,8 +69,9 @@ interface FencePrefixes {
 function stripFencePrefixes(line: string): FencePrefixes {
   let content = line.trimStart();
   let quoteDepth = 0;
+  let prefixCount = 0;
   let listOpen = false;
-  for (;;) {
+  for (let guard = 0; guard < 64; guard += 1) {
     const quote = /^ {0,3}> ?/.exec(content);
     if (quote !== null) {
       quoteDepth += 1;
@@ -78,17 +81,19 @@ function stripFencePrefixes(line: string): FencePrefixes {
     const list = LIST_MARKER_PREFIX.exec(content);
     if (list !== null) {
       listOpen = true;
+      prefixCount += 1;
       content = content.slice(list[0].length).trimStart();
       continue;
     }
     const task = listOpen ? TASK_MARKER_PREFIX.exec(content) : null;
     if (task !== null) {
+      prefixCount += 1;
       content = content.slice(task[0].length).trimStart();
       continue;
     }
     break;
   }
-  return { content, quoteDepth };
+  return { content, quoteDepth, prefixCount };
 }
 
 /** Expand tabs to their visual 4-column stops before parsing indentation. */
@@ -120,6 +125,7 @@ function fenceOpener(line: string): {
   char: string;
   length: number;
   quoteDepth: number;
+  prefixCount: number;
 } | null {
   const prefixes = stripFencePrefixes(line);
   const match = /^(`{3,}|~{3,})(.*)$/.exec(prefixes.content);
@@ -131,6 +137,7 @@ function fenceOpener(line: string): {
     char: run[0]!,
     length: run.length,
     quoteDepth: prefixes.quoteDepth,
+    prefixCount: prefixes.prefixCount,
   };
 }
 
@@ -139,9 +146,13 @@ function fenceCloser(
   char: string,
   length: number,
   quoteDepth: number,
+  prefixCount: number,
 ): boolean {
   const prefixes = stripFencePrefixes(line);
   if (prefixes.quoteDepth !== quoteDepth) return false;
+  // A list-contained fence may close on a thinner indented line, but a
+  // top-level fence must not close on a list-prefixed code line.
+  if (prefixes.prefixCount > prefixCount) return false;
   const match = /^(`{3,}|~{3,})\s*$/.exec(prefixes.content);
   return match !== null && match[1]![0] === char && match[1]!.length >= length;
 }
@@ -158,6 +169,7 @@ function maskCodeBlocks(chars: string[]): void {
   let fenceChar: string | null = null;
   let fenceLength = 0;
   let fenceQuoteDepth = 0;
+  let fencePrefixCount = 0;
   while (offset < text.length) {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
@@ -165,13 +177,22 @@ function maskCodeBlocks(chars: string[]): void {
     const expanded = expandTabs(line);
 
     if (fenceChar !== null) {
-      // A closer must have the same prefix-chain quote depth as the opener;
-      // a deeper quoted fence line is code content, never a closer.
-      if (fenceCloser(expanded, fenceChar, fenceLength, fenceQuoteDepth)) {
+      // A closer must have the same prefix-chain quote depth and no more
+      // list/task prefixes than the opener; otherwise it is code content.
+      if (
+        fenceCloser(
+          expanded,
+          fenceChar,
+          fenceLength,
+          fenceQuoteDepth,
+          fencePrefixCount,
+        )
+      ) {
         maskRange(chars, offset, end);
         fenceChar = null;
         fenceLength = 0;
         fenceQuoteDepth = 0;
+        fencePrefixCount = 0;
       } else {
         maskRange(chars, offset, end);
       }
@@ -184,6 +205,7 @@ function maskCodeBlocks(chars: string[]): void {
       fenceChar = opener.char;
       fenceLength = opener.length;
       fenceQuoteDepth = opener.quoteDepth;
+      fencePrefixCount = opener.prefixCount;
       maskRange(chars, offset, end);
     }
     offset = end;
