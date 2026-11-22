@@ -283,9 +283,11 @@ to every account equally, each with its own counter. Routes under `/api/v1/admin
 The retention window is the number of days before the purge may remove
 soft-deleted rows (1 to 3650, default 30). The page offers the 30/90/365
 presets and shows how many cards, comments, attachments and columns are
-currently eligible. The counts follow the number in the field, including an
-unsaved draft, so the panel never counts with one window while promising
-another (`GET /api/v1/admin/retention?retentionDays=365`). The same window
+currently eligible. Once the panel is ready, the counts follow the number in
+the field, including an unsaved draft (`GET /api/v1/admin/retention?retentionDays=365`).
+While that request is pending the page shows a loading state; if it fails it
+shows an error with Retry and keeps Purge disabled. It does not present stale
+counts or an unconfigured backup status as the current answer. The same window
 applies to the command log, activity
 feed, ended agent sessions and approvals past their decision or apply window.
 Age runs from the session end, the rejection or cancellation decision,

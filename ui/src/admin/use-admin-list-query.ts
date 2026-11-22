@@ -110,6 +110,7 @@ export function useAdminListQuery<T>(
   const urlKey = adminListQueryKey(parsed);
   const lastUrlKey = useRef(urlKey);
   const applyingFromUrl = useRef(false);
+  const lastReplaceToken = useRef(list.historyReplaceToken);
 
   // URL → hook. Our own writes set `lastUrlKey` before navigating, so this
   // effect only reacts to back/forward and deep links.
@@ -152,10 +153,15 @@ export function useAdminListQuery<T>(
       state.offset === parsed.offset &&
       adminFiltersKey(state.filters) === adminFiltersKey(parsed.filters) &&
       state.search !== parsed.search;
+    // An automatic out-of-range clamp replaces the invalid entry; a Back
+    // press must not return to it and clamp again.
+    const replaceThisWrite =
+      list.historyReplaceToken !== lastReplaceToken.current;
+    if (replaceThisWrite) lastReplaceToken.current = list.historyReplaceToken;
 
     lastUrlKey.current = listKey;
     setParams((current) => writeAdminListQuery(current, state, queryOptions), {
-      replace: onlySearch,
+      replace: onlySearch || replaceThisWrite,
     });
     // The URL write must run once per list-state change, not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps

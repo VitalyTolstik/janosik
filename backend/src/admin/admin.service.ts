@@ -3637,10 +3637,14 @@ export class AdminService {
     // the destructive retention control is OWNER-only like the other ops
     // writes.
     this.assertOwner(admin);
-    const affected = await this.maintenance.purgeSoftDeleted(retentionDays);
+    // Resolve the effective window once: the maintenance service falls back to
+    // PURGE_AFTER_DAYS, so the audit row must record the same value it uses.
+    const days =
+      retentionDays ?? (await this.ops.retentionDays()) ?? env.PURGE_AFTER_DAYS;
+    const affected = await this.maintenance.purgeSoftDeleted(days);
     await this.audit(admin, "retention.changed", "retention", null, {
       purged: affected,
-      retentionDays: retentionDays ?? (await this.ops.retentionDays()) ?? 30,
+      retentionDays: days,
     });
     return { affected };
   }

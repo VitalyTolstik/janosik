@@ -579,6 +579,13 @@ export class FakeAdminServer {
     },
   };
 
+  /**
+   * QA review: simulated soft-deleted rows by age in days. When non-empty,
+   * `/admin/retention` derives `purgeable.cards` from the requested window and
+   * the purge endpoint really removes only rows older than that window.
+   */
+  retentionDeletedAges: number[] = [];
+
   /** Observability snapshot (TASK-64). */
   observability: AdminObservabilityDto = {
     version: "0.1.0",
@@ -1983,15 +1990,39 @@ export class FakeAdminServer {
 
     // ---------------------------------------------- data/compliance (TASK-63)
     if (path === "/admin/retention" && method === "GET") {
-      const draft = Number(url.searchParams.get("retentionDays"));
-      return this.json(
-        Number.isFinite(draft) && draft > 0
-          ? { ...this.retention, retentionDays: draft }
-          : this.retention,
-      );
+      const requested = Number(url.searchParams.get("retentionDays"));
+      const days =
+        Number.isFinite(requested) && requested > 0
+          ? requested
+          : (this.ops.retentionDays ?? 30);
+      const purgeable =
+        this.retentionDeletedAges.length > 0
+          ? {
+              ...this.retention.purgeable,
+              cards: this.retentionDeletedAges.filter((age) => age > days)
+                .length,
+            }
+          : this.retention.purgeable;
+      return this.json({
+        ...this.retention,
+        retentionDays: days,
+        purgeable,
+      });
     }
     if (path === "/admin/retention/purge" && method === "POST") {
-      return this.json({ affected: 3 }, 201);
+      const requested = Number(
+        (jsonBody as { retentionDays?: number } | null)?.retentionDays ??
+          this.ops.retentionDays ??
+          30,
+      );
+      const before = this.retentionDeletedAges.length;
+      this.retentionDeletedAges = this.retentionDeletedAges.filter(
+        (age) => age <= requested,
+      );
+      return this.json(
+        { affected: before - this.retentionDeletedAges.length },
+        201,
+      );
     }
     if (path === "/admin/maintenance/run" && method === "POST") {
       const job = (jsonBody as { job?: string } | null)?.job ?? "all";

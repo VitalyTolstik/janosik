@@ -2,12 +2,21 @@ import type { ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import type { AdminPage } from "@janosik/shared";
+import type { AdminListParams } from "./admin-client";
 import { useAdminListQuery } from "./use-admin-list-query";
 
-function setup(url: string, preceding?: string) {
-  const fetcher = vi
+interface Row {
+  id: string;
+}
+
+function setup(
+  url: string,
+  preceding?: string,
+  fetcher: (params: AdminListParams) => Promise<AdminPage<Row>> = vi
     .fn()
-    .mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    .mockResolvedValue({ items: [], total: 120, limit: 50, offset: 0 }),
+) {
   const hook = renderHook(
     () => ({
       list: useAdminListQuery(fetcher),
@@ -106,6 +115,58 @@ describe("URL-backed admin lists", () => {
     });
   });
 
+  it("keeps a non-multiple offset inside the first page (QA-A4)", async () => {
+    const fetcher = vi
+      .fn<(params: AdminListParams) => Promise<AdminPage<Row>>>()
+      .mockResolvedValue({
+        items: [{ id: "u-1" }],
+        total: 25,
+        limit: 50,
+        offset: 2,
+      });
+    const { result } = setup("/admin/users?offset=2", undefined, fetcher);
+    await waitFor(() => expect(result.current.list.loading).toBe(false));
+
+    // offset=2 is page 1 of 1, not an out-of-range offset, so it must survive.
+    expect(result.current.list.offset).toBe(2);
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 2, limit: 50 }),
+    );
+    expect(
+      new URLSearchParams(result.current.location.search).get("offset"),
+    ).toBe("2");
+  });
+
+  it("replaces an out-of-range offset instead of pushing a back-trap entry", async () => {
+    const fetcher = vi
+      .fn<(params: AdminListParams) => Promise<AdminPage<Row>>>()
+      .mockResolvedValue({
+        items: [],
+        total: 25,
+        limit: 25,
+        offset: 25,
+      });
+    const { result } = setup(
+      "/admin/users?offset=25&limit=25",
+      "/admin/users?search=previous",
+      fetcher,
+    );
+
+    await waitFor(() => expect(result.current.list.offset).toBe(0));
+    await waitFor(() =>
+      expect(
+        new URLSearchParams(result.current.location.search).get("offset"),
+      ).toBeNull(),
+    );
+
+    // If the clamp pushed an entry, Back would return to offset=25 and clamp
+    // again. Replacing it lets Back reach the previous view.
+    act(() => result.current.navigate(-1));
+    await waitFor(() =>
+      expect(result.current.location.search).toContain("search=previous"),
+    );
+  });
+
   it("preserves explicit URL bounds while paging", async () => {
     const { result, fetcher } = setup(
       "/admin/audit?tab=commands&from=0&to=123",
@@ -123,7 +184,7 @@ describe("URL-backed admin lists", () => {
     expect(fetcher).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 50, from: undefined }),
     );
-    expect(fetcher.mock.lastCall?.[0]).not.toHaveProperty("to");
+    expect(vi.mocked(fetcher).mock.lastCall?.[0]).not.toHaveProperty("to");
   });
 
   it("sends the announcement alias as disabled and replaces the URL", async () => {
@@ -163,7 +224,7 @@ describe("URL-backed admin lists", () => {
     );
     act(() => result.current.navigate(1));
     await waitFor(() => expect(result.current.list.filters.labelId).toBeNull());
-    expect(fetcher.mock.lastCall?.[0]).not.toHaveProperty("labelId");
+    expect(vi.mocked(fetcher).mock.lastCall?.[0]).not.toHaveProperty("labelId");
   });
 
   it("keeps debounced search in the current history entry", async () => {

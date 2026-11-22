@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { AdminAuthProvider, useAdminAuth } from "./AdminAuthContext";
 import { AdminLoginPage } from "./AdminLoginPage";
 import { AdminShell } from "./AdminShell";
@@ -91,9 +92,35 @@ function LegacyRedirect({ to, tab }: { to: string; tab?: string }) {
 
 function AdminGate() {
   const t = useAdminT();
-  const { status, recovering } = useAdminAuth();
+  const { status, recovering, recoveryFailed, retryRefresh, signIn } =
+    useAdminAuth();
 
   if (status === "boot") {
+    if (recoveryFailed !== null) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+          <p
+            className="max-w-sm text-xs text-danger"
+            data-testid="admin-boot-failed"
+            role="alert"
+          >
+            {t(
+              recoveryFailed === "rateLimited"
+                ? "admin.boot.failed.rateLimited"
+                : "admin.boot.failed.unavailable",
+            )}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button size="sm" onClick={retryRefresh}>
+              {t("admin.common.retry")}
+            </Button>
+            <Button size="sm" variant="outline" onClick={signIn}>
+              {t("admin.boot.signIn")}
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <Loader2
@@ -106,7 +133,11 @@ function AdminGate() {
             data-testid="admin-boot-recovering"
             role="status"
           >
-            {t("admin.boot.recovering")}
+            {t(
+              recovering === "rateLimited"
+                ? "admin.boot.recovering.rateLimited"
+                : "admin.boot.recovering.unavailable",
+            )}
           </p>
         ) : null}
       </div>

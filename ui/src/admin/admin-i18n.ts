@@ -228,6 +228,8 @@ const en = {
   "admin.userDetail.reset.done": "Temporary password issued",
   "admin.userDetail.reset.oneTime":
     "Hand this password over now — it will not be shown again.",
+  "admin.userDetail.reset.timeout":
+    "The reset request timed out. Close this dialog and try again; if the old password stops working, reset it once more.",
   "admin.userDetail.resend.done": "Verification code sent",
   "admin.userDetail.promote.done": "Master account created",
   "admin.userDetail.exported": "Export downloaded",
@@ -308,6 +310,10 @@ const en = {
     "Purge uses this {days}-day window right now. Save first to make it the default — this run never falls back to the saved value.",
   "admin.ops.retention.purgeable":
     "{cards} cards · {comments} comments · {attachments} attachments · {columns} columns",
+  "admin.ops.retention.loading":
+    "Loading eligible rows and backup status for this window…",
+  "admin.ops.retention.loadError":
+    "Could not load the retention status for this window.",
   "admin.ops.retention.purge": "Purge now",
   "admin.ops.retention.confirm.title": "Purge soft-deleted data?",
   "admin.ops.retention.confirm.body":
@@ -564,8 +570,15 @@ const en = {
   "admin.demo.cleanupPending":
     "Cleanup is still pending because some demo rows have dependencies. Check the board and retry cleanup.",
 
-  "admin.boot.recovering":
-    "The master session check was rate-limited. Your session is still valid; retrying automatically…",
+  "admin.boot.recovering.rateLimited":
+    "The session check was rate-limited. Your session is still valid; retrying automatically…",
+  "admin.boot.recovering.unavailable":
+    "Could not check your session (server or network unavailable). Retrying automatically…",
+  "admin.boot.failed.rateLimited":
+    "The session check is still rate-limited. Your session may be valid — retry in a moment or sign in again.",
+  "admin.boot.failed.unavailable":
+    "Could not check your session. The server or network may be unavailable — retry or sign in again.",
+  "admin.boot.signIn": "Go to sign in",
   "admin.login.title": "Sign in to Janosik",
   "admin.login.subtitle": "Master console",
   "admin.login.backToSite": "Back to site",
@@ -1762,6 +1775,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.userDetail.reset.done": "Временный пароль выдан",
   "admin.userDetail.reset.oneTime":
     "Передайте этот пароль сейчас — он больше не будет показан.",
+  "admin.userDetail.reset.timeout":
+    "Запрос на сброс не ответил вовремя. Закройте окно и повторите; если старый пароль перестал работать, сбросьте его ещё раз.",
   "admin.userDetail.resend.done": "Код подтверждения отправлен",
   "admin.userDetail.promote.done": "Мастер-аккаунт создан",
   "admin.userDetail.exported": "Выгрузка скачана",
@@ -1842,9 +1857,13 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention.olderThan":
     "Под очистку попадают только уже удалённые элементы старше {days} дней.",
   "admin.ops.retention.draftHint":
-    "Очистка использует это окно в {days} дней прямо сейчас. Нажмите «Сохранить», чтобы сделать его значением по умолчанию — этот запуск не берёт сохранённое значение.",
+    "Очистка использует это окно в {days} дней прямо сейчас. Нажмите «Сохранить», чтобы сделать его значением по умолчанию — этот запуск не использует сохранённое значение.",
   "admin.ops.retention.purgeable":
     "{cards} карточек · {comments} комментариев · {attachments} вложений · {columns} колонок",
+  "admin.ops.retention.loading":
+    "Загружаем подходящие строки и статус бэкапов для этого окна…",
+  "admin.ops.retention.loadError":
+    "Не удалось загрузить статус хранения для этого окна.",
   "admin.ops.retention.purge": "Очистить",
   "admin.ops.retention.confirm.title": "Очистить soft-deleted данные?",
   "admin.ops.retention.confirm.body":
@@ -2103,8 +2122,15 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.cleanupPending":
     "Очистка ещё не завершена: от некоторых демо-данных зависят другие записи. Проверьте доску и повторите очистку.",
 
-  "admin.boot.recovering":
-    "Проверка сессии мастера ограничена по частоте. Сессия ещё действительна; повторяем автоматически…",
+  "admin.boot.recovering.rateLimited":
+    "Превышен лимит проверок сессии. Сессия ещё действительна; повторяем автоматически…",
+  "admin.boot.recovering.unavailable":
+    "Не удалось проверить сессию (сервер или сеть недоступны). Повторяем автоматически…",
+  "admin.boot.failed.rateLimited":
+    "Проверки сессии всё ещё ограничены по частоте. Сессия может быть действительна — повторите через минуту или войдите заново.",
+  "admin.boot.failed.unavailable":
+    "Не удалось проверить сессию. Сервер или сеть могут быть недоступны — повторите или войдите заново.",
+  "admin.boot.signIn": "Перейти ко входу",
   "admin.login.title": "Вход в Janosik",
   "admin.login.subtitle": "Мастер-консоль",
   "admin.login.backToSite": "На сайт",

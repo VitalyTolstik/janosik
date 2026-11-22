@@ -574,6 +574,9 @@ describe("AdminApp", () => {
     const input = await screen.findByTestId("admin-ops-retention");
     fireEvent.change(input, { target: { value: "365" } });
     expect(await screen.findByTestId("admin-ops-retention-dirty")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
 
     fireEvent.click(screen.getByTestId("admin-ops-purge"));
     const dialog = await screen.findByRole("dialog");
@@ -612,6 +615,141 @@ describe("AdminApp", () => {
         ),
       ).toBe(true),
     );
+  });
+
+  it("varies retention counts by window and keeps data inside a 365-day draft (QA review)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    // One soft-deleted row that is 60 days old.
+    server.retentionDeletedAges = [60];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 1,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+
+    fireEvent.change(input, { target: { value: "365" } });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 0,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByTestId("admin-ops-purge"));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByTestId(
+        "admin-confirm-accept",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.path === "/admin/retention/purge" &&
+            (request.body as { retentionDays?: number }).retentionDays === 365,
+        ),
+      ).toBe(true),
+    );
+    // The 60-day row is inside the 365-day window and must survive.
+    expect(server.retentionDeletedAges).toEqual([60]);
+
+    // Moving back to the saved 30-day window makes it eligible.
+    fireEvent.change(input, { target: { value: "30" } });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 1,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByTestId("admin-ops-purge"));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByTestId(
+        "admin-confirm-accept",
+      ),
+    );
+    await waitFor(() => expect(server.retentionDeletedAges).toEqual([]));
+  });
+
+  it("does not claim zero rows or no backup directory when retention status fails (QA review)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    server.failNextStatuses.push({ path: "/admin/retention", status: 500 });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    expect(await screen.findByTestId("admin-ops-retention-error")).toBeTruthy();
+    expect(screen.queryByText(t("admin.ops.backups.none"))).toBeNull();
+    expect(screen.getByTestId("admin-ops-purge")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("admin-ops-retention-retry"));
+    expect(
+      await screen.findByTestId("admin-ops-retention-counts"),
+    ).toHaveTextContent(
+      t("admin.ops.retention.purgeable", {
+        cards: 0,
+        comments: 0,
+        attachments: 0,
+        columns: 0,
+      }),
+    );
+    expect(screen.getByText(t("admin.ops.backups.none"))).toBeTruthy();
+    expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled();
+  });
+
+  it("keeps an unsaved retention draft across sweeps and a flag failure (QA review)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    fireEvent.change(input, { target: { value: "365" } });
+    await screen.findByTestId("admin-ops-retention-dirty");
+    const retentionGets = () =>
+      server.requests.filter(
+        (request) =>
+          request.method === "GET" && request.path === "/admin/retention",
+      ).length;
+
+    let before = retentionGets();
+    fireEvent.click(screen.getByTestId("admin-ops-run-sweeps"));
+    await waitFor(() => expect(retentionGets()).toBeGreaterThan(before));
+    expect(input).toHaveValue("365");
+
+    server.failNext.push("/admin/flags/registration_open");
+    before = retentionGets();
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    await waitFor(() => expect(retentionGets()).toBeGreaterThan(before));
+    expect(input).toHaveValue("365");
   });
 
   it("previews a mail template with sample placeholder values", async () => {
@@ -779,6 +917,96 @@ describe("AdminApp", () => {
     ).toHaveTextContent("Temp-pass-123");
   });
 
+  it("guards the create-master secret while pending and clears it on reopen", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.click(await screen.findByTestId("admin-create-master"));
+    fireEvent.change(await screen.findByTestId("admin-master-email"), {
+      target: { value: "new-owner@example.com" },
+    });
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/admins",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-master-submit"));
+    await waitFor(() => expect(cancel).toBeDisabled());
+    expect(within(dialog).queryByTestId("dialog-close")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    release();
+    expect(await screen.findByTestId("admin-master-password")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("admin-master-done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Reopening starts clean: the previous one-time secret is gone.
+    fireEvent.click(screen.getByTestId("admin-create-master"));
+    expect(await screen.findByTestId("admin-master-email")).toHaveValue("");
+    expect(screen.queryByTestId("admin-master-password")).toBeNull();
+  });
+
+  it("guards the promote secret while pending and clears it on reopen", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/users/u-1/promote",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    const openDialog = async () => {
+      fireEvent.pointerDown(
+        await screen.findByTestId("admin-user-detail-actions"),
+        { button: 0 },
+      );
+      fireEvent.click(await screen.findByTestId("admin-user-promote"));
+    };
+    await openDialog();
+    const dialog = await screen.findByTestId("admin-promote-user-dialog");
+    fireEvent.change(within(dialog).getByTestId("admin-promote-user-input"), {
+      target: { value: "member@example.com" },
+    });
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-promote-user-submit"));
+    await waitFor(() => expect(cancel).toBeDisabled());
+    expect(within(dialog).queryByTestId("dialog-close")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByTestId("admin-promote-user-dialog")).toBeTruthy();
+
+    release();
+    expect(
+      await screen.findByTestId("admin-promote-password"),
+    ).toHaveTextContent("Temp-pass-123");
+    fireEvent.click(
+      within(dialog).getAllByRole("button", {
+        name: t("admin.common.close"),
+      })[0],
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("admin-promote-user-dialog")).toBeNull(),
+    );
+
+    await openDialog();
+    await screen.findByTestId("admin-promote-user-dialog");
+    expect(screen.queryByTestId("admin-promote-password")).toBeNull();
+  });
+
   it("surfaces a rejected login lockout as a dedicated message", async () => {
     const server = serverWith();
     server.sessionAlive = false;
@@ -822,7 +1050,6 @@ describe("AdminApp", () => {
 
     const sidebar = await screen.findByTestId("admin-sidebar");
     await waitFor(() => expect(sidebar).toHaveAttribute("inert"));
-    expect(sidebar).toHaveAttribute("aria-hidden", "true");
     // Icon-only controls keep an accessible name at phone widths.
     expect(
       screen.getByRole("button", { name: t("admin.search.title") }),
@@ -833,7 +1060,6 @@ describe("AdminApp", () => {
 
     fireEvent.click(screen.getByTestId("admin-sidebar-toggle"));
     await waitFor(() => expect(sidebar).not.toHaveAttribute("inert"));
-    expect(sidebar).not.toHaveAttribute("aria-hidden");
   });
 
   it("collapses the sidebar to an icon rail and remembers the choice", async () => {

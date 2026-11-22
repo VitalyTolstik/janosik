@@ -660,8 +660,14 @@ export function ConfirmDialog({
 }) {
   const t = useAdminT();
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
-      <DialogContent className="max-w-sm">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next || busy) return;
+        onClose();
+      }}
+    >
+      <DialogContent className="max-w-sm" hideClose={busy}>
         <DialogHeader>
           <DialogTitle className="text-sm">{title}</DialogTitle>
           <DialogDescription className="text-xs">{body}</DialogDescription>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,9 @@ import {
 } from "@janosik/shared";
 import { CharCount, Field } from "./ui";
 import { fieldError, isValid } from "./validation";
+
+/** QA review: a hung reset must fall back to a closable error state. */
+const RESET_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Creation dialogs for the generic entity pages (TASK-48): users (with the
@@ -549,36 +552,61 @@ export function ResetUserPasswordDialog({
   // QA-A2: while the one-time password is in flight the dialog must not be
   // dismissible — closing it would leave the account with an unknown password.
   const [busy, setBusy] = useState(false);
+  const requestRef = useRef(0);
 
-  // Fire the reset whenever a user is opened.
+  // Fire the reset whenever a user is opened. A generation guard plus a
+  // timeout/abort means a late or hung response can never keep the dialog
+  // trapped or reveal a secret from an older attempt.
   useEffect(() => {
     if (user === null) return;
+    const request = ++requestRef.current;
     let active = true;
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new Error("reset_timeout"));
+      }, RESET_REQUEST_TIMEOUT_MS);
+    });
     setPassword(null);
     setError(null);
     setCopied(false);
     setBusy(true);
-    adminApi
-      .resetUserPassword(user.id)
+    void Promise.race([
+      adminApi.resetUserPassword(user.id, { signal: controller.signal }),
+      timeout,
+    ])
       .then((result) => {
-        if (!active) return;
+        if (!active || requestRef.current !== request) return;
         setPassword(result.temporaryPassword);
         toast.success(t("admin.userDetail.reset.done"));
       })
       .catch(() => {
-        if (active) setError(t("admin.common.actionFailed"));
+        if (!active || requestRef.current !== request) return;
+        setError(
+          timedOut
+            ? t("admin.userDetail.reset.timeout")
+            : t("admin.common.actionFailed"),
+        );
       })
       .finally(() => {
-        if (active) setBusy(false);
+        clearTimeout(timer);
+        if (active && requestRef.current === request) setBusy(false);
       });
     return () => {
       active = false;
+      clearTimeout(timer);
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on user id
   }, [user?.id]);
 
   const close = () => {
     if (busy) return;
+    requestRef.current += 1;
     setPassword(null);
     onClose();
   };
@@ -628,7 +656,18 @@ export function ResetUserPasswordDialog({
               <p className="text-[11px] text-muted-foreground">
                 {t("admin.userDetail.reset.oneTime")}
               </p>
-              <Button size="sm" variant="outline" type="button" onClick={copy}>
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                aria-label={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                title={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                onClick={copy}
+              >
                 {copied ? (
                   <Check className="h-3.5 w-3.5" aria-hidden />
                 ) : (
@@ -777,8 +816,11 @@ export function PromoteUserDialog({
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const requestRef = useRef(0);
 
   const close = () => {
+    if (busy) return;
+    requestRef.current += 1;
     setTyped("");
     setPassword(null);
     setCopied(false);
@@ -787,18 +829,26 @@ export function PromoteUserDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!user || typed.trim().toLowerCase() !== user.email.toLowerCase())
+    if (
+      !user ||
+      busy ||
+      typed.trim().toLowerCase() !== user.email.toLowerCase()
+    )
       return;
+    const request = ++requestRef.current;
     setBusy(true);
     try {
       const result = await adminApi.promoteUser(user.id);
+      if (requestRef.current !== request) return;
       setPassword(result.temporaryPassword);
       toast.success(t("admin.userDetail.promote.done"));
       onDone();
     } catch {
-      toast.error(t("admin.common.actionFailed"));
+      if (requestRef.current === request) {
+        toast.error(t("admin.common.actionFailed"));
+      }
     } finally {
-      setBusy(false);
+      if (requestRef.current === request) setBusy(false);
     }
   };
 
@@ -851,7 +901,13 @@ export function PromoteUserDialog({
               />
             </Field>
             <DialogFooter className="gap-2">
-              <Button size="sm" type="button" variant="ghost" onClick={close}>
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={close}
+              >
                 {t("admin.common.cancel")}
               </Button>
               <Button
@@ -880,7 +936,18 @@ export function PromoteUserDialog({
               >
                 {password}
               </code>
-              <Button size="sm" variant="outline" type="button" onClick={copy}>
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                aria-label={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                title={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                onClick={copy}
+              >
                 {copied ? (
                   <Check className="h-3.5 w-3.5" aria-hidden />
                 ) : (

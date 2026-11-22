@@ -150,6 +150,7 @@ function CreateMasterDialog({
     email: string;
     password: string;
   } | null>(null);
+  const requestRef = useRef(0);
 
   const emailError = fieldError(t, email, { required: true, email: true });
   const nameError = fieldError(t, displayName, { max: 50 });
@@ -167,6 +168,8 @@ function CreateMasterDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    const request = ++requestRef.current;
     setBusy(true);
     setError(null);
     try {
@@ -175,6 +178,7 @@ function CreateMasterDialog({
         displayName: displayName.trim() || undefined,
         role: owner ? "OWNER" : "OPERATOR",
       });
+      if (requestRef.current !== request) return;
       toast.success(
         t("admin.masters.toast.created", { email: response.admin.email }),
       );
@@ -184,6 +188,7 @@ function CreateMasterDialog({
         password: response.temporaryPassword,
       });
     } catch (cause) {
+      if (requestRef.current !== request) return;
       if (cause instanceof ApiError && cause.status === 409) {
         setError(t("admin.masters.exists"));
       } else if (cause instanceof ApiError && cause.status === 403) {
@@ -192,11 +197,13 @@ function CreateMasterDialog({
         setError(t("admin.common.error"));
       }
     } finally {
-      setBusy(false);
+      if (requestRef.current === request) setBusy(false);
     }
   };
 
   const closeAll = () => {
+    requestRef.current += 1;
+    setBusy(false);
     onClose();
     reset();
   };
@@ -204,9 +211,9 @@ function CreateMasterDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => (next ? undefined : closeAll())}
+      onOpenChange={(next) => (next || busy ? undefined : closeAll())}
     >
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" hideClose={busy}>
         {revealed ? (
           <OneTimePassword
             title={t("admin.masters.created.title")}
@@ -286,6 +293,7 @@ function CreateMasterDialog({
                 size="sm"
                 variant="outline"
                 type="button"
+                disabled={busy}
                 onClick={closeAll}
               >
                 {t("admin.common.cancel")}
@@ -491,11 +499,16 @@ export function MastersPage() {
                   key={master.id}
                   className="transition-colors hover:bg-hover/50"
                 >
-                  <Td>
+                  <Td label={t("admin.masters.column.id")}>
                     <IdChip id={master.id} />
                   </Td>
-                  <Td className="font-medium">{master.email}</Td>
-                  <Td>
+                  <Td
+                    label={t("admin.masters.column.email")}
+                    className="font-medium"
+                  >
+                    {master.email}
+                  </Td>
+                  <Td label={t("admin.masters.column.role")}>
                     {master.role === "OWNER" ? (
                       <span
                         title={t("admin.masters.ownerBadge")}
@@ -510,31 +523,46 @@ export function MastersPage() {
                       </span>
                     )}
                   </Td>
-                  <Td className="text-muted-foreground">
+                  <Td
+                    label={t("admin.masters.column.name")}
+                    className="text-muted-foreground"
+                  >
                     <TextCell value={master.displayName} maxWidth="7rem" />
                   </Td>
-                  <Td className="text-right tabular-nums">
+                  <Td
+                    label={t("admin.masters.column.failed")}
+                    className="text-right tabular-nums"
+                  >
                     {master.failedLogins}
                   </Td>
-                  <Td className="text-muted-foreground">
+                  <Td
+                    label={t("admin.masters.column.lastLogin")}
+                    className="text-muted-foreground"
+                  >
                     {master.lastLoginAt === null
                       ? t("admin.common.never")
                       : formatDate(master.lastLoginAt, lang, hour12)}
                   </Td>
-                  <Td className="text-muted-foreground">
+                  <Td
+                    label={t("admin.masters.column.locked")}
+                    className="text-muted-foreground"
+                  >
                     {master.lockedUntil === null
                       ? "—"
                       : formatDate(master.lockedUntil, lang, hour12)}
                   </Td>
-                  <Td>{statusBadge(master)}</Td>
-                  <Td>
+                  <Td label={t("admin.masters.column.status")}>
+                    {statusBadge(master)}
+                  </Td>
+                  <Td label="">
+                    {/* row actions */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
                           aria-label={t("admin.common.actions")}
                           data-testid={`admin-master-menu-${master.email}`}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
                         >
                           <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                         </button>
@@ -617,6 +645,7 @@ export function MastersPage() {
       </Panel>
 
       <CreateMasterDialog
+        key={creating ? "create-master-open" : "create-master-closed"}
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={list.reload}

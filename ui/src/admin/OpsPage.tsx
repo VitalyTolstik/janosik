@@ -48,41 +48,74 @@ export function OpsPage() {
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [openingQueues, setOpeningQueues] = useState(false);
+  const [retentionState, setRetentionState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   // Only the latest retention-count request may write state; a slow answer
   // for an older draft window must not overwrite the current one.
   const retentionRequest = useRef(0);
+  const lastRetentionRequestDays = useRef<number | null>(null);
+  const savedRetentionDays = useRef<number | null>(null);
 
-  const fetchRetention = useCallback((days?: number) => {
-    const request = ++retentionRequest.current;
-    void adminApi
-      .getRetention(days)
-      .then((next) => {
-        if (retentionRequest.current === request) setRetention(next);
-      })
-      .catch(() => undefined);
-  }, []);
+  const fetchRetention = useCallback(
+    async (days?: number): Promise<boolean> => {
+      const request = ++retentionRequest.current;
+      if (days !== undefined) lastRetentionRequestDays.current = days;
+      setRetentionState("loading");
+      try {
+        const next = await adminApi.getRetention(days);
+        if (retentionRequest.current !== request) return false;
+        setRetention(next);
+        setRetentionState("ready");
+        return true;
+      } catch {
+        if (retentionRequest.current !== request) return false;
+        setRetentionState("error");
+        return false;
+      }
+    },
+    [],
+  );
 
-  const load = useCallback(() => {
-    Promise.all([adminApi.listFlags(), adminApi.getOps()])
-      .then(([nextFlags, nextOps]) => {
+  const load = useCallback(
+    async (options: { preserveDrafts?: boolean } = {}) => {
+      try {
+        const [nextFlags, nextOps] = await Promise.all([
+          adminApi.listFlags(),
+          adminApi.getOps(),
+        ]);
         setFlags(nextFlags);
         setOps(nextOps);
         setMessage(nextOps.maintenanceMessage ?? "");
         setPerUser(nextOps.perUserRateLimit?.toString() ?? "");
         // Default retention window: 30 days (mirrors the backend default).
         const days = nextOps.retentionDays ?? 30;
-        setRetentionDays(String(days));
+        const previousSaved = savedRetentionDays.current;
+        savedRetentionDays.current = days;
+        setRetentionDays((current) =>
+          options.preserveDrafts === true &&
+          previousSaved !== null &&
+          current !== String(previousSaved) &&
+          days === previousSaved
+            ? current
+            : String(days),
+        );
         setMaintInterval(String(nextOps.maintenanceIntervalMinutes ?? 0));
         setDigestHours(String(nextOps.digestIntervalHours ?? 0));
         setReminderLead(String(nextOps.reminderLeadHours ?? 0));
+        // Gate `ready` on the initial retention answer: the panel must not
+        // briefly claim zero eligible rows or "no backup directory".
+        await fetchRetention(days);
         setPhase("ready");
-        fetchRetention(days);
-      })
-      .catch(() => setPhase("error"));
-  }, [fetchRetention]);
+      } catch {
+        setPhase("error");
+      }
+    },
+    [fetchRetention],
+  );
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   // QA-A1: the "eligible" counts must describe the window the owner sees, not
@@ -91,9 +124,10 @@ export function OpsPage() {
   useEffect(() => {
     if (phase !== "ready") return;
     const days = retentionDays.trim() === "" ? 30 : Number(retentionDays);
-    if (!Number.isFinite(days) || days < 1) return;
+    if (!Number.isFinite(days) || days < 1 || days > 3_650) return;
+    if (lastRetentionRequestDays.current === days) return;
     const timer = setTimeout(() => {
-      fetchRetention(days);
+      void fetchRetention(days);
     }, 300);
     return () => clearTimeout(timer);
   }, [retentionDays, phase, fetchRetention]);
@@ -113,7 +147,7 @@ export function OpsPage() {
         toast.success(t("admin.ops.saved"));
       } catch {
         toast.error(t("admin.common.actionFailed"));
-        load();
+        void load({ preserveDrafts: true });
       }
     },
     [load, t, toast],
@@ -132,6 +166,7 @@ export function OpsPage() {
         reminderLeadHours: Number(reminderLead) || 0,
       });
       setOps(updated);
+      savedRetentionDays.current = updated.retentionDays ?? 30;
       toast.success(t("admin.ops.saved"));
     } catch {
       toast.error(t("admin.common.actionFailed"));
@@ -162,7 +197,7 @@ export function OpsPage() {
         );
         toast.success(t("admin.ops.runNow.done", { count: removed }));
       }
-      load();
+      void load({ preserveDrafts: true });
     } catch {
       toast.error(t("admin.common.actionFailed"));
     } finally {
@@ -204,7 +239,7 @@ export function OpsPage() {
   const purge = useCallback(async () => {
     if (purging) return;
     const days = retentionDays.trim() === "" ? 30 : Number(retentionDays);
-    if (!Number.isFinite(days) || days < 1) return;
+    if (!Number.isFinite(days) || days < 1 || days > 3_650) return;
     setPurging(true);
     try {
       // QA-A1: always send the visible window. The server validates it and
@@ -215,7 +250,7 @@ export function OpsPage() {
       );
       setPurgeOpen(false);
       // Refresh the counts for the same window without resetting the draft.
-      fetchRetention(days);
+      void fetchRetention(days);
     } catch {
       toast.error(t("admin.common.actionFailed"));
     } finally {
@@ -225,9 +260,18 @@ export function OpsPage() {
 
   const effectiveDays =
     retentionDays.trim() === "" ? 30 : Number(retentionDays);
-  const daysValid = Number.isFinite(effectiveDays) && effectiveDays >= 1;
+  const daysValid =
+    Number.isFinite(effectiveDays) &&
+    effectiveDays >= 1 &&
+    effectiveDays <= 3_650;
   const savedDays = ops?.retentionDays ?? 30;
   const retentionDirty = daysValid && effectiveDays !== savedDays;
+  const retentionMatches =
+    retentionState === "ready" &&
+    retention !== null &&
+    retention.retentionDays === effectiveDays;
+  const retentionData = retentionMatches ? retention : null;
+  const retentionFailed = retentionState === "error";
 
   if (phase === "loading")
     return <SettingsSkeleton testId="admin-ops-skeleton" panels={3} wide />;
@@ -236,7 +280,7 @@ export function OpsPage() {
       <ErrorState
         onRetry={() => {
           setPhase("loading");
-          load();
+          void load();
         }}
       />
     );
@@ -425,29 +469,74 @@ export function OpsPage() {
             {t("admin.ops.retention.draftHint", { days: effectiveDays })}
           </p>
         ) : null}
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("admin.ops.retention.purgeable", {
-            cards: retention?.purgeable.cards ?? 0,
-            comments: retention?.purgeable.comments ?? 0,
-            attachments: retention?.purgeable.attachments ?? 0,
-            columns: retention?.purgeable.columns ?? 0,
-          })}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {retention?.backups.mode === "external"
-            ? t("admin.ops.backups.external", {
-                location: retention.backups.location ?? "",
-              })
-            : t("admin.ops.backups.none")}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("admin.ops.backups.notAutomatic")}
-        </p>
+        {retentionData === null ? (
+          retentionFailed ? (
+            <div
+              className="mt-1 flex flex-wrap items-center gap-2"
+              data-testid="admin-ops-retention-error"
+            >
+              <p role="alert" className="text-xs text-danger">
+                {t("admin.ops.retention.loadError")}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={!daysValid}
+                data-testid="admin-ops-retention-retry"
+                onClick={() => void fetchRetention(effectiveDays)}
+              >
+                {t("admin.common.retry")}
+              </Button>
+            </div>
+          ) : (
+            <div
+              className="mt-1 flex items-center"
+              data-testid="admin-ops-retention-loading"
+              aria-busy
+            >
+              <span className="sr-only">
+                {t("admin.ops.retention.loading")}
+              </span>
+              <span
+                className="h-3 w-64 animate-pulse rounded bg-hover"
+                aria-hidden
+              />
+            </div>
+          )
+        ) : (
+          <>
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-testid="admin-ops-retention-counts"
+            >
+              {t("admin.ops.retention.purgeable", {
+                cards: retentionData.purgeable.cards,
+                comments: retentionData.purgeable.comments,
+                attachments: retentionData.purgeable.attachments,
+                columns: retentionData.purgeable.columns,
+              })}
+            </p>
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              data-testid="admin-ops-backup-status"
+            >
+              {retentionData.backups.mode === "external"
+                ? t("admin.ops.backups.external", {
+                    location: retentionData.backups.location ?? "",
+                  })
+                : t("admin.ops.backups.none")}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("admin.ops.backups.notAutomatic")}
+            </p>
+          </>
+        )}
         <div className="mt-3 flex justify-end">
           <Button
             variant="destructive"
             size="sm"
-            disabled={!daysValid || !isOwner || purging}
+            disabled={!daysValid || !isOwner || purging || !retentionMatches}
             data-testid="admin-ops-purge"
             onClick={() => setPurgeOpen(true)}
           >

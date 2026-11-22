@@ -94,7 +94,6 @@ export function AdminSidebar({
         data-collapsed={collapsed ? "true" : "false"}
         data-mobile-open={mobileOpen ? "true" : "false"}
         aria-label={t("admin.hub.navLabel")}
-        aria-hidden={mobile && !mobileOpen ? true : undefined}
         className="admin-sidebar flex shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm"
       >
         <NavLink

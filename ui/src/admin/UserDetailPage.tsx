@@ -571,7 +571,12 @@ export function UserDetailPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
       <div className="flex items-center gap-2">
-        <Button size="icon" variant="ghost" className="h-7 w-7" asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          asChild
+        >
           <Link to={backTo} aria-label={t("admin.common.back")}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>

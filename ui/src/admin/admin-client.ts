@@ -598,10 +598,13 @@ export class AdminApiClient {
     );
   }
 
-  resetUserPassword(id: string): Promise<AdminResetUserPasswordResponse> {
+  resetUserPassword(
+    id: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AdminResetUserPasswordResponse> {
     return this.request<AdminResetUserPasswordResponse>(
       `/admin/users/${encodeURIComponent(id)}/password/reset`,
-      { method: "POST", body: {} },
+      { method: "POST", body: {}, signal: options.signal },
     );
   }
 

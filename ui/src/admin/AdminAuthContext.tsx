@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { AdminAuthResponseDto, AdminUserDto } from "@janosik/shared";
+import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
 
 /**
@@ -20,11 +21,21 @@ import { adminApi } from "./admin-client";
 
 export type AdminAuthStatus = "boot" | "anonymous" | "authenticated";
 
+/** Why the boot refresh is being retried (QA review: distinct copy). */
+export type AdminAuthRecovery = "rateLimited" | "unavailable";
+
+/** Initial refresh plus three backoff retries, then a manual choice. */
+const MAX_BOOT_REFRESH_ATTEMPTS = 4;
+
 export interface AdminAuthValue {
   status: AdminAuthStatus;
   admin: AdminUserDto | null;
-  /** Boot refresh hit a transient throttle/outage and is retrying. */
-  recovering: boolean;
+  /** Boot refresh hit a transient throttle or outage and is retrying. */
+  recovering: AdminAuthRecovery | null;
+  /** Automatic retries are exhausted; the user can retry or sign in. */
+  recoveryFailed: AdminAuthRecovery | null;
+  retryRefresh: () => void;
+  signIn: () => void;
   login: (email: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -34,7 +45,10 @@ const AdminAuthContext = createContext<AdminAuthValue | null>(null);
 export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AdminAuthStatus>("boot");
   const [admin, setAdmin] = useState<AdminUserDto | null>(null);
-  const [recovering, setRecovering] = useState(false);
+  const [recovering, setRecovering] = useState<AdminAuthRecovery | null>(null);
+  const [recoveryFailed, setRecoveryFailed] =
+    useState<AdminAuthRecovery | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,27 +58,39 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     adminApi.onAuthLost = () => {
       if (cancelled) return;
       setAdmin(null);
-      setRecovering(false);
+      setRecovering(null);
+      setRecoveryFailed(null);
       setStatus("anonymous");
     };
 
     // QA-A3: a 429 from the refresh throttle is not a logout. Keep the boot
     // screen (the cookie session is still valid) and retry with exponential
-    // backoff until the throttle window clears.
+    // backoff. Retries are bounded; after that the gate offers Retry and a
+    // deliberate sign-in instead of spinning forever.
     const refresh = async () => {
       try {
         const session = await adminApi.refreshSession();
         if (cancelled) return;
-        setRecovering(false);
+        setRecovering(null);
+        setRecoveryFailed(null);
         if (session !== null) {
           setAdmin(session.admin);
           setStatus("authenticated");
         } else {
           setStatus("anonymous");
         }
-      } catch {
+      } catch (error) {
         if (cancelled) return;
-        setRecovering(true);
+        const kind: AdminAuthRecovery =
+          error instanceof ApiError && error.status === 429
+            ? "rateLimited"
+            : "unavailable";
+        if (attempt >= MAX_BOOT_REFRESH_ATTEMPTS - 1) {
+          setRecovering(null);
+          setRecoveryFailed(kind);
+          return;
+        }
+        setRecovering(kind);
         const delay = Math.min(1000 * 2 ** attempt, 15_000);
         attempt += 1;
         timer = setTimeout(() => void refresh(), delay);
@@ -77,6 +103,20 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       if (timer !== undefined) clearTimeout(timer);
       adminApi.onAuthLost = null;
     };
+  }, [refreshNonce]);
+
+  const retryRefresh = useCallback(() => {
+    setRecovering(null);
+    setRecoveryFailed(null);
+    setStatus("boot");
+    setRefreshNonce((nonce) => nonce + 1);
+  }, []);
+
+  const signIn = useCallback(() => {
+    setAdmin(null);
+    setRecovering(null);
+    setRecoveryFailed(null);
+    setStatus("anonymous");
   }, []);
 
   const applySession = useCallback((session: AdminAuthResponseDto) => {
@@ -98,12 +138,32 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       /* the local session ends whether or not the revoke call landed */
     }
     setAdmin(null);
+    setRecovering(null);
+    setRecoveryFailed(null);
     setStatus("anonymous");
   }, []);
 
   const value = useMemo<AdminAuthValue>(
-    () => ({ status, admin, recovering, login, logout }),
-    [status, admin, recovering, login, logout],
+    () => ({
+      status,
+      admin,
+      recovering,
+      recoveryFailed,
+      retryRefresh,
+      signIn,
+      login,
+      logout,
+    }),
+    [
+      status,
+      admin,
+      recovering,
+      recoveryFailed,
+      retryRefresh,
+      signIn,
+      login,
+      logout,
+    ],
   );
 
   return (

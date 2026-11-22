@@ -73,6 +73,8 @@ export interface AdminListState<T> {
   /** HTTP status of the failed request (`null` when the last answer was ok). */
   errorStatus: number | null;
   errorBody?: unknown;
+  /** Increments when an automatic page clamp must replace the history entry. */
+  historyReplaceToken: number;
   reload: () => void;
 }
 
@@ -116,6 +118,7 @@ export function useAdminList<T>(
   );
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState<ListResult<T> | null>(null);
+  const [historyReplaceToken, setHistoryReplaceToken] = useState(0);
 
   useEffect(() => {
     // Do not schedule a reset for the initial (empty) search or for a value
@@ -175,13 +178,17 @@ export function useAdminList<T>(
         });
         // QA-A4: if the result set shrank below the current page (e.g. the
         // only row on page 2 was deleted), clamp to the last real page.
-        // Without this the table says "Page 2 of 1" with no rows.
+        // Page indices — not page-aligned offsets — decide: a deep link such
+        // as `offset=2&limit=50` over 25 rows is still page 1.
         const pageLimit = page.limit > 0 ? page.limit : limit;
-        const lastOffset =
-          page.total === 0
-            ? 0
-            : Math.floor((page.total - 1) / pageLimit) * pageLimit;
-        if (offset > lastOffset) setOffset(lastOffset);
+        const lastPage =
+          page.total === 0 ? 0 : Math.ceil(page.total / pageLimit) - 1;
+        if (Math.floor(offset / pageLimit) > lastPage) {
+          // Automatic correction: replace the invalid history entry, never
+          // push a new one (Back would clamp again and trap the user).
+          setHistoryReplaceToken((token) => token + 1);
+          setOffset(lastPage * pageLimit);
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -334,6 +341,7 @@ export function useAdminList<T>(
     errorStatus:
       filterError === undefined ? (result?.errorStatus ?? null) : null,
     errorBody: result?.key === requestKey ? result.errorBody : undefined,
+    historyReplaceToken,
     reload,
   };
 }
