@@ -84,7 +84,7 @@ janosik/                        # npm workspaces root (one package-lock.json)
 - **Four board views** — Kanban, **Calendar** (drag deadlines, "unscheduled" panel, week/month, day panel), **Table** (sorting, inline editing, configurable columns) and **Watch** (a read-only status view with a live activity feed and 20/50/100-item pages).
 - **Card density** — a `Simplify design` toggle switches every card to a compact one-line tile (title, label dots, blocked marker, checklist progress, priority and assignee) with far fewer elements; the full face stays one click away in the card dialog.
 - **Drag & drop** — move cards within/between columns and reorder columns (`@dnd-kit`), inline Trello-style "+" zones, keyboard sensor and drag overlay.
-- **Rich card content** — WYSIWYG description (MDXEditor) that is the card's document (up to 64k characters), checklists with progress badges (items up to 500 characters), due dates with overdue/soon badges, color/gradient covers, 14-color labels, and a read-only machine-readable acceptance-criteria / definition-of-done contract.
+- **Rich card content** — WYSIWYG description (MDXEditor) that is the card's document (up to 64k characters), checklists with progress badges (items up to 500 characters), due dates with overdue/soon badges, color/gradient covers, 14-color labels, and a machine-readable acceptance-criteria / definition-of-done contract that agents write over MCP and board members can edit in the card dialog.
 - **Attachments** — paste files into descriptions or add them directly; description uploads follow edits and undo/redo. Video uploads can be processed in the background for browser playback; see the [card guide](./site/src/content/docs/docs/user-guide/cards.md#attachments) for limits and retention.
 - **Card & board archive** — Trello-style archiving with restore (WIP-aware) and permanent delete; board archive with restore.
 - **Multi-boards** — switcher, create/rename/archive/delete, deep links `/board/:id`, global search across boards with snippets.
@@ -454,8 +454,9 @@ sections (`Why` / `Scope` / `Acceptance criteria` / `Out of scope` / `Verify`),
 a `Definition of Done` checklist, and typed comments (a structured `kind`:
 `status` / `question` / `blocker` / `evidence` / `handoff`) so the thread is
 machine-readable and filterable. It can also write the card's task contract
-(`janosik_set_card_task_spec` sets `acceptanceCriteria` + `definitionOfDone`,
-each rendered read-only in the card dialog) and tag cards with the reserved
+(`janosik_set_card_task_spec` sets `acceptanceCriteria` + `definitionOfDone`);
+the card dialog shows that contract, and a board ADMIN or MEMBER can edit or
+clear it there. The agent can tag cards with the reserved
 `agent:blocked` / `agent:needs-human` / `agent:verified` labels. Every command
 records whether a person or an agent caused it, so an agent's entries carry an
 "Agent" badge in the card history.

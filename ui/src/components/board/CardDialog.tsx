@@ -32,6 +32,7 @@ import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardPriority } from "@/components/board/CardPriority";
 import { CardAssignee } from "@/components/board/CardAssignee";
 import { CardTaskSpec } from "@/components/board/CardTaskSpec";
+import { CardClaim } from "@/components/board/CardClaim";
 import { CardLinks } from "@/components/board/CardLinks";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
@@ -74,6 +75,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, ApiError } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 import { embedMarkdown } from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
@@ -86,6 +88,7 @@ import { createId } from "@/utils/id";
 import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
 import { cn } from "@/lib/utils";
+import { canEditCardTaskSpec } from "@/utils/card-permissions";
 import type { LabelColor } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
@@ -187,6 +190,7 @@ export function CardDialog({
     registerDraftFlush,
   } = useBoard();
   const { role } = useBoardAccess();
+  const { user } = useAuth();
   // The conflict-draft key is board-scoped (TASK-147 follow-up). `board` is
   // optional in the store; an empty id only happens before a board loads,
   // when this dialog is not really open.
@@ -210,6 +214,24 @@ export function CardDialog({
     setDeleteConfirm(false);
   }
   const contentRef = useRef<HTMLDivElement>(null);
+  // TASK-177.4 UX fix: Radix listens on document capture, so the inline task
+  // spec editor must announce itself before Escape reaches the dialog. A ref
+  // is enough here: the guard is read from the event handler, never rendered.
+  const taskSpecEditingRef = useRef(false);
+  const handleTaskSpecEditing = useCallback((editing: boolean) => {
+    taskSpecEditingRef.current = editing;
+  }, []);
+  const focusTaskSpecControl = useCallback(() => {
+    const content = contentRef.current;
+    const target =
+      content?.querySelector<HTMLButtonElement>(
+        '[data-testid="card-task-spec-edit"]',
+      ) ??
+      content?.querySelector<HTMLButtonElement>(
+        '[data-testid="card-task-spec"]',
+      );
+    target?.focus();
+  }, []);
   // The element focused when this card opened (the board card face/handle or
   // a table/calendar row). Captured in a layout effect so it runs before
   // Radix's passive auto-focus moves focus into the dialog (U-04).
@@ -869,6 +891,13 @@ export function CardDialog({
           className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
           closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center md:h-8 md:w-8"
           onEscapeKeyDown={(event) => {
+            // The inline task-spec editor owns Escape: keep the dialog and
+            // its staged draft open. Radix runs this on document capture, so
+            // a bubble-phase stopPropagation in the form would be too late.
+            if (taskSpecEditingRef.current) {
+              event.preventDefault();
+              return;
+            }
             // The inline link editor closes first; the card stays open.
             if (linkEditorCardId === card.id) {
               event.preventDefault();
@@ -1391,9 +1420,25 @@ export function CardDialog({
                   />
                 </CollapsibleSection>
 
+                <CardClaim
+                  key={`claim:${card.id}`}
+                  boardId={board.id}
+                  cardId={card.id}
+                  claimedBy={card.claimedBy}
+                  leaseUntil={card.leaseUntil}
+                  role={role}
+                  userId={user?.id}
+                  readOnly={readOnly}
+                  onReleased={focusTaskSpecControl}
+                />
+
                 <CardTaskSpec
+                  key={`task-spec:${card.id}`}
+                  cardId={card.id}
                   acceptanceCriteria={card.acceptanceCriteria}
                   definitionOfDone={card.definitionOfDone}
+                  canEdit={canEditCardTaskSpec(role, readOnly)}
+                  onEditingChange={handleTaskSpecEditing}
                 />
 
                 <CardLinks
