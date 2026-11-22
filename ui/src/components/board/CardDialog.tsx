@@ -533,17 +533,31 @@ export function CardDialog({
       titleTargetRef.current = null;
       if (!target) return;
       const value = titleDraftRef.current;
+      const trimmed = value.trim();
+      // A card always has a name (QA-14). Clearing the field reverts the
+      // draft instead of writing an empty title: the shared validator and
+      // reducer refuse blank titles too, so this is the friendly UI half.
+      if (trimmed === "") {
+        const stored = titleSeenRef.current;
+        heldTitles.delete(conflictedKey(boardId, target));
+        titleDraftRef.current = stored;
+        setTitleDraft(stored);
+        titleDirtyRef.current = false;
+        titleConflictRef.current = false;
+        setTitleConflict(false);
+        return;
+      }
       if (!force && titleConflictRef.current) {
         // Never overwrite the other writer's newer title on blur/close.
         rememberDraft(heldTitles, conflictedKey(boardId, target), value);
         return;
       }
       heldTitles.delete(conflictedKey(boardId, target));
-      titleSeenRef.current = value;
+      titleSeenRef.current = trimmed;
       titleDirtyRef.current = false;
       titleConflictRef.current = false;
       setTitleConflict(false);
-      updateCardRef.current(target, { title: value }, { quiet: true });
+      updateCardRef.current(target, { title: trimmed }, { quiet: true });
       // The idle gap already played the debounce role; stamp now so "updated"
       // and the undo precondition line up with the write. A pending description
       // touch would otherwise stamp the card a second time for the same burst.

@@ -811,6 +811,7 @@ function parseAction(action: Json): BoardAction {
         result,
         "title",
         readOptionalString(action, "title", "action.title", {
+          nonBlank: true,
           max: LIMITS.cardTitle,
         }),
       );

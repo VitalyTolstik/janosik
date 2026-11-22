@@ -971,11 +971,17 @@ function updateCard(
   if (!target) return board;
 
   // Live editing: clamp length only — trimming here would eat the trailing
-  // space of every keystroke while the user types.
-  const title =
+  // space of every keystroke while the user types. A blank title is not a
+  // card name though: keep the stored one so clearing the field cannot leave
+  // an unlabeled card on the board (QA-14).
+  const nextTitle =
     action.title === undefined
-      ? target.title
+      ? undefined
       : clampText(action.title, LIMITS.cardTitle);
+  const title =
+    nextTitle === undefined || nextTitle.trim() === ""
+      ? target.title
+      : nextTitle;
   // Empty description means "no description" — drop the field entirely.
   const description =
     action.description === undefined

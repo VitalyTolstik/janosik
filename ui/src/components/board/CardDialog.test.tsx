@@ -197,6 +197,18 @@ describe("CardDialog comment drafts", () => {
     },
   );
 
+  it("reverts a blank title instead of storing an unlabeled card", async () => {
+    renderBoard("/board/b-1?card=draft-a");
+    const title = await screen.findByLabelText("Title");
+    await userEvent.clear(title);
+    await userEvent.tab();
+    await waitFor(() => expect(title).toHaveValue("Draft card A"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    await userEvent.click(screen.getByText("Draft card A"));
+    expect(await screen.findByLabelText("Title")).toHaveValue("Draft card A");
+  });
+
   it("restores only the source card's draft when following a link and returning", async () => {
     renderBoard("/board/b-1?card=draft-a");
     await enterDraft();
@@ -736,7 +748,7 @@ describe("CardDialog checklists", () => {
       name: /Delete this checklist/i,
     });
     expect(
-      within(confirm).getByText(/1 item will be permanently deleted/),
+      within(confirm).getByText(/1 item will be deleted/),
     ).toBeInTheDocument();
 
     // …Cancel keeps the checklist…

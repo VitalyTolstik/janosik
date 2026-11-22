@@ -509,6 +509,11 @@ describe("validateBoardAction — rejected shapes", () => {
       "action.title",
     ],
     [
+      "a blank card title in an update",
+      action({ type: "UPDATE_CARD", cardId: "c", title: "   " }),
+      "action.title",
+    ],
+    [
       "a non-boolean quiet flag",
       action({ type: "UPDATE_CARD", cardId: "c", quiet: 1 }),
       "action.quiet",

@@ -646,6 +646,19 @@ describe("boardReducer — UPDATE_CARD patch", () => {
     });
     expect(next).toEqual(board);
   });
+
+  it("keeps the stored title when an edit would blank it", () => {
+    const board = freshBoard();
+    const original = board.cards["card-1"].title;
+    for (const title of ["", "   ", "\n\t"]) {
+      const next = reduceBoard(board, {
+        type: "UPDATE_CARD",
+        cardId: "card-1",
+        title,
+      });
+      expect(next.cards["card-1"].title).toBe(original);
+    }
+  });
 });
 
 describe("boardReducer — quiet updatedAt (TASK-18)", () => {
