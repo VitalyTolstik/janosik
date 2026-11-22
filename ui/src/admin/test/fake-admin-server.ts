@@ -437,6 +437,8 @@ export class FakeAdminServer {
     status: number;
     body?: Record<string, unknown>;
   }> = [];
+  /** Hold the next matching request until the promise resolves (race tests). */
+  holds: Array<{ match: string; promise: Promise<void> }> = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
   sessionAlive = true;
   /**
@@ -645,6 +647,14 @@ export class FakeAdminServer {
       const hold = this.holdCommands;
       this.holdCommands = undefined;
       if (hold) await hold;
+
+      const pathHold = this.holds.find((candidate) =>
+        path.includes(candidate.match),
+      );
+      if (pathHold) {
+        this.holds = this.holds.filter((item) => item !== pathHold);
+        await pathHold.promise;
+      }
 
       const failure = this.failNext.find((candidate) =>
         path.includes(candidate),
@@ -1973,7 +1983,12 @@ export class FakeAdminServer {
 
     // ---------------------------------------------- data/compliance (TASK-63)
     if (path === "/admin/retention" && method === "GET") {
-      return this.json(this.retention);
+      const draft = Number(url.searchParams.get("retentionDays"));
+      return this.json(
+        Number.isFinite(draft) && draft > 0
+          ? { ...this.retention, retentionDays: draft }
+          : this.retention,
+      );
     }
     if (path === "/admin/retention/purge" && method === "POST") {
       return this.json({ affected: 3 }, 201);

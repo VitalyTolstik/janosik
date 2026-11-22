@@ -155,6 +155,10 @@ export class MaintenanceService {
   /**
    * Hard-deletes soft-deleted rows past the retention window (TASK-38a/63).
    *
+   * `retentionDays` lets the owner-triggered purge use the window currently
+   * shown in the panel (QA-A1) instead of a stale saved setting. The scheduled
+   * sweep keeps calling it without an argument and uses the saved window.
+   *
    * B-7: chunked. One unbounded transaction over every stale row of every
    * table held locks (and a connection) for as long as the purge took — on a
    * large instance, minutes. Each chunk is now its own short transaction of
@@ -163,8 +167,8 @@ export class MaintenanceService {
    * children first, then cards (with everything hanging off them), then the
    * columns/labels that no longer hold any card.
    */
-  async purgeSoftDeleted(): Promise<number> {
-    const days = await this.retentionDays();
+  async purgeSoftDeleted(retentionDays?: number): Promise<number> {
+    const days = retentionDays ?? (await this.retentionDays());
     const cutoff = new Date(Date.now() - days * 86_400_000);
     const stale = { deletedAt: { not: null, lte: cutoff } } as const;
     let count = 0;

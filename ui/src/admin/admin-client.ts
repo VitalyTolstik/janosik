@@ -195,9 +195,19 @@ export class AdminApiClient {
       );
       this.accessToken = response.accessToken;
       return response;
-    } catch {
-      this.accessToken = null;
-      return null;
+    } catch (error) {
+      // QA-A3: only an explicit "no session" answer logs the master out.
+      // A throttle (429), a 5xx or a network failure is transient: keep the
+      // current session and let the caller retry/back off instead of showing
+      // the sign-in screen.
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        this.accessToken = null;
+        return null;
+      }
+      throw error;
     }
   }
 
@@ -778,14 +788,20 @@ export class AdminApiClient {
 
   // -------------------------------------------- data/compliance (TASK-63)
 
-  getRetention(): Promise<AdminRetentionDto> {
-    return this.request<AdminRetentionDto>("/admin/retention");
+  getRetention(retentionDays?: number): Promise<AdminRetentionDto> {
+    const query =
+      retentionDays === undefined
+        ? ""
+        : `?retentionDays=${encodeURIComponent(String(retentionDays))}`;
+    return this.request<AdminRetentionDto>(`/admin/retention${query}`);
   }
 
-  purgeSoftDeleted(): Promise<AdminBulkResultDto> {
+  /** Hard-delete soft-deleted rows. The visible window is always sent so the
+   * server never falls back to a different saved setting (QA-A1). */
+  purgeSoftDeleted(retentionDays: number): Promise<AdminBulkResultDto> {
     return this.request<AdminBulkResultDto>("/admin/retention/purge", {
       method: "POST",
-      body: {},
+      body: { retentionDays },
     });
   }
 

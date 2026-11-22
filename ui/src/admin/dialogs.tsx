@@ -122,9 +122,9 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
       </Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => (next ? undefined : closeAll())}
+        onOpenChange={(next) => (next || busy ? undefined : closeAll())}
       >
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" hideClose={busy}>
           {temporary ? (
             <>
               <DialogHeader>
@@ -546,6 +546,9 @@ export function ResetUserPasswordDialog({
   const [password, setPassword] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // QA-A2: while the one-time password is in flight the dialog must not be
+  // dismissible — closing it would leave the account with an unknown password.
+  const [busy, setBusy] = useState(false);
 
   // Fire the reset whenever a user is opened.
   useEffect(() => {
@@ -554,6 +557,7 @@ export function ResetUserPasswordDialog({
     setPassword(null);
     setError(null);
     setCopied(false);
+    setBusy(true);
     adminApi
       .resetUserPassword(user.id)
       .then((result) => {
@@ -563,6 +567,9 @@ export function ResetUserPasswordDialog({
       })
       .catch(() => {
         if (active) setError(t("admin.common.actionFailed"));
+      })
+      .finally(() => {
+        if (active) setBusy(false);
       });
     return () => {
       active = false;
@@ -571,6 +578,7 @@ export function ResetUserPasswordDialog({
   }, [user?.id]);
 
   const close = () => {
+    if (busy) return;
     setPassword(null);
     onClose();
   };
@@ -591,6 +599,8 @@ export function ResetUserPasswordDialog({
       <DialogContent
         className="max-w-sm"
         data-testid="admin-reset-password-dialog"
+        hideClose={busy}
+        aria-busy={busy}
       >
         <DialogHeader>
           <DialogTitle>
@@ -629,7 +639,13 @@ export function ResetUserPasswordDialog({
           </div>
         )}
         <DialogFooter>
-          <Button size="sm" variant="ghost" type="button" onClick={close}>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            disabled={busy}
+            onClick={close}
+          >
             {t("admin.common.close")}
           </Button>
         </DialogFooter>
@@ -802,11 +818,12 @@ export function PromoteUserDialog({
   return (
     <Dialog
       open={user !== null}
-      onOpenChange={(next) => (next ? undefined : close())}
+      onOpenChange={(next) => (next || busy ? undefined : close())}
     >
       <DialogContent
         className="max-w-sm"
         data-testid="admin-promote-user-dialog"
+        hideClose={busy}
       >
         <DialogHeader>
           <DialogTitle>

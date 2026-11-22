@@ -23,6 +23,8 @@ export type AdminAuthStatus = "boot" | "anonymous" | "authenticated";
 export interface AdminAuthValue {
   status: AdminAuthStatus;
   admin: AdminUserDto | null;
+  /** Boot refresh hit a transient throttle/outage and is retrying. */
+  recovering: boolean;
   login: (email: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -32,25 +34,47 @@ const AdminAuthContext = createContext<AdminAuthValue | null>(null);
 export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AdminAuthStatus>("boot");
   const [admin, setAdmin] = useState<AdminUserDto | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+
     adminApi.onAuthLost = () => {
       if (cancelled) return;
       setAdmin(null);
+      setRecovering(false);
       setStatus("anonymous");
     };
-    void adminApi.refreshSession().then((session) => {
-      if (cancelled) return;
-      if (session !== null) {
-        setAdmin(session.admin);
-        setStatus("authenticated");
-      } else {
-        setStatus("anonymous");
+
+    // QA-A3: a 429 from the refresh throttle is not a logout. Keep the boot
+    // screen (the cookie session is still valid) and retry with exponential
+    // backoff until the throttle window clears.
+    const refresh = async () => {
+      try {
+        const session = await adminApi.refreshSession();
+        if (cancelled) return;
+        setRecovering(false);
+        if (session !== null) {
+          setAdmin(session.admin);
+          setStatus("authenticated");
+        } else {
+          setStatus("anonymous");
+        }
+      } catch {
+        if (cancelled) return;
+        setRecovering(true);
+        const delay = Math.min(1000 * 2 ** attempt, 15_000);
+        attempt += 1;
+        timer = setTimeout(() => void refresh(), delay);
       }
-    });
+    };
+    void refresh();
+
     return () => {
       cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
       adminApi.onAuthLost = null;
     };
   }, []);
@@ -78,8 +102,8 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AdminAuthValue>(
-    () => ({ status, admin, login, logout }),
-    [status, admin, login, logout],
+    () => ({ status, admin, recovering, login, logout }),
+    [status, admin, recovering, login, logout],
   );
 
   return (

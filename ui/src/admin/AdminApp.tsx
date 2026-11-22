@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import { AdminAuthProvider, useAdminAuth } from "./AdminAuthContext";
 import { AdminLoginPage } from "./AdminLoginPage";
 import { AdminShell } from "./AdminShell";
+import { useAdminT } from "./admin-i18n";
 import { DashboardPage } from "./DashboardPage";
 import { UserDetailPage } from "./UserDetailPage";
 import { CardDetailPage } from "./CardDetailPage";
@@ -89,15 +90,25 @@ function LegacyRedirect({ to, tab }: { to: string; tab?: string }) {
 }
 
 function AdminGate() {
-  const { status } = useAdminAuth();
+  const t = useAdminT();
+  const { status, recovering } = useAdminAuth();
 
   if (status === "boot") {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <Loader2
           className="h-5 w-5 animate-spin text-muted-foreground"
           aria-hidden
         />
+        {recovering ? (
+          <p
+            className="max-w-sm text-xs text-muted-foreground"
+            data-testid="admin-boot-recovering"
+            role="status"
+          >
+            {t("admin.boot.recovering")}
+          </p>
+        ) : null}
       </div>
     );
   }

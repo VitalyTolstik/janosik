@@ -3585,9 +3585,15 @@ export class AdminService {
     };
   }
 
-  /** Retention policy + how much a purge would remove right now. */
-  async getRetention(): Promise<AdminRetentionDto> {
-    const cutoff = await this.retentionCutoff();
+  /** Retention policy + how much a purge would remove right now.
+   *
+   * QA-A1: `retentionDays` is the window currently visible in the panel (the
+   * operator may not have saved it yet); counts must use that window so the
+   * number beside the input never disagrees with the input itself.
+   */
+  async getRetention(retentionDays?: number): Promise<AdminRetentionDto> {
+    const days = retentionDays ?? (await this.ops.retentionDays()) ?? 30;
+    const cutoff = new Date(Date.now() - days * DAY_MS);
     const where = { deletedAt: { not: null, lte: cutoff } } as const;
     const [cards, comments, attachments, columns] =
       await this.prisma.$transaction([
@@ -3598,8 +3604,9 @@ export class AdminService {
       ]);
     const backupDir = process.env.BACKUP_DIR?.trim() || null;
     return {
-      // The effective window (30 is the product default, not "unset").
-      retentionDays: (await this.ops.retentionDays()) ?? 30,
+      // The effective window used for the counts (30 is the product default,
+      // not "unset").
+      retentionDays: days,
       purgeable: { cards, comments, attachments, columns },
       // TASK-166 D21: Janosik does not create or verify backups. `external`
       // only means the operator pointed BACKUP_DIR at their own directory.
@@ -3613,23 +3620,27 @@ export class AdminService {
     };
   }
 
-  private async retentionCutoff(): Promise<Date> {
-    const days = (await this.ops.retentionDays()) ?? 30;
-    return new Date(Date.now() - days * DAY_MS);
-  }
-
   /** Hard-deletes soft-deleted rows past the retention window (TASK-38a/63).
    * TASK-68: the sweep itself lives in `MaintenanceService` so the scheduled
-   * job and this button run the exact same code. */
-  async purgeSoftDeleted(admin: AdminPrincipal): Promise<AdminBulkResultDto> {
+   * job and this button run the exact same code.
+   *
+   * QA-A1: an explicit `retentionDays` (validated and bounded by the DTO)
+   * wins over the saved setting, so what the confirmation dialog promises is
+   * exactly what gets deleted.
+   */
+  async purgeSoftDeleted(
+    admin: AdminPrincipal,
+    retentionDays?: number,
+  ): Promise<AdminBulkResultDto> {
     // H8: this hard-deletes every soft-deleted row past the retention window.
     // The class-level admin guard lets an OPERATOR read data, not destroy it;
     // the destructive retention control is OWNER-only like the other ops
     // writes.
     this.assertOwner(admin);
-    const affected = await this.maintenance.purgeSoftDeleted();
+    const affected = await this.maintenance.purgeSoftDeleted(retentionDays);
     await this.audit(admin, "retention.changed", "retention", null, {
       purged: affected,
+      retentionDays: retentionDays ?? (await this.ops.retentionDays()) ?? 30,
     });
     return { affected };
   }

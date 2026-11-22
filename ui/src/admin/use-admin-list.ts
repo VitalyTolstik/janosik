@@ -173,6 +173,15 @@ export function useAdminList<T>(
           error: false,
           errorStatus: null,
         });
+        // QA-A4: if the result set shrank below the current page (e.g. the
+        // only row on page 2 was deleted), clamp to the last real page.
+        // Without this the table says "Page 2 of 1" with no rows.
+        const pageLimit = page.limit > 0 ? page.limit : limit;
+        const lastOffset =
+          page.total === 0
+            ? 0
+            : Math.floor((page.total - 1) / pageLimit) * pageLimit;
+        if (offset > lastOffset) setOffset(lastOffset);
       })
       .catch((error: unknown) => {
         if (cancelled) return;

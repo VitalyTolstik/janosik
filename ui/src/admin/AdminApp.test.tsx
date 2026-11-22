@@ -172,6 +172,30 @@ describe("AdminApp", () => {
     expect(screen.queryByTestId("admin-login-form")).toBeNull();
   });
 
+  it("retries a throttled refresh instead of signing the master out (QA-A3)", async () => {
+    const server = serverWith();
+    server.failNextStatuses.push({
+      path: "/admin/auth/refresh",
+      status: 429,
+      body: { message: "ThrottlerException: Too Many Requests" },
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    // The boot screen says it is retrying; the sign-in form must not appear.
+    expect(await screen.findByTestId("admin-boot-recovering")).toBeTruthy();
+    expect(screen.queryByTestId("admin-login-form")).toBeNull();
+
+    expect(
+      await screen.findByText(
+        t("admin.dashboard.registrations"),
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-login-form")).toBeNull();
+  });
+
   it("signs in, and signs out back to the login screen", async () => {
     const server = serverWith();
     server.sessionAlive = false;
@@ -541,6 +565,55 @@ describe("AdminApp", () => {
     ).not.toBeNull();
   });
 
+  it("purges with the visible retention draft, once, and counts with it (QA-A1/A7)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    fireEvent.change(input, { target: { value: "365" } });
+    expect(await screen.findByTestId("admin-ops-retention-dirty")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("admin-ops-purge"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("365");
+
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/retention/purge",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    const accept = within(dialog).getByTestId("admin-confirm-accept");
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await waitFor(() => expect(accept).toBeDisabled());
+    release();
+
+    await waitFor(() => {
+      const purges = server.requests.filter(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/admin/retention/purge",
+      );
+      expect(purges).toHaveLength(1);
+      expect(purges[0]?.body).toEqual({ retentionDays: 365 });
+    });
+    // The eligible counts are fetched for the same visible window.
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "GET" &&
+            request.path === "/admin/retention" &&
+            request.query.get("retentionDays") === "365",
+        ),
+      ).toBe(true),
+    );
+  });
+
   it("previews a mail template with sample placeholder values", async () => {
     const server = serverWith();
     vi.stubGlobal("fetch", server.fetchImpl);
@@ -578,6 +651,25 @@ describe("AdminApp", () => {
     expect(
       await screen.findByTestId("admin-template-reset-verification_code"),
     ).toBeTruthy();
+
+    // QA-A6: resetting authored content confirms first.
+    fireEvent.click(
+      screen.getByTestId("admin-template-reset-verification_code"),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(server.requests.some((request) => request.method === "DELETE")).toBe(
+      false,
+    );
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/email-templates/verification_code",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("unlocks a locked master", async () => {
@@ -622,11 +714,69 @@ describe("AdminApp", () => {
       await screen.findByText(t("admin.masters.action.resetPassword")),
     );
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    // QA-A5: the confirm is single-flight; a double click must not mint a
+    // second temporary password.
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/admins/master-2/password/reset",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    const accept = within(dialog).getByTestId("admin-confirm-accept");
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await waitFor(() => expect(accept).toBeDisabled());
+    release();
 
     expect(
       await screen.findByTestId("admin-master-password"),
     ).toHaveTextContent("reset-one-time-pass");
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/admin/admins/master-2/password/reset",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the reset-password dialog open until the one-time secret arrives (QA-A2)", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/users/u-1/password/reset",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByTestId("admin-user-reset-password"));
+
+    const dialog = await screen.findByTestId("admin-reset-password-dialog");
+    // The X is gone and the footer Close is disabled while the request runs.
+    expect(within(dialog).queryByTestId("dialog-close")).toBeNull();
+    const close = within(dialog).getByRole("button", {
+      name: t("admin.common.close"),
+    });
+    expect(close).toBeDisabled();
+    fireEvent.click(close);
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByTestId("admin-reset-password-dialog")).toBeTruthy();
+
+    release();
+    expect(
+      await screen.findByTestId("admin-reset-password-value"),
+    ).toHaveTextContent("Temp-pass-123");
   });
 
   it("surfaces a rejected login lockout as a dedicated message", async () => {

@@ -304,6 +304,8 @@ const en = {
   "admin.ops.retention": "Soft-deleted data",
   "admin.ops.retention.olderThan":
     "Only already-deleted items older than {days} days are eligible.",
+  "admin.ops.retention.draftHint":
+    "Purge uses this {days}-day window right now. Save first to make it the default — this run never falls back to the saved value.",
   "admin.ops.retention.purgeable":
     "{cards} cards · {comments} comments · {attachments} attachments · {columns} columns",
   "admin.ops.retention.purge": "Purge now",
@@ -434,6 +436,9 @@ const en = {
   "admin.comms.templates.previewNote":
     "Placeholders show sample values — the real letter uses the recipient's data. Rendered exactly as an email client sees it.",
   "admin.comms.templates.reset": "Reset to default",
+  "admin.comms.templates.resetConfirm.title": "Reset the “{name}” template?",
+  "admin.comms.templates.resetConfirm.body":
+    "Your custom subject and HTML body will be replaced by the built-in letter. This cannot be undone.",
   "admin.comms.templates.resetDone": "Template reset to the built-in letter",
   "admin.comms.saved": "Template saved",
   "admin.comms.field.title": "Title",
@@ -559,6 +564,8 @@ const en = {
   "admin.demo.cleanupPending":
     "Cleanup is still pending because some demo rows have dependencies. Check the board and retry cleanup.",
 
+  "admin.boot.recovering":
+    "The master session check was rate-limited. Your session is still valid; retrying automatically…",
   "admin.login.title": "Sign in to Janosik",
   "admin.login.subtitle": "Master console",
   "admin.login.backToSite": "Back to site",
@@ -1834,6 +1841,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention": "Удалённые (soft-delete) данные",
   "admin.ops.retention.olderThan":
     "Под очистку попадают только уже удалённые элементы старше {days} дней.",
+  "admin.ops.retention.draftHint":
+    "Очистка использует это окно в {days} дней прямо сейчас. Нажмите «Сохранить», чтобы сделать его значением по умолчанию — этот запуск не берёт сохранённое значение.",
   "admin.ops.retention.purgeable":
     "{cards} карточек · {comments} комментариев · {attachments} вложений · {columns} колонок",
   "admin.ops.retention.purge": "Очистить",
@@ -1964,6 +1973,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.templates.previewNote":
     "Плейсхолдеры показаны с примерными значениями — в реальном письме подставятся данные получателя. Отрендерено ровно так, как увидит почтовый клиент.",
   "admin.comms.templates.reset": "Сбросить к стандартному",
+  "admin.comms.templates.resetConfirm.title": "Сбросить шаблон «{name}»?",
+  "admin.comms.templates.resetConfirm.body":
+    "Ваши тема и HTML-тело будут заменены встроенным письмом. Отменить это нельзя.",
   "admin.comms.templates.resetDone": "Шаблон сброшен к встроенному",
   "admin.comms.saved": "Шаблон сохранён",
   "admin.comms.field.title": "Заголовок",
@@ -2091,6 +2103,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.cleanupPending":
     "Очистка ещё не завершена: от некоторых демо-данных зависят другие записи. Проверьте доску и повторите очистку.",
 
+  "admin.boot.recovering":
+    "Проверка сессии мастера ограничена по частоте. Сессия ещё действительна; повторяем автоматически…",
   "admin.login.title": "Вход в Janosik",
   "admin.login.subtitle": "Мастер-консоль",
   "admin.login.backToSite": "На сайт",

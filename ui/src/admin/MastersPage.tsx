@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -315,6 +315,10 @@ export function MastersPage() {
 
   const list = useAdminList<AdminMasterRowDto>(() => adminApi.listMasters());
   const [pending, setPending] = useState<PendingAction>(null);
+  // QA-A5: a confirm is single-flight; a second click must not mint a second
+  // temporary password behind the one already shown.
+  const [running, setRunning] = useState(false);
+  const runningRef = useRef(false);
   const [creating, setCreating] = useState(false);
   const [allowlistMaster, setAllowlistMaster] =
     useState<AdminMasterRowDto | null>(null);
@@ -325,7 +329,9 @@ export function MastersPage() {
   } | null>(null);
 
   const run = async (action: PendingAction) => {
-    if (action === null) return;
+    if (action === null || runningRef.current) return;
+    runningRef.current = true;
+    setRunning(true);
     try {
       if (action.kind === "disable" || action.kind === "enable") {
         const disabled = action.kind === "disable";
@@ -368,6 +374,8 @@ export function MastersPage() {
     } catch {
       toast.error(t("admin.common.error"));
     } finally {
+      runningRef.current = false;
+      setRunning(false);
       setPending(null);
     }
   };
@@ -630,7 +638,10 @@ export function MastersPage() {
           pending.kind !== "enable" &&
           pending.kind !== "unlock"
         }
-        onClose={() => setPending(null)}
+        busy={running}
+        onClose={() => {
+          if (!running) setPending(null);
+        }}
         onConfirm={() => void run(pending)}
       />
 
