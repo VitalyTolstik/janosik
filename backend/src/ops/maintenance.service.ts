@@ -167,13 +167,18 @@ export class MaintenanceService {
   /**
    * Hard-deletes soft-deleted rows past the retention window (TASK-38a/63).
    *
-   * B-7: chunked. One unbounded transaction over every stale row of every
-   * table held locks (and a connection) for as long as the purge took — on a
-   * large instance, minutes. Each chunk is now its own short transaction of
-   * at most `PURGE_CHUNK` ids; a crash mid-run leaves only fully-purged
-   * chunks behind and the next run picks up the rest. Parents go last:
-   * children first, then cards (with everything hanging off them), then the
-   * columns/labels that no longer hold any card.
+   * B-7: ordinary passes are chunked. One unbounded transaction over every
+   * stale row of every table held locks (and a connection) for as long as the
+   * purge took — on a large instance, minutes. Each ordinary chunk is now its
+   * own short transaction of at most `PURGE_CHUNK` ids; a crash mid-run leaves
+   * only fully-purged chunks behind and the next run picks up the rest.
+   * Parents go last: children first, then cards (with everything hanging off
+   * them), then the columns/labels that no longer hold any card.
+   *
+   * The board-subtree fallback is the deliberate exception: one board per
+   * transaction, holding that board's advisory lock for the whole subtree and
+   * using `PURGE_BOARD_TX_TIMEOUT_MS` instead of the ordinary short chunk
+   * timeout, so a restore can never interleave with a partial subtree delete.
    */
   async purgeSoftDeleted(): Promise<number> {
     const days = await this.retentionDays();

@@ -25,13 +25,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - TASK-185.1 hardening. An attachment-delete gap now releases its claimed
   destructive approval instead of burning it; repeated attachment deletion is
-  an idempotent no-op; GDPR erase locks every affected board before reading
-  candidates, re-reads the verified chain and merges `gdpr_erase` atomically;
-  every purge pass re-checks the soft-deleted flag in its delete predicate,
+  an idempotent no-op; GDPR erase collects the board union, takes one sorted
+  board-lock set behind a global erase key, re-reads the verified chain and
+  replays if a late board appears, then merges `gdpr_erase` atomically. Every
+  purge pass re-checks the soft-deleted flag in its delete predicate,
   attachments remove only blobs of rows that actually went, and the board
-  subtree is purged in one board-locked transaction so a restore wins. Activity
-  `commentId`/`revisionId` lookups have expression indexes. The 409 names
-  operator reconciliation until the automated sweep lands in 185.2/185.6.
+  subtree is purged one board at a time in its board-locked transaction so a
+  restore wins. Activity `commentId`/`revisionId` lookups have expression
+  indexes. The 409 names operator reconciliation until the automated sweep
+  lands in 185.2/185.6.
 
 - TASK-177.11 comment kind edit and filter. An author can now retype a
   comment's structured kind (note, status, question, blocker, evidence,

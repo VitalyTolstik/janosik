@@ -634,7 +634,7 @@ describe("MaintenanceService", () => {
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/t.jpg");
   });
 
-  it("purges a stale board's feed and command log in bounded pages before the final board transaction (TASK-156)", async () => {
+  it("purges a stale board's feed and command log in bounded pages under the board lock (TASK-156)", async () => {
     const prisma = makePrisma();
     const ids = (n: number, prefix: string) =>
       Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));

@@ -275,6 +275,20 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     return { promise, resolve };
   }
 
+  /** Wait until some transaction is queued on a transaction-scoped lock. */
+  async function waitForAdvisoryWaiter(): Promise<void> {
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT count(*)::bigint AS "count"
+          FROM pg_locks
+         WHERE locktype = 'advisory' AND NOT granted
+      `;
+      if ((rows[0]?.count ?? 0n) > 0n) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("erase never queued on the board lock");
+  }
+
   /** A valid revision chain without going through the HTTP writer. */
   async function seedForeignRevision(
     cardId: string,
@@ -1405,6 +1419,61 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
         where: { userId: { in: [leftUser.id, rightUser.id] } },
       }),
     ).toBe(0);
+  });
+
+  it("replays the erase when a late board appears after the lock set", async () => {
+    const first = await boardWithCard("History erase late first", "hel");
+    const late = await boardWithCard("History erase late new", "hen");
+    const user = await prisma.user.create({
+      data: { email: "history-late-board@example.com", displayName: "Late" },
+    });
+    await prisma.boardMember.create({
+      data: {
+        boardId: first.boardId,
+        userId: user.id,
+        role: "MEMBER",
+        acceptedAt: new Date(),
+      },
+    });
+
+    const held = deferred();
+    const release = deferred();
+    const hold = prisma.$transaction(async (tx) => {
+      await lockBoard(tx, first.boardId);
+      held.resolve();
+      await release.promise;
+    });
+    await held.promise;
+    const erase = accountDeletion.deleteAccount(user.id);
+    await waitForAdvisoryWaiter();
+
+    // This lands after the erase took its candidate union and locks. The
+    // retry must replay with the late board in the sorted lock set.
+    await prisma.boardMember.create({
+      data: {
+        boardId: late.boardId,
+        userId: user.id,
+        role: "MEMBER",
+        acceptedAt: new Date(),
+      },
+    });
+    const lateComment = await prisma.comment.create({
+      data: {
+        cardId: late.cardId,
+        authorId: user.id,
+        text: "late board comment",
+      },
+    });
+    release.resolve();
+    await Promise.all([hold, erase]);
+
+    expect(
+      await prisma.comment.findUnique({ where: { id: lateComment.id } }),
+    ).toBeNull();
+    expect(await prisma.user.findUnique({ where: { id: user.id } })).toBeNull();
+    expect(await prisma.boardMember.count({ where: { userId: user.id } })).toBe(
+      0,
+    );
   });
 
   it("hard purge removes revisions and comment Activity (comment and card paths)", async () => {
