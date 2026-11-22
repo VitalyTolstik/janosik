@@ -178,18 +178,22 @@ describe("useAdminList", () => {
     );
   });
 
-  it("leaves an out-of-range page alone unless clamping is opted in", async () => {
+  it("clamps a manually chosen out-of-range page (QA-A4)", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce(page([], 100, 0, 50))
-      .mockResolvedValueOnce(page([], 100, 150, 50));
+      .mockResolvedValueOnce(page([], 100, 150, 50))
+      .mockResolvedValueOnce(page([], 100, 50, 50));
     const { result } = renderHook(() => useAdminList<Row>(fetcher));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     act(() => result.current.setOffset(150));
-    await waitFor(() => expect(result.current.pageOffset).toBe(150));
-    expect(result.current.offset).toBe(150);
+    await waitFor(() => expect(result.current.pageOffset).toBe(50));
+    expect(result.current.offset).toBe(50);
     expect(result.current.items).toEqual([]);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 50, limit: 50 }),
+    );
   });
 });

@@ -71,10 +71,14 @@ describe("URL-backed admin lists", () => {
     },
   );
 
-  it("does not auto-correct an out-of-range URL offset", async () => {
+  it("corrects an out-of-range URL offset in place (QA-A4)", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValue({ items: [], total: 100, limit: 50, offset: 150 });
+      .mockImplementation(async ({ offset }: { offset?: number }) =>
+        offset === 150
+          ? { items: [], total: 100, limit: 50, offset: 150 }
+          : { items: [], total: 100, limit: 50, offset: 50 },
+      );
     const { result } = renderHook(
       () => ({
         list: useAdminListQuery(fetcher),
@@ -89,15 +93,14 @@ describe("URL-backed admin lists", () => {
       },
     );
 
-    await waitFor(() => expect(result.current.list.loading).toBe(false));
     await waitFor(() =>
-      expect(result.current.location.search).toBe("?tab=audit&offset=150"),
+      expect(result.current.location.search).toBe("?tab=audit&offset=50"),
     );
-    expect(result.current.list.offset).toBe(150);
-    expect(result.current.list.pageOffset).toBe(150);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher).toHaveBeenCalledWith(
-      expect.objectContaining({ offset: 150 }),
+    expect(result.current.list.offset).toBe(50);
+    expect(result.current.list.pageOffset).toBe(50);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 50 }),
     );
   });
 
