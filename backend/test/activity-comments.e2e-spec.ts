@@ -781,6 +781,93 @@ describe("Activity & comments API (e2e)", () => {
       }
     });
 
+    it("lets the author retype the kind, stamps editedAt and filters by it", async () => {
+      const { cardId } = await boardWithCard("Edit comment kind", "ek");
+      const created = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Needs a decision", kind: "note" })
+        .expect(201);
+      expect(created.body.kind).toBe("note");
+
+      const edited = await server()
+        .patch(`/api/v1/comments/${created.body.id as string}`)
+        .set(auth(memberToken))
+        .send({ kind: "question" })
+        .expect(200);
+      expect(edited.body).toMatchObject({
+        id: created.body.id,
+        text: "Needs a decision",
+        kind: "question",
+        editedAt: expect.any(Number),
+      });
+
+      const filtered = await server()
+        .get(`/api/v1/cards/${cardId}/comments?kind=question`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(filtered.body.items).toHaveLength(1);
+      expect(filtered.body.items[0]).toMatchObject({
+        id: created.body.id,
+        kind: "question",
+      });
+      const notes = await server()
+        .get(`/api/v1/cards/${cardId}/comments?kind=note`)
+        .set(auth(memberToken))
+        .expect(200);
+      expect(notes.body.items).toEqual([]);
+
+      const feed = await cardFeed(cardId);
+      const updated = feed.items.find(
+        (entry) => entry.type === "comment_updated",
+      );
+      expect(updated?.details).toMatchObject({
+        commentId: created.body.id,
+        text: "Needs a decision",
+      });
+    });
+
+    it("updates text and kind together and keeps an omitted field", async () => {
+      const { cardId } = await boardWithCard("Edit both fields", "eb");
+      const created = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(memberToken))
+        .send({ text: "Original", kind: "note" })
+        .expect(201);
+      const commentId = created.body.id as string;
+
+      const both = await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ text: "Now blocked", kind: "blocker" })
+        .expect(200);
+      expect(both.body).toMatchObject({
+        text: "Now blocked",
+        kind: "blocker",
+        editedAt: expect.any(Number),
+      });
+
+      const textOnly = await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ text: "Still blocked" })
+        .expect(200);
+      expect(textOnly.body).toMatchObject({
+        text: "Still blocked",
+        kind: "blocker",
+      });
+
+      const kindOnly = await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ kind: "evidence" })
+        .expect(200);
+      expect(kindOnly.body).toMatchObject({
+        text: "Still blocked",
+        kind: "evidence",
+      });
+    });
+
     it("rejects a non-author, a deleted comment and invalid text", async () => {
       const { cardId } = await boardWithCard("Edit guards", "eg");
       const created = await server()
@@ -814,6 +901,33 @@ describe("Activity & comments API (e2e)", () => {
         .set(auth(memberToken))
         .send({ text: "x".repeat(LIMITS.comment + 1) })
         .expect(400);
+      // TASK-177.11: at least one field is required, and the kind is checked.
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({})
+        .expect(400);
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ kind: "nonsense" })
+        .expect(400);
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ text: null })
+        .expect(400);
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(memberToken))
+        .send({ kind: null })
+        .expect(400);
+      // A non-author cannot retype the kind either.
+      await server()
+        .patch(`/api/v1/comments/${commentId}`)
+        .set(auth(adminToken))
+        .send({ kind: "blocker" })
+        .expect(403);
 
       await server()
         .delete(`/api/v1/comments/${commentId}`)

@@ -592,6 +592,74 @@ describe("Attention notifications (e2e)", () => {
     ).toBe(2);
   });
 
+  it("does not duplicate comment attention when the kind is edited", async () => {
+    const cardId = await createCard("Kind edit attention");
+    mailer.outbox.length = 0;
+
+    const blocker = await server()
+      .post(`/api/v1/cards/${cardId}/comments`)
+      .set(auth(agentToken))
+      .send({ text: "Waiting for credentials", kind: "blocker" })
+      .expect(201);
+    const commentId = blocker.body.id as string;
+    await notificationsFor("agent.blocked");
+    const attentionFor = (id: string) =>
+      prisma.attentionNotification.count({
+        where: { dedupKey: { contains: `:${id}:` } },
+      });
+    const delivered = await attentionFor(commentId);
+    expect(delivered).toBeGreaterThan(0);
+
+    // blocker → handoff: the original attention already went out; the type
+    // switch must not mint a second `agent.needs_human` row.
+    const handoff = await server()
+      .patch(`/api/v1/comments/${commentId}`)
+      .set(auth(agentToken))
+      .send({ kind: "handoff" })
+      .expect(200);
+    expect((handoff.body as CommentDto).kind).toBe("handoff");
+    expect(await attentionFor(commentId)).toBe(delivered);
+    expect(
+      await prisma.attentionNotification.count({
+        where: {
+          type: "agent.needs_human",
+          dedupKey: { contains: `:${commentId}:` },
+        },
+      }),
+    ).toBe(0);
+
+    // A text-only edit of the same typed comment fans out nothing either.
+    await server()
+      .patch(`/api/v1/comments/${commentId}`)
+      .set(auth(agentToken))
+      .send({ text: "Still waiting for credentials" })
+      .expect(200);
+    expect(await attentionFor(commentId)).toBe(delivered);
+
+    // A previously quiet agent note gets exactly one attention set when the
+    // author retypes it as a blocker; a later handoff edit stays deduplicated.
+    const note = await server()
+      .post(`/api/v1/cards/${cardId}/comments`)
+      .set(auth(agentToken))
+      .send({ text: "Just a note", kind: "note" })
+      .expect(201);
+    const noteId = note.body.id as string;
+    expect(await attentionFor(noteId)).toBe(0);
+    await server()
+      .patch(`/api/v1/comments/${noteId}`)
+      .set(auth(agentToken))
+      .send({ kind: "blocker" })
+      .expect(200);
+    const firstNoteAttention = await attentionFor(noteId);
+    expect(firstNoteAttention).toBeGreaterThan(0);
+    await server()
+      .patch(`/api/v1/comments/${noteId}`)
+      .set(auth(agentToken))
+      .send({ kind: "handoff" })
+      .expect(200);
+    expect(await attentionFor(noteId)).toBe(firstNoteAttention);
+  });
+
   it("records a quota warning when the operator board cap refuses a create", async () => {
     const previous = process.env.MAX_BOARDS_PER_USER;
     process.env.MAX_BOARDS_PER_USER = "1";
