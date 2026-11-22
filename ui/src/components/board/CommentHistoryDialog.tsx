@@ -52,15 +52,21 @@ function isGone(error: unknown): boolean {
 }
 
 /**
- * A live page that must replace the visible list with an empty state: GDPR
- * erase and writer gaps delete or disavow the saved revisions, and any empty
- * page that declares incomplete history can no longer be appended to.
+ * A live recheck page that must replace the visible list with an empty state:
+ * GDPR erase and writer gaps delete or disavow the saved revisions, and any
+ * empty page that declares incomplete history can no longer be appended to.
  */
 function clearsHistory(page: CommentRevisionPage): boolean {
   return (
+    erasesHistory(page) || (page.items.length === 0 && page.historyIncomplete)
+  );
+}
+
+/** Reasons that invalidate every loaded snapshot, including page 1. */
+function erasesHistory(page: CommentRevisionPage): boolean {
+  return (
     page.historyIncompleteReason === "gdpr_erase" ||
-    page.historyIncompleteReason === "writer_gap" ||
-    (page.items.length === 0 && page.historyIncomplete)
+    page.historyIncompleteReason === "writer_gap"
   );
 }
 
@@ -102,6 +108,9 @@ export function CommentHistoryDialog({
   // Every first-page load or close invalidates an in-flight response. A
   // slower reload must never overwrite a newer deletion or access check.
   const seqRef = useRef(0);
+  // Synchronous mirror of `status`: a focus recheck can resolve between the
+  // first page's `setStatus` and its effect, so the ref is updated with it.
+  const statusRef = useRef<Status>("loading");
   // Transient controls (Refresh, retry, Show older) unmount when their state
   // lands. Move focus to the dialog first so it never falls to <body>, then
   // return it to the still-mounted Show older button on an intermediate page
@@ -121,9 +130,11 @@ export function CommentHistoryDialog({
   }, [items]);
 
   const reset = useCallback(() => {
+    itemsRef.current = [];
     setItems([]);
     setNextCursor(null);
     setReason(null);
+    statusRef.current = "loading";
     setStatus("loading");
     setStale(false);
     setLoadingOlder(false);
@@ -132,15 +143,48 @@ export function CommentHistoryDialog({
     focusEndRef.current = false;
   }, []);
 
+  /**
+   * Drop every loaded revision after an erase/gap and invalidate any first or
+   * older page still in flight. If focus was inside the list or an expanded
+   * snapshot, move it to the dialog before those nodes unmount.
+   */
+  const clearHistory = useCallback(
+    (nextReason: CommentHistoryIncompleteReason | null) => {
+      const active = document.activeElement;
+      const focusWillUnmount =
+        active instanceof HTMLElement &&
+        (active.closest('[data-testid="comment-history-list"]') !== null ||
+          active.closest(
+            '[role="region"][data-testid^="comment-history-snapshot-"]',
+          ) !== null);
+      if (focusWillUnmount) dialogRef.current?.focus();
+      seqRef.current += 1;
+      itemsRef.current = [];
+      setItems([]);
+      setNextCursor(null);
+      setReason(nextReason);
+      statusRef.current = "ready";
+      setStatus("ready");
+      setStale(false);
+      setLoadingOlder(false);
+      setOlderError(false);
+      focusOlderRef.current = false;
+      focusEndRef.current = false;
+    },
+    [],
+  );
+
   const loadFirst = useCallback(
     async (keepBanner = false) => {
       const seq = ++seqRef.current;
+      statusRef.current = "loading";
       setStatus("loading");
       setStale(false);
       setLoadingOlder(false);
       setOlderError(false);
       focusOlderRef.current = false;
       focusEndRef.current = false;
+      itemsRef.current = [];
       setItems([]);
       setNextCursor(null);
       // A live refresh keeps the banner on screen until the new page says
@@ -156,6 +200,7 @@ export function CommentHistoryDialog({
         setItems(page.items);
         setNextCursor(page.nextCursor);
         setReason(page.historyIncompleteReason);
+        statusRef.current = "ready";
         setStatus("ready");
       } catch (error) {
         if (seq !== seqRef.current) return;
@@ -167,6 +212,7 @@ export function CommentHistoryDialog({
           onOpenChange(false);
           return;
         }
+        statusRef.current = "error";
         setStatus("error");
       }
     },
@@ -212,17 +258,11 @@ export function CommentHistoryDialog({
     try {
       const page = await api.listCommentRevisions(commentId, cursor, PAGE_SIZE);
       if (seq !== seqRef.current) return;
-      if (clearsHistory(page)) {
-        // The older page may reveal an erase or a writer gap that invalidates
-        // every loaded snapshot; do not keep page 1 visible under the banner.
-        setItems([]);
-        setNextCursor(null);
-        setReason(page.historyIncompleteReason);
-        setStatus("ready");
-        setStale(false);
-        setOlderError(false);
-        focusOlderRef.current = false;
-        focusEndRef.current = false;
+      if (erasesHistory(page)) {
+        // GDPR erase and writer gaps invalidate every loaded snapshot; do not
+        // keep page 1 visible under the banner. A trimmed/legacy empty page
+        // is not an erase: keep the loaded rows and just end the cursor.
+        clearHistory(page.historyIncompleteReason);
         return;
       }
       setItems((current) => {
@@ -255,7 +295,7 @@ export function CommentHistoryDialog({
     } finally {
       if (seq === seqRef.current) setLoadingOlder(false);
     }
-  }, [commentId, loadingOlder, nextCursor, onOpenChange, reset]);
+  }, [commentId, clearHistory, loadingOlder, nextCursor, onOpenChange, reset]);
 
   useEffect(() => {
     if (status !== "ready") return;
@@ -293,22 +333,17 @@ export function CommentHistoryDialog({
       if (seq !== seqRef.current) return;
       if (clearsHistory(page)) {
         // A focus/reconnect recheck can be the first place an erase or writer
-        // gap becomes visible; drop every retained snapshot and show only the
-        // banner/empty state.
-        setItems([]);
-        setNextCursor(null);
-        setReason(page.historyIncompleteReason);
-        setStatus("ready");
-        setStale(false);
-        setOlderError(false);
-        focusOlderRef.current = false;
-        focusEndRef.current = false;
+        // gap becomes visible; drop every retained snapshot and invalidate an
+        // in-flight first page so it cannot restore the erased rows.
+        clearHistory(page.historyIncompleteReason);
         return;
       }
       setReason(page.historyIncompleteReason);
-      const newest = page.items[0]?.revisionNumber ?? 0;
-      const loadedNewest = itemsRef.current[0]?.revisionNumber ?? 0;
-      if (newest > loadedNewest) setStale(true);
+      if (statusRef.current === "ready") {
+        const newest = page.items[0]?.revisionNumber ?? 0;
+        const loadedNewest = itemsRef.current[0]?.revisionNumber ?? 0;
+        if (newest > loadedNewest) setStale(true);
+      }
     } catch (error) {
       if (seq !== seqRef.current) return;
       if (isGone(error)) {
@@ -317,7 +352,7 @@ export function CommentHistoryDialog({
         onOpenChange(false);
       }
     }
-  }, [commentId, onOpenChange, reset]);
+  }, [clearHistory, commentId, onOpenChange, reset]);
 
   useEffect(() => {
     if (!open) return;
