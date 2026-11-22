@@ -166,6 +166,11 @@ for (const viewport of VIEWPORTS) {
       board,
     }) => {
       const { cardId, targetId } = await seedThread(board, 1);
+      // Two-word display name: the initial pair is visible in the avatar.
+      const profile = await board.api.patch("/api/v1/users/me", {
+        data: { displayName: "Vitaliy Kowalczyk-Shcherbakovsky" },
+      });
+      expect(profile.status(), await profile.text()).toBe(200);
       await board.open(page);
       await page.goto(
         new URL(`board/${board.id}?card=${cardId}&comment=${targetId}`, appUrl)
@@ -176,7 +181,9 @@ for (const viewport of VIEWPORTS) {
         dialog.locator(`[data-comment-id="${targetId}"]`),
       ).toBeVisible();
 
-      expect(await axeViolations(page, '[role="dialog"]')).toEqual([]);
+      const dialogViolations = await axeViolations(page, '[role="dialog"]');
+      expect(dialogViolations).not.toContain("label-content-name-mismatch");
+      expect(dialogViolations).toEqual([]);
 
       const editor = dialog
         .getByTestId("comment-input")
