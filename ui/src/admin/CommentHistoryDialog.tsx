@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import type {
   AdminCommentRowDto,
   CommentHistoryIncompleteReason,
@@ -56,15 +56,67 @@ export function AdminCommentHistoryButton({
   className?: string;
 }) {
   const t = useAdminT();
+  const { lang } = useI18n();
+  const hour12 = useHour12();
   const [open, setOpen] = useState(false);
   const openRef = useRef<HTMLButtonElement>(null);
+  const editedDate =
+    comment.editedAt === null
+      ? null
+      : formatDate(comment.editedAt, lang, hour12);
 
-  if (comment.revisionCount === null) return null;
+  /**
+   * Stable across parent re-renders (a refresh or toast must not make the
+   * dialog's first-page effect rerun and clear the loaded cursor).
+   */
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      // Radix restores focus to the trigger; repeat the assignment for a
+      // request that closed the dialog while the trigger remounted.
+      requestAnimationFrame(() => openRef.current?.focus());
+    }
+  }, []);
+
+  if (comment.revisionCount === null) {
+    // Deleted rows and rows under a deleted parent keep the old read-only
+    // edit marker; only the revisions link and dialog disappear.
+    return comment.editedAt === null ? null : (
+      <span
+        data-testid="admin-comment-edited"
+        title={editedDate ?? undefined}
+        className={cn(
+          "inline-flex max-w-full shrink-0 items-center align-middle",
+          className,
+        )}
+      >
+        <Badge variant="neutral">{t("admin.comments.edited")}</Badge>
+      </span>
+    );
+  }
 
   const edited = comment.editedAt !== null;
   const label = edited
     ? t("admin.comments.edited")
     : t("admin.comments.history");
+  const countLabel = t(
+    comment.revisionCount === 1
+      ? "admin.comments.history.openOne"
+      : "admin.comments.history.openMany",
+    { count: comment.revisionCount },
+  );
+  const accessibleName = t("admin.comments.history.triggerName", {
+    label,
+    count: countLabel,
+    date:
+      editedDate === null
+        ? ""
+        : t("admin.comments.history.triggerDate", { date: editedDate }),
+    incomplete: comment.historyIncomplete
+      ? t("admin.comments.history.triggerIncomplete")
+      : "",
+  });
+  const showCount = comment.revisionCount > 0 || comment.historyIncomplete;
 
   return (
     <>
@@ -73,28 +125,26 @@ export function AdminCommentHistoryButton({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={t("admin.comments.history.open", {
-          count: comment.revisionCount,
-        })}
-        title={t("admin.comments.history.open", {
-          count: comment.revisionCount,
-        })}
+        aria-label={accessibleName}
+        title={accessibleName}
         data-testid={`admin-comment-history-${comment.id}`}
         onClick={() => setOpen(true)}
         className={cn(
-          "inline-flex max-w-full items-center gap-1 rounded align-middle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "group inline-flex max-w-full shrink-0 items-center gap-1 rounded align-middle hover:bg-hover/60 hover:underline focus-visible:bg-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11 max-lg:px-2",
           className,
         )}
       >
         <Badge variant={comment.historyIncomplete ? "warning" : "neutral"}>
           {label}
         </Badge>
-        <span
-          data-testid={`admin-comment-revision-count-${comment.id}`}
-          className="text-[10px] tabular-nums text-muted-foreground"
-        >
-          {comment.revisionCount}
-        </span>
+        {showCount ? (
+          <span
+            data-testid={`admin-comment-revision-count-${comment.id}`}
+            className="text-[10px] tabular-nums text-muted-foreground"
+          >
+            {comment.revisionCount}
+          </span>
+        ) : null}
         {comment.historyIncomplete ? (
           <span
             aria-hidden
@@ -104,18 +154,15 @@ export function AdminCommentHistoryButton({
             !
           </span>
         ) : null}
+        <ChevronRight
+          aria-hidden
+          className="h-3 w-3 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+        />
       </button>
       <AdminCommentHistoryDialog
         comment={comment}
         open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (!next) {
-            // Radix restores focus to the trigger; repeat the assignment for
-            // a request that closed the dialog while the trigger remounted.
-            requestAnimationFrame(() => openRef.current?.focus());
-          }
-        }}
+        onOpenChange={handleOpenChange}
       />
     </>
   );
@@ -152,6 +199,15 @@ export function AdminCommentHistoryDialog({
   const seqRef = useRef(0);
   const endRef = useRef<HTMLParagraphElement | null>(null);
   const focusEndRef = useRef(false);
+  // The caller may pass a fresh callback on every render; it is only a way to
+  // close, so keep the latest one out of the load effect's dependencies.
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  }, [onOpenChange]);
+  const closeDialog = useCallback(() => {
+    onOpenChangeRef.current(false);
+  }, []);
 
   const reset = useCallback(() => {
     setItems([]);
@@ -186,12 +242,12 @@ export function AdminCommentHistoryDialog({
       if (isGone(error)) {
         seqRef.current += 1;
         reset();
-        onOpenChange(false);
+        closeDialog();
         return;
       }
       setStatus("error");
     }
-  }, [comment.id, onOpenChange, reset]);
+  }, [closeDialog, comment.id, reset]);
 
   useEffect(() => {
     if (!open) {
@@ -238,14 +294,14 @@ export function AdminCommentHistoryDialog({
       if (isGone(error)) {
         seqRef.current += 1;
         reset();
-        onOpenChange(false);
+        closeDialog();
         return;
       }
       setOlderError(true);
     } finally {
       if (seq === seqRef.current) setLoadingOlder(false);
     }
-  }, [comment.id, loadingOlder, nextCursor, onOpenChange, reset]);
+  }, [closeDialog, comment.id, loadingOlder, nextCursor, reset]);
 
   useEffect(() => {
     if (!focusEndRef.current || status !== "ready" || nextCursor !== null) {
@@ -255,13 +311,16 @@ export function AdminCommentHistoryDialog({
     endRef.current?.focus();
   }, [nextCursor, status]);
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) {
-      seqRef.current += 1;
-      reset();
-    }
-    onOpenChange(next);
-  };
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) {
+        seqRef.current += 1;
+        reset();
+      }
+      onOpenChangeRef.current(next);
+    },
+    [reset],
+  );
 
   const banner =
     reason === null
@@ -323,6 +382,7 @@ export function AdminCommentHistoryDialog({
                 variant="outline"
                 size="sm"
                 data-testid="admin-comment-history-retry"
+                className="max-lg:min-h-11"
                 onClick={() => void loadFirst()}
               >
                 {t("admin.comments.history.retry")}
@@ -354,6 +414,7 @@ export function AdminCommentHistoryDialog({
                   size="sm"
                   disabled={loadingOlder}
                   data-testid="admin-comment-history-show-older"
+                  className="max-lg:min-h-11"
                   onClick={() => void loadOlder()}
                 >
                   {loadingOlder ? (
@@ -384,6 +445,7 @@ export function AdminCommentHistoryDialog({
                     variant="outline"
                     size="sm"
                     data-testid="admin-comment-history-older-retry"
+                    className="max-lg:min-h-11"
                     onClick={() => void loadOlder()}
                   >
                     {t("admin.comments.history.retry")}
@@ -489,7 +551,7 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
         }
         data-testid={`admin-comment-history-snapshot-toggle-${number}`}
         onClick={() => setFull((current) => !current)}
-        className="mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11 max-lg:px-3"
       >
         {full
           ? t("admin.comments.history.hideSnapshot")
@@ -499,8 +561,11 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
       {full ? (
         <div
           id={snapshotId}
+          role="region"
+          aria-label={t("admin.comments.history.snapshotLabel", { number })}
+          tabIndex={0}
           data-testid={`admin-comment-history-snapshot-${number}`}
-          className="mt-2 max-h-60 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-2"
+          className="mt-2 max-h-60 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {t("admin.comments.history.fullVersion")}

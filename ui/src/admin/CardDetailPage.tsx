@@ -1023,13 +1023,14 @@ export function CardDetailPage() {
                     >
                       <Td
                         label={t("admin.comments.column.text")}
-                        className="max-w-[30rem] whitespace-normal"
+                        className="max-w-[30rem] whitespace-normal break-words [overflow-wrap:anywhere]"
                       >
-                        {comment.text}
-                        <AdminCommentHistoryButton
-                          comment={comment}
-                          className="ml-2"
-                        />
+                        <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
+                          <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">
+                            {comment.text}
+                          </div>
+                          <AdminCommentHistoryButton comment={comment} />
+                        </div>
                       </Td>
                       <Td label={t("admin.comments.column.author")}>
                         <EntityLink

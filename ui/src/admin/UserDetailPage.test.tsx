@@ -458,6 +458,8 @@ describe("UserDetailPage identity links and per-row moderation", () => {
     const trigger = await screen.findByTestId(
       "admin-comment-history-comment-1",
     );
+    expect(trigger.parentElement?.className).toContain("flex-col");
+    expect(trigger).toHaveClass("max-lg:min-h-11");
     await user.click(trigger);
     expect(
       await screen.findByTestId("admin-comment-history-dialog"),

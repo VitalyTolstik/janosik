@@ -40,8 +40,28 @@ describe("admin comments table history", () => {
   it("opens a live row's history and hides deleted rows' links", async () => {
     const state = emptyAdminState();
     state.users = [adminUser()];
-    state.boards = [adminBoard()];
-    state.cards = [adminCard({ id: "card-1" })];
+    state.boards = [
+      adminBoard(),
+      adminBoard({ id: "b-column-deleted", title: "Deleted column board" }),
+      adminBoard({
+        id: "b-board-deleted",
+        title: "Deleted board",
+        deletedAt: Date.UTC(2026, 0, 2),
+      }),
+    ];
+    state.cards = [
+      adminCard({ id: "card-1" }),
+      adminCard({
+        id: "card-column-deleted",
+        boardId: "b-column-deleted",
+        columnId: "column-deleted",
+      }),
+      adminCard({
+        id: "card-board-deleted",
+        boardId: "b-board-deleted",
+        columnId: "column-board-deleted",
+      }),
+    ];
     state.comments = [
       adminComment({ id: "live", text: "Live note", revisionCount: 1 }),
       adminComment({
@@ -51,11 +71,40 @@ describe("admin comments table history", () => {
         revisionCount: null,
         historyIncomplete: null,
       }),
+      adminComment({
+        id: "column-deleted",
+        text: "Deleted column note",
+        cardId: "card-column-deleted",
+        revisionCount: null,
+        historyIncomplete: null,
+      }),
+      adminComment({
+        id: "board-deleted",
+        text: "Deleted board note",
+        cardId: "card-board-deleted",
+        revisionCount: null,
+        historyIncomplete: null,
+      }),
     ];
     state.commentHistories.live = adminCommentHistory({
       items: [adminCommentRevision()],
     });
     const server = new FakeAdminServer(state);
+    server.boardColumns["b-column-deleted"] = [
+      {
+        id: "column-deleted",
+        boardId: "b-column-deleted",
+        boardTitle: "Deleted column board",
+        title: "Gone",
+        wipLimit: null,
+        position: 0,
+        cardCount: 1,
+        deletedAt: Date.UTC(2026, 0, 2),
+        version: 0,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
     vi.stubGlobal("fetch", server.fetchImpl);
     const user = userEvent.setup();
 
@@ -75,12 +124,15 @@ describe("admin comments table history", () => {
       </ThemeProvider>,
     );
 
-    expect(
-      await screen.findByTestId("admin-comment-history-live"),
-    ).toHaveTextContent("History");
-    expect(screen.queryByTestId("admin-comment-history-deleted")).toBeNull();
+    const trigger = await screen.findByTestId("admin-comment-history-live");
+    expect(trigger).toHaveTextContent("History");
+    expect(trigger).toHaveClass("max-lg:min-h-11");
+    expect(trigger.parentElement?.className).toContain("min-w-0");
+    for (const id of ["deleted", "column-deleted", "board-deleted"]) {
+      expect(screen.queryByTestId(`admin-comment-history-${id}`)).toBeNull();
+    }
 
-    await user.click(screen.getByTestId("admin-comment-history-live"));
+    await user.click(trigger);
     expect(
       await screen.findByTestId("admin-comment-history-dialog"),
     ).toBeTruthy();

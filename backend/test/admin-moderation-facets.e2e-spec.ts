@@ -23,6 +23,10 @@ const INLINE_CARD = "inline-only-card";
 const ARCHIVED_CARD = "archived-parent";
 const DELETED_CARD = "deleted-parent";
 const OTHER_CARD = "other-card";
+const COLUMN_DELETED_BOARD = "column-deleted-board";
+const COLUMN_DELETED_CARD = "column-deleted-card";
+const BOARD_DELETED_BOARD = "board-deleted-board";
+const BOARD_DELETED_CARD = "board-deleted-card";
 const USER = "moderation-author";
 const OTHER_USER = "moderation-colleague";
 const EMAIL = "moderation-operator@example.com";
@@ -71,6 +75,12 @@ describe("Admin moderation facets (e2e)", () => {
       data: [
         { id: BOARD, title: BOARD_TITLE, archivedAt: new Date(BOUNDARY) },
         { id: OTHER_BOARD, title: "Elsewhere" },
+        { id: COLUMN_DELETED_BOARD, title: "Deleted column parent" },
+        {
+          id: BOARD_DELETED_BOARD,
+          title: "Deleted board parent",
+          deletedAt: new Date(BOUNDARY),
+        },
       ],
     });
     await prisma.boardMember.create({
@@ -89,6 +99,23 @@ describe("Admin moderation facets (e2e)", () => {
         position: 0,
       })),
     });
+    await prisma.column.createMany({
+      data: [
+        {
+          id: `${COLUMN_DELETED_BOARD}-column`,
+          boardId: COLUMN_DELETED_BOARD,
+          title: "Gone column",
+          position: 0,
+          deletedAt: new Date(BOUNDARY),
+        },
+        {
+          id: `${BOARD_DELETED_BOARD}-column`,
+          boardId: BOARD_DELETED_BOARD,
+          title: "Gone board column",
+          position: 0,
+        },
+      ],
+    });
     await prisma.card.createMany({
       data: [CARD, INLINE_CARD, ARCHIVED_CARD, DELETED_CARD, OTHER_CARD].map(
         (id, position) => ({
@@ -100,6 +127,22 @@ describe("Admin moderation facets (e2e)", () => {
           position,
         }),
       ),
+    });
+    await prisma.card.createMany({
+      data: [
+        {
+          id: COLUMN_DELETED_CARD,
+          title: "Deleted column card",
+          columnId: `${COLUMN_DELETED_BOARD}-column`,
+          position: 10,
+        },
+        {
+          id: BOARD_DELETED_CARD,
+          title: "Deleted board card",
+          columnId: `${BOARD_DELETED_BOARD}-column`,
+          position: 11,
+        },
+      ],
     });
 
     await prisma.comment.createMany({
@@ -127,6 +170,16 @@ describe("Admin moderation facets (e2e)", () => {
         },
         { id: "c-deleted", kind: "blocker", deletedAt: new Date(BOUNDARY) },
         { id: "c-other-board", kind: "blocker", cardId: OTHER_CARD },
+        {
+          id: "c-column-deleted",
+          kind: "note",
+          cardId: COLUMN_DELETED_CARD,
+        },
+        {
+          id: "c-board-deleted",
+          kind: "note",
+          cardId: BOARD_DELETED_CARD,
+        },
       ].map((row) => ({
         cardId: CARD,
         authorId: USER,
@@ -507,6 +560,18 @@ describe("Admin moderation facets (e2e)", () => {
         revisionCount: null,
         historyIncomplete: null,
       });
+      for (const [boardId, id] of [
+        [COLUMN_DELETED_BOARD, "c-column-deleted"],
+        [BOARD_DELETED_BOARD, "c-board-deleted"],
+      ]) {
+        const parentPage = await comments(
+          `boardId=${boardId}&status=all&limit=100`,
+          specialized,
+        );
+        expect(parentPage.items).toMatchObject([
+          { id, revisionCount: null, historyIncomplete: null },
+        ]);
+      }
       for (const row of page.items) expect(typeof row.text).toBe("string");
 
       // TASK-181 kind filtering and TASK-176.3 totals stay untouched.
@@ -561,7 +626,9 @@ describe("Admin moderation facets (e2e)", () => {
       .body;
     expect(revisions.items).toHaveLength(2);
     expect(revisions.historyIncomplete).toBe(false);
-    await get("comments/c-handoff/revisions").expect(404);
+    for (const id of ["c-handoff", "c-column-deleted", "c-board-deleted"]) {
+      await get(`comments/${id}/revisions`).expect(404);
+    }
   });
 
   it("resolves an exact user and a board-scoped card as an operator", async () => {

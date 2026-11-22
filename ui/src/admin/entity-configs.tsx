@@ -898,8 +898,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comments.column.text"),
             render: (comment) => (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <TextCell value={comment.text} maxWidth="26rem" />
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+                <TextCell
+                  value={comment.text}
+                  maxWidth="26rem"
+                  className="min-w-0 max-w-full"
+                />
                 <Badge>{t(`admin.filters.kind.${comment.kind}`)}</Badge>
                 <AdminCommentHistoryButton comment={comment} />
               </div>

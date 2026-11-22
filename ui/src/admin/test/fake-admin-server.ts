@@ -142,6 +142,43 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+/** Opaque comment-bound cursor, mirroring the real base64url JSON shape. */
+function encodeRevisionCursor(commentId: string, revisionNumber: number) {
+  return btoa(JSON.stringify({ c: commentId, r: revisionNumber }))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
+/** `null` for a malformed or foreign cursor, exactly what the API rejects. */
+function decodeRevisionCursor(raw: string, commentId: string): number | null {
+  try {
+    const base64 = raw.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "=",
+    );
+    const decoded = JSON.parse(atob(padded)) as {
+      c?: unknown;
+      r?: unknown;
+    };
+    if (
+      decoded === null ||
+      typeof decoded !== "object" ||
+      typeof decoded.c !== "string" ||
+      decoded.c !== commentId ||
+      typeof decoded.r !== "number" ||
+      !Number.isSafeInteger(decoded.r) ||
+      decoded.r <= 0
+    ) {
+      return null;
+    }
+    return decoded.r;
+  } catch {
+    return null;
+  }
+}
+
 export function emptyAdminState(): FakeAdminState {
   return {
     admins: [],
@@ -2824,20 +2861,20 @@ export class FakeAdminServer {
       return this.json({ message: "Comment not found" }, 404);
     }
     const limitRaw = url.searchParams.get("limit");
-    if (limitRaw !== null && !/^[0-9]+$/.test(limitRaw)) {
+    if (limitRaw !== null && limitRaw !== "" && !/^[0-9]+$/.test(limitRaw)) {
       return this.json({ message: "limit must be an integer" }, 400);
     }
-    const limit = limitRaw === null ? 20 : Number(limitRaw);
+    const limit = limitRaw === null || limitRaw === "" ? 20 : Number(limitRaw);
     if (limit < 1 || limit > 100) {
       return this.json({ message: "limit must be an integer" }, 400);
     }
     const cursorRaw = url.searchParams.get("cursor");
     let cursor: number | null = null;
-    if (cursorRaw !== null) {
-      if (!/^[0-9]+$/.test(cursorRaw) || Number(cursorRaw) <= 0) {
+    if (cursorRaw !== null && cursorRaw !== "") {
+      cursor = decodeRevisionCursor(cursorRaw, commentId);
+      if (cursor === null) {
         return this.json({ message: "cursor is malformed" }, 400);
       }
-      cursor = Number(cursorRaw);
     }
 
     const history = this.state.commentHistories[commentId];
@@ -2853,7 +2890,10 @@ export class FakeAdminServer {
     const items = candidates.slice(0, limit);
     const nextCursor =
       candidates.length > limit && items.length > 0
-        ? String(items[items.length - 1].revisionNumber)
+        ? encodeRevisionCursor(
+            commentId,
+            items[items.length - 1].revisionNumber,
+          )
         : null;
     return this.json({
       items,

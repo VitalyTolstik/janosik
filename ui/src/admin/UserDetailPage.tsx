@@ -1200,13 +1200,16 @@ export function UserDetailPage() {
                     <tr key={comment.id}>
                       <Td
                         label={t("admin.comments.column.text")}
-                        className="max-w-[26rem]"
+                        className="max-w-[26rem] break-words [overflow-wrap:anywhere]"
                       >
-                        <TextCell value={comment.text} maxWidth="26rem" />
-                        <AdminCommentHistoryButton
-                          comment={comment}
-                          className="ml-1.5"
-                        />
+                        <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
+                          <TextCell
+                            value={comment.text}
+                            maxWidth="26rem"
+                            className="min-w-0 max-w-full"
+                          />
+                          <AdminCommentHistoryButton comment={comment} />
+                        </div>
                       </Td>
                       <Td label={t("admin.comments.column.card")}>
                         <EntityLink to={cardHref(comment.cardId)}>

@@ -3498,6 +3498,11 @@ describe("FakeAdminServer relation fidelity (TASK-176.9 B2)", () => {
       "admin-comment-history-comment-1",
     );
     expect(trigger).toHaveTextContent("History");
+    expect(trigger).toHaveClass("max-lg:min-h-11");
+    expect(trigger.parentElement?.className).toContain("flex-col");
+    expect(trigger.closest("td")?.className).toContain(
+      "[overflow-wrap:anywhere]",
+    );
     await user.click(trigger);
     expect(
       await screen.findByTestId("admin-comment-history-dialog"),
