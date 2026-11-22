@@ -101,6 +101,10 @@ import { SecurityAuditService } from "@/common/security-audit/security-audit.ser
 import type { RequestAttribution } from "@/auth/request-attribution";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import {
+  ADMIN_COMMENT_ROW_SELECT,
+  toAdminCommentRow,
+} from "./admin-comment-row";
 import { auditIdsForCommands } from "./audit-correlation";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import type { AdminEmailTestDto } from "./dto/admin-email-test.dto";
@@ -2073,37 +2077,13 @@ export class AdminService {
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
-        select: {
-          id: true,
-          cardId: true,
-          authorId: true,
-          text: true,
-          kind: true,
-          createdAt: true,
-          updatedAt: true,
-          editedAt: true,
-          deletedAt: true,
-          card: { select: { title: true } },
-          author: { select: { email: true } },
-        },
+        select: ADMIN_COMMENT_ROW_SELECT,
       }),
       this.prisma.comment.count({ where }),
     ]);
 
     return {
-      items: items.map((comment) => ({
-        id: comment.id,
-        cardId: comment.cardId,
-        cardTitle: comment.card.title,
-        authorId: comment.authorId,
-        authorEmail: comment.author.email,
-        text: comment.text,
-        kind: comment.kind as AdminCommentRowDto["kind"],
-        createdAt: comment.createdAt.getTime(),
-        updatedAt: comment.updatedAt.getTime(),
-        editedAt: comment.editedAt?.getTime() ?? null,
-        deletedAt: comment.deletedAt?.getTime() ?? null,
-      })),
+      items: items.map(toAdminCommentRow),
       total,
       limit,
       offset,

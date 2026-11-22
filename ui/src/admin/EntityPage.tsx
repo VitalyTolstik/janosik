@@ -1,4 +1,10 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import type {
@@ -726,9 +732,8 @@ export function EntityPage<E extends AdminEntity>({
                     `admin-row-${config.entity}-${index}`;
                   const id = rowId(row);
                   return (
-                    <>
+                    <Fragment key={rowHrefKey(row, index)}>
                       <tr
-                        key={rowHrefKey(row, index)}
                         data-testid={testId}
                         data-clickable={href ? "true" : undefined}
                         data-selected={
@@ -822,7 +827,7 @@ export function EntityPage<E extends AdminEntity>({
                           </Td>
                         ) : null}
                       </tr>
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

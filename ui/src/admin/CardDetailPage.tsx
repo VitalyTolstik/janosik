@@ -47,6 +47,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { adminApi } from "./admin-client";
+import { AdminCommentHistoryButton } from "./CommentHistoryDialog";
 import {
   adminAuditEntryHref,
   currentAdminPath,
@@ -1022,20 +1023,14 @@ export function CardDetailPage() {
                     >
                       <Td
                         label={t("admin.comments.column.text")}
-                        className="max-w-[30rem] whitespace-normal"
+                        className="max-w-[30rem] whitespace-normal break-words [overflow-wrap:anywhere]"
                       >
-                        {comment.text}
-                        {comment.editedAt !== null ? (
-                          <span
-                            data-testid="admin-comment-edited"
-                            className="ml-2 inline-flex align-middle"
-                            title={formatDate(comment.editedAt, lang, hour12)}
-                          >
-                            <Badge variant="neutral">
-                              {t("admin.comments.edited")}
-                            </Badge>
-                          </span>
-                        ) : null}
+                        <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
+                          <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">
+                            {comment.text}
+                          </div>
+                          <AdminCommentHistoryButton comment={comment} />
+                        </div>
                       </Td>
                       <Td label={t("admin.comments.column.author")}>
                         <EntityLink
