@@ -137,6 +137,52 @@ describe("comment composer mentions (TASK-177.12)", () => {
     expect(await screen.findByTestId("mention-picker")).toBeVisible();
   });
 
+  it("does not open at a text offset 0 after an inline word", () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+    const editor = screen.getByTestId("mock-comment-editor");
+    editor.innerHTML = "<p>hello <em>world</em>next</p>";
+    const text = editor.querySelector("p")!.lastChild!;
+    setCaret(text, 0);
+
+    fireEvent.keyDown(editor, {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+  });
+
+  it("does not open inside a fenced code textarea", () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+    const editor = screen.getByTestId("mock-comment-editor");
+    const textarea = document.createElement("textarea");
+    editor.append(textarea);
+    textarea.focus();
+
+    fireEvent.keyDown(textarea, {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+  });
+
   it("does not open inside inline code at the caret", () => {
     render(
       <I18nProvider>

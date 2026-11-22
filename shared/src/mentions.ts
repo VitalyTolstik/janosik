@@ -55,7 +55,21 @@ function maskHtmlComments(chars: string[]): void {
   }
 }
 
-/** Four-space/tab indented code blocks are inert like fenced ones. */
+/** Remove repeated blockquote markers so their indented code is visible. */
+function unquoteLine(line: string): string {
+  let current = line;
+  for (;;) {
+    const match = /^ {0,3}> ?/.exec(current);
+    if (match === null) return current;
+    current = current.slice(match[0].length);
+  }
+}
+
+/**
+ * Four-space/tab indented code blocks are inert like fenced ones. Blockquote
+ * markers are stripped first; an indented list marker is a nested list item
+ * (a mention inside it stays live), not a code line.
+ */
 function maskIndentedCode(chars: string[]): void {
   const text = chars.join("");
   let offset = 0;
@@ -65,10 +79,15 @@ function maskIndentedCode(chars: string[]): void {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
     const line = text.slice(offset, newline === -1 ? text.length : newline);
-    const blank = line.trim() === "";
-    const indented = /^(?: {4}|\t)/.test(line);
+    const content = unquoteLine(line);
+    const blank = content.trim() === "";
+    const indented = /^(?: {4}|\t)/.test(content);
+    const afterIndent = content.replace(/^(?: {4}|\t)/, "");
+    const listContinuation = /^ {0,3}(?:[-+*]|\d+[.)])(?:\s|$)/.test(
+      afterIndent,
+    );
     if (inIndented) {
-      if (indented || blank) {
+      if ((indented && !listContinuation) || blank) {
         maskRange(chars, offset, end);
         offset = end;
         previousBlank = blank;
@@ -76,7 +95,7 @@ function maskIndentedCode(chars: string[]): void {
       }
       inIndented = false;
     }
-    if (previousBlank && indented) {
+    if (previousBlank && indented && !listContinuation) {
       maskRange(chars, offset, end);
       inIndented = true;
       previousBlank = false;
@@ -282,7 +301,7 @@ export function isMentionHref(href: string | null | undefined): boolean {
   if (!href) return false;
   // Raw prefix, not normalised `URL.pathname`: `…/mention/../etc` must be
   // swallowed even though the URL parser would collapse the traversal.
-  return /^https:\/\/janosik\.invalid\/mention(?:[/?#%]|$)/i.test(href);
+  return /^https:\/\/janosik\.invalid\/mention(?:[/?#%\\]|$)/i.test(href);
 }
 
 /** Parse a mention anchor href; anything else (including lookalikes) is null. */

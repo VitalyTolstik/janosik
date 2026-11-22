@@ -102,11 +102,28 @@ function lastCaretChar(node: Node | null): string | null {
     const text = node.textContent ?? "";
     return text === "" ? null : ([...text].pop() ?? null);
   }
+  if (node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+    return lastCaretChar(node.lastChild);
+  }
   if (node.nodeType !== Node.ELEMENT_NODE) return null;
   const element = node as HTMLElement;
   if (element.tagName === "BR") return null;
-  const last = lastCaretChar(element.lastChild);
-  if (last !== null) return last;
+  let child = element.lastChild;
+  while (child !== null) {
+    if (child.nodeType === Node.ELEMENT_NODE) {
+      const childElement = child as HTMLElement;
+      if (childElement.tagName === "BR") return null;
+    }
+    const last = lastCaretChar(child);
+    if (last !== null) return last;
+    if (
+      child.nodeType === Node.ELEMENT_NODE &&
+      BLOCK_TAGS.has((child as HTMLElement).tagName)
+    ) {
+      return null;
+    }
+    child = child.previousSibling;
+  }
   if (BLOCK_TAGS.has(element.tagName)) return null;
   return lastCaretChar(element.previousSibling);
 }
@@ -283,8 +300,19 @@ export const CommentComposerEditor = forwardRef<
       className="relative"
       onKeyDown={(event) => {
         const context = caretContext();
+        const codeSurface = (node: Element | null) =>
+          node?.closest("code, pre, textarea, [class*='code']") != null;
+        const eventTarget =
+          event.target instanceof Element ? event.target : null;
+        const activeElement =
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        const inCodeControl =
+          codeSurface(eventTarget) || codeSurface(activeElement);
         if (
           !context.inCode &&
+          !inCodeControl &&
           isMentionTrigger({
             key: event.key,
             isComposing: event.nativeEvent.isComposing,

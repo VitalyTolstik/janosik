@@ -83,6 +83,15 @@ describe("comment mentions (TASK-177.12)", () => {
     ]);
   });
 
+  it("keeps mentions in nested list continuations but not blockquote code", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`- parent\n\n    - child ${token}`)).toEqual([
+      expect.objectContaining({ userId: "user-1" }),
+    ]);
+    expect(parseCommentMentions(`>     ${token}`)).toEqual([]);
+    expect(parseCommentMentions(`> >     ${token}`)).toEqual([]);
+  });
+
   it("ignores escaped tokens and keeps a double-escaped link live", () => {
     const token = mentionMarkdown("Alice", "user-1");
     expect(parseCommentMentions(`Literal \\${token}`)).toEqual([]);
@@ -120,6 +129,9 @@ describe("comment mentions (TASK-177.12)", () => {
       true,
     );
     expect(isMentionHref("https://janosik.invalid/mention%2f..%2fetc")).toBe(
+      true,
+    );
+    expect(isMentionHref("https://janosik.invalid/mention\\..\\etc")).toBe(
       true,
     );
     expect(isMentionHref("https://example.com/mention/user-1")).toBe(false);
