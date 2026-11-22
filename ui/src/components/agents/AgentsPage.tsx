@@ -2219,7 +2219,7 @@ function AttentionLiveSessions({
           type="button"
           onClick={onViewAll}
           data-testid="agents-live-view-all"
-          className="ml-auto inline-flex min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"
+          className="ml-auto inline-flex max-xl:min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"
         >
           {t("agents.shell.viewAll")}
           <ChevronRight className="h-[11px] w-[11px]" aria-hidden />

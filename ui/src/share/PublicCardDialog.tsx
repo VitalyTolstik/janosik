@@ -62,7 +62,9 @@ export function PublicCardDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="pr-8 text-lg">{card.title}</DialogTitle>
+          <DialogTitle className="min-w-0 max-w-full pr-8 text-lg wrap-anywhere">
+            {card.title}
+          </DialogTitle>
         </DialogHeader>
 
         <CardBody
@@ -134,7 +136,7 @@ function CardBody({
 
       {card.description !== undefined && card.description.trim() !== "" ? (
         <p
-          className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]"
+          className="min-w-0 max-w-full whitespace-pre-wrap text-sm wrap-anywhere"
           data-testid="public-description"
         >
           {card.description}
@@ -146,9 +148,9 @@ function CardBody({
         const done = items.filter((item) => item.done).length;
         return (
           <div key={checklist.id} className="space-y-1">
-            <div className="flex items-center justify-between text-sm font-medium">
-              <span>{checklist.title}</span>
-              <span className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-2 text-sm font-medium">
+              <span className="min-w-0 wrap-anywhere">{checklist.title}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
                 {done}/{items.length}
               </span>
             </div>
@@ -164,7 +166,7 @@ function CardBody({
                     className="h-3.5 w-3.5 shrink-0 rounded-sm border"
                     aria-hidden
                   />
-                  {item.text}
+                  <span className="min-w-0 wrap-anywhere">{item.text}</span>
                 </li>
               ))}
             </ul>
@@ -241,10 +243,10 @@ function PublicAttachments({
               href={publicAttachmentUrl(token, item.id)}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm text-primary hover:underline"
             >
-              <Paperclip className="h-3.5 w-3.5" aria-hidden />
-              {item.fileName}
+              <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 wrap-anywhere">{item.fileName}</span>
             </a>
           </li>
         ))}
@@ -267,6 +269,8 @@ function PublicComments({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [initialError, setInitialError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     let active = true;
     fetchPublicComments(token, cardId, undefined, 50)
@@ -279,11 +283,18 @@ function PublicComments({
         if (!active) return;
         setItems([]);
         setNextCursor(null);
+        setInitialError(true);
       });
     return () => {
       active = false;
     };
-  }, [token, cardId]);
+  }, [token, cardId, reloadKey]);
+
+  const retryInitial = () => {
+    setInitialError(false);
+    setItems(null);
+    setReloadKey((value) => value + 1);
+  };
 
   const loadOlder = async () => {
     if (nextCursor === null || loadingMore) return;
@@ -303,6 +314,24 @@ function PublicComments({
   };
 
   if (items === null) return <PublicCommentsSkeleton />;
+  if (items.length === 0 && initialError) {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm font-medium">{t("activity.comments")}</p>
+        <p role="alert" className="text-xs text-destructive">
+          {t("share.public.commentsInitialError")}
+        </p>
+        <button
+          type="button"
+          data-testid="public-comments-retry"
+          onClick={retryInitial}
+          className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline"
+        >
+          {t("share.public.retry")}
+        </button>
+      </div>
+    );
+  }
   if (items.length === 0) return null;
   return (
     <div className="space-y-2">

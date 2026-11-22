@@ -58,12 +58,19 @@ describe("Toast", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Board saved");
   });
 
-  it("keeps the notifications region above the home-indicator safe area", () => {
+  it("moves the notifications region off the phone agent footer", () => {
     renderToasts();
 
-    expect(
-      screen.getByRole("region", { name: "Notifications" }).className,
-    ).toContain("bottom-[calc(1rem_+_env(safe-area-inset-bottom))]");
+    const region = screen.getByRole("region", { name: "Notifications" });
+    expect(region.className).toContain(
+      "bottom-[calc(1rem_+_env(safe-area-inset-bottom))]",
+    );
+    // On phones the agent-control safety footer owns the bottom edge; the
+    // toast stack moves under the top safe area instead of covering it.
+    expect(region.className).toContain(
+      "max-md:top-[calc(1rem_+_env(safe-area-inset-top))]",
+    );
+    expect(region.className).toContain("max-md:bottom-auto");
   });
 
   it("auto-dismisses after 4.5 seconds", () => {

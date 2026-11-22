@@ -1377,6 +1377,7 @@
   "share.public.anonymous": "Someone",
   "share.public.badge": "Shared · read-only",
   "share.public.badgeLive": "Live · read-only",
+  "share.public.commentsInitialError": "Couldn't load comments.",
   "share.public.commentsLoadError": "Couldn't load older comments.",
   "share.public.commentsLoadMore": "Load older comments",
   "share.public.commentsLoading": "Loading…",

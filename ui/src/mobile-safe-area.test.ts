@@ -67,7 +67,7 @@ describe("mobile safe areas (TASK-177.18)", () => {
     );
   });
 
-  it("pads both public share headers like the authenticated header", () => {
+  it("pads both public share headers and the shell for safe areas", () => {
     // The public contour mounts outside the app shell, so it cannot inherit
     // the header's safe-area classes. F3: the brand used to sit at y=13.5
     // under a 47 px status bar; both the ready state and the pre-payload
@@ -76,6 +76,12 @@ describe("mobile safe areas (TASK-177.18)", () => {
       /<header className="sticky top-0[^"]*"/g,
     );
     expect(headers).toHaveLength(2);
+    // Both ready and loading/error shells use the dynamic viewport unit and
+    // leave the home indicator clear at the bottom.
+    expect(publicBoardPage.match(/className="flex h-dvh /g)).toHaveLength(2);
+    expect(
+      publicBoardPage.match(/pb-\[env\(safe-area-inset-bottom\)\]/g),
+    ).toHaveLength(2);
     for (const headerClassName of headers ?? []) {
       expect(headerClassName).toContain("pt-[env(safe-area-inset-top)]");
       expect(headerClassName).toContain(

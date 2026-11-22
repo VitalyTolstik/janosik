@@ -94,6 +94,17 @@ html.light .agent-control-surface {
   .agent-control-surface .live-status-actions .btn {
     min-height: 44px;
   }
+
+  .agent-control-surface .ac-toolbar .icon-btn-sm {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Runs still owns an absolutely-positioned footer; reserve the 44 px
+     action row plus its padding and the bottom inset. */
+  .agent-control-surface .ac-body--overlay-footer {
+    padding-bottom: calc(61px + env(safe-area-inset-bottom));
+  }
 }
 
 /* Prototype scene scrim: 0.64 black in dark / slate 0.36 in light, 2 px
@@ -290,8 +301,8 @@ html[lang="ru"] .agent-control-surface .ac-title {
   display: flex;
 }
 
-/* Live/Runs still own an absolutely-positioned footer inside the panel, so
-   only those tabs reserve its 50 px; the Inbox footer is a flex sibling. */
+/* Runs still owns an absolutely-positioned footer inside the panel, so only
+   that tab reserves its height; Live and the Inbox footer are flex siblings. */
 .agent-control-surface .ac-body--overlay-footer {
   padding-bottom: 50px;
 }
@@ -1124,7 +1135,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   }
 
   .agent-control-surface .ac-body--overlay-footer {
-    padding-bottom: 56px;
+    padding-bottom: calc(61px + env(safe-area-inset-bottom));
   }
 
   .agent-control-surface .ac-rail {
@@ -1275,6 +1286,13 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-foot .ac-foot-actions .btn {
     flex: 1;
     min-height: 44px;
+  }
+
+  /* With sessions present the status card owns Pause/Resume; hiding this
+     now-empty footer avoids a blank bar above the home indicator. Member
+     Close still needs the footer, so only the admin variant goes. */
+  .agent-control-surface .ac-foot[data-live-status="true"][data-admin="true"] {
+    display: none;
   }
 
   .agent-control-surface .ac-list-head {

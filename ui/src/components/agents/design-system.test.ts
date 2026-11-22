@@ -154,11 +154,25 @@ describe("agent design system (TASK-179.9)", () => {
     expect(mobileBlock).toMatch(
       /\.agent-control-surface \.ac-foot \.ac-foot-actions \.btn \{[^}]*min-height: 44px/,
     );
+    // The Live footer is a flex sibling now, so its own height is natural;
+    // Runs still overlays and reserves the notched 61 px + bottom inset.
+    expect(pausePanel).toContain("ac-foot ac-foot-static");
+    expect(agentControlDialog).toContain(
+      'tab === "runs" && "ac-body--overlay-footer"',
+    );
+    expect(mobileBlock).toContain(
+      "padding-bottom: calc(61px + env(safe-area-inset-bottom));",
+    );
     // The Pause/Resume (and member Close) controls live outside the
     // `sessions.length > 0` branch, so the empty Live state inherits them.
     expect(pausePanel).toContain('data-testid="board-pause-status"');
     expect(pausePanel).toContain('data-testid="board-pause"');
     expect(pausePanel).toContain('data-testid="board-resume"');
+    // With sessions the card owns the action; the admin footer is hidden so
+    // it cannot duplicate it or leave a blank bar on a phone.
+    expect(mobileBlock).toContain(
+      '.agent-control-surface .ac-foot[data-live-status="true"][data-admin="true"]',
+    );
   });
 
   it("keeps tablet touch controls at 44 px", () => {
@@ -166,19 +180,27 @@ describe("agent design system (TASK-179.9)", () => {
     // controls are touch targets on a tablet, so the 44 px floor is kept at
     // every width instead of only below 768.
     expect(attention).toContain(
-      '"inline-flex min-h-11 items-center gap-1 text-[11px] transition-colors"',
+      '"inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] transition-colors"',
     );
     expect(attention).not.toContain("md:min-h-0");
     expect(agentsPage).toContain(
-      'className="ml-auto inline-flex min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"',
+      'className="ml-auto inline-flex max-xl:min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"',
     );
     expect(agentsPage).not.toContain("min-[761px]:min-h-0");
     expect(agentsAutomation).toContain(
-      "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap",
+      "inline-flex max-xl:min-h-11 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap",
     );
     expect(agentsAutomation).toContain(
-      'className="ml-auto inline-flex min-h-11 items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground',
+      'className="ml-auto inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground',
     );
+    // Session Pause/Resume/End and the token-settings trigger keep the
+    // 44 px floor up to 1279 px too; only the 1280 px desktop row shrinks.
+    expect(pausePanel).toContain("min-[1280px]:h-[26px]");
+    expect(pausePanel).toContain("min-[1280px]:h-6");
+    expect(pausePanel).not.toContain("min-[761px]:h-[26px]");
+    expect(pausePanel).not.toContain("min-[761px]:h-6");
+    expect(sessionUi).toContain("min-[1280px]:min-h-6");
+    expect(sessionUi).not.toContain("min-[761px]:min-h-6");
     // The live footer and the approval/pause confirmation dialogs are the
     // other touch actions named by F7. They keep the 44 px floor up to the
     // 1280 px desktop breakpoint; above it the compact 28/32 px mockup row
@@ -200,18 +222,26 @@ describe("agent design system (TASK-179.9)", () => {
       ".agent-control-surface .live-status-actions .btn",
     );
     expect(tabletBlock).toContain("min-height: 44px");
+    expect(tabletBlock).toMatch(
+      /\.agent-control-surface \.ac-toolbar \.icon-btn-sm \{\s*width: 44px;\s*height: 44px;/,
+    );
+    expect(tabletBlock).toContain(
+      "padding-bottom: calc(61px + env(safe-area-inset-bottom));",
+    );
     for (const [name, source] of [
       ["approval-ui", approvalUi],
       ["AgentActionDialog", agentActionDialog],
       ["AgentConfirmDialog", agentConfirmDialog],
     ] as const) {
-      expect(source, name).toContain("max-[1279px]:min-h-11");
+      expect(source, name).toContain("max-xl:min-h-11");
     }
   });
 
   it("gives every primary control a 44 px mobile target", () => {
     const controls = [
       [pausePanel, "agent-live-refresh"],
+      [pausePanel, "agent-session-pause"],
+      [pausePanel, "agent-session-resume"],
       [pausePanel, "agent-session-end"],
       [pausePanel, "board-pause"],
       [approvalUi, "approval-approve"],
@@ -223,7 +253,15 @@ describe("agent design system (TASK-179.9)", () => {
       expect(source, testId).toContain(testId);
     }
     expect(pausePanel).toContain("min-h-11");
-    expect(approvalUi).toContain("max-md:min-h-11");
+    expect(pausePanel).toContain("agent-live-token-settings-");
+    // Tie the 44 px rule to the actual approval actions, not to an unrelated
+    // 22 px chip elsewhere in the same file.
+    expect(approvalUi).toMatch(
+      /data-testid="approval-approve"[\s\S]{0,400}?max-xl:min-h-11/,
+    );
+    expect(approvalUi).toMatch(
+      /data-testid="approval-reject"[\s\S]{0,400}?max-xl:min-h-11/,
+    );
     expect(agentsPage).toContain("min-h-11");
   });
 

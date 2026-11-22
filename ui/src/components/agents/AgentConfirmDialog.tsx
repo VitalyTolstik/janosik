@@ -111,7 +111,7 @@ export function AgentConfirmDialog({
             onClick={() => onOpenChange(false)}
             disabled={busy}
             data-testid={cancelTestId}
-            className="h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none text-muted-foreground max-[1279px]:min-h-11"
+            className="h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none text-muted-foreground max-xl:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -121,7 +121,7 @@ export function AgentConfirmDialog({
             disabled={busy}
             data-testid={confirmTestId}
             className={cn(
-              "h-7 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-[1279px]:min-h-11",
+              "h-7 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-xl:min-h-11",
               tone === "danger" ? DANGER_CONFIRM : PRIMARY_CONFIRM,
               confirmClassName,
             )}

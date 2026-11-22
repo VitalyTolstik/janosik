@@ -277,7 +277,9 @@ export function AgentControlDialog({
           <div
             className={cn(
               "ac-body",
-              tab !== "approvals" && "ac-body--overlay-footer",
+              // Live owns a static footer (a flex sibling); only Runs still
+              // overlays the panel, so only Runs reserves its height.
+              tab === "runs" && "ac-body--overlay-footer",
             )}
           >
             <nav className="ac-rail" aria-label={t("agentControl.sections")}>

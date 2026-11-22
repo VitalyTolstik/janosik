@@ -220,7 +220,7 @@ export function PublicBoardPage() {
 
   if (status !== "ready" || dto === null || board === null) {
     return (
-      <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <div className="flex h-dvh flex-col overflow-hidden bg-background pb-[env(safe-area-inset-bottom)] text-foreground">
         {!embed ? <PublicHeaderChrome /> : null}
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {status === "loading" ? (
@@ -243,7 +243,7 @@ export function PublicBoardPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh flex-col overflow-hidden bg-background pb-[env(safe-area-inset-bottom)] text-foreground">
       <ShareBoardProvider board={board} members={members}>
         {!embed ? <PublicHeader mode={dto.mode} /> : null}
         <main
