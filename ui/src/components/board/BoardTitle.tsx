@@ -15,7 +15,7 @@ export function BoardTitle() {
   const { t } = useI18n();
   // Narrow subscriptions (TASK-21.4.1): the name is all this needs, so a
   // card edit somewhere on the board leaves the header title alone.
-  const { id, title } = useBoardIdentity();
+  const { id, title, archived } = useBoardIdentity();
   const { renameBoard, roleOf } = useBoardActions();
 
   const [editing, setEditing] = useState(false);
@@ -48,7 +48,9 @@ export function BoardTitle() {
   if (!id) return null;
 
   // VIEWER renames nothing — the header shows a plain heading (TASK-35).
-  if (roleOf(id) === "VIEWER") {
+  // An archived board is read-only until it is restored, so the deep-link
+  // view cannot rewrite its name either.
+  if (archived || roleOf(id) === "VIEWER") {
     return (
       <h1
         data-testid="board-title"

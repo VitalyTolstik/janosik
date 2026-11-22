@@ -642,6 +642,25 @@ describe("invert — every action is reversible", () => {
     });
   }
 
+  it("omits the title from an inverse when the previous title is blank", () => {
+    const before = fixture();
+    before.cards["c-1"] = { ...before.cards["c-1"], title: "" };
+    const action = {
+      type: "UPDATE_CARD",
+      cardId: "c-1",
+      title: "First real title",
+      at: AT,
+    } as const;
+    const inverse = invert(before, action);
+    expect(inverse).not.toBeNull();
+    expect(inverse).not.toHaveProperty("title");
+    const after = reduce(before, action);
+    expect(after.cards["c-1"].title).toBe("First real title");
+    const undone = reduce(after, inverse!);
+    // The blank legacy title is not reintroduced; the card keeps its name.
+    expect(undone.cards["c-1"].title).toBe("First real title");
+  });
+
   it("restores the exact card timestamp on label undo and reapplies the stamp on redo", () => {
     const before = fixture();
     const action = {
