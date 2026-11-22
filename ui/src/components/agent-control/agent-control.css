@@ -86,6 +86,14 @@ html.light .agent-control-surface {
     padding-left: max(0px, env(safe-area-inset-left));
     padding-right: max(0px, env(safe-area-inset-right));
   }
+
+  /* F7: 768/1024 is still a touch surface. The board-wide Pause/Resume
+     action in the Live footer (and its live-status twin) keeps the phone
+     44 px floor instead of the 28 px desktop `.btn-sm` height. */
+  .agent-control-surface .ac-foot .ac-foot-actions .btn,
+  .agent-control-surface .live-status-actions .btn {
+    min-height: 44px;
+  }
 }
 
 /* Prototype scene scrim: 0.64 black in dark / slate 0.36 in light, 2 px

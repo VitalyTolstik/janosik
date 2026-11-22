@@ -19,7 +19,8 @@ const PRIMARY_CONFIRM =
 
 /**
  * The mockup confirmation shell: 440 px, p0, 10 px radius, inline 30 px icon
- * tile, 14/650 title and 28 px footer row (44 px touch targets on mobile).
+ * tile, 14/650 title and 28 px footer row (44 px touch targets below the
+ * 1280 px desktop breakpoint, where tablets are still touch surfaces).
  */
 export function AgentConfirmDialog({
   open,
@@ -110,7 +111,7 @@ export function AgentConfirmDialog({
             onClick={() => onOpenChange(false)}
             disabled={busy}
             data-testid={cancelTestId}
-            className="h-7 min-h-0 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none text-muted-foreground max-md:min-h-11"
+            className="h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none text-muted-foreground max-[1279px]:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -120,7 +121,7 @@ export function AgentConfirmDialog({
             disabled={busy}
             data-testid={confirmTestId}
             className={cn(
-              "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:min-h-11",
+              "h-7 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-[1279px]:min-h-11",
               tone === "danger" ? DANGER_CONFIRM : PRIMARY_CONFIRM,
               confirmClassName,
             )}

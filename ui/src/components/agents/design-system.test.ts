@@ -8,6 +8,8 @@ import agentDetailPage from "./AgentDetailPage.tsx?raw";
 import attention from "./AttentionApprovals.tsx?raw";
 import runUi from "./run-ui.tsx?raw";
 import sessionUi from "./session-ui.tsx?raw";
+import agentActionDialog from "./AgentActionDialog.tsx?raw";
+import agentConfirmDialog from "./AgentConfirmDialog.tsx?raw";
 import boardScope from "./BoardScopeSelect.tsx?raw";
 import agentControlDialog from "../agent-control/AgentControlDialog.tsx?raw";
 import approvalsPanel from "../agent-control/ApprovalsPanel.tsx?raw";
@@ -177,6 +179,34 @@ describe("agent design system (TASK-179.9)", () => {
     expect(agentsAutomation).toContain(
       'className="ml-auto inline-flex min-h-11 items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground',
     );
+    // The live footer and the approval/pause confirmation dialogs are the
+    // other touch actions named by F7. They keep the 44 px floor up to the
+    // 1280 px desktop breakpoint; above it the compact 28/32 px mockup row
+    // returns.
+    const tabletStart = agentControlCss.indexOf(
+      "@media (min-width: 761px) and (max-width: 1279px)",
+    );
+    const tabletEnd = agentControlCss.indexOf(
+      "@media (min-width: 761px) and (max-width: 1279px)",
+      tabletStart + 1,
+    );
+    expect(tabletStart).toBeGreaterThan(-1);
+    expect(tabletEnd).toBeGreaterThan(tabletStart);
+    const tabletBlock = agentControlCss.slice(tabletStart, tabletEnd);
+    expect(tabletBlock).toContain(
+      ".agent-control-surface .ac-foot .ac-foot-actions .btn",
+    );
+    expect(tabletBlock).toContain(
+      ".agent-control-surface .live-status-actions .btn",
+    );
+    expect(tabletBlock).toContain("min-height: 44px");
+    for (const [name, source] of [
+      ["approval-ui", approvalUi],
+      ["AgentActionDialog", agentActionDialog],
+      ["AgentConfirmDialog", agentConfirmDialog],
+    ] as const) {
+      expect(source, name).toContain("max-[1279px]:min-h-11");
+    }
   });
 
   it("gives every primary control a 44 px mobile target", () => {
