@@ -24,11 +24,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [the foundation notes](docs/TASK-185.1-comment-history-foundation.md).
 
 - TASK-185.1 hardening. An attachment-delete gap now releases its claimed
-  destructive approval instead of burning it; repeated attachment deletion is
-  an idempotent no-op. Under one global erase key, GDPR erase collects the
-  board union and takes the sorted board-lock set, re-reads the verified chain,
-  and replays on a late board before merging `gdpr_erase` atomically. Every
-  purge pass re-checks the soft-deleted flag in its delete predicate,
+  destructive approval instead of burning it; a plain repeated attachment
+  delete is an idempotent no-op, while an approved retry whose row vanished
+  releases the claim and still answers `404`. Under one global erase key, GDPR
+  erase collects the board union and takes the sorted board-lock set, re-reads
+  the verified chain, and replays on a late board before merging `gdpr_erase`
+  atomically. Every purge pass re-checks the soft-deleted flag in its delete
+  predicate,
   attachments remove only blobs of rows that actually went, and the board
   subtree is purged one board at a time in its board-locked transaction so a
   restore wins. Activity `commentId`/`revisionId` lookups have expression

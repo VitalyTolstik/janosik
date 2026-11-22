@@ -673,7 +673,13 @@ export class AttachmentsService {
     if (removed.kind === "noop") {
       // A concurrent request already removed the row; the approval was not
       // used, so make it usable again rather than leaving it consumed.
-      if (approval !== null) await this.approvals.releaseOperation(approval);
+      if (approval !== null) {
+        await this.approvals.releaseOperation(approval);
+        // An approved destructive retry keeps main's contract: the claim is
+        // released, but the caller learns the row was already removed.
+        throw new NotFoundException("Attachment was already removed");
+      }
+      // A plain repeated delete (no approval claimed) stays an idempotent 200.
       return;
     }
     if (removed.kind === "gap") {
