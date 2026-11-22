@@ -17,13 +17,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   replays never fan out again. The dedup key is
   `card.assigned:<minSeq>-<maxSeq>`. A single card opens its dialog; a batch
   opens the board filtered with `f.assignee=<assigneeId>`. The EN/RU
-  `attention_card_assigned` letter and digest label respect `notifyAttention`
-  while the inbox row is always written, and the bounded body names a few card
-  titles plus “and N more”. Due reminder letters now link each listed card
+  `attention_card_assigned` letter respects `notifyAttention` while the inbox
+  row is always written; scheduled digests, governed by `notifyDigest`, label
+  the category as assignment updates. The bounded inbox/letter body names the
+  actor and a few card titles plus “and N more”. Due reminder letters now link
+  each listed card
   absolutely through `PUBLIC_ORIGIN` and `UI_BASE` (escaped, capped with “and N
-  more”) while keeping `ReminderSent` dedupe, opt-out and UTC labels; no in-app
-  due rows were added. API EN/RU docs, user guide, OpenAPI enum and CHANGELOG
-  are updated.
+  more”, with plain URLs in the text alternative) while keeping `ReminderSent`
+  dedupe, opt-out and UTC labels; no in-app due rows were added. API EN/RU
+  docs, user guide, admin template docs, OpenAPI enum and CHANGELOG are
+  updated.
 
 - TASK-177.12 comment mentions (U-01). Typing `@` at a word boundary opens an
   accessible board-member picker (arrow/Home/End/Tab/Enter/Escape, portalled

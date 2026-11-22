@@ -149,6 +149,37 @@ describe("AttentionInbox (TASK-177.6)", () => {
     ).toHaveAttribute("href", `${cardHref("b-1", "c-1")}&comment=comment-9`);
   });
 
+  it("deep-links assignment rows to one card or an assignee-filtered board (TASK-177.20)", () => {
+    renderInbox(
+      page([
+        item({
+          id: "assigned-one",
+          type: "card.assigned",
+          title: "New card assignment",
+          body: "Alice assigned you card “Ship it”.",
+          data: { assigneeId: "u-1", cardIds: ["c-1"], cardId: "c-1" },
+        }),
+        item({
+          id: "assigned-many",
+          type: "card.assigned",
+          title: "New card assignment",
+          data: { assigneeId: "u-1", cardIds: ["c-1", "c-2"] },
+        }),
+      ]),
+    );
+
+    const assignmentLinks = screen.getAllByRole("link", {
+      name: "Open “New card assignment”",
+    });
+    expect(assignmentLinks[0]).toHaveAttribute("href", cardHref("b-1", "c-1"));
+    const batchUrl = new URL(
+      assignmentLinks[1]!.getAttribute("href") ?? "",
+      "http://app",
+    );
+    expect(batchUrl.pathname).toBe("/board/b-1");
+    expect(batchUrl.searchParams.get("f.assignee")).toBe("u-1");
+  });
+
   it("links approvals to the board approvals tab and focus one request", () => {
     renderInbox(
       page([

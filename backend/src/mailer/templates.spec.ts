@@ -5,6 +5,7 @@ import {
   attentionEmail,
   digestAttentionHtml,
   digestEmail,
+  dueReminderEmail,
   htmlToText,
   mentionInboxBody,
 } from "./templates";
@@ -111,6 +112,8 @@ describe("attentionEmail", () => {
     status: "approved",
     agent: "builder",
     actor: "Alice",
+    cards: "Ship it, Release",
+    count: 2,
     limit: 2,
     current: 2,
     expiresAt: "2026-11-10T12:00:00.000Z",
@@ -171,6 +174,14 @@ describe("attentionEmail", () => {
     expect(mail.html).not.toContain("<script>x</script>");
     expect(mail.html).toContain("&lt;script&gt;x&lt;/script&gt;");
     expect(mail.html).toContain("A&amp;B");
+
+    const assigned = attentionEmail(
+      "card.assigned",
+      { ...vars, board: "A&B", cards: "<script>cards</script>" },
+      "en",
+    );
+    expect(assigned.html).not.toContain("<script>cards</script>");
+    expect(assigned.html).toContain("&lt;script&gt;cards&lt;/script&gt;");
   });
 
   it("names the decision and the expiry in the right language", () => {
@@ -217,16 +228,43 @@ describe("attentionEmail", () => {
     expect(
       attentionEmail("card.assigned", { ...vars, cards: "Ship it" }, "ru")
         .subject,
-    ).toContain("назначили карточки");
+    ).toContain("новое назначение");
+    expect(
+      attentionEmail(
+        "card.assigned",
+        { ...vars, cards: "Ship it", count: 1, actor: "Alice" },
+        "en",
+      ).text,
+    ).toContain("Alice assigned you a card");
+    expect(
+      attentionEmail(
+        "card.assigned",
+        { ...vars, cards: "Ship it, Release", count: 2 },
+        "en",
+      ).text,
+    ).toContain("assigned you 2 cards");
   });
 
   it("labels assignment attention in the digest in both languages (TASK-177.20)", () => {
     expect(
       digestAttentionHtml([{ type: "card.assigned", count: 2 }], "en"),
-    ).toContain("cards assigned to you: <b>2</b>");
+    ).toContain("assignment updates: <b>2</b>");
     expect(
       digestAttentionHtml([{ type: "card.assigned", count: 2 }], "ru"),
-    ).toContain("назначенных вам карточек: <b>2</b>");
+    ).toContain("обновлений о назначениях: <b>2</b>");
+  });
+
+  it("keeps due-reminder URLs and list line breaks in the text alternative", () => {
+    const tasks =
+      '<ul><li><a href="https://kb.example/app/board/b-1?card=c-1">Ship it</a> — due 1 Jan 2026, 10:00 UTC</li><li><a href="https://kb.example/app/board/b-1?card=c-2">Fix it</a></li></ul>';
+    const mail = dueReminderEmail(2, tasks, "en");
+    expect(mail.text).toContain(
+      "Ship it (https://kb.example/app/board/b-1?card=c-1)",
+    );
+    expect(mail.text).toContain(
+      "Fix it (https://kb.example/app/board/b-1?card=c-2)",
+    );
+    expect(mail.text).toContain("\n");
   });
 
   it("keeps comment text out of the mention letter but in the inbox body", () => {

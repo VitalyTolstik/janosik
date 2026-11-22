@@ -548,7 +548,7 @@ export class AttentionService {
       }
       if (byAssignee.size === 0) return;
 
-      const [board, cards] = await Promise.all([
+      const [board, cards, actor] = await Promise.all([
         this.prisma.board.findFirst({
           where: {
             id: input.boardId,
@@ -564,11 +564,16 @@ export class AttentionService {
             archivedAt: null,
             column: { boardId: input.boardId, deletedAt: null },
           },
-          select: { id: true, title: true },
+          select: { id: true, title: true, assigneeId: true },
+        }),
+        this.prisma.user.findUnique({
+          where: { id: input.actorId },
+          select: { displayName: true },
         }),
       ]);
       if (board === null || cards.length === 0) return;
-      const titleById = new Map(cards.map((card) => [card.id, card.title]));
+      const cardById = new Map(cards.map((card) => [card.id, card]));
+      const actorName = actor?.displayName?.trim() || null;
       const recipients = await this.members(input.boardId, [
         ...byAssignee.keys(),
       ]);
@@ -580,10 +585,15 @@ export class AttentionService {
         const recipient = recipientById.get(assigneeId);
         if (recipient === undefined) continue;
         const live = changes
-          .filter((change) => titleById.has(change.cardId))
+          .filter((change) => {
+            const card = cardById.get(change.cardId);
+            // A concurrent batch may have reassigned the card between our
+            // commit and this read. Only the current assignee is notified.
+            return card !== undefined && card.assigneeId === change.assigneeId;
+          })
           .sort((left, right) => left.seq - right.seq);
         if (live.length === 0) continue;
-        const titles = live.map((change) => titleById.get(change.cardId)!);
+        const titles = live.map((change) => cardById.get(change.cardId)!.title);
         const cardIds = live.map((change) => change.cardId);
         const minSeq = live[0]!.seq;
         const maxSeq = live[live.length - 1]!.seq;
@@ -595,16 +605,24 @@ export class AttentionService {
           emailVars: (locale) => ({
             board: board.title,
             cards: assignmentCardList(titles, locale),
+            count: live.length,
+            actor: actorName ?? "",
           }),
           inboxBody: (locale) =>
             assignmentInboxBody(
-              { board: board.title, titles, count: live.length },
+              {
+                board: board.title,
+                titles,
+                count: live.length,
+                actorName,
+              },
               locale,
             ),
           data: {
             assigneeId,
             cardIds,
             ...(cardIds.length === 1 ? { cardId: cardIds[0] } : {}),
+            ...(actorName !== null ? { actorName } : {}),
           },
         });
       }
@@ -1099,18 +1117,28 @@ function assignmentCardList(titles: string[], locale: MailLocale): string {
 
 /** Authenticated in-app body; the attention letter uses `emailVars` instead. */
 function assignmentInboxBody(
-  input: { board: string; titles: string[]; count: number },
+  input: {
+    board: string;
+    titles: string[];
+    count: number;
+    actorName: string | null;
+  },
   locale: MailLocale,
 ): string {
+  const ru = locale === "ru";
+  const who =
+    input.actorName?.trim() || (ru ? "Участник доски" : "A board member");
   const list = assignmentCardList(input.titles, locale);
   if (input.count === 1) {
-    return locale === "ru"
-      ? `Вам назначили карточку «${list}» на доске «${input.board}». Откройте карточку, чтобы посмотреть детали.`
-      : `You were assigned card “${list}” on board “${input.board}”. Open the card to see the details.`;
+    return ru
+      ? `${who} назначил(а) вам карточку «${list}» на доске «${input.board}». Откройте карточку, чтобы посмотреть детали.`
+      : `${who} assigned you card “${list}” on board “${input.board}”. Open the card to see the details.`;
   }
-  return locale === "ru"
-    ? `Вам назначили ${input.count} карточек на доске «${input.board}»: ${list}. Откройте доску с фильтром по вашим карточкам.`
-    : `You were assigned ${input.count} cards on board “${input.board}”: ${list}. Open the board filtered to your cards.`;
+  // Neutral count wording: “новые карточки (21)” stays grammatical for every
+  // Russian plural form instead of producing “21 карточек”.
+  return ru
+    ? `${who} назначил(а) вам новые карточки (${input.count}) на доске «${input.board}»: ${list}. Откройте доску с фильтром по вашим карточкам.`
+    : `${who} assigned you ${input.count} cards on board “${input.board}”: ${list}. Open the board filtered to your cards.`;
 }
 
 function parseLimit(raw: number | undefined): number {

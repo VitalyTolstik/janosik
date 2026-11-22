@@ -341,8 +341,8 @@ const DIGEST_ATTENTION_LABELS: Record<
   },
   "comment.mention": { en: "mentions", ru: "упоминаний" },
   "card.assigned": {
-    en: "cards assigned to you",
-    ru: "назначенных вам карточек",
+    en: "assignment updates",
+    ru: "обновлений о назначениях",
   },
   "claim.expired": { en: "expired claims", ru: "истёкших захватов" },
   "quota.exceeded": { en: "limit warnings", ru: "предупреждений о лимитах" },
@@ -441,6 +441,8 @@ export interface AttentionEmailVars {
   agent?: string;
   /** Pre-rendered card titles for an assignment letter (bounded list). */
   cards?: string;
+  /** How many cards the assignment covers (singular/plural copy). */
+  count?: number | string;
   comment?: string;
   limit?: string | number;
   current?: string | number;
@@ -516,6 +518,12 @@ export function attentionEmail(
   const agent = escapeHtml(vars.agent ?? "");
   const actor = escapeHtml(vars.actor ?? "");
   const cards = escapeHtml(vars.cards ?? "");
+  const countValue = vars.count ?? 0;
+  const countNumber = Number(countValue);
+  const countLabel = Number.isFinite(countNumber)
+    ? String(countNumber)
+    : String(countValue);
+  const oneCard = countNumber === 1;
   const risk = escapeHtml(vars.risk ?? "");
   const action = escapeHtml(vars.action ?? "");
   const expiresAt = escapeHtml(vars.expiresAt ?? "");
@@ -686,24 +694,37 @@ export function attentionEmail(
             ],
           );
     }
-    case "card.assigned":
+    case "card.assigned": {
+      const who =
+        actor === "" ? (ru ? "Участник доски" : "A board member") : actor;
       return ru
         ? attentionLetter(
             "Новое назначение",
-            `${BRAND}: вам назначили карточки на доске «${board}»`,
-            [
-              `Вам назначены карточки на доске <b>${board}</b>: ${cards}.`,
-              "Откройте доску, чтобы посмотреть детали.",
-            ],
+            `${BRAND}: новое назначение на доске «${board}»`,
+            oneCard
+              ? [
+                  `${who} назначил(а) вам карточку на доске <b>${board}</b>: ${cards}.`,
+                  "Откройте карточку, чтобы посмотреть детали.",
+                ]
+              : [
+                  `${who} назначил(а) вам новые карточки (<b>${countLabel}</b>) на доске <b>${board}</b>: ${cards}.`,
+                  "Откройте доску, чтобы посмотреть детали.",
+                ],
           )
         : attentionLetter(
             "New card assignment",
-            `${BRAND}: cards assigned to you on "${board}"`,
-            [
-              `You were assigned cards on board <b>${board}</b>: ${cards}.`,
-              "Open the board to see the details.",
-            ],
+            `${BRAND}: new card assignment on "${board}"`,
+            oneCard
+              ? [
+                  `${who} assigned you a card on board <b>${board}</b>: ${cards}.`,
+                  "Open the card to see the details.",
+                ]
+              : [
+                  `${who} assigned you <b>${countLabel}</b> cards on board <b>${board}</b>: ${cards}.`,
+                  "Open the board to see the details.",
+                ],
           );
+    }
     case "claim.expired":
       return ru
         ? attentionLetter(
@@ -976,8 +997,13 @@ const commentMentionDefault = attentionDefault(
 );
 const cardAssignedDefault = attentionDefault(
   "card.assigned",
-  { board: "{{board}}", cards: "{{cards}}" },
-  ["board", "cards"],
+  {
+    board: "{{board}}",
+    cards: "{{cards}}",
+    count: "{{count}}",
+    actor: "{{actor}}",
+  },
+  ["board", "cards", "count", "actor"],
 );
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
@@ -1048,6 +1074,14 @@ export function fillTemplate(
   );
 }
 
+/** `href` from a raw `<a …>` tag, without trusting/reconstructing the tag. */
+function hrefAttribute(tag: string): string | null {
+  const match = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(
+    tag,
+  );
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+}
+
 /** A readable plain-text alternative from the HTML body. */
 export function htmlToText(html: string): string {
   // Decode before scanning: decoding afterwards would turn `&lt;script&gt;`
@@ -1058,6 +1092,7 @@ export function htmlToText(html: string): string {
   const source = decodeHtmlEntities(html);
   let text = "";
   let index = 0;
+  const links: string[] = [];
   while (index < source.length) {
     const open = source.indexOf("<", index);
     if (open === -1) {
@@ -1071,14 +1106,30 @@ export function htmlToText(html: string): string {
       text += source.slice(open);
       break;
     }
-    const tag = source
-      .slice(open + 1, close)
-      .trim()
-      .toLowerCase();
+    const rawTag = source.slice(open + 1, close).trim();
+    const tag = rawTag.toLowerCase();
     if (tag === "br" || tag === "br/") {
       text += "\n";
     } else if (tag === "/p") {
       text += "\n\n";
+    } else if (tag === "li") {
+      if (text !== "" && !text.endsWith("\n")) text += "\n";
+    } else if (tag === "/li") {
+      if (!text.endsWith("\n")) text += "\n";
+    } else if (
+      tag === "a" ||
+      tag.startsWith("a ") ||
+      tag.startsWith("a\t") ||
+      tag.startsWith("a\n")
+    ) {
+      links.push(hrefAttribute(rawTag) ?? "");
+    } else if (tag === "/a") {
+      const href = links.pop();
+      // Keep the destination in the plain-text alternative; a label alone
+      // makes a due reminder's links unusable in a text-only mail client.
+      if (href !== undefined && href !== "" && !text.trimEnd().endsWith(href)) {
+        text += ` (${href})`;
+      }
     } else if (
       tag === "style" ||
       tag.startsWith("style ") ||

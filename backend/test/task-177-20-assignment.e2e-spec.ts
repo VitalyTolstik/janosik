@@ -213,7 +213,7 @@ describe("Card assignment attention (TASK-177.20, e2e)", () => {
     while (Date.now() < deadline) {
       const found = mailer.outbox.find(
         (mail) =>
-          mail.to === to && mail.subject.includes("cards assigned to you"),
+          mail.to === to && mail.subject.includes("new card assignment"),
       );
       if (found !== undefined) return;
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -237,8 +237,10 @@ describe("Card assignment attention (TASK-177.20, e2e)", () => {
       assigneeId: member.id,
       cardIds: [cards.get("c1")],
       cardId: cards.get("c1"),
+      actorName: "Owner",
     });
     expect(row!.body).toContain("Ship release");
+    expect(row!.body).toContain("Owner");
     await waitForMail(MEMBER_EMAIL);
 
     const inbox = await server()
@@ -328,6 +330,7 @@ describe("Card assignment attention (TASK-177.20, e2e)", () => {
       assigneeId: second.id,
       cardIds: [cards.get("c5")],
       cardId: cards.get("c5"),
+      actorName: "Owner",
     });
     expect(
       inBatch.some(
@@ -353,7 +356,7 @@ describe("Card assignment attention (TASK-177.20, e2e)", () => {
       mailer.outbox.some(
         (mail) =>
           mail.to === QUIET_EMAIL &&
-          mail.subject.includes("cards assigned to you"),
+          mail.subject.includes("new card assignment"),
       ),
     ).toBe(false);
   });

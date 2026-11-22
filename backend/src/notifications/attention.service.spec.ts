@@ -80,7 +80,10 @@ function makePrisma(admins: RecipientFixture[]) {
         },
       ),
     },
-    user: { findFirst: jest.fn().mockResolvedValue(admins[0] ?? null) },
+    user: {
+      findFirst: jest.fn().mockResolvedValue(admins[0] ?? null),
+      findUnique: jest.fn().mockResolvedValue({ displayName: "Actor" }),
+    },
     card: {
       findFirst: jest.fn().mockResolvedValue({ title: "Card" }),
       findMany: jest.fn().mockResolvedValue([]),
@@ -378,7 +381,11 @@ describe("AttentionService", () => {
 
   describe("notifyCardsAssigned (TASK-177.20)", () => {
     const cards = (...ids: string[]) =>
-      ids.map((id) => ({ id, title: `Task ${id}` }));
+      ids.map((id) => ({
+        id,
+        title: `Task ${id}`,
+        assigneeId: "assignee",
+      }));
 
     it("writes one row and one letter for a single-card assignment", async () => {
       const { prisma, rows } = makePrisma([recipient("assignee")]);
@@ -402,10 +409,12 @@ describe("AttentionService", () => {
         }),
       );
       expect(rows[0]!.body).toContain("Task card-1");
+      expect(rows[0]!.body).toContain("Actor");
       expect(rows[0]!.data).toEqual({
         assigneeId: "assignee",
         cardIds: ["card-1"],
         cardId: "card-1",
+        actorName: "Actor",
       });
       expect(mail.create).toHaveBeenCalledTimes(1);
     });
@@ -481,6 +490,63 @@ describe("AttentionService", () => {
       expect(missingMember.rows).toEqual([]);
       expect(deletedBoard.rows).toEqual([]);
       expect(deletedCard.rows).toEqual([]);
+      expect(deletedBoard.prisma.board.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            deletedAt: null,
+            archivedAt: null,
+          }),
+        }),
+      );
+      expect(deletedCard.prisma.card.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            deletedAt: null,
+            archivedAt: null,
+          }),
+        }),
+      );
+    });
+
+    it("skips a card superseded by a concurrent assignment", async () => {
+      const { prisma, rows } = makePrisma([recipient("assignee")]);
+      (prisma.card.findMany as jest.Mock).mockResolvedValue([
+        { id: "card-1", title: "Task card-1", assigneeId: "someone-else" },
+      ]);
+      const { service } = makeService(prisma);
+
+      await service.notifyCardsAssigned({
+        boardId: "board-1",
+        actorId: "owner",
+        assignments: [{ cardId: "card-1", assigneeId: "assignee", seq: 1 }],
+      });
+      await flush();
+
+      expect(rows).toEqual([]);
+    });
+
+    it("uses neutral Russian plural wording for a multi-card batch", async () => {
+      const { prisma, rows } = makePrisma([
+        recipient("assignee", { locale: "ru" }),
+      ]);
+      (prisma.card.findMany as jest.Mock).mockResolvedValue(
+        cards("card-1", "card-2"),
+      );
+      const { service } = makeService(prisma);
+
+      await service.notifyCardsAssigned({
+        boardId: "board-1",
+        actorId: "owner",
+        assignments: [
+          { cardId: "card-1", assigneeId: "assignee", seq: 1 },
+          { cardId: "card-2", assigneeId: "assignee", seq: 2 },
+        ],
+      });
+      await flush();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.body).toContain("новые карточки (2)");
+      expect(rows[0]!.body).not.toContain("2 карточек");
     });
 
     it("does nothing for a no-op replay or a trailing unassign", async () => {
@@ -513,7 +579,9 @@ describe("AttentionService", () => {
 
     it("notifies only the last assignee when one card changes twice in a batch", async () => {
       const { prisma, rows } = makePrisma([recipient("a"), recipient("b")]);
-      (prisma.card.findMany as jest.Mock).mockResolvedValue(cards("card-1"));
+      (prisma.card.findMany as jest.Mock).mockResolvedValue([
+        { id: "card-1", title: "Task card-1", assigneeId: "b" },
+      ]);
       const { service } = makeService(prisma);
 
       await service.notifyCardsAssigned({
@@ -532,6 +600,7 @@ describe("AttentionService", () => {
         assigneeId: "b",
         cardIds: ["card-1"],
         cardId: "card-1",
+        actorName: "Actor",
       });
       expect(rows[0]!.dedupKey).toBe("card.assigned:6-6:b");
     });
@@ -560,6 +629,7 @@ describe("AttentionService", () => {
       expect(rows[0]!.data).toEqual({
         assigneeId: "assignee",
         cardIds: ["card-1", "card-2", "card-3", "card-4"],
+        actorName: "Actor",
       });
       expect(rows[0]!.body).toContain("Task card-3");
       expect(rows[0]!.body).toContain("and 1 more");
