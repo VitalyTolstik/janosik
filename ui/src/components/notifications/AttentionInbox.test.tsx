@@ -188,6 +188,27 @@ describe("AttentionInbox (TASK-177.6)", () => {
     expect(batchUrl.searchParams.get("f.assignee")).toBe("u-1");
   });
 
+  it("truncates long assignment context in the accessible name", () => {
+    const body = `Alice assigned you 3 cards: ${"A very long card title ".repeat(8)}`;
+    renderInbox(
+      page([
+        item({
+          id: "assigned-long",
+          type: "card.assigned",
+          title: "New card assignment",
+          body,
+          data: { assigneeId: "u-1", cardIds: ["c-1", "c-2", "c-3"] },
+        }),
+      ]),
+    );
+
+    const label =
+      screen.getByTestId("attention-link").getAttribute("aria-label") ?? "";
+    expect(label).toContain("Alice");
+    expect(label.endsWith("…")).toBe(true);
+    expect(label.length).toBeLessThan(130);
+  });
+
   it("links approvals to the board approvals tab and focus one request", () => {
     renderInbox(
       page([

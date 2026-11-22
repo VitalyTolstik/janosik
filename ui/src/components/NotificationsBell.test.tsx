@@ -138,9 +138,11 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
       "false",
     );
     unavailable = false;
-    await userEvent.click(
-      screen.getByRole("button", { name: "Retry loading invitations" }),
-    );
+    const retry = screen.getByRole("button", {
+      name: "Retry loading invitations",
+    });
+    expect(retry).toHaveClass("max-lg:min-h-11");
+    await userEvent.click(retry);
     expect(await screen.findByText("No invitations")).toBeVisible();
     expect(
       screen.queryByText("Could not load board invitations."),

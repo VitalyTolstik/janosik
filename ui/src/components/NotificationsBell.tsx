@@ -308,7 +308,12 @@ function NotificationsPanel({
       {unavailable ? (
         <div className="space-y-2 px-4 py-3 text-center text-sm text-muted-foreground">
           <p role="status">{t("notifications.invitationsUnavailable")}</p>
-          <Button variant="outline" size="sm" onClick={onReload}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onReload}
+            className="max-lg:min-h-11 max-lg:px-3"
+          >
             {t("notifications.retryInvitations")}
           </Button>
         </div>

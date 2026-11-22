@@ -372,10 +372,30 @@ describe("digestEmail attention summary", () => {
       "Janosik: 2 tasks due soon",
     );
     expect(dueReminderEmail(1, "<li>Ship it</li>", "en").text).toContain(
-      "Task due soon:",
+      "1 task due soon:",
     );
     expect(dueReminderEmail(2, "<li>Ship it</li>", "en").text).toContain(
-      "Tasks due soon:",
+      "2 tasks due soon:",
+    );
+  });
+
+  it("uses Russian plural forms for one, few and many", () => {
+    const one = digestEmail("Доска", 1, 24, "ru");
+    expect(one.subject).toContain("1 изменение");
+    expect(one.text).toContain("1 изменение");
+    expect(one.text).not.toContain("1 изменений");
+    expect(digestEmail("Доска", 2, 24, "ru").subject).toContain("2 изменения");
+    expect(digestEmail("Доска", 5, 24, "ru").subject).toContain("5 изменений");
+
+    const dueOne = dueReminderEmail(1, "<li>Ship it</li>", "ru");
+    expect(dueOne.subject).toContain("1 задача");
+    expect(dueOne.text).toContain("1 задача");
+    expect(dueOne.text).not.toContain("1 задач ");
+    expect(dueReminderEmail(2, "<li>Ship it</li>", "ru").subject).toContain(
+      "2 задачи",
+    );
+    expect(dueReminderEmail(5, "<li>Ship it</li>", "ru").subject).toContain(
+      "5 задач",
     );
   });
 

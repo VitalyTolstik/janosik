@@ -24,6 +24,15 @@ interface Props {
   roleOf: (boardId: string) => BoardRole | undefined;
 }
 
+/** Keep the extra SR context short; coalesced batches can be long. */
+const ARIA_CONTEXT_MAX = 80;
+
+function truncateAriaContext(value: string): string {
+  return value.length <= ARIA_CONTEXT_MAX
+    ? value
+    : `${value.slice(0, ARIA_CONTEXT_MAX - 1).trimEnd()}…`;
+}
+
 export function AttentionInbox({
   page,
   unavailable,
@@ -137,14 +146,15 @@ export function AttentionInbox({
             );
             const unread = item.readAt === null;
             const compactBody = item.body?.replace(/\s+/g, " ").trim() ?? "";
+            const ariaContext = truncateAriaContext(compactBody);
             // Assignment rows all share the generic title. Add the body
             // context (actor + card titles/count) so the accessible name is
             // distinguishable; the visible text stays unchanged.
             const openLabel =
-              item.type === "card.assigned" && compactBody !== ""
+              item.type === "card.assigned" && ariaContext !== ""
                 ? `${t("notifications.attention.openAria", {
                     title: item.title,
-                  })} — ${compactBody}`
+                  })} — ${ariaContext}`
                 : t("notifications.attention.openAria", {
                     title: item.title,
                   });

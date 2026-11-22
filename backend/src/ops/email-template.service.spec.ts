@@ -8,13 +8,13 @@ import { EmailTemplateService } from "./email-template.service";
  * is deliberately neutral for every count, and the text alternative keeps
  * escaped card titles literal instead of turning them into links.
  */
-describe("EmailTemplateService assignment default", () => {
-  function service() {
-    const fallback = EMAIL_TEMPLATE_DEFAULTS.attention_card_assigned!;
+describe("EmailTemplateService saved defaults", () => {
+  function service(key = "attention_card_assigned") {
+    const fallback = EMAIL_TEMPLATE_DEFAULTS[key]!;
     const prisma = {
       emailTemplate: {
         findUnique: jest.fn().mockResolvedValue({
-          key: "attention_card_assigned",
+          key,
           subject: fallback.subject,
           bodyHtml: fallback.bodyHtml,
         }),
@@ -72,5 +72,25 @@ describe("EmailTemplateService assignment default", () => {
 
     expect(rendered.text).toContain("Evil card");
     expect(rendered.text).not.toContain("https://evil.example");
+  });
+
+  it("renders a saved digest default with a singular count", async () => {
+    const rendered = await service("digest").digestEmail("Board", 1, 24, "en");
+    expect(rendered.subject).toContain("1 change");
+    expect(rendered.subject).not.toContain("1 changes");
+    expect(rendered.text).toContain(": 1 change.");
+    expect(rendered.text).not.toContain("1 changes");
+  });
+
+  it("renders a saved due-reminder default with a singular count", async () => {
+    const rendered = await service("due_reminder").dueReminderEmail(
+      1,
+      "<li>Ship it</li>",
+      "en",
+    );
+    expect(rendered.subject).toContain("1 task due soon");
+    expect(rendered.subject).not.toContain("1 tasks");
+    expect(rendered.text).toContain("Due soon: 1 task");
+    expect(rendered.text).not.toContain("Tasks due soon");
   });
 });

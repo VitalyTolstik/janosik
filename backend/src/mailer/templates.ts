@@ -261,13 +261,42 @@ export function emailChangedNoticeEmail(
   };
 }
 
-/**
- * English singular/plural for a numeric count. Template previews pass a
- * `{{count}}` placeholder (NaN), which falls back to the plural form rather
- * than emitting literal `change(s)`/`task(s)`.
- */
+/** English singular/plural for a numeric count. */
 function countForm(count: string | number, one: string, many: string): string {
   return Number(count) === 1 ? one : many;
+}
+
+/** Russian plural form for a count (`1 изменение`, `2 изменения`, `5 изменений`). */
+function russianForm(
+  count: string | number,
+  one: string,
+  few: string,
+  many: string,
+): string {
+  const value = Number(count);
+  if (!Number.isFinite(value)) return many;
+  const form = new Intl.PluralRules("ru").select(Math.abs(value));
+  return form === "one" ? one : form === "few" ? few : many;
+}
+
+/** Pre-renderable count phrase for a digest; the default editor uses it. */
+export function digestCountLabel(
+  count: string | number,
+  locale: MailLocale,
+): string {
+  return locale === "ru"
+    ? `${count} ${russianForm(count, "изменение", "изменения", "изменений")}`
+    : `${count} ${Number(count) === 1 ? "change" : "changes"}`;
+}
+
+/** Pre-renderable count phrase for a due reminder; the default editor uses it. */
+export function dueCountLabel(
+  count: string | number,
+  locale: MailLocale,
+): string {
+  return locale === "ru"
+    ? `${count} ${russianForm(count, "задача", "задачи", "задач")}`
+    : `${count} ${Number(count) === 1 ? "task" : "tasks"}`;
 }
 
 /**
@@ -293,24 +322,39 @@ export function digestEmail(
         ? ""
         : `\n\n${htmlToText(attention)}`
       : digestAttentionText(attention, locale);
+  const preRendered = count === "{{countLabel}}";
+  const countLabel = preRendered
+    ? "{{countLabel}}"
+    : digestCountLabel(count, locale);
   if (locale === "ru") {
     return {
-      subject: `${BRAND}: ${board} — изменений: ${count}`,
-      text: `В доске «${board}» за последние ${hours} ч было ${count} изменений.${attentionText}`,
+      subject: `${BRAND}: ${board} — ${countLabel}`,
+      text: `Изменения на доске «${board}» за последние ${hours} ч: ${countLabel}.${attentionText}`,
       html: shell(
         "Изменения на доске",
-        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">В доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч было <b>${count}</b> изменений.</p>${attentionHtml}`,
+        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Изменения на доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч: <b>${countLabel}</b>.</p>${attentionHtml}`,
       ),
     };
   }
-  const changes = countForm(count, "change", "changes");
+  if (preRendered) {
+    // Editable default: neutral verbs, so filling `1` never yields
+    // “there were 1 change”. `countLabel` is pre-rendered by the service.
+    return {
+      subject: `${BRAND}: ${board} — ${countLabel}`,
+      text: `Board activity on "${board}" in the last ${hours} h: ${countLabel}.${attentionText}`,
+      html: shell(
+        "Board activity",
+        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Board activity on <b>${escapeHtml(String(board))}</b> in the last <b>${hours}</b> h: <b>${countLabel}</b>.</p>${attentionHtml}`,
+      ),
+    };
+  }
   const verb = countForm(count, "was", "were");
   return {
-    subject: `${BRAND}: ${board} — ${count} ${changes}`,
-    text: `In "${board}" there ${verb} ${count} ${changes} in the last ${hours} h.${attentionText}`,
+    subject: `${BRAND}: ${board} — ${countLabel}`,
+    text: `In "${board}" there ${verb} ${countLabel} in the last ${hours} h.${attentionText}`,
     html: shell(
       "Board activity",
-      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there ${verb} <b>${count}</b> ${changes} in the last <b>${hours}</b> h.</p>${attentionHtml}`,
+      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there ${verb} <b>${countLabel}</b> in the last <b>${hours}</b> h.</p>${attentionHtml}`,
     ),
   };
 }
@@ -397,29 +441,38 @@ export function dueReminderEmail(
   tasksHtml: string,
   locale: MailLocale,
 ): { subject: string; text: string; html: string } {
+  const preRendered = count === "{{countLabel}}";
+  const countLabel = preRendered
+    ? "{{countLabel}}"
+    : dueCountLabel(count, locale);
   if (locale === "ru") {
     return {
-      subject: `${BRAND}: скоро срок у ${count} задач`,
-      text: `Задачи с приближающимся сроком:\n${htmlToText(tasksHtml)}`,
+      subject: `${BRAND}: ${countLabel} со сроком скоро`,
+      text: `${countLabel} с приближающимся сроком:\n${htmlToText(tasksHtml)}`,
       html: shell(
         "Скоро срок",
-        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Задачи с приближающимся сроком:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${countLabel} с приближающимся сроком:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
       ),
     };
   }
-  const tasks = countForm(count, "task", "tasks");
-  const heading = countForm(count, "Task", "Tasks");
-  const intro = countForm(
-    count,
-    "Task with an approaching due date",
-    "Tasks with an approaching due date",
-  );
+  if (preRendered) {
+    // Editable default: neutral “Due soon: N task(s)” wording through the
+    // pre-rendered label, so filling `1` cannot say “1 tasks” or “Tasks”.
+    return {
+      subject: `${BRAND}: ${countLabel} due soon`,
+      text: `Due soon: ${countLabel}\n${htmlToText(tasksHtml)}`,
+      html: shell(
+        "Due soon",
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Due soon: <b>${countLabel}</b></p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      ),
+    };
+  }
   return {
-    subject: `${BRAND}: ${count} ${tasks} due soon`,
-    text: `${heading} due soon:\n${htmlToText(tasksHtml)}`,
+    subject: `${BRAND}: ${countLabel} due soon`,
+    text: `${countLabel} due soon:\n${htmlToText(tasksHtml)}`,
     html: shell(
-      heading === "Task" ? "Task due soon" : "Tasks due soon",
-      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${intro}:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      "Due soon",
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${countLabel} due soon:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
     ),
   };
 }
@@ -942,12 +995,16 @@ const changeCodeDefault = emailChangeCodeEmail("{{code}}", "{{minutes}}", "en");
 const changedNoticeDefault = emailChangedNoticeEmail("{{email}}", "en");
 const digestDefault = digestEmail(
   "{{board}}",
-  "{{count}}",
+  "{{countLabel}}",
   "{{hours}}",
   "en",
   "{{attention}}",
 );
-const dueReminderDefault = dueReminderEmail("{{count}}", "{{tasks}}", "en");
+const dueReminderDefault = dueReminderEmail(
+  "{{countLabel}}",
+  "{{tasks}}",
+  "en",
+);
 const approvalRequestedDefault = attentionDefault(
   "approval.requested",
   {
@@ -1069,12 +1126,12 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   digest: {
     subject: digestDefault.subject,
     bodyHtml: digestDefault.html,
-    placeholders: ["board", "count", "hours", "attention"],
+    placeholders: ["board", "count", "countLabel", "hours", "attention"],
   },
   due_reminder: {
     subject: dueReminderDefault.subject,
     bodyHtml: dueReminderDefault.html,
-    placeholders: ["count", "tasks"],
+    placeholders: ["count", "countLabel", "tasks"],
   },
   attention_approval_requested: approvalRequestedDefault,
   attention_approval_decided: approvalDecidedDefault,

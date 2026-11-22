@@ -6,7 +6,9 @@ import {
   ATTENTION_EMAIL_TEMPLATE_KEYS,
   attentionEmail,
   digestAttentionHtml,
+  digestCountLabel,
   digestEmail,
+  dueCountLabel,
   dueReminderEmail,
   emailChangeCodeEmail,
   emailChangedNoticeEmail,
@@ -190,6 +192,7 @@ export class EmailTemplateService {
       const vars = {
         board: escapeHtml(board),
         count,
+        countLabel: digestCountLabel(count, locale),
         hours,
         attention: digestAttentionHtml(attention, locale),
       };
@@ -231,7 +234,11 @@ export class EmailTemplateService {
   ): Promise<RenderedEmail> {
     const row = await this.row("due_reminder");
     if (row) {
-      const vars = { count, tasks: tasksHtml };
+      const vars = {
+        count,
+        countLabel: dueCountLabel(count, locale),
+        tasks: tasksHtml,
+      };
       const subject = fillTemplate(row.subject, vars);
       const html = fillTemplate(row.bodyHtml, vars);
       return { subject, text: htmlToText(html), html };
