@@ -91,6 +91,32 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(
       parseCommentMentions(["- > ~~~", `  > ${token}`, "  > ~~~"].join("\n")),
     ).toEqual(mentioned);
+    // `[ ]` without a list item is ordinary text too.
+    expect(parseCommentMentions(`> [ ] ~~~\n${token}`)).toEqual(mentioned);
+  });
+
+  it("closes a blockquote fence when the quote ends", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`> ~~~\n> ${token}\n~~~\n${token}`)).toEqual([
+      expect.objectContaining({ userId: "user-1" }),
+    ]);
+  });
+
+  it("keeps list-marker lines inside a top-level fence inert", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(
+      parseCommentMentions(`~~~\n- ~~~\n- [ ] ~~~\n${token}\n~~~\n${token}`),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
+  });
+
+  it("bounds quote-depth scanning at 64 markers", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    const prefix = "> ".repeat(64);
+    expect(
+      parseCommentMentions(
+        [`${prefix}~~~`, `${prefix}${token}`, `${prefix}~~~`, token].join("\n"),
+      ),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
   });
 
   it("keeps explicit mention links in indented text live; only fenced/inline code suppresses", () => {

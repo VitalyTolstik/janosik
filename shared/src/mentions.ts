@@ -58,28 +58,16 @@ interface QuoteStripped {
   depth: number;
 }
 
-/** Strip exactly `limit` blockquote markers; null when fewer are present. */
-function stripQuoteDepth(line: string, limit: number): string | null {
-  let content = line;
-  let depth = 0;
-  while (depth < limit) {
-    const match = /^ {0,3}> ?/.exec(content);
-    if (match === null) return null;
-    content = content.slice(match[0].length);
-    depth += 1;
-  }
-  return content;
-}
-
 function countLeadingQuotes(line: string): QuoteStripped {
   let content = line;
   let depth = 0;
-  for (;;) {
+  for (let guard = 0; guard < 64; guard += 1) {
     const match = /^ {0,3}> ?/.exec(content);
-    if (match === null) return { content, depth };
+    if (match === null) break;
     content = content.slice(match[0].length);
     depth += 1;
   }
+  return { content, depth };
 }
 
 /** Top-level (0–3 spaces) or blockquote fenced code opener. */
@@ -103,9 +91,11 @@ function fenceCloser(
   length: number,
   quoteDepth: number,
 ): boolean {
-  const content = stripQuoteDepth(line, quoteDepth);
-  if (content === null) return false;
-  const match = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(content);
+  const quoted = countLeadingQuotes(line);
+  // A blockquote fence may close when its quote ends (shallower/equal), but
+  // a deeper quoted fence line is code content.
+  if (quoted.depth > quoteDepth) return false;
+  const match = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(quoted.content);
   return match !== null && match[1]![0] === char && match[1]!.length >= length;
 }
 
