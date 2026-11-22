@@ -3,7 +3,7 @@ import { Archive, ArchiveRestore } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { useBoardAccess, useBoardActions } from "@/store/BoardContext";
+import { useBoardActions } from "@/store/BoardContext";
 
 /**
  * Archived boards are read-only until they are restored. An explicit notice
@@ -23,8 +23,12 @@ export function ArchivedBoardNotice({
   onRestored?: () => void;
 }) {
   const { t } = useI18n();
-  const { unarchiveBoard } = useBoardActions();
-  const { role } = useBoardAccess();
+  const { unarchiveBoard, roleOf } = useBoardActions();
+  // The notice may describe a board that is not the active route board (the
+  // archive dialog pins `boardId`), so ask for that board's role instead of
+  // the route's. Otherwise an active ADMIN could see Restore on a board they
+  // only view, or a pinned ADMIN could lose it.
+  const role = roleOf(boardId);
 
   const restore = () => {
     unarchiveBoard(boardId);

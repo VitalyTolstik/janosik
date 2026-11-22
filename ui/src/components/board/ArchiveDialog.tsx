@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Check, X } from "lucide-react";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { routes } from "@/routes";
-import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import { useBoard } from "@/store/BoardContext";
 import { LIMITS, type BoardAction, type Card } from "@janosik/shared";
 import { createId } from "@/utils/id";
 import { restoreTargetBlockReason } from "@/utils/workflow";
@@ -113,12 +113,11 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
   const {
     board: activeBoard,
     boards,
-    unarchiveCard,
-    deleteCard,
+    roleOf,
+    dispatch,
     archiveBatch,
     startArchiveBatch,
   } = useBoard();
-  const { role } = useBoardAccess();
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const navigate = useNavigate();
@@ -141,6 +140,11 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
       ? activeBoard
       : boards.find((entry) => entry.id === boardId);
   if (!board) return null;
+
+  // The pinned archive may not be the active route board: use the pinned
+  // board's role, never the active one (an active ADMIN is not an ADMIN of
+  // every board, and vice versa).
+  const role = roleOf(board.id);
 
   const busy = archiveBatch !== null;
   const currentBatch = archiveBatch?.boardId === board.id ? archiveBatch : null;
@@ -169,8 +173,9 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
   const allVisibleSelected =
     visible.length > 0 && visible.every((card) => selectedIds.has(card.id));
   // Restoring/deleting is a write: VIEWERs and an archived board's read-only
-  // view keep every per-row and bulk action hidden (QA-04). The server
-  // refuses both, so an offered control would only be a dead action.
+  // view keep every per-row and bulk action hidden (QA-04). The role is the
+  // pinned board's, and every write carries `board.id`, so a dialog that
+  // outlives a restore cannot dispatch into the active board.
   const canManage =
     role !== undefined && role !== "VIEWER" && board.archivedAt === undefined;
 
@@ -446,7 +451,9 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                           disabled={busy}
                           onClick={() => {
                             setConfirmDeleteId(null);
-                            deleteCard(card.id);
+                            void dispatch(
+                              bulkAction("delete", board.id, card.id),
+                            );
                           }}
                         >
                           <Check className="h-3.5 w-3.5" />
@@ -495,7 +502,14 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                                   disabled={reason !== null}
                                   title={reason ?? undefined}
                                   onSelect={() =>
-                                    unarchiveCard(card.id, column.id)
+                                    void dispatch(
+                                      bulkAction(
+                                        "restore",
+                                        board.id,
+                                        card.id,
+                                        column.id,
+                                      ),
+                                    )
                                   }
                                 >
                                   <span className="truncate">

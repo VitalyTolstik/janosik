@@ -459,6 +459,99 @@ describe("ArchiveDialog permissions", () => {
     expect(screen.getByTestId("archived-board-notice")).toBeVisible();
   });
 
+  it("uses the pinned board's role, not the active board's", async () => {
+    const pinned: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, pinned]);
+    // ADMIN on the active board, VIEWER on the pinned archived one.
+    server.role = "ADMIN";
+    server.roles.set("b-2", "VIEWER");
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(within(notice).queryByTestId("archived-board-restore")).toBeNull();
+    expect(notice).toHaveTextContent(/ask a board admin/i);
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+    const row = screen.getByTestId("archive-row");
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+  });
+
+  it("keeps Restore for a pinned ADMIN viewed from a VIEWER board", async () => {
+    const pinned: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, pinned]);
+    // VIEWER on the active board, ADMIN on the pinned archived one.
+    server.role = "VIEWER";
+    server.roles.set("b-2", "ADMIN");
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(within(notice).getByTestId("archived-board-restore")).toBeVisible();
+    await userEvent.click(within(notice).getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("archived-board-notice")).toBeNull(),
+    );
+
+    // Restore follows the pinned role, not the active VIEWER role.
+    const row = await screen.findByTestId("archive-row");
+    expect(within(row).getByTestId("archive-delete")).toBeVisible();
+    expect(screen.getByTestId("archive-bulk-controls")).toBeVisible();
+  });
+
+  it("keeps post-restore actions on the pinned board", async () => {
+    const pinned: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, pinned]);
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    await userEvent.click(within(notice).getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("archived-board-notice")).toBeNull(),
+    );
+
+    // The restored pinned board now offers writes again; they must dispatch
+    // with its id, not into the still-different active board.
+    const row = await screen.findByTestId("archive-row");
+    await userEvent.click(within(row).getByTestId("archive-delete"));
+    await userEvent.click(
+      within(row).getByRole("button", { name: "Yes, delete" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("archive-list")).toHaveTextContent(
+        "The archive is empty.",
+      ),
+    );
+  });
+
   it("tells a VIEWER to ask an admin instead of offering restore", async () => {
     const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 5_000 }]);
     server.role = "VIEWER";
