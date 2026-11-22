@@ -175,6 +175,17 @@ describe("agent design system (TASK-179.9)", () => {
     );
   });
 
+  it("lifts the global toast stack above the agent sheet footer", () => {
+    expect(agentControlDialog).toContain(
+      'root.dataset.agentControlOpen = "true"',
+    );
+    expect(agentControlDialog).toContain("--agent-control-toast-offset");
+    expect(agentControlCss).toContain(
+      'html[data-agent-control-open="true"] .janosik-toast-region',
+    );
+    expect(agentControlCss).toContain("var(--agent-control-toast-offset, 0px)");
+  });
+
   it("keeps tablet touch controls at 44 px", () => {
     // F7: at 768 px `md` resets the mobile minimum back to 16 px. These four
     // controls are touch targets on a tablet, so the 44 px floor is kept at
@@ -225,9 +236,26 @@ describe("agent design system (TASK-179.9)", () => {
     expect(tabletBlock).toMatch(
       /\.agent-control-surface \.ac-toolbar \.icon-btn-sm \{\s*width: 44px;\s*height: 44px;/,
     );
-    expect(tabletBlock).toContain(
-      "padding-bottom: calc(61px + env(safe-area-inset-bottom));",
+    // The tablet Runs reserve must beat the 50 px base rule by source order,
+    // so it lives after that base rule (not in the earlier tablet block).
+    const baseOverlay = agentControlCss.indexOf(
+      ".agent-control-surface .ac-body--overlay-footer {",
     );
+    const tabletOverlayMedia = agentControlCss.indexOf(
+      "@media (min-width: 761px) and (max-width: 1279px)",
+      baseOverlay + 1,
+    );
+    expect(baseOverlay).toBeGreaterThan(-1);
+    expect(tabletOverlayMedia).toBeGreaterThan(baseOverlay);
+    expect(agentControlCss.slice(baseOverlay, tabletOverlayMedia)).toContain(
+      "padding-bottom: 50px;",
+    );
+    expect(
+      agentControlCss.indexOf(
+        "padding-bottom: calc(61px + env(safe-area-inset-bottom));",
+        tabletOverlayMedia,
+      ),
+    ).toBeGreaterThan(tabletOverlayMedia);
     for (const [name, source] of [
       ["approval-ui", approvalUi],
       ["AgentActionDialog", agentActionDialog],

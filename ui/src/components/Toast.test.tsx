@@ -58,19 +58,18 @@ describe("Toast", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Board saved");
   });
 
-  it("moves the notifications region off the phone agent footer", () => {
+  it("exposes the region the agent sheet lifts above its footer", () => {
     renderToasts();
 
     const region = screen.getByRole("region", { name: "Notifications" });
+    expect(region.className).toContain("janosik-toast-region");
     expect(region.className).toContain(
       "bottom-[calc(1rem_+_env(safe-area-inset-bottom))]",
     );
-    // On phones the agent-control safety footer owns the bottom edge; the
-    // toast stack moves under the top safe area instead of covering it.
-    expect(region.className).toContain(
-      "max-md:top-[calc(1rem_+_env(safe-area-inset-top))]",
-    );
-    expect(region.className).toContain("max-md:bottom-auto");
+    // The surface-aware offset is a bottom lift, not a top move: staying at
+    // the top covered the phone sheet's close button.
+    expect(region.className).not.toContain("max-md:top-");
+    expect(region.className).not.toContain("max-md:bottom-auto");
   });
 
   it("auto-dismisses after 4.5 seconds", () => {

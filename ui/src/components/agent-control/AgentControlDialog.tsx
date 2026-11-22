@@ -64,6 +64,77 @@ export function AgentControlDialog({
   );
   const [footerHost, setFooterHost] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement;
+    // Radix mounts the portal just after this effect can run; a body
+    // observer attaches as soon as the sheet exists. The data attribute is
+    // set immediately so the toast rule is ready for the first toast.
+    root.dataset.agentControlOpen = "true";
+    let surface: HTMLElement | null = null;
+    let footer: HTMLElement | null = null;
+    let footerObserver: ResizeObserver | null = null;
+    let surfaceObserver: ResizeObserver | null = null;
+    let mutation: MutationObserver | null = null;
+    const sync = () => {
+      if (surface === null) return;
+      const next = surface.querySelector<HTMLElement>(".ac-foot");
+      if (next !== footer) {
+        footerObserver?.disconnect();
+        footer = next;
+        if (footer !== null) {
+          footerObserver = new ResizeObserver(sync);
+          footerObserver.observe(footer);
+        }
+      }
+      const rect = footer?.getBoundingClientRect();
+      // The tablet sheet intentionally stops 14 px short of the viewport
+      // edge, so a 2 px bottom check would miss its footer. Treat the sheet
+      // as bottom-anchored within 24 px; a centred desktop modal stays far
+      // away and keeps the normal bottom toast.
+      const offset =
+        rect !== undefined &&
+        rect.height > 0 &&
+        rect.bottom >= window.innerHeight - 24
+          ? Math.max(0, Math.ceil(window.innerHeight - rect.top))
+          : 0;
+      root.style.setProperty("--agent-control-toast-offset", `${offset}px`);
+    };
+    const attach = (): boolean => {
+      const next = document.querySelector<HTMLElement>(
+        ".agent-control-surface",
+      );
+      if (next === null) return false;
+      surface = next;
+      surfaceObserver = new ResizeObserver(sync);
+      surfaceObserver.observe(surface);
+      mutation = new MutationObserver(sync);
+      mutation.observe(surface, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "data-live-status", "data-admin"],
+      });
+      sync();
+      return true;
+    };
+    const bodyObserver = new MutationObserver(() => {
+      if (attach()) bodyObserver.disconnect();
+    });
+    if (!attach()) {
+      bodyObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    window.addEventListener("resize", sync);
+    return () => {
+      bodyObserver.disconnect();
+      mutation?.disconnect();
+      surfaceObserver?.disconnect();
+      footerObserver?.disconnect();
+      window.removeEventListener("resize", sync);
+      delete root.dataset.agentControlOpen;
+      root.style.removeProperty("--agent-control-toast-offset");
+    };
+  }, [open]);
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the URL-selected tab in sync on back/forward
     setTab(
       role !== "ADMIN" && initialTab === "approvals" ? "pause" : initialTab,

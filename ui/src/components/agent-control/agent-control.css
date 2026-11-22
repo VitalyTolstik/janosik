@@ -99,12 +99,6 @@ html.light .agent-control-surface {
     width: 44px;
     height: 44px;
   }
-
-  /* Runs still owns an absolutely-positioned footer; reserve the 44 px
-     action row plus its padding and the bottom inset. */
-  .agent-control-surface .ac-body--overlay-footer {
-    padding-bottom: calc(61px + env(safe-area-inset-bottom));
-  }
 }
 
 /* Prototype scene scrim: 0.64 black in dark / slate 0.36 in light, 2 px
@@ -305,6 +299,14 @@ html[lang="ru"] .agent-control-surface .ac-title {
    that tab reserves its height; Live and the Inbox footer are flex siblings. */
 .agent-control-surface .ac-body--overlay-footer {
   padding-bottom: 50px;
+}
+
+/* Tablet order matters: this must follow the 50 px base rule, otherwise the
+   base wins and the last rows sit under the absolute Runs footer. */
+@media (min-width: 761px) and (max-width: 1279px) {
+  .agent-control-surface .ac-body--overlay-footer {
+    padding-bottom: calc(61px + env(safe-area-inset-bottom));
+  }
 }
 
 .agent-control-surface .ac-footer-host {
@@ -1313,6 +1315,19 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 /* Large screens: keep the 1440 mockup intact below 1600, then let the board
    control use the available canvas instead of a 1120×760 island. */
+/* The global toast stack is portalled next to the body, so the sheet exposes
+   the space its footer occupies through a root-level variable. On phones and
+   tablets the bottom toast sits above that footer instead of covering the
+   board Pause/Resume or Runs action. */
+@media (max-width: 1279px) {
+  html[data-agent-control-open="true"] .janosik-toast-region {
+    bottom: calc(
+      1rem +
+        max(env(safe-area-inset-bottom), var(--agent-control-toast-offset, 0px))
+    );
+  }
+}
+
 @media (min-width: 1600px) {
   .agent-control-surface.ac-modal {
     top: 0;
