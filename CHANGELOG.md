@@ -14,7 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   explicit `[@Name](https://janosik.invalid/mention/<userId>)` markdown link.
   The backend validates every id against the active roster and rejects
   non-members. Mentions are inert in top-level/blockquote fenced code and
-  inline code; list-contained fences and indented text are ordinary text, so
+  inline code, as are escaped tokens and larger URLs; HTML comments are not
+  rendered. List-contained fences and indented text are ordinary text, so
   explicit mention links there stay live while a hand-typed `@Name` never
   notifies. Each
   mentioned member gets one deduplicated `comment.mention` attention row with

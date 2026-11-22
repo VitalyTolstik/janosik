@@ -58,6 +58,7 @@ interface QuoteStripped {
   depth: number;
 }
 
+/** Bounded at 64 blockquote markers; deeper chains are ordinary text. */
 function countLeadingQuotes(line: string): QuoteStripped {
   let content = line;
   let depth = 0;
@@ -85,6 +86,12 @@ function fenceOpener(line: string): {
   return { char: run[0]!, length: run.length, quoteDepth: depth };
 }
 
+/**
+ * A closer follows the opener's 0–3-space indentation rule; a four-space
+ * fence line is content and outside the supported scope. A blockquote fence
+ * may close when its quote ends (shallower/equal depth), while a deeper
+ * quoted fence line is code content.
+ */
 function fenceCloser(
   line: string,
   char: string,
@@ -92,8 +99,6 @@ function fenceCloser(
   quoteDepth: number,
 ): boolean {
   const quoted = countLeadingQuotes(line);
-  // A blockquote fence may close when its quote ends (shallower/equal), but
-  // a deeper quoted fence line is code content.
   if (quoted.depth > quoteDepth) return false;
   const match = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(quoted.content);
   return match !== null && match[1]![0] === char && match[1]!.length >= length;

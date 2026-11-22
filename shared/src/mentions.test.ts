@@ -119,6 +119,16 @@ describe("comment mentions (TASK-177.12)", () => {
     ).toEqual([expect.objectContaining({ userId: "user-1" })]);
   });
 
+  it("treats a 65-deep quote chain as ordinary text at the 64 bound", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    const prefix = "> ".repeat(65);
+    expect(
+      parseCommentMentions(
+        [`${prefix}~~~`, `${prefix}${token}`, `${prefix}~~~`].join("\n"),
+      ),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
+  });
+
   it("keeps explicit mention links in indented text live; only fenced/inline code suppresses", () => {
     const token = mentionMarkdown("Alice", "user-1");
     const mentioned = [expect.objectContaining({ userId: "user-1" })];

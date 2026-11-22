@@ -200,12 +200,12 @@ keeps the text you typed. The
 mention becomes an `@Name` chip and the member receives an attention
 notification (respecting their attention-email setting) with a deep link to the
 comment; the comment author is never notified. Mentions inside top-level or
-blockquote fenced code and inline code never notify. Fenced code nested inside
-a list item is treated as ordinary text; the composer only creates top-level
-code blocks. Escaped tokens are inert. Indented text is ordinary text: an
-explicit `[@Name](…)` link there still notifies, while a hand-typed `@Name`
-never does. If you remove a mention while editing, its pending notification is
-withdrawn.
+blockquote fenced code and inline code never notify; escaped tokens and larger
+URLs are inert too, and HTML comments are not rendered. Fenced code nested
+inside a list item is treated as ordinary text; the composer only creates
+top-level code blocks. Indented text is ordinary text: an explicit
+`[@Name](…)` link there still notifies, while a hand-typed `@Name` never does.
+If you remove a mention while editing, its pending notification is withdrawn.
 
 ### History
 

@@ -224,9 +224,11 @@ link at write time, rejects an id outside the board's active roster with
 Mentions inside top-level or blockquote fenced code and inline code are
 inert. Fenced code nested inside a list item is treated as ordinary text; the
 composer only creates top-level code blocks. Escaped tokens and larger URLs
-are inert too. Indented text is ordinary text: an explicit
-`[@Alice](https://janosik.invalid/mention/clx…)` link there is live and
-notifies, while a hand-typed `@Alice` never notifies.
+are inert too, and HTML comments are not rendered. Closing fences follow the
+same 0–3-space indentation rule as their opener; a fence line indented four
+spaces is content and outside the supported scope. Indented text is ordinary
+text: an explicit `[@Alice](https://janosik.invalid/mention/clx…)` link there
+is live and notifies, while a hand-typed `@Alice` never notifies.
 
 `GET` accepts `?cursor=` (opaque), `?limit=` and `?kind=` (one comment kind).
 The default limit is 50, the maximum is 100; a limit outside `1` to `100`
