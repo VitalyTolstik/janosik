@@ -7,6 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
 
 import { I18nProvider } from "@/i18n";
 import { ToastProvider } from "@/components/Toast";
@@ -18,6 +19,8 @@ import AdminApp from "./AdminApp";
 import {
   adminCard,
   adminComment,
+  adminCommentHistory,
+  adminCommentRevision,
   adminMembership,
   adminSession,
   adminToken,
@@ -436,5 +439,31 @@ describe("UserDetailPage identity links and per-row moderation", () => {
       name: adminMessage("admin.common.back", "en"),
     });
     expect(back).toHaveAttribute("href", backTo);
+  });
+
+  it("opens edit history from the user's comment row", async () => {
+    const state = emptyAdminState();
+    state.users = [adminUser()];
+    state.cards = [adminCard({ id: "card-1" })];
+    state.comments = [adminComment({ id: "comment-1", revisionCount: 1 })];
+    state.commentHistories["comment-1"] = adminCommentHistory({
+      items: [adminCommentRevision()],
+    });
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const user = userEvent.setup();
+    renderUser();
+
+    fireEvent.click(await screen.findByTestId("admin-user-tab-comments"));
+    const trigger = await screen.findByTestId(
+      "admin-comment-history-comment-1",
+    );
+    await user.click(trigger);
+    expect(
+      await screen.findByTestId("admin-comment-history-dialog"),
+    ).toBeTruthy();
+    expect(
+      await screen.findAllByTestId("admin-comment-history-revision"),
+    ).toHaveLength(1);
   });
 });

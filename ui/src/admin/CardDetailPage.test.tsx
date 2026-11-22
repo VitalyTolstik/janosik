@@ -36,6 +36,8 @@ import {
   adminCardLink,
   adminChecklist,
   adminComment,
+  adminCommentHistory,
+  adminCommentRevision,
   adminLabel,
   adminUser,
   boardMember,
@@ -3477,5 +3479,31 @@ describe("FakeAdminServer relation fidelity (TASK-176.9 B2)", () => {
       ).status,
     ).toBe(200);
     expect(server.state.commands).toHaveLength(1);
+  });
+
+  it("opens a live comment's edit history from the card detail row", async () => {
+    const state = emptyAdminState();
+    state.users = [adminUser()];
+    state.cards = [adminCard({ id: "card-1", commentIds: ["comment-1"] })];
+    state.comments = [adminComment({ id: "comment-1", revisionCount: 1 })];
+    state.commentHistories["comment-1"] = adminCommentHistory({
+      items: [adminCommentRevision()],
+    });
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    const user = userEvent.setup();
+    renderCard();
+
+    const trigger = await screen.findByTestId(
+      "admin-comment-history-comment-1",
+    );
+    expect(trigger).toHaveTextContent("History");
+    await user.click(trigger);
+    expect(
+      await screen.findByTestId("admin-comment-history-dialog"),
+    ).toBeTruthy();
+    expect(
+      await screen.findAllByTestId("admin-comment-history-revision"),
+    ).toHaveLength(1);
   });
 });

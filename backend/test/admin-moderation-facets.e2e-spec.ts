@@ -135,6 +135,39 @@ describe("Admin moderation facets (e2e)", () => {
         ...row,
       })),
     });
+    // TASK-185.5: one live comment with saved revisions, one live comment
+    // with an incomplete chain and no revisions. Deleted rows and rows under
+    // a deleted parent stay without history.
+    await prisma.commentRevision.createMany({
+      data: [
+        {
+          id: "rev-c-blocker-1",
+          commentId: "c-blocker",
+          revisionNumber: 1,
+          beforeText: "moderation draft",
+          afterText: "moderation c-blocker",
+          editorId: USER,
+          cause: "author_edit",
+        },
+        {
+          id: "rev-c-blocker-2",
+          commentId: "c-blocker",
+          revisionNumber: 2,
+          beforeText: "moderation c-blocker",
+          afterText: "moderation c-blocker final",
+          editorId: USER,
+          cause: "attachment_deleted",
+        },
+      ],
+    });
+    await prisma.comment.update({
+      where: { id: "c-question" },
+      data: {
+        editedAt: new Date(BOUNDARY + 10),
+        historyIncompleteReason: "legacy_cutover",
+      },
+    });
+
     await prisma.attachment.createMany({
       data: [
         {
@@ -439,6 +472,96 @@ describe("Admin moderation facets (e2e)", () => {
         expect.arrayContaining([expect.objectContaining(comment)]),
       );
     }
+  });
+
+  it("serves TASK-185.5 revision counts and hides unavailable history", async () => {
+    for (const specialized of [false, true]) {
+      const page = await comments(
+        `boardId=${BOARD}&status=all&limit=100`,
+        specialized,
+      );
+      const byId = new Map(page.items.map((row) => [row.id, row]));
+
+      // A live comment keeps `text`, its kind and its saved count.
+      expect(byId.get("c-blocker")).toMatchObject({
+        text: "moderation c-blocker",
+        kind: "blocker",
+        revisionCount: 2,
+        historyIncomplete: false,
+      });
+      // Zero revisions is a real answer; the persisted reason still shows.
+      expect(byId.get("c-question")).toMatchObject({
+        revisionCount: 0,
+        historyIncomplete: true,
+      });
+      expect(byId.get("c-note")).toMatchObject({
+        revisionCount: 0,
+        historyIncomplete: false,
+      });
+      // Deleted row and deleted parent: both fields are null.
+      expect(byId.get("c-deleted")).toMatchObject({
+        revisionCount: null,
+        historyIncomplete: null,
+      });
+      expect(byId.get("c-handoff")).toMatchObject({
+        revisionCount: null,
+        historyIncomplete: null,
+      });
+      for (const row of page.items) expect(typeof row.text).toBe("string");
+
+      // TASK-181 kind filtering and TASK-176.3 totals stay untouched.
+      const blocked = await comments(
+        `boardId=${BOARD}&kind=blocker&status=all&limit=100`,
+        specialized,
+      );
+      expect(blocked.total).toBe(2);
+      expect(blocked.items.map((row) => row.id).sort()).toEqual([
+        "c-blocker",
+        "c-deleted",
+      ]);
+    }
+
+    const card = (await get(`cards/${CARD}/detail`).expect(200)).body;
+    expect(card.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c-blocker",
+          text: "moderation c-blocker",
+          revisionCount: 2,
+          historyIncomplete: false,
+        }),
+      ]),
+    );
+    const user = (
+      await get(`users/${USER}/detail?includeDeleted=true`).expect(200)
+    ).body;
+    expect(user.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c-deleted",
+          revisionCount: null,
+          historyIncomplete: null,
+        }),
+      ]),
+    );
+    const otherUser = (
+      await get(`users/${OTHER_USER}/detail?includeDeleted=true`).expect(200)
+    ).body;
+    expect(otherUser.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c-handoff",
+          revisionCount: null,
+          historyIncomplete: null,
+        }),
+      ]),
+    );
+
+    const revisions = (await get("comments/c-blocker/revisions").expect(200))
+      .body;
+    expect(revisions.items).toHaveLength(2);
+    expect(revisions.historyIncomplete).toBe(false);
+    await get("comments/c-handoff/revisions").expect(404);
   });
 
   it("resolves an exact user and a board-scoped card as an operator", async () => {
