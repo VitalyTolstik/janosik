@@ -1129,7 +1129,11 @@ export interface AuthConfigResponse {
  */
 export interface UserDataExportDto {
   id: string;
-  status: "pending" | "ready" | "failed";
+  /**
+   * `expired` means the seven-day artifact lifetime passed: there is nothing
+   * left to download, so the client offers a new copy instead.
+   */
+  status: "pending" | "ready" | "failed" | "expired";
   /** Unix ms. */
   createdAt: number;
   /** Unix ms; the artifact is deleted at this point. */

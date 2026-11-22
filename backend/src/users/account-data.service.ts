@@ -295,9 +295,12 @@ export class AccountDataService {
 }
 
 function toExportDto(row: AdminExportRowDto): UserDataExportDto {
+  // The download route has always enforced the TTL; the status route must
+  // agree or the UI keeps offering a bundle that is already gone.
+  const expired = row.status !== "failed" && row.expiresAt <= Date.now();
   return {
     id: row.id,
-    status: row.status,
+    status: expired ? "expired" : row.status,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     sizeBytes: row.sizeBytes,

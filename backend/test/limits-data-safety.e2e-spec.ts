@@ -549,6 +549,34 @@ describe("Limits & data safety (e2e)", () => {
         .expect(404);
     });
 
+    it("reports an expired export instead of ready and refuses its download", async () => {
+      const created = await server()
+        .post("/api/v1/users/me/export")
+        .set(auth(token))
+        .expect(202);
+      await prisma.dataExport.update({
+        where: { id: created.body.id },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+
+      const status = await server()
+        .get(`/api/v1/users/me/export/${created.body.id}`)
+        .set(auth(token))
+        .expect(200);
+      expect(status.body.status).toBe("expired");
+      await server()
+        .get(`/api/v1/users/me/export/${created.body.id}/download`)
+        .set(auth(token))
+        .expect(410);
+      const latest = await server()
+        .get("/api/v1/users/me/export/latest")
+        .set(auth(token))
+        .expect(200);
+      // Nest serializes a null body as an empty object over supertest; the
+      // contract that matters is that the expired row is not offered.
+      expect(latest.body.id).toBeUndefined();
+    });
+
     it("refuses a second export while one is pending", async () => {
       await prisma.dataExport.create({
         data: {

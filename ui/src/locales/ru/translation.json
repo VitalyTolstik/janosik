@@ -91,6 +91,7 @@
   "account.data.status.pending": "Готовится…",
   "account.data.status.ready": "Готов",
   "account.data.status.failed": "Ошибка экспорта",
+  "account.data.status.expired": "Срок истёк — подготовьте новую копию",
   "account.data.deleteTitle": "Удаление аккаунта",
   "account.data.deleteHint": "Аккаунт отключается сразу и безвозвратно удаляется через 7 дней. После этого отменить удаление нельзя. Ранее опубликованные снимки досок могут сохранять копии ваших комментариев и файлов.",
   "account.data.confirmEmail": "Введите email аккаунта для подтверждения",

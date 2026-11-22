@@ -1,6 +1,7 @@
 import { UnauthorizedException } from "@nestjs/common";
 import type { User } from "@prisma/client";
 import { hash as argonHash, argon2id } from "argon2";
+import type { AdminExportRowDto } from "@janosik/shared";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import { securityStamp } from "@/auth/security-stamp";
 import { AccountDataService } from "./account-data.service";
@@ -69,5 +70,63 @@ describe("AccountDataService deletion races", () => {
     await expect(pending).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(pending).rejects.toThrow("Credentials changed");
     expect(scheduleInTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("AccountDataService export status", () => {
+  const row = (overrides: Partial<AdminExportRowDto> = {}): AdminExportRowDto => ({
+    id: "exp-1",
+    userId: "user-1",
+    userEmail: "user@example.com",
+    status: "ready",
+    filename: "janosik-user-1.json",
+    sizeBytes: 10,
+    error: null,
+    createdAt: Date.now() - 1_000,
+    expiresAt: Date.now() + 60_000,
+    ...overrides,
+  });
+
+  const serviceFor = (exportRow: AdminExportRowDto): AccountDataService => {
+    const exports = { row: jest.fn().mockResolvedValue(exportRow) };
+    return new AccountDataService(
+      {} as never,
+      exports as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  };
+
+  it("reports a ready export whose TTL has passed as expired", async () => {
+    const service = serviceFor(
+      row({ status: "ready", expiresAt: Date.now() - 1_000 }),
+    );
+
+    await expect(service.exportStatus("user-1", "exp-1")).resolves.toMatchObject(
+      { id: "exp-1", status: "expired" },
+    );
+  });
+
+  it("reports a pending export whose TTL has passed as expired", async () => {
+    const service = serviceFor(
+      row({ status: "pending", expiresAt: Date.now() - 1_000 }),
+    );
+
+    await expect(service.exportStatus("user-1", "exp-1")).resolves.toMatchObject(
+      { status: "expired" },
+    );
+  });
+
+  it("keeps a live ready export and a failed export unchanged", async () => {
+    await expect(
+      serviceFor(row()).exportStatus("user-1", "exp-1"),
+    ).resolves.toMatchObject({ status: "ready" });
+    await expect(
+      serviceFor(
+        row({ status: "failed", expiresAt: Date.now() - 1_000 }),
+      ).exportStatus("user-1", "exp-1"),
+    ).resolves.toMatchObject({ status: "failed" });
   });
 });
