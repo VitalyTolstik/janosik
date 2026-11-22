@@ -1018,11 +1018,49 @@ export function fillTemplate(
 
 /** A readable plain-text alternative from the HTML body. */
 export function htmlToText(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n\n")
-      .replace(/<[^>]+>/g, ""),
-  ).trim();
+  // Decode before scanning: decoding afterwards would turn `&lt;script&gt;`
+  // back into markup in the returned text. The scanner then walks the string
+  // once and drops every tag, so no second pass can expose a fresh one from
+  // nested input like `<<b>>`. A regex sanitizer cannot promise that, which is
+  // why this is an explicit scan rather than a chain of replacements.
+  const source = decodeHtmlEntities(html);
+  let text = "";
+  let index = 0;
+  while (index < source.length) {
+    const open = source.indexOf("<", index);
+    if (open === -1) {
+      text += source.slice(index);
+      break;
+    }
+    text += source.slice(index, open);
+    const close = source.indexOf(">", open + 1);
+    if (close === -1) {
+      // An unterminated `<` is ordinary text, not a tag.
+      text += source.slice(open);
+      break;
+    }
+    const tag = source
+      .slice(open + 1, close)
+      .trim()
+      .toLowerCase();
+    if (tag === "br" || tag === "br/") {
+      text += "\n";
+    } else if (tag === "/p") {
+      text += "\n\n";
+    } else if (
+      tag === "style" ||
+      tag.startsWith("style ") ||
+      tag.startsWith("style\t") ||
+      tag.startsWith("style\n")
+    ) {
+      const end = source.indexOf("</style", close + 1);
+      if (end === -1) break;
+      const endClose = source.indexOf(">", end + 1);
+      if (endClose === -1) break;
+      index = endClose + 1;
+      continue;
+    }
+    index = close + 1;
+  }
+  return text.trim();
 }

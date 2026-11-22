@@ -47,9 +47,17 @@ function maskRange(chars: string[], start: number, end: number): void {
 /** HTML comments are not rendered and never carry recipients. */
 function maskHtmlComments(chars: string[]): void {
   const text = chars.join("");
-  for (const match of text.matchAll(/<!--[\s\S]*?-->/g)) {
-    const start = match.index ?? 0;
-    maskRange(chars, start, start + match[0].length);
+  // `indexOf` keeps this linear: a lazy regex would rescan the tail for every
+  // `<!--` and is polynomial on hostile input with many openers.
+  let cursor = 0;
+  for (;;) {
+    const start = text.indexOf("<!--", cursor);
+    if (start === -1) break;
+    const close = text.indexOf("-->", start + 4);
+    if (close === -1) break;
+    const end = close + 3;
+    maskRange(chars, start, end);
+    cursor = end;
   }
 }
 

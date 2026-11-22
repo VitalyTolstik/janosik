@@ -213,7 +213,8 @@ URLs are inert too, and HTML comments are not rendered. Fenced code nested
 inside a list item is treated as ordinary text; the composer only creates
 top-level code blocks. The closing fence follows the same 0–3-space
 indentation rule as the opening fence. Indented text is ordinary text: an explicit
-`[@Name](…)` link there still notifies, while a hand-typed `@Name` never does.
+`[@Name](https://janosik.invalid/mention/<userId>)` link there still notifies,
+while a hand-typed `@Name` never does.
 If you remove a mention while editing, its pending notification is withdrawn.
 
 ### History

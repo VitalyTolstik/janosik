@@ -241,6 +241,9 @@ describe("attentionEmail", () => {
     expect(htmlToText("<p>&quot;hi&quot; &amp; &#39;there&#39;</p>")).toBe(
       `"hi" & 'there'`,
     );
+    // Entities decode before tags are stripped, so an encoded tag cannot
+    // reappear in the plain-text output.
+    expect(htmlToText("<p>&lt;b&gt;bold&lt;/b&gt; x</p>")).toBe("bold x");
   });
 });
 
