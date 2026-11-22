@@ -28,6 +28,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   other recipients. EN/RU copy, API/OpenAPI docs, user guide, touch targets,
   axe coverage and focused parser/backend/UI tests are included.
 
+- TASK-185.5/185.6 comment history in the admin panel and closeout. Every
+  admin comment row (card detail, user detail and the comments entity table)
+  now carries `revisionCount` and `historyIncomplete`; a live row opens the
+  read-only revision dialog, while a deleted row or parent returns `null` in
+  both fields and hides the link. The acceptance pass added the
+  `sweep-comment-history` maintenance job: it finds an old writer even when no
+  PATCH follows, persists `writer_gap`, adopts the current text as the new
+  verified point, strips Activity snapshots that no revision backs and lets
+  the next edit continue under a fresh number. It also verified both GDPR
+  export paths (sync and background) exclude revision snapshots and another
+  author's edits, exposed revision count/bytes, related Activity bytes,
+  derived revisions beyond the 50-revision window, incomplete histories and
+  over-budget comments in the observability snapshot
+  (counts only, never text), and covered delete/restore feeds, the 50-revision
+  window on both APIs, public-share SSE allowlists, command catch-up/resync,
+  the 390 px card History view, the live SSE refresh and EN/RU dialog
+  coverage.
+
+- TASK-185.4 card comment history. An edited comment’s `edited` marker is now
+  a keyboard-accessible button that opens its read-only revision list:
+  localized revision number and time, the current editor name (or “Editor
+  unavailable”), the change cause, an escaped character-level before/after
+  diff, and a full-text snapshot toggle for the revision. The list uses the
+  TASK-185.3 cursor API at 20 revisions per page with loading, retry, empty
+  and end states. A banner follows `historyIncompleteReason`: the cutover copy
+  names the pinned release that introduced edit history, the other reasons
+  stay neutral. Open
+  history marks itself stale on a new edit, closes and clears on deletion,
+  rechecks access on focus/reconnect, and returns focus to the trigger. EN/RU
+  copy and the 390/768 px layouts are covered; the admin history dialog remains
+  in 185.5.
+
 - TASK-177.4 human-owned agent state (G-03). A board ADMIN or MEMBER can now
   add, edit and clear a card's `Acceptance criteria` / `Definition of done` in
   the card dialog; VIEWERs keep the read-only view. The command goes through
@@ -41,6 +73,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   card for the wrong identity. EN/RU copy, 44 px touch
   targets, keyboard focus/Escape handling, component tests and backend/MCP
   coverage are included.
+
+- TASK-177.7 truthful deletes, per-board export and Recently deleted.
+  `Export this board` downloads one board through `GET /boards/:id/export`,
+  stays disabled without an open board and explains the 25 MB `413` while the
+  all-boards file keeps its separate copy. Delete prompts for cards, archived
+  cards, columns, comments, attachments and archived boards no longer imply an
+  immediate permanent removal: they say an administrator can restore the item
+  during the retention period. A new `Recently deleted` view lists soft-deleted
+  cards, columns, comments and card files for board ADMIN/MEMBER and restores
+  them through the command log (cards/columns) or in place (comments/files)
+  inside the same retention window; restore writes `comment_restored` /
+  `attachment_restored` Activity and SSE. Admin restore is unchanged and true
+  purge remains a maintenance job. EN/RU UI copy, the boards/cards/account
+  user-guide pages, REST/OpenAPI docs, client/component tests and board-scoped
+  API tests are included.
 
 - TASK-185.1 comment history foundation. Every real text edit now writes one
   immutable `CommentRevision` under the board-write lock, together with one

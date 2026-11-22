@@ -1,7 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import type { AdminObservabilityDto } from "@janosik/shared";
+import { Prisma } from "@prisma/client";
 import { createRequire } from "node:module";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import {
+  COMMENT_ACTIVITY_BUDGET_BYTES,
+  COMMENT_REVISION_BUDGET_BYTES,
+  COMMENT_REVISION_LIMIT,
+} from "@/comments/comment-history";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { PresenceService } from "@/realtime/presence.service";
 import { TranscodeService } from "@/attachments/transcode.service";
@@ -25,6 +31,36 @@ const BACKEND_VERSION: string = (() => {
     return "0.0.0";
   }
 })();
+
+/**
+ * The six history aggregates scan `Comment`, `CommentRevision` and `Activity`,
+ * so the admin-only panel caches them briefly and bounds the transaction. A
+ * timeout/failure must read as "unavailable", never as healthy zeros.
+ */
+const HISTORY_METRICS_TTL_MS = 30_000;
+const HISTORY_METRICS_TIMEOUT_MS = 10_000;
+
+let historyMetricsCache: {
+  at: number;
+  value: AdminObservabilityDto["commentHistory"];
+} | null = null;
+
+function unavailableHistoryCounters(): AdminObservabilityDto["commentHistory"] {
+  return {
+    available: false,
+    revisions: { count: 0, bytes: 0 },
+    activity: { count: 0, bytes: 0 },
+    derivedTrimmedRevisions: 0,
+    incompleteComments: 0,
+    reasons: {
+      legacy_cutover: 0,
+      revision_limit: 0,
+      gdpr_erase: 0,
+      writer_gap: 0,
+    },
+    overBudget: { revisions: 0, activity: 0 },
+  };
+}
 
 interface TableStat {
   name: string;
@@ -70,14 +106,16 @@ export class ObservabilityService {
   ) {}
 
   async snapshot(): Promise<AdminObservabilityDto> {
-    const [size, tables, transcode, demo, health, queues] = await Promise.all([
-      this.databaseSize(),
-      this.tableStats(),
-      this.transcodeCounts(),
-      this.demo.status(),
-      this.healthChecks(),
-      this.queueCounters(),
-    ]);
+    const [size, tables, transcode, demo, health, queues, commentHistory] =
+      await Promise.all([
+        this.databaseSize(),
+        this.tableStats(),
+        this.transcodeCounts(),
+        this.demo.status(),
+        this.healthChecks(),
+        this.queueCounters(),
+        this.commentHistoryCounters().catch(() => unavailableHistoryCounters()),
+      ]);
 
     return {
       version: BACKEND_VERSION,
@@ -102,8 +140,138 @@ export class ObservabilityService {
         },
         queues,
       },
+      commentHistory,
       health,
     };
+  }
+
+  /**
+   * TASK-185.6 §3.5 observation: how many revisions exist and how many text
+   * bytes they and their Activity copies take, how many were trimmed, which
+   * reasons mark an incomplete chain and how many comments exceed the 4 MB /
+   * 6 MB text budgets. Counts and byte sizes only — the queries never select
+   * or return the text itself.
+   */
+  private async commentHistoryCounters(): Promise<
+    AdminObservabilityDto["commentHistory"]
+  > {
+    const cached = historyMetricsCache;
+    if (cached !== null && Date.now() - cached.at < HISTORY_METRICS_TTL_MS) {
+      return cached.value;
+    }
+
+    const [revisions, activity, trims, reasons, overRevisions, overActivity] =
+      await this.prisma.$transaction(
+        (tx) =>
+          Promise.all([
+            tx.$queryRaw<Array<{ count: bigint; bytes: bigint }>>(
+              Prisma.sql`
+                SELECT count(*)::bigint AS "count",
+                       COALESCE(
+                         sum(octet_length("beforeText") + octet_length("afterText")),
+                         0
+                       )::bigint AS "bytes"
+                  FROM "CommentRevision"
+              `,
+            ),
+            tx.$queryRaw<Array<{ count: bigint; bytes: bigint }>>(
+              Prisma.sql`
+                SELECT count(*)::bigint AS "count",
+                       COALESCE(
+                         sum(
+                           COALESCE(octet_length("details"->>'beforeText'), 0)
+                           + COALESCE(octet_length("details"->>'afterText'), 0)
+                           + COALESCE(octet_length("details"->>'text'), 0)
+                         ),
+                         0
+                       )::bigint AS "bytes"
+                  FROM "Activity"
+                 WHERE "type" = 'comment_updated'
+                   AND "details"->>'revisionId' IS NOT NULL
+              `,
+            ),
+            // Derived, not an exact trim-event counter: `lastRevisionNumber`
+            // stays monotonic across trimming and GDPR erase, so a chain that
+            // was erased after 60 edits still contributes 10 here.
+            tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+              SELECT COALESCE(
+                       sum(GREATEST("lastRevisionNumber" - ${COMMENT_REVISION_LIMIT}, 0)),
+                       0
+                     )::bigint AS "count"
+                FROM "Comment"
+            `),
+            tx.$queryRaw<Array<{ reason: string; count: bigint }>>(
+              Prisma.sql`
+                SELECT "historyIncompleteReason"::text AS "reason",
+                       count(*)::bigint AS "count"
+                  FROM "Comment"
+                 WHERE "historyIncompleteReason" IS NOT NULL
+                 GROUP BY "historyIncompleteReason"
+              `,
+            ),
+            tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+              SELECT count(*)::bigint AS "count"
+                FROM (
+                  SELECT "commentId"
+                    FROM "CommentRevision"
+                   GROUP BY "commentId"
+                  HAVING sum(
+                           octet_length("beforeText") + octet_length("afterText")
+                         ) > ${COMMENT_REVISION_BUDGET_BYTES}
+                ) AS over_budget
+            `),
+            tx.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+              SELECT count(*)::bigint AS "count"
+                FROM (
+                  SELECT "commentId"
+                    FROM "Activity"
+                   WHERE "type" = 'comment_updated'
+                     AND "details"->>'revisionId' IS NOT NULL
+                   GROUP BY "commentId"
+                  HAVING sum(
+                           COALESCE(octet_length("details"->>'beforeText'), 0)
+                           + COALESCE(octet_length("details"->>'afterText'), 0)
+                           + COALESCE(octet_length("details"->>'text'), 0)
+                         ) > ${COMMENT_ACTIVITY_BUDGET_BYTES}
+                ) AS over_budget
+            `),
+          ]),
+        {
+          timeout: HISTORY_METRICS_TIMEOUT_MS,
+          maxWait: 5_000,
+        },
+      );
+
+    const reasonCount = (name: string): number =>
+      Number(reasons.find((row) => row.reason === name)?.count ?? 0);
+    const value: AdminObservabilityDto["commentHistory"] = {
+      available: true,
+      revisions: {
+        count: Number(revisions[0]?.count ?? 0),
+        bytes: Number(revisions[0]?.bytes ?? 0),
+      },
+      activity: {
+        count: Number(activity[0]?.count ?? 0),
+        bytes: Number(activity[0]?.bytes ?? 0),
+      },
+      derivedTrimmedRevisions: Number(trims[0]?.count ?? 0),
+      incompleteComments: reasons.reduce(
+        (sum, row) => sum + Number(row.count),
+        0,
+      ),
+      reasons: {
+        legacy_cutover: reasonCount("legacy_cutover"),
+        revision_limit: reasonCount("revision_limit"),
+        gdpr_erase: reasonCount("gdpr_erase"),
+        writer_gap: reasonCount("writer_gap"),
+      },
+      overBudget: {
+        revisions: Number(overRevisions[0]?.count ?? 0),
+        activity: Number(overActivity[0]?.count ?? 0),
+      },
+    };
+    historyMetricsCache = { at: Date.now(), value };
+    return value;
   }
 
   /** Per-queue counters for every BullMQ/in-process queue (TASK-66…73). */

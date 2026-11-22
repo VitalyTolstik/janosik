@@ -254,7 +254,8 @@ const en = {
   "admin.bulk.delete": "Delete selected",
   "admin.bulk.restore": "Restore selected",
   "admin.bulk.confirm.title": "Apply to {count} selected?",
-  "admin.bulk.confirm.body": "Delete the selected rows? This cannot be undone.",
+  "admin.bulk.confirm.body":
+    "Delete the selected rows? They are soft-deleted and can be restored until the retention sweep removes them.",
   "admin.bulk.partial": "{count} refused — kept selected for retry.",
   "admin.bulk.tooMany":
     "Too many rows selected: {count}. The bulk limit is {limit} — narrow the filters or select fewer rows.",
@@ -500,6 +501,28 @@ const en = {
   "admin.observability.off": "off",
   "admin.observability.ok": "ok",
   "admin.observability.fail": "fail",
+  "admin.observability.history": "Comment history",
+  "admin.observability.history.hint":
+    "Counts and UTF-8 text bytes only; comment text is never collected here.",
+  "admin.observability.history.cache":
+    "Values may be up to 30 seconds old (admin-only cache).",
+  "admin.observability.history.unavailable":
+    "Metrics are unavailable: the aggregate query failed or timed out. Values are hidden rather than shown as zero.",
+  "admin.observability.history.revisions": "Saved revisions",
+  "admin.observability.history.revisionBytes": "Revision text (UTF-8)",
+  "admin.observability.history.activity": "Related activity rows",
+  "admin.observability.history.activityBytes": "Related activity text (UTF-8)",
+  "admin.observability.history.derivedTrims":
+    "Revisions beyond latest 50 (derived)",
+  "admin.observability.history.incomplete": "Incomplete histories",
+  "admin.observability.history.reason.legacy_cutover":
+    "Incomplete: legacy cutover",
+  "admin.observability.history.reason.revision_limit":
+    "Incomplete: revision limit",
+  "admin.observability.history.reason.gdpr_erase": "Incomplete: GDPR erase",
+  "admin.observability.history.reason.writer_gap": "Incomplete: writer gap",
+  "admin.observability.history.overBudget":
+    "Over budget comments (4 MB / 6 MB text)",
   "admin.observability.frontend": "Frontend",
   "admin.observability.frontend.hint": "The app build serving this panel",
   "admin.observability.frontend.appVersion": "App version",
@@ -1849,7 +1872,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.bulk.delete": "Удалить выбранные",
   "admin.bulk.restore": "Восстановить выбранные",
   "admin.bulk.confirm.title": "Применить к выбранным: {count}?",
-  "admin.bulk.confirm.body": "Удалить выбранные строки? Отменить это нельзя.",
+  "admin.bulk.confirm.body":
+    "Удалить выбранные строки? Они будут мягко удалены — восстановить их можно до очистки по сроку хранения.",
   "admin.bulk.partial": "Отказано: {count} — оставлены выбранными для повтора.",
   "admin.bulk.tooMany":
     "Выбрано слишком много строк: {count}. Лимит массового действия — {limit}; сузьте фильтры или выберите меньше строк.",
@@ -2099,6 +2123,29 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.observability.off": "выкл",
   "admin.observability.ok": "ок",
   "admin.observability.fail": "сбой",
+  "admin.observability.history": "История комментариев",
+  "admin.observability.history.hint":
+    "Только счётчики и размер текста в UTF-8; сам текст комментариев здесь не собирается.",
+  "admin.observability.history.cache":
+    "Значения могут отставать до 30 секунд (кэш только для администратора).",
+  "admin.observability.history.unavailable":
+    "Метрики недоступны: агрегатный запрос завершился ошибкой или превысил время. Значения скрыты, а не показаны как нули.",
+  "admin.observability.history.revisions": "Сохранённые ревизии",
+  "admin.observability.history.revisionBytes": "Текст ревизий (UTF-8)",
+  "admin.observability.history.activity": "Связанные записи Activity",
+  "admin.observability.history.activityBytes":
+    "Текст связанных Activity (UTF-8)",
+  "admin.observability.history.derivedTrims":
+    "Ревизии сверх последних 50 (расчётно)",
+  "admin.observability.history.incomplete": "Неполные истории",
+  "admin.observability.history.reason.legacy_cutover":
+    "Неполная: переход со старой версии",
+  "admin.observability.history.reason.revision_limit":
+    "Неполная: лимит ревизий",
+  "admin.observability.history.reason.gdpr_erase": "Неполная: удаление GDPR",
+  "admin.observability.history.reason.writer_gap": "Неполная: пропуск записи",
+  "admin.observability.history.overBudget":
+    "Комментарии сверх бюджета (4 МБ / 6 МБ текста)",
   "admin.observability.frontend": "Фронтенд",
   "admin.observability.frontend.hint": "Сборка приложения, отдающая эту панель",
   "admin.observability.frontend.appVersion": "Версия приложения",

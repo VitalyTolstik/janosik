@@ -1510,6 +1510,24 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       .delete(`/api/v1/comments/${comment.id}`)
       .set(auth(author.token))
       .expect(200);
+    // TASK-177.7: a user restore writes `comment_restored`; its text snapshot
+    // must not outlive the comment in a later hard purge.
+    await server()
+      .post(`/api/v1/boards/${boardId}/deleted/comments/${comment.id}/restore`)
+      .set(auth(author.token))
+      .expect(200);
+    expect(
+      await prisma.activity.count({
+        where: {
+          type: "comment_restored",
+          details: { path: ["commentId"], equals: comment.id },
+        },
+      }),
+    ).toBe(1);
+    await server()
+      .delete(`/api/v1/comments/${comment.id}`)
+      .set(auth(author.token))
+      .expect(200);
     await prisma.comment.update({
       where: { id: comment.id },
       data: { deletedAt: new Date(Date.now() - 45 * 86_400_000) },
@@ -1547,7 +1565,14 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     expect(
       await prisma.activity.count({
         where: {
-          type: { in: ["comment_added", "comment_updated", "comment_deleted"] },
+          type: {
+            in: [
+              "comment_added",
+              "comment_updated",
+              "comment_deleted",
+              "comment_restored",
+            ],
+          },
           OR: [
             { details: { path: ["commentId"], equals: comment.id } },
             { details: { path: ["commentId"], equals: cardComment.id } },
@@ -1596,6 +1621,26 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
     const lastRevisionNumber = afterScrub.lastRevisionNumber;
     const verifiedEditedAt = afterScrub.historyVerifiedEditedAt?.getTime();
     expect(lastRevisionNumber).toBe(1);
+    // The author deletes and restores the comment: the restored text snapshot
+    // contains the erased user's scrub edit, so the erase must drop it too.
+    await server()
+      .delete(`/api/v1/comments/${foreignComment.id}`)
+      .set(auth(author.token))
+      .expect(200);
+    await server()
+      .post(
+        `/api/v1/boards/${foreign.boardId}/deleted/comments/${foreignComment.id}/restore`,
+      )
+      .set(auth(author.token))
+      .expect(200);
+    expect(
+      await prisma.activity.count({
+        where: {
+          type: "comment_restored",
+          details: { path: ["commentId"], equals: foreignComment.id },
+        },
+      }),
+    ).toBe(1);
     // Simulate a trim that happened before the erase: gdpr_erase must win.
     await prisma.comment.update({
       where: { id: foreignComment.id },
@@ -1650,6 +1695,14 @@ describe("Comment history foundation (TASK-185.1, e2e)", () => {
       }),
     ).toBe(0);
     expect(await commentUpdates(foreignComment.id)).toHaveLength(0);
+    expect(
+      await prisma.activity.count({
+        where: {
+          type: "comment_restored",
+          details: { path: ["commentId"], equals: foreignComment.id },
+        },
+      }),
+    ).toBe(0);
 
     // The unverified chain keeps its number for the next sweep.
     const unverifiedAfter = await prisma.comment.findUniqueOrThrow({

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  GoneException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -724,6 +725,98 @@ export class CommentsService {
     return ids;
   }
 
+  /**
+   * TASK-177.7: bring a soft-deleted comment back while it is inside the
+   * retention window. Board ADMIN/MEMBER may do this from "Recently
+   * deleted"; the original author-only delete rule is unchanged. Inline
+   * files that the delete unlinked stay deleted — the comment body may then
+   * show a missing image (noted in the user guide) — while the comment text
+   * itself is restored in place and appears in Activity/SSE again.
+   */
+  async restoreItem(
+    boardId: string,
+    commentId: string,
+    actorId: string,
+    deletedAfter: Date,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+  ): Promise<void> {
+    const preRead = await this.prisma.comment.findFirst({
+      where: {
+        id: commentId,
+        card: { column: { boardId } },
+      },
+      select: { cardId: true, deletedAt: true },
+    });
+    if (!preRead) throw new NotFoundException("Comment not found");
+    // Repeated restore after a lost response is a no-op, not a 404.
+    if (preRead.deletedAt === null) return;
+
+    const restored = await this.boardWrite.run(boardId, async (tx) => {
+      await assertBoardAcceptsWrites(tx, boardId);
+      const comment = await tx.comment.findFirst({
+        where: {
+          id: commentId,
+          card: {
+            deletedAt: null,
+            column: { boardId, deletedAt: null },
+          },
+        },
+        select: { id: true, cardId: true, text: true, deletedAt: true },
+      });
+      if (!comment) throw new NotFoundException("Comment not found");
+      if (comment.deletedAt === null) return null;
+      if (comment.deletedAt < deletedAfter) {
+        throw new GoneException({
+          message:
+            "This comment is past the retention period and can no longer be restored",
+          code: "retention_expired",
+        });
+      }
+      await tx.comment.update({
+        where: { id: comment.id },
+        data: { deletedAt: null },
+      });
+      const activity = await tx.activity.create({
+        data: {
+          boardId,
+          cardId: comment.cardId,
+          type: "comment_restored",
+          // TASK-185.2: the typed link keeps purge/erase and the liveness
+          // projection working without parsing the free-JSON snapshot.
+          commentId: comment.id,
+          actorId,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          agentName: attribution.agentName,
+          details: { commentId: comment.id, text: comment.text },
+        },
+      });
+      return {
+        activityId: activity.id,
+        cardId: comment.cardId,
+        at: activity.createdAt.getTime(),
+      };
+    });
+    if (restored === null) return;
+
+    this.publishActivity(
+      boardId,
+      restored.cardId,
+      restored.activityId,
+      actorId,
+      restored.at,
+      "comment_restored",
+      commentId,
+      attribution,
+    );
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
+  }
+
   /** Delete only the author's inline files that no remaining content uses. */
   private async unlinkInlineAttachments(
     tx: Prisma.TransactionClient,
@@ -811,7 +904,11 @@ export class CommentsService {
     activityId: string,
     actorId: string,
     at: number,
-    kind: "comment_added" | "comment_deleted" | "comment_updated",
+    kind:
+      | "comment_added"
+      | "comment_deleted"
+      | "comment_updated"
+      | "comment_restored",
     commentId: string,
     attribution: RequestAttribution,
     revisionId?: string | null,

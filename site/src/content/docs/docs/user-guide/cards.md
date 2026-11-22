@@ -136,9 +136,11 @@ directly stay until explicitly deleted. Older uploads are not automatically
 classified as description uploads.
 
 For undo and saved snapshots, hidden files remain stored and count toward the
-20-file limit. Expand `Removed from descriptions` to permanently delete them
-and free space; undo and snapshots can no longer restore a deleted file.
-Deleting a file explicitly can make it unavailable wherever it is referenced.
+20-file limit. Expand `Removed from descriptions` to delete one and free
+space; that action is not offered in `Recently deleted`, so treat it as final
+unless a platform administrator restores the row. Deleting a file explicitly
+can make it unavailable wherever it is referenced; a regular file can be
+restored from `Recently deleted` during the retention period.
 
 When video processing is enabled, uploaded videos are converted in the
 background to H.264/AAC MP4. An MP4 original is kept if the result is no
@@ -164,10 +166,10 @@ the card, or delete it.
 - **Archive** takes a card off the board but keeps it: archived cards stay in
   search and in the card archive, and the dialog shows `Send back to board`, which restores the card to a
   column you pick.
-- **Delete** asks for confirmation and removes the card from the board. You can
-  undo this right away. From the archive, the same action reads
-  `Delete from archive`; its confirmation also explains that undo removes one
-  card at a time.
+- **Delete** asks for confirmation and removes the card from the board. An
+  administrator can restore it during the retention period, and board members
+  can use `Recently deleted`. From the archive, the same action reads
+  `Delete from archive`; it follows the same retention rule.
 
 The card archive is opened from the data menu (see
 [Account, keys and preferences](/docs/user-guide/account/)).
@@ -187,11 +189,17 @@ listed newest first, with `Show older comments` to page back. Filter chips
 above the thread narrow it to `All`, `Note`, `Status`, `Question`, `Blocker`,
 `Evidence` or `Handoff`; the filter asks the server, so paging stays inside
 the chosen kind. You can delete your own comments after a confirmation that
-names the author and quotes the comment; the deletion cannot be undone. Edit a
+names the author and quotes the comment; an administrator can restore it during
+the retention period, and board members can use `Recently deleted`. Edit a
 comment with the pencil next to the delete icon: the same editor and kind
 picker appear, `Save` or Ctrl/Cmd+Enter applies the change, `Escape` cancels.
 An edited comment keeps its place in the thread and shows an `edited` marker;
-only the author can edit or delete a comment. Comments need server mode.
+only the author can edit or delete a comment. Click the `edited` marker to open
+the read-only edit history: every saved revision with its time, editor, cause
+and before/after diff. Long revisions can reveal their full saved text, and
+`Show older revisions` pages the chain back. The newest 50 revisions are
+kept; an older chain or a legacy/erased/gap state shows an incomplete-history
+banner instead of pretending the list is complete. Comments need server mode.
 
 Type `@` at the start of a word to mention a board member. A picker lists the
 board's active members; type to filter, use `↑`/`↓`, `Home`/`End` or

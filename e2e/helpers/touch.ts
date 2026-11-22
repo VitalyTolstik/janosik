@@ -328,26 +328,44 @@ export async function touchDragToOffscreen(
       box = await target.boundingBox({ timeout: 500 }).catch(() => null);
     }
     if (!box) throw new Error("touchDragToOffscreen: target disappeared");
-    const visible = visibleBox(page, box, "target after auto-scroll");
 
     // The release point can still sit inside the auto-scroll band. Aim at
     // the target's true centre: a calendar day cell is 128 px tall, so its
     // centre is outside the 48 px band, while the old capped 40 px point sat
     // inside it. A 60 ms wait then kept scrolling, moving the next week's
     // same weekday under the finger and dropping the card there.
-    await client.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [
-        {
-          x: visible.x + visible.width / 2,
-          y: visible.y + visible.height / 2,
-          id: 1,
-          radiusX: 1,
-          radiusY: 1,
-          force: 1,
-        },
-      ],
-    });
+    //
+    // The box above was measured while the rAF loop was still running, and a
+    // delayed frame scales its step by up to 250 ms (14 px × 15), so the
+    // target can move a whole calendar row before the move below lands.
+    // Park on the target and chase its centre until the box stops moving,
+    // then release there: the finger is either outside the band or the
+    // container is already at its scroll limit.
+    let visible = visibleBox(page, box, "target after auto-scroll");
+    const settleDeadline = Date.now() + 3_000;
+    for (;;) {
+      await client.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          {
+            x: visible.x + visible.width / 2,
+            y: visible.y + visible.height / 2,
+            id: 1,
+            radiusX: 1,
+            radiusY: 1,
+            force: 1,
+          },
+        ],
+      });
+      await page.waitForTimeout(50);
+      const next = await target.boundingBox({ timeout: 500 }).catch(() => null);
+      if (!next) throw new Error("touchDragToOffscreen: target disappeared");
+      const moved =
+        Math.abs(next.x - visible.x) > 0.5 ||
+        Math.abs(next.y - visible.y) > 0.5;
+      visible = visibleBox(page, next, "target after settle");
+      if (!moved || Date.now() >= settleDeadline) break;
+    }
     await page.waitForTimeout(60);
     await client.send("Input.dispatchTouchEvent", {
       type: "touchEnd",

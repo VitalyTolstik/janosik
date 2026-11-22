@@ -1794,6 +1794,28 @@ export interface AdminObservabilityDto {
       backend: "redis" | "memory";
     }>;
   };
+  /** TASK-185.6 §3.5: counts and text bytes only — never comment text. */
+  commentHistory: {
+    /** False when the aggregate queries failed or timed out; values are zeros. */
+    available: boolean;
+    revisions: { count: number; bytes: number };
+    activity: { count: number; bytes: number };
+    /**
+     * Derived from `lastRevisionNumber - 50`; it counts every number issued
+     * beyond the window, including chains later erased, so it is not an exact
+     * per-trim event counter.
+     */
+    derivedTrimmedRevisions: number;
+    incompleteComments: number;
+    reasons: {
+      legacy_cutover: number;
+      revision_limit: number;
+      gdpr_erase: number;
+      writer_gap: number;
+    };
+    /** Comments over the 4,000,000 / 6,000,000-byte text budgets. */
+    overBudget: { revisions: number; activity: number };
+  };
   health: Array<{ name: string; ok: boolean; detail: string }>;
 }
 

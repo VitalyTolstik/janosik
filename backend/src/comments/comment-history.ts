@@ -24,10 +24,22 @@ export type { CommentHistoryIncompleteReason, CommentRevisionCause };
 /** How many revisions per comment are kept (§3.5). */
 export const COMMENT_REVISION_LIMIT = 50;
 
+/**
+ * §3.5 per-comment raw UTF-8 text budgets. `LIMITS.comment` is 10 000
+ * characters and a 50-revision chain stores two sides per edit, so the
+ * revision budget is 4,000,000 bytes and the related Activity budget (a third
+ * copy plus the legacy `text` field) is 6,000,000 bytes — decimal, as in the
+ * task formula 50 × 2/3 × 40 000. These are text-field budgets only; indexes
+ * and row overhead are measured separately.
+ */
+export const COMMENT_REVISION_BUDGET_BYTES = 4_000_000;
+export const COMMENT_ACTIVITY_BUDGET_BYTES = 6_000_000;
+
 export const COMMENT_ACTIVITY_TYPES = [
   "comment_added",
   "comment_updated",
   "comment_deleted",
+  "comment_restored",
 ] as const;
 
 /**
@@ -97,6 +109,20 @@ export type CommentHistoryState = Pick<
   | "historyVerifiedRevisionNumber"
   | "historyIncompleteReason"
 >;
+
+/** Prisma selection for `CommentHistoryState` (writer, API and sweep). */
+export const COMMENT_HISTORY_STATE_SELECT = {
+  id: true,
+  cardId: true,
+  text: true,
+  kind: true,
+  editedAt: true,
+  lastRevisionNumber: true,
+  historyCutoverAt: true,
+  historyVerifiedEditedAt: true,
+  historyVerifiedRevisionNumber: true,
+  historyIncompleteReason: true,
+} as const;
 
 export type CommentHistoryTx = Pick<
   Prisma.TransactionClient,
@@ -199,13 +225,17 @@ export async function deleteCommentActivitySnapshots(
 ): Promise<void> {
   if (commentIds.length === 0) return;
   const types = options.onlyUpdates
-    ? Prisma.sql`"type" = 'comment_updated'`
-    : Prisma.sql`"type" IN ('comment_added', 'comment_updated', 'comment_deleted')`;
+    ? Prisma.sql`"type" IN ('comment_updated', 'comment_restored')`
+    : Prisma.sql`"type" IN ('comment_added', 'comment_updated', 'comment_deleted', 'comment_restored')`;
+  const ids = Prisma.join([...commentIds]);
+  // TASK-185.6 review: a row written before the typed column may still carry
+  // the comment id only in `details`. Matching both closes the window where a
+  // hard purge left a legacy text snapshot behind.
   await tx.$executeRaw(
     Prisma.sql`
       DELETE FROM "Activity"
       WHERE ${types}
-        AND "commentId" IN (${Prisma.join([...commentIds])})
+        AND ("commentId" IN (${ids}) OR "details"->>'commentId' IN (${ids}))
     `,
   );
 }

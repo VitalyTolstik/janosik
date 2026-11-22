@@ -58,6 +58,8 @@ REST. Эти операции не являются действиями ред�
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`               | нет               | `{ status: "ok" }` |
 | `GET`    | `/boards/search`              | пользователь          | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
 | `GET`    | `/boards/:id/export`          | участник              | нет               | `BoardEnvelope`    |
+| `GET`    | `/boards/:id/deleted`         | `ADMIN`/`MEMBER`      | нет               | `DeletedBoardItemsDto` |
+| `POST`   | `/boards/:id/deleted/:type/:itemId/restore` | `ADMIN`/`MEMBER` | нет | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/search`          | участник              | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[]; matchesTotal: number; matchesTruncated: boolean }` |
 
 `GET /boards` перечисляет доски, где вызывающий является принятым участником,
@@ -100,6 +102,20 @@ JSON-объект, либо как сырую JSON-строку; сервер в
 политики). Импорт создаёт новые id
 колонок и карточек и переназначает ссылки процесса; переход, чья колонка
 отсутствует, отбрасывается, а не ломает импорт.
+
+`GET /boards/:id/export` отдаёт один `BoardEnvelope` (`schemaVersion: 3`) и
+отклоняет экспорт больше `MAX_BOARD_EXPORT_BYTES` с `413`. `GET
+/boards/:id/deleted` перечисляет мягко удалённые карточки, колонки, комментарии
+и файлы карточки в пределах срока хранения, сначала новые; тело —
+`{ retentionDays, limit, items, truncated }`, элемент — `{ type, id, title,
+deletedAt, purgeAt, columnTitle?, cardId?, cardTitle?, authorName?,
+sizeBytes? }`. `POST /boards/:id/deleted/:type/:itemId/restore` восстанавливает
+элемент (`type`: `cards`, `columns`, `comments` или `attachments`). Карточки и
+колонки возвращаются через журнал команд; комментарии и файлы
+восстанавливаются на месте и публикуют Activity/SSE. Оба маршрута требуют
+роль `ADMIN` или `MEMBER` доски — `VIEWER` получает `403`. Карточка, чья
+колонка ещё удалена, отвечает `409 column_deleted`; элемент старше срока
+хранения скрыт из списка и отвечает `410 retention_expired`.
 
 `GET /boards/:id` возвращает агрегат доски и устанавливает заголовок ответа
 `X-Board-Seq`, несущий `seq` команды, который отражает агрегат. Клиент
@@ -281,10 +297,16 @@ writer'а, маршрут сразу возвращает пустую стра�
 публичное имя редактора, `null` если редактор или имя недоступны.
 Идентификаторы токена и сессии не выдаются. Master читает ту же проекцию по
 `GET /admin/comments/:commentId/revisions` с админским JWT и без членства в
-доске; оба маршрута только для чтения. Публичные проекции комментариев и
-замороженные snapshot share не содержат ревизий, их ID, текстов до/после,
-счётчиков, флагов и причин неполной истории, cutover и проверенных полей, а
-токен share не открывает маршруты ревизий.
+доске; оба маршрута только для чтения. Writer хранит 50 последних ревизий на
+комментарий: более старые строки и их копии Activity удаляются, а комментарий
+получает `revision_limit`. Расхождение с проверенной парой writer'а даёт
+`writer_gap`; служебная очистка `sweep-comment-history` принимает текущий
+текст как новую проверенную точку и убирает неподтверждённые снимки Activity.
+Наблюдаемость показывает число ревизий и Activity, размер их текста, обрезки,
+неполные истории и превышения бюджета, но не сам текст. Публичные проекции
+комментариев и замороженные snapshot share не содержат ревизий, их ID, текстов
+до/после, счётчиков, флагов и причин неполной истории, cutover и проверенных
+полей, а токен share не открывает маршруты ревизий.
 
 Каждая запись создаёт строку `Activity` и публикует кадр SSE `activity`.
 
@@ -1096,6 +1118,10 @@ historyIncompleteReason }`; последние два поля описываю�
   `includeComments`, `includeAttachments`. Участники — это `{ id, displayName,
   avatarColor, avatarPath }` без email.
 - `BoardEnvelope`: `{ app, schemaVersion, exportedAt, boards[] }`.
+- `DeletedBoardItemsDto`: `{ retentionDays, limit, items[], truncated }`.
+  `items[]` — `{ type, id, title, deletedAt, purgeAt, columnTitle?, cardId?,
+  cardTitle?, authorName?, sizeBytes? }`; `type` — `cards`, `columns`,
+  `comments` или `attachments`.
 - `PlanPreviewDto`: `{ dryRun: true, schemaVersion: 1, boardId, planHash,
   plan, commandCount, cardCreates, limits, requirement, diff, warnings,
   conflicts, canApply }`; `plan` — `ApprovalPlan` с массивом `commands`.

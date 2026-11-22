@@ -68,9 +68,19 @@ aborts the whole deletion.
 
 ### Reconciliation runbook
 
-The standalone reconciliation sweep is **not part of 185.1**; it lands with the
-read/feed work in 185.2/185.6. Until then the 409 means an operator must inspect
-the comment manually:
+The standalone reconciliation sweep ships with TASK-185.6 as the
+`sweep-comment-history` maintenance job (also part of `all`). It finds a
+comment whose verified pair or last revision disagrees with the stored text —
+including a change written without a following PATCH — takes the board-write
+lock, merges `writer_gap`, adopts the current `editedAt` as the new verified
+point with a null revision number, keeps the confirmed revisions and
+monotonic counter, and strips post-cutover Activity text that no revision
+backs (a verified legacy `details.commentId` fills the typed column). The next
+PATCH then starts a fresh number from the actual text. Run it after stopping
+an old writer and before re-enabling comment writes; the next sweep after the
+restart is the proof that no old writer remains.
+
+Operators can still inspect a single chain directly:
 
 ```sql
 SELECT c."id", c."editedAt", c."historyCutoverAt",

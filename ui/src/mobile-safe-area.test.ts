@@ -127,13 +127,19 @@ describe("mobile safe areas (TASK-177.18)", () => {
     );
     // Card-dialog header: the close button and the ⋮ menu both respect the
     // status bar/notch. Mobile close is 44 px with a 12 px inset (+4 px gap
-    // → 3rem); from `md` it is 32 px with a 16 px inset (→ 2.25rem). The
-    // mobile 32 px trigger drops 6 px so both icons share a centre line.
+    // → 3rem). From `md` to `lg` the close is also 44 px: 16 px inset + 44 px
+    // + 8 px gap = 68 px (→ 3.25rem), which clears the 32 px trigger instead
+    // of overlapping it; at `lg` the close returns to 32 px (16 + 32 + 4 = 52
+    // px → 2.25rem). The mobile 32 px trigger drops 6 px so both icons share
+    // a centre line.
     expect(cardDialog).toContain(
       "right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)]",
     );
     expect(cardDialog).toContain(
-      "md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]",
+      "md:right-[calc(max(1rem,env(safe-area-inset-right))_+_3.25rem)]",
+    );
+    expect(cardDialog).toContain(
+      "lg:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]",
     );
     expect(cardDialog).toContain(
       "top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)]",
@@ -143,7 +149,7 @@ describe("mobile safe areas (TASK-177.18)", () => {
       'closeClassName="right-[max(0.75rem,env(safe-area-inset-right))]',
     );
     expect(cardDialog).toContain(
-      "flex h-11 w-11 items-center justify-center md:h-8 md:w-8",
+      "flex h-11 w-11 items-center justify-center md:h-11 md:w-11 lg:h-8 lg:w-8",
     );
     // Tablet/landscape sheet (761–1279) keeps the horizontal insets and
     // starts below the safe-area-aware header; its height subtracts the same

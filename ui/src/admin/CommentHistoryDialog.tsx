@@ -335,7 +335,7 @@ export function AdminCommentHistoryDialog({
         data-reason={reason ?? undefined}
         className="max-w-2xl gap-3 overflow-x-hidden"
       >
-        <DialogHeader className="pr-8">
+        <DialogHeader className="pr-12">
           <DialogTitle>{t("admin.comments.history.title")}</DialogTitle>
           <DialogDescription>
             {comment.editedAt === null

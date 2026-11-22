@@ -15,6 +15,19 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- Admins can open the same read-only edit history from a card, a user's
+  comments or the comments table; deleted rows hide the link and return no
+  revision count. A comment keeps its newest 50 revisions, and a comment
+  edited with an old writer is reconciled by the `sweep-comment-history`
+  maintenance job. The observability page shows revision/Activity counts and
+  text sizes, revisions beyond the latest-50 window (derived), incomplete
+  histories and over-budget comments, without collecting the text. GDPR
+  exports (sync and background) exclude revisions and another author's edits.
+- The `edited` marker on a comment opens its read-only edit history: every
+  saved revision with its time, editor, cause and before/after diff, cursor
+  paging for older revisions, and a full-text view of any revision. An
+  incomplete chain shows a banner; the legacy-cutover copy names the release
+  that added edit history.
 - Comment kinds can be edited after posting: the author retypes the kind in
   the inline editor and the thread shows an `edited` marker. Comments also
   gain `All` / kind filter chips backed by the server query, so paging stays

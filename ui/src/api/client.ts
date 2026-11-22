@@ -33,9 +33,12 @@ import type {
   CommentDto,
   CommentKind,
   CommentPage,
+  CommentRevisionPage,
   CreateShareRequest,
   CreateUserTokenRequest,
   CreateUserTokenResponse,
+  DeletedBoardItemsDto,
+  DeletedItemType,
   DeleteAccountRequest,
   DeleteAccountResponse,
   EndAgentSessionRequest,
@@ -1014,6 +1017,38 @@ export class ApiClient {
     });
   }
 
+  /**
+   * `GET /boards/:id/export` (TASK-177.7). The server streams the exact
+   * validated export string, so it is returned as text and never parsed back
+   * into an object only to be serialized a second time. A `413` surfaces as
+   * `ApiError.status === 413` for the Data menu's explicit message.
+   */
+  async exportBoard(boardId: string): Promise<string> {
+    const response = await this.requestRaw(
+      `/boards/${encodeURIComponent(boardId)}/export`,
+    );
+    return response.text();
+  }
+
+  /** `GET /boards/:id/deleted` — Recently deleted (TASK-177.7). */
+  listDeleted(boardId: string): Promise<DeletedBoardItemsDto> {
+    return this.request<DeletedBoardItemsDto>(
+      `/boards/${encodeURIComponent(boardId)}/deleted`,
+    );
+  }
+
+  /** `POST /boards/:id/deleted/:type/:itemId/restore` (TASK-177.7). */
+  restoreDeleted(
+    boardId: string,
+    type: DeletedItemType,
+    itemId: string,
+  ): Promise<{ status: "ok" }> {
+    return this.request<{ status: "ok" }>(
+      `/boards/${encodeURIComponent(boardId)}/deleted/${type}/${encodeURIComponent(itemId)}/restore`,
+      { method: "POST", body: {} },
+    );
+  }
+
   importBoards(envelope: BoardEnvelope): Promise<BoardAggregate[]> {
     return this.requestIdempotent<BoardAggregate[]>("/boards/import", {
       method: "POST",
@@ -1229,6 +1264,21 @@ export class ApiClient {
           ...(kind && kind !== DEFAULT_COMMENT_KIND ? { kind } : {}),
         },
       },
+    );
+  }
+
+  /**
+   * Read-only edit history of one live comment, newest revision first
+   * (TASK-185.3, TASK-185.4). The server pages at 20 by default and caps at
+   * 100; the opaque cursor is bound to this comment.
+   */
+  listCommentRevisions(
+    commentId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<CommentRevisionPage> {
+    return this.request<CommentRevisionPage>(
+      `/comments/${encodeURIComponent(commentId)}/revisions${pageQuery(cursor, limit)}`,
     );
   }
 
@@ -1540,7 +1590,11 @@ export class ApiClient {
       if (this.accessToken !== null) {
         headers.Authorization = `Bearer ${this.accessToken}`;
       }
-      return fetch(`${base}${path}`, { headers, credentials: "include" });
+      const fetchImpl = this.options.fetchImpl ?? fetch;
+      return fetchImpl(`${base}${path}`, {
+        headers,
+        credentials: "include",
+      });
     };
     try {
       let response = await send();

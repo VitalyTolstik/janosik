@@ -58,17 +58,20 @@ let latest: {
   cardLabelIds: string[];
   addLabel: ReturnType<typeof useBoard>["addLabel"];
   toggleCardLabel: ReturnType<typeof useBoard>["toggleCardLabel"];
+  exportBoard: ReturnType<typeof useBoard>["exportBoard"];
   undo: () => void;
   redo: () => void;
 };
 
 function Probe() {
-  const { board, addLabel, toggleCardLabel, undo, redo } = useBoard();
+  const { board, addLabel, toggleCardLabel, exportBoard, undo, redo } =
+    useBoard();
   latest = {
     labels: board?.labels ?? [],
     cardLabelIds: board?.cards["c-1"]?.labelIds ?? [],
     addLabel,
     toggleCardLabel,
+    exportBoard,
     undo,
     redo,
   };
@@ -127,6 +130,19 @@ describe("BoardContext dispatch/history (TASK-33)", () => {
 
     act(() => latest.redo());
     expect(latest.cardLabelIds).toEqual(["l-1"]);
+  });
+
+  it("exports one board directly as an importable envelope", async () => {
+    renderProbe();
+    const raw = await latest.exportBoard("b-1");
+    const parsed = JSON.parse(raw) as {
+      app: string;
+      schemaVersion: number;
+      boards: Board[];
+    };
+    expect(parsed.app).toBe("janosik");
+    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.boards.map((board) => board.id)).toEqual(["b-1"]);
   });
 
   it("two same-tick dispatches keep the history free of duplicate snapshots", () => {

@@ -116,6 +116,13 @@ export async function closeCardDialog(page: Page): Promise<void> {
     await page.keyboard.press("Escape");
   }
   await expect(dialog).toBeHidden();
+  // TASK-177.7: the close handler clears `?card=` asynchronously. A board
+  // update landing in that window can briefly reopen the dialog under load;
+  // wait for the URL to settle and re-assert before the next action.
+  await page.waitForFunction(
+    () => !new URL(window.location.href).searchParams.has("card"),
+  );
+  await expect(dialog).toBeHidden();
 }
 
 /** Open a column's overflow menu and pick one entry. */

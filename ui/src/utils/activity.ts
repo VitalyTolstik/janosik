@@ -331,6 +331,9 @@ export function sentenceFor(
   if (entry.type === "attachment_deleted") {
     return { key: "activity.attachment-deleted" };
   }
+  if (entry.type === "attachment_restored") {
+    return { key: "activity.attachment-restored" };
+  }
 
   if (entry.type === "comment_added") {
     return { key: "activity.comment-added" };
@@ -340,6 +343,9 @@ export function sentenceFor(
   }
   if (entry.type === "comment_updated") {
     return { key: "activity.comment-updated" };
+  }
+  if (entry.type === "comment_restored") {
+    return { key: "activity.comment-restored" };
   }
 
   const membership = MEMBERSHIP_KEYS[entry.type];

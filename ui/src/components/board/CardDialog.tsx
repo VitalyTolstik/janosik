@@ -889,7 +889,7 @@ export function CardDialog({
       >
         <DialogContent
           className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
-          closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center md:h-8 md:w-8"
+          closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center md:h-11 md:w-11 lg:h-8 lg:w-8"
           onEscapeKeyDown={(event) => {
             // The inline task-spec editor owns Escape: keep the dialog and
             // its staged draft open. Radix runs this on document capture, so
@@ -927,7 +927,7 @@ export function CardDialog({
             </DialogDescription>
             {/* The mobile close is 44 px while this 32 px trigger is not:
                 offset the top by 6 px so both icons share a centre line. */}
-            <div className="absolute right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)] top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)] md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)] md:top-[max(1rem,env(safe-area-inset-top))]">
+            <div className="absolute right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)] top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)] md:right-[calc(max(1rem,env(safe-area-inset-right))_+_3.25rem)] md:top-[max(1rem,env(safe-area-inset-top))] lg:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
