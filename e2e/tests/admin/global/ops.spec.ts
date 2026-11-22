@@ -151,19 +151,20 @@ test("S11: retention purge removes an aged soft-deleted card", async ({
     await page.getByTestId("admin-ops-retention-save").click();
     await expectToast(page, "Saved");
     await page.reload({ waitUntil: "domcontentloaded" });
-    const text = await page
-      .getByText(/cards · .*comments · .*attachments · .*columns/)
-      .textContent();
+    const counts = page.getByTestId("admin-ops-retention-counts");
+    await expect(counts).toBeVisible();
+    const text = await counts.textContent();
     const cards = Number(text?.match(/(\d+) cards/)?.[1] ?? "0");
     expect(cards).toBeGreaterThan(0);
 
+    await expect(page.getByTestId("admin-ops-purge")).toBeEnabled();
     await page.getByTestId("admin-ops-purge").click();
     await confirmAction(page);
     await expectToast(page, "Purged");
     await page.reload({ waitUntil: "domcontentloaded" });
-    const after = await page
-      .getByText(/cards · .*comments · .*attachments · .*columns/)
-      .textContent();
+    const afterCounts = page.getByTestId("admin-ops-retention-counts");
+    await expect(afterCounts).toBeVisible();
+    const after = await afterCounts.textContent();
     expect(Number(after?.match(/(\d+) cards/)?.[1] ?? "0")).toBe(0);
     await expectAudit(admin, { action: "retention.changed" });
   } finally {

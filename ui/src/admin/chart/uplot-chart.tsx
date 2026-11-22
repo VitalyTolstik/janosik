@@ -45,7 +45,9 @@ export function UplotChart({
     const options: uPlot.Options = {
       width: host.clientWidth > 0 ? host.clientWidth : 600,
       height,
-      padding: [8, 8, 0, 0],
+      // Right padding leaves room for the final x-axis label, which is centred
+      // on the last tick (QA-A15: "11-22" was clipped to "11-2").
+      padding: [8, 20, 0, 0],
       legend: {
         show: true,
         live: true,

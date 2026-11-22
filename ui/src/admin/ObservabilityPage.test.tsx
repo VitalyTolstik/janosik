@@ -83,6 +83,23 @@ describe("ObservabilityPage", () => {
     expect(screen.getByText("abc1234")).toBeTruthy();
   });
 
+  it("labels database table cells for the phone card layout", async () => {
+    const server = new FakeAdminServer();
+    server.observability.database.tables = [
+      { name: "Board", rows: 12, sizeBytes: 2048 },
+    ];
+    vi.stubGlobal("fetch", fetchWithManifest(server));
+    renderObservability();
+
+    const row = (await screen.findByText("Board")).closest("tr");
+    expect(row).not.toBeNull();
+    const cells = row?.querySelectorAll("td") ?? [];
+    expect(cells).toHaveLength(3);
+    expect(cells[0]).toHaveAttribute("data-label", "Table");
+    expect(cells[1]).toHaveAttribute("data-label", "Rows");
+    expect(cells[2]).toHaveAttribute("data-label", "Size");
+  });
+
   it("reports the theme and the (unsupported) service worker state", async () => {
     vi.stubGlobal("fetch", fetchWithManifest(new FakeAdminServer()));
     renderObservability();
