@@ -93,6 +93,7 @@ export function CommentHistoryDialog({
   // or to the end marker once the last older page replaces the button.
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const showOlderRef = useRef<HTMLButtonElement | null>(null);
+  const olderRetryRef = useRef<HTMLButtonElement | null>(null);
   const endRef = useRef<HTMLParagraphElement | null>(null);
   const focusOlderRef = useRef(false);
   const focusEndRef = useRef(false);
@@ -235,6 +236,13 @@ export function CommentHistoryDialog({
     focusEndRef.current = false;
     endRef.current?.focus();
   }, [items.length, nextCursor, status]);
+
+  // A failed older page leaves the retry control below the full list. Move
+  // focus there so the keyboard user does not have to tab through every row.
+  useEffect(() => {
+    if (!olderError) return;
+    olderRetryRef.current?.focus();
+  }, [olderError]);
 
   // A background tab, reconnect or focus can hide a revoked membership or a
   // deleted comment. Probe the same protected endpoint; only 403/404 close
@@ -452,6 +460,7 @@ export function CommentHistoryDialog({
                 >
                   <span>{t("comment.history.olderError")}</span>
                   <Button
+                    ref={olderRetryRef}
                     type="button"
                     variant="outline"
                     size="sm"

@@ -2235,11 +2235,15 @@ describe("CardComments", () => {
     expect(
       await within(dialog).findByTestId("comment-history-older-error"),
     ).toBeVisible();
+    const olderRetry = within(dialog).getByTestId(
+      "comment-history-older-retry",
+    );
+    await waitFor(() => expect(document.activeElement).toBe(olderRetry));
     expect(
       within(dialog).getAllByTestId("comment-history-revision"),
     ).toHaveLength(20);
 
-    fireEvent.click(within(dialog).getByTestId("comment-history-older-retry"));
+    fireEvent.click(olderRetry);
     await waitFor(() =>
       expect(
         within(dialog).getAllByTestId("comment-history-revision"),
