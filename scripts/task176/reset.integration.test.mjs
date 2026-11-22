@@ -906,6 +906,14 @@ test(
             (await command(["verify"])).output,
             /Fixture comment count/,
           );
+          await prisma.activity.deleteMany({
+            where: {
+              type: {
+                in: ["comment_added", "comment_updated", "comment_deleted"],
+              },
+            },
+          });
+          await prisma.commentRevision.deleteMany();
           await prisma.comment.deleteMany();
         },
       );

@@ -2,7 +2,12 @@ import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { StorageService } from "@/attachments/storage.service";
 import type { AccountDeletionService } from "@/users/account-deletion.service";
 import type { OpsSettingsService } from "./ops-settings.service";
-import { MaintenanceService, PURGE_CHUNK } from "./maintenance.service";
+import {
+  MaintenanceService,
+  PURGE_BOARD_TX_MAX_WAIT_MS,
+  PURGE_BOARD_TX_TIMEOUT_MS,
+  PURGE_CHUNK,
+} from "./maintenance.service";
 
 function makePrisma(): PrismaService {
   const purgeable = () => ({
@@ -15,9 +20,10 @@ function makePrisma(): PrismaService {
       .mockResolvedValue(count > 0 ? [{ id: `row-${count}` }] : []),
     deleteMany: jest.fn().mockResolvedValue({ count }),
   });
-  return {
+  const prisma = {
     attachment: purgeable(),
     comment: purgeable(),
+    commentRevision: purgeable(),
     checklistItem: purgeable(),
     checklist: purgeable(),
     cardLink: purgeable(),
@@ -32,11 +38,7 @@ function makePrisma(): PrismaService {
     activity: sweepable(0),
     adminAuditLog: sweepable(0),
     securityAuditLog: sweepable(0),
-    $transaction: jest.fn(async (arg: unknown) =>
-      typeof arg === "function"
-        ? (arg as (t: unknown) => unknown)({})
-        : Promise.all(arg as unknown[]),
-    ),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     emailVerificationCode: sweepable(2),
     emailChangeCode: sweepable(1),
     passwordResetToken: sweepable(0),
@@ -72,6 +74,17 @@ function makePrisma(): PrismaService {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
   } as unknown as PrismaService;
+  // Interactive callbacks see the same client, as Prisma's `tx` would.
+  (
+    prisma as unknown as {
+      $transaction: (arg: unknown) => Promise<unknown>;
+    }
+  ).$transaction = jest.fn(async (arg: unknown) =>
+    typeof arg === "function"
+      ? (arg as (t: unknown) => unknown)(prisma)
+      : Promise.all(arg as unknown[]),
+  );
+  return prisma;
 }
 
 const storageMock = {
@@ -333,8 +346,20 @@ describe("MaintenanceService", () => {
     const prisma = makePrisma();
     const ids = (n: number, prefix: string) =>
       Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
+    const firstCards = ids(500, "a").map((row) => ({
+      ...row,
+      column: { boardId: "b1" },
+    }));
+    const secondCards = ids(120, "b").map((row) => ({
+      ...row,
+      column: { boardId: "b1" },
+    }));
     (prisma.card.findMany as jest.Mock)
       .mockResolvedValueOnce(ids(500, "a"))
+      .mockResolvedValueOnce(firstCards)
+      .mockResolvedValueOnce(ids(500, "a"))
+      .mockResolvedValueOnce(ids(120, "b"))
+      .mockResolvedValueOnce(secondCards)
       .mockResolvedValueOnce(ids(120, "b"));
     (prisma.card.deleteMany as jest.Mock)
       .mockResolvedValueOnce({ count: 500 })
@@ -368,8 +393,54 @@ describe("MaintenanceService", () => {
     const firstChunk = (prisma.card.deleteMany as jest.Mock).mock.calls[0][0]
       .where.id.in as string[];
     expect(firstChunk).toHaveLength(500);
+    // TASK-185.1: the card path removes revisions and comment snapshots
+    // before the parent comment rows.
+    expect(prisma.commentRevision.deleteMany).toHaveBeenCalledWith({
+      where: { comment: { cardId: { in: firstChunk } } },
+    });
+    expect(
+      (prisma.commentRevision.deleteMany as jest.Mock).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      (prisma.comment.deleteMany as jest.Mock).mock.invocationCallOrder[0]!,
+    );
     // A purged card's attachment blobs are removed with it.
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/card-blob.bin");
+  });
+
+  it("deletes revisions and comment snapshots before a hard comment purge (TASK-185.1)", async () => {
+    const prisma = makePrisma();
+    (prisma.comment.findMany as jest.Mock)
+      .mockResolvedValueOnce([{ id: "cm-1" }])
+      .mockResolvedValueOnce([
+        { id: "cm-1", card: { column: { boardId: "b1" } } },
+      ])
+      .mockResolvedValueOnce([{ id: "cm-1" }])
+      .mockResolvedValue([]);
+    (prisma.comment.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+
+    const removed = await service.purgeSoftDeleted();
+
+    expect(removed).toBe(1);
+    expect(prisma.commentRevision.deleteMany).toHaveBeenCalledWith({
+      where: { commentId: { in: ["cm-1"] } },
+    });
+    expect(
+      (prisma.commentRevision.deleteMany as jest.Mock).mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      (prisma.comment.deleteMany as jest.Mock).mock.invocationCallOrder[0]!,
+    );
+    // The Activity cleanup goes through the JSON-key helper.
+    expect(prisma.$executeRaw).toHaveBeenCalled();
   });
 
   it("trims the command log to the retention window (TASK-84)", async () => {
@@ -523,11 +594,11 @@ describe("MaintenanceService", () => {
     // The per-card passes have nothing left; only the board chunk sees rows.
     (prisma.card.findMany as jest.Mock).mockImplementation(
       async (args: { where: { column?: unknown } }) =>
-        args.where.column ? [{ id: "c1" }] : [],
+        args.where.column ? [{ id: "c1", column: { boardId: "b1" } }] : [],
     );
     (prisma.attachment.findMany as jest.Mock).mockImplementation(
-      async (args: { where: { cardId?: unknown } }) =>
-        args.where.cardId
+      async (args: { where: { cardId?: unknown; card?: unknown } }) =>
+        args.where.cardId || args.where.card
           ? [
               {
                 storedName: "gone.bin",
@@ -566,7 +637,7 @@ describe("MaintenanceService", () => {
       where: { commandId: { in: ["pre-1"] } },
     });
     expect(prisma.agentRun.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] } },
+      where: { boardId: "b1" },
     });
     expect(
       (prisma.commandPreimage.deleteMany as jest.Mock).mock
@@ -580,7 +651,7 @@ describe("MaintenanceService", () => {
       where: { id: { in: ["cmd-1"] } },
     });
     expect(prisma.boardShare.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: { in: ["b1"] }, mode: "live" },
+      where: { boardId: "b1", mode: "live" },
     });
     expect(prisma.activity.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ["act-1"] } },
@@ -589,7 +660,7 @@ describe("MaintenanceService", () => {
     expect(storageMock.remove).toHaveBeenCalledWith("/blobs/t.jpg");
   });
 
-  it("purges a stale board's feed and command log in bounded pages before the final board transaction (TASK-156)", async () => {
+  it("purges a stale board's feed and command log in bounded pages under the board lock (TASK-156)", async () => {
     const prisma = makePrisma();
     const ids = (n: number, prefix: string) =>
       Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
@@ -623,7 +694,11 @@ describe("MaintenanceService", () => {
     // The board itself is deleted exactly once, by the final transaction.
     expect(removed).toBe(1);
     expect(prisma.board.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["b1"] } },
+      where: expect.objectContaining({ id: "b1" }),
+    });
+    // TASK-185.1: the board fallback removes revisions before comments.
+    expect(prisma.commentRevision.deleteMany).toHaveBeenCalledWith({
+      where: { comment: { card: { column: { boardId: "b1" } } } },
     });
     // Feed and log go as two pages by row id — never one unbounded
     // boardId batch inside the transaction.
@@ -645,13 +720,17 @@ describe("MaintenanceService", () => {
     // Each page is read with a take bound and a boardId filter.
     expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);
     expect((prisma.activity.findMany as jest.Mock).mock.calls[0][0]).toEqual({
-      where: { boardId: { in: ["b1"] } },
+      where: { boardId: "b1" },
       select: { id: true },
       take: PURGE_CHUNK,
     });
-    // The card pages found nothing, so the only transaction left is the
-    // small final one that deletes the subtree tail and the board.
+    // The whole board subtree runs in one board-locked transaction with a
+    // generous bound instead of Prisma's 5 s default.
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: PURGE_BOARD_TX_MAX_WAIT_MS,
+      timeout: PURGE_BOARD_TX_TIMEOUT_MS,
+    });
   });
 
   it("deletes expired and long-revoked board shares (TASK-148)", async () => {

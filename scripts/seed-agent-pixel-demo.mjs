@@ -200,6 +200,7 @@ async function clearPixelScene(prisma) {
   await prisma.apiToken.deleteMany();
   await prisma.attentionNotification.deleteMany();
   await prisma.activity.deleteMany();
+  await prisma.commentRevision.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.attachment.deleteMany();
   await prisma.checklistItem.deleteMany();

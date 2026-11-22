@@ -954,7 +954,10 @@ export interface CommentDto {
   agentName?: string | null;
   /** Unix ms. */
   createdAt: number;
-  /** Unix ms of the last author edit (TASK-176.2); absent = never edited. */
+  /**
+   * Unix ms of the last author text edit (TASK-176.2, TASK-185.1); absent =
+   * never edited, or only the structured kind changed.
+   */
   editedAt?: number;
 }
 

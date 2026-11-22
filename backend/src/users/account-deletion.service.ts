@@ -1,10 +1,15 @@
 import { ConflictException, Injectable, Logger } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { ActorType } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
+import {
+  deleteCommentActivitySnapshots,
+  lockBoardWrites,
+  verifyCommentHistory,
+} from "@/comments/comment-history";
 
 /** TASK-166 D22/§12.5: the self-service deletion window. */
 export const ACCOUNT_DELETE_GRACE_DAYS = 7;
@@ -14,6 +19,14 @@ export const BOARD_CLEANUP_FAILED_ACTION = "board.cleanup_failed";
 export const BOARD_CLEANUP_RECOVERED_ACTION = "board.cleanup_recovered";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A board appeared between the pre-lock candidate read and the sorted board
+ * lock. The transaction is rolled back and replayed so the next attempt sees
+ * one complete lock set; acquiring the late board now would invert lock order
+ * against another multi-board erasure.
+ */
+class EraseLockOrderRetry extends Error {}
 
 export interface AccountDeletionSummary {
   userId: string;
@@ -78,7 +91,7 @@ export class AccountDeletionService {
     const deleteAfter = new Date(
       now.getTime() + ACCOUNT_DELETE_GRACE_DAYS * DAY_MS,
     );
-    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR NO KEY UPDATE`;
     const tokenIds = (
       await tx.apiToken.findMany({
         where: { userId },
@@ -373,115 +386,243 @@ export class AccountDeletionService {
     const boardIds = [...new Set(memberships.map((row) => row.boardId))];
     const now = new Date();
 
-    const deleted = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
-      if (dueCutoff !== undefined) {
-        const current = await tx.user.findUnique({
-          where: { id: userId },
-          select: { disabledAt: true },
-        });
-        const latest = await tx.securityAuditLog.findFirst({
-          where: { userId, action: ACCOUNT_DELETE_SCHEDULED_ACTION },
-          orderBy: { createdAt: "desc" },
-          select: { createdAt: true },
-        });
-        if (
-          !current?.disabledAt ||
-          !latest ||
-          latest.createdAt > dueCutoff ||
-          current.disabledAt > latest.createdAt
-        )
-          return false;
-      }
-      // M3 guard: a user who verified the address or acquired protection
-      // between the sweep's read and this lock must survive. The scale of the
-      // check lives in this transaction on purpose: the outer counts are only
-      // a cheap prefilter, and a membership/comment/command/attachment can
-      // commit between them and this point. A self-created board always has
-      // an accepted ADMIN membership, so the membership count also protects
-      // that case; the FK on the content tables is the final backstop if a
-      // writer still slips in after these reads.
-      if (unverifiedBefore !== undefined) {
-        const current = await tx.user.findUnique({
-          where: { id: userId },
-          select: { emailVerifiedAt: true, createdAt: true },
-        });
-        if (
-          !current ||
-          current.emailVerifiedAt !== null ||
-          current.createdAt >= unverifiedBefore
-        )
-          return false;
-        const [memberships, comments, commands, attachments] =
-          await Promise.all([
-            tx.boardMember.count({
-              where: { userId, acceptedAt: { not: null } },
-            }),
-            tx.comment.count({ where: { authorId: userId } }),
-            tx.command.count({ where: { actorId: userId } }),
-            tx.attachment.count({ where: { uploadedById: userId } }),
+    let deleted: boolean | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        deleted = await this.prisma.$transaction(async (tx) => {
+          // One global erase key serializes multi-board cleanup. Combined with one
+          // sorted board-lock set below, two erasures can never acquire board
+          // locks in a crossing order.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('account-erasure', 0))`;
+          // `FOR NO KEY UPDATE` still serializes two erasures of the same user,
+          // but it is compatible with the KEY SHARE a concurrent revision insert
+          // takes on `User` through `CommentRevision.editorId`. A plain
+          // `FOR UPDATE` here deadlocked with that writer (40P01).
+          await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR NO KEY UPDATE`;
+          if (dueCutoff !== undefined) {
+            const current = await tx.user.findUnique({
+              where: { id: userId },
+              select: { disabledAt: true },
+            });
+            const latest = await tx.securityAuditLog.findFirst({
+              where: { userId, action: ACCOUNT_DELETE_SCHEDULED_ACTION },
+              orderBy: { createdAt: "desc" },
+              select: { createdAt: true },
+            });
+            if (
+              !current?.disabledAt ||
+              !latest ||
+              latest.createdAt > dueCutoff ||
+              current.disabledAt > latest.createdAt
+            )
+              return false;
+          }
+          // M3 guard: a user who verified the address or acquired protection
+          // between the sweep's read and this lock must survive. The scale of the
+          // check lives in this transaction on purpose: the outer counts are only
+          // a cheap prefilter, and a membership/comment/command/attachment can
+          // commit between them and this point. A self-created board always has
+          // an accepted ADMIN membership, so the membership count also protects
+          // that case; the FK on the content tables is the final backstop if a
+          // writer still slips in after these reads.
+          if (unverifiedBefore !== undefined) {
+            const current = await tx.user.findUnique({
+              where: { id: userId },
+              select: { emailVerifiedAt: true, createdAt: true },
+            });
+            if (
+              !current ||
+              current.emailVerifiedAt !== null ||
+              current.createdAt >= unverifiedBefore
+            )
+              return false;
+            const [memberships, comments, commands, attachments] =
+              await Promise.all([
+                tx.boardMember.count({
+                  where: { userId, acceptedAt: { not: null } },
+                }),
+                tx.comment.count({ where: { authorId: userId } }),
+                tx.command.count({ where: { actorId: userId } }),
+                tx.attachment.count({ where: { uploadedById: userId } }),
+              ]);
+            if (
+              memberships > 0 ||
+              comments > 0 ||
+              commands > 0 ||
+              attachments > 0
+            ) {
+              return false;
+            }
+          }
+          await tx.agentSession.deleteMany({ where: { userId } });
+          await tx.approvalRequest.deleteMany({
+            where: { requestedBy: userId },
+          });
+          await tx.idempotencyRecord.deleteMany({
+            where: {
+              OR: [
+                { actorKey: `user:${userId}` },
+                { actorKey: { in: tokenKeys } },
+              ],
+            },
+          });
+          await tx.emailVerificationCode.deleteMany({ where: { userId } });
+          await tx.emailChangeCode.deleteMany({ where: { userId } });
+          await tx.refreshToken.deleteMany({ where: { userId } });
+          await tx.apiToken.deleteMany({ where: { userId } });
+          await tx.attentionNotification.deleteMany({ where: { userId } });
+          await tx.notificationMail.deleteMany({ where: { userId } });
+          await tx.dataExport.deleteMany({ where: { userId } });
+          await tx.attachment.deleteMany({ where: { uploadedById: userId } });
+          // TASK-185.1: history cleanup must happen before the user row (the
+          // editor FK is RESTRICT) and before comments/Activity disappear.
+          // Collect the complete union before taking ANY board lock; the global
+          // erase key above means another erasure cannot interleave. If a late
+          // board appears after the lock, abort and replay instead of acquiring
+          // locks out of order.
+          const authoredBefore = await tx.comment.findMany({
+            where: { authorId: userId },
+            select: {
+              id: true,
+              card: { select: { column: { select: { boardId: true } } } },
+            },
+          });
+          const editedIdsBefore = await this.commentIdsEditedBy(
+            tx,
+            userId,
+            authoredBefore.map((row) => row.id),
+          );
+          const editedBefore = await tx.comment.findMany({
+            where: { id: { in: editedIdsBefore } },
+            select: {
+              id: true,
+              card: { select: { column: { select: { boardId: true } } } },
+            },
+          });
+          const lockedBoardIds = new Set([
+            ...boardIds,
+            ...authoredBefore.map((row) => row.card.column.boardId),
+            ...editedBefore.map((row) => row.card.column.boardId),
           ]);
-        if (
-          memberships > 0 ||
-          comments > 0 ||
-          commands > 0 ||
-          attachments > 0
-        ) {
-          return false;
-        }
-      }
-      await tx.agentSession.deleteMany({ where: { userId } });
-      await tx.approvalRequest.deleteMany({ where: { requestedBy: userId } });
-      await tx.idempotencyRecord.deleteMany({
-        where: {
-          OR: [{ actorKey: `user:${userId}` }, { actorKey: { in: tokenKeys } }],
-        },
-      });
-      await tx.emailVerificationCode.deleteMany({ where: { userId } });
-      await tx.emailChangeCode.deleteMany({ where: { userId } });
-      await tx.refreshToken.deleteMany({ where: { userId } });
-      await tx.apiToken.deleteMany({ where: { userId } });
-      await tx.attentionNotification.deleteMany({ where: { userId } });
-      await tx.notificationMail.deleteMany({ where: { userId } });
-      await tx.dataExport.deleteMany({ where: { userId } });
-      await tx.attachment.deleteMany({ where: { uploadedById: userId } });
-      await tx.comment.deleteMany({ where: { authorId: userId } });
-      await tx.activity.deleteMany({ where: { actorId: userId } });
-      // ADR §6.14 purge order: preimages → commands → runs. The preimage
-      // table has no actor column, so resolve the user's commands in SQL
-      // before the command rows disappear.
-      await tx.$executeRaw`
+          await lockBoardWrites(tx, lockedBoardIds);
+
+          const authoredComments = await tx.comment.findMany({
+            where: { authorId: userId },
+            select: {
+              id: true,
+              card: { select: { column: { select: { boardId: true } } } },
+            },
+          });
+          const editedCommentIds = await this.commentIdsEditedBy(
+            tx,
+            userId,
+            authoredComments.map((row) => row.id),
+          );
+          const editedComments = await tx.comment.findMany({
+            where: { id: { in: editedCommentIds } },
+            select: {
+              id: true,
+              card: { select: { column: { select: { boardId: true } } } },
+            },
+          });
+          const discovered = [
+            ...authoredComments.map((row) => row.card.column.boardId),
+            ...editedComments.map((row) => row.card.column.boardId),
+          ].filter((boardId) => !lockedBoardIds.has(boardId));
+          if (discovered.length > 0) throw new EraseLockOrderRetry();
+          const authoredIds = authoredComments.map((row) => row.id);
+
+          if (authoredIds.length > 0) {
+            await deleteCommentActivitySnapshots(tx, authoredIds);
+            await tx.commentRevision.deleteMany({
+              where: { commentId: { in: authoredIds } },
+            });
+          }
+          for (const { id: commentId } of editedComments) {
+            // Re-read after the locks: a writer that committed earlier may have
+            // changed the text or the verified pair.
+            const comment = await tx.comment.findUnique({
+              where: { id: commentId },
+              select: {
+                id: true,
+                cardId: true,
+                kind: true,
+                text: true,
+                editedAt: true,
+                lastRevisionNumber: true,
+                historyCutoverAt: true,
+                historyVerifiedEditedAt: true,
+                historyVerifiedRevisionNumber: true,
+                historyIncompleteReason: true,
+              },
+            });
+            if (comment === null) continue;
+            // A confirmed chain loses its number after the cleanup; an
+            // unconfirmed one keeps the mismatch so the next sweep finds it.
+            const verified = await verifyCommentHistory(tx, comment);
+            // The reason merge is a SQL CASE so a concurrent trim cannot
+            // downgrade gdpr_erase back to revision_limit.
+            await tx.$executeRaw(Prisma.sql`
+          UPDATE "Comment"
+          SET "historyIncompleteReason" = CASE
+                WHEN "historyIncompleteReason" = 'writer_gap'::"CommentHistoryIncompleteReason"
+                  THEN "historyIncompleteReason"
+                ELSE 'gdpr_erase'::"CommentHistoryIncompleteReason"
+              END,
+              "historyVerifiedRevisionNumber" = CASE
+                WHEN ${verified} THEN NULL
+                ELSE "historyVerifiedRevisionNumber"
+              END
+          WHERE "id" = ${commentId}
+        `);
+            await tx.commentRevision.deleteMany({ where: { commentId } });
+            await deleteCommentActivitySnapshots(tx, [commentId], {
+              onlyUpdates: true,
+            });
+          }
+          await tx.comment.deleteMany({ where: { authorId: userId } });
+          await tx.activity.deleteMany({ where: { actorId: userId } });
+          // ADR §6.14 purge order: preimages → commands → runs. The preimage
+          // table has no actor column, so resolve the user's commands in SQL
+          // before the command rows disappear.
+          await tx.$executeRaw`
         DELETE FROM "CommandPreimage"
         WHERE "commandId" IN (
           SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
         )
       `;
-      await tx.command.deleteMany({ where: { actorId: userId } });
-      await tx.agentRun.deleteMany({ where: { actorId: userId } });
-      await tx.boardMember.deleteMany({ where: { userId } });
-      await tx.boardMember.updateMany({
-        where: { invitedById: userId },
-        data: { invitedById: null },
-      });
-      await tx.card.updateMany({
-        where: { assigneeId: userId },
-        data: { assigneeId: null },
-      });
-      // A self-service erasure must not leave a live public link created by
-      // the account behind. Snapshot shares are frozen content and survive.
-      await tx.boardShare.updateMany({
-        where: { createdBy: userId, mode: "live", revokedAt: null },
-        data: { revokedAt: now },
-      });
-      await this.releaseClaims(
-        tx,
-        userId,
-        tokens.map((token) => token.id),
-        now,
-      );
-      await tx.user.delete({ where: { id: userId } });
-      return true;
-    });
+          await tx.command.deleteMany({ where: { actorId: userId } });
+          await tx.agentRun.deleteMany({ where: { actorId: userId } });
+          await tx.boardMember.deleteMany({ where: { userId } });
+          await tx.boardMember.updateMany({
+            where: { invitedById: userId },
+            data: { invitedById: null },
+          });
+          await tx.card.updateMany({
+            where: { assigneeId: userId },
+            data: { assigneeId: null },
+          });
+          // A self-service erasure must not leave a live public link created by
+          // the account behind. Snapshot shares are frozen content and survive.
+          await tx.boardShare.updateMany({
+            where: { createdBy: userId, mode: "live", revokedAt: null },
+            data: { revokedAt: now },
+          });
+          await this.releaseClaims(
+            tx,
+            userId,
+            tokens.map((token) => token.id),
+            now,
+          );
+          await tx.user.delete({ where: { id: userId } });
+          return true;
+        });
+        break;
+      } catch (error) {
+        if (error instanceof EraseLockOrderRetry && attempt < 2) continue;
+        throw error;
+      }
+    }
     if (!deleted) return null;
 
     // Boards with no accepted members left are unusable; soft-delete them
@@ -553,6 +694,39 @@ export class AccountDeletionService {
       exports: exports.length,
       blobs: blobs.length,
     };
+  }
+
+  /**
+   * TASK-185.1: comments by another author that the erased user edited,
+   * detected through immutable revisions or `comment_updated` Activity. The
+   * Activity rows are still present here; they are deleted after this step.
+   */
+  private async commentIdsEditedBy(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    excluded: readonly string[],
+  ): Promise<string[]> {
+    const excludedIds = new Set(excluded);
+    const [revisions, activities] = await Promise.all([
+      tx.commentRevision.findMany({
+        where: { editorId: userId },
+        select: { commentId: true },
+      }),
+      tx.activity.findMany({
+        where: { actorId: userId, type: "comment_updated" },
+        select: { details: true },
+      }),
+    ]);
+    const ids = new Set<string>();
+    for (const revision of revisions) ids.add(revision.commentId);
+    for (const activity of activities) {
+      const details = activity.details;
+      if (details === null || typeof details !== "object") continue;
+      if (Array.isArray(details)) continue;
+      const commentId = (details as Record<string, unknown>).commentId;
+      if (typeof commentId === "string") ids.add(commentId);
+    }
+    return [...ids].filter((id) => !excludedIds.has(id));
   }
 
   private async releaseClaims(

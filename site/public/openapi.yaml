@@ -2083,12 +2083,14 @@ paths:
       operationId: updateComment
       summary: Edit a comment
       description: |
-        Author only. Replaces the text and/or kind, stamps `editedAt`; a field
-        omitted from the body keeps its value, and an empty body answers `400`.
-        `authorId`, attribution and `createdAt` do not change. Another author
-        answers `403`, a deleted comment `404`. Inline media removed from the
-        text is soft-deleted under the same transaction. A kind change writes
-        `comment_updated` activity and never re-sends blocker/handoff attention
+        Author only. Replaces the text and/or kind. A real text change stamps
+        `editedAt` and appends a revision; a kind-only change does neither. A
+        field omitted from the body keeps its value, and an empty body answers
+        `400`. `authorId`, attribution and `createdAt` do not change. Another
+        author answers `403`, a deleted comment `404`. Inline media removed
+        from the text is soft-deleted under the same transaction. A kind change
+        writes `comment_updated` activity and never re-sends blocker/handoff
+        attention
         for a comment whose event was already delivered.
       parameters:
         - $ref: "#/components/parameters/AgentSession"
@@ -6102,7 +6104,7 @@ components:
           description: Unix ms.
         editedAt:
           type: integer
-          description: Unix ms of the last author edit; absent when never edited.
+          description: Unix ms of the last text edit; absent when never edited or only the kind changed.
     CommentPage:
       type: object
       required: [items, nextCursor]

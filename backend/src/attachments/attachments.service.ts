@@ -31,6 +31,13 @@ import {
   stripAttachmentReference,
 } from "@/commands/command-writers";
 import { RealtimeService } from "@/realtime/realtime.service";
+import {
+  commentHistoryGapException,
+  findCommentHistoryGaps,
+  markHistoryIncomplete,
+  writeCommentUpdate,
+  type CommentHistoryState,
+} from "@/comments/comment-history";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import {
   ATTACHMENT_MIME_ALLOWLIST,
@@ -411,31 +418,73 @@ export class AttachmentsService {
    * this only scrubs the bodies that still point at it and re-runs the
    * existing reconcile so the other embedded files keep their detached
    * state and the card badge stays honest.
+   *
+   * TASK-185.1: every changed live comment goes through the common history
+   * writer (`cause: attachment_deleted`) so the scrub is a normal, auditable
+   * edit. Pre-flight runs before the attachment row is touched: one history
+   * gap aborts the deletion and persists only the `writer_gap` marks.
    */
+  private async preflightCommentHistory(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    attachmentId: string,
+  ): Promise<boolean> {
+    const comments = await this.affectedComments(tx, boardId, attachmentId);
+    const gaps = await findCommentHistoryGaps(tx, comments);
+    for (const commentId of gaps) {
+      await markHistoryIncomplete(tx, commentId, "writer_gap");
+    }
+    return gaps.length > 0;
+  }
+
+  private async affectedComments(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    attachmentId: string,
+  ): Promise<CommentHistoryState[]> {
+    const url = `/attachments/${attachmentId}/content`;
+    return tx.comment.findMany({
+      where: {
+        card: {
+          column: { boardId, deletedAt: null },
+          deletedAt: null,
+        },
+        deletedAt: null,
+        text: { contains: url },
+      },
+      select: {
+        id: true,
+        cardId: true,
+        text: true,
+        kind: true,
+        editedAt: true,
+        lastRevisionNumber: true,
+        historyCutoverAt: true,
+        historyVerifiedEditedAt: true,
+        historyVerifiedRevisionNumber: true,
+        historyIncompleteReason: true,
+      },
+    });
+  }
+
   private async scrubDeletedAttachment(
     tx: Prisma.TransactionClient,
     boardId: string,
     attachmentId: string,
-  ): Promise<void> {
+    initiatorId: string,
+    attribution: RequestAttribution,
+  ): Promise<
+    Array<{ commentId: string; cardId: string; activityId: string; at: number }>
+  > {
     const url = `/attachments/${attachmentId}/content`;
-    const [cards, comments] = await Promise.all([
-      tx.card.findMany({
-        where: {
-          column: { boardId },
-          deletedAt: null,
-          description: { contains: url },
-        },
-        select: { id: true, description: true },
-      }),
-      tx.comment.findMany({
-        where: {
-          card: { column: { boardId }, deletedAt: null },
-          deletedAt: null,
-          text: { contains: url },
-        },
-        select: { id: true, text: true },
-      }),
-    ]);
+    const cards = await tx.card.findMany({
+      where: {
+        column: { boardId },
+        deletedAt: null,
+        description: { contains: url },
+      },
+      select: { id: true, description: true },
+    });
     for (const card of cards) {
       const before = card.description ?? undefined;
       const after = stripAttachmentReference(before, attachmentId);
@@ -446,15 +495,40 @@ export class AttachmentsService {
       });
       await reconcileDescriptionAttachments(tx, boardId, before, after);
     }
+    const comments = await this.affectedComments(tx, boardId, attachmentId);
+    const updates: Array<{
+      commentId: string;
+      cardId: string;
+      activityId: string;
+      at: number;
+    }> = [];
     for (const comment of comments) {
       const after = stripAttachmentReference(comment.text, attachmentId);
       if (after === comment.text) continue;
-      await tx.comment.update({
-        where: { id: comment.id },
-        data: { text: after ?? "", editedAt: new Date() },
+      const written = await writeCommentUpdate(tx, {
+        commentId: comment.id,
+        boardId,
+        text: after ?? "",
+        editorId: initiatorId,
+        attribution,
+        cause: "attachment_deleted",
+        reconcileMedia: (beforeText, afterText) =>
+          reconcileDescriptionAttachments(tx, boardId, beforeText, afterText),
       });
-      await reconcileDescriptionAttachments(tx, boardId, comment.text, after);
+      // The pre-flight verified this row under the same board lock; a gap
+      // here is a programming/writer error, so rolling the transaction back
+      // is safer than publishing a partially scrubbed attachment.
+      if (written.status === "gap") throw commentHistoryGapException();
+      if (written.status === "written") {
+        updates.push({
+          commentId: comment.id,
+          cardId: comment.cardId,
+          activityId: written.activityId,
+          at: written.at,
+        });
+      }
     }
+    return updates;
   }
 
   async remove(
@@ -465,7 +539,7 @@ export class AttachmentsService {
     approvalId?: string,
   ): Promise<void> {
     const row = await this.prisma.attachment.findFirst({
-      where: { id: attachmentId, deletedAt: null },
+      where: { id: attachmentId },
       select: {
         id: true,
         cardId: true,
@@ -474,6 +548,7 @@ export class AttachmentsService {
         uploadedByTokenId: true,
         fileName: true,
         isInline: true,
+        deletedAt: true,
         card: { select: { deletedAt: true } },
       },
     });
@@ -490,8 +565,6 @@ export class AttachmentsService {
           ? row.uploadedByTokenId === attribution.apiTokenId
           : row.uploadedById === user.id
         : row.uploadedById === user.id;
-    let approval: Awaited<ReturnType<ApprovalsService["authorizeOperation"]>> =
-      null;
     if (!ownUpload) {
       const membership = await this.prisma.boardMember.findFirst({
         where: {
@@ -502,6 +575,13 @@ export class AttachmentsService {
         select: { role: true },
       });
       if (membership?.role !== "ADMIN") throw new ForbiddenException();
+    }
+    // A repeated DELETE is an idempotent no-op rather than a 404, but only
+    // after the uploader/admin check above. It never claims an approval.
+    if (row.deletedAt !== null) return;
+    let approval: Awaited<ReturnType<ApprovalsService["authorizeOperation"]>> =
+      null;
+    if (!ownUpload) {
       // TASK-166: deleting another user's upload is admin + destructive.
       // The board role was checked first; the approval gate then applies the
       // token preset (admin), the board policy and the exact
@@ -510,7 +590,7 @@ export class AttachmentsService {
       approval = await this.approvals.authorizeOperation({
         boardId: row.boardId,
         userId: user.id,
-        role: membership.role,
+        role: "ADMIN",
         principal,
         agentSessionId: attribution.agentSessionId,
         op: "attachment.delete",
@@ -524,28 +604,40 @@ export class AttachmentsService {
       this.boardWrite.run(
         row.boardId,
         async (tx) => {
-          const current = await tx.attachment.findUnique({
-            where: { id: attachmentId },
-            select: { descriptionDetached: true },
+          // Resolve the live row under the board lock first. A concurrent
+          // repeat delete sees `null` here and skips the history preflight.
+          const current = await tx.attachment.findFirst({
+            where: { id: attachmentId, deletedAt: null },
+            select: { id: true, descriptionDetached: true },
           });
+          if (current === null) return { kind: "noop" as const };
+          // TASK-185.1: verify every affected comment before the attachment
+          // row or any text moves. A gap commits only the marks and aborts.
+          if (
+            await this.preflightCommentHistory(tx, row.boardId, attachmentId)
+          ) {
+            return { kind: "gap" as const };
+          }
           const updated = await tx.attachment.updateMany({
             where: { id: attachmentId, deletedAt: null },
             data: { deletedAt: new Date() },
           });
-          if (updated.count === 0) {
-            if (approval !== null)
-              throw new NotFoundException("Attachment was already removed");
-            return null;
-          }
+          if (updated.count === 0) return { kind: "noop" as const };
           // TASK-108: inline media never incremented the counter, so they must
           // not decrement it either — that drift went negative over time.
-          if (!row.isInline && !current?.descriptionDetached) {
+          if (!row.isInline && !current.descriptionDetached) {
             await tx.card.update({
               where: { id: row.cardId },
               data: { attachmentCount: { decrement: 1 } },
             });
           }
-          await this.scrubDeletedAttachment(tx, row.boardId, attachmentId);
+          const commentUpdates = await this.scrubDeletedAttachment(
+            tx,
+            row.boardId,
+            attachmentId,
+            user.id,
+            attribution,
+          );
           const activity = await tx.activity.create({
             data: {
               boardId: row.boardId,
@@ -559,7 +651,12 @@ export class AttachmentsService {
               details: { attachmentId, fileName: row.fileName },
             },
           });
-          return activity.id;
+          return {
+            kind: "ok" as const,
+            activityId: activity.id,
+            at: activity.createdAt.getTime(),
+            commentUpdates,
+          };
         },
         pauseGateFor(
           principal,
@@ -573,7 +670,24 @@ export class AttachmentsService {
         ),
       ),
     );
-    if (!removed) return;
+    if (removed.kind === "noop") {
+      // A concurrent request already removed the row; the approval was not
+      // used, so make it usable again rather than leaving it consumed.
+      if (approval !== null) {
+        await this.approvals.releaseOperation(approval);
+        // An approved destructive retry keeps main's contract: the claim is
+        // released, but the caller learns the row was already removed.
+        throw new NotFoundException("Attachment was already removed");
+      }
+      // A plain repeated delete (no approval claimed) stays an idempotent 200.
+      return;
+    }
+    if (removed.kind === "gap") {
+      // The approval was claimed before the transaction. A gap aborts the
+      // destructive operation, so release the claim before the 409.
+      if (approval !== null) await this.approvals.releaseOperation(approval);
+      throw commentHistoryGapException();
+    }
     if (approval !== null) {
       await this.approvals.consumeOperation(approval, user.id, principal, {
         operation: "attachment.delete",
@@ -588,12 +702,25 @@ export class AttachmentsService {
     this.publish(
       row.boardId,
       row.cardId,
-      removed,
+      removed.activityId,
       user.id,
       "attachment_deleted",
       attachmentId,
       attribution,
+      removed.at,
     );
+    for (const update of removed.commentUpdates) {
+      this.publish(
+        row.boardId,
+        update.cardId,
+        update.activityId,
+        user.id,
+        "comment_updated",
+        update.commentId,
+        attribution,
+        update.at,
+      );
+    }
     await touchAgentSessionAfterWrite(
       this.prisma,
       this.realtime,
@@ -606,9 +733,10 @@ export class AttachmentsService {
     cardId: string,
     activityId: string,
     actorId: string,
-    kind: "attachment_added" | "attachment_deleted",
+    kind: "attachment_added" | "attachment_deleted" | "comment_updated",
     detail: string,
     attribution: RequestAttribution,
+    at: number = Date.now(),
   ): void {
     this.realtime.publish(boardId, {
       type: "activity",
@@ -617,7 +745,7 @@ export class AttachmentsService {
       cardId,
       actorId,
       actorType: attribution.actorType,
-      at: Date.now(),
+      at,
       kind,
       detail,
       ...(attribution.apiTokenId ? { apiTokenId: attribution.apiTokenId } : {}),

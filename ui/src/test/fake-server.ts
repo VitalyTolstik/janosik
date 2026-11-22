@@ -905,9 +905,13 @@ export class FakeServer {
             code: "scope_denied",
           });
         }
-        if (trimmed !== undefined) comment.text = trimmed;
+        if (trimmed !== undefined && comment.text !== trimmed) {
+          comment.text = trimmed;
+          // TASK-185.1: editedAt belongs to a real text change; a kind-only
+          // save does not move it.
+          comment.editedAt = Date.now();
+        }
         if (kind !== undefined) comment.kind = kind;
-        comment.editedAt = Date.now();
         return json(200, structuredClone(comment));
       }
       return json(404, { message: "Comment not found" });
