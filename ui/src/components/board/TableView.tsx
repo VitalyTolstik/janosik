@@ -524,7 +524,7 @@ export function TableView({
         data-testid="table-scroll"
         className="flex-1 overflow-x-auto overflow-y-auto overscroll-contain"
       >
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full table-fixed border-collapse text-sm">
           <thead>
             <tr className="border-b border-border/60">
               <SortHeader
@@ -538,18 +538,18 @@ export function TableView({
                 sortKey="column"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-40"
+                className="w-24 sm:w-28 lg:w-40"
               />
               <SortHeader
                 label={t("dueDate.label")}
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-48"
+                className="w-24 sm:w-32 lg:w-48"
               />
               <th
                 scope="col"
-                className="hidden w-44 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell"
+                className="hidden w-44 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
               >
                 {t("view.table.labels")}
               </th>
@@ -559,7 +559,7 @@ export function TableView({
                   sortKey="priority"
                   sort={sort}
                   onCycle={cycleSort}
-                  className="hidden w-28 sm:table-cell"
+                  className="hidden w-28 lg:table-cell"
                 />
               ) : null}
               {visibleColumns.includes("assignee") ? (
@@ -568,13 +568,13 @@ export function TableView({
                   sortKey="assignee"
                   sort={sort}
                   onCycle={cycleSort}
-                  className="hidden w-36 sm:table-cell"
+                  className="hidden w-32 sm:table-cell lg:w-36"
                 />
               ) : null}
               {visibleColumns.includes("checklists") ? (
                 <th
                   scope="col"
-                  className="hidden w-24 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell"
+                  className="hidden w-24 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.checklists")}
                 </th>
@@ -582,7 +582,7 @@ export function TableView({
               {visibleColumns.includes("description") ? (
                 <th
                   scope="col"
-                  className="hidden w-16 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell"
+                  className="hidden w-16 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.description")}
                 </th>
@@ -593,13 +593,13 @@ export function TableView({
                   sortKey="createdAt"
                   sort={sort}
                   onCycle={cycleSort}
-                  className="hidden w-28 sm:table-cell"
+                  className="hidden w-28 lg:table-cell"
                 />
               ) : null}
               {visibleColumns.includes("updatedAt") ? (
                 <th
                   scope="col"
-                  className="hidden w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell"
+                  className="hidden w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.updatedAt")}
                 </th>
@@ -607,7 +607,7 @@ export function TableView({
               {visibleColumns.includes("activity") ? (
                 <th
                   scope="col"
-                  className="hidden w-20 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell"
+                  className="hidden w-20 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.activity")}
                 </th>
@@ -854,7 +854,7 @@ function TableRowBody({
               : undefined
           }
         >
-          <td className="relative max-w-0 px-2 py-2 sm:px-3">
+          <td className="relative min-w-0 px-2 py-2 sm:px-3">
             {isEditingTitle ? (
               <Input
                 autoFocus
@@ -1081,7 +1081,7 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="hidden px-3 py-2 sm:table-cell"
+            className="hidden px-3 py-2 lg:table-cell"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
@@ -1155,7 +1155,7 @@ function TableRowBody({
           </td>
           {visibleColumns.includes("priority") ? (
             <td
-              className="hidden px-3 py-2 sm:table-cell"
+              className="hidden px-3 py-2 lg:table-cell"
               data-testid="table-priority"
             >
               <PriorityBadge priority={card.priority ?? "medium"} showLabel />
@@ -1163,14 +1163,14 @@ function TableRowBody({
           ) : null}
           {visibleColumns.includes("assignee") ? (
             <td
-              className="hidden px-3 py-2 sm:table-cell"
+              className="hidden min-w-0 px-3 py-2 sm:table-cell"
               data-testid="table-assignee"
             >
               <AssigneeCell boardId={boardId} assigneeId={card.assigneeId} />
             </td>
           ) : null}
           {visibleColumns.includes("checklists") ? (
-            <td className="hidden px-3 py-2 sm:table-cell">
+            <td className="hidden px-3 py-2 lg:table-cell">
               {(() => {
                 const { done, total } = checklistProgress(card);
                 return total > 0 ? (
@@ -1189,7 +1189,7 @@ function TableRowBody({
             </td>
           ) : null}
           {visibleColumns.includes("description") ? (
-            <td className="hidden px-3 py-2 sm:table-cell">
+            <td className="hidden px-3 py-2 lg:table-cell">
               {card.description ? (
                 <AlignLeft
                   data-testid="table-description"
@@ -1202,17 +1202,17 @@ function TableRowBody({
             </td>
           ) : null}
           {visibleColumns.includes("createdAt") ? (
-            <td className="hidden px-3 py-2 text-xs text-muted-foreground sm:table-cell">
+            <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
               {formatDateOnly(card.createdAt, lang)}
             </td>
           ) : null}
           {visibleColumns.includes("updatedAt") ? (
-            <td className="hidden px-3 py-2 text-xs text-muted-foreground sm:table-cell">
+            <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
               {formatDateOnly(card.updatedAt, lang)}
             </td>
           ) : null}
           {visibleColumns.includes("activity") ? (
-            <td className="hidden px-3 py-2 sm:table-cell">
+            <td className="hidden px-3 py-2 lg:table-cell">
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <MessageSquare className="h-3 w-3" aria-hidden />
                 {card.activity?.length ?? 0}
@@ -1252,8 +1252,12 @@ function AssigneeCell({
   if (!assigneeId) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
+  // The assignee cell is a bounded table column now: a long e-mail must
+  // truncate inside it instead of widening the column and squeezing the
+  // title on a portrait tablet (QA-06).
+  const label = userLabel(member?.displayName ?? null, member?.email ?? "");
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm">
+    <span className="flex min-w-0 items-center gap-1.5 text-sm">
       <UserAvatar
         userId={assigneeId}
         displayName={member?.displayName ?? null}
@@ -1261,9 +1265,11 @@ function AssigneeCell({
         color={member?.avatarColor}
         avatarPath={member?.avatarPath}
         size="xs"
-        className="ring-1 ring-border/60"
+        className="shrink-0 ring-1 ring-border/60"
       />
-      {userLabel(member?.displayName ?? null, member?.email ?? "")}
+      <span className="min-w-0 truncate" title={label}>
+        {label}
+      </span>
     </span>
   );
 }

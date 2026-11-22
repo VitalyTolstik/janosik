@@ -346,3 +346,41 @@ test("shows the filtered empty state", async ({ page, board }) => {
   await expect(page.getByTestId("table-row")).toHaveCount(1);
   await expect(tableRow(page, "Visible card")).toBeVisible();
 });
+
+test("keeps the title readable at 768 with a long assignee e-mail", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  const cardId = await board.card(
+    todo,
+    "A title that must stay readable on a portrait tablet",
+  );
+  await board.command({
+    type: "SET_CARD_ASSIGN",
+    cardId,
+    assigneeId: board.userId,
+  });
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await board.open(page);
+  await openTable(page);
+
+  const row = tableRow(
+    page,
+    "A title that must stay readable on a portrait tablet",
+  );
+  await expect(row).toBeVisible();
+
+  // The title is the dominant column again: the long fixture e-mail is
+  // truncated inside its bounded assignee cell instead of widening it
+  // (QA-06).
+  const titleBox = await row.getByTestId("table-title-cell").boundingBox();
+  const assigneeBox = await row.getByTestId("table-assignee").boundingBox();
+  expect(titleBox).not.toBeNull();
+  expect(assigneeBox).not.toBeNull();
+  expect(titleBox!.width).toBeGreaterThan(140);
+  expect(assigneeBox!.width).toBeLessThan(200);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(768);
+});
