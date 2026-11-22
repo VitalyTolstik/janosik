@@ -8,6 +8,13 @@ import type {
 } from "@janosik/shared";
 import { attributionFields } from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import {
+  commentActivityLiveSql,
+  isCommentActivity,
+  readCommentActivityContext,
+  readCommentActivityProjection,
+  type CommentActivityContext,
+} from "./activity-visibility";
 
 /** A stored actor type, defaulting to "human" for legacy/garbage rows. */
 function toActorType(value: string): ActorType {
@@ -146,7 +153,10 @@ export class ActivityService {
       this.findActivityRows(boardId, cardId, filters, createdAt, cursor, limit),
     ]);
 
-    const commentContext = await this.readCommentContext(activities);
+    const commentContext = await readCommentActivityContext(
+      this.prisma,
+      activities,
+    );
     const merged = [
       ...commands.map(toCommandEntry),
       ...activities.map((row) => toActivityEntry(row, commentContext)),
@@ -207,23 +217,7 @@ export class ActivityService {
           : Prisma.sql`a."createdAt" <= ${at}`,
       );
     }
-    conditions.push(Prisma.sql`(
-      a."type" <> 'comment_updated'
-      OR EXISTS (
-        SELECT 1
-          FROM "Comment" c
-          JOIN "Card" card ON card."id" = c."cardId"
-          JOIN "Column" col ON col."id" = card."columnId"
-          JOIN "Board" board ON board."id" = col."boardId"
-        WHERE c."id" = COALESCE(a."commentId", a."details"->>'commentId')
-          AND c."deletedAt" IS NULL
-          AND card."deletedAt" IS NULL
-          AND col."deletedAt" IS NULL
-          AND board."deletedAt" IS NULL
-          AND col."boardId" = a."boardId"
-          AND (a."cardId" IS NULL OR c."cardId" = a."cardId")
-      )
-    )`);
+    conditions.push(commentActivityLiveSql("a"));
 
     return this.prisma.$queryRaw<ActivityRow[]>(Prisma.sql`
       SELECT a."id", a."boardId", a."cardId", a."type", a."commentId",
@@ -237,58 +231,6 @@ export class ActivityService {
        ORDER BY a."createdAt" DESC, a."id" DESC
        LIMIT ${limit + 1}
     `);
-  }
-
-  /**
-   * Per-page comment facts used by the read projection: which comments are
-   * live (and their cutover fence) plus the revisions referenced by
-   * `comment_updated` rows. A revision is trusted only when it exists and
-   * belongs to the same comment; otherwise the row keeps the sentence-only
-   * shape and never leaks the text stored in `details`.
-   */
-  private async readCommentContext(
-    rows: ActivityRow[],
-  ): Promise<CommentFeedContext> {
-    const commentIds = new Set<string>();
-    const revisionIds = new Set<string>();
-    for (const row of rows) {
-      if (!COMMENT_ACTIVITY_TYPES.has(row.type)) continue;
-      const details = asRecord(row.details);
-      const commentId = row.commentId ?? stringField(details, "commentId");
-      if (commentId !== undefined) commentIds.add(commentId);
-      const revisionId = stringField(details, "revisionId");
-      if (revisionId !== undefined) revisionIds.add(revisionId);
-    }
-    const [live, revisions] = await Promise.all([
-      commentIds.size === 0
-        ? Promise.resolve([])
-        : this.prisma.comment.findMany({
-            where: {
-              id: { in: [...commentIds] },
-              deletedAt: null,
-              card: {
-                deletedAt: null,
-                column: { deletedAt: null, board: { deletedAt: null } },
-              },
-            },
-            select: { id: true, historyCutoverAt: true },
-          }),
-      revisionIds.size === 0
-        ? Promise.resolve([])
-        : this.prisma.commentRevision.findMany({
-            where: { id: { in: [...revisionIds] } },
-            select: {
-              id: true,
-              commentId: true,
-              beforeText: true,
-              afterText: true,
-            },
-          }),
-    ]);
-    return {
-      live: new Map(live.map((row) => [row.id, row.historyCutoverAt])),
-      revisions: new Map(revisions.map((row) => [row.id, row])),
-    };
   }
 }
 
@@ -310,21 +252,6 @@ interface ActivityRow {
   actorDisplayName: string | null;
   actorEmail: string | null;
 }
-
-interface CommentFeedContext {
-  /** Live comment id → its cutover fence. */
-  live: Map<string, Date>;
-  revisions: Map<
-    string,
-    { id: string; commentId: string; beforeText: string; afterText: string }
-  >;
-}
-
-const COMMENT_ACTIVITY_TYPES = new Set([
-  "comment_added",
-  "comment_updated",
-  "comment_deleted",
-]);
 
 /** A feed entry plus the raw sort fields the cursor uses. */
 interface RankedEntry {
@@ -444,15 +371,18 @@ function readCommandSnapshot(value: Prisma.JsonValue | null): {
 
 function toActivityEntry(
   row: ActivityRow,
-  context: CommentFeedContext,
+  context: CommentActivityContext,
 ): RankedEntry {
-  const isComment = COMMENT_ACTIVITY_TYPES.has(row.type);
-  const commentId = isComment
-    ? (row.commentId ?? stringField(asRecord(row.details), "commentId"))
-    : undefined;
+  const isComment = isCommentActivity(row.type);
   const snapshot = isComment
-    ? readCommentChanges(row, context)
+    ? readCommentActivityProjection(row, context)
     : readActivitySnapshot(row.type, row.details);
+  const detail = isComment
+    ? undefined
+    : (snapshot as { detail?: string }).detail;
+  const projectedCommentId = isComment
+    ? (snapshot as { commentId?: string }).commentId
+    : undefined;
   const entry: ActivityFeedEntry = {
     source: "activity",
     id: row.id,
@@ -473,7 +403,9 @@ function toActivityEntry(
     actorType: toActorType(row.actorType),
     ...attributionFields(row),
     ...(row.cardId ? { cardId: row.cardId } : {}),
-    ...(commentId !== undefined ? { commentId } : {}),
+    ...(projectedCommentId !== undefined
+      ? { commentId: projectedCommentId }
+      : {}),
     // TASK-185.2: comment rows never expose the raw JSON snapshot (deleted
     // text, legacy ids, revision internals). `changes` below is the only
     // text-bearing projection, and only under its read rules.
@@ -482,98 +414,16 @@ function toActivityEntry(
       : {
           details: (row.details as Record<string, unknown> | null) ?? null,
         }),
-    ...(snapshot.detail !== undefined ? { detail: snapshot.detail } : {}),
+    ...(detail !== undefined ? { detail } : {}),
     ...(snapshot.changes !== undefined ? { changes: snapshot.changes } : {}),
   };
   return { entry, at: entry.at, source: "a", key: row.id };
 }
 
 /**
- * TASK-185.2 — the only place a comment body may reach the feed.
- *
- * - `comment_added`: show the frozen snapshot (`null → text`) only while the
- *   comment and its parent chain are live. After deletion it is a tombstone
- *   with metadata.
- * - `comment_deleted`: never text — deletion is a tombstone.
- * - `comment_updated`: a `before → after` diff only when `details.revisionId`
- *   resolves to an existing revision of the same comment. A pre-cutover
- *   legacy row may instead show its `details.text` as a one-sided snapshot.
- *   A post-cutover row without that confirmed link (a gap, a foreign revision
- *   or a malformed snapshot) degrades to the localized sentence; `detail`
- *   (the raw comment id) is never emitted for a comment row, so Watch cannot
- *   fall back to it.
- */
-function readCommentChanges(
-  row: ActivityRow,
-  context: CommentFeedContext,
-): { detail?: string; changes?: ActivityChange[] } {
-  const details = asRecord(row.details);
-  const commentId = row.commentId ?? stringField(details, "commentId");
-  if (commentId === undefined) return {};
-  const liveCutover = context.live.get(commentId);
-  const text = stringField(details, "text");
-
-  if (row.type === "comment_added") {
-    return liveCutover !== undefined && text !== undefined
-      ? { changes: [{ field: "comment", from: null, to: text }] }
-      : {};
-  }
-  if (row.type === "comment_deleted") {
-    return {};
-  }
-
-  const revisionId = stringField(details, "revisionId");
-  if (
-    revisionId !== undefined &&
-    commentId !== undefined &&
-    liveCutover !== undefined
-  ) {
-    const revision = context.revisions.get(revisionId);
-    if (revision !== undefined && revision.commentId === commentId) {
-      return {
-        changes: [
-          {
-            field: "comment",
-            from: revision.beforeText,
-            to: revision.afterText,
-          },
-        ],
-      };
-    }
-  }
-  // Legacy writer: the text was frozen before the cutover fence and no
-  // revision exists. Expose it as a snapshot, never as a fabricated diff.
-  if (
-    liveCutover !== undefined &&
-    text !== undefined &&
-    row.createdAt.getTime() < liveCutover.getTime()
-  ) {
-    return { changes: [{ field: "comment", from: null, to: text }] };
-  }
-  return {};
-}
-
-/** A JSON object guard for free-form `Activity.details`. */
-function asRecord(
-  value: Prisma.JsonValue | null,
-): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringField(
-  record: Record<string, unknown> | null,
-  field: string,
-): string | undefined {
-  const value = record?.[field];
-  return typeof value === "string" ? value : undefined;
-}
-
-/**
  * Comment or membership: whichever the row's type matches. Comment text is
- * handled separately by `readCommentChanges` (TASK-185.2) so the raw snapshot
- * can never leak through this generic path.
+ * handled separately by the shared visibility projection (TASK-185.2) so the
+ * raw snapshot can never leak through this generic path.
  */
 function readActivitySnapshot(
   type: string,

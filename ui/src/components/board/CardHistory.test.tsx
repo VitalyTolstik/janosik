@@ -177,6 +177,32 @@ describe("CardHistory", () => {
     expect(diffs[1]).toHaveTextContent("Done");
   });
 
+  it("ignores legacy text fields on a deleted-comment tombstone", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      {
+        source: "activity",
+        id: "deleted",
+        at: AT,
+        type: "comment_deleted",
+        actorId: "user-3",
+        cardId: "card-1",
+        commentId: "comment-1",
+        detail: "comment-1",
+        details: { text: "Old body" },
+        changes: [{ field: "comment", from: "Old body", to: null }],
+      },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+    renderHistory();
+
+    const entry = await screen.findByTestId("history-entry");
+    expect(entry).toHaveTextContent("Deleted a comment");
+    expect(screen.queryByTestId("history-diff")).not.toBeInTheDocument();
+    expect(entry).not.toHaveTextContent("Old body");
+    expect(entry).not.toHaveTextContent("comment-1");
+  });
+
   it("marks an agent-issued command with a badge (TASK-157)", async () => {
     const server = new FakeServer();
     server.seedActivity("card-1", [
@@ -453,5 +479,74 @@ describe("CardHistory", () => {
     expect(screen.queryByText("New secret")).not.toBeInTheDocument();
     expect(screen.getByText("Added a comment")).toBeInTheDocument();
     expect(screen.getByText("Deleted a comment")).toBeInTheDocument();
+  });
+
+  it("discards a stale in-flight history page after the deletion frame", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      {
+        source: "activity",
+        id: "comment-update",
+        at: AT,
+        type: "comment_updated",
+        actorId: "user-2",
+        cardId: "card-1",
+        commentId: "comment-1",
+        changes: [{ field: "comment", from: "Stale old", to: "Stale new" }],
+      },
+    ]);
+    let listCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/cards/card-1/activity")) {
+        listCalls += 1;
+        if (listCalls >= 2) await gate;
+      }
+      return server.handle(input, init);
+    };
+    vi.stubGlobal("fetch", handler);
+    const live = createBoardLive();
+    render(
+      <I18nProvider>
+        <BoardLiveProvider live={live}>
+          <TooltipProvider>
+            <CardHistory cardId="card-1" boardId="b-1" updatedAt={1} />
+          </TooltipProvider>
+        </BoardLiveProvider>
+      </I18nProvider>,
+    );
+    expect(await screen.findByTestId("history-diff")).toHaveTextContent(
+      "Stale old",
+    );
+
+    act(() => {
+      live.commits.publish("b-1", ["card-1"]);
+    });
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: AT + 1,
+        kind: "comment_deleted",
+        commentId: "comment-1",
+      });
+    });
+    act(() => release());
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("history-diff")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Stale old")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stale new")).not.toBeInTheDocument();
   });
 });

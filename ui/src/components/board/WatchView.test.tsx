@@ -253,6 +253,9 @@ describe("WatchView (TASK-142)", () => {
           actorId: "u-1",
           cardId: "card-1",
           commentId: "comment-1",
+          detail: "comment-1",
+          details: { text: "Old body" },
+          changes: [{ field: "comment", from: "Old body", to: null }],
         },
       ],
       nextCursor: null,
@@ -261,7 +264,9 @@ describe("WatchView (TASK-142)", () => {
     const entry = await screen.findByTestId("watch-entry");
     expect(entry).toHaveTextContent("Deleted a comment");
     expect(entry.querySelector(".line-through")).toBeNull();
+    expect(entry).not.toHaveTextContent("Old body");
     expect(entry).not.toHaveTextContent("comment-1");
+    expect(entry).not.toHaveTextContent("Show full values");
   });
 
   it("renders a comment edit as a character-level diff and truncates it", async () => {

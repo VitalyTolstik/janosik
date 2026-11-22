@@ -115,6 +115,34 @@ const MEMBERSHIP_KEYS: Record<string, MessageKey> = {
   agent_policy_changed: "activity.agent-policy-changed",
 };
 
+/**
+ * TASK-185.2: an in-flight feed response can land after the `comment_deleted`
+ * SSE frame that removed the row. Keep the server-provided metadata-only
+ * tombstone, but discard any stale entry that still carries the deleted body
+ * or a text diff.
+ */
+export function isStaleDeletedCommentEntry(
+  entry: Pick<
+    ActivityFeedEntry,
+    "type" | "commentId" | "detail" | "changes" | "details"
+  >,
+  deletedIds: ReadonlySet<string>,
+): boolean {
+  const id = entry.commentId ?? entry.detail;
+  if (
+    id === undefined ||
+    !deletedIds.has(id) ||
+    entry.type === "comment_deleted"
+  ) {
+    return false;
+  }
+  return (
+    entry.type === "comment_updated" ||
+    (entry.changes?.length ?? 0) > 0 ||
+    entry.details != null
+  );
+}
+
 /** Field label keys for the "from → to" lines. */
 export const FIELD_KEYS: Record<string, MessageKey> = {
   title: "history.field.title",

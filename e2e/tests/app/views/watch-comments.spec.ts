@@ -140,7 +140,9 @@ test("watch renders a deleted comment as a text-free tombstone", async ({
     false,
   );
   const deleted = feed.items.find((item) => item.type === "comment_deleted");
-  expect(deleted).toMatchObject({ commentId: id });
+  expect(deleted).toBeDefined();
+  // A deleted comment has no live match, so even the id stays metadata-only.
+  expect(deleted?.commentId).toBeUndefined();
   expect(deleted?.detail).toBeUndefined();
   expect(deleted?.changes).toBeUndefined();
   expect(deleted?.details).toBeUndefined();

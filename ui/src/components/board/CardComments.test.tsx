@@ -1801,6 +1801,54 @@ describe("CardComments", () => {
     expect(screen.queryByText("Comment 55")).not.toBeInTheDocument();
   });
 
+  it("discards an in-flight list response that lands after a deletion", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-race", text: "Stale body" }),
+    ]);
+    let listCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (
+        url.includes("/cards/card-1/comments") &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        listCalls += 1;
+        if (listCalls >= 2) await gate;
+      }
+      return server.handle(input, init);
+    };
+    renderComments(server, false, handler);
+    await screen.findByText("Stale body");
+    await waitStream(server);
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-race",
+      });
+    });
+    act(() => release());
+
+    await waitFor(() =>
+      expect(screen.queryByText("Stale body")).not.toBeInTheDocument(),
+    );
+  });
+
   it("invalidates by commentId on an actor-less master deletion and closes the preview", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [

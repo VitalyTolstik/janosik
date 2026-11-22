@@ -27,7 +27,11 @@ import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
-import { FIELD_KEYS, sentenceFor } from "@/utils/activity";
+import {
+  FIELD_KEYS,
+  isStaleDeletedCommentEntry,
+  sentenceFor,
+} from "@/utils/activity";
 import { AgentAttribution } from "@/components/agents/AgentAttribution";
 import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSegment } from "@/utils/diff-words";
@@ -73,6 +77,14 @@ export function CardHistory({
   // Distinguishes a real empty history from the first page still in flight.
   const [loaded, setLoaded] = useState(!serverMode);
   const aliveRef = useRef(true);
+  // TASK-185.2: an in-flight page can resolve after the deletion frame.
+  const deletedCommentIdsRef = useRef(new Set<string>());
+  const withoutStaleDeleted = useCallback((items: ActivityFeedEntry[]) => {
+    return items.filter(
+      (entry) =>
+        !isStaleDeletedCommentEntry(entry, deletedCommentIdsRef.current),
+    );
+  }, []);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const loadFirst = useCallback(async () => {
@@ -80,14 +92,14 @@ export function CardHistory({
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setFeed(page);
+      setFeed({ ...page, items: withoutStaleDeleted(page.items) });
     } catch {
       if (!aliveRef.current) return;
       toast.error(t("history.loadError"));
     } finally {
       if (aliveRef.current) setLoaded(true);
     }
-  }, [cardId, serverMode, t, toast]);
+  }, [cardId, serverMode, t, toast, withoutStaleDeleted]);
 
   // Threads are keyed by card id upstream, so mount state is the reset.
   useEffect(() => {
@@ -104,13 +116,14 @@ export function CardHistory({
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setFeed((current) =>
-        current ? mergeNewestActivity(current, page) : page,
-      );
+      setFeed((current) => {
+        const merged = current ? mergeNewestActivity(current, page) : page;
+        return { ...merged, items: withoutStaleDeleted(merged.items) };
+      });
     } catch {
       /* best effort */
     }
-  }, [cardId, serverMode]);
+  }, [cardId, serverMode, withoutStaleDeleted]);
 
   // A committed edit moves `updatedAt` (once per editing session — quiet
   // keystrokes only touch it at the end), so this is a cheap trigger for a
@@ -131,6 +144,7 @@ export function CardHistory({
       if (event.kind === "comment_deleted") {
         const deletedId = event.commentId ?? event.detail;
         if (deletedId) {
+          deletedCommentIdsRef.current.add(deletedId);
           // TASK-185.2: drop the cached text/diff immediately and let the
           // refetch return the text-free tombstones. Keying on the typed id
           // also works for an actor-less master frame.
@@ -167,9 +181,11 @@ export function CardHistory({
     setLoadingOlder(true);
     try {
       const page = await api.cardActivity(cardId, nextCursor, PAGE_SIZE);
-      setFeed((current) =>
-        current ? appendOlderActivity(current, page, nextCursor) : current,
-      );
+      setFeed((current) => {
+        if (!current) return current;
+        const merged = appendOlderActivity(current, page, nextCursor);
+        return { ...merged, items: withoutStaleDeleted(merged.items) };
+      });
     } catch {
       toast.error(t("history.loadError"));
     } finally {
@@ -319,7 +335,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
           );
 
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
-  const changes = renderedChanges(entry.changes);
+  const changes = renderedChanges(entry);
 
   return (
     <li
@@ -458,10 +474,13 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
  * value the reader needs to see.
  */
 function renderedChanges(
-  changes: ActivityChange[] | undefined,
+  entry: ActivityFeedEntry,
 ): ActivityChange[] | undefined {
-  if (changes === undefined) return undefined;
-  const visible = changes.filter(
+  // Deletion is a metadata-only tombstone: a legacy/cached payload must not
+  // resurrect the old body or a text → null diff.
+  if (entry.type === "comment_deleted") return undefined;
+  if (entry.changes === undefined) return undefined;
+  const visible = entry.changes.filter(
     (change) => change.field !== "checklistItemDone",
   );
   return visible.length > 0 ? visible : undefined;

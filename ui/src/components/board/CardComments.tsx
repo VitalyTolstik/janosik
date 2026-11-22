@@ -154,6 +154,12 @@ export function CardComments({
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
   const pendingAuthor = useBoardMember(boardId, pendingDelete?.authorId);
   const deletingIdRef = useRef<string | null>(null);
+  // TASK-185.2: an in-flight list fetch can resolve after the delete frame.
+  // Remember deletions so a stale page cannot put the body back.
+  const deletedIdsRef = useRef(new Set<string>());
+  const withoutDeleted = useCallback(<T extends { id: string }>(items: T[]) => {
+    return items.filter((item) => !deletedIdsRef.current.has(item.id));
+  }, []);
   const pendingAuthorName = commentAuthorLabel(
     pendingDelete?.authorId ?? "",
     pendingAuthor,
@@ -178,7 +184,7 @@ export function CardComments({
       try {
         const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
         if (!aliveRef.current || seq !== loadSeqRef.current) return;
-        setThread(page);
+        setThread({ ...page, items: withoutDeleted(page.items) });
         setStatus("ready");
         loadedKindRef.current = kind;
         setLoadedKind(kind);
@@ -199,7 +205,7 @@ export function CardComments({
         }
       }
     },
-    [cardId, markUnavailable, serverMode, t, toast],
+    [cardId, markUnavailable, serverMode, t, toast, withoutDeleted],
   );
 
   // A different card means a different thread: the parent remounts this
@@ -327,16 +333,17 @@ export function CardComments({
     try {
       const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
       if (!aliveRef.current || kind !== loadedKindRef.current) return;
-      setThread((current) =>
-        mergeNewestActivity(current, page, isPendingComment),
-      );
+      setThread((current) => {
+        const merged = mergeNewestActivity(current, page, isPendingComment);
+        return { ...merged, items: withoutDeleted(merged.items) };
+      });
       setStatus("ready");
     } catch (error) {
       if (aliveRef.current && kind === loadedKindRef.current) {
         markUnavailable(error);
       }
     }
-  }, [cardId, markUnavailable, serverMode]);
+  }, [cardId, markUnavailable, serverMode, withoutDeleted]);
 
   // An edit is not in the frame body either: re-read the loaded pages until
   // the edited row is found and replace matching rows in place, keeping the
@@ -349,6 +356,9 @@ export function CardComments({
       const kind = loadedKindRef.current;
       const loaded = itemsRef.current;
       const target = commentId === "" ? undefined : commentId;
+      // A deletion already landed: an in-flight edit response must not
+      // resurrect the body.
+      if (target !== undefined && deletedIdsRef.current.has(target)) return;
       // An edit of a row this client has not loaded is not rendered here.
       if (target !== undefined && !loaded.some((item) => item.id === target)) {
         return;
@@ -374,18 +384,20 @@ export function CardComments({
         if (!aliveRef.current || kind !== loadedKindRef.current) return;
         setThread((current) => ({
           ...current,
-          items: current.items.flatMap((comment) => {
-            // Under a kind filter an edit can move the row out of the
-            // visible page; drop it instead of leaving a stale chip match.
-            if (
-              kind !== undefined &&
-              comment.id === target &&
-              !byId.has(comment.id)
-            ) {
-              return [];
-            }
-            return [byId.get(comment.id) ?? comment];
-          }),
+          items: withoutDeleted(
+            current.items.flatMap((comment) => {
+              // Under a kind filter an edit can move the row out of the
+              // visible page; drop it instead of leaving a stale chip match.
+              if (
+                kind !== undefined &&
+                comment.id === target &&
+                !byId.has(comment.id)
+              ) {
+                return [];
+              }
+              return [byId.get(comment.id) ?? comment];
+            }),
+          ),
         }));
       } catch (error) {
         if (aliveRef.current && kind === loadedKindRef.current) {
@@ -393,7 +405,7 @@ export function CardComments({
         }
       }
     },
-    [cardId, markUnavailable, serverMode],
+    [cardId, markUnavailable, serverMode, withoutDeleted],
   );
 
   useEffect(() => {
@@ -414,6 +426,7 @@ export function CardComments({
         // TASK-185.2: a master/admin frame omits the actor, so invalidation
         // must key on the comment id, never on attribution. Drop the loaded
         // body and any open confirmation that still quotes it.
+        deletedIdsRef.current.add(deletedId);
         if (itemsRef.current.some((item) => item.id === deletedId)) {
           adjustUnfilteredCount(-1);
         }
@@ -553,6 +566,7 @@ export function CardComments({
     // works instead of silently dropping the second confirmation.
     if (comment === null || deletingIdRef.current === comment.id) return;
     deletingIdRef.current = comment.id;
+    deletedIdsRef.current.add(comment.id);
     const index = itemsRef.current.findIndex((item) => item.id === comment.id);
     const previousTotal = total;
     setPendingDelete(null);
@@ -580,6 +594,8 @@ export function CardComments({
         return;
       }
       toast.error(t("comment.deleteError"));
+      // The DELETE failed: allow the restored row through future merges.
+      deletedIdsRef.current.delete(comment.id);
       // Keep the loaded pages intact: reinsert the row where it was instead
       // of resetting to page 1 (which would drop comments loaded from 2+).
       setThread((current) => {
@@ -604,7 +620,10 @@ export function CardComments({
     try {
       const page = await api.listComments(cardId, nextCursor, PAGE_SIZE, kind);
       if (kind !== loadedKindRef.current) return;
-      setThread((current) => appendOlderActivity(current, page, nextCursor));
+      setThread((current) => {
+        const merged = appendOlderActivity(current, page, nextCursor);
+        return { ...merged, items: withoutDeleted(merged.items) };
+      });
     } catch (error) {
       markUnavailable(error);
       toast.error(t("comment.loadError"));

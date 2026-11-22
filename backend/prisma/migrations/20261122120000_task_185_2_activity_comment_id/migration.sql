@@ -11,13 +11,25 @@
 
 ALTER TABLE "Activity" ADD COLUMN "commentId" TEXT;
 
-UPDATE "Activity"
-SET "commentId" = "details"->>'commentId'
-WHERE "type" IN ('comment_added', 'comment_updated', 'comment_deleted')
-  AND "commentId" IS NULL
-  AND jsonb_typeof("details") = 'object'
-  AND jsonb_typeof("details"->'commentId') = 'string'
-  AND "details"->>'commentId' IS NOT NULL;
+UPDATE "Activity" a
+SET "commentId" = a."details"->>'commentId'
+WHERE a."type" IN ('comment_added', 'comment_updated', 'comment_deleted')
+  AND a."commentId" IS NULL
+  AND jsonb_typeof(a."details") = 'object'
+  AND jsonb_typeof(a."details"->'commentId') = 'string'
+  AND a."details"->>'commentId' IS NOT NULL
+  -- TASK-185.2 follow-up: a legacy id is only a real link when the comment
+  -- sits on the row's own card and board. Cross-board/malformed rows stay
+  -- metadata-only instead of borrowing another board's text.
+  AND EXISTS (
+    SELECT 1
+      FROM "Comment" c
+      JOIN "Card" card ON card."id" = c."cardId"
+      JOIN "Column" col ON col."id" = card."columnId"
+    WHERE c."id" = a."details"->>'commentId'
+      AND c."cardId" = a."cardId"
+      AND col."boardId" = a."boardId"
+  );
 
 CREATE INDEX "Activity_commentId_idx" ON "Activity"("commentId");
 

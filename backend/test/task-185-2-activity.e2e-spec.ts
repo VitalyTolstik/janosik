@@ -356,6 +356,30 @@ describe("Comment activity and SSE (TASK-185.2, e2e)", () => {
     expect(JSON.stringify(updated)).not.toContain("Leaked");
   });
 
+  it("treats a cross-board legacy comment link as metadata only", async () => {
+    const own = await boardWithCard("Scoped link A", "sca");
+    const other = await boardWithCard("Scoped link B", "scb");
+    const foreign = await createComment(other.cardId, "Other board body");
+    const row = await prisma.activity.create({
+      data: {
+        boardId: own.boardId,
+        cardId: own.cardId,
+        type: "comment_added",
+        commentId: foreign.id,
+        actorId: author.id,
+        details: { commentId: foreign.id, text: "Other board body" },
+      },
+    });
+
+    const feed = await cardFeed(own.cardId);
+    const entry = feed.items.find((item) => item.id === row.id);
+    expect(entry).toBeDefined();
+    expect(entry?.commentId).toBeUndefined();
+    expect(entry?.changes).toBeUndefined();
+    expect(entry?.details).toBeUndefined();
+    expect(JSON.stringify(entry)).not.toContain("Other board body");
+  });
+
   it("filters deleted edits before pagination but keeps add/delete tombstones", async () => {
     const { cardId } = await boardWithCard("Tombstones", "tb");
     const created = await createComment(cardId, "Secret body");

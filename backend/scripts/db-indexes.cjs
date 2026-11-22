@@ -41,9 +41,9 @@ const STATEMENTS = [
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailVerificationCode_consumedAt_idx" ON "EmailVerificationCode"("consumedAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailChangeCode_expiresAt_idx" ON "EmailChangeCode"("expiresAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailChangeCode_consumedAt_idx" ON "EmailChangeCode"("consumedAt")`,
-  // TASK-185.1: comment-history trim/purge look up Activity snapshots by
-  // JSON details while holding a board lock.
-  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_commentId_expr_idx" ON "Activity" ((("details"->>'commentId')))`,
+  // TASK-185.2: the typed comment link replaced the 185.1 JSON expression
+  // index (dropped by migration 20261122120000_task_185_2_activity_comment_id).
+  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_commentId_idx" ON "Activity"("commentId")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_revisionId_expr_idx" ON "Activity" ((("details"->>'revisionId')))`,
 ];
 

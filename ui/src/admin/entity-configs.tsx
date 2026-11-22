@@ -1124,12 +1124,15 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.activity.column.details"),
-            render: (entry) => (
-              <JsonCell
-                value={entry.details}
-                testId={`admin-activity-details-${entry.id}`}
-              />
-            ),
+            render: (entry) =>
+              entry.details && !entry.type.startsWith("comment_") ? (
+                <JsonCell
+                  value={entry.details}
+                  testId={`admin-activity-details-${entry.id}`}
+                />
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
           },
           {
             label: t("admin.activity.column.created"),

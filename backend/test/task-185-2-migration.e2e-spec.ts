@@ -42,9 +42,38 @@ describe("TASK-185.2 Activity commentId migration (e2e)", () => {
   async function createBaseSchema(target: string): Promise<void> {
     await prisma.$executeRawUnsafe(`CREATE SCHEMA ${quote(target)}`);
     await prisma.$executeRawUnsafe(`
+      CREATE TABLE ${quote(target)}."Board" (
+        "id" TEXT NOT NULL,
+        CONSTRAINT "Board_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE ${quote(target)}."Column" (
+        "id" TEXT NOT NULL,
+        "boardId" TEXT NOT NULL,
+        CONSTRAINT "Column_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE ${quote(target)}."Card" (
+        "id" TEXT NOT NULL,
+        "columnId" TEXT NOT NULL,
+        CONSTRAINT "Card_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE ${quote(target)}."Comment" (
+        "id" TEXT NOT NULL,
+        "cardId" TEXT NOT NULL,
+        CONSTRAINT "Comment_pkey" PRIMARY KEY ("id")
+      )
+    `);
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE ${quote(target)}."Activity" (
         "id" TEXT NOT NULL,
         "type" TEXT NOT NULL,
+        "boardId" TEXT NOT NULL,
+        "cardId" TEXT,
         "details" JSONB,
         CONSTRAINT "Activity_pkey" PRIMARY KEY ("id")
       )
@@ -59,15 +88,40 @@ describe("TASK-185.2 Activity commentId migration (e2e)", () => {
   beforeAll(async () => {
     await createBaseSchema(schema);
     await prisma.$executeRawUnsafe(`
-      INSERT INTO ${quote(schema)}."Activity" ("id", "type", "details") VALUES
-        ('added', 'comment_added', '{"commentId":"c-added","text":"hello"}'),
-        ('deleted', 'comment_deleted', '{"commentId":"c-deleted","text":"gone"}'),
-        ('updated', 'comment_updated',
+      INSERT INTO ${quote(schema)}."Board" ("id") VALUES ('board-a'), ('board-b')
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO ${quote(schema)}."Column" ("id", "boardId") VALUES
+        ('col-a', 'board-a'), ('col-b', 'board-b')
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO ${quote(schema)}."Card" ("id", "columnId") VALUES
+        ('card-a', 'col-a'), ('card-b', 'col-b')
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO ${quote(schema)}."Comment" ("id", "cardId") VALUES
+        ('c-added', 'card-a'),
+        ('c-deleted', 'card-a'),
+        ('c-updated', 'card-a'),
+        ('c-other', 'card-b')
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO ${quote(schema)}."Activity"
+        ("id", "type", "boardId", "cardId", "details") VALUES
+        ('added', 'comment_added', 'board-a', 'card-a',
+          '{"commentId":"c-added","text":"hello"}'),
+        ('deleted', 'comment_deleted', 'board-a', 'card-a',
+          '{"commentId":"c-deleted","text":"gone"}'),
+        ('updated', 'comment_updated', 'board-a', 'card-a',
           '{"commentId":"c-updated","revisionId":"rev-1","beforeText":"a","afterText":"b","text":"b"}'),
-        ('foreign', 'member_invited', '{"commentId":"not-a-comment","email":"a@b.c"}'),
-        ('missing', 'comment_added', NULL),
-        ('no-id', 'comment_updated', '{"text":"no id"}'),
-        ('non-string', 'comment_added', '{"commentId":42,"text":"n"}')
+        ('foreign', 'member_invited', 'board-a', 'card-a',
+          '{"commentId":"not-a-comment","email":"a@b.c"}'),
+        ('missing', 'comment_added', 'board-a', 'card-a', NULL),
+        ('no-id', 'comment_updated', 'board-a', 'card-a', '{"text":"no id"}'),
+        ('non-string', 'comment_added', 'board-a', 'card-a',
+          '{"commentId":42,"text":"n"}'),
+        ('cross-board', 'comment_added', 'board-a', 'card-a',
+          '{"commentId":"c-other","text":"not this board"}')
     `);
   });
 
@@ -91,6 +145,7 @@ describe("TASK-185.2 Activity commentId migration (e2e)", () => {
       Object.fromEntries(rows.map((row) => [row.id, row.commentId])),
     ).toEqual({
       added: "c-added",
+      "cross-board": null,
       deleted: "c-deleted",
       foreign: null,
       missing: null,

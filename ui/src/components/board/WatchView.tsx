@@ -18,7 +18,12 @@ import {
   useBoardMembersList,
   useBoardPresence,
 } from "@/store/board-live";
-import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
+import {
+  FIELD_KEYS,
+  formatChangeValue,
+  isStaleDeletedCommentEntry,
+  sentenceFor,
+} from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSides } from "@/utils/diff-words";
 
@@ -125,6 +130,14 @@ export function WatchView({ boardId }: WatchViewProps) {
   const atEndRef = useRef(false);
   const pageRef = useRef(0);
   const inFlight = useRef(false);
+  // TASK-185.2: an in-flight page can resolve after the deletion frame.
+  const deletedCommentIdsRef = useRef(new Set<string>());
+  const withoutStaleDeleted = useCallback((items: ActivityFeedEntry[]) => {
+    return items.filter(
+      (entry) =>
+        !isStaleDeletedCommentEntry(entry, deletedCommentIdsRef.current),
+    );
+  }, []);
   // Mirror the page for the stable poll callback without reading a ref in
   // render (react-hooks/refs).
   useEffect(() => {
@@ -186,7 +199,8 @@ export function WatchView({ boardId }: WatchViewProps) {
       if (!cursorByPage.current.has(index)) return null;
       const cursor = cursorByPage.current.get(index) ?? undefined;
       const result = await api.boardActivity(boardId, cursor, pageSize);
-      pageCache.current.set(index, result.items);
+      const items = withoutStaleDeleted(result.items);
+      pageCache.current.set(index, items);
       if (result.nextCursor === null) {
         atEndRef.current = true;
         setAtEnd(true);
@@ -194,9 +208,9 @@ export function WatchView({ boardId }: WatchViewProps) {
         cursorByPage.current.set(index + 1, result.nextCursor);
         setMaxPage(Math.max(...cursorByPage.current.keys()));
       }
-      return result.items;
+      return items;
     },
-    [boardId, pageSize],
+    [boardId, pageSize, withoutStaleDeleted],
   );
 
   const goToPage = useCallback(
@@ -233,8 +247,9 @@ export function WatchView({ boardId }: WatchViewProps) {
   const loadFirst = useCallback(
     async (size: number) => {
       const result = await api.boardActivity(boardId, undefined, size);
+      const items = withoutStaleDeleted(result.items);
       pageCache.current.clear();
-      pageCache.current.set(0, result.items);
+      pageCache.current.set(0, items);
       cursorByPage.current.clear();
       cursorByPage.current.set(0, null);
       atEndRef.current = result.nextCursor === null;
@@ -243,13 +258,13 @@ export function WatchView({ boardId }: WatchViewProps) {
         cursorByPage.current.set(1, result.nextCursor);
       }
       setMaxPage(Math.max(...cursorByPage.current.keys()));
-      setItems(result.items);
-      rememberAgents(result.items);
+      setItems(items);
+      rememberAgents(items);
       setPage(0);
       pageRef.current = 0;
       setError(false);
     },
-    [boardId, rememberAgents],
+    [boardId, rememberAgents, withoutStaleDeleted],
   );
 
   // The newest page stays live; when the user pages into history, polling
@@ -333,6 +348,7 @@ export function WatchView({ boardId }: WatchViewProps) {
       if (event.kind === "comment_deleted") {
         const deletedId = event.commentId ?? event.detail;
         if (deletedId) {
+          deletedCommentIdsRef.current.add(deletedId);
           // Drop any cached comment diff immediately; the coalesced refetch
           // then returns the metadata-only tombstone.
           setItems((current) =>
@@ -854,11 +870,13 @@ function WatchRow({
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
   const details = detailsFor(entry, t, memberName, lang, hour12, expanded);
   const canExpand =
-    (entry.changes ?? []).some(
+    entry.type !== "comment_deleted" &&
+    ((entry.changes ?? []).some(
       (change) =>
         (change.from?.length ?? 0) > MAX_VALUE_CHARS ||
         (change.to?.length ?? 0) > MAX_VALUE_CHARS,
-    ) || (entry.detail?.length ?? 0) > MAX_VALUE_CHARS;
+    ) ||
+      (entry.detail?.length ?? 0) > MAX_VALUE_CHARS);
   const clock = new Date(entry.at).toLocaleTimeString(
     lang === "ru" ? "ru-RU" : "en-US",
     { hour12, hour: "2-digit", minute: "2-digit", second: "2-digit" },
@@ -998,6 +1016,10 @@ function detailsFor(
   hour12: boolean,
   expanded: boolean,
 ): DetailPart[] {
+  // A deletion is always a text-free tombstone, even when an old cached
+  // payload still carries `changes`/`details`/`detail` from the pre-185.2
+  // contract.
+  if (entry.type === "comment_deleted") return [];
   const display = (value: string) => (expanded ? value : shorten(value));
   const changes: ActivityChange[] = (entry.changes ?? []).filter(
     (change) => change.field !== "checklistItemDone",
