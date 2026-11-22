@@ -285,6 +285,60 @@ describe("Board-level commands (e2e)", () => {
       );
       expect(again.archivedAt).toEqual(expect.any(Number));
     });
+
+    it("refuses content writes until the board is unarchived", async () => {
+      const boardId = await createBoard("Read-only archive");
+      await invite(boardId, MEMBER_EMAIL, "MEMBER", memberToken);
+      const columnId = randomUUID();
+      const cardId = randomUUID();
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_COLUMN",
+          newColumnId: columnId,
+          title: "Todo",
+        }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "ADD_CARD",
+          newCardId: cardId,
+          columnId,
+          title: "Card",
+        }),
+      );
+      await applyAndAssert(boardId, scoped(boardId, { type: "ARCHIVE_BOARD" }));
+
+      const refused = await postCommand(
+        boardId,
+        scoped(boardId, {
+          type: "UPDATE_CARD",
+          cardId,
+          title: "Written through the archive",
+        }),
+        memberToken,
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body.message).toContain("archived");
+      expect((await getAggregate(boardId)).cards[cardId]?.title).toBe("Card");
+
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, { type: "UNARCHIVE_BOARD" }),
+      );
+      await applyAndAssert(
+        boardId,
+        scoped(boardId, {
+          type: "UPDATE_CARD",
+          cardId,
+          title: "Written after restore",
+        }),
+      );
+      expect((await getAggregate(boardId)).cards[cardId]?.title).toBe(
+        "Written after restore",
+      );
+    });
   });
 
   describe("ifMatchVersions", () => {

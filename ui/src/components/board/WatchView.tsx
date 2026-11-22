@@ -852,7 +852,11 @@ function WatchRow({
   return (
     <li
       data-testid="watch-entry"
-      className="grid grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] divide-x divide-muted-foreground/40 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 [&>*]:px-2 [&>*:first-child]:pl-0 [&>*:last-child]:pr-0"
+      // Below 1024 px the feed pane is too narrow for the three-column row:
+      // time + actor share the first line and the sentence gets the full
+      // width on the next one. The fixed time/actor widths only return when
+      // the header can afford them (QA-05).
+      className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:gap-x-0 lg:gap-y-0 lg:divide-x lg:divide-muted-foreground/40 lg:[&>*]:px-2 lg:[&>*:first-child]:pl-0 lg:[&>*:last-child]:pr-0"
     >
       <time
         className="whitespace-nowrap tabular-nums text-muted-foreground"
@@ -875,7 +879,10 @@ function WatchRow({
           </span>
         ) : null}
       </span>
-      <span className="min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere]">
+      <span
+        data-testid="watch-entry-sentence"
+        className="col-span-2 min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere] lg:col-span-1"
+      >
         {card ? (
           <span
             className="text-muted-foreground [overflow-wrap:anywhere]"

@@ -16,6 +16,7 @@ import {
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { assertBoardAcceptsWrites } from "@/common/archived-board";
 import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
 import {
@@ -146,6 +147,7 @@ export class CommentsService {
       created = await this.boardWrite.run(
         boardId,
         async (tx) => {
+          await assertBoardAcceptsWrites(tx, boardId);
           const comment = await tx.comment.create({
             include: AUTHOR_INCLUDE,
             data: {
@@ -347,6 +349,7 @@ export class CommentsService {
     const updated = await this.boardWrite.run(
       boardId,
       async (tx) => {
+        await assertBoardAcceptsWrites(tx, boardId);
         // TASK-185.1: the common writer re-reads the live row under the lock,
         // reconciles the cutover chain before the no-op comparison and writes
         // one revision + Activity for a real text change.
@@ -511,6 +514,7 @@ export class CommentsService {
     const removed = await this.boardWrite.run(
       preRead.card.column.boardId,
       async (tx) => {
+        await assertBoardAcceptsWrites(tx, preRead.card.column.boardId);
         // TASK-185.1: re-read under the board lock. A concurrent edit may have
         // moved the text; the tombstone snapshot and media reconcile must use
         // the committed body, never the pre-lock copy.

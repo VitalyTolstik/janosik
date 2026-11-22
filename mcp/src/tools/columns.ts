@@ -174,6 +174,8 @@ export function registerColumnTools(server: McpServer, client: JanosikClient) {
         columnId: columnIdSchema,
         title: z
           .string()
+          .trim()
+          .min(1)
           .max(LIMITS.columnTitle)
           .optional()
           .describe("Title for the copy (defaults to the source title)."),

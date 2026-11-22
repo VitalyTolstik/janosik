@@ -1176,6 +1176,12 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   margin: 0 4px;
   border-color: var(--border);
 }
+/* WCAG 2.2 2.5.8: toolbar icons are 14–16 px glyphs; the button around them
+ * must still be a 24 px touch target on a phone (QA-10). */
+.mdxeditor.janosik-mdx .janosik-mdx-toolbar button {
+  min-width: 24px;
+  min-height: 24px;
+}
 /* Active formatting toggles glow in the accent color. */
 .mdxeditor.janosik-mdx .janosik-mdx-toolbar [data-state="on"] {
   color: var(--accentText);

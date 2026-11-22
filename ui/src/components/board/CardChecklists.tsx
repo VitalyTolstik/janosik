@@ -319,7 +319,7 @@ function ChecklistCard({
                   aria-pressed={item.done}
                   aria-label={t("checklist.itemToggle", { text: item.text })}
                   className={cn(
-                    "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                    "mt-0 flex h-6 w-6 shrink-0 items-center justify-center rounded border transition-colors",
                     item.done
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border/80 bg-background hover:border-primary/60",
@@ -357,7 +357,7 @@ function ChecklistCard({
                   type="button"
                   onClick={() => onDeleteItem(item.id)}
                   aria-label={t("checklist.itemDelete")}
-                  className="no-hover:opacity-100 mt-px shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
+                  className="no-hover:opacity-100 mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/item:opacity-100"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>

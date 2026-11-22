@@ -565,6 +565,26 @@ describe("BoardSwitcher role sections (server mode)", () => {
     await waitFor(() => expect(server.revoked.has("b-2")).toBe(true));
   });
 
+  it("offers Leave for a shared archived board too", async () => {
+    const archived = {
+      ...serverBoard("b-2", "Beta"),
+      archivedAt: Date.now(),
+    } as Board;
+    const server = new FakeServer([serverBoard("b-1", "Alpha"), archived]);
+    server.roles.set("b-2", "MEMBER");
+    renderServerSwitcher(server);
+    await openSwitcher();
+
+    const section = await screen.findByTestId("archived-section");
+    fireEvent.click(
+      within(section).getByTestId("board-switcher-archived-leave"),
+    );
+    fireEvent.click(
+      within(section).getByRole("button", { name: "Yes, leave" }),
+    );
+    await waitFor(() => expect(server.revoked.has("b-2")).toBe(true));
+  });
+
   it("keeps the flat list when everyone is admin", async () => {
     const server = new FakeServer([
       serverBoard("b-1", "Alpha"),
