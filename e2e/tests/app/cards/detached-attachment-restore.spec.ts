@@ -175,7 +175,7 @@ test("clamps a long detached filename to two lines at 390 and 768", async ({
       const style = getComputedStyle(element);
       const lineHeight = Number.parseFloat(style.lineHeight) || 16;
       return {
-        display: style.display,
+        overflow: style.overflow,
         height: element.getBoundingClientRect().height,
         lineHeight,
       };
@@ -183,12 +183,12 @@ test("clamps a long detached filename to two lines at 390 and 768", async ({
   };
 
   const narrow = await measured();
-  expect(narrow.display).toBe("-webkit-box");
+  expect(narrow.overflow).toBe("hidden");
   expect(narrow.height).toBeLessThanOrEqual(narrow.lineHeight * 2 + 1);
 
   await page.setViewportSize({ width: 768, height: 1024 });
   await expect(name).toBeVisible();
   const tablet = await measured();
-  expect(tablet.display).toBe("-webkit-box");
+  expect(tablet.overflow).toBe("hidden");
   expect(tablet.height).toBeLessThanOrEqual(tablet.lineHeight * 2 + 1);
 });
