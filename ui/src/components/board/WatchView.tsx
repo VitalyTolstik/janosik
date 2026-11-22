@@ -1044,12 +1044,19 @@ function detailsFor(
     parts.push({ label: "", to: display(entry.detail) });
   }
   for (const change of changes) {
-    // TASK-185.2: text fields use the shared character-level common
+    // TASK-185.2: a long text field uses the shared character-level common
     // prefix/suffix split, so a long comment shows the changed fragment
-    // instead of two almost identical walls. Expanded rows fall back to the
-    // full stored snapshot (the feed's stand-in until the revisions view).
+    // instead of two almost identical walls. Short values keep the plain
+    // `from → to` contract (`watch-details.spec`: one line-through with the
+    // whole saved value). Collapsed rows are head-only so the value's hidden
+    // tail cannot leak before "Show full values"; expanded rows fall back to
+    // the full stored snapshot (the feed's stand-in until the revisions view).
+    const longValue =
+      (change.from?.length ?? 0) > MAX_VALUE_CHARS ||
+      (change.to?.length ?? 0) > MAX_VALUE_CHARS;
     const diffable =
       !expanded &&
+      longValue &&
       change.from !== null &&
       change.to !== null &&
       change.field !== "dueDate" &&
@@ -1060,7 +1067,7 @@ function detailsFor(
       change.field !== "expiresAt";
     const sides =
       diffable && change.from !== null && change.to !== null
-        ? diffSides(change.from, change.to)
+        ? diffSides(change.from, change.to, { headOnly: true })
         : null;
     if (change.field === "comment") {
       parts.push({
