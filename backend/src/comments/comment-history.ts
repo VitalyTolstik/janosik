@@ -1,7 +1,15 @@
 import { NotFoundException, ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Comment } from "@prisma/client";
+import type {
+  CommentHistoryIncompleteReason,
+  CommentRevisionCause,
+} from "@janosik/shared";
 import type { RequestAttribution } from "@/auth/request-attribution";
+
+// The wire contract owns these unions; the writer and the read API must not
+// drift into two copies of the same enum.
+export type { CommentHistoryIncompleteReason, CommentRevisionCause };
 
 /**
  * TASK-185.1 — the single writer for comment text edits.
@@ -21,12 +29,6 @@ export const COMMENT_ACTIVITY_TYPES = [
   "comment_updated",
   "comment_deleted",
 ] as const;
-
-export type CommentHistoryIncompleteReason =
-  "legacy_cutover" | "revision_limit" | "gdpr_erase" | "writer_gap";
-
-export type CommentRevisionCause =
-  "author_edit" | "attachment_deleted" | "system";
 
 /**
  * Most severe reason wins. A writer gap is an integrity incident, so it is

@@ -1122,15 +1122,27 @@ export function sanitizePublicBoard(board: BoardAggregate): BoardAggregate {
   return copy;
 }
 
-/** Comments on a public share keep their text/kind, not the agent identity. */
+/**
+ * Comments on a public share keep their text/kind, not the agent identity.
+ *
+ * TASK-185.3: this is an explicit allowlist, not "the internal DTO minus
+ * secrets". Revision ids, snapshots, counters, incompleteness flags, cutover
+ * and verified fields must never ride along if the member projection grows.
+ */
 function toPublicComment(comment: CommentDto): CommentDto {
-  const copy = { ...comment };
-  delete copy.apiTokenId;
-  delete copy.agentSessionId;
-  delete copy.agentName;
-  // The public contour never exposes an email; the display name is enough.
-  delete copy.authorEmail;
-  return copy;
+  return {
+    id: comment.id,
+    cardId: comment.cardId,
+    authorId: comment.authorId,
+    ...(comment.authorName !== undefined
+      ? { authorName: comment.authorName }
+      : {}),
+    text: comment.text,
+    kind: comment.kind,
+    actorType: comment.actorType,
+    createdAt: comment.createdAt,
+    ...(comment.editedAt !== undefined ? { editedAt: comment.editedAt } : {}),
+  };
 }
 
 /** Public attachment metadata never exposes the uploader's token/session. */

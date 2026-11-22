@@ -13,7 +13,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import type { CommentDto, CommentPage } from "@janosik/shared";
+import type {
+  CommentDto,
+  CommentPage,
+  CommentRevisionPage,
+} from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentAgentSession, CurrentPrincipal } from "@/auth/auth-principal";
@@ -29,6 +33,7 @@ import {
   IdempotencyService,
   normalizeIdempotencyKey,
 } from "@/common/idempotency.service";
+import { CommentRevisionsService } from "./comment-revisions.service";
 import { CommentsService } from "./comments.service";
 import { CreateCommentDto } from "./dto/create-comment.dto";
 import { UpdateCommentDto } from "./dto/update-comment.dto";
@@ -42,6 +47,7 @@ import { UpdateCommentDto } from "./dto/update-comment.dto";
 export class CommentsController {
   constructor(
     private readonly comments: CommentsService,
+    private readonly revisionsService: CommentRevisionsService,
     private readonly idempotency: IdempotencyService,
   ) {}
 
@@ -98,6 +104,22 @@ export class CommentsController {
     @Query("kind") kind?: string,
   ): Promise<CommentPage> {
     return this.comments.list(cardId, cursor, limit, kind);
+  }
+
+  /**
+   * Read-only edit history (TASK-185.3, §3.3). Every accepted discussion
+   * reader gets it: board `ADMIN`, `MEMBER` and an active `VIEWER`; the guard
+   * rejects non-members and expired memberships. Writing stays author-only
+   * through `PATCH /comments/:commentId`.
+   */
+  @UseGuards(CardAccessGuard)
+  @Get("comments/:commentId/revisions")
+  revisions(
+    @Param("commentId") commentId: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+  ): Promise<CommentRevisionPage> {
+    return this.revisionsService.list(commentId, cursor, limit);
   }
 
   @UseGuards(CardAccessGuard)

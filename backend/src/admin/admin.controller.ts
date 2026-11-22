@@ -50,6 +50,7 @@ import type {
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  CommentRevisionPage,
   AdminCreateMasterResponse,
   AdminCreateUserResponse,
   AdminMasterRowDto,
@@ -82,6 +83,7 @@ import type {
 } from "@janosik/shared";
 import { AdminJwtAuthGuard } from "./admin-jwt-auth.guard";
 import { AdminFilterOptionsService } from "./admin-filter-options.service";
+import { CommentRevisionsService } from "@/comments/comment-revisions.service";
 import { AdminFilterOptionsQueryDto } from "./dto/admin-filter-options-query.dto";
 import { AdminEntitiesService } from "./admin-entities.service";
 import { AdminService } from "./admin.service";
@@ -146,6 +148,7 @@ import {
 export class AdminController {
   constructor(
     private readonly admin: AdminService,
+    private readonly commentRevisions: CommentRevisionsService,
     private readonly entities: AdminEntitiesService,
     private readonly filterOptions: AdminFilterOptionsService,
     private readonly attachments: AttachmentsService,
@@ -298,6 +301,20 @@ export class AdminController {
     @AdminListQuery("comments") query: AdminListQueryDto,
   ): Promise<AdminPage<AdminCommentRowDto>> {
     return this.admin.listComments(query);
+  }
+
+  /**
+   * Master read of a live comment's edit history (TASK-185.3, §3.3). Same
+   * master read rights as admin card detail, no board membership required; a
+   * deleted comment or parent answers `404`. Read-only.
+   */
+  @Get("comments/:commentId/revisions")
+  commentRevisionsPage(
+    @Param("commentId") commentId: string,
+    @Query("cursor") cursor?: string,
+    @Query("limit") limit?: string,
+  ): Promise<CommentRevisionPage> {
+    return this.commentRevisions.list(commentId, cursor, limit);
   }
 
   @Delete("comments/:id")

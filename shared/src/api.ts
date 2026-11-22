@@ -990,6 +990,49 @@ export interface CommentPage {
   nextCursor: string | null;
 }
 
+/** Why a saved comment edit exists (TASK-185.1). */
+export type CommentRevisionCause =
+  "author_edit" | "attachment_deleted" | "system";
+
+/**
+ * Why a comment's edit history is incomplete (TASK-185.1, §3.1). The severity
+ * order is `writer_gap` → `gdpr_erase` → `revision_limit` → `legacy_cutover`.
+ */
+export type CommentHistoryIncompleteReason =
+  "legacy_cutover" | "revision_limit" | "gdpr_erase" | "writer_gap";
+
+/**
+ * One immutable text-edit snapshot from `GET /comments/:commentId/revisions`
+ * (TASK-185.3). Token and session identifiers stay server-side: only the
+ * current public display name of the editor crosses the boundary.
+ */
+export interface CommentRevisionDto {
+  id: string;
+  revisionNumber: number;
+  /** Unix ms. */
+  createdAt: number;
+  editorId: string | null;
+  /** Current public `displayName`; `null` for an absent or unnamed editor. */
+  editorName: string | null;
+  actorType: ActorType;
+  agentName: string | null;
+  cause: CommentRevisionCause;
+  beforeText: string;
+  afterText: string;
+}
+
+/**
+ * A page of comment revisions, newest revision first. The incomplete-history
+ * fields describe the live comment and are present on every page, including
+ * an empty one.
+ */
+export interface CommentRevisionPage {
+  items: CommentRevisionDto[];
+  nextCursor: string | null;
+  historyIncomplete: boolean;
+  historyIncompleteReason: CommentHistoryIncompleteReason | null;
+}
+
 /** Lifecycle of the TASK-50 video transcode ("ужиматор"): video uploads
  * re-encode to a compact H.264 MP4 in a background job — `none` for
  * non-videos, `pending` while queued/running, `done` once `content`
