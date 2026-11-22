@@ -54,6 +54,10 @@ test("keeps the archive row and inline confirm usable at 768", async ({
   const column = await board.column("Archive tablet");
   const cardId = await board.card(column, "Tablet archive row");
   await board.command({ type: "ARCHIVE_CARD", cardId });
+  for (let index = 0; index < 20; index += 1) {
+    const extra = await board.card(column, `Archive tablet extra ${index}`);
+    await board.command({ type: "ARCHIVE_CARD", cardId: extra });
+  }
   await page.setViewportSize({ width: 768, height: 1024 });
   await board.open(page);
 
@@ -75,6 +79,23 @@ test("keeps the archive row and inline confirm usable at 768", async ({
   expect(selectAllBox).not.toBeNull();
   expect(selectAllBox!.width).toBeGreaterThanOrEqual(44);
   expect(selectAllBox!.height).toBeGreaterThanOrEqual(44);
+
+  await selectAll.click();
+  const pagination = page.getByTestId("archive-pagination");
+  await expect(pagination).toBeVisible();
+  for (const control of [
+    page.getByRole("button", { name: "Clear", exact: true }),
+    page.getByRole("button", { name: "Restore selected" }),
+    page.getByRole("button", { name: "Delete selected" }),
+    pagination.getByRole("button", { name: "Previous page" }),
+    pagination.getByRole("button", { name: "Next page" }),
+  ]) {
+    await expect(control).toBeVisible();
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
 
   await trigger.click();
   await expect(row).toContainText("Delete?");

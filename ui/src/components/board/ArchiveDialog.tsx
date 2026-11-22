@@ -263,6 +263,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                 size="sm"
                 disabled={busy}
                 onClick={() => setSelectedIds(new Set())}
+                className="max-lg:h-11 lg:h-8"
               >
                 {t("archive.clearSelection")}
               </Button>
@@ -273,6 +274,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                   variant="outline"
                   size="sm"
                   disabled={busy || selected.length === 0}
+                  className="max-lg:h-11 lg:h-8"
                 >
                   <ArchiveRestore className="h-4 w-4" />
                   {t("archive.restoreSelected")}
@@ -317,7 +319,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
               size="sm"
               disabled={busy || selected.length === 0}
               onClick={() => setConfirmBulkDelete(true)}
-              className="text-destructive hover:text-destructive"
+              className="max-lg:h-11 text-destructive hover:text-destructive lg:h-8"
             >
               <Trash2 className="h-4 w-4" />
               {t("archive.deleteSelected")}
@@ -528,7 +530,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="max-lg:h-11 max-lg:w-11 lg:h-8 lg:w-8"
               aria-label={t("archive.previousPage")}
               disabled={busy || currentPage === 0}
               onClick={() => setPage(currentPage - 1)}
@@ -538,7 +540,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
+              className="max-lg:h-11 max-lg:w-11 lg:h-8 lg:w-8"
               aria-label={t("archive.nextPage")}
               disabled={busy || currentPage >= pageCount - 1}
               onClick={() => setPage(currentPage + 1)}
