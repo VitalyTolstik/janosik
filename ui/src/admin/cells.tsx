@@ -100,7 +100,7 @@ export function CopyButton({
           .then(() => setCopied(true))
           .catch(() => setCopied(false));
       }}
-      className="inline-flex items-center text-muted-foreground transition-colors hover:text-foreground"
+      className="inline-flex shrink-0 items-center text-muted-foreground transition-colors hover:text-foreground"
     >
       {copied ? (
         <Check className="h-3 w-3 text-success" aria-hidden />
@@ -140,13 +140,13 @@ export function EntityLink({
     ? withReturnTo(to, currentAdminPath(location))
     : to;
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5">
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
       <Link
         to={href}
         data-testid={testId}
         aria-label={ariaLabel}
         className={cn(
-          "truncate font-medium text-primary underline-offset-2 hover:underline",
+          "min-w-0 truncate font-medium text-primary underline-offset-2 hover:underline",
           className,
         )}
         title={typeof children === "string" ? children : undefined}
