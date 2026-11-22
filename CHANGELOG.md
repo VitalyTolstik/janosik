@@ -17,7 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inline code, as are escaped tokens and larger URLs; HTML comments are not
   rendered. List-contained fences and indented text are ordinary text, so
   explicit mention links there stay live while a hand-typed `@Name` never
-  notifies. Each
+  notifies. The closing fence follows the same 0–3-space indentation rule as
+  the opening fence. Each
   mentioned member gets one deduplicated `comment.mention` attention row with
   actor, card, board, excerpt and a card/comment deep link; the author is
   skipped, `notifyAttention` still controls e-mail, and the immediate letter
