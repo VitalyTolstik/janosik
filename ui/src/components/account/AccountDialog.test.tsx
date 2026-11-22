@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   fireEvent,
   render,
@@ -13,6 +14,7 @@ import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { ToastProvider } from "@/components/Toast";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -32,6 +34,7 @@ function renderAccount(
     init?: RequestInit,
   ) => Promise<Response> = server.handle,
   entry: string | string[] = "/",
+  before?: ReactNode,
 ) {
   const entries = Array.isArray(entry) ? entry : [entry];
   vi.stubGlobal("fetch", handler);
@@ -46,6 +49,7 @@ function renderAccount(
                   initialEntries={entries}
                   initialIndex={entries.length - 1}
                 >
+                  {before}
                   <AccountDialog />
                   <HistoryProbe />
                 </MemoryRouter>
@@ -55,6 +59,16 @@ function renderAccount(
         </I18nProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
+  );
+}
+
+function OlderDialog() {
+  return (
+    <Dialog open>
+      <DialogContent data-testid="unrelated-dialog">
+        <DialogTitle>Token info</DialogTitle>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -91,6 +105,7 @@ describe("AccountDialog (TASK-36.1)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
   });
 
   it("stays hidden without a session", async () => {
@@ -366,6 +381,152 @@ describe("AccountDialog (TASK-36.1)", () => {
 
     await userEvent.click(screen.getByTestId("account-nav-profile"));
     expect(screen.getByTestId("account-profile")).toBeInTheDocument();
+  });
+
+  it("reveals and focuses the active mobile rail tab, with edge cues", async () => {
+    const scrolled: Element[] = [];
+    const scrollOptions: Array<ScrollIntoViewOptions | undefined> = [];
+    const scrollIntoView = vi.fn(function (
+      this: Element,
+      options?: ScrollIntoViewOptions,
+    ) {
+      scrolled.push(this);
+      scrollOptions.push(options);
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const server = new FakeServer();
+    renderAccount(server, server.handle, "/board/b-1?account=tokens");
+
+    await screen.findByTestId("account-dialog");
+    const tokensTab = await screen.findByTestId("account-nav-tokens");
+    await waitFor(() => expect(scrolled).toContain(tokensTab));
+    await waitFor(() => expect(tokensTab).toHaveFocus());
+    expect(tokensTab).toHaveAttribute("aria-current", "page");
+    expect(tokensTab).toHaveClass("max-lg:min-h-11");
+    const nav = tokensTab.closest("nav")!;
+    expect(nav).toHaveClass("overflow-x-auto");
+
+    // Sign out is pinned outside the horizontal scroller at 390, so it is
+    // reachable while Tokens or Data is active.
+    const logout = screen.getByTestId("account-logout");
+    const rail = screen.getByTestId("account-rail");
+    expect(rail).toContainElement(logout);
+    expect(nav).not.toContainElement(logout);
+    expect(logout).toHaveClass("max-lg:min-h-11");
+
+    await userEvent.click(screen.getByTestId("account-nav-data"));
+    const dataTab = await screen.findByTestId("account-nav-data");
+    await waitFor(() => expect(dataTab).toHaveFocus());
+    expect(dataTab).toHaveAttribute("aria-current", "page");
+    expect(tokensTab).not.toHaveAttribute("aria-current");
+    await waitFor(() => expect(scrolled).toContain(dataTab));
+    expect(scrollOptions[scrollOptions.length - 1]).toEqual({
+      block: "nearest",
+      inline: "center",
+    });
+
+    // Simulate the real rail: the right cue shows while content continues,
+    // and swaps to the left cue once scrolled to the end.
+    Object.defineProperty(nav, "clientWidth", {
+      configurable: true,
+      value: 364,
+    });
+    Object.defineProperty(nav, "scrollWidth", {
+      configurable: true,
+      value: 736,
+    });
+    Object.defineProperty(nav, "scrollLeft", {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    fireEvent.scroll(nav);
+    expect(
+      await screen.findByTestId("account-nav-overflow"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("account-nav-overflow-start")).toBeNull();
+
+    nav.scrollLeft = 372;
+    fireEvent.scroll(nav);
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-nav-overflow")).toBeNull(),
+    );
+    expect(screen.getByTestId("account-nav-overflow-start")).toBeVisible();
+
+    // Reopening on Data must reveal and focus the same section again. The
+    // portal remounts, so hold the new tab node rather than the old one.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+    await userEvent.click(screen.getByTestId("account-trigger"));
+    const reopened = await screen.findByTestId("account-dialog");
+    const reopenedTab = await screen.findByTestId("account-nav-data");
+    await waitFor(() => expect(scrolled).toContain(reopenedTab));
+    await waitFor(() => expect(reopenedTab).toHaveFocus());
+    expect(within(reopened).getByTestId("account-data")).toBeVisible();
+  });
+
+  it("closes on Escape when an unrelated dialog is underneath", async () => {
+    const server = new FakeServer();
+    renderAccount(
+      server,
+      server.handle,
+      "/board/b-1?account=tokens",
+      <OlderDialog />,
+    );
+
+    expect(await screen.findByTestId("account-dialog")).toBeVisible();
+    expect(screen.getByTestId("unrelated-dialog")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+    expect(screen.getByTestId("unrelated-dialog")).toBeVisible();
+  });
+
+  it("returns focus to a nested dialog opener and closes only the top layer", async () => {
+    const server = new FakeServer();
+    await openPanel(server);
+    await userEvent.click(screen.getByTestId("account-nav-tokens"));
+    const create = screen.getByTestId("token-create");
+    await userEvent.click(create);
+    expect(await screen.findByTestId("token-dialog")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("token-dialog")).toBeNull(),
+    );
+    expect(screen.getByTestId("account-dialog")).toBeVisible();
+    await waitFor(() => expect(create).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+  });
+
+  it("returns focus to the email-change opener after Cancel", async () => {
+    const server = new FakeServer();
+    await openPanel(server);
+    const opener = screen.getByTestId("account-email-change");
+    await userEvent.click(opener);
+    const dialog = await screen.findByTestId("email-change-dialog");
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("email-change-dialog")).toBeNull(),
+    );
+    expect(screen.getByTestId("account-dialog")).toBeVisible();
+    await waitFor(() => expect(opener).toHaveFocus());
   });
 
   it("signs out only after the confirmation", async () => {

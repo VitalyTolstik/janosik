@@ -1138,9 +1138,23 @@ export interface AuthConfigResponse {
  * TASK-166 self-service data export (`POST /users/me/export`). The bundle is
  * built by the existing `DataExport` queue and downloaded through a TTL link.
  */
+/** Lifecycle states of a self-service account export. */
+export const USER_DATA_EXPORT_STATUSES = [
+  "pending",
+  "ready",
+  "failed",
+  "expired",
+] as const;
+
+export type UserDataExportStatus = (typeof USER_DATA_EXPORT_STATUSES)[number];
+
 export interface UserDataExportDto {
   id: string;
-  status: "pending" | "ready" | "failed";
+  /**
+   * `expired` means the seven-day artifact lifetime passed: there is nothing
+   * left to download, so the client offers a new copy instead.
+   */
+  status: UserDataExportStatus;
   /** Unix ms. */
   createdAt: number;
   /** Unix ms; the artifact is deleted at this point. */
