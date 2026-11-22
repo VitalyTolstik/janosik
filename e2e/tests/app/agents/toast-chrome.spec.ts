@@ -106,6 +106,36 @@ test("768 toast clears the agent sheet close and Live footer", async ({
   await expectToastClear(page, dialog, toast);
 });
 
+test("1366×768 toast clears the short desktop sheet footer", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await board.open(page);
+  const { dialog, toast } = await showBoardPauseToast(page);
+  await expectToastClear(page, dialog, toast);
+});
+
+test("1440×820 toast clears the short desktop sheet footer", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 820 });
+  await board.open(page);
+  const { dialog, toast } = await showBoardPauseToast(page);
+  await expectToastClear(page, dialog, toast);
+});
+
+test("1600×900 toast clears the centred desktop sheet footer", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await board.open(page);
+  const { dialog, toast } = await showBoardPauseToast(page);
+  await expectToastClear(page, dialog, toast);
+});
+
 test("768 Runs footer reserves the tablet action row", async ({
   page,
   board,

@@ -1316,16 +1316,15 @@ html[lang="ru"] .agent-control-surface .ac-title {
 /* Large screens: keep the 1440 mockup intact below 1600, then let the board
    control use the available canvas instead of a 1120×760 island. */
 /* The global toast stack is portalled next to the body, so the sheet exposes
-   the space its footer occupies through a root-level variable. On phones and
-   tablets the bottom toast sits above that footer instead of covering the
-   board Pause/Resume or Runs action. */
-@media (max-width: 1279px) {
-  html[data-agent-control-open="true"] .janosik-toast-region {
-    bottom: calc(
-      1rem +
-        max(env(safe-area-inset-bottom), var(--agent-control-toast-offset, 0px))
-    );
-  }
+   the space its footer occupies through a root-level variable. A short
+   desktop such as 1366×768 also anchors the sheet near the bottom edge; the
+   script publishes 0 when the sheet is a centred island, so 1440/1920 keep
+   the normal bottom offset. */
+html[data-agent-control-open="true"] .janosik-toast-region {
+  bottom: calc(
+    1rem +
+      max(env(safe-area-inset-bottom), var(--agent-control-toast-offset, 0px))
+  );
 }
 
 @media (min-width: 1600px) {

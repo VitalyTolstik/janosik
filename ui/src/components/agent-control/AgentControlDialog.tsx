@@ -87,14 +87,15 @@ export function AgentControlDialog({
         }
       }
       const rect = footer?.getBoundingClientRect();
-      // The tablet sheet intentionally stops 14 px short of the viewport
-      // edge, so a 2 px bottom check would miss its footer. Treat the sheet
-      // as bottom-anchored within 24 px; a centred desktop modal stays far
-      // away and keeps the normal bottom toast.
+      // Lift the toast while the footer sits inside the bottom band that
+      // the toast stack itself occupies (≈61 px card + 16 px margin, with
+      // headroom). The tablet sheet stops 14 px short of the edge; short
+      // desktops such as 1440×820 (40 px gap) and 1600×900 (48 px gap) also
+      // fall inside 96 px. A roomy 1440×900/1920×1080 sheet keeps offset 0.
       const offset =
         rect !== undefined &&
         rect.height > 0 &&
-        rect.bottom >= window.innerHeight - 24
+        rect.bottom >= window.innerHeight - 96
           ? Math.max(0, Math.ceil(window.innerHeight - rect.top))
           : 0;
       root.style.setProperty("--agent-control-toast-offset", `${offset}px`);
