@@ -995,16 +995,26 @@ const commentMentionDefault = attentionDefault(
   { board: "{{board}}", card: "{{card}}", actor: "{{actor}}" },
   ["board", "card", "actor"],
 );
-const cardAssignedDefault = attentionDefault(
-  "card.assigned",
-  {
-    board: "{{board}}",
-    cards: "{{cards}}",
-    count: "{{count}}",
-    actor: "{{actor}}",
-  },
-  ["board", "cards", "count", "actor"],
-);
+/**
+ * Editable default for an assignment letter. Deliberately neutral: the editor
+ * previews it with `{{count}}` unresolved, so singular/plural branching here
+ * would render “1 cards” once an operator saves the default unchanged.
+ */
+const cardAssignedDefault = (() => {
+  const letter = attentionLetterBase(
+    "New card assignment",
+    `${BRAND}: new card assignment on "{{board}}"`,
+    [
+      "Card assignment from {{actor}} on board <b>{{board}}</b>: {{cards}}.",
+      "Open the card or board in Janosik to see the details.",
+    ],
+  );
+  return {
+    subject: letter.subject,
+    bodyHtml: letter.html.replace("<html>", '<html lang="en">'),
+    placeholders: ["board", "cards", "count", "actor"],
+  };
+})();
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
@@ -1082,28 +1092,54 @@ function hrefAttribute(tag: string): string | null {
   return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
 }
 
+/**
+ * Decode one text segment and drop markup that escaped user text revealed.
+ * This keeps the old guarantee that `&lt;b&gt;` does not become markup, while
+ * the caller scans the *raw* HTML for tags: only literal template anchors are
+ * trusted links, an escaped `<a href>` stays text and contributes no URL.
+ */
+function plainTextSegment(raw: string): string {
+  const decoded = decodeHtmlEntities(raw);
+  let text = "";
+  let index = 0;
+  while (index < decoded.length) {
+    const open = decoded.indexOf("<", index);
+    if (open === -1) {
+      text += decoded.slice(index);
+      break;
+    }
+    text += decoded.slice(index, open);
+    const close = decoded.indexOf(">", open + 1);
+    if (close === -1) {
+      text += decoded.slice(open);
+      break;
+    }
+    index = close + 1;
+  }
+  return text;
+}
+
 /** A readable plain-text alternative from the HTML body. */
 export function htmlToText(html: string): string {
-  // Decode before scanning: decoding afterwards would turn `&lt;script&gt;`
-  // back into markup in the returned text. The scanner then walks the string
-  // once and drops every tag, so no second pass can expose a fresh one from
-  // nested input like `<<b>>`. A regex sanitizer cannot promise that, which is
-  // why this is an explicit scan rather than a chain of replacements.
-  const source = decodeHtmlEntities(html);
+  // Scan the raw HTML: tags in user text are escaped by the caller, so only a
+  // literal template anchor becomes a trusted link. Each text segment is
+  // decoded and stripped afterwards, so an escaped anchor cannot masquerade
+  // as a link or displace a real card URL.
+  const source = html;
   let text = "";
   let index = 0;
   const links: string[] = [];
   while (index < source.length) {
     const open = source.indexOf("<", index);
     if (open === -1) {
-      text += source.slice(index);
+      text += plainTextSegment(source.slice(index));
       break;
     }
-    text += source.slice(index, open);
+    text += plainTextSegment(source.slice(index, open));
     const close = source.indexOf(">", open + 1);
     if (close === -1) {
       // An unterminated `<` is ordinary text, not a tag.
-      text += source.slice(open);
+      text += plainTextSegment(source.slice(open));
       break;
     }
     const rawTag = source.slice(open + 1, close).trim();
@@ -1122,7 +1158,8 @@ export function htmlToText(html: string): string {
       tag.startsWith("a\t") ||
       tag.startsWith("a\n")
     ) {
-      links.push(hrefAttribute(rawTag) ?? "");
+      const href = hrefAttribute(rawTag);
+      links.push(href === null ? "" : decodeHtmlEntities(href));
     } else if (tag === "/a") {
       const href = links.pop();
       // Keep the destination in the plain-text alternative; a label alone

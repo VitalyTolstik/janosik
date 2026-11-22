@@ -1132,7 +1132,7 @@ function assignmentInboxBody(
   if (input.count === 1) {
     return ru
       ? `${who} назначил(а) вам карточку «${list}» на доске «${input.board}». Откройте карточку, чтобы посмотреть детали.`
-      : `${who} assigned you card “${list}” on board “${input.board}”. Open the card to see the details.`;
+      : `${who} assigned you a card “${list}” on board “${input.board}”. Open the card to see the details.`;
   }
   // Neutral count wording: “новые карточки (21)” stays grammatical for every
   // Russian plural form instead of producing “21 карточек”.

@@ -697,7 +697,8 @@ immediate e-mail omits the comment text. A `card.assigned` row tells the new
 assignee about one or more cards assigned in the same command batch. The batch
 is coalesced into one row per assignee, the last assignment per card wins (a
 later unassign notifies nobody), and assigning a card to yourself is skipped.
-Its payload carries `assigneeId`, `cardIds` and, for a single card, `cardId`;
+Its payload carries `assigneeId`, `cardIds` and the assigning actor's
+display name in `actorName` when known, plus `cardId` for a single card;
 the inbox opens that card or, for a batch, the board filtered with
 `f.assignee=<assigneeId>`. The scheduled digest also
 includes undigested attention categories once per recipient; immediate

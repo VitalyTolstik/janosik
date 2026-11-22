@@ -243,6 +243,14 @@ describe("attentionEmail", () => {
         "en",
       ).text,
     ).toContain("assigned you 2 cards");
+    const ruAssigned = attentionEmail(
+      "card.assigned",
+      { ...vars, cards: "Ship it, Release", count: 2, actor: "Алиса" },
+      "ru",
+    );
+    expect(ruAssigned.text).toContain("новые карточки (2)");
+    expect(ruAssigned.text).toContain("Алиса");
+    expect(ruAssigned.text).not.toContain("2 карточек");
   });
 
   it("labels assignment attention in the digest in both languages (TASK-177.20)", () => {
@@ -265,6 +273,31 @@ describe("attentionEmail", () => {
       "Fix it (https://kb.example/app/board/b-1?card=c-2)",
     );
     expect(mail.text).toContain("\n");
+  });
+
+  it("never turns an escaped user anchor into a trusted link", () => {
+    const escapedTitle =
+      '&lt;a href="https://evil.example"&gt;Evil card&lt;/a&gt;';
+    const tasks = `<ul><li><a href="https://kb.example/app/board/b-1?card=c-1">${escapedTitle}</a> — due 1 Jan 2026, 10:00 UTC</li></ul>`;
+    const due = dueReminderEmail(1, tasks, "en");
+    expect(due.text).toContain(
+      "Evil card (https://kb.example/app/board/b-1?card=c-1)",
+    );
+    expect(due.text).not.toContain("https://evil.example");
+
+    const assigned = attentionEmail(
+      "card.assigned",
+      {
+        ...vars,
+        count: 1,
+        board: '<a href="https://evil.example/board">Evil board</a>',
+        actor: '<a href="https://evil.example/actor">Eve</a>',
+        cards: '<a href="https://evil.example">Evil card</a>',
+      },
+      "en",
+    );
+    expect(assigned.text).toContain("Evil card");
+    expect(assigned.text).not.toContain("https://evil.example");
   });
 
   it("keeps comment text out of the mention letter but in the inbox body", () => {

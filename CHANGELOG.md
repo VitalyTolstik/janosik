@@ -15,7 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   actor. Assignments are coalesced per recipient per command batch; the last
   assignment per card wins, a trailing unassign or a no-op notifies nobody, and
   replays never fan out again. The dedup key is
-  `card.assigned:<minSeq>-<maxSeq>`. A single card opens its dialog; a batch
+  `card.assigned:<minSeq>-<maxSeq>:<recipientId>` (one row per recipient). A
+  single card opens its dialog; a batch
   opens the board filtered with `f.assignee=<assigneeId>`. The EN/RU
   `attention_card_assigned` letter respects `notifyAttention` while the inbox
   row is always written; scheduled digests, governed by `notifyDigest`, label

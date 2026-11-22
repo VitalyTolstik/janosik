@@ -2100,7 +2100,10 @@ export interface AttentionNotificationDto {
   boardId: string | null;
   title: string;
   body: string | null;
-  /** Small, non-sensitive context: ids, risk, action, limit, current. */
+  /**
+   * Small, non-sensitive context: ids, risk, action, limit, current, and
+   * `actorName` for rows that name a human (mentions and assignments).
+   */
   data: Record<string, unknown> | null;
   /** Unix ms; null while unread. */
   readAt: number | null;

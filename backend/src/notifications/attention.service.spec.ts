@@ -410,6 +410,8 @@ describe("AttentionService", () => {
       );
       expect(rows[0]!.body).toContain("Task card-1");
       expect(rows[0]!.body).toContain("Actor");
+      expect(rows[0]!.body).toContain("assigned you a card");
+      expect(rows[0]!.body).not.toContain("assigned you 1 cards");
       expect(rows[0]!.data).toEqual({
         assigneeId: "assignee",
         cardIds: ["card-1"],
@@ -417,6 +419,24 @@ describe("AttentionService", () => {
         actorName: "Actor",
       });
       expect(mail.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to a generic actor label when the display name is missing", async () => {
+      const { prisma, rows } = makePrisma([recipient("assignee")]);
+      (prisma.card.findMany as jest.Mock).mockResolvedValue(cards("card-1"));
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+      const { service } = makeService(prisma);
+
+      await service.notifyCardsAssigned({
+        boardId: "board-1",
+        actorId: "owner",
+        assignments: [{ cardId: "card-1", assigneeId: "assignee", seq: 1 }],
+      });
+      await flush();
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.body).toContain("A board member assigned you a card");
+      expect(rows[0]!.data).not.toHaveProperty("actorName");
     });
 
     it("skips assigning a card to the actor", async () => {

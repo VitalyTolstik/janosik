@@ -278,7 +278,7 @@ Source: `design/ui-roast/REVIEW.md` (live 1440/1024/390 + axe-core). These are *
 - Card/board follow or watch; saved filter views; assignment/due notifications (respect preferences).
 - Reuse attention infrastructure; deep links; read/read-all via 177.6.
 - Product decision: scope can be split into follow-up waves, but the item stays in TASK-177.
-- Decision: saved views and assignment notifications ship now (with due-email card links); card follow/watch is deferred until after TASK-200; board follow/watch, in-app due rows and shared/team saved views are closed for now — membership plus digest already covers board follow, due e-mail plus saved views covers due visibility, and the `f.*` URL is the shareable saved view.
+- Decision: shareable filter URLs and assignment notifications ship now (with due-email card links); named/team saved views are deferred. Card follow/watch is deferred until after TASK-200; board follow/watch and in-app due rows are closed for now — membership plus digest already covers board follow, due e-mail plus shareable filter URLs covers due visibility.
 - Tests: follow/unfollow, notification on change, saved view restore, opt-out.
 - Files: follow model/API or attention subscription, board filter state, NotificationsBell.
 
