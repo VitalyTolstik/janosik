@@ -5,6 +5,7 @@ import type {
   CommentHistoryIncompleteReason,
   CommentRevisionCause,
   CommentRevisionDto,
+  CommentRevisionPage,
 } from "@janosik/shared";
 
 import { api, ApiError } from "@/api/client";
@@ -51,6 +52,19 @@ function isGone(error: unknown): boolean {
 }
 
 /**
+ * A live page that must replace the visible list with an empty state: GDPR
+ * erase and writer gaps delete or disavow the saved revisions, and any empty
+ * page that declares incomplete history can no longer be appended to.
+ */
+function clearsHistory(page: CommentRevisionPage): boolean {
+  return (
+    page.historyIncompleteReason === "gdpr_erase" ||
+    page.historyIncompleteReason === "writer_gap" ||
+    (page.items.length === 0 && page.historyIncomplete)
+  );
+}
+
+/**
  * Read-only edit history of one comment (TASK-185.4, §3.4).
  *
  * The comment row opens this from its “Edited” trigger. The list is the
@@ -77,6 +91,7 @@ export function CommentHistoryDialog({
 
   const [status, setStatus] = useState<Status>("loading");
   const [items, setItems] = useState<CommentRevisionDto[]>([]);
+  const itemsRef = useRef<CommentRevisionDto[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [reason, setReason] = useState<CommentHistoryIncompleteReason | null>(
     null,
@@ -100,6 +115,10 @@ export function CommentHistoryDialog({
   const keepFocusInDialog = useCallback(() => {
     dialogRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const reset = useCallback(() => {
     setItems([]);
@@ -193,6 +212,19 @@ export function CommentHistoryDialog({
     try {
       const page = await api.listCommentRevisions(commentId, cursor, PAGE_SIZE);
       if (seq !== seqRef.current) return;
+      if (clearsHistory(page)) {
+        // The older page may reveal an erase or a writer gap that invalidates
+        // every loaded snapshot; do not keep page 1 visible under the banner.
+        setItems([]);
+        setNextCursor(null);
+        setReason(page.historyIncompleteReason);
+        setStatus("ready");
+        setStale(false);
+        setOlderError(false);
+        focusOlderRef.current = false;
+        focusEndRef.current = false;
+        return;
+      }
       setItems((current) => {
         const seen = new Set(current.map((revision) => revision.id));
         return [
@@ -229,18 +261,25 @@ export function CommentHistoryDialog({
     if (status !== "ready") return;
     if (focusOlderRef.current && nextCursor !== null) {
       focusOlderRef.current = false;
-      showOlderRef.current?.focus();
+      // A slow request must not steal focus if the reader already moved on.
+      if (document.activeElement === dialogRef.current) {
+        showOlderRef.current?.focus();
+      }
       return;
     }
     if (!focusEndRef.current || nextCursor !== null) return;
     focusEndRef.current = false;
-    endRef.current?.focus();
+    if (document.activeElement === dialogRef.current) {
+      endRef.current?.focus();
+    }
   }, [items.length, nextCursor, status]);
 
   // A failed older page leaves the retry control below the full list. Move
-  // focus there so the keyboard user does not have to tab through every row.
+  // focus there so the keyboard user does not have to tab through every row,
+  // but only when they have not already focused something else meanwhile.
   useEffect(() => {
     if (!olderError) return;
+    if (document.activeElement !== dialogRef.current) return;
     olderRetryRef.current?.focus();
   }, [olderError]);
 
@@ -252,7 +291,24 @@ export function CommentHistoryDialog({
     try {
       const page = await api.listCommentRevisions(commentId, undefined, 1);
       if (seq !== seqRef.current) return;
+      if (clearsHistory(page)) {
+        // A focus/reconnect recheck can be the first place an erase or writer
+        // gap becomes visible; drop every retained snapshot and show only the
+        // banner/empty state.
+        setItems([]);
+        setNextCursor(null);
+        setReason(page.historyIncompleteReason);
+        setStatus("ready");
+        setStale(false);
+        setOlderError(false);
+        focusOlderRef.current = false;
+        focusEndRef.current = false;
+        return;
+      }
       setReason(page.historyIncompleteReason);
+      const newest = page.items[0]?.revisionNumber ?? 0;
+      const loadedNewest = itemsRef.current[0]?.revisionNumber ?? 0;
+      if (newest > loadedNewest) setStale(true);
     } catch (error) {
       if (seq !== seqRef.current) return;
       if (isGone(error)) {
@@ -589,7 +645,10 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
         <div
           id={snapshotId}
           data-testid={`comment-history-snapshot-${number}`}
-          className="mt-2 max-h-60 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-2"
+          role="region"
+          aria-label={t("comment.history.snapshotRegion", { number })}
+          tabIndex={0}
+          className="mt-2 max-h-60 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {t("comment.history.fullVersion")}

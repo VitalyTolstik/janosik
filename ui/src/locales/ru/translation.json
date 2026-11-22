@@ -1063,6 +1063,7 @@
   "comment.history.showOlder": "Показать более ранние правки",
   "comment.history.showSnapshot": "Показать полную версию",
   "comment.history.showSnapshotFor": "Показать полную версию правки {{number}}",
+  "comment.history.snapshotRegion": "Полная версия правки {{number}}",
   "comment.history.stale": "Комментарий изменился. Обновите историю, чтобы увидеть последние правки.",
   "comment.history.subtitle": "Последняя правка: {{date}}. Сохранённые изменения текста этого комментария.",
   "comment.history.title": "История правок",

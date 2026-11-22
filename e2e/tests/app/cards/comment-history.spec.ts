@@ -133,14 +133,24 @@ test.describe("comment edit history at 390 px", () => {
 
     // A truncated diff still reaches the complete saved version.
     await dialog.getByTestId("comment-history-snapshot-toggle-1").click();
-    await expect(
-      dialog.getByTestId("comment-history-snapshot-1"),
-    ).toBeVisible();
+    const snapshot = dialog.getByTestId("comment-history-snapshot-1");
+    await expect(snapshot).toBeVisible();
     const snapshotAfter = dialog.getByTestId(
       "comment-history-snapshot-after-1",
     );
     await expect(snapshotAfter).toContainText("x".repeat(600));
     expect(await snapshotAfter.textContent()).toBe(longAfter);
+
+    // The expanded scroll region is itself keyboard reachable and axe-clean.
+    await expectAxeClean(page, "history snapshot at 390");
+    await snapshot.focus();
+    const scrollBefore = await snapshot.evaluate(
+      (element) => element.scrollTop,
+    );
+    await page.keyboard.press("PageDown");
+    await expect
+      .poll(() => snapshot.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(scrollBefore);
 
     // Escape closes only the history overlay, not the card dialog.
     await page.keyboard.press("Escape");

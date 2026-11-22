@@ -78,6 +78,7 @@ describe("TASK-185.4 comment history", () => {
     "comment.history.hideSnapshot",
     "comment.history.showSnapshotFor",
     "comment.history.hideSnapshotFor",
+    "comment.history.snapshotRegion",
     "comment.history.fullVersion",
     "comment.history.banner.legacy",
     "comment.history.banner.generic",

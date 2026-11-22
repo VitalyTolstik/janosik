@@ -1049,6 +1049,7 @@
   "comment.history.showOlder": "Show older revisions",
   "comment.history.showSnapshot": "Show full version",
   "comment.history.showSnapshotFor": "Show full version of revision {{number}}",
+  "comment.history.snapshotRegion": "Full revision {{number}}",
   "comment.history.stale": "This comment changed. Refresh the history to see the latest revisions.",
   "comment.history.subtitle": "Last edited {{date}}. Saved text changes to this comment.",
   "comment.history.title": "Edit history",
