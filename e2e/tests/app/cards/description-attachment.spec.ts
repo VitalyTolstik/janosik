@@ -73,7 +73,9 @@ test("description image follows deletion, undo and redo", async ({
   ).toContainText("pasted.png");
   await removed.getByRole("button", { name: "Delete file" }).click();
   const confirmation = page.getByRole("dialog", { name: "Delete this file?" });
-  await expect(confirmation).toContainText("no longer be available");
+  await expect(confirmation).toContainText(
+    "only a platform administrator can restore the row",
+  );
   await confirmation.getByRole("button", { name: "Delete file" }).click();
   await expect(removed).toHaveCount(0);
 });
