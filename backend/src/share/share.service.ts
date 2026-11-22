@@ -698,7 +698,12 @@ export class ShareService {
       undefined,
       this.legacyCutoff(share),
     );
-    return { ...page, items: page.items.map(toPublicComment) };
+    // Explicit allowlist on live pages too: never spread a member page that
+    // may grow revision or history fields later.
+    return {
+      items: page.items.map(toPublicComment),
+      nextCursor: page.nextCursor,
+    };
   }
 
   /** Attachment metadata for a card on the shared board, when exposed. */

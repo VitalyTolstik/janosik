@@ -21,6 +21,7 @@ const VIEWER_EMAIL = "1853-viewer@example.com";
 const EXPIRED_EMAIL = "1853-expired@example.com";
 const OUTSIDER_EMAIL = "1853-outsider@example.com";
 const UNNAMED_EMAIL = "1853-unnamed@example.com";
+const BLANK_EMAIL = "1853-blank@example.com";
 
 const REVISION_KEYS = [
   "actorType",
@@ -55,6 +56,7 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
   let expired: { token: string; id: string };
   let outsider: { token: string; id: string };
   let unnamed: { id: string };
+  let blank: { id: string };
 
   let boardId: string;
   let cardId: string;
@@ -96,6 +98,13 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
       id: (
         await prisma.user.create({
           data: { email: UNNAMED_EMAIL, displayName: null },
+        })
+      ).id,
+    };
+    blank = {
+      id: (
+        await prisma.user.create({
+          data: { email: BLANK_EMAIL, displayName: "   " },
         })
       ).id,
     };
@@ -171,18 +180,56 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
     });
   }
 
-  async function command(
+  async function commandOn(
+    targetBoardId: string,
     actor: { token: string },
     action: Record<string, unknown>,
   ): Promise<void> {
     await server()
-      .post(`/api/v1/boards/${boardId}/commands`)
+      .post(`/api/v1/boards/${targetBoardId}/commands`)
       .set(auth(actor.token))
       .send({
         commandId: randomUUID(),
-        action: { boardId, at: Date.now(), ...action } as BoardAction,
+        action: {
+          boardId: targetBoardId,
+          at: Date.now(),
+          ...action,
+        } as BoardAction,
       })
       .expect(200);
+  }
+
+  async function command(
+    actor: { token: string },
+    action: Record<string, unknown>,
+  ): Promise<void> {
+    await commandOn(boardId, actor, action);
+  }
+
+  async function createBoardWithCard(
+    title: string,
+    prefix: string,
+  ): Promise<{ boardId: string; cardId: string }> {
+    const board = await server()
+      .post("/api/v1/boards")
+      .set(auth(owner.token))
+      .send({ title })
+      .expect(201);
+    const targetBoardId = board.body.id as string;
+    const columnId = `col-${prefix}-${randomUUID().slice(0, 8)}`;
+    const targetCardId = `card-${prefix}-${randomUUID().slice(0, 8)}`;
+    await commandOn(targetBoardId, owner, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    await commandOn(targetBoardId, owner, {
+      type: "ADD_CARD",
+      newCardId: targetCardId,
+      columnId,
+      title: `Card ${prefix}`,
+    });
+    return { boardId: targetBoardId, cardId: targetCardId };
   }
 
   async function createComment(
@@ -326,6 +373,30 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
       .expect(201);
     await revisions(commentId, pat.body.token as string).expect(200);
 
+    const readOnlyPat = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(owner.token))
+      .send({ name: "reader-ro", readOnly: true })
+      .expect(201);
+    await revisions(commentId, readOnlyPat.body.token as string).expect(200);
+
+    // A board-scoped PAT is refused on another board before membership.
+    const otherBoard = await createBoardWithCard("Scoped PAT target", "scoped");
+    const scopedPat = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(owner.token))
+      .send({ name: "scoped", boardId: otherBoard.boardId })
+      .expect(201);
+    const foreignBoard = await revisions(
+      commentId,
+      scopedPat.body.token as string,
+    );
+    expect(foreignBoard.status).toBe(403);
+    expect(foreignBoard.body).toMatchObject({
+      code: "scope_denied",
+      reason: "board_scope",
+    });
+
     // The history view does not widen the write role: a VIEWER still cannot
     // edit the comment.
     await editComment(commentId, viewer.token, "Viewer edit").expect(403);
@@ -375,11 +446,29 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
     });
     await revisions(parentColumnComment, owner.token).expect(404);
     await revisions(parentColumnComment, outsider.token).expect(404);
+    await adminRevisions(parentColumnComment).expect(404);
     // Give the shared column back before the rest of the suite.
     await prisma.column.update({
       where: { id: "col-revisions" },
       data: { deletedAt: null },
     });
+  });
+
+  it("answers 404 when the board parent is deleted, for members and masters", async () => {
+    const doomed = await createBoardWithCard("Deleted board", "deleted-board");
+    const doomedComment = await createComment(
+      doomed.cardId,
+      owner.token,
+      "On a deleted board",
+    );
+    await prisma.board.update({
+      where: { id: doomed.boardId },
+      data: { deletedAt: new Date() },
+    });
+
+    await revisions(doomedComment, owner.token).expect(404);
+    await revisions(doomedComment, outsider.token).expect(404);
+    await adminRevisions(doomedComment).expect(404);
   });
 
   it("paginates with a bound opaque cursor and validates limit and cursor", async () => {
@@ -427,7 +516,17 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
       ),
     ).toEqual([2, 1]);
 
-    for (const limit of ["0", "101", "-1", "1.5", "ten"]) {
+    for (const limit of [
+      "0",
+      "101",
+      "-1",
+      "1.5",
+      "ten",
+      "1e2",
+      "+20",
+      " 20",
+      "0x14",
+    ]) {
       await revisions(paged, member.token).query({ limit }).expect(400);
     }
     await revisions(paged, member.token)
@@ -455,6 +554,48 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
       .expect(400);
   });
 
+  it("keeps pages stable when an edit lands between them", async () => {
+    const between = await seedChain({
+      targetCardId: await newCard("between-pages"),
+      revisions: 4,
+    });
+
+    const first = await revisions(between, member.token)
+      .query({ limit: 2 })
+      .expect(200);
+    expect(
+      first.body.items.map(
+        (item: { revisionNumber: number }) => item.revisionNumber,
+      ),
+    ).toEqual([4, 3]);
+    expect(typeof first.body.nextCursor).toBe("string");
+
+    // A new revision lands after page one. The cursor is a number boundary,
+    // so it stays below the new head instead of duplicating or skipping.
+    await editComment(between, owner.token, "Seed text 4 plus").expect(200);
+
+    const second = await revisions(between, member.token)
+      .query({ limit: 2, cursor: first.body.nextCursor })
+      .expect(200);
+    expect(
+      second.body.items.map(
+        (item: { revisionNumber: number }) => item.revisionNumber,
+      ),
+    ).toEqual([2, 1]);
+    expect(second.body.nextCursor).toBeNull();
+
+    const head = await revisions(between, member.token)
+      .query({ limit: 1 })
+      .expect(200);
+    expect(head.body.items[0].revisionNumber).toBe(5);
+
+    const paged = [...first.body.items, ...second.body.items].map(
+      (item: { revisionNumber: number }) => item.revisionNumber,
+    );
+    expect(paged).toEqual([4, 3, 2, 1]);
+    expect(new Set(paged).size).toBe(paged.length);
+  });
+
   it("orders by revision number when timestamps are equal", async () => {
     const equal = await seedChain({
       targetCardId: await newCard("equal-time"),
@@ -470,6 +611,15 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
   });
 
   it("carries the reason on every page, including an empty history", async () => {
+    const complete = await createComment(cardId, owner.token, "Never edited");
+    const completePage = await revisions(complete, member.token).expect(200);
+    expect(completePage.body).toEqual({
+      items: [],
+      nextCursor: null,
+      historyIncomplete: false,
+      historyIncompleteReason: null,
+    });
+
     const legacy = await seedChain({
       targetCardId: await newCard("legacy"),
       revisions: 0,
@@ -527,7 +677,7 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
     expect(row.historyIncompleteReason).toBeNull();
   });
 
-  it("uses the current public editor name and null for a null or unnamed editor", async () => {
+  it("uses the current public editor name and null for a null, unnamed or blank editor", async () => {
     await prisma.user.update({
       where: { id: owner.id },
       data: { displayName: "Owner Renamed" },
@@ -559,6 +709,17 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
     );
     expect(unnamedPage.body.items[0]).toMatchObject({
       editorId: unnamed.id,
+      editorName: null,
+    });
+
+    const blankEditor = await seedChain({
+      targetCardId: await newCard("blank-editor"),
+      revisions: 1,
+      editorId: blank.id,
+    });
+    const blankPage = await revisions(blankEditor, member.token).expect(200);
+    expect(blankPage.body.items[0]).toMatchObject({
+      editorId: blank.id,
       editorName: null,
     });
   });
@@ -644,6 +805,35 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
       .send({ mode: "snapshot", includeComments: true })
       .expect(201);
 
+    // Poison the frozen payload directly: the public reader must project an
+    // allowlist even if a stored snapshot grew extra fields.
+    const snapshotComment =
+      await prisma.boardShareSnapshotComment.findFirstOrThrow({
+        where: { shareId: snapshot.body.id as string, cardId },
+      });
+    await prisma.boardShareSnapshotComment.updateMany({
+      where: { shareId: snapshot.body.id as string, id: snapshotComment.id },
+      data: {
+        payload: {
+          ...(snapshotComment.payload as Record<string, unknown>),
+          revisionId: "poison-revision",
+          revisionNumber: 99,
+          beforeText: "poison-before",
+          afterText: "poison-after",
+          historyIncomplete: true,
+          historyIncompleteReason: "writer_gap",
+          lastRevisionNumber: 99,
+          historyCutoverAt: "poison-cutover",
+          historyVerifiedEditedAt: "poison-verified-at",
+          historyVerifiedRevisionNumber: 99,
+          apiTokenId: "poison-token",
+          agentSessionId: "poison-session",
+          agentName: "poison-agent",
+          authorEmail: "poison@example.com",
+        },
+      },
+    });
+
     for (const share of [live.body, snapshot.body]) {
       const page = await server()
         .get(`/api/v1/share/${share.token as string}/cards/${cardId}/comments`)
@@ -666,22 +856,26 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
         /revisionNumber|historyIncomplete|beforeText|historyCutoverAt/,
       );
 
-      // A share token is not a user credential and does not open the
-      // revisions route.
+      // A share token is not a user credential and opens neither revisions
+      // route, member or master.
       await server()
         .get(`/api/v1/comments/${commentId}/revisions`)
         .set("Authorization", `Bearer ${share.token as string}`)
         .expect(401);
+      await server()
+        .get(`/api/v1/admin/comments/${commentId}/revisions`)
+        .set("Authorization", `Bearer ${share.token as string}`)
+        .expect(401);
     }
 
-    // The persisted snapshot comment projection has the same allowlist.
-    const rows = await prisma.boardShareSnapshotComment.findMany({
-      where: { shareId: snapshot.body.id as string },
-      select: { payload: true },
-    });
-    expect(rows.length).toBeGreaterThan(0);
-    expect(JSON.stringify(rows)).not.toMatch(
-      /revisionNumber|historyIncomplete|beforeText|historyCutoverAt/,
+    // The projected response dropped every poisoned field.
+    const snapshotPage = await server()
+      .get(
+        `/api/v1/share/${snapshot.body.token as string}/cards/${cardId}/comments`,
+      )
+      .expect(200);
+    expect(JSON.stringify(snapshotPage.body)).not.toMatch(
+      /poison|revisionNumber|historyIncomplete|beforeText|historyCutoverAt/,
     );
   });
 

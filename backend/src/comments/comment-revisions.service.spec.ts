@@ -19,11 +19,14 @@ describe("comment revision pagination", () => {
     expect(parseCommentRevisionPage("c1", undefined, "100").limit).toBe(100);
   });
 
-  it.each(["0", "101", "-1", "1.5", "ten"])("rejects limit %s", (limit) => {
-    expect(() => parseCommentRevisionPage("c1", undefined, limit)).toThrow(
-      "limit must be an integer 1…100",
-    );
-  });
+  it.each(["0", "101", "-1", "1.5", "ten", "1e2", "+20", " 20", "0x14"])(
+    "rejects limit %s",
+    (limit) => {
+      expect(() => parseCommentRevisionPage("c1", undefined, limit)).toThrow(
+        "limit must be an integer 1…100",
+      );
+    },
+  );
 
   it("round-trips the comment id and last revision number", () => {
     const cursor = encodeCommentRevisionCursor("comment-1", 42);

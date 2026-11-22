@@ -111,8 +111,9 @@ export class CommentRevisionsService {
             createdAt: row.createdAt.getTime(),
             editorId: row.editorId,
             // The current public display name, never a snapshot: a renamed
-            // editor is shown under the name they use today.
-            editorName: row.editor?.displayName ?? null,
+            // editor is shown under the name they use today. A blank name is
+            // indistinguishable from an unavailable editor on the wire.
+            editorName: row.editor?.displayName?.trim() || null,
             actorType: toActorType(row.actorType),
             agentName: row.agentName,
             cause: row.cause as CommentRevisionCause,
@@ -188,8 +189,15 @@ function parseRevisionCursor(raw: string, commentId: string): RevisionCursor {
 
 function parseRevisionLimit(raw: string | undefined): number {
   if (raw === undefined || raw === "") return DEFAULT_REVISION_LIMIT;
+  // Digits only: `Number()` alone would accept `1e2`, `+20`, ` 20` and
+  // `0x14`, none of which are the documented integer spelling.
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new BadRequestException(
+      `limit must be an integer 1…${MAX_REVISION_LIMIT}`,
+    );
+  }
   const limit = Number(raw);
-  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_REVISION_LIMIT) {
+  if (limit < 1 || limit > MAX_REVISION_LIMIT) {
     throw new BadRequestException(
       `limit must be an integer 1…${MAX_REVISION_LIMIT}`,
     );
