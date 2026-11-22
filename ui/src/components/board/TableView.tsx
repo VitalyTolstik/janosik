@@ -119,6 +119,12 @@ interface TableViewProps {
   onCardClick: (cardId: string) => void;
   /** VIEWER mode (TASK-35): inline editors and destructive actions off. */
   readOnly?: boolean;
+  /**
+   * Publishes the ids in the table's current visual order (sort + filter),
+   * so bulk Shift ranges and select-all target the rows the user sees, not
+   * the underlying board order.
+   */
+  onVisibleOrderChange?: (cardIds: readonly string[]) => void;
 }
 
 /**
@@ -136,6 +142,7 @@ export function TableView({
   highlight,
   onCardClick,
   readOnly = false,
+  onVisibleOrderChange,
 }: TableViewProps) {
   const {
     board,
@@ -337,6 +344,19 @@ export function TableView({
       );
     return [...rows].sort(cmp);
   }, [board, rows, sort, lang, assigneeNameById]);
+
+  // The selection provider lives above the view (BoardSection) and cannot
+  // see this visual sort; publish the row order whenever it changes. The key
+  // keeps a title edit from re-publishing an identical order.
+  const visibleOrderKey = sortedRows.map((row) => row.card.id).join("\u0000");
+  const publishedOrderRef = useRef("");
+  useEffect(() => {
+    if (publishedOrderRef.current === visibleOrderKey) return;
+    publishedOrderRef.current = visibleOrderKey;
+    onVisibleOrderChange?.(
+      visibleOrderKey === "" ? [] : visibleOrderKey.split("\u0000"),
+    );
+  }, [onVisibleOrderChange, visibleOrderKey]);
 
   // Row virtualizer (TASK-139): every row is a real <tr>, so the window keeps
   // the table's own column layout and only mounts the rows around the
@@ -826,10 +846,7 @@ function TableRowBody({
             // Checkbox mode turns the row into the selection target; Shift
             // extends the range instead of opening a new tab, while Ctrl/Cmd
             // keeps the browser's new-tab gesture.
-            if (
-              onToggleSelect &&
-              (selectionMode || (event.shiftKey && !event.ctrlKey))
-            ) {
+            if (onToggleSelect && selectionMode) {
               event.preventDefault();
               onToggleSelect(card.id, event.shiftKey);
               return;
@@ -886,14 +903,19 @@ function TableRowBody({
           <td
             className={cn(
               "relative min-w-0 px-2 py-2 sm:px-3",
-              onToggleSelect && (selectionMode || selected) && "pl-8 sm:pl-9",
+              onToggleSelect &&
+                (selectionMode || selected) &&
+                "pl-8 max-lg:pl-12 sm:pl-9",
             )}
           >
             {onToggleSelect && (selectionMode || selected) ? (
               <span
                 data-testid="table-select"
-                className="absolute left-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center"
-                onClick={(event) => event.stopPropagation()}
+                className="absolute left-1 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center max-lg:h-11 max-lg:w-11"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleSelect(card.id, event.shiftKey);
+                }}
                 onPointerDown={(event) => event.stopPropagation()}
               >
                 <Checkbox

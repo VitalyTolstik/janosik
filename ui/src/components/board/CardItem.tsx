@@ -252,10 +252,7 @@ function CardItemView({
                 // Checkbox mode turns the whole card into the selection
                 // target; Shift extends the range instead of opening a new
                 // tab, while Ctrl/Cmd keeps the browser's new-tab gesture.
-                if (
-                  onToggleSelect &&
-                  (selectionMode || (event.shiftKey && !event.ctrlKey))
-                ) {
+                if (onToggleSelect && selectionMode) {
                   event.preventDefault();
                   onToggleSelect(card.id, event.shiftKey);
                   return;
@@ -307,7 +304,7 @@ function CardItemView({
           compact
             ? "flex h-12 items-center gap-2 px-3"
             : "flex h-[92px] flex-col gap-1 px-3 py-2",
-          selectionMode && "pl-9",
+          (selectionMode || selected) && "pl-9 max-lg:pl-12",
           selected &&
             "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/40",
           entering && "animate-card-in",
@@ -319,10 +316,14 @@ function CardItemView({
           <span
             data-testid="card-select"
             className={cn(
-              "absolute left-1.5 z-10 flex h-7 w-7 items-center justify-center",
+              "absolute left-1 z-10 flex h-7 w-7 items-center justify-center max-lg:h-11 max-lg:w-11",
               compact ? "top-1/2 -translate-y-1/2" : "top-1.5",
             )}
-            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSelect(card.id, event.shiftKey);
+            }}
           >
             <Checkbox
               checked={selected}

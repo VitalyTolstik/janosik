@@ -52,24 +52,27 @@ Inside the table you can:
 
 ## Bulk actions
 
-Board and table views support multi-select for ADMIN and MEMBER. A VIEWER, an
-archived board and the calendar/watch views stay read-only.
+Board and table views support multi-select for ADMIN and MEMBER. Bulk selection
+is unavailable to a VIEWER, on an archived board, and in the calendar/watch
+views; those views otherwise keep their existing behaviour.
 
 - Click **Select** next to the view switcher, then click cards to toggle them.
   The checkbox on a card or table row does the same, and Shift-click extends a
-  range across columns. `X` selects the card under the `J`/`K` keyboard cursor;
-  `Ctrl/⌘+A` selects all visible cards.
+  range across columns. In the table the range follows the visible sort order,
+  not the underlying board order. `X` selects the card under the `J`/`K`
+  keyboard cursor; `Ctrl/⌘+A` selects all visible cards.
 - The bar at the bottom shows the count and the available actions: move to a
   column, add or remove a label, assign a member, archive or delete. Archive
   and delete ask for confirmation.
 - One run changes at most **100** visible cards. A filter narrows the set;
   archived and deleted cards drop out of the selection automatically.
 - Moves respect the board workflow, its definition-of-done conditions, WIP
-  limits and the cards-per-column cap. If one card is refused, the other cards
-  still change and the bar lists the failed card with the reason.
+  limits and the cards-per-column cap; labels respect the per-card label cap.
+  If some cards are refused, the others still change and the bar lists every
+  failed card with its reason in a scrollable summary.
 - Commands are applied one card at a time, so undo also works one card at a
-  time. `Cancel` stops a run after the current card; `Clear selection` exits
-  the mode.
+  time. `Cancel` stops a run after the current card and keeps the failed and
+  never-processed cards selected; `Clear selection` exits the mode.
 
 ## Watch
 

@@ -101,6 +101,7 @@ function SortableCardView({
       // invalid on a group (TASK-156); a title gives the group its name.
       aria-pressed={undefined}
       aria-label={card.title}
+      data-card-selected={selected || undefined}
       onKeyDown={(event) => {
         // dnd-kit's keyboard activator (Space) first; Enter on the focused
         // card itself opens it — never a drag (a11y). Keys typed into the

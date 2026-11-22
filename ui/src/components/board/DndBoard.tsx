@@ -653,6 +653,7 @@ export function DndBoard({
         !readOnly
       ) {
         event.preventDefault();
+        if (!selection.mode) selection.setMode(true);
         selection.toggle(focusedCardId, event.shiftKey);
       } else if ((code === "KeyE" || key === "Enter") && focusedCardId) {
         // Enter belongs to the focused control (a card's own keyboard

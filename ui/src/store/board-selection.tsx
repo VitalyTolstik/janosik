@@ -90,6 +90,10 @@ export function CardSelectionProvider({
   const toast = useToast();
   const [mode, setModeState] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Synchronous mirror for rapid handler loops (select-all + range): a
+  // functional updater cannot show a toast when the cap is reached without
+  // side effects inside the updater.
+  const selectedRef = useRef<string[]>([]);
   // Range anchor for shift-click. A ref: it never affects rendering.
   const anchorRef = useRef<string | null>(null);
   const boardIdRef = useRef(boardId);
@@ -105,10 +109,14 @@ export function CardSelectionProvider({
   );
   const orderSet = useMemo(() => new Set(stableOrder), [stableOrder]);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- selection is
+     transient UI state: a board switch or a surface turning read-only must
+     discard it synchronously with the render that changed the context. */
   useEffect(() => {
     if (boardIdRef.current !== boardId) {
       boardIdRef.current = boardId;
       anchorRef.current = null;
+      selectedRef.current = [];
       setSelectedIds([]);
       setModeState(false);
     }
@@ -117,40 +125,58 @@ export function CardSelectionProvider({
   useEffect(() => {
     if (!enabled) {
       anchorRef.current = null;
+      selectedRef.current = [];
       setModeState(false);
       setSelectedIds([]);
       return;
     }
-    setSelectedIds((previous) => {
-      const next = previous.filter((id) => orderSet.has(id));
-      return next.length === previous.length ? previous : next;
-    });
+    const pruned = selectedRef.current.filter((id) => orderSet.has(id));
+    if (pruned.length !== selectedRef.current.length) {
+      selectedRef.current = pruned;
+      setSelectedIds(pruned);
+    }
     if (anchorRef.current !== null && !orderSet.has(anchorRef.current)) {
       anchorRef.current = null;
     }
   }, [enabled, orderSet]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const commitSelected = useCallback((next: string[]) => {
+    selectedRef.current = next;
+    setSelectedIds(next);
+  }, []);
+
+  useEffect(() => {
+    selectedRef.current = selectedIds;
+  }, [selectedIds]);
 
   const setSelected = useCallback(
     (ids: readonly string[]) => {
       anchorRef.current = null;
-      setSelectedIds(normalize(ids, orderSet));
+      commitSelected(normalize(ids, orderSet));
     },
-    [orderSet],
+    [commitSelected, orderSet],
   );
 
   const clear = useCallback(() => {
     anchorRef.current = null;
-    setSelectedIds([]);
+    commitSelected([]);
     setModeState(false);
-  }, []);
+  }, [commitSelected]);
 
   const setMode = useCallback(
     (next: boolean) => {
       if (!enabled) return;
       setModeState(next);
-      if (!next) anchorRef.current = null;
+      if (!next) {
+        // The toggle and the bar say the same thing: pressed = a selection
+        // may exist. Turning Select off therefore clears it instead of
+        // leaving an unpressed toggle above a live bulk bar.
+        anchorRef.current = null;
+        commitSelected([]);
+      }
     },
-    [enabled],
+    [commitSelected, enabled],
   );
 
   const toggleMode = useCallback(() => setMode(!mode), [mode, setMode]);
@@ -167,31 +193,41 @@ export function CardSelectionProvider({
             Math.min(from, to),
             Math.max(from, to) + 1,
           );
-          setSelectedIds((previous) => {
-            const next = new Set(previous);
-            for (const id of range) {
-              if (next.size >= CARD_SELECTION_MAX) break;
-              next.add(id);
+          const current = selectedRef.current;
+          const next = new Set(current);
+          let capped = false;
+          for (const id of range) {
+            if (next.has(id)) continue;
+            if (next.size >= CARD_SELECTION_MAX) {
+              capped = true;
+              break;
             }
-            return [...next];
-          });
+            next.add(id);
+          }
+          if (capped) {
+            toast.error(t("bulk.capReached", { count: CARD_SELECTION_MAX }));
+          }
+          if (next.size !== current.length) {
+            commitSelected([...next]);
+          }
           return;
         }
       }
 
+      const current = selectedRef.current;
+      if (current.includes(cardId)) {
+        anchorRef.current = cardId;
+        commitSelected(current.filter((id) => id !== cardId));
+        return;
+      }
+      if (current.length >= CARD_SELECTION_MAX) {
+        toast.error(t("bulk.capReached", { count: CARD_SELECTION_MAX }));
+        return;
+      }
       anchorRef.current = cardId;
-      setSelectedIds((previous) => {
-        if (previous.includes(cardId)) {
-          return previous.filter((id) => id !== cardId);
-        }
-        if (previous.length >= CARD_SELECTION_MAX) {
-          toast.error(t("bulk.capReached", { count: CARD_SELECTION_MAX }));
-          return previous;
-        }
-        return [...previous, cardId];
-      });
+      commitSelected([...current, cardId]);
     },
-    [enabled, stableOrder, orderSet, t, toast],
+    [commitSelected, enabled, stableOrder, orderSet, t, toast],
   );
 
   const selectAllVisible = useCallback(() => {
@@ -202,7 +238,7 @@ export function CardSelectionProvider({
     }
     const next = stableOrder.slice(0, CARD_SELECTION_MAX);
     if (stableOrder.length > CARD_SELECTION_MAX) {
-      toast.info(t("bulk.capReached", { count: CARD_SELECTION_MAX }));
+      toast.error(t("bulk.capReached", { count: CARD_SELECTION_MAX }));
     }
     setSelected(next);
   }, [enabled, stableOrder, setSelected, t, toast]);

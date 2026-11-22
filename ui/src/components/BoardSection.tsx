@@ -178,6 +178,34 @@ export function BoardSection() {
           ),
     [board, filteredIds],
   );
+  // The table publishes its sorted/filtered row order; Shift ranges and
+  // "select all visible" must use exactly that order. Keyed by board so a
+  // stale table order never leaks into another board.
+  const [tableOrder, setTableOrder] = useState<{
+    boardId: string;
+    ids: readonly string[];
+  } | null>(null);
+  const activeBoardId = board?.id;
+  const handleTableOrder = useCallback(
+    (ids: readonly string[]) => {
+      if (activeBoardId === undefined) return;
+      setTableOrder((previous) => {
+        if (
+          previous?.boardId === activeBoardId &&
+          previous.ids.length === ids.length &&
+          previous.ids.every((id, index) => id === ids[index])
+        ) {
+          return previous;
+        }
+        return { boardId: activeBoardId, ids };
+      });
+    },
+    [activeBoardId],
+  );
+  const selectionOrder =
+    view === "table" && tableOrder !== null && tableOrder.boardId === board?.id
+      ? tableOrder.ids
+      : visibleCardIds;
 
   // The open card mirrors the `?card=` URL param (shareable card links and
   // the global-search "open the card itself" behaviour): navigating with the
@@ -290,7 +318,7 @@ export function BoardSection() {
   return (
     <CardSelectionProvider
       boardId={board.id}
-      order={visibleCardIds}
+      order={selectionOrder}
       enabled={selectionEnabled}
     >
       <main
@@ -375,6 +403,7 @@ export function BoardSection() {
                 highlight={filter.query}
                 onCardClick={handleCardClick}
                 readOnly={readOnly}
+                onVisibleOrderChange={handleTableOrder}
               />
             )}
           </div>

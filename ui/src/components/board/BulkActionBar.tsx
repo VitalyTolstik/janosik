@@ -1,9 +1,7 @@
 import {
   Archive,
-  Check,
   ListChecks,
   LoaderCircle,
-  Minus,
   MoveRight,
   Tag,
   Trash2,
@@ -16,6 +14,7 @@ import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -55,6 +54,7 @@ interface Failure {
 }
 
 interface RunResult {
+  ids: readonly string[];
   failures: Failure[];
   changed: number;
   done: number;
@@ -124,9 +124,14 @@ export function BulkActionBar() {
   } | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [liveMessage, setLiveMessage] = useState("");
+  const [countAnnouncement, setCountAnnouncement] = useState("");
 
   const cancelRef = useRef(false);
   const aliveRef = useRef(true);
+  const barRef = useRef<HTMLElement | null>(null);
+  const wasVisibleRef = useRef(false);
+  const boardIdRef = useRef(board?.id);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -134,28 +139,91 @@ export function BulkActionBar() {
     };
   }, []);
 
-  const visible = selection.enabled && (selection.mode || selection.count > 0);
+  const visible =
+    selection.enabled &&
+    (busy !== null || selection.mode || selection.count > 0);
   const role = board ? roleOf(board.id) : undefined;
   const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
+
+  const requestCancel = useCallback(() => {
+    if (busy === null) return false;
+    cancelRef.current = true;
+    setCancelling(true);
+    return true;
+  }, [busy]);
+
+  // Focus moves with the mode: opening it lands on the bar instead of making
+  // a keyboard user tab through every card; closing it returns to the
+  // Select toggle (or the board main for a read-only fallback).
+  const focusToggleOrMain = useCallback(() => {
+    const toggle = document.querySelector<HTMLElement>(
+      '[data-testid="bulk-select-toggle"]',
+    );
+    if (toggle !== null) {
+      toggle.focus();
+      return;
+    }
+    document.querySelector<HTMLElement>('[data-testid="board-main"]')?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (visible && !wasVisibleRef.current) {
+      barRef.current?.focus();
+    } else if (!visible && wasVisibleRef.current) {
+      focusToggleOrMain();
+    }
+    wasVisibleRef.current = visible;
+  }, [focusToggleOrMain, visible]);
+
+  // Stale failure/summary text must never leak into the next selection or
+  // another board. A cancelled run keeps its selection, so it is not reset.
+  useEffect(() => {
+    if (selection.count === 0 || board?.id !== boardIdRef.current) {
+      setFailures([]);
+      setLastRun(null);
+    }
+    boardIdRef.current = board?.id;
+  }, [board?.id, selection.count]);
+
+  // Announce the selection count once it settles; a checkbox storm must not
+  // turn into a stream of live-region messages.
+  useEffect(() => {
+    if (!visible || busy !== null) return;
+    const timer = window.setTimeout(() => {
+      setCountAnnouncement(t("bulk.selected", { count: selection.count }));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [busy, selection.count, t, visible]);
 
   useEffect(() => {
     if (!visible || readOnly) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
       if (isEditableTarget(event.target) || isOverlayOpen()) return;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
-        event.preventDefault();
-        selection.selectAllVisible();
+      if (event.key === "Escape") {
+        if (busy !== null) {
+          event.preventDefault();
+          requestCancel();
+          return;
+        }
+        if (selection.count > 0 || selection.mode) {
+          event.preventDefault();
+          selection.clear();
+        }
         return;
       }
-      if (event.key === "Escape" && (selection.count > 0 || selection.mode)) {
+      if (
+        busy === null &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "a"
+      ) {
         event.preventDefault();
-        selection.clear();
+        selection.selectAllVisible();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [readOnly, selection, visible]);
+  }, [busy, readOnly, requestCancel, selection, visible]);
 
   const runAction = useCallback(
     async (action: BoardAction): Promise<boolean> => {
@@ -175,6 +243,7 @@ export function BulkActionBar() {
       setFailures([]);
       setLastRun(null);
       setBusy({ done: 0, total: ids.length });
+      setLiveMessage(t("bulk.started", { count: ids.length }));
       const cardFailures: Failure[] = [];
       let changed = 0;
       let done = 0;
@@ -192,7 +261,7 @@ export function BulkActionBar() {
           cardFailures.push({
             cardId,
             title,
-            ...(result.reason !== undefined ? { reason: result.reason } : {}),
+            reason: result.reason ?? t("bulk.rejected"),
           });
         } else if (result.changed !== false) {
           changed += 1;
@@ -201,12 +270,15 @@ export function BulkActionBar() {
         if (aliveRef.current) setBusy({ done, total: ids.length });
       }
 
+      const cancelled = cancelRef.current && done < ids.length;
+      cancelRef.current = false;
       const result: RunResult = {
+        ids,
         failures: cardFailures,
         changed,
         done,
         total: ids.length,
-        cancelled: cancelRef.current,
+        cancelled,
       };
       if (aliveRef.current) {
         setBusy(null);
@@ -215,7 +287,7 @@ export function BulkActionBar() {
       }
       return result;
     },
-    [board],
+    [board, t],
   );
 
   const report = useCallback(
@@ -233,7 +305,30 @@ export function BulkActionBar() {
         total: result.total,
         cancelled: result.cancelled,
       });
-      if (destructive) {
+      setLiveMessage(
+        result.cancelled
+          ? t("bulk.cancelled", { done: result.done, total: result.total })
+          : `${t("bulk.changedOf", {
+              changed: result.changed,
+              total: result.total,
+            })}${
+              result.failures.length > 0
+                ? ` ${tp("bulk.failed", result.failures.length)}`
+                : ""
+            }`,
+      );
+      if (result.cancelled) {
+        // Cancel keeps both the refused cards and everything the run never
+        // reached; successful earlier cards are not silently re-included.
+        const failed = new Set(
+          result.failures.map((failure) => failure.cardId),
+        );
+        selection.replace(
+          result.ids.filter(
+            (id, index) => index >= result.done || failed.has(id),
+          ),
+        );
+      } else if (destructive) {
         if (result.failures.length === 0) selection.clear();
         else
           selection.replace(result.failures.map((failure) => failure.cardId));
@@ -381,6 +476,14 @@ export function BulkActionBar() {
         if (card.labelIds.includes(label.id) === on) {
           return { ok: true, changed: false };
         }
+        if (on && card.labelIds.length >= LIMITS.labelsPerCard) {
+          return {
+            ok: false,
+            reason: t("limits.maxLabelsOnCard", {
+              limit: LIMITS.labelsPerCard,
+            }),
+          };
+        }
         const ok = await runAction({
           type: "SET_CARD_LABEL",
           cardId,
@@ -429,6 +532,11 @@ export function BulkActionBar() {
 
   const labels = board?.labels ?? [];
   const selectedIds = new Set(selection.selectedIds);
+  const selectedCards = selection.selectedIds
+    .map((id) => board?.cards[id])
+    .filter((card) => card !== undefined);
+  const allUnassigned =
+    selectedCards.length > 0 && selectedCards.every((card) => !card.assigneeId);
   const allSelectedIn = (column: Column) =>
     selectedIds.size > 0 &&
     column.cardIds.filter((id) => selectedIds.has(id)).length ===
@@ -459,12 +567,30 @@ export function BulkActionBar() {
 
   return (
     <section
+      ref={barRef}
+      tabIndex={-1}
       role="region"
       aria-label={t("bulk.region")}
       aria-busy={busy !== null}
       data-testid="bulk-bar"
-      className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/95 p-2 shadow-lg backdrop-blur-sm sm:p-3"
+      className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/95 p-2 shadow-lg outline-none backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-ring sm:p-3"
     >
+      <span
+        role="status"
+        aria-live="polite"
+        data-testid="bulk-count-announcement"
+        className="sr-only"
+      >
+        {countAnnouncement}
+      </span>
+      <span
+        role="status"
+        aria-live="polite"
+        data-testid="bulk-phase-announcement"
+        className="sr-only"
+      >
+        {liveMessage}
+      </span>
       <div className="flex flex-wrap items-center gap-2">
         <span
           data-testid="bulk-count"
@@ -479,6 +605,11 @@ export function BulkActionBar() {
           size="sm"
           data-testid="bulk-select-all"
           className={ACTION_BUTTON}
+          title={
+            selection.visibleIds.length > selection.cap
+              ? t("bulk.cap", { count: selection.cap })
+              : undefined
+          }
           disabled={
             busy !== null ||
             selection.visibleIds.length === 0 ||
@@ -491,10 +622,6 @@ export function BulkActionBar() {
             ? t("bulk.selectFirst", { count: selection.cap })
             : t("bulk.selectAll")}
         </Button>
-        <span className="text-xs text-muted-foreground">
-          {t("bulk.cap", { count: selection.cap })}
-        </span>
-
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -559,29 +686,22 @@ export function BulkActionBar() {
                 </DropdownMenuItem>
               ) : (
                 labels.map((label) => {
-                  const selectedCards = [...selectedIds].map(
-                    (id) => board.cards[id],
-                  );
                   const allHave =
                     selectedCards.length > 0 &&
                     selectedCards.every((card) =>
-                      card?.labelIds.includes(label.id),
+                      card.labelIds.includes(label.id),
                     );
                   const someHave = selectedCards.some((card) =>
-                    card?.labelIds.includes(label.id),
+                    card.labelIds.includes(label.id),
                   );
                   return (
-                    <DropdownMenuItem
+                    <DropdownMenuCheckboxItem
                       key={label.id}
-                      onSelect={() => void applyLabel(label)}
+                      checked={
+                        allHave ? true : someHave ? "indeterminate" : false
+                      }
+                      onCheckedChange={() => void applyLabel(label)}
                     >
-                      <span className="flex h-4 w-4 items-center justify-center">
-                        {allHave ? (
-                          <Check className="h-3.5 w-3.5" aria-hidden />
-                        ) : someHave ? (
-                          <Minus className="h-3.5 w-3.5" aria-hidden />
-                        ) : null}
-                      </span>
                       <span
                         aria-hidden
                         className={cn(
@@ -592,7 +712,14 @@ export function BulkActionBar() {
                       <span className="min-w-0 flex-1 truncate">
                         {label.name}
                       </span>
-                    </DropdownMenuItem>
+                      <span className="sr-only">
+                        {allHave
+                          ? t("bulk.applied")
+                          : someHave
+                            ? t("bulk.partiallyApplied")
+                            : t("bulk.notApplied")}
+                      </span>
+                    </DropdownMenuCheckboxItem>
                   );
                 })
               )}
@@ -619,28 +746,36 @@ export function BulkActionBar() {
                 className="max-h-72 overflow-y-auto"
               >
                 <DropdownMenuLabel>{t("bulk.assignAction")}</DropdownMenuLabel>
-                <DropdownMenuItem onSelect={() => void applyAssignee(null)}>
-                  <span className="h-4 w-4" aria-hidden />
-                  {t("bulk.unassign")}
-                </DropdownMenuItem>
+                <DropdownMenuCheckboxItem
+                  checked={allUnassigned}
+                  onCheckedChange={() => void applyAssignee(null)}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {t("bulk.unassign")}
+                  </span>
+                  <span className="sr-only">
+                    {allUnassigned ? t("bulk.applied") : t("bulk.notApplied")}
+                  </span>
+                </DropdownMenuCheckboxItem>
                 <DropdownMenuSeparator />
                 {members.map((member) => {
                   const name = userLabel(member.displayName, member.email);
-                  const allAssigned = [...selectedIds].every(
-                    (id) => board.cards[id]?.assigneeId === member.userId,
-                  );
+                  const allAssigned =
+                    selectedCards.length > 0 &&
+                    selectedCards.every(
+                      (card) => card.assigneeId === member.userId,
+                    );
                   return (
-                    <DropdownMenuItem
+                    <DropdownMenuCheckboxItem
                       key={member.userId}
-                      onSelect={() => void applyAssignee(member.userId)}
+                      checked={allAssigned}
+                      onCheckedChange={() => void applyAssignee(member.userId)}
                     >
-                      <span className="flex h-4 w-4 items-center justify-center">
-                        {allAssigned ? (
-                          <Check className="h-3.5 w-3.5" aria-hidden />
-                        ) : null}
-                      </span>
                       <span className="min-w-0 flex-1 truncate">{name}</span>
-                    </DropdownMenuItem>
+                      <span className="sr-only">
+                        {allAssigned ? t("bulk.applied") : t("bulk.notApplied")}
+                      </span>
+                    </DropdownMenuCheckboxItem>
                   );
                 })}
               </DropdownMenuContent>
@@ -678,11 +813,7 @@ export function BulkActionBar() {
             data-testid="bulk-clear"
             className={cn(ACTION_BUTTON, "gap-1.5")}
             onClick={() => {
-              if (busy !== null) {
-                cancelRef.current = true;
-                setCancelling(true);
-                return;
-              }
+              if (requestCancel()) return;
               selection.clear();
             }}
           >
@@ -720,12 +851,7 @@ export function BulkActionBar() {
         </div>
       ) : null}
 
-      <p
-        role="status"
-        aria-live="polite"
-        data-testid="bulk-status"
-        className="text-xs text-muted-foreground"
-      >
+      <p data-testid="bulk-status" className="text-xs text-muted-foreground">
         {busyLabel ?? idleLabel}
         {lastRun !== null && lastRun.changed > 1 ? (
           <span className="ml-1">{t("bulk.undoHint")}</span>
@@ -739,8 +865,8 @@ export function BulkActionBar() {
           className="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-xs text-(--chip-red)"
         >
           <p className="font-semibold">{tp("bulk.failed", failures.length)}</p>
-          <ul className="mt-1 space-y-0.5">
-            {failures.slice(0, 3).map((failure) => (
+          <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto overscroll-contain pr-1">
+            {failures.map((failure) => (
               <li key={failure.cardId} className="break-words">
                 <span className="font-medium">{failure.title}</span>
                 {failure.reason !== undefined ? (
@@ -752,11 +878,6 @@ export function BulkActionBar() {
               </li>
             ))}
           </ul>
-          {failures.length > 3 ? (
-            <p className="mt-1 text-muted-foreground">
-              {t("bulk.moreFailures", { count: failures.length - 3 })}
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -767,6 +888,7 @@ export function BulkActionBar() {
         description={tp("bulk.archiveDescription", selection.count)}
         confirmLabel={t("bulk.archive")}
         onConfirm={() => void archiveSelected()}
+        onClosed={() => barRef.current?.focus()}
       />
       <ConfirmDialog
         open={deleteOpen}
@@ -776,6 +898,7 @@ export function BulkActionBar() {
         confirmLabel={t("bulk.delete")}
         destructive
         onConfirm={() => void deleteSelected()}
+        onClosed={() => barRef.current?.focus()}
       />
     </section>
   );

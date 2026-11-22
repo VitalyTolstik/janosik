@@ -35,6 +35,9 @@ function Probe({ ids }: { ids: string[] }) {
       >
         toggle last
       </button>
+      <button type="button" onClick={selection.selectAllVisible}>
+        select all visible
+      </button>
     </div>
   );
 }
@@ -63,6 +66,22 @@ describe("card selection state", () => {
     fireEvent.click(screen.getByRole("button", { name: "add all" }));
     expect(screen.getByTestId("count")).toHaveTextContent(
       String(CARD_SELECTION_MAX),
+    );
+  });
+
+  it("select-all takes the first visible cards in provider order", () => {
+    const ids = Array.from(
+      { length: CARD_SELECTION_MAX + 5 },
+      (_, i) => `c-${i}`,
+    );
+    render(<Harness order={ids} />);
+    fireEvent.click(screen.getByRole("button", { name: "select all visible" }));
+    expect(screen.getByTestId("count")).toHaveTextContent(
+      String(CARD_SELECTION_MAX),
+    );
+    expect(screen.getByTestId("selected")).toHaveTextContent(`c-0,c-1,`);
+    expect(screen.getByTestId("selected")).not.toHaveTextContent(
+      `c-${CARD_SELECTION_MAX}`,
     );
   });
 

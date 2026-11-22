@@ -42,12 +42,15 @@ export function ShortcutsDialog({
   filter,
   kanban,
   canEdit,
+  selectable,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   filter?: boolean;
   kanban?: boolean;
   canEdit?: boolean;
+  /** Board or table view with bulk selection enabled. */
+  selectable?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -83,11 +86,10 @@ export function ShortcutsDialog({
                 action={t("shortcuts.redo")}
                 keys={[`${mod}⇧Z`, `${mod}Y`]}
               />
-              <ShortcutRow
-                action={t("shortcuts.selectAll")}
-                keys={[`${mod}A`]}
-              />
             </>
+          ) : null}
+          {canEdit && selectable ? (
+            <ShortcutRow action={t("shortcuts.selectAll")} keys={[`${mod}A`]} />
           ) : null}
           {kanban ? (
             <>

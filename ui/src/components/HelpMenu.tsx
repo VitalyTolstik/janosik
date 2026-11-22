@@ -31,10 +31,12 @@ export function HelpMenu({
   filter,
   kanban,
   canEdit,
+  selectable,
 }: {
   filter?: boolean;
   kanban?: boolean;
   canEdit?: boolean;
+  selectable?: boolean;
 }) {
   const { t, lang } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -110,6 +112,7 @@ export function HelpMenu({
         filter={filter}
         kanban={kanban}
         canEdit={canEdit}
+        selectable={selectable}
       />
     </>
   );
