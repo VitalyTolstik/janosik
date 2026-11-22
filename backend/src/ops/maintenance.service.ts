@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { env } from "@/config/env";
 import { ApprovalsService } from "@/approvals/approvals.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -15,8 +15,11 @@ import { OpsSettingsService } from "./ops-settings.service";
 import { AttentionService } from "@/notifications/attention.service";
 import {
   COMMENT_ACTIVITY_TYPES,
+  COMMENT_HISTORY_STATE_SELECT,
   deleteCommentActivitySnapshots,
   lockBoardWrites,
+  markHistoryIncomplete,
+  verifyCommentHistory,
 } from "@/comments/comment-history";
 
 /**
@@ -40,6 +43,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-agent-sessions",
   "sweep-approvals",
   "sweep-reminders",
+  "sweep-comment-history",
   "sweep-activity",
   "sweep-audit",
   "sweep-accounts",
@@ -132,6 +136,8 @@ export class MaintenanceService {
         return this.sweepApprovals();
       case "sweep-reminders":
         return this.sweepReminders();
+      case "sweep-comment-history":
+        return this.sweepCommentHistory();
       case "sweep-activity":
         return this.sweepActivity();
       case "sweep-audit":
@@ -1157,6 +1163,158 @@ export class MaintenanceService {
       where: { dueDate: { lt: cutoff } },
     });
     return result.count;
+  }
+
+  /**
+   * TASK-185.6 §3.5 reconciliation sweep. A writer from an older release can
+   * move `editedAt` (or the text) without appending a revision, so the next
+   * PATCH sees a gap and answers 409. This sweep finds those rows — including
+   * soft-deleted comments and a broken verified pair — marks `writer_gap`,
+   * adopts the current text as the new verified point with a null revision
+   * number and keeps the confirmed revisions and monotonic counter. The next
+   * edit then appends a fresh number from the actual text.
+   *
+   * It also repairs the Activity half: a legacy `details.commentId` that
+   * resolves to the same card and board fills the typed column, and a
+   * post-cutover `comment_updated` whose text is not backed by its own
+   * revision keeps only metadata. Confirmed pre-cutover snapshots stay.
+   *
+   * The board lock keeps a live writer from interleaving the mark and the
+   * adoption. Every pass is idempotent; a row repaired between the SELECT and
+   * the lock is simply skipped.
+   */
+  async sweepCommentHistory(): Promise<number> {
+    let reconciled = 0;
+    for (;;) {
+      const candidates = await this.prisma.$queryRaw<
+        Array<{ id: string; boardId: string }>
+      >(Prisma.sql`
+        SELECT c."id", col."boardId"
+          FROM "Comment" c
+          JOIN "Card" card ON card."id" = c."cardId"
+          JOIN "Column" col ON col."id" = card."columnId"
+          LEFT JOIN "CommentRevision" r
+            ON r."commentId" = c."id"
+           AND r."revisionNumber" = c."historyVerifiedRevisionNumber"
+         WHERE c."editedAt" IS DISTINCT FROM c."historyVerifiedEditedAt"
+            OR (c."historyVerifiedRevisionNumber" IS NOT NULL AND (
+                 c."historyVerifiedRevisionNumber" <= 0
+                 OR c."editedAt" IS NULL
+                 OR c."lastRevisionNumber" <> c."historyVerifiedRevisionNumber"
+                 OR r."id" IS NULL
+                 OR r."createdAt" <> c."editedAt"
+                 OR r."createdAt" <= c."historyCutoverAt"
+                 OR r."afterText" <> c."text"
+               ))
+         ORDER BY c."id"
+         LIMIT 200
+      `);
+      if (candidates.length === 0) break;
+
+      let changedInPass = 0;
+      for (let offset = 0; offset < candidates.length; offset += 50) {
+        const batch = candidates.slice(offset, offset + 50);
+        changedInPass += await this.prisma.$transaction(
+          async (tx) => {
+            await lockBoardWrites(
+              tx,
+              batch.map((candidate) => candidate.boardId),
+            );
+            let changed = 0;
+            for (const candidate of batch) {
+              const comment = await tx.comment.findUnique({
+                where: { id: candidate.id },
+                select: COMMENT_HISTORY_STATE_SELECT,
+              });
+              if (comment === null) continue;
+              if (await verifyCommentHistory(tx, comment)) continue;
+              await markHistoryIncomplete(tx, comment.id, "writer_gap");
+              const adopted = await tx.comment.updateMany({
+                where: { id: comment.id },
+                data: {
+                  historyVerifiedEditedAt: comment.editedAt,
+                  historyVerifiedRevisionNumber: null,
+                },
+              });
+              if (adopted.count > 0) changed += 1;
+            }
+            return changed;
+          },
+          { timeout: 30_000 },
+        );
+      }
+      reconciled += changedInPass;
+      // Defensive: a candidate that keeps matching the suspect predicate
+      // without a writable row must not spin the whole sweep forever.
+      if (changedInPass === 0) break;
+    }
+
+    await this.repairCommentHistoryActivity();
+    return reconciled;
+  }
+
+  /**
+   * The Activity half of the history sweep: fill typed comment ids from a
+   * verified legacy link and strip post-cutover text that no revision backs.
+   * Both statements run in bounded batches; neither touches a confirmed
+   * pre-cutover snapshot.
+   */
+  private async repairCommentHistoryActivity(): Promise<void> {
+    // Bounded passes: a live database drains each statement to zero, while a
+    // faulty batch predicate cannot turn one sweep into an endless loop.
+    for (let pass = 0; pass < 200; pass += 1) {
+      const filled = await this.prisma.$executeRaw(Prisma.sql`
+        WITH batch AS (
+          SELECT a."id"
+            FROM "Activity" a
+            JOIN "Comment" c ON c."id" = a."details"->>'commentId'
+            JOIN "Card" card ON card."id" = c."cardId"
+            JOIN "Column" col ON col."id" = card."columnId"
+           WHERE a."commentId" IS NULL
+             AND a."type" IN ('comment_added', 'comment_updated', 'comment_deleted')
+             AND jsonb_typeof(a."details") = 'object'
+             AND a."details" ? 'commentId'
+             AND a."cardId" = c."cardId"
+             AND a."boardId" = col."boardId"
+           LIMIT 500
+        )
+        UPDATE "Activity" a
+           SET "commentId" = a."details"->>'commentId'
+          FROM batch
+         WHERE a."id" = batch."id"
+      `);
+      if (filled === 0) break;
+    }
+
+    for (let pass = 0; pass < 200; pass += 1) {
+      const stripped = await this.prisma.$executeRaw(Prisma.sql`
+        WITH batch AS (
+          SELECT a."id"
+            FROM "Activity" a
+            JOIN "Comment" c
+              ON c."id" = COALESCE(a."commentId", a."details"->>'commentId')
+            LEFT JOIN "CommentRevision" r
+              ON r."id" = a."details"->>'revisionId'
+             AND r."commentId" = c."id"
+           WHERE a."type" = 'comment_updated'
+             AND a."createdAt" >= c."historyCutoverAt"
+             AND (a."details" ? 'text'
+                  OR a."details" ? 'beforeText'
+                  OR a."details" ? 'afterText')
+             AND (
+               r."id" IS NULL
+               OR r."beforeText" IS DISTINCT FROM a."details"->>'beforeText'
+               OR r."afterText" IS DISTINCT FROM a."details"->>'afterText'
+             )
+           LIMIT 500
+        )
+        UPDATE "Activity" a
+           SET "details" = a."details" - 'text' - 'beforeText' - 'afterText'
+          FROM batch
+         WHERE a."id" = batch."id"
+      `);
+      if (stripped === 0) break;
+    }
   }
 
   /**

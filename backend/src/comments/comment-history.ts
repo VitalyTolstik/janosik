@@ -24,6 +24,16 @@ export type { CommentHistoryIncompleteReason, CommentRevisionCause };
 /** How many revisions per comment are kept (§3.5). */
 export const COMMENT_REVISION_LIMIT = 50;
 
+/**
+ * §3.5 per-comment raw UTF-8 text budgets. `LIMITS.comment` is 10 000
+ * characters and a 50-revision chain stores two sides per edit, so the
+ * revision budget is 4 MB and the related Activity budget (a third copy plus
+ * the legacy `text` field) is 6 MB. These are text-field budgets only;
+ * indexes and row overhead are measured separately.
+ */
+export const COMMENT_REVISION_BUDGET_BYTES = 4 * 1024 * 1024;
+export const COMMENT_ACTIVITY_BUDGET_BYTES = 6 * 1024 * 1024;
+
 export const COMMENT_ACTIVITY_TYPES = [
   "comment_added",
   "comment_updated",
@@ -97,6 +107,20 @@ export type CommentHistoryState = Pick<
   | "historyVerifiedRevisionNumber"
   | "historyIncompleteReason"
 >;
+
+/** Prisma selection for `CommentHistoryState` (writer, API and sweep). */
+export const COMMENT_HISTORY_STATE_SELECT = {
+  id: true,
+  cardId: true,
+  text: true,
+  kind: true,
+  editedAt: true,
+  lastRevisionNumber: true,
+  historyCutoverAt: true,
+  historyVerifiedEditedAt: true,
+  historyVerifiedRevisionNumber: true,
+  historyIncompleteReason: true,
+} as const;
 
 export type CommentHistoryTx = Pick<
   Prisma.TransactionClient,

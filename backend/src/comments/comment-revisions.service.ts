@@ -11,26 +11,15 @@ import type {
   CommentRevisionPage,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { verifyCommentHistory } from "./comment-history";
+import {
+  COMMENT_HISTORY_STATE_SELECT,
+  verifyCommentHistory,
+} from "./comment-history";
 
 /** Default page size of `GET …/comments/:commentId/revisions?limit=` (§3.3). */
 export const DEFAULT_REVISION_LIMIT = 20;
 /** Upper bound for the revisions `?limit=` (§3.3). */
 export const MAX_REVISION_LIMIT = 100;
-
-/** Live parent chain and the §3.5 fields the consistency check reads. */
-const HISTORY_SELECT = {
-  id: true,
-  cardId: true,
-  text: true,
-  kind: true,
-  editedAt: true,
-  lastRevisionNumber: true,
-  historyCutoverAt: true,
-  historyVerifiedEditedAt: true,
-  historyVerifiedRevisionNumber: true,
-  historyIncompleteReason: true,
-} as const;
 
 interface RevisionCursor {
   commentId: string;
@@ -69,7 +58,7 @@ export class CommentRevisionsService {
               column: { deletedAt: null, board: { deletedAt: null } },
             },
           },
-          select: HISTORY_SELECT,
+          select: COMMENT_HISTORY_STATE_SELECT,
         });
         if (comment === null) {
           throw new NotFoundException("Comment not found");
