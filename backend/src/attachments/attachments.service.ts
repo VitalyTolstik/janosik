@@ -4,7 +4,9 @@ import { rename, rm } from "node:fs/promises";
 
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  GoneException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -740,12 +742,122 @@ export class AttachmentsService {
     );
   }
 
+  /**
+   * TASK-177.7: restore a normally-listed card file that was soft-deleted
+   * within the retention window. Inline/description uploads are excluded by
+   * the Recently deleted listing, so this path only has to keep the file
+   * list + badge consistent. The blob was never removed on delete (TASK-88).
+   */
+  async restoreItem(
+    boardId: string,
+    attachmentId: string,
+    actorId: string,
+    deletedAfter: Date,
+    attribution: RequestAttribution = HUMAN_ATTRIBUTION,
+  ): Promise<void> {
+    const preRead = await this.prisma.attachment.findFirst({
+      where: { id: attachmentId, boardId },
+      select: { cardId: true, deletedAt: true },
+    });
+    if (!preRead) {
+      throw new NotFoundException("Attachment not found");
+    }
+    // Repeated restore after a lost response is a no-op, not a 404.
+    if (preRead.deletedAt === null) return;
+
+    const restored = await this.boardWrite.run(boardId, async (tx) => {
+      await assertBoardAcceptsWrites(tx, boardId);
+      const row = await tx.attachment.findFirst({
+        where: {
+          id: attachmentId,
+          boardId,
+          isInline: false,
+          descriptionEmbed: false,
+          descriptionDetached: false,
+          card: { deletedAt: null, column: { deletedAt: null } },
+        },
+        select: {
+          id: true,
+          cardId: true,
+          fileName: true,
+          deletedAt: true,
+        },
+      });
+      if (!row) throw new NotFoundException("Attachment not found");
+      if (row.deletedAt === null) return null;
+      if (row.deletedAt < deletedAfter) {
+        throw new GoneException({
+          message:
+            "This file is past the retention period and can no longer be restored",
+          code: "retention_expired",
+        });
+      }
+      const live = await tx.attachment.count({
+        where: { cardId: row.cardId, deletedAt: null },
+      });
+      if (live >= LIMITS.attachmentsPerCard) {
+        throw new ConflictException({
+          message: `Card already holds ${LIMITS.attachmentsPerCard} files`,
+          code: "attachment_limit",
+          limit: LIMITS.attachmentsPerCard,
+        });
+      }
+      await tx.attachment.update({
+        where: { id: row.id },
+        data: { deletedAt: null },
+      });
+      await tx.card.update({
+        where: { id: row.cardId },
+        data: { attachmentCount: { increment: 1 } },
+      });
+      const activity = await tx.activity.create({
+        data: {
+          boardId,
+          cardId: row.cardId,
+          type: "attachment_restored",
+          actorId,
+          actorType: attribution.actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          agentName: attribution.agentName,
+          details: { attachmentId: row.id, fileName: row.fileName },
+        },
+      });
+      return {
+        cardId: row.cardId,
+        activityId: activity.id,
+        at: activity.createdAt.getTime(),
+      };
+    });
+    if (restored === null) return;
+
+    this.publish(
+      boardId,
+      restored.cardId,
+      restored.activityId,
+      actorId,
+      "attachment_restored",
+      attachmentId,
+      attribution,
+      restored.at,
+    );
+    await touchAgentSessionAfterWrite(
+      this.prisma,
+      this.realtime,
+      attribution.agentSessionId,
+    );
+  }
+
   private publish(
     boardId: string,
     cardId: string,
     activityId: string,
     actorId: string,
-    kind: "attachment_added" | "attachment_deleted" | "comment_updated",
+    kind:
+      | "attachment_added"
+      | "attachment_deleted"
+      | "attachment_restored"
+      | "comment_updated",
     detail: string,
     attribution: RequestAttribution,
     at: number = Date.now(),

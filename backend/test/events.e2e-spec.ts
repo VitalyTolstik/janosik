@@ -921,6 +921,82 @@ describe("Board events SSE (e2e)", () => {
     await retry.body?.cancel().catch(() => undefined);
   }, 20_000);
 
+  it("publishes comment_restored and attachment_restored activity frames", async () => {
+    const columnId = "col-1777-restore";
+    const cardId = "card-1777-restore";
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Restore",
+        at: Date.now(),
+      },
+      "evt-1777-col",
+    );
+    await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Restore card",
+        at: Date.now(),
+      },
+      "evt-1777-card",
+    );
+    const comment = await server()
+      .post(`/api/v1/cards/${cardId}/comments`)
+      .set(auth(ownerToken))
+      .send({ text: "Restore this comment" })
+      .expect(201);
+    const file = await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(ownerToken))
+      .attach("file", Buffer.from("hello"), {
+        filename: "restore.txt",
+        contentType: "text/plain",
+      })
+      .expect(201);
+
+    const stream = openReader(
+      await openStream(ownerToken, await boardSeq(ownerToken), "restore-tab-1"),
+    );
+    await stream.next(1, "presence");
+
+    await server()
+      .delete(`/api/v1/comments/${comment.body.id}`)
+      .set(auth(ownerToken))
+      .expect(200);
+    await server()
+      .post(
+        `/api/v1/boards/${boardId}/deleted/comments/${comment.body.id}/restore`,
+      )
+      .set(auth(ownerToken))
+      .expect(200);
+    await server()
+      .delete(`/api/v1/attachments/${file.body.id}`)
+      .set(auth(ownerToken))
+      .expect(200);
+    await server()
+      .post(
+        `/api/v1/boards/${boardId}/deleted/attachments/${file.body.id}/restore`,
+      )
+      .set(auth(ownerToken))
+      .expect(200);
+
+    const frames = await stream.next(4, "activity");
+    expect(frames.map((frame) => frame.kind)).toEqual([
+      "comment_deleted",
+      "comment_restored",
+      "attachment_deleted",
+      "attachment_restored",
+    ]);
+    expect(frames[1]?.detail).toBe(comment.body.id);
+    expect(frames[3]?.detail).toBe(file.body.id);
+    await stream.close();
+  }, 30_000);
+
   async function wipe(db: PrismaService): Promise<void> {
     await db.attachment.deleteMany();
     await db.cardLink.deleteMany();

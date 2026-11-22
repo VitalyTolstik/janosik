@@ -430,7 +430,9 @@ function readActivitySnapshot(
   value: Prisma.JsonValue | null,
 ): { detail?: string; changes?: ActivityChange[] } {
   const attachment =
-    (type === "attachment_added" || type === "attachment_deleted") &&
+    (type === "attachment_added" ||
+      type === "attachment_deleted" ||
+      type === "attachment_restored") &&
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&

@@ -36,6 +36,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   targets, keyboard focus/Escape handling, component tests and backend/MCP
   coverage are included.
 
+- TASK-177.7 truthful deletes, per-board export and Recently deleted.
+  `Export this board` downloads one board through `GET /boards/:id/export`,
+  stays disabled without an open board and explains the 25 MB `413` while the
+  all-boards file keeps its separate copy. Delete prompts for cards, archived
+  cards, columns, comments, attachments and archived boards no longer imply an
+  immediate permanent removal: they say an administrator can restore the item
+  during the retention period. A new `Recently deleted` view lists soft-deleted
+  cards, columns, comments and card files for board ADMIN/MEMBER and restores
+  them through the command log (cards/columns) or in place (comments/files)
+  inside the same retention window; restore writes `comment_restored` /
+  `attachment_restored` Activity and SSE. Admin restore is unchanged and true
+  purge remains a maintenance job. EN/RU UI copy, the boards/cards/account
+  user-guide pages, REST/OpenAPI docs, client/component tests and board-scoped
+  API tests are included.
+
 - TASK-185.1 comment history foundation. Every real text edit now writes one
   immutable `CommentRevision` under the board-write lock, together with one
   `comment_updated` Activity carrying the before/after text; `editedAt` and the

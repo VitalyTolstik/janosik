@@ -254,7 +254,8 @@ const en = {
   "admin.bulk.delete": "Delete selected",
   "admin.bulk.restore": "Restore selected",
   "admin.bulk.confirm.title": "Apply to {count} selected?",
-  "admin.bulk.confirm.body": "Delete the selected rows? This cannot be undone.",
+  "admin.bulk.confirm.body":
+    "Delete the selected rows? They are soft-deleted and can be restored until the retention sweep removes them.",
   "admin.bulk.partial": "{count} refused — kept selected for retry.",
   "admin.bulk.tooMany":
     "Too many rows selected: {count}. The bulk limit is {limit} — narrow the filters or select fewer rows.",
@@ -1849,7 +1850,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.bulk.delete": "Удалить выбранные",
   "admin.bulk.restore": "Восстановить выбранные",
   "admin.bulk.confirm.title": "Применить к выбранным: {count}?",
-  "admin.bulk.confirm.body": "Удалить выбранные строки? Отменить это нельзя.",
+  "admin.bulk.confirm.body":
+    "Удалить выбранные строки? Они будут мягко удалены — восстановить их можно до очистки по сроку хранения.",
   "admin.bulk.partial": "Отказано: {count} — оставлены выбранными для повтора.",
   "admin.bulk.tooMany":
     "Выбрано слишком много строк: {count}. Лимит массового действия — {limit}; сузьте фильтры или выберите меньше строк.",

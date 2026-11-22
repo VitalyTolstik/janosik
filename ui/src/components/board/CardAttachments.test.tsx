@@ -355,7 +355,7 @@ describe("CardAttachments", () => {
     expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");
   });
 
-  it("lets the uploader permanently remove files retained after description edits", async () => {
+  it("lets the uploader remove a detached file with its own not-recoverable warning", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAttachments").mockResolvedValue([]);
     vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
@@ -366,7 +366,9 @@ describe("CardAttachments", () => {
     await user.click(group.querySelector("summary")!);
     expect(group).toHaveTextContent("spec.pdf");
     await user.click(screen.getByRole("button", { name: "Delete file" }));
-    expect(screen.getByText(/no longer be available/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/not offered in Recently deleted/),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete file" }));
     await waitFor(() => expect(group).not.toBeInTheDocument());
     expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");

@@ -335,7 +335,7 @@ describe("ArchiveDialog", () => {
     );
     expect(
       screen.getByText(
-        "3 selected cards will be deleted from the archive. You can undo this right away, one card at a time.",
+        "3 selected cards will be deleted from the archive and the board. An administrator can restore them during the retention period.",
       ),
     ).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));

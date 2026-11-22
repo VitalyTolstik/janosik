@@ -16,6 +16,9 @@ export const COMMENT_ACTIVITY_TYPES = new Set([
   "comment_added",
   "comment_updated",
   "comment_deleted",
+  // TASK-177.7: a user restore writes a text-bearing snapshot too, so it must
+  // follow the same projection and purge rules as the other comment kinds.
+  "comment_restored",
 ]);
 
 export function isCommentActivity(type: string): boolean {
@@ -159,7 +162,9 @@ export function readCommentActivityProjection(
   if (!scoped) return {};
 
   const text = stringField(details, "text");
-  if (row.type === "comment_added") {
+  if (row.type === "comment_added" || row.type === "comment_restored") {
+    // A restore revives the exact text the delete froze (TASK-177.7), so the
+    // row reads like an addition: the body is live again, not a diff.
     return {
       commentId,
       ...(text !== undefined

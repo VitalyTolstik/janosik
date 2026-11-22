@@ -32,7 +32,9 @@ test("deletes an own comment after confirmation and it stays deleted", async ({
   await expect(confirm.getByTestId("comment-delete-excerpt")).toHaveText(
     "Please remove me",
   );
-  await expect(confirm).toContainText("This cannot be undone.");
+  await expect(confirm).toContainText(
+    "An administrator can restore it during the retention period.",
+  );
   // Opening the confirmation must not delete anything yet. Radix hides the
   // parent dialog from the accessibility tree while the nested confirm is up,
   // so count the rows by test id instead of a role-scoped locator.

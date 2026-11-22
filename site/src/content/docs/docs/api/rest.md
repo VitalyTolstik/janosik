@@ -55,6 +55,8 @@ design (they are not reducer actions). Content lives in the command log.
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
 | `GET`    | `/boards/search`              | user        | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
+| `GET`    | `/boards/:id/deleted`         | `ADMIN`/`MEMBER` | none         | `DeletedBoardItemsDto` |
+| `POST`   | `/boards/:id/deleted/:type/:itemId/restore` | `ADMIN`/`MEMBER` | none | `{ status: "ok" }` |
 | `GET`    | `/boards/:id/search`          | member      | query `q`, optional `includeMatches` | `{ cardIds: string[]; matches: BoardSearchMatch[]; matchesTotal: number; matchesTruncated: boolean }` |
 
 `GET /boards` lists the boards where the caller is an accepted member, newest
@@ -95,6 +97,20 @@ Version 3 adds the optional per-board `agentPolicy`; version 2 added the
 optional `workflow`; version 1/2 files still import (with no policy). The
 importer mints fresh column and card ids and rewrites the workflow references;
 a transition whose column is missing is dropped rather than failing the import.
+
+`GET /boards/:id/export` streams one `BoardEnvelope` (`schemaVersion: 3`) and
+refuses an export above `MAX_BOARD_EXPORT_BYTES` with `413`. `GET
+/boards/:id/deleted` lists the board's soft-deleted cards, columns, comments and
+card-face files inside the operator retention window, newest first; the body is
+`{ retentionDays, limit, items, truncated }`, and each item is `{ type, id,
+title, deletedAt, purgeAt, columnTitle?, cardId?, cardTitle?, authorName?,
+sizeBytes? }`. `POST /boards/:id/deleted/:type/:itemId/restore` restores one of
+them (`type` is `cards`, `columns`, `comments` or `attachments`). Cards and
+columns return through the command log; comments and files restore in place and
+emit Activity/SSE. Both routes require board `ADMIN` or `MEMBER` — a `VIEWER`
+gets `403`. A card whose column is still deleted answers `409 column_deleted`;
+an item older than the retention cutoff is hidden from the list and answers
+`410 retention_expired`.
 
 `GET /boards/:id` returns the board aggregate and sets an `X-Board-Seq`
 response header carrying the command `seq` the aggregate reflects. A client
@@ -1075,6 +1091,10 @@ The response bodies are the shared wire types. Key fields:
   `includeComments`, `includeAttachments`. Members are `{ id, displayName,
   avatarColor, avatarPath }` with no emails.
 - `BoardEnvelope`: `{ app, schemaVersion, exportedAt, boards[] }`.
+- `DeletedBoardItemsDto`: `{ retentionDays, limit, items[], truncated }`.
+  `items[]` is `{ type, id, title, deletedAt, purgeAt, columnTitle?, cardId?,
+  cardTitle?, authorName?, sizeBytes? }`; `type` is `cards`, `columns`,
+  `comments` or `attachments`.
 - `PlanPreviewDto`: `{ dryRun: true, schemaVersion: 1, boardId, planHash,
   plan, commandCount, cardCreates, limits, requirement, diff, warnings,
   conflicts, canApply }`; `plan` is an `ApprovalPlan` with a `commands` array.

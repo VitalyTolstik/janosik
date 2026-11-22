@@ -841,6 +841,17 @@ export class FakeServer {
       };
       return json(201, masked);
     }
+    const exportMatch = /^\/api\/v1\/boards\/([^/]+)\/export$/.exec(path);
+    if (exportMatch && method === "GET") {
+      const board = this.boards.get(exportMatch[1]);
+      if (!board) return json(404, { message: "Board not found" });
+      return json(200, {
+        app: "janosik",
+        schemaVersion: 3,
+        exportedAt: Date.now(),
+        boards: [structuredClone(board)],
+      });
+    }
     const boardMatch = /^\/api\/v1\/boards\/([^/]+)$/.exec(path);
     if (boardMatch) {
       const boardId = boardMatch[1];

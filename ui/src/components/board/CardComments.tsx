@@ -515,6 +515,9 @@ export function CardComments({
         }));
         void refreshNewest();
       }
+      if (event.kind === "comment_restored") {
+        void refreshNewest();
+      }
     });
   }, [
     activity,
@@ -630,10 +633,9 @@ export function CardComments({
     }
   };
 
-  // TASK-177.17: the server keeps the row soft-deleted, but there is no
-  // user-facing comment restore endpoint (only the master-admin entity
-  // restore reaches it), so this UI deliberately offers no undo toast and
-  // the dialog says the deletion cannot be undone.
+  // TASK-177.7: the server keeps the row soft-deleted and board members can
+  // restore it from Recently deleted; this thread deliberately offers no
+  // inline undo, and the confirmation names the retention path instead.
   const handleDelete = async () => {
     const comment = pendingDelete;
     // A double click or a repeated Enter of the same confirmation reaches the
