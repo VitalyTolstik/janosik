@@ -548,7 +548,7 @@ describe("CardComments", () => {
     renderComments(server);
 
     const profile = await screen.findByRole("button", {
-      name: "Vitaliy Kowalczyk-Shcherbakovsky (VK) — open profile",
+      name: "Vitaliy Kowalczyk-Shcherbakovsky VK — open profile",
     });
     expect(profile).toBeVisible();
 
