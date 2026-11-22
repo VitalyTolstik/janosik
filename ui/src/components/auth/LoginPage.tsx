@@ -302,7 +302,7 @@ export function LoginPage() {
                 type="button"
                 data-testid="forgot-password"
                 onClick={() => setRecovering(true)}
-                className="self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                className="max-md:inline-flex max-md:min-h-11 max-md:items-center self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
               >
                 {t("auth.recovery.forgot")}
               </button>
@@ -318,7 +318,12 @@ export function LoginPage() {
               </p>
             ) : null}
 
-            <Button type="submit" data-testid="login-submit" disabled={pending}>
+            <Button
+              type="submit"
+              data-testid="login-submit"
+              disabled={pending}
+              className="max-md:min-h-11"
+            >
               {isRegister ? t("auth.register") : t("auth.login")}
             </Button>
 
@@ -358,7 +363,7 @@ export function LoginPage() {
                 type="button"
                 data-testid="login-toggle"
                 onClick={toggleMode}
-                className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                className="max-md:inline-flex max-md:min-h-11 max-md:items-center max-md:justify-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
               >
                 {isRegister
                   ? t("auth.switchToLogin")

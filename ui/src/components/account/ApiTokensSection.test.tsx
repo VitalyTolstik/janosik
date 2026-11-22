@@ -424,6 +424,24 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     expect(screen.queryByTestId("token-revoke")).toBeNull();
   });
 
+  it("names the icon-only token actions and sizes them for touch", async () => {
+    const server = new FakeServer();
+    server.apiTokens.push(token());
+    renderTokens(server);
+
+    const row = await screen.findByTestId("token-row");
+    for (const [testId, label] of [
+      ["token-edit", "Edit"],
+      ["token-pause", "Pause"],
+      ["token-revoke", "Revoke"],
+    ] as const) {
+      const button = within(row).getByTestId(testId);
+      expect(button).toHaveAttribute("aria-label", label);
+      expect(button).toHaveAccessibleName(label);
+      expect(button).toHaveClass("max-md:min-h-11", "max-md:min-w-11");
+    }
+  });
+
   it("pauses a token with a reason and resumes it (TASK-166.14)", async () => {
     const server = new FakeServer();
     server.apiTokens.push(token());

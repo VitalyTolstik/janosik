@@ -319,4 +319,15 @@ describe("LoginPage", () => {
     const error = await screen.findByTestId("login-error");
     expect(error.textContent).not.toBe("");
   });
+
+  it("gives the primary and text actions a 44 px mobile target", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("login-submit")).toBeVisible(),
+    );
+
+    expect(screen.getByTestId("login-submit")).toHaveClass("max-md:min-h-11");
+    expect(screen.getByTestId("forgot-password")).toHaveClass("max-md:min-h-11");
+    expect(screen.getByTestId("login-toggle")).toHaveClass("max-md:min-h-11");
+  });
 });
