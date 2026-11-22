@@ -1,7 +1,14 @@
-import { Injectable } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  type ExecutionContext,
+} from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { ApiTokenService } from "@/auth/api-token.service";
+import { isWriteMethod } from "@/auth/agent-pause";
+import type { AuthUser } from "@/auth/auth.types";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { ARCHIVED_BOARD_MESSAGE } from "./archived-board";
 import { GuardedRequest, MembershipGuard } from "./membership.guard";
 
 /**
@@ -21,6 +28,36 @@ export class CardAccessGuard extends MembershipGuard {
     apiTokens: ApiTokenService,
   ) {
     super(reflector, prisma, apiTokens);
+  }
+
+  /**
+   * Card-scoped writes (comments, comment edits/deletes, attachment uploads
+   * and deletes) bypass the command path. The board lock serializes them but
+   * does not know about the archive; refuse them here, after membership and
+   * role checks so the answer does not leak the board to an outsider. Reads
+   * stay open: an archived card is still a readable view.
+   */
+  protected override async enforceMembership(
+    context: ExecutionContext,
+    request: GuardedRequest,
+    user: AuthUser,
+    boardId: string,
+  ): Promise<boolean> {
+    const allowed = await super.enforceMembership(
+      context,
+      request,
+      user,
+      boardId,
+    );
+    if (!allowed || !isWriteMethod(request.method)) return allowed;
+    const board = await this.prisma.board.findFirst({
+      where: { id: boardId, deletedAt: null },
+      select: { archivedAt: true },
+    });
+    if (board?.archivedAt != null) {
+      throw new ConflictException(ARCHIVED_BOARD_MESSAGE);
+    }
+    return true;
   }
 
   protected override async resolveBoardId(

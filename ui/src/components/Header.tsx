@@ -124,6 +124,10 @@ export function Header() {
   // An archived board is read-only too — its card deep link is a view, not
   // an editing surface (the command path refuses writes for the same reason).
   const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
+  // Archived boards keep the roster read-only for everyone, but the admin
+  // surfaces (members, sharing, settings, agent control) would offer writes
+  // that the command and REST guards refuse. Hide them until restore.
+  const archived = board?.archivedAt !== undefined;
   const [settings, setSettings] = useState<{
     boardId: string;
     section: "workflow" | "agents";
@@ -396,20 +400,26 @@ export function Header() {
         ) : null}
         {isBoardRoute ? (
           <>
-            <div className="hidden min-[1024px]:block">
-              <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
-            </div>
-            <div className="hidden min-[1024px]:block">
-              <ShareDialog />
-            </div>
-            <AgentControlButton
-              onOpen={(trigger) => {
-                agentTrigger.current = trigger;
-                // Members start on read-only Live; admins start in Inbox.
-                openAgentControl(role === "ADMIN" ? "approvals" : "pause");
-              }}
-            />
-            {role === "ADMIN" ? (
+            {!archived ? (
+              <div className="hidden min-[1024px]:block">
+                <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
+              </div>
+            ) : null}
+            {!archived ? (
+              <div className="hidden min-[1024px]:block">
+                <ShareDialog />
+              </div>
+            ) : null}
+            {!archived ? (
+              <AgentControlButton
+                onOpen={(trigger) => {
+                  agentTrigger.current = trigger;
+                  // Members start on read-only Live; admins start in Inbox.
+                  openAgentControl(role === "ADMIN" ? "approvals" : "pause");
+                }}
+              />
+            ) : null}
+            {role === "ADMIN" && !readOnly ? (
               <div className="max-[720.98px]:hidden">
                 <Tooltip>
                   <TooltipTrigger asChild>

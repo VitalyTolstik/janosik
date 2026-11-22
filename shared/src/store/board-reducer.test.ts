@@ -9,7 +9,7 @@ import {
   type BoardState,
 } from "./board-reducer";
 import type { Board, Card } from "../types/kanban";
-import { LIMITS } from "../types/kanban";
+import { LIMITS, UNTITLED_CARD_TITLE } from "../types/kanban";
 
 /**
  * Tests for the pure board reducer — the core move logic (cards within and
@@ -1305,6 +1305,29 @@ describe("boardReducer — DUPLICATE_CARD", () => {
     expect(copy.updatedAt).toBe(copy.createdAt);
     // The original is untouched.
     expect(next.cards["card-1"]).toEqual(seed.cards["card-1"]);
+  });
+
+  it("falls back to the source title for a blank copy title", () => {
+    const seed = freshBoard();
+    const sourceTitle = seed.cards["card-1"].title;
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+      title: "   ",
+    });
+    const column = next.columns.find((c) => c.id === "col-backlog")!;
+    expect(next.cards[column.cardIds[1]].title).toBe(sourceTitle);
+  });
+
+  it("labels a copy of a legacy blank-title card", () => {
+    const seed = freshBoard();
+    seed.cards["card-1"] = { ...seed.cards["card-1"], title: "" };
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+    });
+    const column = next.columns.find((c) => c.id === "col-backlog")!;
+    expect(next.cards[column.cardIds[1]].title).toBe(UNTITLED_CARD_TITLE);
   });
 
   it("copies description, checklists, due date and cover", () => {

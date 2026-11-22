@@ -200,6 +200,16 @@ test("the card archive is reachable on the phone and restores a card", async ({
   await expect(archive.getByTestId("archive-list")).toContainText(
     "Archived on phone",
   );
+  for (const target of [
+    archive.getByTestId("archive-restore"),
+    archive.getByTestId("archive-delete"),
+    archive.getByRole("checkbox", { name: "Select Archived on phone" }),
+  ]) {
+    const box = await target.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
   await archive.getByTestId("archive-restore").tap();
   await page.getByRole("menuitem", { name: "Todo", exact: true }).tap();
   await expect(

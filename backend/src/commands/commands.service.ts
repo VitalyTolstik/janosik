@@ -48,6 +48,7 @@ import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
+import { ARCHIVED_BOARD_MESSAGE } from "@/common/archived-board";
 import { activeMembershipWhere } from "@/common/membership";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import {
@@ -139,16 +140,6 @@ const RESTORE_ACTIONS = new Set<string>([
   "RESTORE_CHECKLIST",
   "RESTORE_CHECKLIST_ITEM",
 ]);
-
-/**
- * Archived boards are a read-only view (docs/admin/content.md: "the board
- * becomes read-only for members"). The only command that may run against an
- * archived board is `UNARCHIVE_BOARD`; everything else has to restore it
- * first. The UI hides the mutating affordances too, but the server is the
- * authority — a deep link or a PAT must not be able to write through it.
- */
-const ARCHIVED_BOARD_MESSAGE =
-  "This board is archived and read-only. Restore it from the board switcher to make changes.";
 
 /**
  * Upper bound on a single delta catch-up (TASK-84). The retention sweep keeps

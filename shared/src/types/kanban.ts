@@ -304,6 +304,13 @@ export const CLAIM_LEASE_MIN_MS = 60 * 1000;
 export const CLAIM_LEASE_MAX_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Placeholder for legacy snapshots or copies whose stored title is blank.
+ * The command surface refuses blank titles; recovery must still leave a
+ * usable card rather than an unlabeled row.
+ */
+export const UNTITLED_CARD_TITLE = "Untitled card";
+
+/**
  * Max lengths for every free-text field, in characters. One source of
  * truth: UI inputs get `maxLength={LIMITS.x}`, the reducer clamps as a
  * second line of defense (imports / console), and the future backend

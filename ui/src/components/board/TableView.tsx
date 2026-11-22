@@ -485,7 +485,7 @@ export function TableView({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto hidden h-7 gap-1 px-2 text-xs sm:inline-flex"
+              className="ml-auto hidden h-7 gap-1 px-2 text-xs lg:inline-flex"
               aria-label={t("view.table.columnsSettings")}
               data-testid="table-columns-settings"
             >
@@ -532,6 +532,7 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
+                className="w-40 md:w-auto lg:w-72"
               />
               <SortHeader
                 label={t("view.table.column")}
@@ -549,7 +550,7 @@ export function TableView({
               />
               <th
                 scope="col"
-                className="hidden w-44 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
+                className="hidden w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell lg:w-44"
               >
                 {t("view.table.labels")}
               </th>
@@ -568,7 +569,7 @@ export function TableView({
                   sortKey="assignee"
                   sort={sort}
                   onCycle={cycleSort}
-                  className="hidden w-32 sm:table-cell lg:w-36"
+                  className="hidden w-32 md:table-cell lg:w-36"
                 />
               ) : null}
               {visibleColumns.includes("checklists") ? (
@@ -1081,7 +1082,7 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="hidden px-3 py-2 lg:table-cell"
+            className="hidden px-3 py-2 sm:table-cell"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
@@ -1163,7 +1164,7 @@ function TableRowBody({
           ) : null}
           {visibleColumns.includes("assignee") ? (
             <td
-              className="hidden min-w-0 px-3 py-2 sm:table-cell"
+              className="hidden min-w-0 px-3 py-2 md:table-cell"
               data-testid="table-assignee"
             >
               <AssigneeCell boardId={boardId} assigneeId={card.assigneeId} />

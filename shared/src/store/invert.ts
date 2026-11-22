@@ -200,7 +200,10 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         ...head,
         type: "UPDATE_CARD",
         cardId: card.id,
-        title: card.title,
+        // A legacy blank title cannot be written back: UPDATE_CARD refuses
+        // blanks. Omitting the field reverts only the description/stamp and
+        // leaves the first real title in place.
+        ...(card.title.trim() === "" ? {} : { title: card.title }),
         // An empty string is how the reducer spells "no description".
         description: card.description ?? "",
         cardUpdatedAt: card.updatedAt,

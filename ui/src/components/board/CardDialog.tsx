@@ -539,13 +539,14 @@ export function CardDialog({
       // draft instead of writing an empty title: the shared validator and
       // reducer refuse blank titles too, so this is the friendly UI half.
       if (trimmed === "") {
-        const stored = titleSeenRef.current;
-        heldTitles.delete(conflictedKey(boardId, target));
+        // Use the title currently stored on the card, not a stale draft
+        // baseline. A foreign rename is never dismissed by a blank submit:
+        // the conflict banner stays until the user chooses reload/keep.
+        const stored = board?.cards[target]?.title ?? titleSeenRef.current;
+        titleSeenRef.current = stored;
         titleDraftRef.current = stored;
         setTitleDraft(stored);
         titleDirtyRef.current = false;
-        titleConflictRef.current = false;
-        setTitleConflict(false);
         return;
       }
       if (!force && titleConflictRef.current) {
@@ -568,7 +569,7 @@ export function CardDialog({
       }
       touchCardRef.current(target);
     },
-    [boardId],
+    [board?.cards, boardId],
   );
   const flushTitleRef = useRef(flushTitle);
   useEffect(() => {
@@ -937,7 +938,13 @@ export function CardDialog({
               </DropdownMenu>
             </div>
             {board?.archivedAt !== undefined ? (
-              <ArchivedBoardNotice boardId={board.id} className="mb-2" />
+              <ArchivedBoardNotice
+                boardId={board.id}
+                className="mb-2"
+                onRestored={() =>
+                  window.requestAnimationFrame(() => titleRef.current?.focus())
+                }
+              />
             ) : null}
             <div className="space-y-1.5">
               <label htmlFor="card-title-input" className="sr-only">
@@ -970,9 +977,16 @@ export function CardDialog({
                     className="col-start-1 row-start-1 min-h-10 min-w-0 resize-none break-words border-transparent bg-transparent px-2 text-xl font-semibold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     placeholder={t("card.titlePlaceholder")}
                     aria-describedby={
-                      showRemaining(titleDraft.length, LIMITS.cardTitle)
-                        ? "card-title-counter"
-                        : undefined
+                      [
+                        !readOnly && titleDraft.trim() === ""
+                          ? "card-title-blank-hint"
+                          : null,
+                        showRemaining(titleDraft.length, LIMITS.cardTitle)
+                          ? "card-title-counter"
+                          : null,
+                      ]
+                        .filter((id): id is string => id !== null)
+                        .join(" ") || undefined
                     }
                   />
                 </div>
@@ -990,12 +1004,17 @@ export function CardDialog({
               />
               {!readOnly && titleDraft.trim() === "" ? (
                 <p
+                  id="card-title-blank-hint"
                   role="status"
                   aria-live="polite"
                   data-testid="card-title-blank-hint"
-                  className="text-xs text-amber-600"
+                  className="text-xs text-amber-700 dark:text-amber-400"
                 >
-                  {t("card.titleBlankHint")}
+                  {t(
+                    (card?.title ?? "").trim() === ""
+                      ? "card.titleBlankHintAdd"
+                      : "card.titleBlankHint",
+                  )}
                 </p>
               ) : null}
               {titleConflict && !readOnly ? (

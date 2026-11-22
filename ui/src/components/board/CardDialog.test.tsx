@@ -226,6 +226,13 @@ describe("CardDialog comment drafts", () => {
     expect(screen.getByTestId("card-title-blank-hint")).toHaveTextContent(
       "A card needs a title",
     );
+    expect(screen.getByTestId("card-title-blank-hint")).toHaveAttribute(
+      "id",
+      "card-title-blank-hint",
+    );
+    expect(title.getAttribute("aria-describedby")).toContain(
+      "card-title-blank-hint",
+    );
 
     fireEvent.blur(title);
     await waitFor(() => expect(title).toHaveValue("Draft card A"));

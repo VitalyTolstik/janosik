@@ -80,14 +80,14 @@ function addArchivedCards(count: number, wipLimit?: number) {
   localStorage.setItem("janosik-boards", JSON.stringify(boards));
 }
 
-function renderArchive() {
+function renderArchive(entry = routes.board("b-1")) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter initialEntries={[routes.board("b-1")]}>
+              <MemoryRouter initialEntries={[entry]}>
                 <ToastProvider>
                   <BoardProvider>
                     <Routes>
@@ -311,7 +311,7 @@ describe("ArchiveDialog", () => {
     );
     expect(
       screen.getByText(
-        "Delete the selected cards from the archive? You can undo this right away, one card at a time.",
+        "3 selected cards will be deleted from the archive. You can undo this right away, one card at a time.",
       ),
     ).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -382,5 +382,24 @@ describe("ArchiveDialog permissions", () => {
     expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
     // Opening the archived card stays available for reading.
     expect(within(row).getByTestId("archive-row-title")).toBeEnabled();
+  });
+
+  it("keeps an archived board's archive read-only and explains why", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 5_000 }]);
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(`${routes.board("b-1")}?card=c-old`);
+
+    const row = await screen.findByTestId(
+      "archive-row",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(row).toHaveTextContent("Archived thing");
+    expect(screen.getByTestId("archive-archived-notice")).toHaveTextContent(
+      /board is archived/i,
+    );
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
   });
 });

@@ -15,13 +15,31 @@ import { useBoardAccess, useBoardActions } from "@/store/BoardContext";
 export function ArchivedBoardNotice({
   boardId,
   className,
+  onRestored,
 }: {
   boardId: string;
   className?: string;
+  /** Where focus should land after the restore button unmounts. */
+  onRestored?: () => void;
 }) {
   const { t } = useI18n();
   const { unarchiveBoard } = useBoardActions();
   const { role } = useBoardAccess();
+
+  const restore = () => {
+    unarchiveBoard(boardId);
+    // The notice (and this button) unmounts with the archived state. Hand
+    // focus back to a stable surface so it does not fall to <body>.
+    window.requestAnimationFrame(() => {
+      if (onRestored) {
+        onRestored();
+        return;
+      }
+      document
+        .querySelector<HTMLElement>('[data-testid="board-title"]')
+        ?.focus();
+    });
+  };
 
   return (
     <div
@@ -41,7 +59,7 @@ export function ArchivedBoardNotice({
           variant="outline"
           className="h-11 shrink-0 lg:h-8"
           data-testid="archived-board-restore"
-          onClick={() => unarchiveBoard(boardId)}
+          onClick={restore}
         >
           <ArchiveRestore className="h-4 w-4" aria-hidden="true" />
           {t("board.switcher.restore")}

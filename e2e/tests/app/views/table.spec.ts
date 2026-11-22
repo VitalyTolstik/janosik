@@ -361,6 +361,13 @@ test("keeps the title readable at 768 with a long assignee e-mail", async ({
     cardId,
     assigneeId: board.userId,
   });
+  const labelId = await board.label("Design", "blue");
+  await board.command({
+    type: "SET_CARD_LABEL",
+    cardId,
+    labelId,
+    on: true,
+  });
   await page.setViewportSize({ width: 768, height: 1024 });
   await board.open(page);
   await openTable(page);
@@ -371,6 +378,14 @@ test("keeps the title readable at 768 with a long assignee e-mail", async ({
   );
   await expect(row).toBeVisible();
 
+  // Labels stay in the tablet projection; the settings trigger that would
+  // toggle columns the layout cannot show is not offered below lg.
+  await expect(
+    page.getByRole("columnheader", { name: "Labels", exact: true }),
+  ).toBeVisible();
+  await expect(row.getByTestId("table-labels-cell")).toContainText("Design");
+  await expect(page.getByTestId("table-columns-settings")).toBeHidden();
+
   // The title is the dominant column again: the long fixture e-mail is
   // truncated inside its bounded assignee cell instead of widening it
   // (QA-06).
@@ -378,7 +393,7 @@ test("keeps the title readable at 768 with a long assignee e-mail", async ({
   const assigneeBox = await row.getByTestId("table-assignee").boundingBox();
   expect(titleBox).not.toBeNull();
   expect(assigneeBox).not.toBeNull();
-  expect(titleBox!.width).toBeGreaterThan(140);
+  expect(titleBox!.width).toBeGreaterThan(180);
   expect(assigneeBox!.width).toBeLessThan(200);
   const assigneeName = row
     .getByTestId("table-assignee")
@@ -388,4 +403,53 @@ test("keeps the title readable at 768 with a long assignee e-mail", async ({
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(768);
+});
+
+test("keeps the title column when every optional column is enabled", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.card(todo, "Every optional column still leaves a readable title");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await board.open(page);
+  await openTable(page);
+
+  await page.getByTestId("table-columns-settings").click();
+  for (const name of [
+    "Priority",
+    "Assignee",
+    "Checklists",
+    "Description",
+    "Created",
+    "Updated",
+    "Activity",
+  ]) {
+    const item = page.getByRole("menuitemcheckbox", { name, exact: true });
+    if ((await item.getAttribute("aria-checked")) !== "true") {
+      await item.click();
+    }
+  }
+  await page.keyboard.press("Escape");
+
+  for (const width of [1280, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    const title = tableRow(
+      page,
+      "Every optional column still leaves a readable title",
+    ).getByTestId("table-title-cell");
+    const box = await title.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(180);
+    const metrics = await page.getByTestId("table-scroll").evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    // The fixed columns may exceed the viewport; the table scrolls, but the
+    // title keeps its explicit width instead of collapsing to zero.
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width);
+  }
 });

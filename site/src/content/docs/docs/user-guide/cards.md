@@ -161,8 +161,10 @@ the card, or delete it.
 - **Archive** takes a card off the board but keeps it: archived cards stay in
   search and in the card archive, and the dialog shows `Send back to board`, which restores the card to a
   column you pick.
-- **Delete** asks for confirmation and removes the card permanently. From the
-  archive, the same action reads `Delete forever`.
+- **Delete** asks for confirmation and removes the card from the board. You can
+  undo this right away. From the archive, the same action reads
+  `Delete from archive`; its confirmation also explains that undo removes one
+  card at a time.
 
 The card archive is opened from the data menu (see
 [Account, keys and preferences](/docs/user-guide/account/)).

@@ -186,6 +186,16 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
         </DialogDescription>
       </DialogHeader>
 
+      {board.archivedAt !== undefined ? (
+        <p
+          role="status"
+          data-testid="archive-archived-notice"
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+        >
+          {t("archive.archivedReadOnly")}
+        </p>
+      ) : null}
+
       {archived.length > 0 ? (
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -211,8 +221,8 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
               checked={allVisibleSelected}
               className={
                 allVisibleSelected
-                  ? "h-6 w-6"
-                  : "h-6 w-6 border-muted-foreground"
+                  ? "h-11 w-11 sm:h-6 sm:w-6"
+                  : "h-11 w-11 border-muted-foreground sm:h-6 sm:w-6"
               }
               disabled={busy || visible.length === 0}
               aria-label={t("archive.selectVisible")}
@@ -362,8 +372,8 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                       }
                       className={
                         selectedIds.has(card.id)
-                          ? "h-6 w-6"
-                          : "h-6 w-6 border-muted-foreground"
+                          ? "h-11 w-11 sm:h-6 sm:w-6"
+                          : "h-11 w-11 border-muted-foreground sm:h-6 sm:w-6"
                       }
                     />
                   )}
@@ -425,7 +435,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                              className="h-11 w-11 text-muted-foreground hover:text-foreground sm:h-6 sm:w-6"
                               aria-label={t("card.unarchive")}
                               data-testid="archive-restore"
                               disabled={busy}
@@ -470,7 +480,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          className="h-11 w-11 text-muted-foreground hover:text-destructive sm:h-6 sm:w-6"
                           aria-label={t("archive.delete")}
                           data-testid="archive-delete"
                           disabled={busy}
@@ -531,7 +541,9 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
         open={confirmBulkDelete}
         onOpenChange={setConfirmBulkDelete}
         title={t("archive.bulkDeleteTitle")}
-        description={t("archive.bulkDeleteDescription")}
+        description={t("archive.bulkDeleteDescription", {
+          count: selected.length,
+        })}
         confirmLabel={t("archive.deleteSelected")}
         destructive
         onConfirm={() => void runBulk("delete")}

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -145,10 +151,38 @@ describe("BoardSection role wiring (TASK-35)", () => {
     for (const name of ["Duplicate card", "Archive card", "Delete card"]) {
       expect(screen.queryByRole("menuitem", { name })).toBeNull();
     }
-    // The header is a readout too: no rename, no undo stack.
+    // The header is a readout too: no rename, no undo stack, no settings
+    // dialog that could dispatch an archived write.
     expect(screen.queryByTestId("board-rename")).toBeNull();
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(screen.queryByTestId("board-settings-trigger")).toBeNull();
+    // Members, sharing and agent control would expose admin writes that the
+    // archived guard refuses, so they stay off until restore.
+    expect(screen.queryByRole("button", { name: "Members" })).toBeNull();
+    expect(screen.queryByTestId("share-trigger")).toBeNull();
+    expect(screen.queryByTestId("agent-control-trigger")).toBeNull();
     expect(container.querySelector("[data-composer-trigger]")).toBeNull();
+  });
+
+  it("moves focus into the card after restoring an archived board", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 1_700_000 }]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp("/board/b-1?card=c-1");
+
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Card details" },
+      { timeout: 15_000 },
+    );
+    const notice = within(dialog).getByTestId("archived-board-notice");
+    fireEvent.click(within(notice).getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(within(dialog).queryByTestId("archived-board-notice")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("Title")).toHaveFocus(),
+    );
   });
 
   it("asks a non-admin to have an archived board restored", async () => {
