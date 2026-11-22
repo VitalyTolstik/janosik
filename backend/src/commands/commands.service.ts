@@ -993,6 +993,7 @@ export class CommandsService {
       entry.action,
       attribution,
       params.actorId,
+      params.actorRole,
     );
     await this.assertBoardManagement(
       db,
@@ -1168,6 +1169,7 @@ export class CommandsService {
       action,
       attribution,
       actorId,
+      actorRole,
       params.exemptClaimGuard === true,
     );
 
@@ -1878,9 +1880,13 @@ export class CommandsService {
    * reading the row, so any board member could clear a colleague's live claim.
    * A release is now holder-only, compared by the same identity that claimed:
    * agent session, then API token, then the legacy user id. Two PATs of one
-   * account are distinct holders, and a browser session cannot clear a PAT's
-   * lease (or vice versa). Board-ADMIN override is intentionally not part of
-   * this command path; the admin release flow belongs to TASK-176/180.4.
+   * account are distinct holders, and a browser session cannot clear another
+   * holder's lease.
+   *
+   * TASK-177.4 (decision 1) adds the two sanctioned overrides: a board ADMIN
+   * may release any live claim, and the human owner of the account may release
+   * a claim held by that account's own PAT or agent session. Releasing only
+   * clears the card claim — it never ends the agent session.
    */
   private async assertClaimIsFree(
     tx: Prisma.TransactionClient,
@@ -1888,6 +1894,7 @@ export class CommandsService {
     action: BoardAction,
     attribution: RequestAttribution,
     actorId: string,
+    actorRole: Role,
     allowAnyClaimChange = false,
   ): Promise<void> {
     if (action.type !== "CLAIM_CARD") return;
@@ -1920,6 +1927,14 @@ export class CommandsService {
       });
     };
     if (releasing) {
+      // TASK-177.4 decision 1: an ADMIN may release any live claim, and the
+      // human owner may release a claim held by their own agent identity.
+      if (actorRole === Role.ADMIN) return;
+      const humanOwner =
+        attribution.agentSessionId === null &&
+        attribution.apiTokenId === null &&
+        card.claimedBy === actorId;
+      if (humanOwner) return;
       // The stored holder and the authenticated caller must be the same
       // *kind* of identity: a second PAT of the owner is not the holder, and
       // neither is the owner's browser session when a PAT holds the lease.
