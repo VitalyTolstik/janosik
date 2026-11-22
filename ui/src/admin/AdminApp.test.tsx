@@ -260,6 +260,140 @@ describe("AdminApp", () => {
     },
   );
 
+  it("times out a hung create-master request and re-enables Cancel", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.click(await screen.findByTestId("admin-create-master"));
+    fireEvent.change(await screen.findByTestId("admin-master-email"), {
+      target: { value: "timeout-master@example.com" },
+    });
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    server.holds.push({
+      match: "/admin/admins",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(within(dialog).getByTestId("admin-master-submit"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(cancel).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.masters.create.timeout")),
+      ).toBeInTheDocument();
+      expect(cancel).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out a hung promote request and re-enables Cancel", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByTestId("admin-user-promote"));
+    const dialog = await screen.findByTestId("admin-promote-user-dialog");
+    fireEvent.change(within(dialog).getByTestId("admin-promote-user-input"), {
+      target: { value: "member@example.com" },
+    });
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    server.holds.push({
+      match: "/admin/users/u-1/promote",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(within(dialog).getByTestId("admin-promote-user-submit"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(cancel).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.userDetail.promote.timeout")),
+      ).toBeInTheDocument();
+      expect(cancel).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out a hung boot refresh and maps it to unavailable", async () => {
+    const server = serverWith();
+    let refreshCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        ).pathname;
+        if (path.endsWith("/admin/auth/refresh")) {
+          refreshCalls += 1;
+          return new Promise<Response>((_, reject) => {
+            const abort = () =>
+              reject(new DOMException("aborted", "AbortError"));
+            if (init?.signal?.aborted === true) abort();
+            else init?.signal?.addEventListener("abort", abort, { once: true });
+          });
+        }
+        return server.fetchImpl(input, init);
+      },
+    );
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      renderAdmin();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      for (const [timeout, backoff] of [
+        [15_000, 1_000],
+        [15_000, 2_000],
+        [15_000, 4_000],
+        [15_000, 0],
+      ]) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(timeout);
+        });
+        if (backoff > 0) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(backoff);
+          });
+        }
+      }
+      expect(refreshCalls).toBe(4);
+      expect(screen.getByTestId("admin-boot-failed")).toHaveTextContent(
+        t("admin.boot.failed.unavailable"),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("signs in, and signs out back to the login screen", async () => {
     const server = serverWith();
     server.sessionAlive = false;
@@ -846,7 +980,7 @@ describe("AdminApp", () => {
     await expect365Ready();
   });
 
-  it("shows an explicit invalid state for out-of-range retention drafts (QA review)", async () => {
+  it("shows one invalid hint and never saves an out-of-range retention draft", async () => {
     const server = serverWith();
     server.ops.retentionDays = 30;
     vi.stubGlobal("fetch", server.fetchImpl);
@@ -855,14 +989,40 @@ describe("AdminApp", () => {
     const input = await screen.findByTestId("admin-ops-retention");
     for (const invalid of ["0", "3651"]) {
       fireEvent.change(input, { target: { value: invalid } });
+      // Exactly one validation message: the field hint.
+      expect(screen.getAllByTestId("admin-ops-retention-invalid")).toHaveLength(
+        1,
+      );
       expect(
-        await screen.findByTestId("admin-ops-retention-invalid"),
-      ).toBeInTheDocument();
+        screen.queryByTestId("admin-ops-retention-invalid-state"),
+      ).toBeNull();
       expect(
-        screen.getByTestId("admin-ops-retention-invalid-state"),
-      ).toBeInTheDocument();
+        screen.queryByText(
+          t("admin.ops.retention.olderThan", { days: Number(invalid) }),
+        ),
+      ).toBeNull();
       expect(screen.queryByTestId("admin-ops-retention-loading")).toBeNull();
+      expect(screen.queryByTestId("admin-ops-retention-counts")).toBeNull();
       expect(screen.getByTestId("admin-ops-purge")).toBeDisabled();
+
+      // Every Save entry point is disabled, including the retention panel.
+      for (const id of [
+        "admin-ops-save",
+        "admin-ops-rate-limit-save",
+        "admin-ops-retention-save",
+        "admin-ops-schedule-save",
+        "admin-ops-comms-save",
+      ]) {
+        const button = screen.getByTestId(id);
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+      }
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "PUT" && request.path === "/admin/ops",
+        ),
+      ).toBe(false);
     }
 
     fireEvent.change(input, { target: { value: "365" } });
@@ -870,6 +1030,69 @@ describe("AdminApp", () => {
       await screen.findByTestId("admin-ops-retention-counts"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("admin-ops-retention-invalid")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-retention-save")).not.toBeDisabled(),
+    );
+  });
+
+  it("keeps an edit made while a sweep reload is in flight", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    server.retentionDeletedAges = [60];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 1,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/maintenance/run",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    fireEvent.click(screen.getByTestId("admin-ops-run-sweeps"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/admin/maintenance/run",
+        ),
+      ).toBe(true),
+    );
+
+    // Edit while the sweep request is still in flight; the reload it triggers
+    // must read this newer draft, not the value captured at click time.
+    fireEvent.change(input, { target: { value: "365" } });
+    release();
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 0,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+    expect(input).toHaveValue("365");
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
   });
 
   it("previews a mail template with sample placeholder values", async () => {

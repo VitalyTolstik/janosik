@@ -56,6 +56,14 @@ export function OpsPage() {
   const retentionRequest = useRef(0);
   const lastRetentionRequestDays = useRef<number | null>(null);
   const savedRetentionDays = useRef<number | null>(null);
+  // Live draft mirror: a reload that resolves after the owner edits the field
+  // must read the newest value, not the one captured when the action started.
+  const retentionDraft = useRef("");
+
+  const setRetentionDraft = useCallback((value: string) => {
+    retentionDraft.current = value;
+    setRetentionDays(value);
+  }, []);
 
   const fetchRetention = useCallback(
     async (days?: number): Promise<boolean> => {
@@ -78,7 +86,7 @@ export function OpsPage() {
   );
 
   const load = useCallback(
-    async (options: { preserveDrafts?: boolean; draft?: string } = {}) => {
+    async (options: { preserveDrafts?: boolean } = {}) => {
       try {
         const [nextFlags, nextOps] = await Promise.all([
           adminApi.listFlags(),
@@ -92,18 +100,18 @@ export function OpsPage() {
         const days = nextOps.retentionDays ?? 30;
         const previousSaved = savedRetentionDays.current;
         savedRetentionDays.current = days;
-        const draft = options.draft ?? "";
+        const currentDraft = retentionDraft.current;
         const keepDraft =
           options.preserveDrafts === true &&
           previousSaved !== null &&
-          draft !== String(previousSaved) &&
+          currentDraft !== String(previousSaved) &&
           days === previousSaved;
         const effectiveDraft = keepDraft
-          ? draft.trim() === ""
+          ? currentDraft.trim() === ""
             ? 30
-            : Number(draft)
+            : Number(currentDraft)
           : days;
-        setRetentionDays(keepDraft ? draft : String(days));
+        if (!keepDraft) setRetentionDraft(String(days));
         setMaintInterval(String(nextOps.maintenanceIntervalMinutes ?? 0));
         setDigestHours(String(nextOps.digestIntervalHours ?? 0));
         setReminderLead(String(nextOps.reminderLeadHours ?? 0));
@@ -121,7 +129,7 @@ export function OpsPage() {
         setPhase("error");
       }
     },
-    [fetchRetention],
+    [fetchRetention, setRetentionDraft],
   );
 
   useEffect(() => {
@@ -157,13 +165,17 @@ export function OpsPage() {
         toast.success(t("admin.ops.saved"));
       } catch {
         toast.error(t("admin.common.actionFailed"));
-        void load({ preserveDrafts: true, draft: retentionDays });
+        void load({ preserveDrafts: true });
       }
     },
-    [load, retentionDays, t, toast],
+    [load, t, toast],
   );
 
   const saveOps = useCallback(async () => {
+    const draftDays = retentionDays.trim() === "" ? 30 : Number(retentionDays);
+    if (!Number.isFinite(draftDays) || draftDays < 1 || draftDays > 3_650) {
+      return;
+    }
     setBusy(true);
     try {
       const updated = await adminApi.updateOps({
@@ -207,13 +219,13 @@ export function OpsPage() {
         );
         toast.success(t("admin.ops.runNow.done", { count: removed }));
       }
-      void load({ preserveDrafts: true, draft: retentionDays });
+      void load({ preserveDrafts: true });
     } catch {
       toast.error(t("admin.common.actionFailed"));
     } finally {
       setSweeping(false);
     }
-  }, [load, retentionDays, t, toast]);
+  }, [load, t, toast]);
 
   const openQueues = useCallback(async () => {
     setOpeningQueues(true);
@@ -282,7 +294,6 @@ export function OpsPage() {
     retention.retentionDays === effectiveDays;
   const retentionData = retentionMatches ? retention : null;
   const retentionFailed = retentionState === "error";
-  const retentionInvalid = !daysValid;
 
   if (phase === "loading")
     return <SettingsSkeleton testId="admin-ops-skeleton" panels={3} wide />;
@@ -374,7 +385,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-save"
             onClick={() => void saveOps()}
           >
@@ -410,7 +421,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-rate-limit-save"
             onClick={() => void saveOps()}
           >
@@ -439,7 +450,7 @@ export function OpsPage() {
               increaseLabel={t("admin.common.increase")}
               decreaseLabel={t("admin.common.decrease")}
               disabled={!isOwner}
-              onChange={setRetentionDays}
+              onChange={setRetentionDraft}
             />
             {daysValid ? (
               <span className="text-[11px] text-muted-foreground">
@@ -466,7 +477,7 @@ export function OpsPage() {
                   }
                   data-testid={`admin-ops-retention-preset-${preset}`}
                   disabled={!isOwner}
-                  onClick={() => setRetentionDays(String(preset))}
+                  onClick={() => setRetentionDraft(String(preset))}
                 >
                   {t("admin.ops.retentionPreset", { days: preset })}
                 </Button>
@@ -477,94 +488,91 @@ export function OpsPage() {
         <div className="mt-2 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-retention-save"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
           </Button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {t("admin.ops.retention.olderThan", { days: effectiveDays })}
-        </p>
-        {retentionDirty ? (
-          <p
-            className="mt-1 text-xs text-warning"
-            data-testid="admin-ops-retention-dirty"
-          >
-            {t("admin.ops.retention.draftHint", { days: effectiveDays })}
-          </p>
-        ) : null}
-        {retentionInvalid ? (
-          <p
-            className="mt-1 text-xs text-danger"
-            data-testid="admin-ops-retention-invalid-state"
-          >
-            {t("admin.ops.retention.invalid")}
-          </p>
-        ) : retentionData === null ? (
-          retentionFailed ? (
-            <div
-              className="mt-1 flex flex-wrap items-center gap-2"
-              data-testid="admin-ops-retention-error"
-            >
-              <p role="alert" className="text-xs text-danger">
-                {t("admin.ops.retention.loadError")}
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7"
-                disabled={!daysValid}
-                data-testid="admin-ops-retention-retry"
-                onClick={() => void fetchRetention(effectiveDays)}
-              >
-                {t("admin.common.retry")}
-              </Button>
-            </div>
-          ) : (
-            <div
-              className="mt-1 flex items-center"
-              data-testid="admin-ops-retention-loading"
-              aria-busy
-            >
-              <span className="sr-only">
-                {t("admin.ops.retention.loading")}
-              </span>
-              <span
-                className="h-3 w-64 animate-pulse rounded bg-hover"
-                aria-hidden
-              />
-            </div>
-          )
-        ) : (
+        {daysValid ? (
           <>
-            <p
-              className="mt-1 text-xs text-muted-foreground"
-              data-testid="admin-ops-retention-counts"
-            >
-              {t("admin.ops.retention.purgeable", {
-                cards: retentionData.purgeable.cards,
-                comments: retentionData.purgeable.comments,
-                attachments: retentionData.purgeable.attachments,
-                columns: retentionData.purgeable.columns,
-              })}
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t("admin.ops.retention.olderThan", { days: effectiveDays })}
             </p>
-            <p
-              className="mt-1 text-xs text-muted-foreground"
-              data-testid="admin-ops-backup-status"
-            >
-              {retentionData.backups.mode === "external"
-                ? t("admin.ops.backups.external", {
-                    location: retentionData.backups.location ?? "",
-                  })
-                : t("admin.ops.backups.none")}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("admin.ops.backups.notAutomatic")}
-            </p>
+            {retentionDirty ? (
+              <p
+                className="mt-1 text-xs text-warning"
+                data-testid="admin-ops-retention-dirty"
+              >
+                {t("admin.ops.retention.draftHint", { days: effectiveDays })}
+              </p>
+            ) : null}
+            {retentionData === null ? (
+              retentionFailed ? (
+                <div
+                  className="mt-1 flex flex-wrap items-center gap-2"
+                  data-testid="admin-ops-retention-error"
+                >
+                  <p role="alert" className="text-xs text-danger">
+                    {t("admin.ops.retention.loadError")}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={!daysValid}
+                    data-testid="admin-ops-retention-retry"
+                    onClick={() => void fetchRetention(effectiveDays)}
+                  >
+                    {t("admin.common.retry")}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="mt-1 flex items-center"
+                  data-testid="admin-ops-retention-loading"
+                  aria-busy
+                >
+                  <span className="sr-only">
+                    {t("admin.ops.retention.loading")}
+                  </span>
+                  <span
+                    className="h-3 w-64 animate-pulse rounded bg-hover"
+                    aria-hidden
+                  />
+                </div>
+              )
+            ) : (
+              <>
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="admin-ops-retention-counts"
+                >
+                  {t("admin.ops.retention.purgeable", {
+                    cards: retentionData.purgeable.cards,
+                    comments: retentionData.purgeable.comments,
+                    attachments: retentionData.purgeable.attachments,
+                    columns: retentionData.purgeable.columns,
+                  })}
+                </p>
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="admin-ops-backup-status"
+                >
+                  {retentionData.backups.mode === "external"
+                    ? t("admin.ops.backups.external", {
+                        location: retentionData.backups.location ?? "",
+                      })
+                    : t("admin.ops.backups.none")}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("admin.ops.backups.notAutomatic")}
+                </p>
+              </>
+            )}
           </>
-        )}
+        ) : null}
         <div className="mt-3 flex justify-end">
           <Button
             variant="destructive"
@@ -614,7 +622,7 @@ export function OpsPage() {
           </Button>
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-schedule-save"
             onClick={() => void saveOps()}
           >
@@ -665,7 +673,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-comms-save"
             onClick={() => void saveOps()}
           >

@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
-import { AdminApiClient } from "./admin-client";
+import {
+  AdminApiClient,
+  AdminRequestTimeoutError,
+  withAdminRequestTimeout,
+} from "./admin-client";
 
 /**
  * Admin transport (TASK-36): token handling, single-flight refresh, retry
@@ -58,6 +62,27 @@ function client(
 }
 
 describe("AdminApiClient", () => {
+  it("aborts a held one-time request on timeout", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      let signal: AbortSignal | undefined;
+      const request = withAdminRequestTimeout((next) => {
+        signal = next;
+        return new Promise<never>(() => {
+          /* held */
+        });
+      }, 1000);
+      const rejected = expect(request).rejects.toBeInstanceOf(
+        AdminRequestTimeoutError,
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      await rejected;
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   let onAuthLost: () => void;
   let lostCalls = 0;
 
