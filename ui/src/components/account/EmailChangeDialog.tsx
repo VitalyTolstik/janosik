@@ -185,9 +185,14 @@ export function EmailChangeDialog({
                 : t("account.email.passwordHint")}
             </DialogDescription>
           ) : (
-            <DialogDescription className="flex items-center gap-1.5">
-              <MailCheck className="h-3.5 w-3.5" aria-hidden />
-              {t("account.email.codeHint", { email: newEmail.trim() })}
+            <DialogDescription
+              data-testid="email-change-code-hint"
+              className="flex min-w-0 items-center gap-1.5"
+            >
+              <MailCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 break-words">
+                {t("account.email.codeHint", { email: newEmail.trim() })}
+              </span>
             </DialogDescription>
           )}
         </DialogHeader>

@@ -25,12 +25,12 @@ const UNVERIFIED: AuthUserDto = {
   emailVerifiedAt: null,
 };
 
-function renderGate(server: FakeServer) {
+function renderGate(server: FakeServer, user: AuthUserDto = UNVERIFIED) {
   const updateUser = vi.fn();
   const logout = vi.fn().mockResolvedValue(undefined);
   const value: AuthValue = {
     status: "authenticated",
-    user: UNVERIFIED,
+    user,
     login: vi.fn().mockResolvedValue(undefined),
     register: vi.fn().mockResolvedValue(undefined),
     updateUser,
@@ -84,6 +84,17 @@ describe("EmailVerificationGate (TASK-53)", () => {
       path: "/api/v1/auth/verify-email",
       body: { code: server.emailVerifyCode },
     });
+  });
+
+  it("wraps a long unbroken verification address inside the card", () => {
+    const server = new FakeServer();
+    server.emailVerified = false;
+    const email = `owner@${"d".repeat(63)}.example`;
+    renderGate(server, { ...UNVERIFIED, email });
+
+    const subtitle = screen.getByTestId("email-verify-subtitle");
+    expect(subtitle).toHaveTextContent(email);
+    expect(subtitle).toHaveClass("min-w-0", "break-words");
   });
 
   it("shows an inline error for a wrong code and stays", async () => {
