@@ -122,16 +122,27 @@ function maskCodeBlocks(chars: string[]): void {
     const line = text.slice(offset, newline === -1 ? text.length : newline);
 
     if (fenceChar !== null) {
-      if (fenceCloser(line, fenceChar, fenceLength, fenceQuoteDepth)) {
-        maskRange(chars, offset, end);
+      // A blockquote fence also ends when its container does: a shallower
+      // line is processed normally (and never masked by this fence).
+      if (
+        fenceQuoteDepth > 0 &&
+        countLeadingQuotes(line).depth < fenceQuoteDepth
+      ) {
         fenceChar = null;
         fenceLength = 0;
         fenceQuoteDepth = 0;
       } else {
-        maskRange(chars, offset, end);
+        if (fenceCloser(line, fenceChar, fenceLength, fenceQuoteDepth)) {
+          maskRange(chars, offset, end);
+          fenceChar = null;
+          fenceLength = 0;
+          fenceQuoteDepth = 0;
+        } else {
+          maskRange(chars, offset, end);
+        }
+        offset = end;
+        continue;
       }
-      offset = end;
-      continue;
     }
 
     const opener = fenceOpener(line);

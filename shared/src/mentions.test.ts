@@ -95,11 +95,26 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(parseCommentMentions(`> [ ] ~~~\n${token}`)).toEqual(mentioned);
   });
 
-  it("closes a blockquote fence when the quote ends", () => {
+  it("closes a blockquote fence when the quote container ends", () => {
     const token = mentionMarkdown("Alice", "user-1");
-    expect(parseCommentMentions(`> ~~~\n> ${token}\n~~~\n${token}`)).toEqual([
-      expect.objectContaining({ userId: "user-1" }),
-    ]);
+    const mentioned = [expect.objectContaining({ userId: "user-1" })];
+    for (const dedent of ["paragraph", "- list", "", "    four-space"]) {
+      expect(
+        parseCommentMentions(`> ~~~\n> ${token}\n${dedent}\n${token}`),
+      ).toEqual(mentioned);
+    }
+    // A different fence character inside the same quote is content, not a
+    // closer; the actual tilde closer ends the fence.
+    expect(
+      parseCommentMentions(`> ~~~\n> \`\`\`\n> ${token}\n> ~~~\n${token}`),
+    ).toEqual(mentioned);
+    // Nested quotes close at an intermediate or top-level dedent.
+    expect(
+      parseCommentMentions(`> > ~~~\n> > ${token}\n> paragraph\n${token}`),
+    ).toEqual(mentioned);
+    expect(parseCommentMentions(`> > ~~~\n> > ${token}\n${token}`)).toEqual(
+      mentioned,
+    );
   });
 
   it("keeps list-marker lines inside a top-level fence inert", () => {
@@ -129,11 +144,11 @@ describe("comment mentions (TASK-177.12)", () => {
     ).toEqual([expect.objectContaining({ userId: "user-1" })]);
   });
 
-  it("keeps explicit mention links in indented text live; only fenced/inline code suppresses", () => {
+  it("only top-level/≤3-space and blockquote fenced code, plus inline code, suppress", () => {
     const token = mentionMarkdown("Alice", "user-1");
     const mentioned = [expect.objectContaining({ userId: "user-1" })];
-    // Indentation does not make an explicit link inert: only fenced and
-    // inline code suppress it.
+    // Indentation does not make an explicit link inert: only supported
+    // fenced code and inline code suppress it.
     expect(parseCommentMentions(`    ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`    - ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`>     ${token}`)).toEqual(mentioned);
