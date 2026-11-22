@@ -254,6 +254,20 @@ interface BoardActionsValue {
   setCardDueDate: (cardId: string, dueDate?: number) => void;
   setCardPriority: (cardId: string, priority: CardPriority) => void;
   setCardAssign: (cardId: string, assigneeId: string | null) => void;
+  /**
+   * Replaces the card's machine-readable task contract (TASK-177.4): each
+   * list is independent, an empty list clears it, and an omitted list stays
+   * unchanged. The command is attributed like every other card edit.
+   */
+  setCardTaskSpec: (
+    cardId: string,
+    spec: { acceptanceCriteria?: string[]; definitionOfDone?: string[] },
+  ) => void;
+  /**
+   * Releases the card's agent claim without ending the agent session
+   * (TASK-177.4). The server still enforces holder/ADMIN rules.
+   */
+  releaseCardClaim: (cardId: string) => void;
   /** Links `cardId` to `targetCardId` (TASK-46); the row lands on `cardId`. */
   addCardLink: (
     cardId: string,
@@ -2289,6 +2303,8 @@ function createBoardActions(
   | "setCardDueDate"
   | "setCardPriority"
   | "setCardAssign"
+  | "setCardTaskSpec"
+  | "releaseCardClaim"
   | "addCardLink"
   | "removeCardLink"
   | "setCardCover"
@@ -2504,6 +2520,31 @@ function createBoardActions(
         type: "SET_CARD_ASSIGN",
         cardId,
         assigneeId,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    setCardTaskSpec: (
+      cardId: string,
+      spec: { acceptanceCriteria?: string[]; definitionOfDone?: string[] },
+    ) =>
+      dispatch({
+        type: "SET_CARD_TASK_SPEC",
+        cardId,
+        ...(spec.acceptanceCriteria !== undefined
+          ? { acceptanceCriteria: spec.acceptanceCriteria }
+          : {}),
+        ...(spec.definitionOfDone !== undefined
+          ? { definitionOfDone: spec.definitionOfDone }
+          : {}),
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    releaseCardClaim: (cardId: string) =>
+      dispatch({
+        type: "CLAIM_CARD",
+        cardId,
+        claimedBy: null,
+        leaseUntil: null,
         activityIds: ids(1),
         at: Date.now(),
       }),
@@ -2747,6 +2788,8 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     setCardDueDate: noop,
     setCardPriority: noop,
     setCardAssign: noop,
+    setCardTaskSpec: noop,
+    releaseCardClaim: noop,
     addCardLink: noop,
     removeCardLink: noop,
     setCardCover: noop,

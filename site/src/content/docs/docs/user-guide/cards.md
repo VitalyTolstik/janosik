@@ -85,16 +85,19 @@ face and in the table.
 
 A card can also be _claimed_: it is reserved for one agent while that agent
 works on it, so another agent cannot claim it at the same time. A claim is not
-an assignment and expires automatically. The `History` tab shows who claimed
-or released the card.
+an assignment and expires automatically. The card dialog shows the claim as
+`Claimed by … until …`; the claim owner and board ADMINs can release it with
+confirmation. Releasing a claim frees the card immediately but does not end the
+agent session. The `History` tab shows who claimed or released the card.
 
 ### Task spec
 
-When an agent sets a machine-readable task contract over the API or MCP, the
-dialog shows a read-only `Task spec` section with the card's `Acceptance
-criteria` and `Definition of done` as short lists. It is there for a human to
-review what the agent was told to do; the section is hidden while the card has
-no contract.
+A machine-readable task contract holds the card's `Acceptance criteria` and
+`Definition of done` as short lists. Agents set it over the API or MCP, and a
+board ADMIN or MEMBER can add, edit or clear it in the card dialog — one item
+per line — while a VIEWER only reads it. Every change is attributed in
+`History`. The section stays available to writers even when the contract is
+empty, so the first criteria can be added without an agent.
 
 ### Linked cards
 

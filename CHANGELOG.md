@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.4 human-owned agent state (G-03). A board ADMIN or MEMBER can now
+  add, edit and clear a card's `Acceptance criteria` / `Definition of done` in
+  the card dialog; VIEWERs keep the read-only view. The command goes through
+  `BoardContext` as `SET_CARD_TASK_SPEC`, so every change lands in Activity with
+  the human's attribution, and the MCP DoD gate reads the saved contract on the
+  next move. Cards with a lease show `Claimed by … until …`; the claim owner
+  and board ADMINs can release it with confirmation, which writes Activity and
+  frees the card without ending the agent session. EN/RU copy, 44 px touch
+  targets, keyboard focus/Escape handling, component tests and backend/MCP
+  coverage are included.
+
 - TASK-185.1 comment history foundation. Every real text edit now writes one
   immutable `CommentRevision` under the board-write lock, together with one
   `comment_updated` Activity carrying the before/after text; `editedAt` and the
