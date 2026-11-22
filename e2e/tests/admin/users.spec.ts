@@ -15,7 +15,11 @@ import {
   uniqueEmail,
   uniqueToken,
 } from "@/helpers/admin.js";
-import { createApiToken, seedRichCard } from "@/helpers/admin-content.js";
+import {
+  addComment,
+  createApiToken,
+  seedRichCard,
+} from "@/helpers/admin-content.js";
 import { waitForCodes, waitForMessage } from "@/helpers/mail.js";
 import type { BoardFixture } from "@/fixtures/board.js";
 
@@ -507,6 +511,36 @@ test("U13: user detail shows eight counters and nine populated tabs", async ({
   } finally {
     await seeded.context.close();
   }
+});
+
+test("U14: user comment cards wrap long text at 390px", async ({
+  page,
+  board,
+}) => {
+  const seeded = await seedRichCard(board);
+  const commentId = await addComment(board.api, seeded.cardId, "x".repeat(600));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`users/${board.userId}`), {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByTestId("admin-user-tab-comments").click();
+
+  const trigger = page.getByTestId(`admin-comment-history-${commentId}`);
+  await expect(trigger).toBeVisible();
+  const cell = trigger.locator("xpath=ancestor::td");
+  const cellWidth = await cell.evaluate((element) => ({
+    scroll: element.scrollWidth,
+    client: element.clientWidth,
+  }));
+  expect(cellWidth.scroll).toBeLessThanOrEqual(cellWidth.client + 1);
+  const tableViewport = await page
+    .getByTestId("admin-table-scroll")
+    .evaluate((element) => ({
+      scroll: element.scrollWidth,
+      client: element.clientWidth,
+    }));
+  expect(tableViewport.scroll).toBeLessThanOrEqual(tableViewport.client + 1);
 });
 
 async function seedDetailUser(
