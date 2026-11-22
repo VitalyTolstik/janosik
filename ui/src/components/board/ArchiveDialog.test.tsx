@@ -7,15 +7,19 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Board } from "@janosik/shared";
+import { api } from "@/api/client";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
+import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
+import { FakeServer } from "@/test/fake-server";
 import { BoardProvider } from "@/store/BoardContext";
 
 /**
@@ -76,22 +80,30 @@ function addArchivedCards(count: number, wipLimit?: number) {
   localStorage.setItem("janosik-boards", JSON.stringify(boards));
 }
 
-function renderArchive() {
+function renderArchive(entry = routes.board("b-1"), boardId?: string) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter initialEntries={[routes.board("b-1")]}>
-                <BoardProvider>
-                  <Routes>
-                    <Route
-                      path={routes.boardPattern}
-                      element={<ArchiveDialog open onOpenChange={() => {}} />}
-                    />
-                  </Routes>
-                </BoardProvider>
+              <MemoryRouter initialEntries={[entry]}>
+                <ToastProvider>
+                  <BoardProvider>
+                    <Routes>
+                      <Route
+                        path={routes.boardPattern}
+                        element={
+                          <ArchiveDialog
+                            open
+                            onOpenChange={() => {}}
+                            boardId={boardId}
+                          />
+                        }
+                      />
+                    </Routes>
+                  </BoardProvider>
+                </ToastProvider>
               </MemoryRouter>
             </TooltipProvider>
           </I18nProvider>
@@ -127,6 +139,8 @@ describe("ArchiveDialog", () => {
     expect(list).toHaveTextContent("Created");
     expect(list).toHaveTextContent("archived");
     expect(list).not.toHaveTextContent("Active thing");
+    // Singular count for exactly one archived card.
+    expect(screen.getByText("Alpha · 1 card")).toBeVisible();
   });
 
   it("filters rows by search and shows the empty result", async () => {
@@ -152,7 +166,7 @@ describe("ArchiveDialog", () => {
     await waitFor(() => expect(screen.queryByTestId("archive-row")).toBeNull());
   });
 
-  it("deletes an archived card for good after inline confirm", async () => {
+  it("removes an archived card after inline confirm", async () => {
     renderArchive();
     fireEvent.click(screen.getByTestId("archive-delete"));
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete" }));
@@ -220,6 +234,66 @@ describe("ArchiveDialog", () => {
     );
   });
 
+  it("restores a bulk selection oldest-first so the column keeps the archived order", async () => {
+    addArchivedCards(3);
+    renderArchive();
+    expect(screen.getByTestId("archive-undo-hint")).toHaveTextContent(
+      "one at a time",
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select all matching cards" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Restore selected" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "To do" }),
+    );
+    expect(
+      await screen.findByText(
+        "Restored 4 cards. Undo removes them one at a time.",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("archive-list")).toHaveTextContent(
+        "The archive is empty.",
+      ),
+    );
+    await waitFor(
+      () => {
+        const [board] = JSON.parse(
+          localStorage.getItem("janosik-boards")!,
+        ) as Board[];
+        expect(
+          board.columns[0].cardIds.map((id) => board.cards[id].title),
+        ).toEqual([
+          "Active thing",
+          "Extra 0",
+          "Extra 1",
+          "Extra 2",
+          "Archived thing",
+        ]);
+      },
+      { timeout: 2_000 },
+    );
+  });
+
+  it("singularises the bulk restore toast for one card", async () => {
+    renderArchive();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select all matching cards" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Restore selected" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "To do" }),
+    );
+    expect(
+      await screen.findByText("Restored 1 card. Undo removes it right away."),
+    ).toBeInTheDocument();
+  });
+
   it("does not offer a target without enough room for all selected cards", async () => {
     addArchivedCards(2, 3);
     renderArchive();
@@ -234,6 +308,22 @@ describe("ArchiveDialog", () => {
     ).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("uses a singular bulk-delete title for one card", async () => {
+    renderArchive();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select Archived thing" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete selected" }),
+    );
+    expect(
+      screen.getByRole("dialog", {
+        name: "Delete 1 selected card from the archive?",
+      }),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  });
+
   it("requires confirmation before deleting selected cards", async () => {
     addArchivedCards(2);
     renderArchive();
@@ -244,7 +334,9 @@ describe("ArchiveDialog", () => {
       screen.getByRole("button", { name: "Delete selected" }),
     );
     expect(
-      screen.getByText("Permanently delete 3 selected cards from the archive?"),
+      screen.getByText(
+        "3 selected cards will be deleted from the archive. You can undo this right away, one card at a time.",
+      ),
     ).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getAllByTestId("archive-row")).toHaveLength(3);
@@ -252,7 +344,7 @@ describe("ArchiveDialog", () => {
       screen.getByRole("button", { name: "Delete selected" }),
     );
     const confirmation = screen.getByRole("dialog", {
-      name: "Delete selected cards?",
+      name: "Delete 3 selected cards from the archive?",
     });
     await userEvent.click(
       within(confirmation).getByRole("button", { name: "Delete selected" }),
@@ -262,5 +354,218 @@ describe("ArchiveDialog", () => {
         "The archive is empty.",
       ),
     );
+  });
+});
+
+const SERVER_BOARD: Board = {
+  id: "b-1",
+  title: "Alpha",
+  columns: [{ id: "col-1", title: "To do", cardIds: [], createdAt: 1 }],
+  cards: {
+    "c-old": {
+      id: "c-old",
+      title: "Archived thing",
+      labelIds: [],
+      createdAt: 2000,
+      updatedAt: 3000,
+      archivedAt: 3000,
+    },
+  },
+  labels: [],
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+describe("ArchiveDialog permissions", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("gives a VIEWER a read-only archive: no per-row or bulk write actions", async () => {
+    const server = new FakeServer([SERVER_BOARD]);
+    server.role = "VIEWER";
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive();
+
+    const row = await screen.findByTestId(
+      "archive-row",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(row).toHaveTextContent("Archived thing");
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+    // Opening the archived card stays available for reading.
+    expect(within(row).getByTestId("archive-row-title")).toBeEnabled();
+  });
+
+  it("keeps an archived board's archive read-only and explains why", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 5_000 }]);
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(`${routes.board("b-1")}?card=c-old`);
+
+    const row = await screen.findByTestId(
+      "archive-row",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(row).toHaveTextContent("Archived thing");
+    expect(screen.getByTestId("archived-board-notice")).toHaveTextContent(
+      /archived and read-only/i,
+    );
+    expect(screen.getByTestId("archived-board-restore")).toBeVisible();
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("archived-board-notice")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("archive-search")).toHaveFocus(),
+    );
+  });
+
+  it("archives the viewed route board, not the active one", async () => {
+    const archivedBoard: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, archivedBoard]);
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Card archive" },
+      { timeout: 15_000 },
+    );
+    expect(dialog).toHaveTextContent("Archived beta");
+    expect(dialog).not.toHaveTextContent("Alpha");
+    const row = await screen.findByTestId("archive-row");
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+    expect(screen.getByTestId("archived-board-notice")).toBeVisible();
+  });
+
+  it("uses the pinned board's role, not the active board's", async () => {
+    const pinned: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, pinned]);
+    // ADMIN on the active board, VIEWER on the pinned archived one.
+    server.role = "ADMIN";
+    server.roles.set("b-2", "VIEWER");
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(within(notice).queryByTestId("archived-board-restore")).toBeNull();
+    expect(notice).toHaveTextContent(/ask a board admin/i);
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+    const row = screen.getByTestId("archive-row");
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+  });
+
+  it("keeps Restore for a pinned ADMIN viewed from a VIEWER board", async () => {
+    const pinned: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, pinned]);
+    // VIEWER on the active board, ADMIN on the pinned archived one.
+    server.role = "VIEWER";
+    server.roles.set("b-2", "ADMIN");
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(within(notice).getByTestId("archived-board-restore")).toBeVisible();
+    await userEvent.click(within(notice).getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("archived-board-notice")).toBeNull(),
+    );
+
+    // Restore follows the pinned role, not the active VIEWER role.
+    const row = await screen.findByTestId("archive-row");
+    expect(within(row).getByTestId("archive-delete")).toBeVisible();
+    expect(screen.getByTestId("archive-bulk-controls")).toBeVisible();
+  });
+
+  it("keeps post-restore actions on the pinned board", async () => {
+    const pinned: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, pinned]);
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    await userEvent.click(within(notice).getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("archived-board-notice")).toBeNull(),
+    );
+
+    // The restored pinned board now offers writes again; they must dispatch
+    // with its id, not into the still-different active board.
+    const row = await screen.findByTestId("archive-row");
+    await userEvent.click(within(row).getByTestId("archive-delete"));
+    await userEvent.click(
+      within(row).getByRole("button", { name: "Yes, delete" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("archive-list")).toHaveTextContent(
+        "The archive is empty.",
+      ),
+    );
+  });
+
+  it("tells a VIEWER to ask an admin instead of offering restore", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 5_000 }]);
+    server.role = "VIEWER";
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(`${routes.board("b-1")}?card=c-old`);
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(notice).toHaveTextContent(/ask a board admin/i);
+    expect(within(notice).queryByTestId("archived-board-restore")).toBeNull();
   });
 });

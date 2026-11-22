@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { normalizeBoards } from "./migrate";
 import type { Board } from "../types/kanban";
+import { UNTITLED_CARD_TITLE } from "../types/kanban";
 
 /**
  * Migration tests: boards saved by old app versions (cards with a single
@@ -52,6 +53,24 @@ describe("normalizeBoards", () => {
     expect(
       (next.cards["c1"] as unknown as { labelIds: string[] }).labelIds,
     ).toEqual([]);
+  });
+
+  it("normalizes a legacy blank card title during import", () => {
+    const legacy = card({ title: "   ", labelIds: [] });
+    const board = {
+      id: "b",
+      title: "B",
+      columns: [],
+      cards: { c1: legacy },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    } as unknown as Board;
+
+    const [next] = normalizeBoards([board]);
+    expect(next.cards["c1"].title).toBe(UNTITLED_CARD_TITLE);
+    // The neutral placeholder is not an English sentence in RU builds.
+    expect(next.cards["c1"].title).not.toMatch(/untitled/i);
   });
 
   it("leaves already-normalized boards untouched (same reference)", () => {
@@ -571,7 +590,7 @@ describe("normalizeBoards — column accent and board style (TASK-164)", () => {
 });
 
 describe("normalizeBoards — wrong types do not crash", () => {
-  it("drops a null label and blanks non-string titles", () => {
+  it("drops a null label and labels non-string card titles", () => {
     const board = {
       id: "b",
       title: 7,
@@ -585,7 +604,7 @@ describe("normalizeBoards — wrong types do not crash", () => {
     const [next] = normalizeBoards([board]);
     expect(next.title).toBe("");
     expect(next.columns[0].title).toBe("");
-    expect(next.cards["c1"].title).toBe("");
+    expect(next.cards["c1"].title).toBe(UNTITLED_CARD_TITLE);
     expect(next.labels).toEqual([{ id: "l", name: "", color: "red" }]);
   });
 });

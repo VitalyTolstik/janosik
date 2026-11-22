@@ -9,7 +9,7 @@ import {
   type BoardState,
 } from "./board-reducer";
 import type { Board, Card } from "../types/kanban";
-import { LIMITS } from "../types/kanban";
+import { LIMITS, UNTITLED_CARD_TITLE } from "../types/kanban";
 
 /**
  * Tests for the pure board reducer — the core move logic (cards within and
@@ -645,6 +645,19 @@ describe("boardReducer — UPDATE_CARD patch", () => {
       title: board.cards["card-1"].title,
     });
     expect(next).toEqual(board);
+  });
+
+  it("keeps the stored title when an edit would blank it", () => {
+    const board = freshBoard();
+    const original = board.cards["card-1"].title;
+    for (const title of ["", "   ", "\n\t"]) {
+      const next = reduceBoard(board, {
+        type: "UPDATE_CARD",
+        cardId: "card-1",
+        title,
+      });
+      expect(next.cards["card-1"].title).toBe(original);
+    }
   });
 });
 
@@ -1294,6 +1307,29 @@ describe("boardReducer — DUPLICATE_CARD", () => {
     expect(next.cards["card-1"]).toEqual(seed.cards["card-1"]);
   });
 
+  it("falls back to the source title for a blank copy title", () => {
+    const seed = freshBoard();
+    const sourceTitle = seed.cards["card-1"].title;
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+      title: "   ",
+    });
+    const column = next.columns.find((c) => c.id === "col-backlog")!;
+    expect(next.cards[column.cardIds[1]].title).toBe(sourceTitle);
+  });
+
+  it("labels a copy of a legacy blank-title card", () => {
+    const seed = freshBoard();
+    seed.cards["card-1"] = { ...seed.cards["card-1"], title: "" };
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_CARD",
+      cardId: "card-1",
+    });
+    const column = next.columns.find((c) => c.id === "col-backlog")!;
+    expect(next.cards[column.cardIds[1]].title).toBe(UNTITLED_CARD_TITLE);
+  });
+
   it("copies description, checklists, due date and cover", () => {
     const now = Date.now();
     const seed = freshBoard();
@@ -1439,6 +1475,31 @@ describe("boardReducer — DUPLICATE_COLUMN", () => {
     });
     // Original cards stay referenced by the original column only.
     expect(next.columns[0].cardIds).toEqual(["card-1", "card-2", "card-6"]);
+  });
+
+  it("falls back to the source column title for a blank copy title", () => {
+    const seed = freshBoard();
+    const sourceTitle = seed.columns[0].title;
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+      title: "   ",
+    });
+    expect(next.columns[1].title).toBe(sourceTitle);
+  });
+
+  it("labels a copied legacy blank column and its blank cards", () => {
+    const seed = freshBoard();
+    seed.columns[0] = { ...seed.columns[0], title: "" };
+    seed.cards["card-1"] = { ...seed.cards["card-1"], title: "" };
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+    });
+    expect(next.columns[1].title).toBe(UNTITLED_CARD_TITLE);
+    expect(next.cards[next.columns[1].cardIds[0]].title).toBe(
+      UNTITLED_CARD_TITLE,
+    );
   });
 
   it("gives copied checklists fresh ids and starts cards unlinked", () => {

@@ -16,6 +16,7 @@ import {
   isColumnAccentStyle,
   LIMITS,
   MAX_CARD_ACTIVITY,
+  UNTITLED_CARD_TITLE,
 } from "../types/kanban";
 import {
   hasLinkedPair,
@@ -971,11 +972,17 @@ function updateCard(
   if (!target) return board;
 
   // Live editing: clamp length only — trimming here would eat the trailing
-  // space of every keystroke while the user types.
-  const title =
+  // space of every keystroke while the user types. A blank title is not a
+  // card name though: keep the stored one so clearing the field cannot leave
+  // an unlabeled card on the board (QA-14).
+  const nextTitle =
     action.title === undefined
-      ? target.title
+      ? undefined
       : clampText(action.title, LIMITS.cardTitle);
+  const title =
+    nextTitle === undefined || nextTitle.trim() === ""
+      ? target.title
+      : nextTitle;
   // Empty description means "no description" — drop the field entirely.
   const description =
     action.description === undefined
@@ -1235,10 +1242,17 @@ function duplicateCard(
   }
   if (atWipLimit(board.columns[columnIndex], true)) return board;
   const at = action.at;
+  // A copy without a usable title falls back to the source; a legacy source
+  // with a blank name still produces a labeled card.
+  const copyTitle = (
+    action.title?.trim() ||
+    source.title.trim() ||
+    UNTITLED_CARD_TITLE
+  ).slice(0, LIMITS.cardTitle);
   const copy: Card = {
     ...source,
     id: action.newCardId,
-    title: action.title ?? source.title,
+    title: copyTitle,
     // Deep-copy nested content so later edits never alias the original.
     description: source.description,
     checklists: duplicateChecklists(source.checklists, action.newCardId),
@@ -1316,6 +1330,8 @@ function duplicateColumn(
     const cardCopy: Card = {
       ...sourceCard,
       id: cardIds[index],
+      title:
+        sourceCard.title.trim() === "" ? UNTITLED_CARD_TITLE : sourceCard.title,
       checklists: duplicateChecklists(sourceCard.checklists, cardIds[index]),
       dueDate: sourceCard.dueDate,
       cover: sourceCard.cover
@@ -1337,7 +1353,11 @@ function duplicateColumn(
   });
   const copy: Column = {
     id: action.newColumnId,
-    title: action.title ?? source.title,
+    title: (
+      action.title?.trim() ||
+      source.title.trim() ||
+      UNTITLED_CARD_TITLE
+    ).slice(0, LIMITS.columnTitle),
     cardIds: source.cardIds
       .map((sourceId, index) =>
         Object.hasOwn(board.cards, sourceId) ? cardIds[index] : "",
@@ -2323,6 +2343,8 @@ function restoreCard(
     if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
     if (guarded(action) && atWipLimit(column, true)) return board;
   }
+  const restoredCard: Card =
+    card.title.trim() === "" ? { ...card, title: UNTITLED_CARD_TITLE } : card;
   return {
     ...board,
     columns: column
@@ -2339,7 +2361,7 @@ function restoreCard(
             : c,
         )
       : board.columns,
-    cards: { ...board.cards, [card.id]: card },
+    cards: { ...board.cards, [card.id]: restoredCard },
   };
 }
 

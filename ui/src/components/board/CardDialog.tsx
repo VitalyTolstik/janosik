@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
+import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { CardDescriptionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
@@ -33,6 +34,7 @@ import { CardAssignee } from "@/components/board/CardAssignee";
 import { CardTaskSpec } from "@/components/board/CardTaskSpec";
 import { CardLinks } from "@/components/board/CardLinks";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
+import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { LabelPicker } from "@/components/board/LabelPicker";
 // MDXEditor + Lexical are ~half of the app bundle but only needed once the
 // user opens a card — load them on demand (TASK-19). vi.mock in tests
@@ -194,6 +196,7 @@ export function CardDialog({
   const card = board && cardId ? board.cards[cardId] : undefined;
   const { t, lang } = useI18n();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [linkEditorCardId, setLinkEditorCardId] = useState<string | null>(null);
   const [previousLinkCardId, setPreviousLinkCardId] = useState(cardId);
@@ -516,6 +519,9 @@ export function CardDialog({
   // What the draft was based on (TASK-156): a stored title that differs from
   // it while the user is typing is a foreign rename, not our own echo.
   const titleSeenRef = useRef("");
+  // The last non-blank local title while a foreign rename is unresolved.
+  // Clearing the field must not destroy the "Mine" choice behind Keep mine.
+  const titleMineRef = useRef("");
   const titleDirtyRef = useRef(false);
   const titleConflictRef = useRef(false);
   const [titleConflict, setTitleConflict] = useState(false);
@@ -533,17 +539,33 @@ export function CardDialog({
       titleTargetRef.current = null;
       if (!target) return;
       const value = titleDraftRef.current;
+      const trimmed = value.trim();
+      // A card always has a name (QA-14). Clearing the field reverts the
+      // draft instead of writing an empty title: the shared validator and
+      // reducer refuse blank titles too, so this is the friendly UI half.
+      if (trimmed === "") {
+        // Use the title currently stored on the card, not a stale draft
+        // baseline. A foreign rename is never dismissed by a blank submit:
+        // the conflict banner stays until the user chooses reload/keep.
+        const stored = board?.cards[target]?.title ?? titleSeenRef.current;
+        titleSeenRef.current = stored;
+        titleDraftRef.current = stored;
+        setTitleDraft(stored);
+        titleDirtyRef.current = false;
+        return;
+      }
       if (!force && titleConflictRef.current) {
         // Never overwrite the other writer's newer title on blur/close.
         rememberDraft(heldTitles, conflictedKey(boardId, target), value);
         return;
       }
       heldTitles.delete(conflictedKey(boardId, target));
-      titleSeenRef.current = value;
+      titleMineRef.current = "";
+      titleSeenRef.current = trimmed;
       titleDirtyRef.current = false;
       titleConflictRef.current = false;
       setTitleConflict(false);
-      updateCardRef.current(target, { title: value }, { quiet: true });
+      updateCardRef.current(target, { title: trimmed }, { quiet: true });
       // The idle gap already played the debounce role; stamp now so "updated"
       // and the undo precondition line up with the write. A pending description
       // touch would otherwise stamp the card a second time for the same burst.
@@ -553,7 +575,7 @@ export function CardDialog({
       }
       touchCardRef.current(target);
     },
-    [boardId],
+    [board?.cards, boardId],
   );
   const flushTitleRef = useRef(flushTitle);
   useEffect(() => {
@@ -576,6 +598,7 @@ export function CardDialog({
     titleDirtyRef.current = held !== undefined;
     titleTargetRef.current = held !== undefined ? cardId : null;
     titleConflictRef.current = held !== undefined;
+    titleMineRef.current = "";
     setTitleConflict(held !== undefined);
     if (titleTimerRef.current !== null) {
       window.clearTimeout(titleTimerRef.current);
@@ -615,11 +638,25 @@ export function CardDialog({
     titleDraftRef.current = stored;
     titleDirtyRef.current = false;
     titleConflictRef.current = false;
+    titleMineRef.current = "";
     setTitleConflict(false);
     setTitleDraft(stored);
   };
   const keepMyTitle = () => {
     if (!cardId) return;
+    const mine =
+      titleMineRef.current.trim() !== ""
+        ? titleMineRef.current
+        : titleDraftRef.current;
+    if (mine.trim() !== "") {
+      titleTargetRef.current = cardId;
+      titleDraftRef.current = mine;
+      setTitleDraft(mine);
+      titleConflictRef.current = false;
+      setTitleConflict(false);
+      flushTitleRef.current(true);
+      return;
+    }
     titleTargetRef.current = cardId;
     titleConflictRef.current = false;
     setTitleConflict(false);
@@ -627,13 +664,29 @@ export function CardDialog({
   };
   const onTitleChange = (value: string) => {
     if (readOnly || !cardId) return;
+    // A blank submit during an unresolved foreign rename still leaves the
+    // pre-blank local text available for Keep mine.
+    if (
+      titleConflictRef.current &&
+      value.trim() === "" &&
+      titleDraftRef.current.trim() !== ""
+    ) {
+      titleMineRef.current = titleDraftRef.current;
+    } else if (titleConflictRef.current && value.trim() !== "") {
+      titleMineRef.current = value;
+    }
     titleDraftRef.current = value;
     titleDirtyRef.current = true;
     titleTargetRef.current = cardId;
     setTitleDraft(value);
     if (titleTimerRef.current !== null) {
       window.clearTimeout(titleTimerRef.current);
+      titleTimerRef.current = null;
     }
+    // A blank draft must not be written or reverted under the user's hands
+    // while they are still editing: the hint explains the rule, and blur or
+    // close restores the stored title (QA-14 review).
+    if (value.trim() === "") return;
     titleTimerRef.current = window.setTimeout(() => {
       titleTimerRef.current = null;
       flushTitleRef.current();
@@ -916,6 +969,16 @@ export function CardDialog({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+            {board?.archivedAt !== undefined ? (
+              <ArchivedBoardNotice
+                boardId={board.id}
+                className="mb-2"
+                onOpenArchive={() => setArchiveOpen(true)}
+                onRestored={() =>
+                  window.requestAnimationFrame(() => titleRef.current?.focus())
+                }
+              />
+            ) : null}
             <div className="space-y-1.5">
               <label htmlFor="card-title-input" className="sr-only">
                 {t("card.titleLabel")}
@@ -947,9 +1010,16 @@ export function CardDialog({
                     className="col-start-1 row-start-1 min-h-10 min-w-0 resize-none break-words border-transparent bg-transparent px-2 text-xl font-semibold shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                     placeholder={t("card.titlePlaceholder")}
                     aria-describedby={
-                      showRemaining(titleDraft.length, LIMITS.cardTitle)
-                        ? "card-title-counter"
-                        : undefined
+                      [
+                        !readOnly && titleDraft.trim() === ""
+                          ? "card-title-blank-hint"
+                          : null,
+                        showRemaining(titleDraft.length, LIMITS.cardTitle)
+                          ? "card-title-counter"
+                          : null,
+                      ]
+                        .filter((id): id is string => id !== null)
+                        .join(" ") || undefined
                     }
                   />
                 </div>
@@ -965,6 +1035,21 @@ export function CardDialog({
                 limit={LIMITS.cardTitle}
                 testId="card-title-counter"
               />
+              {!readOnly && titleDraft.trim() === "" ? (
+                <p
+                  id="card-title-blank-hint"
+                  role="status"
+                  aria-live="polite"
+                  data-testid="card-title-blank-hint"
+                  className="text-xs text-amber-700 dark:text-amber-400"
+                >
+                  {t(
+                    (card?.title ?? "").trim() === ""
+                      ? "card.titleBlankHintAdd"
+                      : "card.titleBlankHint",
+                  )}
+                </p>
+              ) : null}
               {titleConflict && !readOnly ? (
                 <div
                   role="alert"
@@ -1376,6 +1461,14 @@ export function CardDialog({
           onConfirm={handleDelete}
         />
       </Dialog>
+      {/* The header is inert behind this mandatory card dialog, so the
+          archived notice provides the real entry to the viewed board's
+          archive. */}
+      <ArchiveDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        boardId={board.id}
+      />
     </>
   );
 }

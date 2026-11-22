@@ -15,6 +15,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
 import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
+import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
 import { useBoardBackground } from "@/hooks/use-board-background";
@@ -256,7 +257,10 @@ export function BoardSection() {
 
   // VIEWER is read-only: the server answers 403 to every command, so the UI
   // hides the mutating affordances instead of offering actions that bounce.
-  const readOnly = roleOf(board.id) === "VIEWER";
+  // An archived board is read-only for the same reason: the command path
+  // refuses writes until the board is restored from the switcher.
+  const readOnly =
+    roleOf(board.id) === "VIEWER" || board.archivedAt !== undefined;
   // A global-search hit can name the exact comment/attachment under the card
   // (TASK-177.13). The dialog scrolls to it and highlights it; an id that is
   // not in the loaded page/list is ignored, so the fallback is the card with
@@ -273,6 +277,11 @@ export function BoardSection() {
         boardBackgroundById(background).className,
       )}
     >
+      {/* An archived board is a read-only view: say why before the filter
+          toolbar, and offer the restore action to an ADMIN. */}
+      {board.archivedAt !== undefined ? (
+        <ArchivedBoardNotice boardId={board.id} className="mb-3" />
+      ) : null}
       {/* The watch view reads the whole board feed; a card filter would only
           contradict it, so the toolbar is hidden there. */}
       {view !== "watch" ? (

@@ -337,6 +337,36 @@ describe("WatchView (TASK-142)", () => {
     expect(entry.querySelector(".whitespace-pre-wrap")).not.toBeNull();
   });
 
+  it("keeps a short change as one plain line-through pair", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "rename",
+          at: Date.now(),
+          type: "UPDATE_CARD",
+          actorId: "u-1",
+          cardId: "card-1",
+          changes: [
+            { field: "title", from: "Initial title", to: "Updated title" },
+          ],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    // `watch-details.spec` relies on the collapsed row showing the whole
+    // stored value once, struck through — no character split.
+    expect(entry.querySelectorAll(".line-through")).toHaveLength(1);
+    expect(entry.querySelector(".line-through")).toHaveTextContent(
+      "Initial title",
+    );
+    expect(entry.querySelector("[data-diff]")).toBeNull();
+    expect(entry).toHaveTextContent("Initial title→Updated title");
+  });
+
   it("never falls back to a raw comment id", async () => {
     hoisted.enabled.value = true;
     hoisted.boardActivity.mockResolvedValue({
