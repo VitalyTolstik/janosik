@@ -86,6 +86,19 @@ html.light .agent-control-surface {
     padding-left: max(0px, env(safe-area-inset-left));
     padding-right: max(0px, env(safe-area-inset-right));
   }
+
+  /* F7: 768/1024 is still a touch surface. The board-wide Pause/Resume
+     action in the Live footer (and its live-status twin) keeps the phone
+     44 px floor instead of the 28 px desktop `.btn-sm` height. */
+  .agent-control-surface .ac-foot .ac-foot-actions .btn,
+  .agent-control-surface .live-status-actions .btn {
+    min-height: 44px;
+  }
+
+  .agent-control-surface .ac-toolbar .icon-btn-sm {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* Prototype scene scrim: 0.64 black in dark / slate 0.36 in light, 2 px
@@ -282,10 +295,18 @@ html[lang="ru"] .agent-control-surface .ac-title {
   display: flex;
 }
 
-/* Live/Runs still own an absolutely-positioned footer inside the panel, so
-   only those tabs reserve its 50 px; the Inbox footer is a flex sibling. */
+/* Runs still owns an absolutely-positioned footer inside the panel, so only
+   that tab reserves its height; Live and the Inbox footer are flex siblings. */
 .agent-control-surface .ac-body--overlay-footer {
   padding-bottom: 50px;
+}
+
+/* Tablet order matters: this must follow the 50 px base rule, otherwise the
+   base wins and the last rows sit under the absolute Runs footer. */
+@media (min-width: 761px) and (max-width: 1279px) {
+  .agent-control-surface .ac-body--overlay-footer {
+    padding-bottom: calc(61px + env(safe-area-inset-bottom));
+  }
 }
 
 .agent-control-surface .ac-footer-host {
@@ -1116,7 +1137,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   }
 
   .agent-control-surface .ac-body--overlay-footer {
-    padding-bottom: 56px;
+    padding-bottom: calc(61px + env(safe-area-inset-bottom));
   }
 
   .agent-control-surface .ac-rail {
@@ -1250,8 +1271,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
     display: none;
   }
 
-  .agent-control-surface .ac-foot .ac-foot-note,
-  .agent-control-surface .ac-foot .ac-foot-actions {
+  .agent-control-surface .ac-foot .ac-foot-note {
     display: none;
   }
 
@@ -1260,6 +1280,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   }
 
   .agent-control-surface .ac-foot .ac-foot-actions {
+    display: flex;
     width: 100%;
     margin-left: 0;
   }
@@ -1267,6 +1288,13 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-foot .ac-foot-actions .btn {
     flex: 1;
     min-height: 44px;
+  }
+
+  /* With sessions present the status card owns Pause/Resume; hiding this
+     now-empty footer avoids a blank bar above the home indicator. Member
+     Close still needs the footer, so only the admin variant goes. */
+  .agent-control-surface .ac-foot[data-live-status="true"][data-admin="true"] {
+    display: none;
   }
 
   .agent-control-surface .ac-list-head {
@@ -1287,6 +1315,18 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 /* Large screens: keep the 1440 mockup intact below 1600, then let the board
    control use the available canvas instead of a 1120×760 island. */
+/* The global toast stack is portalled next to the body, so the sheet exposes
+   the space its footer occupies through a root-level variable. A short
+   desktop such as 1366×768 also anchors the sheet near the bottom edge; the
+   script publishes 0 when the sheet is a centred island, so 1440/1920 keep
+   the normal bottom offset. */
+html[data-agent-control-open="true"] .janosik-toast-region {
+  bottom: calc(
+    1rem +
+      max(env(safe-area-inset-bottom), var(--agent-control-toast-offset, 0px))
+  );
+}
+
 @media (min-width: 1600px) {
   .agent-control-surface.ac-modal {
     top: 0;

@@ -189,7 +189,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-resume"
                 onClick={() => onAction("resume", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[1280px]:h-[26px] min-[1280px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <Play className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.resume")}
@@ -201,7 +201,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-pause"
                 onClick={() => onAction("pause", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[761px]:h-[26px] min-[761px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[1280px]:h-[26px] min-[1280px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <Pause className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.pause")}
@@ -215,7 +215,7 @@ function LiveSessionRow({
               aria-label={t("agentControl.live.endSession")}
               title={t("agentControl.live.endSessionHint")}
               onClick={() => onAction("end", session)}
-              className="h-11 w-11 min-h-11 rounded-[5px] px-0 text-[13px] font-normal leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:h-6 min-[761px]:w-6 min-[761px]:min-h-6 [&_svg]:!h-3.5 [&_svg]:!w-3.5"
+              className="h-11 w-11 min-h-11 rounded-[5px] px-0 text-[13px] font-normal leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[1280px]:h-6 min-[1280px]:w-6 min-[1280px]:min-h-6 [&_svg]:!h-3.5 [&_svg]:!w-3.5"
             >
               <Square className="h-3.5 w-3.5" aria-hidden />
             </Button>
@@ -643,6 +643,10 @@ export function PausePanel({
 
   const openTokens = () =>
     window.dispatchEvent(new Event("janosik:open-api-keys"));
+  // The status card owns the board Pause/Resume action whenever it renders;
+  // the footer keeps the same action for the empty and load-error states.
+  const liveStatusVisible =
+    sessions !== null && !sessionsError && sessions.length > 0;
 
   const onSaved = (updated: AgentSessionDto) => {
     setSessions((current) => {
@@ -712,10 +716,22 @@ export function PausePanel({
             </span>
             <h3>{t("agentControl.live.emptyTitle")}</h3>
             <p>{t("agentControl.live.emptyBody")}</p>
+            {paused ? (
+              <p
+                className="mt-1 flex items-center gap-1.5 rounded-[5px] border border-warning/40 bg-warning/[0.07] px-2 py-1 text-[11px] leading-[1.4] text-foreground"
+                data-testid="agent-live-empty-paused"
+              >
+                <Pause className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span>
+                  {t("agentControl.live.boardPausedTitle")}
+                  {pauseReason === null ? "" : ` · ${pauseReason}`}
+                </span>
+              </p>
+            ) : null}
           </div>
         ) : null}
 
-        {sessions !== null && !sessionsError && sessions.length > 0 ? (
+        {liveStatusVisible ? (
           <>
             <LiveStatusCard
               paused={paused}
@@ -803,9 +819,11 @@ export function PausePanel({
       </div>
 
       <footer
-        className="ac-foot"
+        className="ac-foot ac-foot-static"
         data-testid="board-pause-status"
         data-paused={paused ? "true" : "false"}
+        data-live-status={liveStatusVisible ? "true" : "false"}
+        data-admin={admin ? "true" : "false"}
       >
         <span className="ac-foot-note">
           <ShieldCheck className="icon" aria-hidden="true" />
@@ -822,7 +840,7 @@ export function PausePanel({
             : ""}
         </span>
         <div className="ac-foot-actions">
-          {admin ? (
+          {admin && !liveStatusVisible ? (
             paused ? (
               <button
                 type="button"

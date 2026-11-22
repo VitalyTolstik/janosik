@@ -497,7 +497,7 @@ export function ApprovalDecisionForm({
             variant="ghost"
             onClick={resetReject}
             disabled={submitting}
-            className="!py-0 h-7 min-h-0 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] text-muted-foreground max-md:min-h-11"
+            className="!py-0 h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] text-muted-foreground max-xl:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -507,7 +507,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="!py-0 h-7 min-h-0 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] disabled:opacity-40 max-md:min-h-11"
+            className="!py-0 h-7 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] disabled:opacity-40 max-xl:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -574,7 +574,7 @@ export function ApprovalDecisionForm({
               onClick={onNextPending}
               disabled={busy}
               className={cn(
-                "h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11",
+                "h-7 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-xl:min-h-11",
                 layout === "inline"
                   ? "shrink-0"
                   : "max-md:flex-1 max-md:basis-0",
@@ -592,7 +592,7 @@ export function ApprovalDecisionForm({
             onClick={() => setMode("reject")}
             disabled={busy}
             className={cn(
-              "min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] !leading-[11px] font-[650] max-md:min-h-11",
+              "gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] !leading-[11px] font-[650] max-xl:min-h-11",
               layout === "inline"
                 ? "h-7 flex-none px-[9px] text-[11px]"
                 : "h-8 flex-1 px-[11px] text-[11.5px]",
@@ -607,7 +607,7 @@ export function ApprovalDecisionForm({
             onClick={() => setApproveOpen(true)}
             disabled={busy}
             className={cn(
-              "min-h-0 gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] !leading-[11px] font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11",
+              "gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] !leading-[11px] font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-xl:min-h-11",
               layout === "inline"
                 ? "h-7 flex-none px-[9px] text-[11px]"
                 : "h-8 flex-1 px-[11px] text-[11.5px]",
@@ -661,7 +661,7 @@ export function ApprovalDecisionForm({
               variant="ghost"
               onClick={() => setApproveOpen(false)}
               disabled={submitting}
-              className="h-7 min-h-0 rounded-[6px] px-2.5 text-[11px] font-[650] text-muted-foreground max-md:min-h-11 max-md:min-w-[61px]"
+              className="h-7 rounded-[6px] px-2.5 text-[11px] font-[650] text-muted-foreground max-xl:min-h-11 max-md:min-w-[61px]"
             >
               {t("common.cancel")}
             </Button>
@@ -670,7 +670,7 @@ export function ApprovalDecisionForm({
               data-testid="approval-confirm"
               onClick={() => void submitApprove()}
               disabled={submitting || busy}
-              className="h-7 min-h-0 rounded-[6px] px-2.5 text-[11px] font-[650] max-md:min-h-11 max-md:min-w-[103px]"
+              className="h-7 rounded-[6px] px-2.5 text-[11px] font-[650] max-xl:min-h-11 max-md:min-w-[103px]"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -707,7 +707,7 @@ export function ApprovalCancelButton({
         disabled={busy || disabled}
         onClick={() => setOpen(true)}
         className={cn(
-          "text-muted-foreground hover:text-foreground max-md:min-h-11",
+          "text-muted-foreground hover:text-foreground max-xl:min-h-11",
           className,
         )}
       >
@@ -762,7 +762,7 @@ export function ApprovalDetailError({ onRetry }: { onRetry: () => void }) {
         size="sm"
         variant="outline"
         onClick={onRetry}
-        className="max-md:min-h-11"
+        className="max-xl:min-h-11"
       >
         {t("agentControl.retry")}
       </Button>
