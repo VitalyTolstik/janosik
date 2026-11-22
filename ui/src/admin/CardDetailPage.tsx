@@ -1020,7 +1020,10 @@ export function CardDetailPage() {
                       aria-current={anchored ? "true" : undefined}
                       className={anchored ? "bg-warning/10" : undefined}
                     >
-                      <Td className="max-w-[30rem] whitespace-normal">
+                      <Td
+                        label={t("admin.comments.column.text")}
+                        className="max-w-[30rem] whitespace-normal"
+                      >
                         {comment.text}
                         {comment.editedAt !== null ? (
                           <span
@@ -1034,7 +1037,7 @@ export function CardDetailPage() {
                           </span>
                         ) : null}
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.author")}>
                         <EntityLink
                           to={userHref(comment.authorId)}
                           copyValue={comment.authorEmail}
@@ -1043,10 +1046,10 @@ export function CardDetailPage() {
                           {comment.authorEmail}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.created")}>
                         <DateCell value={comment.createdAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.status")}>
                         {comment.deletedAt !== null ? (
                           <Badge variant="danger">
                             {t("admin.status.deleted")}
@@ -1057,7 +1060,7 @@ export function CardDetailPage() {
                           </Badge>
                         )}
                       </Td>
-                      <Td className="text-right">
+                      <Td label="" className="text-right">
                         <RowActions
                           testId={`admin-card-comment-actions-${comment.id}`}
                           actions={

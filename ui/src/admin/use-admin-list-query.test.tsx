@@ -167,6 +167,29 @@ describe("URL-backed admin lists", () => {
     );
   });
 
+  it("clamps an offset at or past the total even inside the last page index", async () => {
+    const fetcher = vi
+      .fn<(params: AdminListParams) => Promise<AdminPage<Row>>>()
+      .mockResolvedValue({
+        items: [],
+        total: 25,
+        limit: 50,
+        offset: 25,
+      });
+    const { result } = setup(
+      "/admin/users?offset=25&limit=50",
+      undefined,
+      fetcher,
+    );
+
+    await waitFor(() => expect(result.current.list.offset).toBe(0));
+    await waitFor(() =>
+      expect(
+        new URLSearchParams(result.current.location.search).get("offset"),
+      ).toBeNull(),
+    );
+  });
+
   it("preserves explicit URL bounds while paging", async () => {
     const { result, fetcher } = setup(
       "/admin/audit?tab=commands&from=0&to=123",

@@ -32,7 +32,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
-import { adminApi } from "./admin-client";
+import {
+  adminApi,
+  withAdminRequestTimeout,
+  AdminRequestTimeoutError,
+} from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
 import { EntityListSkeleton } from "./skeletons";
@@ -173,11 +177,16 @@ function CreateMasterDialog({
     setBusy(true);
     setError(null);
     try {
-      const response = await adminApi.createMaster({
-        email: email.trim(),
-        displayName: displayName.trim() || undefined,
-        role: owner ? "OWNER" : "OPERATOR",
-      });
+      const response = await withAdminRequestTimeout((signal) =>
+        adminApi.createMaster(
+          {
+            email: email.trim(),
+            displayName: displayName.trim() || undefined,
+            role: owner ? "OWNER" : "OPERATOR",
+          },
+          { signal },
+        ),
+      );
       if (requestRef.current !== request) return;
       toast.success(
         t("admin.masters.toast.created", { email: response.admin.email }),
@@ -189,7 +198,9 @@ function CreateMasterDialog({
       });
     } catch (cause) {
       if (requestRef.current !== request) return;
-      if (cause instanceof ApiError && cause.status === 409) {
+      if (cause instanceof AdminRequestTimeoutError) {
+        setError(t("admin.masters.create.timeout"));
+      } else if (cause instanceof ApiError && cause.status === 409) {
         setError(t("admin.masters.exists"));
       } else if (cause instanceof ApiError && cause.status === 403) {
         setError(t("admin.masters.forbidden"));
@@ -355,7 +366,9 @@ export function MastersPage() {
           t("admin.masters.toast.unlocked", { email: action.master.email }),
         );
       } else if (action.kind === "reset") {
-        const response = await adminApi.resetMasterPassword(action.master.id);
+        const response = await withAdminRequestTimeout((signal) =>
+          adminApi.resetMasterPassword(action.master.id, { signal }),
+        );
         toast.success(
           t("admin.masters.toast.passwordReset", {
             email: action.master.email,
@@ -379,8 +392,15 @@ export function MastersPage() {
         );
       }
       list.reload();
-    } catch {
-      toast.error(t("admin.common.error"));
+    } catch (cause) {
+      if (
+        action.kind === "reset" &&
+        cause instanceof AdminRequestTimeoutError
+      ) {
+        toast.error(t("admin.masters.reset.timeout"));
+      } else {
+        toast.error(t("admin.common.error"));
+      }
     } finally {
       runningRef.current = false;
       setRunning(false);

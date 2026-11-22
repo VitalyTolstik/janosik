@@ -232,6 +232,8 @@ const en = {
     "The reset request timed out. Close this dialog and try again; if the old password stops working, reset it once more.",
   "admin.userDetail.resend.done": "Verification code sent",
   "admin.userDetail.promote.done": "Master account created",
+  "admin.userDetail.promote.timeout":
+    "The promotion request timed out. The account may already be a master with a new password — retry, or reset it from the roster once it appears.",
   "admin.userDetail.exported": "Export downloaded",
   "admin.userDetail.impersonate.done": "Impersonation link opened in a new tab",
 
@@ -314,6 +316,7 @@ const en = {
     "Loading eligible rows and backup status for this window…",
   "admin.ops.retention.loadError":
     "Could not load the retention status for this window.",
+  "admin.ops.retention.invalid": "Enter a whole number from 1 to 3650 days.",
   "admin.ops.retention.purge": "Purge now",
   "admin.ops.retention.confirm.title": "Purge soft-deleted data?",
   "admin.ops.retention.confirm.body":
@@ -838,6 +841,8 @@ const en = {
   "admin.users.create.passwordHint":
     "Leave empty to generate a strong password and show it once.",
   "admin.users.create.submit": "Create",
+  "admin.users.create.timeout":
+    "The create request timed out. The user and a temporary password may already exist — check the roster, then reset the password if needed.",
   "admin.users.created.title": "User created",
   "admin.users.created.passwordOnce": "Password (shown once)",
   "admin.users.created.done": "Done",
@@ -1175,10 +1180,14 @@ const en = {
   "admin.masters.create.ownerHint":
     "Owners can manage other masters; operators cannot.",
   "admin.masters.create.submit": "Create",
+  "admin.masters.create.timeout":
+    "The create request timed out. The master and a temporary password may already exist — check the roster, then reset the password if needed.",
   "admin.masters.created.title": "Master created",
   "admin.masters.created.passwordOnce":
     "One-time password — hand it over and have it changed",
   "admin.masters.reset.title": "Password reset",
+  "admin.masters.reset.timeout":
+    "The reset request timed out. The password may already have been changed — check the master and reset again if the new password is unknown.",
   "admin.masters.created.done": "Done",
   "admin.masters.toast.created": "Master {email} created",
   "admin.masters.toast.disabled": "{email} blocked",
@@ -1779,6 +1788,8 @@ const ru: Record<AdminMessageKey, string> = {
     "Запрос на сброс не ответил вовремя. Закройте окно и повторите; если старый пароль перестал работать, сбросьте его ещё раз.",
   "admin.userDetail.resend.done": "Код подтверждения отправлен",
   "admin.userDetail.promote.done": "Мастер-аккаунт создан",
+  "admin.userDetail.promote.timeout":
+    "Запрос на повышение не ответил вовремя. Аккаунт мог уже стать мастером с новым паролем — повторите или сбросьте пароль из списка, когда он появится.",
   "admin.userDetail.exported": "Выгрузка скачана",
   "admin.userDetail.impersonate.done": "Ссылка входа открыта в новой вкладке",
 
@@ -1864,6 +1875,7 @@ const ru: Record<AdminMessageKey, string> = {
     "Загружаем подходящие строки и статус бэкапов для этого окна…",
   "admin.ops.retention.loadError":
     "Не удалось загрузить статус хранения для этого окна.",
+  "admin.ops.retention.invalid": "Введите целое число от 1 до 3650 дней.",
   "admin.ops.retention.purge": "Очистить",
   "admin.ops.retention.confirm.title": "Очистить soft-deleted данные?",
   "admin.ops.retention.confirm.body":
@@ -2392,6 +2404,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.users.create.passwordHint":
     "Оставь пустым — сгенерируем надёжный пароль и покажем один раз.",
   "admin.users.create.submit": "Создать",
+  "admin.users.create.timeout":
+    "Запрос на создание не ответил вовремя. Пользователь и временный пароль могли уже появиться — проверьте список и при необходимости сбросьте пароль.",
   "admin.users.created.title": "Пользователь создан",
   "admin.users.created.passwordOnce": "Пароль (показывается один раз)",
   "admin.users.created.done": "Готово",
@@ -2732,10 +2746,14 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.masters.create.ownerHint":
     "Owner может управлять мастерами; operator — нет.",
   "admin.masters.create.submit": "Создать",
+  "admin.masters.create.timeout":
+    "Запрос на создание не ответил вовремя. Мастер и временный пароль могли уже появиться — проверьте список и при необходимости сбросьте пароль.",
   "admin.masters.created.title": "Мастер создан",
   "admin.masters.created.passwordOnce":
     "Одноразовый пароль — передай его и попроси сменить",
   "admin.masters.reset.title": "Пароль сброшен",
+  "admin.masters.reset.timeout":
+    "Запрос на сброс не ответил вовремя. Пароль мог уже измениться — проверьте мастера и сбросьте ещё раз, если новый пароль неизвестен.",
   "admin.masters.created.done": "Готово",
   "admin.masters.toast.created": "Мастер {email} создан",
   "admin.masters.toast.disabled": "{email} заблокирован",

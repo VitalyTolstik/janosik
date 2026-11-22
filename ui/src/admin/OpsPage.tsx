@@ -78,7 +78,7 @@ export function OpsPage() {
   );
 
   const load = useCallback(
-    async (options: { preserveDrafts?: boolean } = {}) => {
+    async (options: { preserveDrafts?: boolean; draft?: string } = {}) => {
       try {
         const [nextFlags, nextOps] = await Promise.all([
           adminApi.listFlags(),
@@ -92,20 +92,30 @@ export function OpsPage() {
         const days = nextOps.retentionDays ?? 30;
         const previousSaved = savedRetentionDays.current;
         savedRetentionDays.current = days;
-        setRetentionDays((current) =>
+        const draft = options.draft ?? "";
+        const keepDraft =
           options.preserveDrafts === true &&
           previousSaved !== null &&
-          current !== String(previousSaved) &&
-          days === previousSaved
-            ? current
-            : String(days),
-        );
+          draft !== String(previousSaved) &&
+          days === previousSaved;
+        const effectiveDraft = keepDraft
+          ? draft.trim() === ""
+            ? 30
+            : Number(draft)
+          : days;
+        setRetentionDays(keepDraft ? draft : String(days));
         setMaintInterval(String(nextOps.maintenanceIntervalMinutes ?? 0));
         setDigestHours(String(nextOps.digestIntervalHours ?? 0));
         setReminderLead(String(nextOps.reminderLeadHours ?? 0));
         // Gate `ready` on the initial retention answer: the panel must not
-        // briefly claim zero eligible rows or "no backup directory".
-        await fetchRetention(days);
+        // briefly claim zero eligible rows or "no backup directory". When a
+        // preserved draft is active, fetch counts for the draft, not the
+        // stale saved window.
+        const validDraft =
+          Number.isFinite(effectiveDraft) &&
+          effectiveDraft >= 1 &&
+          effectiveDraft <= 3_650;
+        if (validDraft) await fetchRetention(effectiveDraft);
         setPhase("ready");
       } catch {
         setPhase("error");
@@ -147,10 +157,10 @@ export function OpsPage() {
         toast.success(t("admin.ops.saved"));
       } catch {
         toast.error(t("admin.common.actionFailed"));
-        void load({ preserveDrafts: true });
+        void load({ preserveDrafts: true, draft: retentionDays });
       }
     },
-    [load, t, toast],
+    [load, retentionDays, t, toast],
   );
 
   const saveOps = useCallback(async () => {
@@ -197,13 +207,13 @@ export function OpsPage() {
         );
         toast.success(t("admin.ops.runNow.done", { count: removed }));
       }
-      void load({ preserveDrafts: true });
+      void load({ preserveDrafts: true, draft: retentionDays });
     } catch {
       toast.error(t("admin.common.actionFailed"));
     } finally {
       setSweeping(false);
     }
-  }, [load, t, toast]);
+  }, [load, retentionDays, t, toast]);
 
   const openQueues = useCallback(async () => {
     setOpeningQueues(true);
@@ -272,6 +282,7 @@ export function OpsPage() {
     retention.retentionDays === effectiveDays;
   const retentionData = retentionMatches ? retention : null;
   const retentionFailed = retentionState === "error";
+  const retentionInvalid = !daysValid;
 
   if (phase === "loading")
     return <SettingsSkeleton testId="admin-ops-skeleton" panels={3} wide />;
@@ -421,14 +432,29 @@ export function OpsPage() {
               max={3650}
               value={retentionDays}
               ariaLabel={t("admin.ops.retentionDays")}
+              ariaDescribedBy={
+                daysValid ? undefined : "admin-ops-retention-invalid"
+              }
+              invalid={!daysValid}
               increaseLabel={t("admin.common.increase")}
               decreaseLabel={t("admin.common.decrease")}
               disabled={!isOwner}
               onChange={setRetentionDays}
             />
-            <span className="text-[11px] text-muted-foreground">
-              {t("admin.ops.retentionDaysHint")}
-            </span>
+            {daysValid ? (
+              <span className="text-[11px] text-muted-foreground">
+                {t("admin.ops.retentionDaysHint")}
+              </span>
+            ) : (
+              <span
+                id="admin-ops-retention-invalid"
+                role="alert"
+                className="text-[11px] text-danger"
+                data-testid="admin-ops-retention-invalid"
+              >
+                {t("admin.ops.retention.invalid")}
+              </span>
+            )}
             <div className="flex flex-wrap gap-1.5">
               {[30, 90, 365].map((preset) => (
                 <Button
@@ -469,7 +495,14 @@ export function OpsPage() {
             {t("admin.ops.retention.draftHint", { days: effectiveDays })}
           </p>
         ) : null}
-        {retentionData === null ? (
+        {retentionInvalid ? (
+          <p
+            className="mt-1 text-xs text-danger"
+            data-testid="admin-ops-retention-invalid-state"
+          >
+            {t("admin.ops.retention.invalid")}
+          </p>
+        ) : retentionData === null ? (
           retentionFailed ? (
             <div
               className="mt-1 flex flex-wrap items-center gap-2"

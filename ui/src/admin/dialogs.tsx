@@ -14,7 +14,11 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { useI18n } from "@/i18n";
 import { docsPageUrl } from "@/utils/docs-url";
-import { adminApi } from "./admin-client";
+import {
+  adminApi,
+  withAdminRequestTimeout,
+  AdminRequestTimeoutError,
+} from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import {
   ADMIN_PASSWORD_MAX,
@@ -47,6 +51,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
     password: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const requestRef = useRef(0);
 
   const emailError = fieldError(t, email, { required: true, email: true });
   const nameError = fieldError(t, displayName, { max: 50 });
@@ -74,14 +79,22 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    const request = ++requestRef.current;
     setBusy(true);
     setError(null);
     try {
-      const response = await adminApi.createUser({
-        email: email.trim(),
-        displayName: displayName.trim() || undefined,
-        password: password === "" ? undefined : password,
-      });
+      const response = await withAdminRequestTimeout((signal) =>
+        adminApi.createUser(
+          {
+            email: email.trim(),
+            displayName: displayName.trim() || undefined,
+            password: password === "" ? undefined : password,
+          },
+          { signal },
+        ),
+      );
+      if (requestRef.current !== request) return;
       toast.success(
         t("admin.users.toast.created", { email: response.user.email }),
       );
@@ -96,7 +109,10 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
         reset();
       }
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 409) {
+      if (requestRef.current !== request) return;
+      if (cause instanceof AdminRequestTimeoutError) {
+        setError(t("admin.users.create.timeout"));
+      } else if (cause instanceof ApiError && cause.status === 409) {
         setError(t("admin.users.changeEmail.taken"));
       } else if (cause instanceof ApiError && cause.messageText) {
         setError(cause.messageText);
@@ -104,11 +120,13 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
         setError(t("admin.common.error"));
       }
     } finally {
-      setBusy(false);
+      if (requestRef.current === request) setBusy(false);
     }
   };
 
   const closeAll = () => {
+    requestRef.current += 1;
+    setBusy(false);
     setOpen(false);
     reset();
   };
@@ -816,6 +834,7 @@ export function PromoteUserDialog({
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
 
   const close = () => {
@@ -824,6 +843,7 @@ export function PromoteUserDialog({
     setTyped("");
     setPassword(null);
     setCopied(false);
+    setError(null);
     onClose();
   };
 
@@ -837,14 +857,20 @@ export function PromoteUserDialog({
       return;
     const request = ++requestRef.current;
     setBusy(true);
+    setError(null);
     try {
-      const result = await adminApi.promoteUser(user.id);
+      const result = await withAdminRequestTimeout((signal) =>
+        adminApi.promoteUser(user.id, { signal }),
+      );
       if (requestRef.current !== request) return;
       setPassword(result.temporaryPassword);
       toast.success(t("admin.userDetail.promote.done"));
       onDone();
-    } catch {
-      if (requestRef.current === request) {
+    } catch (cause) {
+      if (requestRef.current !== request) return;
+      if (cause instanceof AdminRequestTimeoutError) {
+        setError(t("admin.userDetail.promote.timeout"));
+      } else {
         toast.error(t("admin.common.actionFailed"));
       }
     } finally {
@@ -900,6 +926,15 @@ export function PromoteUserDialog({
                 onChange={(event) => setTyped(event.target.value)}
               />
             </Field>
+            {error !== null ? (
+              <p
+                role="alert"
+                className="text-xs text-danger"
+                data-testid="admin-promote-error"
+              >
+                {error}
+              </p>
+            ) : null}
             <DialogFooter className="gap-2">
               <Button
                 size="sm"

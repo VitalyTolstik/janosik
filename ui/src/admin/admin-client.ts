@@ -76,6 +76,36 @@ import type {
 } from "@janosik/shared";
 import { ApiError, apiBaseUrl } from "@/api/client";
 
+export class AdminRequestTimeoutError extends Error {
+  constructor() {
+    super("admin_request_timeout");
+    this.name = "AdminRequestTimeoutError";
+  }
+}
+
+/** Bound one-time-secret mutations so a hung request cannot trap a dialog. */
+export const ADMIN_SECRET_REQUEST_TIMEOUT_MS = 15_000;
+
+export async function withAdminRequestTimeout<T>(
+  start: (signal: AbortSignal) => Promise<T>,
+  timeoutMs = ADMIN_SECRET_REQUEST_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new AdminRequestTimeoutError());
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([start(controller.signal), timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    controller.abort();
+  }
+}
+
 /**
  * Master-account HTTP client (TASK-36).
  *
@@ -178,20 +208,24 @@ export class AdminApiClient {
     return response.blob();
   }
 
-  refreshSession(): Promise<AdminAuthResponseDto | null> {
+  refreshSession(
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AdminAuthResponseDto | null> {
     if (this.refreshPromise === null) {
-      this.refreshPromise = this.runRefresh().finally(() => {
+      this.refreshPromise = this.runRefresh(options.signal).finally(() => {
         this.refreshPromise = null;
       });
     }
     return this.refreshPromise;
   }
 
-  private async runRefresh(): Promise<AdminAuthResponseDto | null> {
+  private async runRefresh(
+    signal?: AbortSignal,
+  ): Promise<AdminAuthResponseDto | null> {
     try {
       const response = await this.request<AdminAuthResponseDto>(
         "/admin/auth/refresh",
-        { method: "POST", body: {}, auth: false },
+        { method: "POST", body: {}, auth: false, signal },
       );
       this.accessToken = response.accessToken;
       return response;
@@ -286,10 +320,12 @@ export class AdminApiClient {
 
   createMaster(
     body: AdminCreateMasterRequest,
+    options: { signal?: AbortSignal } = {},
   ): Promise<AdminCreateMasterResponse> {
     return this.request<AdminCreateMasterResponse>("/admin/admins", {
       method: "POST",
       body,
+      signal: options.signal,
     });
   }
 
@@ -303,10 +339,13 @@ export class AdminApiClient {
     });
   }
 
-  resetMasterPassword(masterId: string): Promise<AdminCreateMasterResponse> {
+  resetMasterPassword(
+    masterId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AdminCreateMasterResponse> {
     return this.request<AdminCreateMasterResponse>(
       `/admin/admins/${masterId}/password/reset`,
-      { method: "POST" },
+      { method: "POST", signal: options.signal },
     );
   }
 
@@ -321,10 +360,14 @@ export class AdminApiClient {
     return this.list("/admin/users", "users", params);
   }
 
-  createUser(body: AdminCreateUserRequest): Promise<AdminCreateUserResponse> {
+  createUser(
+    body: AdminCreateUserRequest,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AdminCreateUserResponse> {
     return this.request<AdminCreateUserResponse>("/admin/users", {
       method: "POST",
       body,
+      signal: options.signal,
     });
   }
 
@@ -615,10 +658,13 @@ export class AdminApiClient {
     );
   }
 
-  promoteUser(id: string): Promise<AdminPromoteUserResponse> {
+  promoteUser(
+    id: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AdminPromoteUserResponse> {
     return this.request<AdminPromoteUserResponse>(
       `/admin/users/${encodeURIComponent(id)}/promote`,
-      { method: "POST", body: {} },
+      { method: "POST", body: {}, signal: options.signal },
     );
   }
 

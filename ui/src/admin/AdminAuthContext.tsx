@@ -10,7 +10,7 @@ import {
 
 import type { AdminAuthResponseDto, AdminUserDto } from "@janosik/shared";
 import { ApiError } from "@/api/client";
-import { adminApi } from "./admin-client";
+import { adminApi, withAdminRequestTimeout } from "./admin-client";
 
 /**
  * Master-session state (TASK-36). The same boot dance as the user contour —
@@ -69,7 +69,9 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     // deliberate sign-in instead of spinning forever.
     const refresh = async () => {
       try {
-        const session = await adminApi.refreshSession();
+        const session = await withAdminRequestTimeout((signal) =>
+          adminApi.refreshSession({ signal }),
+        );
         if (cancelled) return;
         setRecovering(null);
         setRecoveryFailed(null);

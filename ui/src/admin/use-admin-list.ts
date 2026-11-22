@@ -183,7 +183,8 @@ export function useAdminList<T>(
         const pageLimit = page.limit > 0 ? page.limit : limit;
         const lastPage =
           page.total === 0 ? 0 : Math.ceil(page.total / pageLimit) - 1;
-        if (Math.floor(offset / pageLimit) > lastPage) {
+        const pastEnd = page.total > 0 && offset >= page.total;
+        if (Math.floor(offset / pageLimit) > lastPage || pastEnd) {
           // Automatic correction: replace the invalid history entry, never
           // push a new one (Back would clamp again and trap the user).
           setHistoryReplaceToken((token) => token + 1);
