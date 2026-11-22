@@ -73,12 +73,16 @@ export class AccountDataService {
   }
 
   async latestExport(userId: string): Promise<UserDataExportDto | null> {
-    // Prefer the newest pending/ready row even after its TTL: exportStatus
-    // reports `expired`, which tells the UI to offer a fresh copy instead of
-    // silently pretending no export ever existed.
+    // Prefer a live pending/ready row. The unfiltered fallback still publishes
+    // a lone expired row as `expired` (so the UI can offer a fresh copy) but
+    // never lets an older expired ready row shadow a newer failed attempt.
     const row =
       (await this.prisma.dataExport.findFirst({
-        where: { userId, status: { in: ["pending", "ready"] } },
+        where: {
+          userId,
+          status: { in: ["pending", "ready"] },
+          expiresAt: { gt: new Date() },
+        },
         orderBy: { createdAt: "desc" },
         select: { id: true },
       })) ??

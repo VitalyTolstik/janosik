@@ -438,7 +438,7 @@ describe("ApiTokensSection (TASK-36.1)", () => {
       const button = within(row).getByTestId(testId);
       expect(button).toHaveAttribute("aria-label", label);
       expect(button).toHaveAccessibleName(label);
-      expect(button).toHaveClass("max-md:min-h-11", "max-md:min-w-11");
+      expect(button).toHaveClass("max-lg:min-h-11", "max-lg:min-w-11");
     }
   });
 

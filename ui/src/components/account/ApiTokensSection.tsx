@@ -953,7 +953,7 @@ function TokenRow({
             aria-label={`${t("account.tokens.edit")}: ${token.name}`}
             disabled={busy}
             onClick={onEdit}
-            className="max-md:min-h-11 max-md:min-w-11"
+            className="max-lg:min-h-11 max-lg:min-w-11"
           >
             <Pencil className="h-4 w-4" aria-hidden />
             <span className="hidden sm:inline">{t("account.tokens.edit")}</span>
@@ -967,7 +967,7 @@ function TokenRow({
               aria-label={`${t("account.tokens.resume")}: ${token.name}`}
               disabled={busy}
               onClick={onResume}
-              className="max-md:min-h-11 max-md:min-w-11"
+              className="max-lg:min-h-11 max-lg:min-w-11"
             >
               <CirclePlay className="h-4 w-4" aria-hidden />
               <span className="hidden sm:inline">
@@ -983,7 +983,7 @@ function TokenRow({
               aria-label={`${t("account.tokens.pause")}: ${token.name}`}
               disabled={busy}
               onClick={onPause}
-              className="max-md:min-h-11 max-md:min-w-11"
+              className="max-lg:min-h-11 max-lg:min-w-11"
             >
               <CirclePause className="h-4 w-4" aria-hidden />
               <span className="hidden sm:inline">
@@ -997,7 +997,7 @@ function TokenRow({
             variant="ghost"
             data-testid="token-revoke"
             aria-label={`${t("account.tokens.revoke")}: ${token.name}`}
-            className="text-danger hover:bg-danger/10 hover:text-(--chip-red) max-md:min-h-11 max-md:min-w-11"
+            className="text-danger hover:bg-danger/10 hover:text-(--chip-red) max-lg:min-h-11 max-lg:min-w-11"
             onClick={onRevoke}
           >
             <Trash2 className="h-4 w-4" aria-hidden />

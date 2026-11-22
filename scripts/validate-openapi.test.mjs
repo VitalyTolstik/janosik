@@ -161,6 +161,10 @@ test("keeps the account-export status enum in sync with the shared contract", as
   const download = spec.paths["/users/me/export/{exportId}/download"].get;
   assert.equal(download.responses[410].$ref, "#/components/responses/Gone");
   assert.match(spec.components.responses.Gone.description, /410 gone/);
+
+  const latest = spec.paths["/users/me/export/latest"].get;
+  assert.doesNotMatch(latest.summary, /unexpired/i);
+  assert.match(latest.description, /status: "expired"/);
 });
 
 test("lint catches a duplicate operationId", async () => {

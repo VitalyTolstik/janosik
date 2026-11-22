@@ -376,7 +376,7 @@ function NotificationsPanel({
                     data-testid="invitation-accept"
                     disabled={pending || expired}
                     onClick={() => void handleAccept(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs max-md:min-h-11"
+                    className="h-8 flex-1 gap-1.5 text-xs max-lg:min-h-11"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t("notifications.accept")}
@@ -387,7 +387,7 @@ function NotificationsPanel({
                     data-testid="invitation-decline"
                     disabled={pending}
                     onClick={() => void handleDecline(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-md:min-h-11"
+                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-lg:min-h-11"
                   >
                     <X className="h-3.5 w-3.5" />
                     {t("notifications.decline")}

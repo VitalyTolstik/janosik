@@ -2550,8 +2550,11 @@ paths:
       tags: [Account]
       operationId: getLatestAccountExport
       security: [browserSession: []]
-      summary: Read the latest unexpired account export
-      description: Browser session only; returns null if no export exists.
+      summary: Read the latest account export
+      description: |
+        Browser session only; returns null if no export exists. The latest row
+        is still returned after its TTL as `status: "expired"` so the client
+        can offer a fresh copy.
       responses:
         "200":
           description: Latest export status or null.

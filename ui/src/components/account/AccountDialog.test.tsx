@@ -409,8 +409,8 @@ describe("AccountDialog (TASK-36.1)", () => {
       inline: "center",
     });
     expect(dataTab).toHaveAttribute("aria-current", "page");
-    expect(dataTab).toHaveClass("max-md:min-h-11");
-    expect(screen.getByTestId("account-logout")).toHaveClass("max-md:min-h-11");
+    expect(dataTab).toHaveClass("max-lg:min-h-11");
+    expect(screen.getByTestId("account-logout")).toHaveClass("max-lg:min-h-11");
     expect(dataTab.closest("nav")).toHaveClass("overflow-x-auto");
 
     // Simulate the real rail: the right cue shows while content continues,

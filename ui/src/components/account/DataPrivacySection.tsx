@@ -167,16 +167,18 @@ export function DataPrivacySection() {
 
   const downloadExport = async () => {
     if (!exportRow) return;
+    const attemptedId = exportRow.id;
     setExportError(null);
     try {
-      const blob = await api.downloadAccountExport(exportRow.id);
-      downloadBlob(`janosik-account-${exportRow.id}.json`, blob);
+      const blob = await api.downloadAccountExport(attemptedId);
+      downloadBlob(`janosik-account-${attemptedId}.json`, blob);
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 410) {
         // The artifact outlived the row's TTL between the two calls. Adopt
-        // the server's verdict so the dead Download action disappears.
+        // the server's verdict only for the row that was actually attempted;
+        // a newer export started meanwhile must stay downloadable.
         setExportRow((row) =>
-          row === null ? null : { ...row, status: "expired" },
+          row?.id === attemptedId ? { ...row, status: "expired" } : row,
         );
         return;
       }
@@ -283,6 +285,8 @@ export function DataPrivacySection() {
             </Button>
           ) : null}
           <span
+            role="status"
+            aria-live="polite"
             className="text-xs text-muted-foreground"
             data-testid="account-export-status"
           >

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -232,8 +232,75 @@ describe("DataPrivacySection (TASK-166)", () => {
         "Expired",
       ),
     );
+    const status = screen.getByTestId("account-export-status");
+    expect(status).toHaveAttribute("role", "status");
+    expect(status).toHaveAttribute("aria-live", "polite");
     expect(screen.queryByTestId("account-export-download")).toBeNull();
     expect(screen.queryByTestId("account-export-error")).toBeNull();
+  });
+
+  it("keeps a newer export when an older download reports 410", async () => {
+    vi.mocked(api.latestAccountExport).mockResolvedValue({
+      id: "old",
+      status: "ready",
+      createdAt: 1,
+      expiresAt: Date.now() + 60_000,
+      sizeBytes: 10,
+      error: null,
+    });
+    let release!: (response: Response) => void;
+    const gate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const downloadStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      fakeApi((call) => {
+        if (call.url.endsWith("/download")) {
+          started();
+          return gate;
+        }
+        if (call.method === "POST" && call.url.endsWith("/users/me/export")) {
+          return json(
+            {
+              id: "fresh",
+              status: "ready",
+              createdAt: 2,
+              expiresAt: Date.now() + 60_000,
+              sizeBytes: 20,
+              error: null,
+            },
+            202,
+          );
+        }
+        return json({});
+      }),
+    );
+    renderSection();
+    await userEvent.click(await screen.findByTestId("account-export-download"));
+    await downloadStarted;
+
+    await userEvent.click(screen.getByTestId("account-export-request"));
+    await waitFor(() =>
+      expect(screen.getByTestId("account-export-status")).toHaveTextContent(
+        "Ready",
+      ),
+    );
+
+    await act(async () => {
+      release(json({ message: "Export has expired" }, 410));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // The deferred 410 belongs to the old row and must not retire "fresh".
+    expect(screen.getByTestId("account-export-status")).toHaveTextContent(
+      "Ready",
+    );
+    expect(screen.getByTestId("account-export-download")).toBeVisible();
+    expect(mocks.downloadBlob).not.toHaveBeenCalled();
   });
 
   it("keeps a download failure next to the export controls", async () => {

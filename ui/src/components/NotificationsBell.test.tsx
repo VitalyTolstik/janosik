@@ -463,6 +463,12 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     expect(within(row).getByText("Invited board")).toBeInTheDocument();
     expect(within(row).getByText(/Owner/)).toBeInTheDocument();
     expect(within(row).getByText(/Member/)).toBeInTheDocument();
+    expect(screen.getByTestId("invitation-accept")).toHaveClass(
+      "max-lg:min-h-11",
+    );
+    expect(screen.getByTestId("invitation-decline")).toHaveClass(
+      "max-lg:min-h-11",
+    );
   });
 
   it("keeps a long invitation board title readable", async () => {

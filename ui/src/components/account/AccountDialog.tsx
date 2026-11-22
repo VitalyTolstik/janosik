@@ -163,7 +163,7 @@ export function AccountDialog({
       window.clearTimeout(timer);
       window.removeEventListener("resize", measureRail);
     };
-  }, [measureRail, open, revealSection, section]);
+  }, [lang, measureRail, open, revealSection, section]);
 
   /**
    * Only a dialog layered above this account panel owns Escape. An unrelated
@@ -326,7 +326,7 @@ export function AccountDialog({
                   aria-current={section === id ? "page" : undefined}
                   onClick={() => selectSection(id)}
                   className={cn(
-                    "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors max-md:min-h-11 sm:w-full",
+                    "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors max-lg:min-h-11 sm:w-full",
                     section === id
                       ? "bg-primary/10 font-medium text-primary"
                       : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -344,7 +344,7 @@ export function AccountDialog({
                     setOpen(false);
                     onOpenAgents();
                   }}
-                  className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:min-h-11 sm:w-full"
+                  className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11 sm:w-full"
                 >
                   <Bot className="h-4 w-4 shrink-0" aria-hidden />
                   {t("agents.open")}
@@ -354,7 +354,7 @@ export function AccountDialog({
                 type="button"
                 data-testid="account-logout"
                 onClick={() => setConfirmingLogout(true)}
-                className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 max-md:min-h-11 sm:mt-auto sm:w-full"
+                className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 max-lg:min-h-11 sm:mt-auto sm:w-full"
               >
                 <LogOut className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="whitespace-nowrap">{t("auth.logout")}</span>

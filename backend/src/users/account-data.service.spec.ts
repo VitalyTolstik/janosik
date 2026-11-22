@@ -132,8 +132,11 @@ describe("AccountDataService export status", () => {
     ).resolves.toMatchObject({ status: "failed" });
   });
 
-  it("returns the latest expired ready export as expired", async () => {
-    const findFirst = jest.fn().mockResolvedValue({ id: "exp-1" });
+  it("returns a lone expired ready export as expired", async () => {
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "exp-1" });
     const exports = {
       row: jest
         .fn()
@@ -154,11 +157,50 @@ describe("AccountDataService export status", () => {
       id: "exp-1",
       status: "expired",
     });
-    // TTL is applied by exportStatus, not by dropping the row from "latest".
-    expect(findFirst).toHaveBeenCalledWith(
+    // The live query filters by TTL; the fallback publishes the expired row.
+    expect(findFirst).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        where: { userId: "user-1", status: { in: ["pending", "ready"] } },
+        where: {
+          userId: "user-1",
+          status: { in: ["pending", "ready"] },
+          expiresAt: { gt: expect.any(Date) },
+        },
       }),
     );
+    expect(findFirst).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: { userId: "user-1" } }),
+    );
+  });
+
+  it("lets a newer failed attempt win over an older expired ready row", async () => {
+    const findFirst = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "failed-newer" });
+    const exports = {
+      row: jest.fn().mockResolvedValue(
+        row({
+          id: "failed-newer",
+          status: "failed",
+          error: "builder crashed",
+          expiresAt: Date.now() - 1_000,
+        }),
+      ),
+    };
+    const service = new AccountDataService(
+      { dataExport: { findFirst } } as never,
+      exports as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.latestExport("user-1")).resolves.toMatchObject({
+      id: "failed-newer",
+      status: "failed",
+    });
   });
 });
