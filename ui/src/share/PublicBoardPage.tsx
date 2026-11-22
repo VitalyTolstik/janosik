@@ -279,7 +279,7 @@ export function PublicBoardPage() {
 function PublicHeader({ mode }: { mode?: "snapshot" | "live" }) {
   const { t } = useI18n();
   return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-40 flex h-[calc(3.5rem_+_env(safe-area-inset-top))] shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent pt-[env(safe-area-inset-top)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] backdrop-blur-md sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
       <div className="flex items-center gap-2 sm:gap-3">
         <div className="group flex items-center gap-1.5">
           <BrandMark />
@@ -302,7 +302,7 @@ function PublicHeader({ mode }: { mode?: "snapshot" | "live" }) {
 function PublicHeaderChrome() {
   const { t } = useI18n();
   return (
-    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-40 flex h-[calc(3.5rem_+_env(safe-area-inset-top))] shrink-0 items-center justify-between border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent pt-[env(safe-area-inset-top)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] backdrop-blur-md sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
       <div className="group flex items-center gap-1.5">
         <BrandMark />
       </div>

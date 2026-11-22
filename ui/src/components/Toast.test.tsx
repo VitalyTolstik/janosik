@@ -58,6 +58,14 @@ describe("Toast", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Board saved");
   });
 
+  it("keeps the notifications region above the home-indicator safe area", () => {
+    renderToasts();
+
+    expect(
+      screen.getByRole("region", { name: "Notifications" }).className,
+    ).toContain("bottom-[calc(1rem_+_env(safe-area-inset-bottom))]");
+  });
+
   it("auto-dismisses after 4.5 seconds", () => {
     renderToasts();
     fireEvent.click(screen.getByRole("button", { name: "push" }));

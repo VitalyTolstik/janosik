@@ -1250,8 +1250,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
     display: none;
   }
 
-  .agent-control-surface .ac-foot .ac-foot-note,
-  .agent-control-surface .ac-foot .ac-foot-actions {
+  .agent-control-surface .ac-foot .ac-foot-note {
     display: none;
   }
 
@@ -1260,6 +1259,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   }
 
   .agent-control-surface .ac-foot .ac-foot-actions {
+    display: flex;
     width: 100%;
     margin-left: 0;
   }

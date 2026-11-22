@@ -132,6 +132,53 @@ describe("agent design system (TASK-179.9)", () => {
     expect(block).toContain("width: 360px");
   });
 
+  it("keeps the board pause/resume footer reachable on the phone Live tab", () => {
+    // F4: zero live sessions used to leave the footer with its note and its
+    // actions both `display:none`, so a paused board had no Resume button.
+    // The note may stay hidden, but the actions row must remain laid out.
+    const mobileStart = agentControlCss.indexOf("@media (max-width: 760px)");
+    const mobileEnd = agentControlCss.indexOf("@media (max-width: 480px)");
+    const mobileBlock = agentControlCss.slice(mobileStart, mobileEnd);
+    expect(mobileStart).toBeGreaterThan(-1);
+    expect(mobileBlock).toContain(
+      ".agent-control-surface .ac-foot .ac-foot-note {",
+    );
+    expect(mobileBlock).not.toMatch(
+      /\.agent-control-surface \.ac-foot \.ac-foot-actions \{[^}]*display:\s*none/,
+    );
+    expect(mobileBlock).toMatch(
+      /\.agent-control-surface \.ac-foot \.ac-foot-actions \{\s*display: flex;\s*width: 100%;/,
+    );
+    expect(mobileBlock).toMatch(
+      /\.agent-control-surface \.ac-foot \.ac-foot-actions \.btn \{[^}]*min-height: 44px/,
+    );
+    // The Pause/Resume (and member Close) controls live outside the
+    // `sessions.length > 0` branch, so the empty Live state inherits them.
+    expect(pausePanel).toContain('data-testid="board-pause-status"');
+    expect(pausePanel).toContain('data-testid="board-pause"');
+    expect(pausePanel).toContain('data-testid="board-resume"');
+  });
+
+  it("keeps tablet touch controls at 44 px", () => {
+    // F7: at 768 px `md` resets the mobile minimum back to 16 px. These four
+    // controls are touch targets on a tablet, so the 44 px floor is kept at
+    // every width instead of only below 768.
+    expect(attention).toContain(
+      '"inline-flex min-h-11 items-center gap-1 text-[11px] transition-colors"',
+    );
+    expect(attention).not.toContain("md:min-h-0");
+    expect(agentsPage).toContain(
+      'className="ml-auto inline-flex min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"',
+    );
+    expect(agentsPage).not.toContain("min-[761px]:min-h-0");
+    expect(agentsAutomation).toContain(
+      "inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap",
+    );
+    expect(agentsAutomation).toContain(
+      'className="ml-auto inline-flex min-h-11 items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground',
+    );
+  });
+
   it("gives every primary control a 44 px mobile target", () => {
     const controls = [
       [pausePanel, "agent-live-refresh"],

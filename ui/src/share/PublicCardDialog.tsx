@@ -134,7 +134,7 @@ function CardBody({
 
       {card.description !== undefined && card.description.trim() !== "" ? (
         <p
-          className="whitespace-pre-wrap text-sm"
+          className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]"
           data-testid="public-description"
         >
           {card.description}
@@ -177,7 +177,12 @@ function CardBody({
       ) : null}
 
       {includeComments ? (
-        <PublicComments token={token} cardId={card.id} members={members} />
+        <PublicComments
+          key={card.id}
+          token={token}
+          cardId={card.id}
+          members={members}
+        />
       ) : null}
     </div>
   );
@@ -259,21 +264,57 @@ function PublicComments({
 }) {
   const { t } = useI18n();
   const [items, setItems] = useState<CommentDto[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let active = true;
     fetchPublicComments(token, cardId, undefined, 50)
-      .then((page) => active && setItems(page.items))
-      .catch(() => active && setItems([]));
+      .then((page) => {
+        if (!active) return;
+        setItems(page.items);
+        setNextCursor(page.nextCursor);
+      })
+      .catch(() => {
+        if (!active) return;
+        setItems([]);
+        setNextCursor(null);
+      });
     return () => {
       active = false;
     };
   }, [token, cardId]);
 
+  const loadOlder = async () => {
+    if (nextCursor === null || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError(false);
+    try {
+      const page = await fetchPublicComments(token, cardId, nextCursor, 50);
+      setItems((current) =>
+        current === null ? current : [...current, ...page.items],
+      );
+      setNextCursor(page.nextCursor);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   if (items === null) return <PublicCommentsSkeleton />;
   if (items.length === 0) return null;
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium">{t("activity.comments")}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">{t("activity.comments")}</p>
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid="public-comments-count"
+        >
+          {t("share.public.commentsShown", { count: items.length })}
+        </span>
+      </div>
       <ul className="space-y-2" data-testid="public-comments">
         {items.map((comment) => {
           const author = members.find(
@@ -296,6 +337,26 @@ function PublicComments({
           );
         })}
       </ul>
+      {nextCursor !== null || loadError ? (
+        <div className="space-y-1">
+          {loadError ? (
+            <p role="alert" className="text-xs text-destructive">
+              {t("share.public.commentsLoadError")}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            data-testid="public-comments-more"
+            disabled={loadingMore}
+            onClick={() => void loadOlder()}
+            className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline disabled:opacity-60"
+          >
+            {loadingMore
+              ? t("share.public.commentsLoading")
+              : t("share.public.commentsLoadMore")}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

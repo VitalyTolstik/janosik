@@ -114,7 +114,10 @@ export function UpdatePrompt({
   if (variant === "inline") return notice;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem_+_env(safe-area-inset-bottom))] z-50 flex justify-center px-4"
+      data-testid="update-prompt-shell"
+    >
       <div className="pointer-events-auto w-full max-w-[520px]">{notice}</div>
     </div>
   );
