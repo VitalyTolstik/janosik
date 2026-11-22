@@ -88,10 +88,13 @@ export function CommentHistoryDialog({
   // slower reload must never overwrite a newer deletion or access check.
   const seqRef = useRef(0);
   // Transient controls (Refresh, retry, Show older) unmount when their state
-  // lands. Move focus to the dialog first so it never falls to <body>, and to
-  // the end marker once the last older page replaces the button.
+  // lands. Move focus to the dialog first so it never falls to <body>, then
+  // return it to the still-mounted Show older button on an intermediate page
+  // or to the end marker once the last older page replaces the button.
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const showOlderRef = useRef<HTMLButtonElement | null>(null);
   const endRef = useRef<HTMLParagraphElement | null>(null);
+  const focusOlderRef = useRef(false);
   const focusEndRef = useRef(false);
   const keepFocusInDialog = useCallback(() => {
     dialogRef.current?.focus();
@@ -105,6 +108,8 @@ export function CommentHistoryDialog({
     setStale(false);
     setLoadingOlder(false);
     setOlderError(false);
+    focusOlderRef.current = false;
+    focusEndRef.current = false;
   }, []);
 
   const loadFirst = useCallback(
@@ -114,6 +119,8 @@ export function CommentHistoryDialog({
       setStale(false);
       setLoadingOlder(false);
       setOlderError(false);
+      focusOlderRef.current = false;
+      focusEndRef.current = false;
       setItems([]);
       setNextCursor(null);
       // A live refresh keeps the banner on screen until the new page says
@@ -196,7 +203,13 @@ export function CommentHistoryDialog({
       // The reason describes the live comment and is repeated on every page;
       // the latest page wins without ever hiding an older banner.
       setReason(page.historyIncompleteReason);
-      if (page.nextCursor === null) focusEndRef.current = true;
+      if (page.nextCursor === null) {
+        focusEndRef.current = true;
+      } else {
+        // The button stays mounted on an intermediate page: give its focus
+        // back instead of leaving it at the top of the dialog.
+        focusOlderRef.current = true;
+      }
     } catch (error) {
       if (seq !== seqRef.current) return;
       if (isGone(error)) {
@@ -212,12 +225,16 @@ export function CommentHistoryDialog({
   }, [commentId, loadingOlder, nextCursor, onOpenChange, reset]);
 
   useEffect(() => {
-    if (!focusEndRef.current || status !== "ready" || nextCursor !== null) {
+    if (status !== "ready") return;
+    if (focusOlderRef.current && nextCursor !== null) {
+      focusOlderRef.current = false;
+      showOlderRef.current?.focus();
       return;
     }
+    if (!focusEndRef.current || nextCursor !== null) return;
     focusEndRef.current = false;
     endRef.current?.focus();
-  }, [nextCursor, status]);
+  }, [items.length, nextCursor, status]);
 
   // A background tab, reconnect or focus can hide a revoked membership or a
   // deleted comment. Probe the same protected endpoint; only 403/404 close
@@ -399,6 +416,7 @@ export function CommentHistoryDialog({
 
               {nextCursor !== null ? (
                 <Button
+                  ref={showOlderRef}
                   type="button"
                   variant="ghost"
                   size="sm"

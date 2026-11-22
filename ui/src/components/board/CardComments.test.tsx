@@ -2145,6 +2145,54 @@ describe("CardComments", () => {
     await waitFor(() => expect(document.activeElement).toBe(end));
   });
 
+  it("keeps focus on Show older after an intermediate revision page", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions(
+      "comment-1",
+      Array.from({ length: 45 }, (_, index) =>
+        revision({
+          id: `revision-${index + 1}`,
+          revisionNumber: index + 1,
+          beforeText: `Before ${index + 1}`,
+          afterText: `After ${index + 1}`,
+        }),
+      ),
+    );
+    renderComments(server);
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getAllByTestId("comment-history-revision"),
+      ).toHaveLength(20),
+    );
+
+    fireEvent.click(within(dialog).getByTestId("comment-history-show-older"));
+    await waitFor(() =>
+      expect(
+        within(dialog).getAllByTestId("comment-history-revision"),
+      ).toHaveLength(40),
+    );
+    const stillOlder = within(dialog).getByTestId("comment-history-show-older");
+    await waitFor(() => expect(document.activeElement).toBe(stillOlder));
+
+    fireEvent.click(stillOlder);
+    await waitFor(() =>
+      expect(
+        within(dialog).getAllByTestId("comment-history-revision"),
+      ).toHaveLength(45),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(dialog).getByTestId("comment-history-end"),
+      ),
+    );
+  });
+
   it("shows a retry when the older revision page fails", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [
