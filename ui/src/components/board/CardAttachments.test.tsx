@@ -715,6 +715,121 @@ describe("CardAttachments", () => {
     );
   });
 
+  it("does not steal focus from another open dialog", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div
+              role="dialog"
+              aria-label="Card details"
+              tabIndex={-1}
+              data-testid="owner-dialog"
+            >
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+            <div
+              role="dialog"
+              aria-label="Label picker"
+              tabIndex={-1}
+              data-testid="other-dialog"
+            />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachment-restore")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    const otherDialog = screen.getByTestId("other-dialog");
+    otherDialog.focus();
+    expect(document.activeElement).toBe(otherDialog);
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(otherDialog);
+  });
+
+  it("hands off when Chrome falls back to the owning dialog", async () => {
+    const user = userEvent.setup();
+    const first = attachment({ id: "att-1", fileName: "first.pdf" });
+    const second = attachment({ id: "att-2", fileName: "second.pdf" });
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div
+              role="dialog"
+              aria-label="Card details"
+              tabIndex={-1}
+              data-testid="owner-dialog"
+            >
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const restore = screen.getAllByTestId("card-attachment-restore")[0]!;
+    await user.click(restore);
+    await waitFor(() => expect(restore).toHaveAttribute("aria-busy", "true"));
+    const ownerDialog = screen.getByTestId("owner-dialog");
+    ownerDialog.focus();
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore second.pdf to description",
+        }),
+      ),
+    );
+  });
+
   it("does not steal focus moved away from the row during the restore", async () => {
     const user = userEvent.setup();
     let resolveSave!: (outcome: { ok: true }) => void;

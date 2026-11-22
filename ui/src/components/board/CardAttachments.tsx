@@ -261,11 +261,26 @@ export function CardAttachments({
       if (!aliveRef.current) return;
       const active = document.activeElement;
       const row = target.row!;
-      // Chrome focuses the dialog container (or a Radix focus guard) after
-      // the focused row unmounts.
+      // Only the dialog that owns this section may count as the post-unmount
+      // fallback. A label picker, confirm or another dialog opened while the
+      // request was pending owns focus and must keep it.
+      const ownerDialog =
+        target.section?.closest<HTMLElement>('[role="dialog"]') ?? null;
+      const openDialogs = ownerDialog
+        ? Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+        : [];
+      const ownerIsTop =
+        ownerDialog !== null &&
+        openDialogs[openDialogs.length - 1] === ownerDialog;
+      const activeDialog =
+        active instanceof HTMLElement
+          ? active.closest<HTMLElement>('[role="dialog"]')
+          : null;
       const dialogFallback =
+        ownerIsTop &&
         active instanceof HTMLElement &&
-        (active.getAttribute("role") === "dialog" ||
+        (active === ownerDialog ||
+          activeDialog === ownerDialog ||
           active.hasAttribute("data-radix-focus-guard"));
       // A real control outside the row owns focus: don't steal it.
       const userMoved =
