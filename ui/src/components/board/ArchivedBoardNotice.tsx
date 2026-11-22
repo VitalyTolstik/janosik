@@ -65,9 +65,12 @@ export function ArchivedBoardNotice({
           {t("board.switcher.restore")}
         </Button>
       ) : (
-        <span className="text-xs text-muted-foreground">
-          {t("board.archivedAskAdmin")}
-        </span>
+        <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+          <span>{t("board.archivedAskAdmin")}</span>
+          <span data-testid="archived-board-switcher-hint">
+            {t("board.archivedSwitcherHint")}
+          </span>
+        </div>
       )}
     </div>
   );

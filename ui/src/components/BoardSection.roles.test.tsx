@@ -207,7 +207,7 @@ describe("BoardSection role wiring (TASK-35)", () => {
     );
   });
 
-  it("keeps Leave board reachable for a VIEWER on an archived board", async () => {
+  it("hides the unreachable Members trigger on an archived card deep link", async () => {
     const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 1_700_000 }]);
     server.role = "VIEWER";
     server.membersByBoard.set("b-1", [
@@ -225,12 +225,12 @@ describe("BoardSection role wiring (TASK-35)", () => {
 
     renderHeader("/board/b-1?card=c-1");
 
-    // The archived gate keeps the roster dialog for non-admins: its
-    // self-service Leave button is the only such entry on an archived board
-    // (the switcher only offers admin Restore/Delete).
-    expect(
-      await screen.findByRole("button", { name: "Members" }),
-    ).toBeEnabled();
+    // The mandatory card dialog makes the header inert: a Members trigger
+    // rendered behind it cannot be reached. Leave stays available through
+    // the switcher's archived section instead.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Members" })).toBeNull(),
+    );
   });
 
   it("asks a non-admin to have an archived board restored", async () => {
@@ -247,6 +247,10 @@ describe("BoardSection role wiring (TASK-35)", () => {
     );
     const dialogNotice = within(dialog).getByTestId("archived-board-notice");
     expect(dialogNotice).toHaveTextContent(/ask a board admin/i);
+    expect(dialogNotice).toHaveTextContent(/board switcher/i);
+    expect(
+      within(dialogNotice).getByTestId("archived-board-switcher-hint"),
+    ).toBeVisible();
     expect(
       within(dialogNotice).queryByTestId("archived-board-restore"),
     ).toBeNull();

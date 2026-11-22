@@ -38,6 +38,12 @@ import { restoreTargetBlockReason } from "@/utils/workflow";
 interface ArchiveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * The board in the URL. A `?card=` deep link onto an archived board views
+   * that board without making it active, so the archive must read the route
+   * board instead of falling back to whatever active board is mounted.
+   */
+  boardId?: string;
 }
 
 const MIN_PAGE_SIZE = 5;
@@ -77,18 +83,22 @@ function archivePageSize() {
 
 /**
  * Board card archive (TASK-18.1): search, restore to a picked column and
- * delete-forever for the active board's archived cards. Opened from the
+ * delete-forever for the viewed board's archived cards. Opened from the
  * data menu — a full dialog keeps the dropdown light even with hundreds
  * of archived cards.
  */
-export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
+export function ArchiveDialog({
+  open,
+  onOpenChange,
+  boardId,
+}: ArchiveDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-5xl xl:max-w-6xl">
         {/* Search query and the inline delete confirm live inside
             `DialogContent`: Radix unmounts it on close, so every open starts
             clean without an `open` effect (AGENT.md: reset by remount). */}
-        <ArchiveContent onOpenChange={onOpenChange} />
+        <ArchiveContent onOpenChange={onOpenChange} boardId={boardId} />
       </DialogContent>
     </Dialog>
   );
@@ -96,11 +106,18 @@ export function ArchiveDialog({ open, onOpenChange }: ArchiveDialogProps) {
 
 interface ArchiveContentProps {
   onOpenChange: (open: boolean) => void;
+  boardId?: string;
 }
 
-function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
-  const { board, unarchiveCard, deleteCard, archiveBatch, startArchiveBatch } =
-    useBoard();
+function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
+  const {
+    board: activeBoard,
+    boards,
+    unarchiveCard,
+    deleteCard,
+    archiveBatch,
+    startArchiveBatch,
+  } = useBoard();
   const { role } = useBoardAccess();
   const { t, lang } = useI18n();
   const hour12 = useHour12();
@@ -119,6 +136,10 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
+  const board =
+    boardId === undefined
+      ? activeBoard
+      : boards.find((entry) => entry.id === boardId);
   if (!board) return null;
 
   const busy = archiveBatch !== null;

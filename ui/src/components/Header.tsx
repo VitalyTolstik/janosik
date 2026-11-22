@@ -71,6 +71,12 @@ export function Header() {
   const isAgentsRoute =
     matchPath(routes.agents, location.pathname) !== null ||
     matchPath(routes.agentPattern, location.pathname) !== null;
+  // A mandatory card dialog makes the rest of the board inert (aria-hidden),
+  // so header triggers behind it cannot be reached. Remember the state and
+  // hide the Members trigger on archived deep links rather than leaving a
+  // button that a keyboard or screen reader can focus but not activate.
+  const cardOpen =
+    isBoardRoute && new URLSearchParams(location.search).has("card");
   // Narrow subscriptions on purpose (TASK-21.4): the actions never change
   // and the flags flip rarely, so typing in a card leaves the header alone.
   const { undo, redo, roleOf } = useBoardActions();
@@ -400,7 +406,7 @@ export function Header() {
         ) : null}
         {isBoardRoute ? (
           <>
-            {!archived || role !== "ADMIN" ? (
+            {!archived || (role !== "ADMIN" && !cardOpen) ? (
               <div className={archived ? "block" : "hidden min-[1024px]:block"}>
                 <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
               </div>

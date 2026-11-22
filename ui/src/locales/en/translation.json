@@ -734,6 +734,7 @@
   "board.emptyNewHint": "Name your first board to get started.",
   "board.archivedReadOnly": "This board is archived and read-only.",
   "board.archivedAskAdmin": "Ask a board admin to restore it if you need to make changes.",
+  "board.archivedSwitcherHint": "To leave it, open the board switcher → Archived and choose Leave board.",
   "board.firstRun.nameLabel": "Board name",
   "board.firstRun.placeholder": "e.g. Product launch",
   "board.firstRun.emptyCta": "Create empty board",

@@ -80,7 +80,7 @@ function addArchivedCards(count: number, wipLimit?: number) {
   localStorage.setItem("janosik-boards", JSON.stringify(boards));
 }
 
-function renderArchive(entry = routes.board("b-1")) {
+function renderArchive(entry = routes.board("b-1"), boardId?: string) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -93,7 +93,13 @@ function renderArchive(entry = routes.board("b-1")) {
                     <Routes>
                       <Route
                         path={routes.boardPattern}
-                        element={<ArchiveDialog open onOpenChange={() => {}} />}
+                        element={
+                          <ArchiveDialog
+                            open
+                            onOpenChange={() => {}}
+                            boardId={boardId}
+                          />
+                        }
                       />
                     </Routes>
                   </BoardProvider>
@@ -426,6 +432,31 @@ describe("ArchiveDialog permissions", () => {
     await waitFor(() =>
       expect(screen.getByTestId("archive-search")).toHaveFocus(),
     );
+  });
+
+  it("archives the viewed route board, not the active one", async () => {
+    const archivedBoard: Board = {
+      ...SERVER_BOARD,
+      id: "b-2",
+      title: "Archived beta",
+      archivedAt: 5_000,
+    };
+    const server = new FakeServer([SERVER_BOARD, archivedBoard]);
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(routes.board("b-1"), "b-2");
+
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Card archive" },
+      { timeout: 15_000 },
+    );
+    expect(dialog).toHaveTextContent("Archived beta");
+    expect(dialog).not.toHaveTextContent("Alpha");
+    const row = await screen.findByTestId("archive-row");
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+    expect(screen.getByTestId("archived-board-notice")).toBeVisible();
   });
 
   it("tells a VIEWER to ask an admin instead of offering restore", async () => {
