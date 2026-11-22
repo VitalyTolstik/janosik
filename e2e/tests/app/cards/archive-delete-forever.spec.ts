@@ -52,12 +52,14 @@ test("keeps the archive row and inline confirm usable at 768", async ({
   board,
 }) => {
   const column = await board.column("Archive tablet");
-  const cardId = await board.card(column, "Tablet archive row");
-  await board.command({ type: "ARCHIVE_CARD", cardId });
+  // The archive is newest-first and the tablet page holds 17 rows. Create and
+  // archive the extras first so the target stays on page one.
   for (let index = 0; index < 20; index += 1) {
     const extra = await board.card(column, `Archive tablet extra ${index}`);
     await board.command({ type: "ARCHIVE_CARD", cardId: extra });
   }
+  const cardId = await board.card(column, "Tablet archive row");
+  await board.command({ type: "ARCHIVE_CARD", cardId });
   await page.setViewportSize({ width: 768, height: 1024 });
   await board.open(page);
 
