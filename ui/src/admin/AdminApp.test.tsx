@@ -613,6 +613,46 @@ describe("AdminApp", () => {
     expect(await screen.findByText("new@example.com")).toBeTruthy();
   });
 
+  it("times out a hung create-user request and releases the dialog", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    fireEvent.click(await screen.findByTestId("admin-create-user"));
+    fireEvent.change(await screen.findByTestId("admin-user-email"), {
+      target: { value: "timeout-user@example.com" },
+    });
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    server.holds.push({
+      match: "/admin/users",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(within(dialog).getByTestId("admin-user-submit"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(cancel).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.users.create.timeout")),
+      ).toBeInTheDocument();
+      expect(cancel).not.toBeDisabled();
+      fireEvent.click(cancel);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("validates the create-user email before submitting", async () => {
     const server = serverWith();
     vi.stubGlobal("fetch", server.fetchImpl);
@@ -1221,6 +1261,55 @@ describe("AdminApp", () => {
           request.path === "/admin/admins/master-2/password/reset",
       ),
     ).toHaveLength(1);
+  });
+
+  it("times out a hung master reset and releases the confirm", async () => {
+    const server = serverWith();
+    server.masters = [adminMaster()];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    fireEvent.click(
+      await screen.findByText(t("admin.masters.action.resetPassword")),
+    );
+    const dialog = await screen.findByRole("dialog");
+    server.holds.push({
+      match: "/admin/admins/master-2/password/reset",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    const accept = within(dialog).getByTestId("admin-confirm-accept");
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(accept);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(accept).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        screen.getByText(t("admin.masters.reset.timeout")),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The roster is usable again: the same reset action can be started.
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    expect(
+      await screen.findByText(t("admin.masters.action.resetPassword")),
+    ).toBeInTheDocument();
   });
 
   it("keeps the reset-password dialog open until the one-time secret arrives (QA-A2)", async () => {
