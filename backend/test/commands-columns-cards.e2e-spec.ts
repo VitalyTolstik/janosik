@@ -13,6 +13,7 @@ import {
   boardReducer,
   duplicateChecklistId,
   duplicateChecklistItemId,
+  UNTITLED_CARD_TITLE,
 } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
@@ -2262,6 +2263,72 @@ describe("Commands API (e2e)", () => {
       .expect(201);
     return res.body[0].id as string;
   }
+
+  it("closes the blank-title bypass in duplicate and restore", async () => {
+    const boardId = await createBoard("Blank title guard");
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    await applyAndAssert(
+      boardId,
+      scoped(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Todo",
+      }),
+    );
+    await applyAndAssert(
+      boardId,
+      scoped(boardId, {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Original",
+      }),
+    );
+
+    const blankDuplicate = await post(
+      boardId,
+      scoped(boardId, {
+        type: "DUPLICATE_CARD",
+        cardId,
+        newCardId: randomUUID(),
+        title: "   ",
+      }),
+    );
+    expect(blankDuplicate.status).toBe(400);
+    expect(blankDuplicate.body.field).toBe("action.title");
+
+    const blankColumnDuplicate = await post(
+      boardId,
+      scoped(boardId, {
+        type: "DUPLICATE_COLUMN",
+        columnId,
+        newColumnId: randomUUID(),
+        newCardIds: [randomUUID()],
+        title: "   ",
+      }),
+    );
+    expect(blankColumnDuplicate.status).toBe(400);
+    expect(blankColumnDuplicate.body.field).toBe("action.title");
+
+    const before = await getAggregate(boardId);
+    const snapshot = before.cards[cardId];
+    await applyAndAssert(
+      boardId,
+      scoped(boardId, { type: "DELETE_CARD", cardId }),
+    );
+    await post(
+      boardId,
+      scoped(boardId, {
+        type: "RESTORE_CARD",
+        card: { ...snapshot, title: "   " },
+        columnId,
+        index: 0,
+      }),
+    ).expect(200);
+    const restored = await getAggregate(boardId);
+    expect(restored.cards[cardId]?.title).toBe(UNTITLED_CARD_TITLE);
+  });
 
   async function firstCardId(boardId: string): Promise<string> {
     const aggregate = await getAggregate(boardId);

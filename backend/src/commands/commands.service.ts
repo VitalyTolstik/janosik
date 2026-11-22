@@ -48,6 +48,7 @@ import { loadBoardAggregate } from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
+import { ARCHIVED_BOARD_MESSAGE } from "@/common/archived-board";
 import { activeMembershipWhere } from "@/common/membership";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import {
@@ -983,6 +984,7 @@ export class CommandsService {
     versionOffset?: number;
   }): Promise<void> {
     const { boardId, entry, board, attribution } = params;
+    this.assertBoardWritable(board, entry.action.type);
     const db = this.prisma as unknown as Prisma.TransactionClient;
     await this.assertAssigneeIsBoardMember(db, boardId, entry.action);
     await this.assertClaimIsFree(
@@ -1156,6 +1158,8 @@ export class CommandsService {
       board,
     } = params;
     const { dto, action } = entry;
+
+    this.assertBoardWritable(board, action.type);
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
     await this.assertClaimIsFree(
@@ -1943,6 +1947,17 @@ export class CommandsService {
           ? card.claimedByTokenId === attribution.apiTokenId
           : card.claimedBy === action.claimedBy;
     if (!sameHolder) refuse();
+  }
+
+  /**
+   * Archived-board write guard. A restore is the only command allowed while
+   * the board is archived; it is how the switcher brings the board back.
+   */
+  private assertBoardWritable(board: Board, actionType: string): void {
+    if (board.archivedAt === undefined || actionType === "UNARCHIVE_BOARD") {
+      return;
+    }
+    throw new ConflictException(ARCHIVED_BOARD_MESSAGE);
   }
 
   /**

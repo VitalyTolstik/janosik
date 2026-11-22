@@ -35,6 +35,21 @@ async function expectDialogFits(page: Page, locator: Locator, label: string) {
 }
 
 /**
+ * The house press affordance scales any button to 0.97 while it is `:active`,
+ * so a tap followed by an immediate `boundingBox()` can read 42.68 px for a
+ * real 44 px target. Wait for the press transition instead of failing the
+ * target-size check mid-press.
+ */
+async function expectTouchTarget(locator: Locator) {
+  await expect
+    .poll(async () => {
+      const box = await locator.boundingBox();
+      return box ? Math.min(box.width, box.height) : 0;
+    })
+    .toBeGreaterThanOrEqual(44);
+}
+
+/**
  * Some board chrome is deliberately desktop-only at 390 px (TASK-179 hides
  * Members/Share/Settings there). The dialogs still render full-screen for
  * phone-sized viewports, so exercise their geometry without reintroducing a
@@ -45,19 +60,12 @@ async function clickEvenIfHidden(locator: Locator) {
 }
 
 /**
- * The Data menu trigger is desktop-only at 390 too, and its Radix dropdown
- * opens on pointerdown rather than click. Dispatch the pointer event so the
- * archived-card dialog can still be measured on a phone viewport.
+ * The Data menu is a real phone control now (QA-02): the card archive is the
+ * only in-app recovery path for an archived card. Open it the way a user
+ * would, with a tap.
  */
 async function openDataMenu(page: Page) {
-  const trigger = page.locator('button[aria-label="Data & backups"]');
-  await expect(trigger).toHaveCount(1);
-  await trigger.dispatchEvent("pointerdown", {
-    button: 0,
-    pointerType: "mouse",
-    isPrimary: true,
-    bubbles: true,
-  });
+  await page.getByRole("button", { name: "Data & backups" }).tap();
   await expect(page.getByTestId("data-archive")).toBeVisible();
 }
 
@@ -140,6 +148,97 @@ test("header, filters and view controls fit a phone without sideways scroll", as
   await expectNoPageOverflow(page, "board title editor");
   await expectInsideViewport(titleInput, "board title editor");
   await titleInput.press("Escape");
+});
+
+test("undo and the data menu are touch-reachable on the phone", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  await board.card(todo, "Delete from phone");
+  await board.open(page);
+
+  // The delete confirmation promises undo; the control must be there for a
+  // touch-only user with no Ctrl+Z (QA-01). Both the phone and the tablet get
+  // the house 44 px target (QA-10 UX review).
+  for (const width of [390, 768]) {
+    await page.setViewportSize({
+      width,
+      height: width === 390 ? 844 : 1024,
+    });
+    for (const name of ["Undo", "Redo", "Data & backups"]) {
+      const box = await page.getByRole("button", { name }).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const undo = page.getByRole("button", { name: "Undo" });
+  await expect(undo).toBeVisible();
+  await expect(page.getByRole("button", { name: "Redo" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Data & backups" }),
+  ).toBeVisible();
+
+  await page
+    .getByTestId("card-title")
+    .filter({ hasText: "Delete from phone" })
+    .tap();
+  const dialog = page.getByRole("dialog", { name: "Card details" });
+  await dialog.getByRole("button", { name: "Card actions" }).tap();
+  await page.getByRole("menuitem", { name: "Delete card", exact: true }).tap();
+  await page.getByRole("button", { name: "Delete", exact: true }).tap();
+  await expect(
+    page.getByTestId("card-title").filter({ hasText: "Delete from phone" }),
+  ).toHaveCount(0);
+
+  await undo.tap();
+  await expect(
+    page.getByTestId("card-title").filter({ hasText: "Delete from phone" }),
+  ).toBeVisible();
+});
+
+test("the card archive is reachable on the phone and restores a card", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  const cardId = await board.card(todo, "Archived on phone");
+  await board.command({ type: "ARCHIVE_CARD", cardId });
+  await board.open(page);
+
+  await openDataMenu(page);
+  await page.getByTestId("data-archive").tap();
+  const archive = page.getByRole("dialog");
+  await expect(archive.getByTestId("archive-list")).toContainText(
+    "Archived on phone",
+  );
+  for (const target of [
+    archive.getByTestId("archive-restore"),
+    archive.getByTestId("archive-delete"),
+    archive.getByRole("checkbox", { name: "Select Archived on phone" }),
+  ]) {
+    await expectTouchTarget(target);
+  }
+  await archive.getByTestId("archive-delete").tap();
+  for (const target of [
+    archive.getByRole("button", { name: "Yes, delete" }),
+    archive.getByRole("button", { name: "Cancel", exact: true }),
+  ]) {
+    await expectTouchTarget(target);
+  }
+  await archive.getByRole("button", { name: "Cancel", exact: true }).tap();
+  await archive.getByTestId("archive-restore").tap();
+  await page.getByRole("menuitem", { name: "Todo", exact: true }).tap();
+  await expect(
+    archive.getByTestId("archive-row").filter({ hasText: "Archived on phone" }),
+  ).toHaveCount(0);
+  await archive.getByRole("button", { name: "Close", exact: true }).tap();
+  await expect(
+    page.getByTestId("card-title").filter({ hasText: "Archived on phone" }),
+  ).toBeVisible();
 });
 
 test("board dialogs fit the phone and close by touch", async ({

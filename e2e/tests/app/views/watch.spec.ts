@@ -36,6 +36,36 @@ test("watch reflects board columns and card counts across view changes", async (
   await expect(todo).toContainText("2");
 });
 
+test("keeps the feed sentence readable on tablet and phone widths", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Todo");
+  await board.card(column, "Responsive feed card");
+  await board.open(page);
+  await page
+    .getByRole("group", { name: "View", exact: true })
+    .getByRole("button", { name: "Watch" })
+    .click();
+  const entry = page.getByTestId("watch-entry").first();
+  await expect(entry).toBeVisible({ timeout: 15_000 });
+
+  for (const width of [768, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    const sentence = page.getByTestId("watch-entry-sentence").first();
+    await expect(sentence).toBeVisible();
+    const box = await sentence.boundingBox();
+    expect(box).not.toBeNull();
+    // The sentence owns the row below time+actor, so it gets the full pane
+    // width instead of the 36–78 px left by the fixed desktop columns.
+    expect(box!.width).toBeGreaterThan(200);
+    const actor = entry.locator(":scope > span").first();
+    const actorBox = await actor.boundingBox();
+    expect(actorBox).not.toBeNull();
+    expect(box!.y).toBeGreaterThan(actorBox!.y + actorBox!.height - 1);
+  }
+});
+
 test("shows status, WIP, online roster and no cards", async ({
   page,
   board,

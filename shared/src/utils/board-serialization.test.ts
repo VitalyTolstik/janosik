@@ -7,7 +7,7 @@ import {
   serializeExport,
 } from "./board-serialization";
 import { initialBoardState } from "../store/board-reducer";
-import { LIMITS } from "../types/kanban";
+import { LIMITS, UNTITLED_CARD_TITLE } from "../types/kanban";
 
 /**
  * Tests for export/import JSON: a round-trip preserves the data, the file
@@ -92,6 +92,16 @@ describe("board serialization", () => {
         }),
       ),
     ).toThrow();
+  });
+
+  it("repairs a legacy blank card title on import", () => {
+    const raw = JSON.parse(serializeExport(initialBoardState())) as {
+      boards: Array<{ cards: Record<string, { title: string }> }>;
+    };
+    const cardId = Object.keys(raw.boards[0].cards)[0];
+    raw.boards[0].cards[cardId].title = "   ";
+    const imported = parseExport(JSON.stringify(raw));
+    expect(imported[0].cards[cardId].title).toBe(UNTITLED_CARD_TITLE);
   });
 
   it("drops an unknown board column style instead of failing the import", () => {

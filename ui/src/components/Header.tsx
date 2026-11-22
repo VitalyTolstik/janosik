@@ -71,6 +71,12 @@ export function Header() {
   const isAgentsRoute =
     matchPath(routes.agents, location.pathname) !== null ||
     matchPath(routes.agentPattern, location.pathname) !== null;
+  // A mandatory card dialog makes the rest of the board inert (aria-hidden),
+  // so header triggers behind it cannot be reached. Remember the state and
+  // hide the Members trigger on archived deep links rather than leaving a
+  // button that a keyboard or screen reader can focus but not activate.
+  const cardOpen =
+    isBoardRoute && new URLSearchParams(location.search).has("card");
   // Narrow subscriptions on purpose (TASK-21.4): the actions never change
   // and the flags flip rarely, so typing in a card leaves the header alone.
   const { undo, redo, roleOf } = useBoardActions();
@@ -121,7 +127,13 @@ export function Header() {
   const pendingBadge = pendingForScope;
   // A VIEWER has no mutating affordances, undo included: a stale local stack
   // after a live demotion would only offer commands the server refuses.
-  const readOnly = role === "VIEWER";
+  // An archived board is read-only too — its card deep link is a view, not
+  // an editing surface (the command path refuses writes for the same reason).
+  const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
+  // Archived boards keep the roster read-only for everyone, but the admin
+  // surfaces (members, sharing, settings, agent control) would offer writes
+  // that the command and REST guards refuse. Hide them until restore.
+  const archived = board?.archivedAt !== undefined;
   const [settings, setSettings] = useState<{
     boardId: string;
     section: "workflow" | "agents";
@@ -394,20 +406,26 @@ export function Header() {
         ) : null}
         {isBoardRoute ? (
           <>
-            <div className="hidden min-[1024px]:block">
-              <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
-            </div>
-            <div className="hidden min-[1024px]:block">
-              <ShareDialog />
-            </div>
-            <AgentControlButton
-              onOpen={(trigger) => {
-                agentTrigger.current = trigger;
-                // Members start on read-only Live; admins start in Inbox.
-                openAgentControl(role === "ADMIN" ? "approvals" : "pause");
-              }}
-            />
-            {role === "ADMIN" ? (
+            {!archived || (role !== "ADMIN" && !cardOpen) ? (
+              <div className={archived ? "block" : "hidden min-[1024px]:block"}>
+                <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
+              </div>
+            ) : null}
+            {!archived ? (
+              <div className="hidden min-[1024px]:block">
+                <ShareDialog />
+              </div>
+            ) : null}
+            {!archived ? (
+              <AgentControlButton
+                onOpen={(trigger) => {
+                  agentTrigger.current = trigger;
+                  // Members start on read-only Live; admins start in Inbox.
+                  openAgentControl(role === "ADMIN" ? "approvals" : "pause");
+                }}
+              />
+            ) : null}
+            {role === "ADMIN" && !readOnly ? (
               <div className="max-[720.98px]:hidden">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -500,7 +518,10 @@ export function Header() {
         ) : null}
 
         {isBoardRoute && !readOnly ? (
-          <div className="hidden items-center gap-0.5 min-[1024px]:flex">
+          // Undo/redo stay in the header at every width: the destructive
+          // confirmations promise "you can undo this right away", and a
+          // touch-only user has no keyboard shortcut to fall back on.
+          <div className="flex items-center gap-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -509,7 +530,7 @@ export function Header() {
                   aria-label={t("undo.aria")}
                   disabled={!canUndo}
                   onClick={undo}
-                  className="md:h-8 md:w-8 md:min-w-8"
+                  className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-8 lg:min-w-8"
                 >
                   <LazyAnimatedIcon name="arrow-left" size={16} />
                 </Button>
@@ -525,7 +546,7 @@ export function Header() {
                   aria-label={t("redo.aria")}
                   disabled={!canRedo}
                   onClick={redo}
-                  className="md:h-8 md:w-8 md:min-w-8"
+                  className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-8 lg:min-w-8"
                 >
                   <LazyAnimatedIcon name="arrow-right" size={16} />
                 </Button>
@@ -536,7 +557,10 @@ export function Header() {
         ) : null}
 
         {isBoardRoute ? (
-          <div className="hidden min-[1024px]:block">
+          // Every width keeps the data menu: the card archive is the only
+          // in-app recovery path for an archived card, and it must not be
+          // stranded on phones/tablets (QA-02).
+          <div className="block">
             <DataMenu />
           </div>
         ) : null}

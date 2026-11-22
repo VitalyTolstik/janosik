@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { matchPath, useLocation } from "react-router-dom";
 import { LazyAnimatedIcon } from "@/components/ui/lazy-animated-icon";
 import {
   Archive,
@@ -28,6 +29,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { routes } from "@/routes";
 import { MAX_BOARD_EXPORT_BYTES, MAX_IMPORT_BYTES } from "@janosik/shared";
 import { isApiEnabled } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
@@ -49,7 +51,26 @@ import { createBackup, listBackups } from "@/utils/backup";
 export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
+  const location = useLocation();
   const { boards, board, importBoards, exportBoards } = useBoard();
+  // The data menu acts on the board in the URL, not on "the active board":
+  // an archived board is only reachable through a `?card=` deep link, and its
+  // archive must not silently become the active board's archive.
+  const routeBoardId = matchPath(routes.boardPattern, location.pathname)?.params
+    .boardId;
+  const viewedBoard =
+    routeBoardId !== undefined
+      ? boards.find((entry) => entry.id === routeBoardId)
+      : board;
+  // Opening the data menu behind a modal card can dismiss that card (a
+  // pointer-down outside the dialog), which drops `?card=` and lets the
+  // archived board's redirect take over before the archive is chosen. Pin
+  // the board the menu was opened on so the archive still describes it.
+  const [menuBoardId, setMenuBoardId] = useState<string | undefined>();
+  const menuBoard =
+    menuBoardId === undefined
+      ? viewedBoard
+      : boards.find((entry) => entry.id === menuBoardId);
   // TASK-166 D21: Janosik does not create backups. Server mode shows only
   // export/import; the local "save a copy" / automatic-backup browser is a
   // localStorage-only safety net and must not imply server backups.
@@ -66,12 +87,12 @@ export function DataMenu() {
   // card to label a closed menu item is pure waste.
   const archivedCount = useMemo(
     () =>
-      menuOpen && board
-        ? Object.values(board.cards).filter(
+      menuOpen && menuBoard
+        ? Object.values(menuBoard.cards).filter(
             (card) => card.archivedAt !== undefined,
           ).length
         : 0,
-    [menuOpen, board],
+    [menuOpen, menuBoard],
   );
 
   const refreshBackups = useCallback(async () => {
@@ -153,6 +174,7 @@ export function DataMenu() {
       <DropdownMenu
         onOpenChange={(open) => {
           setMenuOpen(open);
+          if (open) setMenuBoardId(viewedBoard?.id);
           if (open && !serverMode) void refreshBackups();
         }}
       >
@@ -163,6 +185,7 @@ export function DataMenu() {
                 variant="ghost"
                 size="icon"
                 aria-label={t("data.tooltip")}
+                className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11"
               >
                 {/* Cloud + restore-cycle: the recognizable “backup” symbol
                  * (same as OneDrive/iCloud sync badges). Intentionally static. */}
@@ -238,7 +261,11 @@ export function DataMenu() {
           e.target.value = "";
         }}
       />
-      <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
+      <ArchiveDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        boardId={menuBoard?.id}
+      />
       {!serverMode ? (
         <BackupDialog open={backupsOpen} onOpenChange={setBackupsOpen} />
       ) : null}

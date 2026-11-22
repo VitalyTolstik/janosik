@@ -51,6 +51,7 @@ import {
   CARD_ACTIVITY_TYPES,
   LIMITS,
   MAX_CARD_ACTIVITY,
+  UNTITLED_CARD_TITLE,
 } from "../types/kanban";
 import type { CardActivityEvent } from "../types/kanban";
 
@@ -342,7 +343,8 @@ function normalizeCard(card: LegacyCard): Card {
     activity,
     ...rest
   } = card;
-  const title = toText(rest.title, LIMITS.cardTitle);
+  const rawTitle = toText(rest.title, LIMITS.cardTitle).trim();
+  const title = rawTitle === "" ? UNTITLED_CARD_TITLE : rawTitle;
   const description =
     typeof rest.description === "string"
       ? clampText(rest.description, LIMITS.description)
@@ -510,6 +512,7 @@ export function normalizeBoards(state: BoardState): BoardState {
         if (!isCardRecord(card)) return true;
         const legacy = card as LegacyCard;
         if (!isTextCurrent(card.title, LIMITS.cardTitle)) return true;
+        if (card.title.trim() === "") return true;
         if ((card.description ?? "").length > LIMITS.description) return true;
         if (!Array.isArray(legacy.labelIds)) return true;
         if (!isChecklistsCurrent(legacy.checklists)) return true;

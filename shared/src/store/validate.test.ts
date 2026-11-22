@@ -6,7 +6,11 @@ import {
 } from "./board-reducer";
 import { invert } from "./invert";
 import type { Board } from "../types/kanban";
-import { LIMITS, MAX_CARD_ACTIVITY } from "../types/kanban";
+import {
+  LIMITS,
+  MAX_CARD_ACTIVITY,
+  UNTITLED_CARD_TITLE,
+} from "../types/kanban";
 import { MAX_ID_LENGTH, validateBoardAction } from "./validate";
 
 /**
@@ -509,6 +513,32 @@ describe("validateBoardAction — rejected shapes", () => {
       "action.title",
     ],
     [
+      "a blank card title in an update",
+      action({ type: "UPDATE_CARD", cardId: "c", title: "   " }),
+      "action.title",
+    ],
+    [
+      "a blank duplicate title",
+      action({
+        type: "DUPLICATE_CARD",
+        cardId: "c",
+        newCardId: "c-copy",
+        title: "   ",
+      }),
+      "action.title",
+    ],
+    [
+      "a blank duplicate column title",
+      action({
+        type: "DUPLICATE_COLUMN",
+        columnId: "col",
+        newColumnId: "col-copy",
+        newCardIds: ["card"],
+        title: "   ",
+      }),
+      "action.title",
+    ],
+    [
       "a non-boolean quiet flag",
       action({ type: "UPDATE_CARD", cardId: "c", quiet: 1 }),
       "action.quiet",
@@ -961,6 +991,25 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
       }),
     );
     expect(result).toMatchObject({ ok: false, field });
+  });
+
+  it("normalizes a legacy blank title in a restore snapshot", () => {
+    const snapshot = initialBoardState()[0].cards["card-1"];
+    const result = validateBoardAction(
+      action({
+        type: "RESTORE_CARD",
+        card: { ...snapshot, title: "   " },
+        columnId: "col-backlog",
+        index: 0,
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      action: {
+        type: "RESTORE_CARD",
+        card: { title: UNTITLED_CARD_TITLE },
+      },
+    });
   });
 
   it("rejects a clock outside the Date range", () => {

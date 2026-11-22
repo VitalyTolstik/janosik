@@ -11,6 +11,7 @@ import {
   LABEL_COLORS,
   LIMITS,
   MAX_CARD_ACTIVITY,
+  UNTITLED_CARD_TITLE,
   validateBoardAgentPolicy,
 } from "../types/kanban";
 
@@ -406,11 +407,15 @@ function common(action: Json, type: string): Json {
  */
 function validateCard(value: unknown, field: string): Json {
   const card = asRecord(value, field);
+  const title = readString(card, "title", `${field}.title`, {
+    max: LIMITS.cardTitle,
+  }).trim();
   const out: Json = {
     id: readId(card, "id", `${field}.id`),
-    title: readString(card, "title", `${field}.title`, {
-      max: LIMITS.cardTitle,
-    }),
+    // A restore/import snapshot predates the blank-title guard. Keep the
+    // recovery working, but never write an unlabeled card back: legacy blank
+    // titles become the neutral placeholder.
+    title: title === "" ? UNTITLED_CARD_TITLE : title,
   };
   put(
     out,
@@ -718,6 +723,7 @@ function parseAction(action: Json): BoardAction {
         result,
         "title",
         readOptionalString(action, "title", "action.title", {
+          nonBlank: true,
           max: LIMITS.columnTitle,
         }),
       );
@@ -811,6 +817,7 @@ function parseAction(action: Json): BoardAction {
         result,
         "title",
         readOptionalString(action, "title", "action.title", {
+          nonBlank: true,
           max: LIMITS.cardTitle,
         }),
       );
@@ -979,6 +986,7 @@ function parseAction(action: Json): BoardAction {
         result,
         "title",
         readOptionalString(action, "title", "action.title", {
+          nonBlank: true,
           max: LIMITS.cardTitle,
         }),
       );
@@ -1305,7 +1313,12 @@ function checkImportedCard(key: string, value: unknown, field: string): void {
   const card = asRecord(value, field);
   const id = readId(card, "id", `${field}.id`);
   if (id !== key) fail(`${field}.id`, "must match the key it is stored under");
-  readString(card, "title", `${field}.title`);
+  // Blank titles are repaired by normalizeBoards to the neutral placeholder:
+  // rejecting them here would make a legacy backup (or a hand-edited export)
+  // fail as a whole instead of importing its recoverable content.
+  readString(card, "title", `${field}.title`, {
+    max: LIMITS.cardTitle,
+  });
   readOptionalString(card, "description", `${field}.description`);
   // `labelId` (single, nullable) is the v1 shape normalization converts.
   // A card cannot carry more labels than a board defines; normalization

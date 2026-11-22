@@ -234,6 +234,25 @@ describe("CardDialog quiet touch debounce (B-3)", () => {
     expect(screen.getByTestId("title-a").textContent).toBe("Mine");
   });
 
+  it("keeps the pre-blank Mine draft when a foreign rename conflicts", () => {
+    renderHarness();
+    fireEvent.click(screen.getByTestId("open-a"));
+    editTitle("Mine");
+    fireEvent.click(screen.getByTestId("rename-a-elsewhere"));
+
+    const dialog = screen.getByRole("dialog");
+    const title = screen.getByLabelText("Title");
+    within(dialog).getByTestId("card-title-conflict");
+
+    // Blanking the field during the conflict must not turn Keep mine into
+    // a commit of the foreign title.
+    fireEvent.change(title, { target: { value: "" } });
+    fireEvent.blur(title);
+    expect(title).toHaveValue("Theirs");
+    fireEvent.click(within(dialog).getByTestId("card-title-conflict-keep"));
+    expect(screen.getByTestId("title-a").textContent).toBe("Mine");
+  });
+
   it("typing the title does not re-render the description editor (C8, TASK-156 item 22)", async () => {
     editorRenders.count = 0;
     renderHarness();
