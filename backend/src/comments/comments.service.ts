@@ -11,15 +11,22 @@ import type { Comment } from "@prisma/client";
 import {
   COMMENT_KINDS,
   DEFAULT_COMMENT_KIND,
+  commentPlainExcerpt,
+  extractMentionUserIds,
   type CommentDto,
   type CommentKind,
   type CommentPage,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { activeMembershipWhere } from "@/common/membership";
 import { assertBoardAcceptsWrites } from "@/common/archived-board";
 import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
+import {
+  deleteCommentMentionAttention,
+  deleteCommentMentionAttentionForUsers,
+} from "@/notifications/mention-attention";
 import {
   type RequestAttribution,
   HUMAN_ATTRIBUTION,
@@ -138,6 +145,11 @@ export class CommentsService {
         return toCommentDto(existing);
       }
     }
+
+    // TASK-177.12: mentions are explicit `https://janosik.invalid/mention/<userId>` links.
+    // Resolve and validate them before the write so a comment can never carry
+    // a recipient outside the board's active roster.
+    const mentionUserIds = await this.assertMentionMembers(boardId, text);
 
     let created: {
       comment: CommentWithAuthor;
@@ -266,6 +278,19 @@ export class CommentsService {
         agentName: attribution.agentName,
       });
     }
+    // TASK-177.12: one attention row per mentioned active member, never for
+    // the author. The service is best-effort and cannot fail the write.
+    if (mentionUserIds.length > 0) {
+      await this.attention.notifyCommentMention({
+        boardId,
+        cardId,
+        commentId: created.comment.id,
+        authorId,
+        actorName: commentActorName(created.comment, attribution.agentName),
+        mentionedUserIds: mentionUserIds,
+        excerpt: commentPlainExcerpt(text),
+      });
+    }
     return toCommentDto(created.comment);
   }
 
@@ -347,6 +372,13 @@ export class CommentsService {
       );
     }
     const boardId = comment.card.column.boardId;
+    // TASK-177.12: validate the new recipient set before the write. The
+    // added/removed diff is computed again inside the board lock from the
+    // actual before/after text, so a concurrent edit cannot leave stale rows.
+    if (textProvided) {
+      await this.assertMentionMembers(boardId, text ?? comment.text);
+    }
+    let addedMentionIds: string[] = [];
 
     const updated = await this.boardWrite.run(
       boardId,
@@ -379,6 +411,23 @@ export class CommentsService {
               boardId,
               beforeText,
               afterText,
+            );
+            // The under-lock texts are the source of truth for the mention
+            // diff; the pre-read copy may already be stale.
+            const beforeMentionIds = extractMentionUserIds(beforeText);
+            const afterMentionIds = extractMentionUserIds(afterText);
+            const beforeSet = new Set(beforeMentionIds);
+            const afterSet = new Set(afterMentionIds);
+            addedMentionIds = afterMentionIds.filter(
+              (id) => !beforeSet.has(id),
+            );
+            const removedMentionIds = beforeMentionIds.filter(
+              (id) => !afterSet.has(id),
+            );
+            await deleteCommentMentionAttentionForUsers(
+              tx,
+              comment.id,
+              removedMentionIds,
             );
             // Inline pasted media lives outside
             // `reconcileDescriptionAttachments` (it tracks description embeds
@@ -453,6 +502,20 @@ export class CommentsService {
         commentId: comment.id,
         kind: dto.kind,
         agentName: comment.agentName,
+      });
+    }
+    // TASK-177.12: only newly added mentions raise a row; unchanged mentions
+    // are already in the store, and removed ones were withdrawn in the same
+    // transaction as the edit.
+    if (textProvided && addedMentionIds.length > 0) {
+      await this.attention.notifyCommentMention({
+        boardId,
+        cardId: comment.cardId,
+        commentId: comment.id,
+        authorId: userId,
+        actorName: commentActorName(updated.comment, comment.agentName),
+        mentionedUserIds: addedMentionIds,
+        excerpt: commentPlainExcerpt(updated.comment.text),
       });
     }
     return toCommentDto(updated.comment);
@@ -598,6 +661,9 @@ export class CommentsService {
             details: { commentId: comment.id },
           },
         });
+        // TASK-177.12: mention rows and their queued letters go with the
+        // tombstone in the same transaction.
+        await deleteCommentMentionAttention(tx, comment.id);
         return {
           activityId: activity.id,
           boardId: preRead.card.column.boardId,
@@ -622,6 +688,41 @@ export class CommentsService {
       this.realtime,
       attribution.agentSessionId,
     );
+  }
+
+  /**
+   * TASK-177.12 — every mentioned id must be an accepted, unexpired member
+   * of this board. The answer keeps first-mention order and uniqueness; an
+   * unknown or foreign id is a 400 with the offending ids (never a silent
+   * drop, which would lose the author's intent).
+   */
+  private async assertMentionMembers(
+    boardId: string,
+    text: string,
+  ): Promise<string[]> {
+    const ids = extractMentionUserIds(text);
+    if (ids.length === 0) return [];
+    const rows = await this.prisma.boardMember.findMany({
+      where: {
+        boardId,
+        userId: { in: ids },
+        ...activeMembershipWhere(),
+      },
+      select: { userId: true },
+    });
+    const allowed = new Set(rows.map((row) => row.userId));
+    const rejected = ids.filter((id) => !allowed.has(id));
+    if (rejected.length > 0) {
+      throw beforeWrite(
+        new BadRequestException({
+          message: "Mentioned users must be active board members",
+          code: "mention_not_member",
+          field: "text",
+          userIds: rejected,
+        }),
+      );
+    }
+    return ids;
   }
 
   /**
@@ -849,9 +950,20 @@ export function toCommentDto(comment: CommentWithAuthor): CommentDto {
     apiTokenId: comment.apiTokenId,
     agentSessionId: comment.agentSessionId,
     agentName: comment.agentName,
+    mentionedUserIds: extractMentionUserIds(comment.text),
     createdAt: comment.createdAt.getTime(),
     ...(comment.editedAt ? { editedAt: comment.editedAt.getTime() } : {}),
   };
+}
+
+/** Human-readable actor for a mention letter (agent label when attributed). */
+function commentActorName(
+  comment: CommentWithAuthor,
+  agentName: string | null,
+): string | null {
+  return (
+    agentName ?? comment.author?.displayName ?? comment.author?.email ?? null
+  );
 }
 
 /** Attachment ids embedded as `…/attachments/<id>/content` in free text. */

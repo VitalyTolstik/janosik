@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.12 comment mentions (U-01). Typing `@` at a word boundary opens an
+  accessible board-member picker (arrow/Home/End/Tab/Enter/Escape, portalled
+  and flipped so the dialog never clips it); selecting a member inserts an
+  explicit `[@Name](https://janosik.invalid/mention/<userId>)` markdown link.
+  The backend validates every id against the active roster and rejects
+  non-members. Mentions are inert in top-level/blockquote fenced code and
+  inline code, as are escaped tokens and larger URLs; HTML comments are not
+  rendered. List-contained fences and indented text are ordinary text, so
+  explicit mention links there stay live while a hand-typed `@Name` never
+  notifies. The closing fence follows the same 0–3-space indentation rule as
+  the opening fence. Each
+  mentioned member gets one deduplicated `comment.mention` attention row with
+  actor, card, board, excerpt and a card/comment deep link; the author is
+  skipped, `notifyAttention` still controls e-mail, and the immediate letter
+  deliberately omits the comment text. Removing a mention on edit withdraws
+  its row and queued mail; comment/board/admin/account cleanup targets the new
+  exact `AttentionNotification.commentId`, and GDPR erase covers rows owned by
+  other recipients. EN/RU copy, API/OpenAPI docs, user guide, touch targets,
+  axe coverage and focused parser/backend/UI tests are included.
+
 - TASK-185.5/185.6 comment history in the admin panel and closeout. Every
   admin comment row (card detail, user detail and the comments entity table)
   now carries `revisionCount` and `historyIncomplete`; a live row opens the

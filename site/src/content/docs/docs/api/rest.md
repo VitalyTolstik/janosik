@@ -231,6 +231,21 @@ text answers `400`, and an unknown `kind` answers `400`. When `commandId` is
 supplied, a retry that reuses it returns the first comment instead of appending
 a duplicate. A `commandId` already used on another card answers `409`.
 
+Mentions are explicit Markdown links to the reserved
+`https://janosik.invalid/mention/<userId>` address, for example
+`[@Alice](https://janosik.invalid/mention/clx…)`. The server resolves every
+link at write time, rejects an id outside the board's active roster with
+`400 mention_not_member`, and returns the resolved ids in
+`CommentDto.mentionedUserIds` (first-mention order, duplicates collapsed).
+Mentions inside top-level or blockquote fenced code and inline code are
+inert. Fenced code nested inside a list item is treated as ordinary text; the
+composer only creates top-level code blocks. Escaped tokens and larger URLs
+are inert too, and HTML comments are not rendered. Closing fences follow the
+same 0–3-space indentation rule as their opener; a fence line indented four
+spaces is content and outside the supported scope. Indented text is ordinary
+text: an explicit `[@Alice](https://janosik.invalid/mention/clx…)` link there
+is live and notifies, while a hand-typed `@Alice` never notifies.
+
 `GET` accepts `?cursor=` (opaque), `?limit=` and `?kind=` (one comment kind).
 The default limit is 50, the maximum is 100; a limit outside `1` to `100`
 answers `400`, and an unknown `kind` answers `400`. Pages are newest-first and
@@ -1000,7 +1015,7 @@ Field presence and nullability are specified separately:
 
 | Field       | Type   | Required | Constraints                                                |
 | ----------- | ------ | -------- | ---------------------------------------------------------- |
-| `text`      | string | required | non-empty, at most 10000 characters                        |
+| `text`      | string | required | non-empty, at most 10000 characters; may contain explicit mention links |
 | `kind`      | string | optional | one of `note`, `status`, `question`, `blocker`, `evidence`, `handoff` (default `note`) |
 | `commandId` | string | optional | at most 64 characters, `^[A-Za-z0-9_-]+$`; idempotency key |
 

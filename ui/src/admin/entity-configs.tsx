@@ -19,7 +19,7 @@ import type {
   AdminUserRowDto,
   AdminAuditRowDto,
 } from "@janosik/shared";
-import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
+import { ANNOUNCEMENT_LOCALES, stripMentionMarkup } from "@janosik/shared";
 import { adminApi } from "./admin-client";
 import { AdminCommentHistoryButton } from "./CommentHistoryDialog";
 import {
@@ -900,7 +900,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
             render: (comment) => (
               <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
                 <TextCell
-                  value={comment.text}
+                  value={stripMentionMarkup(comment.text)}
                   maxWidth="26rem"
                   className="min-w-0 max-w-full"
                 />

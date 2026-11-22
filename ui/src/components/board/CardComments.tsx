@@ -47,7 +47,7 @@ import { useToast } from "@/components/Toast";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
 import { AgentAttribution } from "@/components/agents/AgentAttribution";
-import { userLabel } from "@/utils/avatar";
+import { userInitials, userLabel } from "@/utils/avatar";
 import { createId } from "@/utils/id";
 
 // MDXEditor rides the description's lazy boundary (TASK-19): both comment
@@ -67,6 +67,53 @@ const PAGE_SIZE = CARD_ACTIVITY_PAGE_SIZE;
 
 function isPendingComment(comment: CommentDto) {
   return comment.id.startsWith("pending-");
+}
+
+/** The dialog body that actually scrolls (the header lives outside it). */
+function findScrollParent(element: HTMLElement): HTMLElement | null {
+  let current = element.parentElement;
+  while (current !== null) {
+    const style = window.getComputedStyle(current);
+    if (
+      /(auto|scroll)/.test(style.overflowY) &&
+      current.scrollHeight > current.clientHeight
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Center a deep-linked row in its scroll container, leaving a margin for the
+ * dialog edge/header. `handled` is false when there is no real scroller;
+ * `moved` keeps the rAF loop alive until the layout is stable.
+ */
+function centerRow(row: HTMLElement): { handled: boolean; moved: boolean } {
+  const scroller = findScrollParent(row);
+  if (scroller === null) return { handled: false, moved: false };
+  const scrollerRect = scroller.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  const margin = 24;
+  const visibleTop = scrollerRect.top + margin;
+  const visibleBottom = scrollerRect.bottom - margin;
+  if (visibleBottom <= visibleTop) return { handled: true, moved: false };
+  const delta =
+    rowRect.top + rowRect.height / 2 - (visibleTop + visibleBottom) / 2;
+  if (Math.abs(delta) < 1) return { handled: true, moved: false };
+  const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  scroller.scrollTop = Math.max(0, Math.min(max, scroller.scrollTop + delta));
+  return { handled: true, moved: true };
+}
+
+/** A stable rAF/setTimeout pair for browsers without animation frames. */
+function afterFrame(callback: () => void): void {
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(callback);
+  } else {
+    window.setTimeout(callback, 16);
+  }
 }
 
 interface CardCommentsProps {
@@ -136,6 +183,12 @@ export function CardComments({
   const listRef = useRef<HTMLOListElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const settlingFocusRef = useRef<string | null>(null);
+  const focusScrollTokenRef = useRef(0);
+  const focusSettleDeadlineRef = useRef(0);
+  // TASK-177.12: a mention deep link may point past the first page. The
+  // thread loads older pages until the target appears (or the cursor ends).
+  const focusAutoLoadRef = useRef<string | null>(null);
+  const focusAutoStuckRef = useRef<string | null>(null);
   // `loaded` separates "no comments yet" from "the first page has not
   // arrived": the section must not claim an empty thread before the answer.
   const [status, setStatus] = useState<
@@ -267,50 +320,110 @@ export function CardComments({
   // One attempt per focus id: later SSE growth must not steal the reader's
   // scroll position. An unknown id leaves the card as the fallback.
   const revealedFocusRef = useRef<string | null>(null);
+  const findFocusRow = useCallback(
+    (id: string) =>
+      Array.from(
+        listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ??
+          [],
+      ).find((element) => element.dataset.commentId === id) ?? null,
+    [],
+  );
+  /**
+   * Center the row after the current layout and again while lazy content
+   * settles. Center on the real scroll container (the dialog body), not the
+   * whole page; two stable frames end the loop.
+   */
+  const settleFocusRow = useCallback(
+    (id: string) => {
+      const token = ++focusScrollTokenRef.current;
+      let stableFrames = 0;
+      let frames = 0;
+      const step = () => {
+        if (!aliveRef.current || token !== focusScrollTokenRef.current) return;
+        const row = findFocusRow(id);
+        if (row === null) return;
+        const result = centerRow(row);
+        if (!result.handled) {
+          // jsdom/tests without layout get one deterministic reveal.
+          row.scrollIntoView?.({ block: "center" });
+          return;
+        }
+        stableFrames = result.moved ? 0 : stableFrames + 1;
+        frames += 1;
+        if (stableFrames < 2 && frames < 16) afterFrame(step);
+      };
+      afterFrame(step);
+    },
+    [findFocusRow],
+  );
+
   useEffect(() => {
     if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
-    const row = Array.from(
-      listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ?? [],
-    ).find((element) => element.dataset.commentId === focusId);
-    if (!row) return;
+    const row = findFocusRow(focusId);
+    if (row === null) return;
     // Mark only a successful reveal: an older page can still bring the
     // target later, while a found row must not be scrolled to twice.
     revealedFocusRef.current = focusId;
     settlingFocusRef.current = focusId;
-    row.scrollIntoView?.({ block: "center" });
+    focusSettleDeadlineRef.current = Date.now() + 1_500;
+    settleFocusRow(focusId);
     row.focus?.({ preventScroll: true });
-  }, [focusId, loaded, items.length]);
+  }, [findFocusRow, focusId, loaded, items.length, settleFocusRow]);
 
-  // The composer is a lazy chunk: it replaces the reserved fallback after
-  // the first reveal, which can push the target below the dialog edge on a
-  // phone. Re-reveal once when the composer's real height settles; list
-  // growth later in the session does not trigger this observer.
+  // The composer and older pages can change layout after the first reveal.
+  // Recenter for a short window only; later list growth must not yank the
+  // reader's scroll position.
   useEffect(() => {
-    const node = composerRef.current;
-    if (!node || !focusId || !loaded || typeof ResizeObserver === "undefined") {
-      return;
-    }
-    let lastHeight: number | null = null;
-    const observer = new ResizeObserver((entries) => {
-      const height = entries[0]?.contentRect.height ?? 0;
-      if (lastHeight === null) {
-        lastHeight = height;
+    if (!focusId || !loaded || typeof ResizeObserver === "undefined") return;
+    const nodes: Element[] = [];
+    if (composerRef.current !== null) nodes.push(composerRef.current);
+    if (listRef.current !== null) nodes.push(listRef.current);
+    if (nodes.length === 0) return;
+    let timer: number | undefined;
+    const observer = new ResizeObserver(() => {
+      if (
+        settlingFocusRef.current !== focusId ||
+        Date.now() > focusSettleDeadlineRef.current
+      ) {
         return;
       }
-      if (height === lastHeight) return;
-      lastHeight = height;
-      if (settlingFocusRef.current !== focusId) return;
-      const row = Array.from(
-        listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ??
-          [],
-      ).find((element) => element.dataset.commentId === focusId);
-      if (!row) return;
-      settlingFocusRef.current = null;
-      row.scrollIntoView?.({ block: "nearest" });
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (settlingFocusRef.current === focusId) settleFocusRow(focusId);
+      }, 80);
     });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [focusId, loaded]);
+    for (const node of nodes) observer.observe(node);
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [focusId, loaded, settleFocusRow]);
+
+  // A window/dialog resize after the settle window can push the target out.
+  // Keep the active deep link centered on resize; the debounce clears on
+  // unmount/close so no timer outlives the row.
+  useEffect(() => {
+    if (!focusId || !loaded) return;
+    let timer: number | undefined;
+    const recenter = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (aliveRef.current) settleFocusRow(focusId);
+      }, 100);
+    };
+    window.addEventListener("resize", recenter);
+    const scroller = listRef.current ? findScrollParent(listRef.current) : null;
+    let observer: ResizeObserver | undefined;
+    if (scroller !== null && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(recenter);
+      observer.observe(scroller);
+    }
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", recenter);
+      observer?.disconnect();
+    };
+  }, [focusId, loaded, settleFocusRow]);
 
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;
@@ -691,14 +804,14 @@ export function CardComments({
     }
   };
 
-  const handleShowOlder = async () => {
-    if (nextCursor === null || loadingOlder) return;
+  const handleShowOlder = useCallback(async (): Promise<boolean> => {
+    if (nextCursor === null || loadingOlder) return false;
     const kind = loadedKindRef.current;
     const generation = deletionGenerationRef.current;
     setLoadingOlder(true);
     try {
       const page = await api.listComments(cardId, nextCursor, PAGE_SIZE, kind);
-      if (kind !== loadedKindRef.current) return;
+      if (kind !== loadedKindRef.current) return false;
       const cleanPage = scrubPage(page, generation);
       setThread((current) => {
         const merged = appendOlderActivity(current, cleanPage, nextCursor);
@@ -711,13 +824,78 @@ export function CardComments({
             : {}),
         };
       });
+      return true;
     } catch (error) {
       markUnavailable(error);
       toast.error(t("comment.loadError"));
+      return false;
     } finally {
       setLoadingOlder(false);
     }
-  };
+  }, [
+    cardId,
+    loadingOlder,
+    markUnavailable,
+    nextCursor,
+    scrubItems,
+    scrubPage,
+    t,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (focusId === undefined || requestedKindRef.current === undefined) {
+      return;
+    }
+    // A deep link may point at a comment the active kind chip excludes.
+    // Reset to All once per focus id; the user can still filter afterwards.
+    requestedKindRef.current = undefined;
+    setRequestedKind(undefined);
+    setFilterError(false);
+    setFiltering(true);
+  }, [focusId]);
+
+  useEffect(() => {
+    if (!focusId || !loaded || status !== "ready" || nextCursor === null) {
+      return;
+    }
+    if (
+      revealedFocusRef.current === focusId ||
+      items.some((comment) => comment.id === focusId)
+    ) {
+      return;
+    }
+    if (
+      loadingOlder ||
+      focusAutoLoadRef.current === focusId ||
+      focusAutoStuckRef.current === focusId
+    ) {
+      return;
+    }
+    focusAutoLoadRef.current = focusId;
+    void handleShowOlder().then((ok) => {
+      if (focusAutoLoadRef.current !== focusId) return;
+      focusAutoLoadRef.current = null;
+      // A failed page must not turn the deep link into a retry loop.
+      if (!ok) focusAutoStuckRef.current = focusId;
+    });
+  }, [
+    focusId,
+    handleShowOlder,
+    items,
+    loaded,
+    loadingOlder,
+    nextCursor,
+    status,
+  ]);
+
+  const focusMissing =
+    focusId !== undefined &&
+    loaded &&
+    status === "ready" &&
+    nextCursor === null &&
+    !loadingOlder &&
+    !items.some((comment) => comment.id === focusId);
 
   const handleKindFilter = (next: CommentKind | undefined) => {
     if (next === requestedKindRef.current) {
@@ -739,6 +917,7 @@ export function CardComments({
             key={user.id}
             user={user}
             cardId={cardId}
+            boardId={boardId}
             draft={draft}
             sending={composer.sending}
             canSend={canSend}
@@ -827,6 +1006,16 @@ export function CardComments({
         </ol>
       ) : null}
 
+      {focusMissing ? (
+        <p
+          role="status"
+          data-testid="comment-focus-missing"
+          className="py-1 pl-[36px] text-xs text-muted-foreground"
+        >
+          {t("comment.focusNotFound")}
+        </p>
+      ) : null}
+
       {nextCursor !== null ? (
         <div className="pl-[36px]">
           <Button
@@ -884,6 +1073,7 @@ export function CardComments({
 interface CommentComposerProps {
   user: AuthUserDto;
   cardId: string;
+  boardId: string;
   draft: string;
   sending: boolean;
   canSend: boolean;
@@ -1057,6 +1247,7 @@ function CommentKindPicker({
 function CommentComposer({
   user,
   cardId,
+  boardId,
   draft,
   sending,
   canSend,
@@ -1095,6 +1286,7 @@ function CommentComposer({
           <CommentComposerEditor
             key={editorNonce}
             cardId={cardId}
+            boardId={boardId}
             value={draft}
             onChange={onDraftChange}
             onSubmit={onSubmit}
@@ -1178,6 +1370,7 @@ function CommentRow({
   const email = comment.authorEmail ?? member?.email ?? "";
   const displayName = comment.authorName ?? member?.displayName ?? null;
   const name = userLabel(displayName, email) || "?";
+  const initials = userInitials(displayName, email);
   const editedDate = comment.editedAt
     ? formatDate(comment.editedAt, lang, hour12)
     : null;
@@ -1277,7 +1470,7 @@ function CommentRow({
     >
       <button
         type="button"
-        aria-label={t("profile.open", { name })}
+        aria-label={t("profile.openInitials", { name, initials })}
         onClick={() => openProfile(comment.authorId)}
         className="ml-0.5 mt-0.5 inline-flex shrink-0 rounded-full"
       >
@@ -1398,6 +1591,7 @@ function CommentRow({
                 <CommentComposerEditor
                   key={editorNonce}
                   cardId={cardId}
+                  boardId={boardId}
                   value={draft}
                   onChange={(value) => {
                     // While the PATCH is in flight the draft is frozen, so a

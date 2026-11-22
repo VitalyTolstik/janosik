@@ -52,11 +52,26 @@ export function approvalPath(
   return `${routes.board(boardId)}?${search.toString()}`;
 }
 
-function cardTarget(boardId: string, cardId: string): AttentionLinkTarget {
+function cardTarget(
+  boardId: string,
+  cardId: string,
+  commentId: string | null = null,
+): AttentionLinkTarget {
+  if (commentId === null) {
+    return {
+      kind: "card",
+      path: cardPath(boardId, cardId),
+      href: cardHref(boardId, cardId),
+    };
+  }
+  // TASK-177.12: a mention opens the exact comment. `BoardSection` already
+  // reads `?comment=` and hands it to `CardComments` as a focus id.
+  const query = new URLSearchParams({ card: cardId, comment: commentId });
+  const path = `/board/${boardId}?${query.toString()}`;
   return {
     kind: "card",
-    path: cardPath(boardId, cardId),
-    href: cardHref(boardId, cardId),
+    path,
+    href: appPath(path),
   };
 }
 
@@ -89,10 +104,17 @@ export function attentionTarget(
   if (
     item.type === "agent.blocked" ||
     item.type === "agent.needs_human" ||
-    item.type === "claim.expired"
+    item.type === "claim.expired" ||
+    item.type === "comment.mention"
   ) {
     if (boardId === null || cardId === null) return null;
-    return cardTarget(boardId, cardId);
+    return cardTarget(
+      boardId,
+      cardId,
+      item.type === "comment.mention"
+        ? stringField(item.data, "commentId")
+        : null,
+    );
   }
 
   if (item.type.startsWith("approval.")) {

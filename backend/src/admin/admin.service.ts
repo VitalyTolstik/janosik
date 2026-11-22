@@ -98,6 +98,7 @@ import {
   ACCOUNT_DELETE_CANCELLED_ACTION,
 } from "@/users/account-deletion.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
+import { deleteCommentMentionAttention } from "@/notifications/mention-attention";
 import type { RequestAttribution } from "@/auth/request-attribution";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
@@ -2124,7 +2125,11 @@ export class AdminService {
             where: { id: commentId, deletedAt: null },
             data: { deletedAt: new Date() },
           });
-          return updated.count > 0 ? live : null;
+          if (updated.count === 0) return null;
+          // TASK-177.12: a master tombstone also withdraws mention rows and
+          // their queued letters in the same transaction.
+          await deleteCommentMentionAttention(tx, commentId);
+          return live;
         },
       );
       if (removed !== null) {

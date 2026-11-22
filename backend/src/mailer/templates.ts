@@ -339,6 +339,7 @@ const DIGEST_ATTENTION_LABELS: Record<
     en: "agents waiting for a human",
     ru: "агентов ждут человека",
   },
+  "comment.mention": { en: "mentions", ru: "упоминаний" },
   "claim.expired": { en: "expired claims", ru: "истёкших захватов" },
   "quota.exceeded": { en: "limit warnings", ru: "предупреждений о лимитах" },
   "token.revoked": { en: "revoked API keys", ru: "отозванных API-ключей" },
@@ -417,6 +418,7 @@ export const ATTENTION_EMAIL_TEMPLATE_KEYS: Record<
   "approval.expired": "attention_approval_expired",
   "agent.blocked": "attention_agent_blocked",
   "agent.needs_human": "attention_agent_needs_human",
+  "comment.mention": "attention_comment_mention",
   "claim.expired": "attention_claim_expired",
   "quota.exceeded": "attention_quota_exceeded",
   "token.revoked": "attention_token_revoked",
@@ -495,6 +497,9 @@ export function attentionEmail(
     const letter = attentionLetterBase(title, subject, paragraphs);
     return {
       ...letter,
+      // Subjects are headers, not HTML: a board named `A "B"` must not ship
+      // `&quot;` in the mailbox list.
+      subject: decodeHtmlEntities(letter.subject),
       html: letter.html.replace("<html>", `<html lang="${locale}">`),
     };
   };
@@ -502,6 +507,7 @@ export function attentionEmail(
   const card = escapeHtml(vars.card ?? "");
   const summary = escapeHtml(vars.summary ?? "");
   const agent = escapeHtml(vars.agent ?? "");
+  const actor = escapeHtml(vars.actor ?? "");
   const risk = escapeHtml(vars.risk ?? "");
   const action = escapeHtml(vars.action ?? "");
   const expiresAt = escapeHtml(vars.expiresAt ?? "");
@@ -651,6 +657,27 @@ export function attentionEmail(
               "Open the board and the handoff comment to continue.",
             ],
           );
+    case "comment.mention": {
+      const who =
+        actor === "" ? (ru ? "Участник доски" : "A board member") : actor;
+      return ru
+        ? attentionLetter(
+            "Вас упомянули",
+            `${BRAND}: вас упомянули на доске «${board}»`,
+            [
+              `${who} упомянул(а) вас в комментарии к карточке <b>${card}</b> на доске <b>${board}</b>.`,
+              "Откройте карточку, чтобы ответить в обсуждении.",
+            ],
+          )
+        : attentionLetter(
+            "You were mentioned",
+            `${BRAND}: you were mentioned on "${board}"`,
+            [
+              `${who} mentioned you in a comment on card <b>${card}</b> on board <b>${board}</b>.`,
+              "Open the card to reply in the discussion.",
+            ],
+          );
+    }
     case "claim.expired":
       return ru
         ? attentionLetter(
@@ -716,6 +743,43 @@ export function attentionEmail(
           );
     }
   }
+}
+
+/**
+ * TASK-177.12 in-app mention body. The attention letter deliberately omits
+ * the comment text (forwarding/leak contract); the authenticated inbox row
+ * still gets the actor, card, board and a short excerpt.
+ */
+export function mentionInboxBody(
+  vars: { board: string; card: string; actor: string | null; excerpt: string },
+  locale: MailLocale,
+): string {
+  const ru = locale === "ru";
+  const who = vars.actor?.trim() || (ru ? "Участник доски" : "A board member");
+  const lines = ru
+    ? [
+        `${who} упомянул(а) вас в комментарии к карточке «${vars.card}» на доске «${vars.board}».`,
+        ...(vars.excerpt === "" ? [] : [`«${vars.excerpt}»`]),
+        "Откройте карточку, чтобы ответить в обсуждении.",
+      ]
+    : [
+        `${who} mentioned you in a comment on card “${vars.card}” on board “${vars.board}”.`,
+        ...(vars.excerpt === "" ? [] : [`“${vars.excerpt}”`]),
+        "Open the card to reply in the discussion.",
+      ];
+  return lines.join("\n\n");
+}
+
+/** Decode the HTML entities the letter builders emit into visible text. */
+export function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*34;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 /** One attention template default, with its editable placeholder list. */
@@ -879,6 +943,11 @@ const agentNeedsHumanDefault = attentionDefault(
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
   ["board", "card", "agent"],
 );
+const commentMentionDefault = attentionDefault(
+  "comment.mention",
+  { board: "{{board}}", card: "{{card}}", actor: "{{actor}}" },
+  ["board", "card", "actor"],
+);
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
@@ -929,6 +998,7 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   attention_approval_expired: approvalExpiredDefault,
   attention_agent_blocked: agentBlockedDefault,
   attention_agent_needs_human: agentNeedsHumanDefault,
+  attention_comment_mention: commentMentionDefault,
   attention_claim_expired: claimExpiredDefault,
   attention_quota_exceeded: quotaExceededDefault,
   attention_token_revoked: tokenRevokedDefault,
@@ -948,14 +1018,49 @@ export function fillTemplate(
 
 /** A readable plain-text alternative from the HTML body. */
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .trim();
+  // Decode before scanning: decoding afterwards would turn `&lt;script&gt;`
+  // back into markup in the returned text. The scanner then walks the string
+  // once and drops every tag, so no second pass can expose a fresh one from
+  // nested input like `<<b>>`. A regex sanitizer cannot promise that, which is
+  // why this is an explicit scan rather than a chain of replacements.
+  const source = decodeHtmlEntities(html);
+  let text = "";
+  let index = 0;
+  while (index < source.length) {
+    const open = source.indexOf("<", index);
+    if (open === -1) {
+      text += source.slice(index);
+      break;
+    }
+    text += source.slice(index, open);
+    const close = source.indexOf(">", open + 1);
+    if (close === -1) {
+      // An unterminated `<` is ordinary text, not a tag.
+      text += source.slice(open);
+      break;
+    }
+    const tag = source
+      .slice(open + 1, close)
+      .trim()
+      .toLowerCase();
+    if (tag === "br" || tag === "br/") {
+      text += "\n";
+    } else if (tag === "/p") {
+      text += "\n\n";
+    } else if (
+      tag === "style" ||
+      tag.startsWith("style ") ||
+      tag.startsWith("style\t") ||
+      tag.startsWith("style\n")
+    ) {
+      const end = source.indexOf("</style", close + 1);
+      if (end === -1) break;
+      const endClose = source.indexOf(">", end + 1);
+      if (endClose === -1) break;
+      index = endClose + 1;
+      continue;
+    }
+    index = close + 1;
+  }
+  return text.trim();
 }

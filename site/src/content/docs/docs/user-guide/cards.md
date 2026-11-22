@@ -201,6 +201,22 @@ and before/after diff. Long revisions can reveal their full saved text, and
 kept; an older chain or a legacy/erased/gap state shows an incomplete-history
 banner instead of pretending the list is complete. Comments need server mode.
 
+Type `@` at the start of a word to mention a board member. A picker lists the
+board's active members; type to filter, use `↑`/`↓`, `Home`/`End` or
+`Tab`/`Shift+Tab` to move, then `Enter` to insert. `Esc` closes the picker and
+keeps the text you typed. The
+mention becomes an `@Name` chip and the member receives an attention
+notification (respecting their attention-email setting) with a deep link to the
+comment; the comment author is never notified. Mentions inside top-level or
+blockquote fenced code and inline code never notify; escaped tokens and larger
+URLs are inert too, and HTML comments are not rendered. Fenced code nested
+inside a list item is treated as ordinary text; the composer only creates
+top-level code blocks. The closing fence follows the same 0–3-space
+indentation rule as the opening fence. Indented text is ordinary text: an explicit
+`[@Name](https://janosik.invalid/mention/<userId>)` link there still notifies,
+while a hand-typed `@Name` never does.
+If you remove a mention while editing, its pending notification is withdrawn.
+
 ### History
 
 History lists everything that happened to the card, newest first, with the

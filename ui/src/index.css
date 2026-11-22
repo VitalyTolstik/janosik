@@ -144,6 +144,10 @@ html[lang="ru"] .font-agent-display {
 :root {
   /* Mockup `--border-soft`: 62% in dark, 72% in light (overridden below). */
   --border-soft: color-mix(in oklab, var(--border) 62%, transparent);
+  /* Avatar initials: dark ink on light palette hues; a few deeper light-theme
+     hues invert to white below. Both pairs clear AA on every avatar color. */
+  --avatar-ink: #000000;
+  --avatar-ink-inverse: #ffffff;
   /* AA-checked status text on the dark surface (#172033); the worst case is
      ≥4.75:1 on the 6–15% status tints. */
   --agent-tone-success: #10b981;
@@ -1270,6 +1274,32 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 .mdxeditor.janosik-mdx .janosik-md-content p {
   margin: 0.45rem 0;
 }
+/* TASK-177.12: avatar initials on the name-bearing picker/comment tiles.
+   Dark ink passes on the light palette hues; the deeper light-theme hues
+   below invert to white. This keeps every avatar tile at AA or better. */
+[data-testid="user-avatar"],
+[data-testid="public-avatar"] {
+  color: var(--avatar-ink);
+}
+html.light [data-testid="user-avatar"].bg-primary,
+html.light [data-testid="public-avatar"].bg-primary,
+html.light [data-testid="user-avatar"].bg-secondary,
+html.light [data-testid="public-avatar"].bg-secondary,
+html.light [data-testid="user-avatar"].bg-blue,
+html.light [data-testid="public-avatar"].bg-blue,
+html.light [data-testid="user-avatar"].bg-indigo,
+html.light [data-testid="public-avatar"].bg-indigo,
+html.light [data-testid="user-avatar"].bg-danger,
+html.light [data-testid="public-avatar"].bg-danger,
+html.light [data-testid="user-avatar"].bg-fuchsia,
+html.light [data-testid="public-avatar"].bg-fuchsia,
+html.light [data-testid="user-avatar"].bg-pink,
+html.light [data-testid="public-avatar"].bg-pink,
+html.light [data-testid="user-avatar"].bg-slate,
+html.light [data-testid="public-avatar"].bg-slate {
+  color: var(--avatar-ink-inverse);
+}
+
 .mdxeditor.janosik-mdx .janosik-md-content a {
   color: var(--primary);
   text-decoration: underline;
@@ -1278,6 +1308,22 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 }
 .mdxeditor.janosik-mdx .janosik-md-content a:hover {
   text-decoration-color: var(--primary);
+}
+/* TASK-177.12: a mention reads as a person chip, not as a web link. */
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  a[href^="https://janosik.invalid/mention/"] {
+  border-radius: 0.25rem;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  color: var(--agent-tone-primary);
+  padding: 0.05rem 0.25rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  a[href^="https://janosik.invalid/mention/"]:hover {
+  background: color-mix(in oklab, var(--primary) 20%, transparent);
 }
 .mdxeditor.janosik-mdx .janosik-md-content ul {
   margin: 0.45rem 0;
