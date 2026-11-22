@@ -398,24 +398,38 @@ describe("AccountDialog (TASK-36.1)", () => {
       value: scrollIntoView,
     });
     const server = new FakeServer();
-    renderAccount(server, server.handle, "/board/b-1?account=data");
+    renderAccount(server, server.handle, "/board/b-1?account=tokens");
 
     await screen.findByTestId("account-dialog");
+    const tokensTab = await screen.findByTestId("account-nav-tokens");
+    await waitFor(() => expect(scrolled).toContain(tokensTab));
+    await waitFor(() => expect(tokensTab).toHaveFocus());
+    expect(tokensTab).toHaveAttribute("aria-current", "page");
+    expect(tokensTab).toHaveClass("max-lg:min-h-11");
+    const nav = tokensTab.closest("nav")!;
+    expect(nav).toHaveClass("overflow-x-auto");
+
+    // Sign out is pinned outside the horizontal scroller at 390, so it is
+    // reachable while Tokens or Data is active.
+    const logout = screen.getByTestId("account-logout");
+    const rail = screen.getByTestId("account-rail");
+    expect(rail).toContainElement(logout);
+    expect(nav).not.toContainElement(logout);
+    expect(logout).toHaveClass("max-lg:min-h-11");
+
+    await userEvent.click(screen.getByTestId("account-nav-data"));
     const dataTab = await screen.findByTestId("account-nav-data");
-    await waitFor(() => expect(scrolled).toContain(dataTab));
     await waitFor(() => expect(dataTab).toHaveFocus());
+    expect(dataTab).toHaveAttribute("aria-current", "page");
+    expect(tokensTab).not.toHaveAttribute("aria-current");
+    await waitFor(() => expect(scrolled).toContain(dataTab));
     expect(scrollOptions[scrollOptions.length - 1]).toEqual({
       block: "nearest",
       inline: "center",
     });
-    expect(dataTab).toHaveAttribute("aria-current", "page");
-    expect(dataTab).toHaveClass("max-lg:min-h-11");
-    expect(screen.getByTestId("account-logout")).toHaveClass("max-lg:min-h-11");
-    expect(dataTab.closest("nav")).toHaveClass("overflow-x-auto");
 
     // Simulate the real rail: the right cue shows while content continues,
     // and swaps to the left cue once scrolled to the end.
-    const nav = dataTab.closest("nav")!;
     Object.defineProperty(nav, "clientWidth", {
       configurable: true,
       value: 364,

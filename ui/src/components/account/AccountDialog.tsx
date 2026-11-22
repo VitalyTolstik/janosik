@@ -308,84 +308,91 @@ export function AccountDialog({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-          <div className="relative shrink-0 sm:contents">
-            <nav
-              ref={navRail}
-              aria-label={t("account.nav")}
-              onScroll={measureRail}
-              className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3"
-            >
-              {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
-                <button
-                  key={id}
-                  ref={(node) => {
-                    sectionButtons.current[id] = node;
-                  }}
-                  type="button"
-                  data-testid={`account-nav-${id}`}
-                  aria-current={section === id ? "page" : undefined}
-                  onClick={() => selectSection(id)}
-                  className={cn(
-                    "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors max-lg:min-h-11 sm:w-full",
-                    section === id
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-muted-foreground hover:bg-hover hover:text-foreground",
-                  )}
+          <aside
+            data-testid="account-rail"
+            className="flex shrink-0 flex-col border-b sm:w-52 sm:border-b-0 sm:border-r"
+          >
+            <div className="relative min-w-0">
+              <nav
+                ref={navRail}
+                aria-label={t("account.nav")}
+                onScroll={measureRail}
+                className="flex gap-1 overflow-x-auto p-2 sm:flex-col sm:overflow-visible sm:p-3"
+              >
+                {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
+                  <button
+                    key={id}
+                    ref={(node) => {
+                      sectionButtons.current[id] = node;
+                    }}
+                    type="button"
+                    data-testid={`account-nav-${id}`}
+                    aria-current={section === id ? "page" : undefined}
+                    onClick={() => selectSection(id)}
+                    className={cn(
+                      "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors max-lg:min-h-11 sm:w-full",
+                      section === id
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="min-w-0 truncate">{t(labelKey)}</span>
+                  </button>
+                ))}
+                {onOpenAgents ? (
+                  <button
+                    type="button"
+                    data-testid="account-open-agents"
+                    onClick={() => {
+                      setOpen(false);
+                      onOpenAgents();
+                    }}
+                    className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11 sm:w-full"
+                  >
+                    <Bot className="h-4 w-4 shrink-0" aria-hidden />
+                    {t("agents.open")}
+                  </button>
+                ) : null}
+                {/* Let the last real tab scroll clear of the right edge cue. */}
+                <span
+                  aria-hidden="true"
+                  className="h-11 w-9 shrink-0 sm:hidden"
+                />
+              </nav>
+              {!railEdges.start ? (
+                <span
+                  aria-hidden="true"
+                  data-testid="account-nav-overflow-start"
+                  className="pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r from-popover via-popover/80 to-transparent sm:hidden"
                 >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                  <span className="min-w-0 truncate">{t(labelKey)}</span>
-                </button>
-              ))}
-              {onOpenAgents ? (
-                <button
-                  type="button"
-                  data-testid="account-open-agents"
-                  onClick={() => {
-                    setOpen(false);
-                    onOpenAgents();
-                  }}
-                  className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11 sm:w-full"
-                >
-                  <Bot className="h-4 w-4 shrink-0" aria-hidden />
-                  {t("agents.open")}
-                </button>
+                  <ChevronLeft className="absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </span>
               ) : null}
+              {/* A fade plus chevron is the mobile cue that the rail continues
+                  past Data; it never intercepts a swipe. */}
+              {!railEdges.end ? (
+                <span
+                  aria-hidden="true"
+                  data-testid="account-nav-overflow"
+                  className="pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l from-popover via-popover/80 to-transparent sm:hidden"
+                >
+                  <ChevronRight className="absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </span>
+              ) : null}
+            </div>
+            <div className="border-t p-2 sm:mt-auto sm:border-t-0 sm:p-3">
               <button
                 type="button"
                 data-testid="account-logout"
                 onClick={() => setConfirmingLogout(true)}
-                className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 max-lg:min-h-11 sm:mt-auto sm:w-full"
+                className="flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 max-lg:min-h-11"
               >
                 <LogOut className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="whitespace-nowrap">{t("auth.logout")}</span>
               </button>
-              {/* Let the last real tab scroll clear of the right edge cue. */}
-              <span
-                aria-hidden="true"
-                className="h-11 w-9 shrink-0 sm:hidden"
-              />
-            </nav>
-            {!railEdges.start ? (
-              <span
-                aria-hidden="true"
-                data-testid="account-nav-overflow-start"
-                className="pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r from-popover via-popover/80 to-transparent sm:hidden"
-              >
-                <ChevronLeft className="absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </span>
-            ) : null}
-            {/* A fade plus chevron is the mobile cue that the rail continues
-                past Data and Sign out; it never intercepts a swipe. */}
-            {!railEdges.end ? (
-              <span
-                aria-hidden="true"
-                data-testid="account-nav-overflow"
-                className="pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l from-popover via-popover/80 to-transparent sm:hidden"
-              >
-                <ChevronRight className="absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </span>
-            ) : null}
-          </div>
+            </div>
+          </aside>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {section === "profile" ? <ProfileSection /> : null}

@@ -174,7 +174,7 @@ export function NotificationsBell() {
           }
           data-testid="notifications-bell"
           className={cn(
-            "relative max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 md:h-8 md:w-8 md:min-w-8",
+            "relative max-lg:h-11 max-lg:w-11 max-lg:min-w-11 max-lg:shrink-0 lg:h-8 lg:w-8 lg:min-w-8",
             count > 0
               ? "text-primary hover:text-primary"
               : "text-muted-foreground hover:text-foreground",

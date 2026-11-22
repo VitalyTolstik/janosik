@@ -89,6 +89,16 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     renderBell(server);
 
     const bell = await screen.findByTestId("notifications-bell");
+    // The bell stays 44 px through the 768 tablet width, then shrinks with
+    // the desktop header at lg.
+    expect(bell).toHaveClass(
+      "max-lg:h-11",
+      "max-lg:w-11",
+      "max-lg:min-w-11",
+      "lg:h-8",
+      "lg:w-8",
+      "lg:min-w-8",
+    );
     await waitFor(() =>
       expect(server.requests).toContainEqual({
         method: "GET",
