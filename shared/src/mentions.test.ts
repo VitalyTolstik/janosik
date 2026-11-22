@@ -71,10 +71,16 @@ describe("comment mentions (TASK-177.12)", () => {
   it("masks fenced code in every container", () => {
     const token = mentionMarkdown("Alice", "user-1");
     expect(parseCommentMentions(`~~~\n${token}\n~~~`)).toEqual([]);
+    expect(parseCommentMentions("```\n" + token + "\n```")).toEqual([]);
     expect(parseCommentMentions(`    ~~~\n    ${token}\n    ~~~`)).toEqual([]);
     expect(parseCommentMentions(`> ~~~\n> ${token}\n> ~~~`)).toEqual([]);
     expect(
       parseCommentMentions(`- parent\n\n  ~~~\n  ${token}\n  ~~~`),
+    ).toEqual([]);
+    expect(
+      parseCommentMentions(
+        ["- parent", "", "  ```", `  ${token}`, "  ```"].join("\n"),
+      ),
     ).toEqual([]);
     expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual([]);
     expect(
@@ -85,6 +91,13 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(
       parseCommentMentions(`- parent\n\n\t~~~\n\t${token}\n\t~~~`),
     ).toEqual([]);
+    expect(parseCommentMentions(`-\t~~~\n\t${token}\n\t~~~`)).toEqual([]);
+    // Container combinations: list + list, list + task, list + blockquote.
+    expect(parseCommentMentions(`- - ~~~\n  ${token}\n  ~~~`)).toEqual([]);
+    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
+    expect(
+      parseCommentMentions(["- > ```", `  > ${token}`, "  > ```"].join("\n")),
+    ).toEqual([]);
   });
 
   it("treats indented text and marker-line indentation as plain text", () => {
@@ -94,6 +107,7 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(parseCommentMentions(`    - ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`>     ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`-     ${token}`)).toEqual(mentioned);
+    expect(parseCommentMentions(`- ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`- parent\n\n      ${token}`)).toEqual(
       mentioned,
     );

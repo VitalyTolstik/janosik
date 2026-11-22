@@ -93,20 +93,45 @@ function expandTabs(line: string): string {
 }
 
 const LIST_MARKER_PREFIX = /^(?:[-+*]|\d+[.)])[ \t]+/;
+const TASK_MARKER_PREFIX = /^\[[ xX]\][ \t]+/;
 
 /**
- * Fenced code opener on a line after blockquote/list prefixes. The editor
- * only emits fenced and inline code; indented text is deliberately plain
- * text and is never masked.
+ * Fenced code opener after any combination of blockquote, list-item and task
+ * prefixes (`- > ~~~`, `- [ ] ~~~`, `1. - ~~~`). The quote depth after the
+ * whole prefix chain is returned so the closer can ignore deeper quoted code.
  */
-function fenceOpener(line: string): { char: string; length: number } | null {
-  const trimmed = line.trimStart().replace(LIST_MARKER_PREFIX, "").trimStart();
-  const match = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
+function fenceOpener(line: string): {
+  char: string;
+  length: number;
+  quoteDepth: number;
+} | null {
+  let content = line.trimStart();
+  let quoteDepth = 0;
+  for (let guard = 0; guard < 32; guard += 1) {
+    const quote = /^ {0,3}> ?/.exec(content);
+    if (quote !== null) {
+      quoteDepth += 1;
+      content = content.slice(quote[0].length).trimStart();
+      continue;
+    }
+    const list = LIST_MARKER_PREFIX.exec(content);
+    if (list !== null) {
+      content = content.slice(list[0].length).trimStart();
+      continue;
+    }
+    const task = TASK_MARKER_PREFIX.exec(content);
+    if (task !== null) {
+      content = content.slice(task[0].length).trimStart();
+      continue;
+    }
+    break;
+  }
+  const match = /^(`{3,}|~{3,})(.*)$/.exec(content);
   if (match === null) return null;
   const run = match[1]!;
   // A backtick fence's info string may not contain a backtick.
   if (run[0] === "`" && match[2]!.includes("`")) return null;
-  return { char: run[0]!, length: run.length };
+  return { char: run[0]!, length: run.length, quoteDepth };
 }
 
 function fenceCloser(line: string, char: string, length: number): boolean {
@@ -136,7 +161,10 @@ function maskCodeBlocks(chars: string[]): void {
     if (fenceChar !== null) {
       // Strip only the opening container's quote depth: a deeper quoted
       // fence line is code content, never a closer.
-      const fenceLine = removeQuoteMarkers(expanded, fenceQuoteDepth).content;
+      const fenceLine = removeQuoteMarkers(
+        expanded.trimStart(),
+        fenceQuoteDepth,
+      ).content;
       if (fenceCloser(fenceLine, fenceChar, fenceLength)) {
         maskRange(chars, offset, end);
         fenceChar = null;
@@ -149,12 +177,11 @@ function maskCodeBlocks(chars: string[]): void {
       continue;
     }
 
-    const unquoted = removeQuoteMarkers(expanded);
-    const opener = fenceOpener(unquoted.content);
+    const opener = fenceOpener(expanded);
     if (opener !== null) {
       fenceChar = opener.char;
       fenceLength = opener.length;
-      fenceQuoteDepth = unquoted.depth;
+      fenceQuoteDepth = opener.quoteDepth;
       maskRange(chars, offset, end);
     }
     offset = end;

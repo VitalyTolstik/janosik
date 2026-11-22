@@ -13,7 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and flipped so the dialog never clips it); selecting a member inserts an
   explicit `[@Name](https://janosik.invalid/mention/<userId>)` markdown link.
   The backend validates every id against the active roster, rejects
-  non-members and ignores mention-shaped text in code, escapes and URLs. Each
+  non-members and ignores mention-shaped text in fenced and inline code,
+  escapes and URLs; indented text is plain text by design. Each
   mentioned member gets one deduplicated `comment.mention` attention row with
   actor, card, board, excerpt and a card/comment deep link; the author is
   skipped, `notifyAttention` still controls e-mail, and the immediate letter
