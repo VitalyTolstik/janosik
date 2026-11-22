@@ -53,7 +53,7 @@ export function BoardTitle() {
       <h1
         data-testid="board-title"
         tabIndex={-1}
-        className="max-w-[46vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
+        className="max-w-[30vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
       >
         {title}
       </h1>
@@ -74,7 +74,7 @@ export function BoardTitle() {
           else if (e.key === "Escape") cancel();
         }}
         aria-label={t("board.editTitleAria")}
-        className="h-8 w-36 max-w-[46vw] rounded-md border border-primary/40 bg-background/80 px-2 text-base font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64 sm:text-lg"
+        className="h-8 w-36 max-w-[30vw] rounded-md border border-primary/40 bg-background/80 px-2 text-base font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64 sm:text-lg"
       />
       <LimitCounter
         length={draft.length}
@@ -97,7 +97,7 @@ export function BoardTitle() {
           }
         }}
         title={t("board.editTitleHint")}
-        className="max-w-[46vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
+        className="max-w-[30vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
       >
         {title}
       </h1>
