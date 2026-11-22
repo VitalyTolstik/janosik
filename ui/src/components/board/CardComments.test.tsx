@@ -777,7 +777,9 @@ describe("CardComments", () => {
       "**Rename** the `migration` table before the release",
     );
     expect(excerpt).toHaveAttribute("dir", "auto");
-    expect(within(dialog).getByText(/cannot be undone/i)).toBeVisible();
+    expect(
+      within(dialog).getByText(/administrator can restore/i),
+    ).toBeVisible();
     expect(
       within(dialog).getByRole("heading", { name: /Delete Vera/ }),
     ).toBeVisible();
@@ -869,7 +871,7 @@ describe("CardComments", () => {
     );
   });
 
-  it("does not offer undo because a deleted comment has no restore endpoint", async () => {
+  it("keeps comment restore out of the inline thread (Recently deleted owns it)", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [comment({ text: "Gone" })]);
     renderComments(server);
@@ -911,7 +913,7 @@ describe("CardComments", () => {
       ).toBeVisible();
       expect(
         within(dialog).getByText(
-          "Комментарий исчезнет у всех. Это действие нельзя отменить.",
+          /Администратор может восстановить его в течение срока хранения/,
         ),
       ).toBeVisible();
       expect(

@@ -1134,6 +1134,212 @@ describe("Boards API (e2e)", () => {
     });
   });
 
+  describe("Recently deleted (TASK-177.7)", () => {
+    async function deleted(boardId: string) {
+      return (
+        await server()
+          .get(`/api/v1/boards/${boardId}/deleted`)
+          .set(auth(adminToken))
+          .expect(200)
+      ).body as {
+        retentionDays: number;
+        truncated: boolean;
+        items: Array<{ type: string; id: string; title: string }>;
+      };
+    }
+
+    it("restores cards, columns, comments and files during retention", async () => {
+      const boardId = await createBoard("Recently deleted board");
+      await server()
+        .post(`/api/v1/boards/${boardId}/members`)
+        .set(auth(adminToken))
+        .send({ email: MEMBER_EMAIL, role: "MEMBER" })
+        .expect(201);
+      await acceptInvitation(memberToken, boardId);
+      const columnId = randomUUID();
+      const cardId = randomUUID();
+      const secondColumnId = randomUUID();
+      const secondCardId = randomUUID();
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "To do",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Retired card",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: secondColumnId,
+        title: "Later",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: secondCardId,
+        columnId: secondColumnId,
+        title: "Column cargo",
+      }).expect(200);
+
+      // Card: delete → reload the list → restore → live again.
+      await applyCommand(boardId, { type: "DELETE_CARD", cardId }).expect(200);
+      let page = await deleted(boardId);
+      expect(page.retentionDays).toBeGreaterThan(0);
+      expect(page.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "cards", id: cardId }),
+        ]),
+      );
+      await server()
+        .post(`/api/v1/boards/${boardId}/deleted/cards/${cardId}/restore`)
+        .set(auth(memberToken))
+        .expect(200);
+      let aggregate = await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(aggregate.body.cards[cardId]).toMatchObject({
+        title: "Retired card",
+      });
+      expect((await deleted(boardId)).items.map((row) => row.id)).not.toContain(
+        cardId,
+      );
+
+      // A deleted column takes its cards with it and brings them back.
+      await applyCommand(boardId, {
+        type: "DELETE_COLUMN",
+        columnId: secondColumnId,
+      }).expect(200);
+      page = await deleted(boardId);
+      expect(page.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "columns", id: secondColumnId }),
+        ]),
+      );
+      expect(page.items.map((row) => row.id)).not.toContain(secondCardId);
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/columns/${secondColumnId}/restore`,
+        )
+        .set(auth(memberToken))
+        .expect(200);
+      aggregate = await server()
+        .get(`/api/v1/boards/${boardId}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(
+        aggregate.body.columns.map((row: { id: string }) => row.id),
+      ).toContain(secondColumnId);
+      expect(aggregate.body.cards[secondCardId]).toMatchObject({
+        title: "Column cargo",
+      });
+
+      // Comment: author delete → restore in place → visible in the thread.
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "Please keep this note" })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect((await deleted(boardId)).items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "comments", id: comment.body.id }),
+        ]),
+      );
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/comments/${comment.body.id}/restore`,
+        )
+        .set(auth(memberToken))
+        .expect(200);
+      const thread = await server()
+        .get(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(thread.body.items.map((row: { id: string }) => row.id)).toContain(
+        comment.body.id,
+      );
+
+      // File: delete → restore → list + blob are back.
+      const file = await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .attach("file", Buffer.from("hello"), {
+          filename: "note.txt",
+          contentType: "text/plain",
+        })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/attachments/${file.body.id}`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect((await deleted(boardId)).items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "attachments", id: file.body.id }),
+        ]),
+      );
+      await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/attachments/${file.body.id}/restore`,
+        )
+        .set(auth(memberToken))
+        .expect(200);
+      const files = await server()
+        .get(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(files.body.map((row: { id: string }) => row.id)).toContain(
+        file.body.id,
+      );
+      await server()
+        .get(`/api/v1/attachments/${file.body.id}/content`)
+        .set(auth(adminToken))
+        .expect(200);
+    });
+
+    it("keeps the view behind board membership and refuses an expired row", async () => {
+      const boardId = await createBoard("Deleted permissions");
+      await server()
+        .get(`/api/v1/boards/${boardId}/deleted`)
+        .set(auth(outsiderToken))
+        .expect(403);
+
+      const columnId = randomUUID();
+      const cardId = randomUUID();
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "To do",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Old card",
+      }).expect(200);
+      await applyCommand(boardId, { type: "DELETE_CARD", cardId }).expect(200);
+      await prisma.card.update({
+        where: { id: cardId },
+        data: { deletedAt: new Date(Date.now() - 400 * 86_400_000) },
+      });
+
+      // Past the 30-day fallback the list hides it and a direct restore is
+      // a 410 rather than a resurrection outside retention.
+      expect((await deleted(boardId)).items.map((row) => row.id)).not.toContain(
+        cardId,
+      );
+      await server()
+        .post(`/api/v1/boards/${boardId}/deleted/cards/${cardId}/restore`)
+        .set(auth(adminToken))
+        .expect(410);
+    });
+  });
+
   describe("import / export round-trip", () => {
     it("preserves cover, dueDate, wipLimit and archivedAt across two imports", async () => {
       const source = richEnvelope("Round trip").boards[0];
