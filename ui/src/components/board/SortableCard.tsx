@@ -32,6 +32,12 @@ interface SortableCardProps {
   compact?: boolean;
   /** VIEWER mode: the card's context menu keeps read-only actions only. */
   readOnly?: boolean;
+  /** True while the card is part of a bulk selection. */
+  selected?: boolean;
+  /** Checkbox mode: a plain click toggles the selection. */
+  selectionMode?: boolean;
+  /** Toggles this card in the bulk selection (shift extends the range). */
+  onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
 }
 
 /**
@@ -53,6 +59,9 @@ function SortableCardView({
   duplicateDisabledReason,
   compact = false,
   readOnly = false,
+  selected = false,
+  selectionMode = false,
+  onToggleSelect,
 }: SortableCardProps) {
   const {
     attributes,
@@ -92,6 +101,7 @@ function SortableCardView({
       // invalid on a group (TASK-156); a title gives the group its name.
       aria-pressed={undefined}
       aria-label={card.title}
+      data-card-selected={selected || undefined}
       onKeyDown={(event) => {
         // dnd-kit's keyboard activator (Space) first; Enter on the focused
         // card itself opens it — never a drag (a11y). Keys typed into the
@@ -106,6 +116,10 @@ function SortableCardView({
           return;
         }
         event.preventDefault();
+        if (selectionMode && onToggleSelect) {
+          onToggleSelect(card.id);
+          return;
+        }
         onCardClick?.(card.id);
       }}
     >
@@ -124,6 +138,9 @@ function SortableCardView({
         duplicateDisabledReason={duplicateDisabledReason}
         compact={compact}
         readOnly={readOnly}
+        selected={selected}
+        selectionMode={selectionMode}
+        onToggleSelect={onToggleSelect}
       />
     </div>
   );

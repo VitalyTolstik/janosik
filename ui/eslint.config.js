@@ -38,6 +38,7 @@ export default tseslint.config(
             "useBoardActions",
             "useBoardHistory",
             "useCardLabels",
+            "useCardSelection",
             "useBoardBackground",
             "useBoardGlass",
             "useToast",

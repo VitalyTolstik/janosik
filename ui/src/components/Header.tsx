@@ -480,6 +480,11 @@ export function Header() {
               filter={board !== undefined && view !== "watch"}
               kanban={board !== undefined && view === "board"}
               canEdit={board !== undefined && !readOnly}
+              selectable={
+                board !== undefined &&
+                !readOnly &&
+                (view === "board" || view === "table")
+              }
             />
           </div>
         ) : (

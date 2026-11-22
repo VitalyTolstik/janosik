@@ -163,7 +163,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div
-        className="janosik-toast-region pointer-events-none fixed right-4 bottom-[calc(1rem_+_env(safe-area-inset-bottom))] z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
+        className="janosik-toast-region pointer-events-none fixed right-4 bottom-[calc(1rem_+_env(safe-area-inset-bottom)_+_var(--janosik-bulk-bar-inset,0px))] z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
         role="region"
         aria-label={t("common.notifications")}
       >

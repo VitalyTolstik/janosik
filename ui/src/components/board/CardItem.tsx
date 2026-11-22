@@ -12,6 +12,7 @@ import { LinkedCardsPopover } from "@/components/board/LinkedCardsPopover";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import { DEFAULT_CARD_PRIORITY } from "@janosik/shared";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { HighlightedText } from "@/components/ui/highlight";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useAuth } from "@/auth/AuthContext";
@@ -89,6 +90,12 @@ interface CardItemProps {
    * read-only actions (open, copy link, new tab).
    */
   readOnly?: boolean;
+  /** True while the card is part of a bulk selection. */
+  selected?: boolean;
+  /** Checkbox mode: a plain click toggles the selection. */
+  selectionMode?: boolean;
+  /** Toggles this card in the bulk selection (shift extends the range). */
+  onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
 }
 
 /**
@@ -159,6 +166,9 @@ function CardItemView({
   duplicateDisabledReason,
   compact = false,
   readOnly = false,
+  selected = false,
+  selectionMode = false,
+  onToggleSelect,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped(!compact);
   // Entry animation only for a card that appears in this tab now (created,
@@ -237,10 +247,17 @@ function CardItemView({
     >
       <article
         onClick={
-          onClick
+          onClick || onToggleSelect
             ? (event) => {
-                // Ctrl/Cmd+click = the browser's own new-tab gesture — hand
-                // it the card's deep link instead of the in-app dialog.
+                // Checkbox mode turns the whole card into the selection
+                // target; Shift extends the range instead of opening a new
+                // tab, while Ctrl/Cmd keeps the browser's new-tab gesture.
+                if (onToggleSelect && selectionMode) {
+                  event.preventDefault();
+                  onToggleSelect(card.id, event.shiftKey);
+                  return;
+                }
+                if (!onClick) return;
                 if (shouldLeaveToBrowser(event)) {
                   if (boardId) {
                     event.preventDefault();
@@ -280,17 +297,57 @@ function CardItemView({
             }
           : {})}
         data-card-cursor={isCursor || undefined}
+        data-card-selected={selected || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
         className={cn(
           "group relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
           compact
             ? "flex h-12 items-center gap-2 px-3"
             : "flex h-[92px] flex-col gap-1 px-3 py-2",
+          (selectionMode || selected) && "pl-9 max-lg:pl-12",
+          selected &&
+            "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/40",
           entering && "animate-card-in",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
         )}
       >
+        {onToggleSelect && (selectionMode || selected) ? (
+          <span
+            data-testid="card-select"
+            className={cn(
+              "absolute left-1 z-10 flex h-7 w-7 items-center justify-center max-lg:h-11 max-lg:w-11",
+              compact ? "top-1/2 -translate-y-1/2" : "top-1.5",
+            )}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              // Only the drag activator keys belong to the checkbox. Escape,
+              // Ctrl/⌘+A and the j/k/x cursor must still reach the board.
+              if (event.key === " " || event.key === "Enter") {
+                event.stopPropagation();
+              }
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleSelect(card.id, event.shiftKey);
+            }}
+          >
+            <Checkbox
+              checked={selected}
+              aria-label={
+                selected
+                  ? t("bulk.deselectCard", { title: card.title })
+                  : t("bulk.selectCard", { title: card.title })
+              }
+              className="h-4 w-4 bg-card"
+              onCheckedChange={() => undefined}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleSelect(card.id, event.shiftKey);
+              }}
+            />
+          </span>
+        ) : null}
         {/* Full-face-only chrome: the hover quick actions. The compact face
             keeps them behind the click/dialog. */}
         {!compact ? (
