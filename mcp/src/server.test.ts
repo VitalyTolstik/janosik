@@ -1573,6 +1573,66 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("rechecks the current task contract after a human edit (TASK-177.4)", async () => {
+    const client = await connect();
+    // The agent sets a contract.
+    const set = await client.callTool({
+      name: "janosik_set_card_task_spec",
+      arguments: {
+        boardId: "b1",
+        cardId: "k1",
+        definitionOfDone: ["agent item"],
+      },
+    });
+    expect(set.isError).toBeFalsy();
+
+    // A human replaces the contract through the card dialog; the next tool
+    // call must read that saved version, not the one the agent remembered.
+    cardOverrides = {
+      k1: {
+        id: "k1",
+        title: "First",
+        labelIds: [],
+        definitionOfDone: ["human-edited item"],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    };
+    const blocked = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k1", toColumnId: "col2" },
+    });
+    expect(blocked.isError).toBe(true);
+    expect(firstText(blocked)).toMatch(/evidence/i);
+    expect(
+      calls.some(
+        (call) =>
+          call.path === "/boards/b1/commands" &&
+          (call.body as { action?: { type?: string } }).action?.type ===
+            "MOVE_CARD",
+      ),
+    ).toBe(false);
+
+    // The human clears it: with no contract the DoD gate no longer binds and
+    // the move goes through against the fresh board.
+    cardOverrides = {
+      k1: {
+        id: "k1",
+        title: "First",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 3,
+      },
+    };
+    const moved = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k1", toColumnId: "col2" },
+    });
+    expect(moved.isError).toBeFalsy();
+    expect(firstText(moved)).toMatch(/Moved card k1/i);
+    await client.close();
+  });
+
   it("rechecks Done after a concurrent column reorder", async () => {
     staleWrites = 1;
     reorderOnConflict = true;
