@@ -68,6 +68,53 @@ function isPendingComment(comment: CommentDto) {
   return comment.id.startsWith("pending-");
 }
 
+/** The dialog body that actually scrolls (the header lives outside it). */
+function findScrollParent(element: HTMLElement): HTMLElement | null {
+  let current = element.parentElement;
+  while (current !== null) {
+    const style = window.getComputedStyle(current);
+    if (
+      /(auto|scroll)/.test(style.overflowY) &&
+      current.scrollHeight > current.clientHeight
+    ) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Center a deep-linked row in its scroll container, leaving a margin for the
+ * dialog edge/header. `handled` is false when there is no real scroller;
+ * `moved` keeps the rAF loop alive until the layout is stable.
+ */
+function centerRow(row: HTMLElement): { handled: boolean; moved: boolean } {
+  const scroller = findScrollParent(row);
+  if (scroller === null) return { handled: false, moved: false };
+  const scrollerRect = scroller.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  const margin = 24;
+  const visibleTop = scrollerRect.top + margin;
+  const visibleBottom = scrollerRect.bottom - margin;
+  if (visibleBottom <= visibleTop) return { handled: true, moved: false };
+  const delta =
+    rowRect.top + rowRect.height / 2 - (visibleTop + visibleBottom) / 2;
+  if (Math.abs(delta) < 1) return { handled: true, moved: false };
+  const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  scroller.scrollTop = Math.max(0, Math.min(max, scroller.scrollTop + delta));
+  return { handled: true, moved: true };
+}
+
+/** A stable rAF/setTimeout pair for browsers without animation frames. */
+function afterFrame(callback: () => void): void {
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(callback);
+  } else {
+    window.setTimeout(callback, 16);
+  }
+}
+
 interface CardCommentsProps {
   cardId: string;
   boardId: string;
@@ -135,6 +182,8 @@ export function CardComments({
   const listRef = useRef<HTMLOListElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const settlingFocusRef = useRef<string | null>(null);
+  const focusScrollTokenRef = useRef(0);
+  const focusSettleDeadlineRef = useRef(0);
   // TASK-177.12: a mention deep link may point past the first page. The
   // thread loads older pages until the target appears (or the cursor ends).
   const focusAutoLoadRef = useRef<string | null>(null);
@@ -270,50 +319,84 @@ export function CardComments({
   // One attempt per focus id: later SSE growth must not steal the reader's
   // scroll position. An unknown id leaves the card as the fallback.
   const revealedFocusRef = useRef<string | null>(null);
+  const findFocusRow = useCallback(
+    (id: string) =>
+      Array.from(
+        listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ??
+          [],
+      ).find((element) => element.dataset.commentId === id) ?? null,
+    [],
+  );
+  /**
+   * Center the row after the current layout and again while lazy content
+   * settles. Center on the real scroll container (the dialog body), not the
+   * whole page; two stable frames end the loop.
+   */
+  const settleFocusRow = useCallback(
+    (id: string) => {
+      const token = ++focusScrollTokenRef.current;
+      let stableFrames = 0;
+      let frames = 0;
+      const step = () => {
+        if (!aliveRef.current || token !== focusScrollTokenRef.current) return;
+        const row = findFocusRow(id);
+        if (row === null) return;
+        const result = centerRow(row);
+        if (!result.handled) {
+          // jsdom/tests without layout get one deterministic reveal.
+          row.scrollIntoView?.({ block: "center" });
+          return;
+        }
+        stableFrames = result.moved ? 0 : stableFrames + 1;
+        frames += 1;
+        if (stableFrames < 2 && frames < 16) afterFrame(step);
+      };
+      afterFrame(step);
+    },
+    [findFocusRow],
+  );
+
   useEffect(() => {
     if (!focusId || !loaded || revealedFocusRef.current === focusId) return;
-    const row = Array.from(
-      listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ?? [],
-    ).find((element) => element.dataset.commentId === focusId);
-    if (!row) return;
+    const row = findFocusRow(focusId);
+    if (row === null) return;
     // Mark only a successful reveal: an older page can still bring the
     // target later, while a found row must not be scrolled to twice.
     revealedFocusRef.current = focusId;
     settlingFocusRef.current = focusId;
-    row.scrollIntoView?.({ block: "center" });
+    focusSettleDeadlineRef.current = Date.now() + 1_500;
+    settleFocusRow(focusId);
     row.focus?.({ preventScroll: true });
-  }, [focusId, loaded, items.length]);
+  }, [findFocusRow, focusId, loaded, items.length, settleFocusRow]);
 
-  // The composer is a lazy chunk: it replaces the reserved fallback after
-  // the first reveal, which can push the target below the dialog edge on a
-  // phone. Re-reveal once when the composer's real height settles; list
-  // growth later in the session does not trigger this observer.
+  // The composer and older pages can change layout after the first reveal.
+  // Recenter for a short window only; later list growth must not yank the
+  // reader's scroll position.
   useEffect(() => {
-    const node = composerRef.current;
-    if (!node || !focusId || !loaded || typeof ResizeObserver === "undefined") {
-      return;
-    }
-    let lastHeight: number | null = null;
-    const observer = new ResizeObserver((entries) => {
-      const height = entries[0]?.contentRect.height ?? 0;
-      if (lastHeight === null) {
-        lastHeight = height;
+    if (!focusId || !loaded || typeof ResizeObserver === "undefined") return;
+    const nodes: Element[] = [];
+    if (composerRef.current !== null) nodes.push(composerRef.current);
+    if (listRef.current !== null) nodes.push(listRef.current);
+    if (nodes.length === 0) return;
+    let timer: number | undefined;
+    const observer = new ResizeObserver(() => {
+      if (
+        settlingFocusRef.current !== focusId ||
+        Date.now() > focusSettleDeadlineRef.current
+      ) {
         return;
       }
-      if (height === lastHeight) return;
-      lastHeight = height;
-      if (settlingFocusRef.current !== focusId) return;
-      const row = Array.from(
-        listRef.current?.querySelectorAll<HTMLElement>("[data-comment-id]") ??
-          [],
-      ).find((element) => element.dataset.commentId === focusId);
-      if (!row) return;
-      settlingFocusRef.current = null;
-      row.scrollIntoView?.({ block: "nearest" });
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (settlingFocusRef.current === focusId) settleFocusRow(focusId);
+      }, 80);
     });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [focusId, loaded]);
+    for (const node of nodes) observer.observe(node);
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [focusId, loaded, settleFocusRow]);
 
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;

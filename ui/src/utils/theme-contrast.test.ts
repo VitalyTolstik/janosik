@@ -3,7 +3,11 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { LABEL_COLORS, LABEL_COLOR_CHIP } from "@janosik/shared";
+import {
+  LABEL_COLORS,
+  LABEL_COLOR_CHIP,
+  USER_AVATAR_COLORS,
+} from "@janosik/shared";
 
 /**
  * Contrast pairs behind U-04 (TASK-177.15).
@@ -97,7 +101,10 @@ const themes = [
   {
     name: "light",
     css: parseBlocks(brandCss, [".light"]),
-    ui: parseBlocks(uiCss, ["html.light"]),
+    ui: {
+      ...parseBlocks(uiCss, [":root"]),
+      ...parseBlocks(uiCss, ["html.light"]),
+    },
   },
 ];
 
@@ -119,7 +126,7 @@ const LABEL_PAIRS = [
   ["warning", "--warning"],
 ] as const;
 
-describe.each(themes)("$name theme contrast pairs", ({ css, ui }) => {
+describe.each(themes)("$name theme contrast pairs", ({ name, css, ui }) => {
   const surfaces = ["--card", "--surface", "--background"].map((token) => ({
     token,
     value: css[token],
@@ -157,6 +164,44 @@ describe.each(themes)("$name theme contrast pairs", ({ css, ui }) => {
         expect(
           contrast(text, tint(css["--primary"], surface.value, alpha)),
           `primary tab text on ${surface.token} at ${alpha}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("avatar initials clear AA on every palette hue", () => {
+    const ink = ui["--avatar-ink"];
+    const inverse = ui["--avatar-ink-inverse"];
+    expect(ink, "--avatar-ink is defined").toBeTruthy();
+    expect(inverse, "--avatar-ink-inverse is defined").toBeTruthy();
+    // Mirrors the light-theme CSS inversion list for the deeper hues.
+    const lightInverse = new Set([
+      "primary",
+      "secondary",
+      "blue",
+      "indigo",
+      "danger",
+      "fuchsia",
+      "pink",
+      "slate",
+    ]);
+    for (const color of USER_AVATAR_COLORS) {
+      const text = name === "light" && lightInverse.has(color) ? inverse : ink;
+      expect(
+        contrast(text, css[`--${color}`]),
+        `avatar ink on ${color}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("mention links clear AA on primary tints, including the focused row", () => {
+    const text = ui["--agent-tone-primary"];
+    expect(text, "--agent-tone-primary is defined").toBeTruthy();
+    for (const surface of surfaces) {
+      for (const alpha of [0.12, 0.22]) {
+        expect(
+          contrast(text, tint(css["--primary"], surface.value, alpha)),
+          `mention link on ${surface.token} at ${alpha}`,
         ).toBeGreaterThanOrEqual(4.5);
       }
     }

@@ -66,7 +66,7 @@ export function UserAvatar({
           aria-label={label}
           data-testid="user-avatar"
           className={cn(
-            "inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold leading-none text-white",
+            "inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold leading-none text-[var(--avatar-ink)]",
             AVATAR_SIZES[size],
             src ? undefined : userAvatarColor(userId, color),
             className,
