@@ -15,6 +15,11 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- The `edited` marker on a comment opens its read-only edit history: every
+  saved revision with its time, editor, cause and before/after diff, cursor
+  paging for older revisions, and a full-text view of any revision. An
+  incomplete chain shows a banner; the legacy-cutover copy names the release
+  that added edit history.
 - Comment kinds can be edited after posting: the author retypes the kind in
   the inline editor and the thread shows an `edited` marker. Comments also
   gain `All` / kind filter chips backed by the server query, so paging stays
