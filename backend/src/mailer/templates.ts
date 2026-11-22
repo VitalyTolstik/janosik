@@ -262,6 +262,15 @@ export function emailChangedNoticeEmail(
 }
 
 /**
+ * English singular/plural for a numeric count. Template previews pass a
+ * `{{count}}` placeholder (NaN), which falls back to the plural form rather
+ * than emitting literal `change(s)`/`task(s)`.
+ */
+function countForm(count: string | number, one: string, many: string): string {
+  return Number(count) === 1 ? one : many;
+}
+
+/**
  * Periodic board digest (TASK-72): what changed on a board in the window.
  * `{{board}}`, `{{count}}`, `{{hours}}` are editable placeholders. TASK-166.9
  * adds an optional attention summary (`{{attention}}`): the categories count
@@ -294,12 +303,14 @@ export function digestEmail(
       ),
     };
   }
+  const changes = countForm(count, "change", "changes");
+  const verb = countForm(count, "was", "were");
   return {
-    subject: `${BRAND}: ${board} — ${count} change(s)`,
-    text: `In "${board}" there were ${count} change(s) in the last ${hours} h.${attentionText}`,
+    subject: `${BRAND}: ${board} — ${count} ${changes}`,
+    text: `In "${board}" there ${verb} ${count} ${changes} in the last ${hours} h.${attentionText}`,
     html: shell(
       "Board activity",
-      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there were <b>${count}</b> change(s) in the last <b>${hours}</b> h.</p>${attentionHtml}`,
+      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there ${verb} <b>${count}</b> ${changes} in the last <b>${hours}</b> h.</p>${attentionHtml}`,
     ),
   };
 }
@@ -396,12 +407,19 @@ export function dueReminderEmail(
       ),
     };
   }
+  const tasks = countForm(count, "task", "tasks");
+  const heading = countForm(count, "Task", "Tasks");
+  const intro = countForm(
+    count,
+    "Task with an approaching due date",
+    "Tasks with an approaching due date",
+  );
   return {
-    subject: `${BRAND}: ${count} task(s) due soon`,
-    text: `Tasks due soon:\n${htmlToText(tasksHtml)}`,
+    subject: `${BRAND}: ${count} ${tasks} due soon`,
+    text: `${heading} due soon:\n${htmlToText(tasksHtml)}`,
     html: shell(
-      "Tasks due soon",
-      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tasks with an approaching due date:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      heading === "Task" ? "Task due soon" : "Tasks due soon",
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${intro}:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
     ),
   };
 }

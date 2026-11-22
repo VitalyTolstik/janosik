@@ -329,7 +329,7 @@ function NotificationsPanel({
         </p>
       ) : (
         <ul
-          className="max-h-80 divide-y divide-border/60 overflow-y-auto"
+          className="divide-y divide-border/60"
           data-testid="notifications-list"
         >
           {invitations.map((invitation) => {

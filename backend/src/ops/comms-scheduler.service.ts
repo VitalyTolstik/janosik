@@ -379,6 +379,9 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
         (item) => !reminded.has(`${item.cardId}:${item.due.getTime()}`),
       );
       if (fresh.length === 0) continue;
+      // A grouped letter must read chronologically even when the database
+      // returned the cards in another order.
+      fresh.sort((left, right) => left.due.getTime() - right.due.getTime());
       const date = new Intl.DateTimeFormat(locale, {
         dateStyle: "medium",
         timeStyle: "short",

@@ -163,19 +163,27 @@ describe("AttentionInbox (TASK-177.6)", () => {
           id: "assigned-many",
           type: "card.assigned",
           title: "New card assignment",
+          body: "Bob assigned you 2 cards: “QA”, “Release”.",
           data: { assigneeId: "u-1", cardIds: ["c-1", "c-2"] },
         }),
       ]),
     );
 
-    const assignmentLinks = screen.getAllByRole("link", {
-      name: "Open “New card assignment”",
+    const oneLink = screen.getByRole("link", {
+      name: /Open “New card assignment” — Alice assigned you card “Ship it”/,
     });
-    expect(assignmentLinks[0]).toHaveAttribute("href", cardHref("b-1", "c-1"));
-    const batchUrl = new URL(
-      assignmentLinks[1]!.getAttribute("href") ?? "",
-      "http://app",
+    const manyLink = screen.getByRole("link", {
+      name: /Open “New card assignment” — Bob assigned you 2 cards/,
+    });
+    expect(oneLink.getAttribute("aria-label")).toContain("Alice");
+    expect(oneLink.getAttribute("aria-label")).toContain("Ship it");
+    expect(manyLink.getAttribute("aria-label")).toContain("Bob");
+    expect(manyLink.getAttribute("aria-label")).toContain("2 cards");
+    expect(oneLink.getAttribute("aria-label")).not.toBe(
+      manyLink.getAttribute("aria-label"),
     );
+    expect(oneLink).toHaveAttribute("href", cardHref("b-1", "c-1"));
+    const batchUrl = new URL(manyLink.getAttribute("href") ?? "", "http://app");
     expect(batchUrl.pathname).toBe("/board/b-1");
     expect(batchUrl.searchParams.get("f.assignee")).toBe("u-1");
   });
@@ -379,17 +387,23 @@ describe("AttentionInbox (TASK-177.6)", () => {
 
     const row = screen.getByText("Agent blocked").closest("li");
     expect(row).not.toBeNull();
-    await userEvent.click(
-      within(row as HTMLElement).getByRole("button", {
-        name: "Mark as read",
-      }),
+    const readButton = within(row as HTMLElement).getByRole("button", {
+      name: "Mark as read",
+    });
+    const readAllButton = screen.getByRole("button", {
+      name: "Mark all as read",
+    });
+    expect(readButton).toHaveClass("max-lg:min-h-11");
+    expect(readAllButton).toHaveClass("max-lg:min-h-11");
+    expect(screen.getByTestId("attention-list")).not.toHaveClass("max-h-64");
+    expect(screen.getByTestId("attention-list")).not.toHaveClass(
+      "overflow-y-auto",
     );
+    await userEvent.click(readButton);
     await waitFor(() => expect(markRead).toHaveBeenCalledWith("blocked"));
     await waitFor(() => expect(onReload).toHaveBeenCalledTimes(1));
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Mark all as read" }),
-    );
+    await userEvent.click(readAllButton);
     await waitFor(() => expect(markAll).toHaveBeenCalledTimes(1));
   });
 });

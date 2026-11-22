@@ -352,10 +352,31 @@ describe("attentionEmail", () => {
 describe("digestEmail attention summary", () => {
   it("keeps the original body when there is no attention", () => {
     const mail = digestEmail("Board", 2, 24, "en");
-    expect(mail.text).toBe(
-      'In "Board" there were 2 change(s) in the last 24 h.',
-    );
+    expect(mail.text).toBe('In "Board" there were 2 changes in the last 24 h.');
     expect(mail.html).not.toContain("Needs attention");
+  });
+
+  it("uses English singular/plural without literal (s)", () => {
+    const one = digestEmail("Board", 1, 24, "en");
+    expect(one.subject).toContain("1 change");
+    expect(one.subject).not.toContain("change(s)");
+    expect(one.text).toContain("there was 1 change in");
+    expect(digestEmail("Board", 2, 24, "en").text).toContain(
+      "there were 2 changes in",
+    );
+
+    expect(dueReminderEmail(1, "<li>Ship it</li>", "en").subject).toBe(
+      "Janosik: 1 task due soon",
+    );
+    expect(dueReminderEmail(2, "<li>Ship it</li>", "en").subject).toBe(
+      "Janosik: 2 tasks due soon",
+    );
+    expect(dueReminderEmail(1, "<li>Ship it</li>", "en").text).toContain(
+      "Task due soon:",
+    );
+    expect(dueReminderEmail(2, "<li>Ship it</li>", "en").text).toContain(
+      "Tasks due soon:",
+    );
   });
 
   it("adds aggregated categories in both locales", () => {

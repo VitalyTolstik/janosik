@@ -479,6 +479,12 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
     expect(screen.getByTestId("invitation-decline")).toHaveClass(
       "max-lg:min-h-11",
     );
+    expect(screen.getByTestId("notifications-list")).not.toHaveClass(
+      "max-h-80",
+    );
+    expect(screen.getByTestId("notifications-list")).not.toHaveClass(
+      "overflow-y-auto",
+    );
   });
 
   it("keeps a long invitation board title readable", async () => {

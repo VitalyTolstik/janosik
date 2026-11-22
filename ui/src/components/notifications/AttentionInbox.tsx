@@ -87,7 +87,7 @@ export function AttentionInbox({
             variant="ghost"
             size="sm"
             disabled={busy}
-            className="max-md:min-h-11 max-md:px-3"
+            className="max-lg:min-h-11 max-lg:px-3"
             onClick={() =>
               void run(async () => {
                 await api.markAllAttentionRead();
@@ -110,7 +110,7 @@ export function AttentionInbox({
             variant="ghost"
             size="sm"
             disabled={busy}
-            className="max-md:min-h-11 max-md:px-3"
+            className="max-lg:min-h-11 max-lg:px-3"
             onClick={() => void run(onReload)}
           >
             {t("notifications.attention.retry")}
@@ -128,7 +128,7 @@ export function AttentionInbox({
           {t("notifications.attention.empty")}
         </p>
       ) : (
-        <ul className="max-h-64 divide-y divide-border/60 overflow-y-auto">
+        <ul data-testid="attention-list" className="divide-y divide-border/60">
           {visible.items.map((item) => {
             const target = attentionTarget(
               item,
@@ -136,6 +136,18 @@ export function AttentionInbox({
               item.boardId === null ? undefined : roleOf(item.boardId),
             );
             const unread = item.readAt === null;
+            const compactBody = item.body?.replace(/\s+/g, " ").trim() ?? "";
+            // Assignment rows all share the generic title. Add the body
+            // context (actor + card titles/count) so the accessible name is
+            // distinguishable; the visible text stays unchanged.
+            const openLabel =
+              item.type === "card.assigned" && compactBody !== ""
+                ? `${t("notifications.attention.openAria", {
+                    title: item.title,
+                  })} — ${compactBody}`
+                : t("notifications.attention.openAria", {
+                    title: item.title,
+                  });
             return (
               <li
                 key={item.id}
@@ -157,9 +169,7 @@ export function AttentionInbox({
                   <a
                     href={target.href}
                     data-testid="attention-link"
-                    aria-label={t("notifications.attention.openAria", {
-                      title: item.title,
-                    })}
+                    aria-label={openLabel}
                     className="group -mx-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-1 text-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={(event) => follow(event, target)}
                     onAuxClick={(event) => {
@@ -198,7 +208,7 @@ export function AttentionInbox({
                       variant="ghost"
                       size="sm"
                       disabled={busy}
-                      className="max-md:min-h-11 max-md:px-3"
+                      className="max-lg:min-h-11 max-lg:px-3"
                       onClick={() =>
                         void run(async () => {
                           const updated = await api.markAttentionRead(item.id);
@@ -231,7 +241,7 @@ export function AttentionInbox({
               variant="ghost"
               size="sm"
               disabled={busy}
-              className="max-md:min-h-11 max-md:px-3"
+              className="max-lg:min-h-11 max-lg:px-3"
               onClick={() => setOlderPage(null)}
             >
               {t("notifications.attention.newest")}
@@ -242,7 +252,7 @@ export function AttentionInbox({
               variant="ghost"
               size="sm"
               disabled={busy}
-              className="max-md:min-h-11 max-md:px-3"
+              className="max-lg:min-h-11 max-lg:px-3"
               onClick={() =>
                 void run(async () => {
                   setOlderPage(

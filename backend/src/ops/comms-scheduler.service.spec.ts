@@ -363,6 +363,54 @@ describe("CommsSchedulerService", () => {
     },
   );
 
+  it("sorts due-letter rows chronologically by due time", async () => {
+    const prisma = prismaMock();
+    const base = Date.now() + 1_800_000;
+    (prisma.boardMember.findMany as jest.Mock).mockResolvedValue([
+      { boardId: "b1", userId: "u1" },
+    ]);
+    (prisma.card.findMany as jest.Mock).mockResolvedValue(
+      [
+        { id: "late", title: "Late card", offset: 180_000 },
+        { id: "early", title: "Early card", offset: 60_000 },
+        { id: "mid", title: "Mid card", offset: 120_000 },
+      ].map(({ id, title, offset }) => ({
+        id,
+        title,
+        dueDate: new Date(base + offset),
+        column: { boardId: "b1", board: { title: "Board" } },
+        assignee: {
+          id: "u1",
+          email: "a@example.com",
+          locale: "en",
+          notifyDigest: true,
+          disabledAt: null,
+        },
+      })),
+    );
+    const ops = {
+      digestIntervalHours: jest.fn().mockResolvedValue(0),
+      reminderLeadHours: jest.fn().mockResolvedValue(48),
+    } as unknown as OpsSettingsService;
+    const service = new CommsSchedulerService(
+      prisma,
+      ops,
+      delivery,
+      templatesMock,
+    );
+
+    await service.run("due-reminders");
+
+    const tasksHtml = (templatesMock.dueReminderEmail as jest.Mock).mock
+      .calls[0]![1] as string;
+    expect(tasksHtml.indexOf("Early card")).toBeLessThan(
+      tasksHtml.indexOf("Mid card"),
+    );
+    expect(tasksHtml.indexOf("Mid card")).toBeLessThan(
+      tasksHtml.indexOf("Late card"),
+    );
+  });
+
   it("does not re-remind an already-notified (card,user,dueDate) (TASK-83)", async () => {
     const prisma = prismaMock();
     const due = new Date(Date.now() + 3_600_000);
