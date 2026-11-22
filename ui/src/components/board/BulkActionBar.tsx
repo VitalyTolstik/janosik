@@ -63,6 +63,7 @@ interface RunResult {
 }
 
 type BulkKind = "move" | "archive" | "delete" | "label" | "assign";
+type BarFocusTarget = "dismiss" | "clear" | "first";
 
 const ACTION_BUTTON = "h-9 max-lg:h-11";
 
@@ -132,8 +133,8 @@ export function BulkActionBar() {
   const barRef = useRef<HTMLElement | null>(null);
   const wasVisibleRef = useRef(false);
   const boardIdRef = useRef(board?.id);
-  const resultSelectionRef = useRef<string | null>(null);
   const shouldRestoreFocusRef = useRef(false);
+  const pendingBarFocusRef = useRef<BarFocusTarget | null>(null);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -151,14 +152,15 @@ export function BulkActionBar() {
     (selection.enabled && (selection.mode || selection.count > 0));
   const role = board ? roleOf(board.id) : undefined;
   const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
-  const selectionKey = selection.selectedIds.join("\u0000");
 
   const requestCancel = useCallback(() => {
     if (busy === null) return false;
     cancelRef.current = true;
     setCancelling(true);
+    // Calendar/Watch remove Cancel when the run ends; land on Dismiss.
+    if (!selection.enabled) pendingBarFocusRef.current = "dismiss";
     return true;
-  }, [busy]);
+  }, [busy, selection.enabled]);
 
   // Focus moves with the mode: opening it lands on the bar instead of making
   // a keyboard user tab through every card; closing it returns to the
@@ -174,6 +176,56 @@ export function BulkActionBar() {
     document.querySelector<HTMLElement>('[data-testid="board-main"]')?.focus();
   }, []);
 
+  /**
+   * Keep keyboard focus inside a bar that stays open while its focused
+   * control disappears or becomes disabled (Cancel → Dismiss, Dismiss with a
+   * selection → Clear, Clear with results → Dismiss).
+   */
+  const focusSurvivingBarControl = useCallback(
+    (target: BarFocusTarget): boolean => {
+      const root = barRef.current;
+      if (root === null) return false;
+      const selector =
+        target === "dismiss"
+          ? '[data-testid="bulk-dismiss"]'
+          : target === "clear"
+            ? '[data-testid="bulk-clear"]'
+            : "button";
+      const preferred = root.querySelector<HTMLElement>(
+        `${selector}:not(:disabled)`,
+      );
+      if (preferred !== null) {
+        preferred.focus();
+        return true;
+      }
+      if (target === "dismiss") {
+        // The result bar has not rendered yet; retry after the next commit.
+        return false;
+      }
+      const fallback =
+        root.querySelector<HTMLElement>(
+          '[data-testid="bulk-dismiss"]:not(:disabled)',
+        ) ??
+        root.querySelector<HTMLElement>(
+          '[data-testid="bulk-clear"]:not(:disabled)',
+        ) ??
+        root.querySelector<HTMLElement>("button:not(:disabled)");
+      if (fallback !== null) {
+        fallback.focus();
+        return true;
+      }
+      root.focus();
+      return true;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const target = pendingBarFocusRef.current;
+    if (target === null) return;
+    if (focusSurvivingBarControl(target)) pendingBarFocusRef.current = null;
+  });
+
   const resetResults = useCallback(() => {
     setFailures((previous) => (previous.length === 0 ? previous : []));
     setLastRun((previous) => (previous === null ? previous : null));
@@ -186,7 +238,7 @@ export function BulkActionBar() {
     const willClose =
       !selection.enabled || (!selection.mode && selection.count === 0);
     if (willClose) shouldRestoreFocusRef.current = true;
-    resultSelectionRef.current = null;
+    else pendingBarFocusRef.current = "clear";
     resetResults();
   }, [busy, resetResults, selection.count, selection.enabled, selection.mode]);
 
@@ -194,6 +246,7 @@ export function BulkActionBar() {
     if (visible && !wasVisibleRef.current) {
       barRef.current?.focus();
     } else if (!visible && wasVisibleRef.current) {
+      pendingBarFocusRef.current = null;
       resetResults();
       // A view switch disables selection and may unmount the bar; the view
       // switcher keeps focus. An explicit Dismiss/Clear returns focus from
@@ -206,34 +259,14 @@ export function BulkActionBar() {
     wasVisibleRef.current = visible;
   }, [focusToggleOrMain, resetResults, selection.enabled, visible]);
 
-  // Any user selection change invalidates the previous run's errors and
-  // summary. A report updates the selection itself, so its exact key is
-  // exempted once; a board switch always resets.
+  // Results survive a view switch (selection is disabled there) and a
+  // selection change; only a board switch or the explicit Dismiss/Clear/new
+  // run paths reset them.
   useEffect(() => {
-    if (busy !== null) return;
-    if (board?.id !== boardIdRef.current) {
-      boardIdRef.current = board?.id;
-      resultSelectionRef.current = null;
-      resetResults();
-      return;
-    }
-    if (!selection.enabled) {
-      // Calendar/Watch cannot change the selection, so the result bar is
-      // authoritative there. Adopt the current key so returning to the board
-      // does not mistake it for a fresh user selection.
-      resultSelectionRef.current = selectionKey;
-      return;
-    }
-    if (resultSelectionRef.current === selectionKey) {
-      resultSelectionRef.current = null;
-      return;
-    }
-    resultSelectionRef.current = null;
+    if (board?.id === boardIdRef.current) return;
+    boardIdRef.current = board?.id;
     resetResults();
-    // `busy` is intentionally not a dependency: a run ending is not a user
-    // selection change, and the report keeps its own failures.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board?.id, resetResults, selection.enabled, selectionKey]);
+  }, [board?.id, resetResults]);
 
   // Announce the selection count once it settles; a checkbox storm must not
   // turn into a stream of live-region messages.
@@ -397,12 +430,6 @@ export function BulkActionBar() {
             : result.failures.map((failure) => failure.cardId);
       }
       if (nextSelection !== null) {
-        // Calendar/Watch disable selection: the provider cannot hold the
-        // failed ids there, so exempt the current (empty) key instead of a
-        // key the selection will never adopt. The result bar persists.
-        resultSelectionRef.current = selection.enabled
-          ? nextSelection.join("\u0000")
-          : selectionKey;
         if (nextSelection.length === 0) selection.clear();
         else selection.replace(nextSelection);
       }
@@ -434,7 +461,7 @@ export function BulkActionBar() {
         );
       }
     },
-    [selection, selectionKey, t, toast, tp],
+    [selection, t, toast, tp],
   );
 
   const moveSelected = useCallback(
@@ -941,6 +968,7 @@ export function BulkActionBar() {
               }
               onClick={() => {
                 if (requestCancel()) return;
+                if (hasResults) pendingBarFocusRef.current = "dismiss";
                 selection.clear();
               }}
             >
