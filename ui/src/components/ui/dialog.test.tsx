@@ -90,7 +90,9 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     expect(close).not.toBeNull();
     expect(close?.className).toContain("h-11");
     expect(close?.className).toContain("w-11");
-    expect(close?.className).toContain("md:h-8");
+    expect(close?.className).toContain("md:h-11");
+    expect(close?.className).toContain("md:w-11");
+    expect(close?.className).toContain("lg:h-8");
   });
 
   it("closes on Escape even when the dialog contains an expanded inline combobox", async () => {

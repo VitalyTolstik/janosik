@@ -503,6 +503,8 @@ const en = {
   "admin.observability.history": "Comment history",
   "admin.observability.history.hint":
     "Counts and UTF-8 text bytes only; comment text is never collected here.",
+  "admin.observability.history.cache":
+    "Values may be up to 30 seconds old (admin-only cache).",
   "admin.observability.history.unavailable":
     "Metrics are unavailable: the aggregate query failed or timed out. Values are hidden rather than shown as zero.",
   "admin.observability.history.revisions": "Saved revisions",
@@ -2122,6 +2124,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.observability.history": "История комментариев",
   "admin.observability.history.hint":
     "Только счётчики и размер текста в UTF-8; сам текст комментариев здесь не собирается.",
+  "admin.observability.history.cache":
+    "Значения могут отставать до 30 секунд (кэш только для администратора).",
   "admin.observability.history.unavailable":
     "Метрики недоступны: агрегатный запрос завершился ошибкой или превысил время. Значения скрыты, а не показаны как нули.",
   "admin.observability.history.revisions": "Сохранённые ревизии",

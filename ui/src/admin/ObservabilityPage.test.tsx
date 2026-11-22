@@ -157,6 +157,17 @@ describe("ObservabilityPage", () => {
     const panel = await screen.findByTestId(
       "admin-observability-comment-history",
     );
+    expect(
+      within(panel).getByTestId("admin-observability-history-cache"),
+    ).toHaveTextContent(t("admin.observability.history.cache"));
+    expect(within(panel).getByTestId("history-revisions")).toHaveClass(
+      "flex",
+      "items-baseline",
+      "justify-between",
+    );
+    expect(
+      within(panel).getByTestId("history-revisions").parentElement,
+    ).toHaveClass("grid-cols-1", "sm:grid-cols-2");
     const value = (id: string) =>
       within(panel).getByTestId(`${id}-value`).textContent ?? "";
     expect(value("history-revisions")).toBe("51");

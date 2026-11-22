@@ -250,7 +250,13 @@ export function ObservabilityPage() {
             {t("admin.observability.history.unavailable")}
           </p>
         ) : null}
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <p
+          className="mb-3 text-xs text-muted-foreground"
+          data-testid="admin-observability-history-cache"
+        >
+          {t("admin.observability.history.cache")}
+        </p>
+        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           <Field
             testId="history-revisions"
             label={t("admin.observability.history.revisions")}
@@ -296,7 +302,7 @@ export function ObservabilityPage() {
           />
         </div>
         <div
-          className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"
+          className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"
           data-testid="admin-observability-history-reasons"
         >
           <Field
@@ -413,10 +419,13 @@ function Field({
   testId?: string;
 }) {
   return (
-    <div data-testid={testId}>
-      <p className="text-xs text-muted-foreground">{label}</p>
+    <div
+      data-testid={testId}
+      className="flex items-baseline justify-between gap-3"
+    >
+      <p className="min-w-0 text-xs text-muted-foreground">{label}</p>
       <p
-        className="font-medium"
+        className="shrink-0 text-right font-medium tabular-nums"
         data-testid={testId !== undefined ? `${testId}-value` : undefined}
       >
         {value}

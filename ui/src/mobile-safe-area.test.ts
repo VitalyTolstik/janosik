@@ -143,7 +143,7 @@ describe("mobile safe areas (TASK-177.18)", () => {
       'closeClassName="right-[max(0.75rem,env(safe-area-inset-right))]',
     );
     expect(cardDialog).toContain(
-      "flex h-11 w-11 items-center justify-center md:h-8 md:w-8",
+      "flex h-11 w-11 items-center justify-center md:h-11 md:w-11 lg:h-8 lg:w-8",
     );
     // Tablet/landscape sheet (761–1279) keeps the horizontal insets and
     // starts below the safe-area-aware header; its height subtracts the same
