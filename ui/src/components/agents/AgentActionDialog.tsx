@@ -235,7 +235,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
-            className="!gap-[6px] h-7 min-h-0 min-w-[61px] !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-md:min-h-11"
+            className="!gap-[6px] h-7 min-w-[61px] !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-xl:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -245,7 +245,7 @@ export function AgentActionDialog({
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
             className={cn(
-              "!gap-[6px] h-7 min-h-0 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-md:min-h-11",
+              "!gap-[6px] h-7 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-xl:min-h-11",
               action === "end" ? "min-w-[93px]" : "min-w-[107px]",
               action === "end"
                 ? "!bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)]"

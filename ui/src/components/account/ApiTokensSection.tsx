@@ -434,7 +434,15 @@ export function ApiTokensSection() {
       ) : null}
 
       <Dialog open={createOpen} onOpenChange={closeCreate}>
-        <DialogContent className="sm:max-w-md" data-testid="token-dialog">
+        <DialogContent
+          className="sm:max-w-md"
+          data-testid="token-dialog"
+          onEscapeKeyDown={(event) => {
+            // The plaintext is shown once. Escape must not discard it before
+            // the user has copied it; Done/Cancel remain explicit exits.
+            if (reveal !== null) event.preventDefault();
+          }}
+        >
           {reveal === null ? (
             <form noValidate onSubmit={handleCreate} className="space-y-4">
               <DialogHeader>
@@ -942,8 +950,10 @@ function TokenRow({
             size="sm"
             variant="ghost"
             data-testid="token-edit"
+            aria-label={`${t("account.tokens.edit")}: ${token.name}`}
             disabled={busy}
             onClick={onEdit}
+            className="max-lg:min-h-11 max-lg:min-w-11"
           >
             <Pencil className="h-4 w-4" aria-hidden />
             <span className="hidden sm:inline">{t("account.tokens.edit")}</span>
@@ -954,8 +964,10 @@ function TokenRow({
               size="sm"
               variant="ghost"
               data-testid="token-resume"
+              aria-label={`${t("account.tokens.resume")}: ${token.name}`}
               disabled={busy}
               onClick={onResume}
+              className="max-lg:min-h-11 max-lg:min-w-11"
             >
               <CirclePlay className="h-4 w-4" aria-hidden />
               <span className="hidden sm:inline">
@@ -968,8 +980,10 @@ function TokenRow({
               size="sm"
               variant="ghost"
               data-testid="token-pause"
+              aria-label={`${t("account.tokens.pause")}: ${token.name}`}
               disabled={busy}
               onClick={onPause}
+              className="max-lg:min-h-11 max-lg:min-w-11"
             >
               <CirclePause className="h-4 w-4" aria-hidden />
               <span className="hidden sm:inline">
@@ -982,7 +996,8 @@ function TokenRow({
             size="sm"
             variant="ghost"
             data-testid="token-revoke"
-            className="text-danger hover:bg-danger/10 hover:text-(--chip-red)"
+            aria-label={`${t("account.tokens.revoke")}: ${token.name}`}
+            className="text-danger hover:bg-danger/10 hover:text-(--chip-red) max-lg:min-h-11 max-lg:min-w-11"
             onClick={onRevoke}
           >
             <Trash2 className="h-4 w-4" aria-hidden />

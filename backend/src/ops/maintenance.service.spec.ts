@@ -303,6 +303,32 @@ describe("MaintenanceService", () => {
     expect(storageMock.remove).not.toHaveBeenCalled();
   });
 
+  it("uses an explicit retention window for a panel purge (QA-A1)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-19T12:00:00Z") });
+    try {
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      await service.purgeSoftDeleted(365);
+      const call = (prisma.card.findMany as jest.Mock).mock.calls[0][0] as {
+        where: { deletedAt: { lte: Date } };
+      };
+      expect(call.where.deletedAt.lte).toEqual(
+        new Date("2025-11-19T12:00:00Z"),
+      );
+      // The stored setting must not override the window the owner confirmed.
+      expect(opsMock.retentionDays).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("purges stale cards in bounded chunks, each in its own transaction (B-7)", async () => {
     const prisma = makePrisma();
     const ids = (n: number, prefix: string) =>

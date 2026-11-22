@@ -73,15 +73,21 @@ export class AccountDataService {
   }
 
   async latestExport(userId: string): Promise<UserDataExportDto | null> {
-    const where = { userId, expiresAt: { gt: new Date() } };
+    // Prefer a live pending/ready row. The unfiltered fallback still publishes
+    // a lone expired row as `expired` (so the UI can offer a fresh copy) but
+    // never lets an older expired ready row shadow a newer failed attempt.
     const row =
       (await this.prisma.dataExport.findFirst({
-        where: { ...where, status: { in: ["pending", "ready"] } },
+        where: {
+          userId,
+          status: { in: ["pending", "ready"] },
+          expiresAt: { gt: new Date() },
+        },
         orderBy: { createdAt: "desc" },
         select: { id: true },
       })) ??
       (await this.prisma.dataExport.findFirst({
-        where,
+        where: { userId },
         orderBy: { createdAt: "desc" },
         select: { id: true },
       }));
@@ -295,9 +301,12 @@ export class AccountDataService {
 }
 
 function toExportDto(row: AdminExportRowDto): UserDataExportDto {
+  // The download route has always enforced the TTL; the status route must
+  // agree or the UI keeps offering a bundle that is already gone.
+  const expired = row.status !== "failed" && row.expiresAt <= Date.now();
   return {
     id: row.id,
-    status: row.status,
+    status: expired ? "expired" : row.status,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     sizeBytes: row.sizeBytes,

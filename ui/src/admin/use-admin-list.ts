@@ -41,6 +41,13 @@ export { PERIOD_WINDOWS_MS };
 export interface AdminListState<T> {
   items: T[];
   total: number;
+  /**
+   * Offset/limit echoed by the response that produced `items` — not the
+   * pending request. A count label can pair these with `items.length` without
+   * mixing a new page number with the previous page's rows.
+   */
+  pageOffset: number;
+  pageLimit: number;
   /** First response has not arrived yet — show the table skeleton. */
   loading: boolean;
   /** A newer request is in flight while the previous rows stay on screen. */
@@ -73,6 +80,8 @@ export interface AdminListState<T> {
   /** HTTP status of the failed request (`null` when the last answer was ok). */
   errorStatus: number | null;
   errorBody?: unknown;
+  /** Increments when an automatic page clamp must replace the history entry. */
+  historyReplaceToken: number;
   reload: () => void;
 }
 
@@ -80,6 +89,9 @@ interface ListResult<T> {
   key: string;
   items: T[];
   total: number;
+  /** Offset/limit echoed by the server for this page. */
+  offset: number;
+  limit: number;
   error: boolean;
   errorStatus?: number | null;
   errorBody?: unknown;
@@ -91,9 +103,15 @@ export function useAdminList<T>(
     limit?: number;
     initialState?: AdminListQueryState;
     surface?: AdminListSurface;
+    /**
+     * Opt-in: rewrite an empty page whose offset is past the server total to
+     * the last real page. URL-backed lists must leave this off so a bad deep
+     * link does not push a correction that Back would undo in a loop.
+     */
+    clampOutOfRange?: boolean;
   } = {},
 ): AdminListState<T> {
-  const { initialState: initial, surface } = options;
+  const { initialState: initial, surface, clampOutOfRange } = options;
   const [limit, setLimitState] = useState(
     initial?.limit ?? options.limit ?? 50,
   );
@@ -116,6 +134,7 @@ export function useAdminList<T>(
   );
   const [reloadKey, setReloadKey] = useState(0);
   const [result, setResult] = useState<ListResult<T> | null>(null);
+  const [historyReplaceToken, setHistoryReplaceToken] = useState(0);
 
   useEffect(() => {
     // Do not schedule a reset for the initial (empty) search or for a value
@@ -166,13 +185,49 @@ export function useAdminList<T>(
       })
       .then((page) => {
         if (cancelled) return;
+        // A page can fall out of range when rows are removed between
+        // requests. Clamp to the last real page instead of showing an empty
+        // page whose offset is past the server total.
+        const lastPageOffset =
+          page.total > 0
+            ? Math.max(
+                0,
+                Math.floor((page.total - 1) / Math.max(1, page.limit)) *
+                  page.limit,
+              )
+            : 0;
+        if (
+          clampOutOfRange === true &&
+          page.total > 0 &&
+          page.items.length === 0 &&
+          page.offset > lastPageOffset
+        ) {
+          setOffset(lastPageOffset);
+          return;
+        }
         setResult({
           key: requestKey,
           items: page.items,
           total: page.total,
+          offset: page.offset,
+          limit: page.limit,
           error: false,
           errorStatus: null,
         });
+        // QA-A4: if the result set shrank below the current page (e.g. the
+        // only row on page 2 was deleted), clamp to the last real page.
+        // Page indices — not page-aligned offsets — decide: a deep link such
+        // as `offset=2&limit=50` over 25 rows is still page 1.
+        const pageLimit = page.limit > 0 ? page.limit : limit;
+        const lastPage =
+          page.total === 0 ? 0 : Math.ceil(page.total / pageLimit) - 1;
+        const pastEnd = page.total > 0 && offset >= page.total;
+        if (Math.floor(offset / pageLimit) > lastPage || pastEnd) {
+          // Automatic correction: replace the invalid history entry, never
+          // push a new one (Back would clamp again and trap the user).
+          setHistoryReplaceToken((token) => token + 1);
+          setOffset(lastPage * pageLimit);
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -187,6 +242,8 @@ export function useAdminList<T>(
           key: requestKey,
           items: [],
           total: 0,
+          offset: 0,
+          limit,
           error: true,
           errorStatus: status,
           errorBody: error instanceof ApiError ? error.body : undefined,
@@ -205,6 +262,7 @@ export function useAdminList<T>(
     filters,
     surface,
     filterError,
+    clampOutOfRange,
   ]);
 
   // Keep the last successful page while a search/page request is in flight
@@ -301,6 +359,8 @@ export function useAdminList<T>(
   return {
     items: filterError === undefined ? (result?.items ?? []) : [],
     total: filterError === undefined ? (result?.total ?? 0) : 0,
+    pageOffset: filterError === undefined ? (result?.offset ?? 0) : 0,
+    pageLimit: filterError === undefined ? (result?.limit ?? limit) : limit,
     loading,
     refreshing,
     // Keep a previous failure on screen while its retry is in flight; the
@@ -325,6 +385,7 @@ export function useAdminList<T>(
     errorStatus:
       filterError === undefined ? (result?.errorStatus ?? null) : null,
     errorBody: result?.key === requestKey ? result.errorBody : undefined,
+    historyReplaceToken,
     reload,
   };
 }

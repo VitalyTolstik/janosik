@@ -161,6 +161,33 @@ export class AdminMaintenanceRunDto {
   job!: (typeof MAINTENANCE_JOB_CHOICES)[number];
 }
 
+/**
+ * QA-A1: the purge must be able to use the window the owner sees in the
+ * dialog, not a possibly stale saved setting. Bounded exactly like
+ * `AdminUpdateOpsDto.retentionDays`.
+ *
+ * The field is optional for backwards compatibility; when omitted the server
+ * falls back to the saved window. The panel always sends the visible value.
+ */
+export class AdminRetentionPurgeDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3_650)
+  retentionDays?: number;
+}
+
+/** QA-A1: counts for the retention panel must match the visible draft too. */
+export class AdminRetentionQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(3_650)
+  retentionDays?: number;
+}
+
 export class AdminCreateAnnouncementDto {
   /** @deprecated Pre-localization payload; maps to the source translation. */
   @IsOptional()

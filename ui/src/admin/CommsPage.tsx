@@ -18,7 +18,15 @@ import { useAdminAuth } from "./AdminAuthContext";
 import { useAdminT } from "./admin-i18n";
 import { AnnouncementEditorDialog } from "./announcements/AnnouncementEditorDialog";
 import { SettingsSkeleton } from "./skeletons";
-import { Badge, CharCount, ErrorState, Field, PageHeader, Panel } from "./ui";
+import {
+  Badge,
+  CharCount,
+  ConfirmDialog,
+  ErrorState,
+  Field,
+  PageHeader,
+  Panel,
+} from "./ui";
 import { fieldError } from "./validation";
 
 /** Length caps mirroring the backend DTOs (AdminSendEmailDto / templates). */
@@ -80,6 +88,10 @@ export function CommsPage() {
     subject: string;
     html: string;
   } | null>(null);
+  // QA-A6: resetting a template throws away authored content, so it confirms
+  // first (and stays single-flight while the DELETE is in flight).
+  const [resetKey, setResetKey] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const toError = fieldError(t, mailTo, { required: true, email: true });
 
@@ -151,20 +163,25 @@ export function CommsPage() {
         toast.error(t("admin.common.actionFailed"));
       }
     },
-    [draft, t, toast],
+    [applyTemplate, draft, t, toast],
   );
 
   const resetTemplate = useCallback(
     async (key: string) => {
+      if (resetting) return;
+      setResetting(true);
       try {
         const updated = await adminApi.resetEmailTemplate(key);
         applyTemplate(updated);
         toast.success(t("admin.comms.templates.resetDone"));
+        setResetKey(null);
       } catch {
         toast.error(t("admin.common.actionFailed"));
+      } finally {
+        setResetting(false);
       }
     },
-    [t, toast],
+    [resetting, t, toast, applyTemplate],
   );
 
   if (phase === "loading")
@@ -375,7 +392,7 @@ export function CommsPage() {
                     size="sm"
                     data-testid={`admin-template-reset-${template.key}`}
                     disabled={!isOwner}
-                    onClick={() => void resetTemplate(template.key)}
+                    onClick={() => setResetKey(template.key)}
                   >
                     {t("admin.comms.templates.reset")}
                   </Button>
@@ -437,6 +454,25 @@ export function CommsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={resetKey !== null}
+        title={t("admin.comms.templates.resetConfirm.title", {
+          name:
+            templates.find((template) => template.key === resetKey)?.label ??
+            resetKey ??
+            "",
+        })}
+        body={t("admin.comms.templates.resetConfirm.body")}
+        confirmLabel={t("admin.comms.templates.reset")}
+        busy={resetting}
+        onConfirm={() => {
+          if (resetKey !== null) void resetTemplate(resetKey);
+        }}
+        onClose={() => {
+          if (!resetting) setResetKey(null);
+        }}
+      />
 
       {creating ? (
         <AnnouncementEditorDialog

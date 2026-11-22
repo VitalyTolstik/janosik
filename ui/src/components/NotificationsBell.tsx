@@ -61,6 +61,9 @@ export function NotificationsBell() {
     null,
   );
   const [attentionError, setAttentionError] = useState(false);
+  // A focus poll can resolve after the row was read; only the newest list
+  // response may overwrite the read state the user just saw.
+  const attentionRequest = useRef(0);
   const [open, setOpen] = useState(false);
   const [inboxSession, setInboxSession] = useState(0);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -80,11 +83,14 @@ export function NotificationsBell() {
   }, []);
 
   const loadAttention = useCallback(async () => {
+    const request = ++attentionRequest.current;
     try {
-      setAttention(await api.listAttentionNotifications());
+      const next = await api.listAttentionNotifications();
+      if (request !== attentionRequest.current) return;
+      setAttention(next);
       setAttentionError(false);
     } catch {
-      setAttentionError(true);
+      if (request === attentionRequest.current) setAttentionError(true);
     }
   }, []);
 
@@ -168,7 +174,7 @@ export function NotificationsBell() {
           }
           data-testid="notifications-bell"
           className={cn(
-            "relative max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 md:h-8 md:w-8 md:min-w-8",
+            "relative max-lg:h-11 max-lg:w-11 max-lg:min-w-11 max-lg:shrink-0 lg:h-8 lg:w-8 lg:min-w-8",
             count > 0
               ? "text-primary hover:text-primary"
               : "text-muted-foreground hover:text-foreground",
@@ -370,7 +376,7 @@ function NotificationsPanel({
                     data-testid="invitation-accept"
                     disabled={pending || expired}
                     onClick={() => void handleAccept(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs max-md:min-h-11"
+                    className="h-8 flex-1 gap-1.5 text-xs max-lg:min-h-11"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t("notifications.accept")}
@@ -381,7 +387,7 @@ function NotificationsPanel({
                     data-testid="invitation-decline"
                     disabled={pending}
                     onClick={() => void handleDecline(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-md:min-h-11"
+                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-lg:min-h-11"
                   >
                     <X className="h-3.5 w-3.5" />
                     {t("notifications.decline")}

@@ -169,6 +169,12 @@ describe("CardDetailPage windows", () => {
     expect(screen.getByTestId("admin-card-timeline-count")).toHaveTextContent(
       "50 of 60",
     );
+    const commentCells = within(
+      screen.getByTestId("admin-card-detail-comments"),
+    ).getAllByRole("cell");
+    expect(commentCells[0]).toHaveAttribute("data-label", "Comment");
+    expect(commentCells[1]).toHaveAttribute("data-label", "Author");
+    expect(commentCells[4]).toHaveAttribute("data-label", "");
 
     fireEvent.click(screen.getByTestId("admin-card-comments-more"));
     await waitFor(() => {

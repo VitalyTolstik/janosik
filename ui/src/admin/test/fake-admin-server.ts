@@ -437,6 +437,8 @@ export class FakeAdminServer {
     status: number;
     body?: Record<string, unknown>;
   }> = [];
+  /** Hold the next matching request until the promise resolves (race tests). */
+  holds: Array<{ match: string; promise: Promise<void> }> = [];
   /** When set, the refresh endpoint answers as if no cookie existed. */
   sessionAlive = true;
   /**
@@ -577,6 +579,13 @@ export class FakeAdminServer {
     },
   };
 
+  /**
+   * QA review: simulated soft-deleted rows by age in days. When non-empty,
+   * `/admin/retention` derives `purgeable.cards` from the requested window and
+   * the purge endpoint really removes only rows older than that window.
+   */
+  retentionDeletedAges: number[] = [];
+
   /** Observability snapshot (TASK-64). */
   observability: AdminObservabilityDto = {
     version: "0.1.0",
@@ -645,6 +654,14 @@ export class FakeAdminServer {
       const hold = this.holdCommands;
       this.holdCommands = undefined;
       if (hold) await hold;
+
+      const pathHold = this.holds.find((candidate) =>
+        path.includes(candidate.match),
+      );
+      if (pathHold) {
+        this.holds = this.holds.filter((item) => item !== pathHold);
+        await pathHold.promise;
+      }
 
       const failure = this.failNext.find((candidate) =>
         path.includes(candidate),
@@ -1535,12 +1552,11 @@ export class FakeAdminServer {
 
     // Public shares (TASK-58): listing for any master, revoke for any master.
     if (path === "/admin/shares" && method === "GET") {
-      return this.json({
-        items: this.shares,
-        total: this.shares.length,
-        limit: 100,
-        offset: 0,
-      });
+      // Mirror the server: newest first, id descending as the tiebreaker.
+      const sorted = [...this.shares].sort(
+        (a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id),
+      );
+      return this.json(this.page(sorted, url));
     }
     const shareRevoke = path.match(/^\/admin\/shares\/([^/]+)\/revoke$/);
     if (shareRevoke && method === "POST") {
@@ -1973,10 +1989,39 @@ export class FakeAdminServer {
 
     // ---------------------------------------------- data/compliance (TASK-63)
     if (path === "/admin/retention" && method === "GET") {
-      return this.json(this.retention);
+      const requested = Number(url.searchParams.get("retentionDays"));
+      const days =
+        Number.isFinite(requested) && requested > 0
+          ? requested
+          : (this.ops.retentionDays ?? 30);
+      const purgeable =
+        this.retentionDeletedAges.length > 0
+          ? {
+              ...this.retention.purgeable,
+              cards: this.retentionDeletedAges.filter((age) => age > days)
+                .length,
+            }
+          : this.retention.purgeable;
+      return this.json({
+        ...this.retention,
+        retentionDays: days,
+        purgeable,
+      });
     }
     if (path === "/admin/retention/purge" && method === "POST") {
-      return this.json({ affected: 3 }, 201);
+      const requested = Number(
+        (jsonBody as { retentionDays?: number } | null)?.retentionDays ??
+          this.ops.retentionDays ??
+          30,
+      );
+      const before = this.retentionDeletedAges.length;
+      this.retentionDeletedAges = this.retentionDeletedAges.filter(
+        (age) => age <= requested,
+      );
+      return this.json(
+        { affected: before - this.retentionDeletedAges.length },
+        201,
+      );
     }
     if (path === "/admin/maintenance/run" && method === "POST") {
       const job = (jsonBody as { job?: string } | null)?.job ?? "all";

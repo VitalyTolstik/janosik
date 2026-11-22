@@ -342,6 +342,32 @@ export class AttentionService {
     }
   }
 
+  /**
+   * TASK-177.11: has this comment already raised blocker/handoff attention?
+   * The create path keys rows on `agent.blocked:<commentId>` or
+   * `agent.needs_human:<commentId>` plus the recipient, so either prefix means
+   * the event was delivered (or deliberately swallowed) before. A kind edit
+   * uses this to avoid sending a second letter for the same comment.
+   */
+  async hasCommentAttention(commentId: string): Promise<boolean> {
+    try {
+      const count = await this.prisma.attentionNotification.count({
+        where: {
+          OR: [
+            { dedupKey: { startsWith: `agent.blocked:${commentId}:` } },
+            { dedupKey: { startsWith: `agent.needs_human:${commentId}:` } },
+          ],
+        },
+      });
+      return count > 0;
+    } catch (error) {
+      // Fail closed: an unreadable dedup store must not become a duplicate
+      // letter. The write already committed, so this only skips the fan-out.
+      this.warn("comment attention lookup", error);
+      return true;
+    }
+  }
+
   /** A lapsed lease → board ADMINs plus the claimant when still a member. */
   async notifyClaimExpired(input: ClaimExpiredInput): Promise<void> {
     try {

@@ -385,7 +385,7 @@ export function AttentionApprovalList({
               aria-pressed={filter === value}
               onClick={() => onFilterChange(value)}
               className={cn(
-                "inline-flex min-h-11 items-center gap-1 text-[11px] transition-colors md:min-h-0",
+                "inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] transition-colors",
                 filter === value
                   ? "font-semibold text-foreground"
                   : "text-muted-foreground hover:text-foreground",

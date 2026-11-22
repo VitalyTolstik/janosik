@@ -424,6 +424,44 @@ describe("ApiTokensSection (TASK-36.1)", () => {
     expect(screen.queryByTestId("token-revoke")).toBeNull();
   });
 
+  it("names the icon-only token actions and sizes them for touch", async () => {
+    const server = new FakeServer();
+    server.apiTokens.push(token());
+    renderTokens(server);
+
+    const row = await screen.findByTestId("token-row");
+    for (const [testId, label] of [
+      ["token-edit", "Edit: Release bot"],
+      ["token-pause", "Pause: Release bot"],
+      ["token-revoke", "Revoke: Release bot"],
+    ] as const) {
+      const button = within(row).getByTestId(testId);
+      expect(button).toHaveAttribute("aria-label", label);
+      expect(button).toHaveAccessibleName(label);
+      expect(button).toHaveClass("max-lg:min-h-11", "max-lg:min-w-11");
+    }
+  });
+
+  it("keeps the one-time token reveal open on Escape", async () => {
+    const server = new FakeServer();
+    renderTokens(server);
+    await screen.findByText("No API keys yet");
+
+    await userEvent.click(screen.getByTestId("token-create"));
+    await userEvent.type(screen.getByTestId("token-name"), "CI pipeline");
+    await userEvent.click(screen.getByTestId("token-create-submit"));
+    expect(await screen.findByTestId("token-reveal")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.getByTestId("token-dialog")).toBeVisible();
+    expect(screen.getByTestId("token-reveal")).toBeVisible();
+    await userEvent.click(screen.getByTestId("token-done"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("token-dialog")).toBeNull(),
+    );
+  });
+
   it("pauses a token with a reason and resumes it (TASK-166.14)", async () => {
     const server = new FakeServer();
     server.apiTokens.push(token());

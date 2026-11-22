@@ -25,6 +25,27 @@ async function searchShares(
 
 /** Public shares (TASK-162.15 full): inspect, open, revoke, board-gone. */
 
+test("S24: the shares table fits its scrollport at desktop widths", async ({
+  page,
+  board,
+}) => {
+  await createShare(board.api, board.id, "live");
+  await loginAsMaster(page, ownerCredentials());
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(adminPath("shares"), { waitUntil: "domcontentloaded" });
+  await searchShares(page, board.title);
+
+  const scroller = page.getByTestId("admin-table-scroll");
+  await expect(scroller).toBeVisible();
+  await expect
+    .poll(() =>
+      scroller.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    )
+    .toBe(true);
+});
+
 test("S23: shares open, copy and revoke, and snapshots survive board deletion", async ({
   page,
   browser,

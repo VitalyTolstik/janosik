@@ -916,6 +916,17 @@ export interface WorkspaceSearchResult {
   truncated: boolean;
 }
 
+/**
+ * Body of `PATCH /comments/:commentId` (TASK-176.2, TASK-177.11). Author-only.
+ * Both fields are optional, but at least one must be present: `text` replaces
+ * the body, `kind` changes the structured type. An omitted field stays as it
+ * was, and an empty body is a `400`.
+ */
+export interface UpdateCommentRequest {
+  text?: string;
+  kind?: CommentKind;
+}
+
 /** A card comment (plain text, TASK-28; UI in TASK-37). */
 export interface CommentDto {
   id: string;
@@ -1127,9 +1138,23 @@ export interface AuthConfigResponse {
  * TASK-166 self-service data export (`POST /users/me/export`). The bundle is
  * built by the existing `DataExport` queue and downloaded through a TTL link.
  */
+/** Lifecycle states of a self-service account export. */
+export const USER_DATA_EXPORT_STATUSES = [
+  "pending",
+  "ready",
+  "failed",
+  "expired",
+] as const;
+
+export type UserDataExportStatus = (typeof USER_DATA_EXPORT_STATUSES)[number];
+
 export interface UserDataExportDto {
   id: string;
-  status: "pending" | "ready" | "failed";
+  /**
+   * `expired` means the seven-day artifact lifetime passed: there is nothing
+   * left to download, so the client offers a new copy instead.
+   */
+  status: UserDataExportStatus;
   /** Unix ms. */
   createdAt: number;
   /** Unix ms; the artifact is deleted at this point. */

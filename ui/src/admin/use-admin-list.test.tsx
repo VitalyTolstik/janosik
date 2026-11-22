@@ -23,8 +23,13 @@ function pendingPage() {
   return { promise, resolve };
 }
 
-function page(items: Row[], total = items.length): AdminPage<Row> {
-  return { items, total, limit: 50, offset: 0 };
+function page(
+  items: Row[],
+  total = items.length,
+  offset = 0,
+  limit = 50,
+): AdminPage<Row> {
+  return { items, total, limit, offset };
 }
 
 describe("useAdminList", () => {
@@ -59,7 +64,9 @@ describe("useAdminList", () => {
   });
 
   it("keeps a page chosen right after mount when the initial search debounce settles", async () => {
-    const fetcher = vi.fn().mockResolvedValue(page([{ id: "a" }]));
+    // A real server only returns offset 25 when the result set is larger than
+    // one page; a smaller total is now clamped by QA-A4.
+    const fetcher = vi.fn().mockResolvedValue(page([{ id: "a" }], 100));
     const { result } = renderHook(() => useAdminList<Row>(fetcher));
 
     act(() => result.current.setOffset(25));
@@ -98,6 +105,32 @@ describe("useAdminList", () => {
     });
   });
 
+  it("clamps to the last real page when the total shrinks (QA-A4)", async () => {
+    const fetcher = vi.fn(async ({ offset }: { offset?: number }) =>
+      offset === 25
+        ? { items: [], total: 25, limit: 25, offset: 25 }
+        : { items: [{ id: "a" }], total: 25, limit: 25, offset: 0 },
+    );
+    const { result } = renderHook(() =>
+      useAdminList<Row>(fetcher, {
+        initialState: {
+          search: "",
+          status: "all",
+          period: "any",
+          limit: 25,
+          offset: 25,
+          filters: EMPTY_ADMIN_LIST_FILTERS,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(result.current.offset).toBe(0));
+    await waitFor(() => expect(result.current.items).toEqual([{ id: "a" }]));
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, limit: 25 }),
+    );
+  });
+
   it("reports errors only after the refresh settles", async () => {
     const first = pendingPage();
     let rejectSecond!: (error: Error) => void;
@@ -120,5 +153,47 @@ describe("useAdminList", () => {
     act(() => rejectSecond(new Error("offline")));
     await waitFor(() => expect(result.current.error).toBe(true));
     expect(result.current.items).toEqual([]);
+  });
+
+  it("echoes the response page and clamps an out-of-range empty page when opted in", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: "a" }], 100, 0, 50))
+      .mockResolvedValueOnce(page([], 100, 150, 50))
+      .mockResolvedValueOnce(page([{ id: "z" }], 100, 50, 50));
+
+    const { result } = renderHook(() =>
+      useAdminList<Row>(fetcher, { clampOutOfRange: true }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.pageOffset).toBe(0);
+    expect(result.current.pageLimit).toBe(50);
+
+    act(() => result.current.setOffset(150));
+    await waitFor(() => expect(result.current.offset).toBe(50));
+    await waitFor(() => expect(result.current.items).toEqual([{ id: "z" }]));
+    expect(result.current.pageOffset).toBe(50);
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 50, limit: 50 }),
+    );
+  });
+
+  it("clamps a manually chosen out-of-range page (QA-A4)", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(page([], 100, 0, 50))
+      .mockResolvedValueOnce(page([], 100, 150, 50))
+      .mockResolvedValueOnce(page([], 100, 50, 50));
+    const { result } = renderHook(() => useAdminList<Row>(fetcher));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.setOffset(150));
+    await waitFor(() => expect(result.current.pageOffset).toBe(50));
+    expect(result.current.offset).toBe(50);
+    expect(result.current.items).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 50, limit: 50 }),
+    );
   });
 });

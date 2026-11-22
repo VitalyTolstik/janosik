@@ -201,7 +201,7 @@ export function TokenSettingsLink({
         data-testid={`${testId}-readonly`}
         title={t("agents.tokenSettings.ownerOnlyHint")}
         className={cn(
-          "inline-flex min-h-11 items-center text-[11px] text-muted-foreground min-[761px]:min-h-0",
+          "inline-flex min-h-11 items-center text-[11px] text-muted-foreground min-[1280px]:min-h-0",
           className,
         )}
       >
@@ -216,7 +216,7 @@ export function TokenSettingsLink({
         onClick={() => setInfoOpen(true)}
         data-testid={testId}
         className={cn(
-          "inline-flex min-h-11 min-w-[121px] items-center justify-center gap-[5px] rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[761px]:min-h-6",
+          "inline-flex min-h-11 min-w-[121px] items-center justify-center gap-[5px] rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[1280px]:min-h-6",
           className,
         )}
       >
