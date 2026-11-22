@@ -434,11 +434,27 @@ export interface ActivitySseEvent {
   id: string;
   boardId: string;
   cardId?: string;
-  actorId: string;
+  /**
+   * Who caused the event. Optional since TASK-185.2: a master-admin comment
+   * deletion deliberately omits the master id (it lives only in the admin
+   * audit); clients fall back to a nameless localized sentence.
+   */
+  actorId?: string;
   /** TASK-166: keep `actorType` on activity frames too. */
   actorType?: ActorType;
   at: number;
   kind: string;
+  /**
+   * TASK-185.2: the comment this frame is about. New clients read
+   * `commentId ?? detail`; `detail` stays for one release of compatibility.
+   */
+  commentId?: string;
+  /**
+   * TASK-185.2: the text revision a `comment_updated` frame refers to.
+   * Frames never carry text, snapshots, diffs or raw `details`.
+   */
+  revisionId?: string;
+  /** Transitional alias of `commentId` (TASK-37 contract). */
   detail?: string;
   /** TASK-166 attribution — same contract as `CommandDeltaEntry`. */
   apiTokenId?: string;
@@ -696,12 +712,19 @@ export interface ActivityFeedEntry {
   agentName?: string;
   /** Command entries: the single card the command touched, when unambiguous. */
   cardId?: string;
+  /**
+   * TASK-185.2: the comment a `comment_*` entry refers to. Allowed metadata
+   * only — the text-bearing `changes` projection stays separate, and `detail`
+   * is never a comment id on this feed.
+   */
+  commentId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */
   details?: Record<string, unknown> | null;
   /** Write-time snapshot for the sentence (label, item text, comment id). */
   detail?: string;
   /** Before → after lines captured at write time (TASK-37): commands freeze
-   *  the display snapshot at apply time, comment rows carry their text. */
+   *  the display snapshot at apply time; comment rows expose only the
+   *  protected text projection (snapshot/diff) allowed by TASK-185.2. */
   changes?: ActivityChange[];
 }
 
@@ -965,6 +988,49 @@ export interface CommentDto {
 export interface CommentPage {
   items: CommentDto[];
   nextCursor: string | null;
+}
+
+/** Why a saved comment edit exists (TASK-185.1). */
+export type CommentRevisionCause =
+  "author_edit" | "attachment_deleted" | "system";
+
+/**
+ * Why a comment's edit history is incomplete (TASK-185.1, §3.1). The severity
+ * order is `writer_gap` → `gdpr_erase` → `revision_limit` → `legacy_cutover`.
+ */
+export type CommentHistoryIncompleteReason =
+  "legacy_cutover" | "revision_limit" | "gdpr_erase" | "writer_gap";
+
+/**
+ * One immutable text-edit snapshot from `GET /comments/:commentId/revisions`
+ * (TASK-185.3). Token and session identifiers stay server-side: only the
+ * current public display name of the editor crosses the boundary.
+ */
+export interface CommentRevisionDto {
+  id: string;
+  revisionNumber: number;
+  /** Unix ms. */
+  createdAt: number;
+  editorId: string | null;
+  /** Current public `displayName`; `null` for an absent or unnamed editor. */
+  editorName: string | null;
+  actorType: ActorType;
+  agentName: string | null;
+  cause: CommentRevisionCause;
+  beforeText: string;
+  afterText: string;
+}
+
+/**
+ * A page of comment revisions, newest revision first. The incomplete-history
+ * fields describe the live comment and are present on every page, including
+ * an empty one.
+ */
+export interface CommentRevisionPage {
+  items: CommentRevisionDto[];
+  nextCursor: string | null;
+  historyIncomplete: boolean;
+  historyIncompleteReason: CommentHistoryIncompleteReason | null;
 }
 
 /** Lifecycle of the TASK-50 video transcode ("ужиматор"): video uploads

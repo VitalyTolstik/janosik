@@ -36,8 +36,22 @@ export interface DiffSides {
   right: DiffSegment[];
 }
 
+export interface DiffOptions {
+  /**
+   * Render only what the collapsed row may show. A feed row that hides its
+   * full value behind "Show full values" must not leak the value's tail, so
+   * the common suffix is dropped and an oversized change keeps only its
+   * leading stub. Expanded rows call without this option and get both ends.
+   */
+  headOnly?: boolean;
+}
+
 /** The two halves with the change highlighted, or `null` for equal texts. */
-export function diffSides(from: string, to: string): DiffSides | null {
+export function diffSides(
+  from: string,
+  to: string,
+  options: DiffOptions = {},
+): DiffSides | null {
   if (from === to) return null;
 
   const prefix = commonPrefix(from, to);
@@ -46,10 +60,11 @@ export function diffSides(from: string, to: string): DiffSides | null {
   const tail = from.slice(from.length - suffix);
   const removed = from.slice(prefix, from.length - suffix);
   const added = to.slice(prefix, to.length - suffix);
+  const headOnly = options.headOnly === true;
 
   return {
-    left: assemble(head, tail, removed, "removed"),
-    right: assemble(head, tail, added, "added"),
+    left: assemble(head, tail, removed, "removed", headOnly),
+    right: assemble(head, tail, added, "added", headOnly),
   };
 }
 
@@ -58,11 +73,12 @@ function assemble(
   tail: string,
   changed: string,
   kind: "removed" | "added",
+  headOnly: boolean,
 ): DiffSegment[] {
   const segments: DiffSegment[] = [];
   pushContext(segments, head, "lead");
-  pushChanged(segments, changed, kind);
-  pushContext(segments, tail, "tail");
+  pushChanged(segments, changed, kind, headOnly);
+  if (!headOnly) pushContext(segments, tail, "tail");
   return segments;
 }
 
@@ -89,6 +105,7 @@ function pushChanged(
   segments: DiffSegment[],
   text: string,
   kind: "removed" | "added",
+  headOnly: boolean,
 ): void {
   if (!text) return;
   if (text.length <= CHANGE_MAX) {
@@ -96,7 +113,9 @@ function pushChanged(
     return;
   }
   segments.push({
-    text: `${text.slice(0, CHANGE_KEEP)}…${text.slice(-CHANGE_KEEP)}`,
+    text: headOnly
+      ? `${text.slice(0, CHANGE_KEEP)}…`
+      : `${text.slice(0, CHANGE_KEEP)}…${text.slice(-CHANGE_KEEP)}`,
     kind,
   });
 }

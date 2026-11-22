@@ -476,7 +476,13 @@ export class AttachmentsService {
     initiatorId: string,
     attribution: RequestAttribution,
   ): Promise<
-    Array<{ commentId: string; cardId: string; activityId: string; at: number }>
+    Array<{
+      commentId: string;
+      cardId: string;
+      activityId: string;
+      revisionId: string | null;
+      at: number;
+    }>
   > {
     const url = `/attachments/${attachmentId}/content`;
     const cards = await tx.card.findMany({
@@ -502,6 +508,7 @@ export class AttachmentsService {
       commentId: string;
       cardId: string;
       activityId: string;
+      revisionId: string | null;
       at: number;
     }> = [];
     for (const comment of comments) {
@@ -526,6 +533,7 @@ export class AttachmentsService {
           commentId: comment.id,
           cardId: comment.cardId,
           activityId: written.activityId,
+          revisionId: written.revisionId,
           at: written.at,
         });
       }
@@ -722,6 +730,7 @@ export class AttachmentsService {
         update.commentId,
         attribution,
         update.at,
+        update.revisionId,
       );
     }
     await touchAgentSessionAfterWrite(
@@ -740,7 +749,11 @@ export class AttachmentsService {
     detail: string,
     attribution: RequestAttribution,
     at: number = Date.now(),
+    revisionId?: string | null,
   ): void {
+    // TASK-185.2: an attachment scrub that made a real text edit is a
+    // comment update too — the frame carries both ids, never the text.
+    const commentId = kind === "comment_updated" ? detail : undefined;
     this.realtime.publish(boardId, {
       type: "activity",
       id: activityId,
@@ -751,6 +764,9 @@ export class AttachmentsService {
       at,
       kind,
       detail,
+      ...(commentId !== undefined
+        ? { commentId, ...(revisionId ? { revisionId } : {}) }
+        : {}),
       ...(attribution.apiTokenId ? { apiTokenId: attribution.apiTokenId } : {}),
       ...(attribution.agentSessionId
         ? { agentSessionId: attribution.agentSessionId }

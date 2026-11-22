@@ -581,6 +581,7 @@ describe("Board events SSE (e2e)", () => {
       cardId: "card-comment",
       actorId: memberId,
       kind: "comment_added",
+      commentId: created.body.id,
       detail: created.body.id,
     });
 
@@ -592,6 +593,7 @@ describe("Board events SSE (e2e)", () => {
     expect(removed).toMatchObject({
       type: "activity",
       kind: "comment_deleted",
+      commentId: created.body.id,
       detail: created.body.id,
       actorId: memberId,
     });

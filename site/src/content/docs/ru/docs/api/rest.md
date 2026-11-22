@@ -216,6 +216,7 @@ inline-вложения и `descriptionDetached` исключены, потом�
 | -------- | ------------------------- | --------------------- | ------------------ | ------------------ |
 | `POST`   | `/cards/:cardId/comments` | `ADMIN` / `MEMBER`    | `CreateCommentDto` | `CommentDto`       |
 | `GET`    | `/cards/:cardId/comments` | участник              | query `cursor`, `limit`, `kind` | `CommentPage`      |
+| `GET`    | `/comments/:commentId/revisions` | `ADMIN` / `MEMBER` / действующий `VIEWER` | query `cursor`, `limit` | `CommentRevisionPage` |
 | `PATCH`  | `/comments/:commentId`    | `ADMIN` / `MEMBER`    | `UpdateCommentDto` | `CommentDto`       |
 | `DELETE` | `/comments/:commentId`    | `ADMIN` / `MEMBER`    | нет                | `{ status: "ok" }` |
 
@@ -245,6 +246,29 @@ inline-вложения и `descriptionDetached` исключены, потом�
 Редактирование пишет строку активности `comment_updated` и SSE-кадр; смена
 типа на `blocker`/`handoff` не повторяет уведомление, уже отправленное
 исходным комментарием.
+
+`GET /comments/:commentId/revisions` возвращает неизменяемую историю правок
+текста, сначала новые (`revisionNumber` по убыванию). Читать её могут
+`ADMIN`, `MEMBER` и действующий `VIEWER` с JWT или PAT с правом чтения доски;
+неучастник или просроченное членство получают `403`, отсутствующий или
+удалённый комментарий, карточка, колонка или доска — `404`. `?limit=` по
+умолчанию 20, максимум 100. `?cursor=` непрозрачен и привязан к комментарию:
+некорректный или чужой cursor даёт `400` после проверки доступа и продолжает
+работать даже после обрезки строки, на которую указывал. На каждой странице,
+включая пустую, есть `historyIncomplete` и `historyIncompleteReason`
+(`legacy_cutover`, `revision_limit`, `gdpr_erase`, `writer_gap` или `null` для
+полной истории). Если сохранённый текст расходится с проверенной парой
+writer'а, маршрут сразу возвращает пустую страницу с `writer_gap`, ещё до
+того, как сверочный sweep сохранит причину. `CommentRevisionDto` содержит
+`id`, `revisionNumber`, `createdAt`, `editorId`, `editorName`, `actorType`,
+`agentName`, `cause`, `beforeText` и `afterText`; `editorName` — текущее
+публичное имя редактора, `null` если редактор или имя недоступны.
+Идентификаторы токена и сессии не выдаются. Master читает ту же проекцию по
+`GET /admin/comments/:commentId/revisions` с админским JWT и без членства в
+доске; оба маршрута только для чтения. Публичные проекции комментариев и
+замороженные snapshot share не содержат ревизий, их ID, текстов до/после,
+счётчиков, флагов и причин неполной истории, cutover и проверенных полей, а
+токен share не открывает маршруты ревизий.
 
 Каждая запись создаёт строку `Activity` и публикует кадр SSE `activity`.
 
@@ -965,6 +989,25 @@ API-токена; в кадрах до появления поля он отсу
 ```json
 { "text": "Looks good", "kind": "evidence", "commandId": "c-1" }
 ```
+
+### CommentRevisionDto
+
+| Поле             | Тип            | Обязательно | Ограничения                                        |
+| ---------------- | -------------- | ----------- | -------------------------------------------------- |
+| `id`             | string         | да          | id ревизии                                          |
+| `revisionNumber` | integer        | да          | не меньше 1, монотонно растёт у комментария         |
+| `createdAt`      | integer        | да          | Unix ms                                             |
+| `editorId`       | string или null | да         | допускает `null`                                   |
+| `editorName`     | string или null | да         | текущее публичное имя; `null` если недоступно       |
+| `actorType`      | string         | да          | `human`, `agent` или `admin`                        |
+| `agentName`      | string или null | да         | допускает `null`                                   |
+| `cause`          | string         | да          | `author_edit`, `attachment_deleted` или `system`    |
+| `beforeText`     | string         | да          | снимок до правки                                    |
+| `afterText`      | string         | да          | снимок после правки                                 |
+
+`CommentRevisionPage` — это `{ items, nextCursor, historyIncomplete,
+historyIncompleteReason }`; последние два поля описывают живой комментарий на
+каждой странице.
 
 ### CreateShareDto
 

@@ -1723,13 +1723,18 @@ describe("admin content and security pages", () => {
 
   it("applies the activity period window as a from query bound", async () => {
     const state = serverWith().state;
-    state.activity = [adminActivity()];
+    state.activity = [
+      adminActivity({
+        type: "member_role_changed",
+        details: { email: "member@example.com", from: "VIEWER", to: "MEMBER" },
+      }),
+    ];
     const server = new FakeAdminServer(state);
     vi.stubGlobal("fetch", server.fetchImpl);
     renderAdmin("/admin/activity");
 
     fireEvent.click(await screen.findByText(t("admin.filter.period.24h")));
-    await screen.findByText(/Looks good/);
+    await screen.findByText("member_role_changed");
     await waitFor(() => {
       const requests = server.requests.filter(
         (request) => request.path === "/admin/entities/activity",
@@ -1741,6 +1746,19 @@ describe("admin content and security pages", () => {
       expect(Number(from)).toBeLessThanOrEqual(Date.now());
       expect(Number(from)).toBeGreaterThan(Date.now() - 25 * 3_600_000);
     });
+  });
+
+  it("hides raw details on comment activity rows", async () => {
+    const state = serverWith().state;
+    state.activity = [adminActivity()];
+    vi.stubGlobal("fetch", new FakeAdminServer(state).fetchImpl);
+    renderAdmin("/admin/activity");
+
+    await screen.findByText("comment_added");
+    expect(screen.queryByText(/Looks good/)).toBeNull();
+    expect(
+      screen.queryByTestId("admin-activity-details-activity-1"),
+    ).toBeNull();
   });
 
   it("deletes a comment", async () => {

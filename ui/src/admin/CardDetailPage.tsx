@@ -1127,7 +1127,9 @@ export function CardDetailPage() {
                     {event.actorEmail}
                   </EntityLink>
                 </span>
-                {event.details ? <JsonCell value={event.details} /> : null}
+                {event.details && !event.type.startsWith("comment_") ? (
+                  <JsonCell value={event.details} />
+                ) : null}
                 <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-[11px] text-muted-foreground">
                   {event.kind === "command" && event.auditId ? (
                     <Link
