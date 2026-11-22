@@ -48,6 +48,8 @@ import type {
   AdminUserRowDto,
   AdminBoardMemberRowDto,
   AdminUserMembershipDto,
+  CommentHistoryIncompleteReason,
+  CommentRevisionDto,
   AdminAnnouncementDto,
   AdminAnnouncementTranslationDto,
   AdminEmailTemplateDto,
@@ -85,6 +87,12 @@ export interface FakeCardLink {
   createdAt: number;
 }
 
+/** Saved history of one comment as the fake revisions route serves it. */
+export interface FakeCommentHistory {
+  reason: CommentHistoryIncompleteReason | null;
+  items: CommentRevisionDto[];
+}
+
 export interface FakeAdminState {
   admins: FakeAdmin[];
   users: AdminUserRowDto[];
@@ -95,6 +103,8 @@ export interface FakeAdminState {
   sessions: AdminSessionRowDto[];
   tokens: AdminTokenRowDto[];
   comments: AdminCommentRowDto[];
+  /** TASK-185.5 revision pages, keyed by comment id (newest first). */
+  commentHistories: Record<string, FakeCommentHistory>;
   attachments: AdminAttachmentRowDto[];
   activity: AdminActivityRowDto[];
   /** User-detail membership rows (TASK-176.4 inviter links). */
@@ -132,6 +142,43 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+/** Opaque comment-bound cursor, mirroring the real base64url JSON shape. */
+function encodeRevisionCursor(commentId: string, revisionNumber: number) {
+  return btoa(JSON.stringify({ c: commentId, r: revisionNumber }))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
+/** `null` for a malformed or foreign cursor, exactly what the API rejects. */
+function decodeRevisionCursor(raw: string, commentId: string): number | null {
+  try {
+    const base64 = raw.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "=",
+    );
+    const decoded = JSON.parse(atob(padded)) as {
+      c?: unknown;
+      r?: unknown;
+    };
+    if (
+      decoded === null ||
+      typeof decoded !== "object" ||
+      typeof decoded.c !== "string" ||
+      decoded.c !== commentId ||
+      typeof decoded.r !== "number" ||
+      !Number.isSafeInteger(decoded.r) ||
+      decoded.r <= 0
+    ) {
+      return null;
+    }
+    return decoded.r;
+  } catch {
+    return null;
+  }
+}
+
 export function emptyAdminState(): FakeAdminState {
   return {
     admins: [],
@@ -143,6 +190,7 @@ export function emptyAdminState(): FakeAdminState {
     sessions: [],
     tokens: [],
     comments: [],
+    commentHistories: {},
     attachments: [],
     activity: [],
     memberships: [],
@@ -269,6 +317,36 @@ export function adminComment(
     updatedAt: now,
     editedAt: null,
     deletedAt: null,
+    revisionCount: 0,
+    historyIncomplete: false,
+    ...overrides,
+  };
+}
+
+export function adminCommentRevision(
+  overrides: Partial<CommentRevisionDto> = {},
+): CommentRevisionDto {
+  return {
+    id: "revision-1",
+    revisionNumber: 1,
+    createdAt: now,
+    editorId: "u-1",
+    editorName: "Member",
+    actorType: "human",
+    agentName: null,
+    cause: "author_edit",
+    beforeText: "Looks good",
+    afterText: "Looks good to me",
+    ...overrides,
+  };
+}
+
+export function adminCommentHistory(
+  overrides: Partial<FakeCommentHistory> = {},
+): FakeCommentHistory {
+  return {
+    reason: null,
+    items: [],
     ...overrides,
   };
 }
@@ -1353,7 +1431,13 @@ export class FakeAdminServer {
     }
 
     if (path === "/admin/comments" && method === "GET") {
-      return this.json(this.page(this.state.comments, url));
+      return this.json(this.commentPage(this.state.comments, url));
+    }
+    const commentRevisions = path.match(
+      /^\/admin\/comments\/([^/]+)\/revisions$/,
+    );
+    if (commentRevisions && method === "GET") {
+      return this.commentRevisionPage(commentRevisions[1], url);
     }
     const commentDelete = path.match(/^\/admin\/comments\/([^/]+)$/);
     if (commentDelete && method === "DELETE") {
@@ -2145,6 +2229,9 @@ export class FakeAdminServer {
           : entity[1] === "audit"
             ? "details"
             : "auto";
+      if (entity[1] === "comments") {
+        return this.json(this.commentPage(this.state.comments, url));
+      }
       return this.json(this.page(map[entity[1]] ?? [], url, commandMatch));
     }
     const userDetail = path.match(/^\/admin\/users\/([^/]+)\/detail$/);
@@ -2710,6 +2797,112 @@ export class FakeAdminServer {
     }
   }
 
+  /**
+   * TASK-185.5 availability boundary: a deleted comment or any deleted parent
+   * (card, column, board) hides both history fields, exactly like the admin
+   * revisions route answering `404`.
+   */
+  private commentParentLive(comment: AdminCommentRowDto): boolean {
+    const card = this.state.cards.find((item) => item.id === comment.cardId);
+    if (card?.deletedAt != null) return false;
+    if (card === undefined) return true;
+    const board = this.state.boards.find((item) => item.id === card.boardId);
+    if (board?.deletedAt != null) return false;
+    const column = (this.boardColumns[card.boardId] ?? []).find(
+      (item) => item.id === card.columnId,
+    );
+    return column?.deletedAt == null;
+  }
+
+  /** One row with the TASK-185.5 count and flag, or `null` when unavailable. */
+  private commentRow(comment: AdminCommentRowDto): AdminCommentRowDto {
+    const live = comment.deletedAt === null && this.commentParentLive(comment);
+    if (!live) {
+      return { ...comment, revisionCount: null, historyIncomplete: null };
+    }
+    const history = this.state.commentHistories[comment.id];
+    return {
+      ...comment,
+      revisionCount: history?.items.length ?? comment.revisionCount,
+      historyIncomplete:
+        history === undefined
+          ? comment.historyIncomplete
+          : history.reason !== null,
+    };
+  }
+
+  private commentPage(
+    comments: AdminCommentRowDto[],
+    url: URL,
+  ): {
+    items: AdminCommentRowDto[];
+    total: number;
+    limit: number;
+    offset: number;
+  } {
+    const result = this.page(comments, url);
+    return {
+      ...result,
+      items: result.items.map((row) => this.commentRow(row)),
+    };
+  }
+
+  /**
+   * Mirror of `GET /admin/comments/:id/revisions` (TASK-185.3 §3.3): newest
+   * first, `limit` default 20 / max 100, a cursor page repeated the reason,
+   * and `404` for a deleted comment or parent.
+   */
+  private commentRevisionPage(commentId: string, url: URL) {
+    const comment = this.state.comments.find((item) => item.id === commentId);
+    if (comment === undefined || !this.commentParentLive(comment)) {
+      return this.json({ message: "Comment not found" }, 404);
+    }
+    if (comment.deletedAt !== null) {
+      return this.json({ message: "Comment not found" }, 404);
+    }
+    const limitRaw = url.searchParams.get("limit");
+    if (limitRaw !== null && limitRaw !== "" && !/^[0-9]+$/.test(limitRaw)) {
+      return this.json({ message: "limit must be an integer" }, 400);
+    }
+    const limit = limitRaw === null || limitRaw === "" ? 20 : Number(limitRaw);
+    if (limit < 1 || limit > 100) {
+      return this.json({ message: "limit must be an integer" }, 400);
+    }
+    const cursorRaw = url.searchParams.get("cursor");
+    let cursor: number | null = null;
+    if (cursorRaw !== null && cursorRaw !== "") {
+      cursor = decodeRevisionCursor(cursorRaw, commentId);
+      if (cursor === null) {
+        return this.json({ message: "cursor is malformed" }, 400);
+      }
+    }
+
+    const history = this.state.commentHistories[commentId];
+    const reason =
+      history?.reason ?? (comment.historyIncomplete ? "legacy_cutover" : null);
+    const ordered = [...(history?.items ?? [])].sort(
+      (a, b) => b.revisionNumber - a.revisionNumber,
+    );
+    const candidates =
+      cursor === null
+        ? ordered
+        : ordered.filter((revision) => revision.revisionNumber < cursor);
+    const items = candidates.slice(0, limit);
+    const nextCursor =
+      candidates.length > limit && items.length > 0
+        ? encodeRevisionCursor(
+            commentId,
+            items[items.length - 1].revisionNumber,
+          )
+        : null;
+    return this.json({
+      items,
+      nextCursor,
+      historyIncomplete: reason !== null,
+      historyIncompleteReason: reason,
+    });
+  }
+
   /** Mirror of the paged `/admin/cards/:id/detail` contract (TASK-176.3). */
   private cardDetail(card: AdminCardRowDto, url: URL) {
     const section = url.searchParams.get("section");
@@ -2905,7 +3098,11 @@ export class FakeAdminServer {
         comments: comments.length - liveComments.length,
         attachments: attachments.length - liveAttachments.length,
       },
-      comments: wants("comments") ? slice(visibleComments, commentsOffset) : [],
+      comments: wants("comments")
+        ? slice(visibleComments, commentsOffset).map((row) =>
+            this.commentRow(row),
+          )
+        : [],
       attachments: wants("attachments")
         ? slice(visibleAttachments, attachmentsOffset)
         : [],
@@ -3022,7 +3219,7 @@ export class FakeAdminServer {
       memberships: this.state.memberships,
       createdCards: slice(createdCards),
       assignedCards: slice(assignedCards),
-      comments: slice(visibleComments),
+      comments: slice(visibleComments).map((row) => this.commentRow(row)),
       attachments: [],
       sessions: slice(visibleSessions),
       tokens: slice(visibleTokens),

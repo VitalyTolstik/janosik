@@ -9,6 +9,7 @@ import type {
   AdminCardRowDto,
   AdminCommandRowDto,
   AdminCommentRowDto,
+  CommentRevisionPage,
   AdminCreateBoardRequest,
   AdminCreateMasterRequest,
   AdminCreateMasterResponse,
@@ -518,6 +519,27 @@ export class AdminApiClient {
     params: AdminListParams = {},
   ): Promise<AdminPage<AdminCommentRowDto>> {
     return this.list("/admin/comments", "comments", params);
+  }
+
+  /**
+   * Master read of a live comment's saved text versions (TASK-185.5, §3.4).
+   * The route is the TASK-185.3 admin API: newest first, opaque cursor, the
+   * incomplete-history reason on every page.
+   */
+  listCommentRevisions(
+    commentId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<CommentRevisionPage> {
+    const search = new URLSearchParams();
+    if (cursor !== undefined) search.set("cursor", cursor);
+    if (limit !== undefined) search.set("limit", String(limit));
+    const query = search.toString();
+    return this.request<CommentRevisionPage>(
+      `/admin/comments/${encodeURIComponent(commentId)}/revisions${
+        query === "" ? "" : `?${query}`
+      }`,
+    );
   }
 
   deleteComment(commentId: string): Promise<{ status: "ok" }> {
