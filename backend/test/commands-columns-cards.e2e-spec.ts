@@ -2298,6 +2298,19 @@ describe("Commands API (e2e)", () => {
     expect(blankDuplicate.status).toBe(400);
     expect(blankDuplicate.body.field).toBe("action.title");
 
+    const blankColumnDuplicate = await post(
+      boardId,
+      scoped(boardId, {
+        type: "DUPLICATE_COLUMN",
+        columnId,
+        newColumnId: randomUUID(),
+        newCardIds: [randomUUID()],
+        title: "   ",
+      }),
+    );
+    expect(blankColumnDuplicate.status).toBe(400);
+    expect(blankColumnDuplicate.body.field).toBe("action.title");
+
     const before = await getAggregate(boardId);
     const snapshot = before.cards[cardId];
     await applyAndAssert(

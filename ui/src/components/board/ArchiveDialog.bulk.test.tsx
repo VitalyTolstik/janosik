@@ -72,7 +72,7 @@ async function deleteAll() {
     screen.getByRole("button", { name: "Delete selected" }),
   );
   const confirmation = screen.getByRole("dialog", {
-    name: "Delete selected cards from the archive?",
+    name: "Delete 3 selected cards from the archive?",
   });
   await userEvent.click(
     within(confirmation).getByRole("button", { name: "Delete selected" }),

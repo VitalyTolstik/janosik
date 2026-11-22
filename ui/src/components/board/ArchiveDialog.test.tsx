@@ -300,6 +300,22 @@ describe("ArchiveDialog", () => {
     ).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("uses a singular bulk-delete title for one card", async () => {
+    renderArchive();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select Archived thing" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete selected" }),
+    );
+    expect(
+      screen.getByRole("dialog", {
+        name: "Delete 1 selected card from the archive?",
+      }),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  });
+
   it("requires confirmation before deleting selected cards", async () => {
     addArchivedCards(2);
     renderArchive();
@@ -320,7 +336,7 @@ describe("ArchiveDialog", () => {
       screen.getByRole("button", { name: "Delete selected" }),
     );
     const confirmation = screen.getByRole("dialog", {
-      name: "Delete selected cards from the archive?",
+      name: "Delete 3 selected cards from the archive?",
     });
     await userEvent.click(
       within(confirmation).getByRole("button", { name: "Delete selected" }),
@@ -395,11 +411,27 @@ describe("ArchiveDialog permissions", () => {
       { timeout: 15_000 },
     );
     expect(row).toHaveTextContent("Archived thing");
-    expect(screen.getByTestId("archive-archived-notice")).toHaveTextContent(
-      /board is archived/i,
+    expect(screen.getByTestId("archived-board-notice")).toHaveTextContent(
+      /archived and read-only/i,
     );
+    expect(screen.getByTestId("archived-board-restore")).toBeVisible();
     expect(within(row).queryByTestId("archive-restore")).toBeNull();
     expect(within(row).queryByTestId("archive-delete")).toBeNull();
     expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+  });
+
+  it("tells a VIEWER to ask an admin instead of offering restore", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 5_000 }]);
+    server.role = "VIEWER";
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive(`${routes.board("b-1")}?card=c-old`);
+
+    const notice = await screen.findByTestId(
+      "archived-board-notice",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(notice).toHaveTextContent(/ask a board admin/i);
+    expect(within(notice).queryByTestId("archived-board-restore")).toBeNull();
   });
 });

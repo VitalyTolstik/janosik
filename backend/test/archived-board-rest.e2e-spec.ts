@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import type { INestApplication } from "@nestjs/common";
+import { ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 
 import { AppModule } from "@/app.module";
+import { CommentsService } from "@/comments/comments.service";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
@@ -23,6 +25,7 @@ describe("Archived board REST writes (e2e)", () => {
   let db: PrismaService;
   let server: () => ReturnType<typeof request>;
   let token: string;
+  let userId: string;
   let boardId: string;
   let cardId: string;
   let commentId: string;
@@ -50,6 +53,7 @@ describe("Archived board REST writes (e2e)", () => {
       })
       .expect(201);
     token = registered.body.accessToken;
+    userId = registered.body.user.id;
 
     const board = await server()
       .post("/api/v1/boards")
@@ -120,6 +124,7 @@ describe("Archived board REST writes (e2e)", () => {
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();
+    await db.commentRevision.deleteMany();
     await db.comment.deleteMany();
     await db.activity.deleteMany();
     await db.command.deleteMany();
@@ -133,6 +138,20 @@ describe("Archived board REST writes (e2e)", () => {
     await db.refreshToken.deleteMany();
     await db.user.deleteMany();
   }
+
+  it("rechecks the archive inside the comment transaction", async () => {
+    // Simulates the interleaving where the request passed CardAccessGuard
+    // while the board was active and ARCHIVE_BOARD committed before the
+    // board lock was acquired: the service call bypasses the guard, so only
+    // the in-transaction check can stop it.
+    const comments = app.get(CommentsService);
+    await expect(
+      comments.create(cardId, userId, { text: "Raced write" }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(
+      await db.comment.count({ where: { cardId, text: "Raced write" } }),
+    ).toBe(0);
+  });
 
   it("keeps reads open and refuses comment/attachment writes until restore", async () => {
     await server()

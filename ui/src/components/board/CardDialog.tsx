@@ -517,6 +517,9 @@ export function CardDialog({
   // What the draft was based on (TASK-156): a stored title that differs from
   // it while the user is typing is a foreign rename, not our own echo.
   const titleSeenRef = useRef("");
+  // The last non-blank local title while a foreign rename is unresolved.
+  // Clearing the field must not destroy the "Mine" choice behind Keep mine.
+  const titleMineRef = useRef("");
   const titleDirtyRef = useRef(false);
   const titleConflictRef = useRef(false);
   const [titleConflict, setTitleConflict] = useState(false);
@@ -555,6 +558,7 @@ export function CardDialog({
         return;
       }
       heldTitles.delete(conflictedKey(boardId, target));
+      titleMineRef.current = "";
       titleSeenRef.current = trimmed;
       titleDirtyRef.current = false;
       titleConflictRef.current = false;
@@ -592,6 +596,7 @@ export function CardDialog({
     titleDirtyRef.current = held !== undefined;
     titleTargetRef.current = held !== undefined ? cardId : null;
     titleConflictRef.current = held !== undefined;
+    titleMineRef.current = "";
     setTitleConflict(held !== undefined);
     if (titleTimerRef.current !== null) {
       window.clearTimeout(titleTimerRef.current);
@@ -631,11 +636,25 @@ export function CardDialog({
     titleDraftRef.current = stored;
     titleDirtyRef.current = false;
     titleConflictRef.current = false;
+    titleMineRef.current = "";
     setTitleConflict(false);
     setTitleDraft(stored);
   };
   const keepMyTitle = () => {
     if (!cardId) return;
+    const mine =
+      titleMineRef.current.trim() !== ""
+        ? titleMineRef.current
+        : titleDraftRef.current;
+    if (mine.trim() !== "") {
+      titleTargetRef.current = cardId;
+      titleDraftRef.current = mine;
+      setTitleDraft(mine);
+      titleConflictRef.current = false;
+      setTitleConflict(false);
+      flushTitleRef.current(true);
+      return;
+    }
     titleTargetRef.current = cardId;
     titleConflictRef.current = false;
     setTitleConflict(false);
@@ -643,6 +662,17 @@ export function CardDialog({
   };
   const onTitleChange = (value: string) => {
     if (readOnly || !cardId) return;
+    // A blank submit during an unresolved foreign rename still leaves the
+    // pre-blank local text available for Keep mine.
+    if (
+      titleConflictRef.current &&
+      value.trim() === "" &&
+      titleDraftRef.current.trim() !== ""
+    ) {
+      titleMineRef.current = titleDraftRef.current;
+    } else if (titleConflictRef.current && value.trim() !== "") {
+      titleMineRef.current = value;
+    }
     titleDraftRef.current = value;
     titleDirtyRef.current = true;
     titleTargetRef.current = cardId;

@@ -723,6 +723,7 @@ function parseAction(action: Json): BoardAction {
         result,
         "title",
         readOptionalString(action, "title", "action.title", {
+          nonBlank: true,
           max: LIMITS.columnTitle,
         }),
       );
@@ -1312,7 +1313,10 @@ function checkImportedCard(key: string, value: unknown, field: string): void {
   const card = asRecord(value, field);
   const id = readId(card, "id", `${field}.id`);
   if (id !== key) fail(`${field}.id`, "must match the key it is stored under");
-  readString(card, "title", `${field}.title`);
+  readString(card, "title", `${field}.title`, {
+    nonBlank: true,
+    max: LIMITS.cardTitle,
+  });
   readOptionalString(card, "description", `${field}.description`);
   // `labelId` (single, nullable) is the v1 shape normalization converts.
   // A card cannot carry more labels than a board defines; normalization

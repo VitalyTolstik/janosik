@@ -268,7 +268,7 @@ describe("BoardContext split (TASK-21.4)", () => {
   });
   it("keeps the board's own name out of card edits", () => {
     renderSplitProbes();
-    expect(identity).toMatchObject({ id: "b-1", title: "Alpha" });
+    expect(identity).toEqual({ id: "b-1", title: "Alpha", archived: false });
     const before = identityRenders;
 
     // A card edit does not touch the board's name...

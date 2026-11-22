@@ -843,6 +843,24 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("rejects a blank duplicate column title before sending a command", async () => {
+    const client = await connect();
+    const before = calls.filter(
+      (call) => call.path === "/boards/b1/commands" && call.method === "POST",
+    ).length;
+    const result = await client.callTool({
+      name: "janosik_duplicate_column",
+      arguments: { boardId: "b1", columnId: "col1", title: "   " },
+    });
+    expect(result.isError).toBe(true);
+    expect(
+      calls.filter(
+        (call) => call.path === "/boards/b1/commands" && call.method === "POST",
+      ),
+    ).toHaveLength(before);
+    await client.close();
+  });
+
   it("reads the workflow and validates a card's moves", async () => {
     boardWorkflow = {
       schemaVersion: 1,

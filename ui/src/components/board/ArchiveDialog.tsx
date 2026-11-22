@@ -10,6 +10,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import {
   Dialog,
@@ -187,13 +188,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
       </DialogHeader>
 
       {board.archivedAt !== undefined ? (
-        <p
-          role="status"
-          data-testid="archive-archived-notice"
-          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
-        >
-          {t("archive.archivedReadOnly")}
-        </p>
+        <ArchivedBoardNotice boardId={board.id} />
       ) : null}
 
       {archived.length > 0 ? (
@@ -372,8 +367,8 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                       }
                       className={
                         selectedIds.has(card.id)
-                          ? "h-11 w-11 sm:h-6 sm:w-6"
-                          : "h-11 w-11 border-muted-foreground sm:h-6 sm:w-6"
+                          ? "h-11 w-11 lg:h-6 lg:w-6"
+                          : "h-11 w-11 border-muted-foreground lg:h-6 lg:w-6"
                       }
                     />
                   )}
@@ -407,7 +402,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-success hover:text-success"
+                          className="h-11 w-11 text-success hover:text-success sm:h-6 sm:w-6"
                           aria-label={t("archive.deleteConfirmYes")}
                           disabled={busy}
                           onClick={() => {
@@ -420,7 +415,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-muted-foreground"
+                          className="h-11 w-11 text-muted-foreground sm:h-6 sm:w-6"
                           aria-label={t("archive.deleteConfirmCancel")}
                           disabled={busy}
                           onClick={() => setConfirmDeleteId(null)}
@@ -435,7 +430,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-11 w-11 text-muted-foreground hover:text-foreground sm:h-6 sm:w-6"
+                              className="h-11 w-11 text-muted-foreground hover:text-foreground lg:h-6 lg:w-6"
                               aria-label={t("card.unarchive")}
                               data-testid="archive-restore"
                               disabled={busy}
@@ -480,7 +475,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-11 w-11 text-muted-foreground hover:text-destructive sm:h-6 sm:w-6"
+                          className="h-11 w-11 text-muted-foreground hover:text-destructive lg:h-6 lg:w-6"
                           aria-label={t("archive.delete")}
                           data-testid="archive-delete"
                           disabled={busy}
@@ -540,7 +535,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
       <ConfirmDialog
         open={confirmBulkDelete}
         onOpenChange={setConfirmBulkDelete}
-        title={t("archive.bulkDeleteTitle")}
+        title={t("archive.bulkDeleteTitle", { count: selected.length })}
         description={t("archive.bulkDeleteDescription", {
           count: selected.length,
         })}

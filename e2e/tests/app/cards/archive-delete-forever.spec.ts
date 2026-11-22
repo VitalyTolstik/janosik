@@ -46,3 +46,35 @@ test("removes an archived card from the archive", async ({ page, board }) => {
   };
   expect(Object.keys(aggregate.cards)).not.toContain(cardId);
 });
+
+test("keeps the archive row and inline confirm usable at 768", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Archive tablet");
+  const cardId = await board.card(column, "Tablet archive row");
+  await board.command({ type: "ARCHIVE_CARD", cardId });
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await board.open(page);
+
+  await page.getByRole("button", { name: "Data & backups" }).click();
+  await page.getByTestId("data-archive").click();
+  const row = page
+    .getByTestId("archive-row")
+    .filter({ hasText: "Tablet archive row" });
+  await expect(row).toBeVisible();
+  const trigger = row.getByTestId("archive-delete");
+  const triggerBox = await trigger.boundingBox();
+  expect(triggerBox).not.toBeNull();
+  expect(triggerBox!.width).toBeGreaterThanOrEqual(44);
+  expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+
+  await trigger.click();
+  await expect(row).toContainText("Delete?");
+  await expect(row.getByRole("button", { name: "Yes, delete" })).toBeVisible();
+  await expect(
+    row.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeVisible();
+  await row.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(row.getByTestId("archive-delete")).toBeVisible();
+});

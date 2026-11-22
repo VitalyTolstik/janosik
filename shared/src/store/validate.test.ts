@@ -528,6 +528,17 @@ describe("validateBoardAction — rejected shapes", () => {
       "action.title",
     ],
     [
+      "a blank duplicate column title",
+      action({
+        type: "DUPLICATE_COLUMN",
+        columnId: "col",
+        newColumnId: "col-copy",
+        newCardIds: ["card"],
+        title: "   ",
+      }),
+      "action.title",
+    ],
+    [
       "a non-boolean quiet flag",
       action({ type: "UPDATE_CARD", cardId: "c", quiet: 1 }),
       "action.quiet",

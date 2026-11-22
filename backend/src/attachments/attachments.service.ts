@@ -19,6 +19,7 @@ import { pauseGateFor } from "@/auth/agent-pause";
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { assertBoardAcceptsWrites } from "@/common/archived-board";
 import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import {
   type RequestAttribution,
@@ -243,6 +244,7 @@ export class AttachmentsService {
       const created = await this.boardWrite.run(
         card.column.boardId,
         async (tx) => {
+          await assertBoardAcceptsWrites(tx, card.column.boardId);
           // Authoritative cap under the board lock (TASK-100): two concurrent
           // uploads would otherwise both pass the pre-check. Counts inline too,
           // so pasted media cannot bypass the per-card budget (TASK-108).
@@ -524,6 +526,7 @@ export class AttachmentsService {
       this.boardWrite.run(
         row.boardId,
         async (tx) => {
+          await assertBoardAcceptsWrites(tx, row.boardId);
           const current = await tx.attachment.findUnique({
             where: { id: attachmentId },
             select: { descriptionDetached: true },

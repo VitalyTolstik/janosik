@@ -70,6 +70,28 @@ function renderApp(entry = "/board/b-1") {
   );
 }
 
+function renderHeader(entry = "/board/b-1") {
+  return render(
+    <ThemeProvider>
+      <BoardBackgroundProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={[entry]}>
+                <ToastProvider>
+                  <BoardProvider>
+                    <Header />
+                  </BoardProvider>
+                </ToastProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
+      </BoardBackgroundProvider>
+    </ThemeProvider>,
+  );
+}
+
 describe("BoardSection role wiring (TASK-35)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
@@ -183,6 +205,32 @@ describe("BoardSection role wiring (TASK-35)", () => {
     await waitFor(() =>
       expect(within(dialog).getByLabelText("Title")).toHaveFocus(),
     );
+  });
+
+  it("keeps Leave board reachable for a VIEWER on an archived board", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 1_700_000 }]);
+    server.role = "VIEWER";
+    server.membersByBoard.set("b-1", [
+      {
+        userId: "user-1",
+        displayName: "Admin",
+        email: "admin@example.com",
+        role: "VIEWER",
+        expiresAt: null,
+        avatarColor: null,
+        avatarPath: null,
+      },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderHeader("/board/b-1?card=c-1");
+
+    // The archived gate keeps the roster dialog for non-admins: its
+    // self-service Leave button is the only such entry on an archived board
+    // (the switcher only offers admin Restore/Delete).
+    expect(
+      await screen.findByRole("button", { name: "Members" }),
+    ).toBeEnabled();
   });
 
   it("asks a non-admin to have an archived board restored", async () => {

@@ -210,6 +210,17 @@ test("the card archive is reachable on the phone and restores a card", async ({
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
   }
+  await archive.getByTestId("archive-delete").tap();
+  for (const target of [
+    archive.getByRole("button", { name: "Yes, delete" }),
+    archive.getByRole("button", { name: "Cancel", exact: true }),
+  ]) {
+    const box = await target.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+  await archive.getByRole("button", { name: "Cancel", exact: true }).tap();
   await archive.getByTestId("archive-restore").tap();
   await page.getByRole("menuitem", { name: "Todo", exact: true }).tap();
   await expect(

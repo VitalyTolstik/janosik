@@ -16,6 +16,7 @@ import {
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
+import { assertBoardAcceptsWrites } from "@/common/archived-board";
 import { beforeWrite, rollbackOnThrow } from "@/common/rollback-certainty";
 import { AttentionService } from "@/notifications/attention.service";
 import {
@@ -142,6 +143,7 @@ export class CommentsService {
       created = await this.boardWrite.run(
         boardId,
         async (tx) => {
+          await assertBoardAcceptsWrites(tx, boardId);
           const comment = await tx.comment.create({
             include: AUTHOR_INCLUDE,
             data: {
@@ -314,6 +316,7 @@ export class CommentsService {
     const updated = await this.boardWrite.run(
       boardId,
       async (tx) => {
+        await assertBoardAcceptsWrites(tx, boardId);
         // `deletedAt: null` makes the write conditional: a comment that was
         // soft-deleted after the pre-read is a 404, never an edit on a tombstone.
         const written = await tx.comment.updateMany({
@@ -471,6 +474,7 @@ export class CommentsService {
     const removed = await this.boardWrite.run(
       comment.card.column.boardId,
       async (tx) => {
+        await assertBoardAcceptsWrites(tx, comment.card.column.boardId);
         await tx.comment.update({
           where: { id: comment.id },
           data: { deletedAt: new Date() },

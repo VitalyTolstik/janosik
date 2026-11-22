@@ -304,11 +304,12 @@ export const CLAIM_LEASE_MIN_MS = 60 * 1000;
 export const CLAIM_LEASE_MAX_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Placeholder for legacy snapshots or copies whose stored title is blank.
- * The command surface refuses blank titles; recovery must still leave a
- * usable card rather than an unlabeled row.
+ * Neutral placeholder for legacy snapshots, imports or copies whose stored
+ * title is blank. The command surface refuses blank titles; recovery must
+ * still leave a usable card rather than an unlabeled row. Deliberately not an
+ * English sentence: the same sentinel is displayed in every locale.
  */
-export const UNTITLED_CARD_TITLE = "Untitled card";
+export const UNTITLED_CARD_TITLE = "—";
 
 /**
  * Max lengths for every free-text field, in characters. One source of

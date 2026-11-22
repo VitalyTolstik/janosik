@@ -94,6 +94,14 @@ describe("board serialization", () => {
     ).toThrow();
   });
 
+  it("rejects a blank card title on import", () => {
+    const raw = JSON.parse(serializeExport(initialBoardState())) as {
+      boards: Array<{ cards: Record<string, { title: string }> }>;
+    };
+    raw.boards[0].cards[Object.keys(raw.boards[0].cards)[0]].title = "   ";
+    expect(() => parseExport(JSON.stringify(raw))).toThrow(/title/);
+  });
+
   it("drops an unknown board column style instead of failing the import", () => {
     const state = initialBoardState();
     const raw = JSON.parse(serializeExport(state)) as {

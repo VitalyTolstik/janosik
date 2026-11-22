@@ -1330,6 +1330,8 @@ function duplicateColumn(
     const cardCopy: Card = {
       ...sourceCard,
       id: cardIds[index],
+      title:
+        sourceCard.title.trim() === "" ? UNTITLED_CARD_TITLE : sourceCard.title,
       checklists: duplicateChecklists(sourceCard.checklists, cardIds[index]),
       dueDate: sourceCard.dueDate,
       cover: sourceCard.cover
@@ -1351,7 +1353,11 @@ function duplicateColumn(
   });
   const copy: Column = {
     id: action.newColumnId,
-    title: action.title ?? source.title,
+    title: (
+      action.title?.trim() ||
+      source.title.trim() ||
+      UNTITLED_CARD_TITLE
+    ).slice(0, LIMITS.columnTitle),
     cardIds: source.cardIds
       .map((sourceId, index) =>
         Object.hasOwn(board.cards, sourceId) ? cardIds[index] : "",

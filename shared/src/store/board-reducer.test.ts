@@ -1477,6 +1477,31 @@ describe("boardReducer — DUPLICATE_COLUMN", () => {
     expect(next.columns[0].cardIds).toEqual(["card-1", "card-2", "card-6"]);
   });
 
+  it("falls back to the source column title for a blank copy title", () => {
+    const seed = freshBoard();
+    const sourceTitle = seed.columns[0].title;
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+      title: "   ",
+    });
+    expect(next.columns[1].title).toBe(sourceTitle);
+  });
+
+  it("labels a copied legacy blank column and its blank cards", () => {
+    const seed = freshBoard();
+    seed.columns[0] = { ...seed.columns[0], title: "" };
+    seed.cards["card-1"] = { ...seed.cards["card-1"], title: "" };
+    const next = reduceBoard(seed, {
+      type: "DUPLICATE_COLUMN",
+      columnId: "col-backlog",
+    });
+    expect(next.columns[1].title).toBe(UNTITLED_CARD_TITLE);
+    expect(next.cards[next.columns[1].cardIds[0]].title).toBe(
+      UNTITLED_CARD_TITLE,
+    );
+  });
+
   it("gives copied checklists fresh ids and starts cards unlinked", () => {
     const seed = freshBoard();
     seed.cards["card-1"] = {

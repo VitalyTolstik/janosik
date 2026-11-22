@@ -400,7 +400,7 @@ export function Header() {
         ) : null}
         {isBoardRoute ? (
           <>
-            {!archived ? (
+            {!archived || role !== "ADMIN" ? (
               <div className="hidden min-[1024px]:block">
                 <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
               </div>
