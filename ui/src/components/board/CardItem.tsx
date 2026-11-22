@@ -320,7 +320,13 @@ function CardItemView({
               compact ? "top-1/2 -translate-y-1/2" : "top-1.5",
             )}
             onPointerDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              // Only the drag activator keys belong to the checkbox. Escape,
+              // Ctrl/⌘+A and the j/k/x cursor must still reach the board.
+              if (event.key === " " || event.key === "Enter") {
+                event.stopPropagation();
+              }
+            }}
             onClick={(event) => {
               event.stopPropagation();
               onToggleSelect(card.id, event.shiftKey);

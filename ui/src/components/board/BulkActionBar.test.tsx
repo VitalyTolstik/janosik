@@ -348,6 +348,23 @@ describe("bulk card actions", () => {
     expect(screen.getByTestId("bulk-count")).toHaveTextContent("1 selected");
   });
 
+  it("lets Escape and Ctrl+A through a focused card checkbox", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    const checkbox = screen.getByRole("checkbox", { name: "Select Alpha" });
+    checkbox.focus();
+    await user.keyboard("{Control>}a{/Control}");
+    expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 selected");
+    expect(checkbox).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("bulk-bar")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-select-toggle")).toHaveFocus(),
+    );
+  });
+
   it("selects the keyboard cursor card with x", async () => {
     const user = userEvent.setup();
     tree(<SelectionHarness />);
@@ -842,6 +859,10 @@ describe("bulk card actions", () => {
       "Processing 3 cards",
     );
 
+    const focusedCheckbox = screen.getByRole("checkbox", {
+      name: "Deselect Bravo",
+    });
+    focusedCheckbox.focus();
     await user.keyboard("{Escape}");
     expect(screen.getByTestId("bulk-bar")).toBeVisible();
     // While the run is in flight the badge reports the run snapshot; the bar
