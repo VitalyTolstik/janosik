@@ -183,6 +183,53 @@ describe("comment composer mentions (TASK-177.12)", () => {
     expect(screen.queryByTestId("mention-picker")).toBeNull();
   });
 
+  it("does not open when only activeElement is a code textarea", () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+    const editor = screen.getByTestId("mock-comment-editor");
+    const textarea = document.createElement("textarea");
+    editor.append(textarea);
+    textarea.focus();
+
+    // The key event targets the editor root; only activeElement identifies
+    // the fenced-code control.
+    fireEvent.keyDown(editor, {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(screen.queryByTestId("mention-picker")).toBeNull();
+  });
+
+  it("opens at the start of a non-empty block", async () => {
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <TooltipProvider>
+            <Harness />
+          </TooltipProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+    const editor = screen.getByTestId("mock-comment-editor");
+    editor.innerHTML = "<p>hello</p>";
+    setCaret(editor.querySelector("p")!.firstChild!, 0);
+
+    fireEvent.keyDown(editor, {
+      key: "@",
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(await screen.findByTestId("mention-picker")).toBeVisible();
+  });
+
   it("does not open inside inline code at the caret", () => {
     render(
       <I18nProvider>

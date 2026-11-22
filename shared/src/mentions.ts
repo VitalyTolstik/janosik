@@ -65,43 +65,41 @@ function unquoteLine(line: string): string {
   }
 }
 
+const LIST_ITEM = /^ {0,3}(?:[-+*]|\d+[.)])(?:\s|$)/;
+
 /**
  * Four-space/tab indented code blocks are inert like fenced ones. Blockquote
- * markers are stripped first; an indented list marker is a nested list item
- * (a mention inside it stays live), not a code line.
+ * markers are stripped first. A line with a list marker opens a list context:
+ * nested list items and continuation paragraphs stay live, while indented
+ * code outside a list (including one whose first line is `- …`) is masked.
  */
 function maskIndentedCode(chars: string[]): void {
   const text = chars.join("");
   let offset = 0;
-  let previousBlank = true;
-  let inIndented = false;
+  let listOpen = false;
   while (offset < text.length) {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
     const line = text.slice(offset, newline === -1 ? text.length : newline);
     const content = unquoteLine(line);
-    const blank = content.trim() === "";
+    if (content.trim() === "") {
+      // Blank lines neither open nor close a list; a nested item may follow.
+      offset = end;
+      continue;
+    }
+    if (LIST_ITEM.test(content)) {
+      listOpen = true;
+      offset = end;
+      continue;
+    }
     const indented = /^(?: {4}|\t)/.test(content);
-    const afterIndent = content.replace(/^(?: {4}|\t)/, "");
-    const listContinuation = /^ {0,3}(?:[-+*]|\d+[.)])(?:\s|$)/.test(
-      afterIndent,
-    );
-    if (inIndented) {
-      if ((indented && !listContinuation) || blank) {
-        maskRange(chars, offset, end);
-        offset = end;
-        previousBlank = blank;
-        continue;
-      }
-      inIndented = false;
+    if (indented) {
+      if (!listOpen) maskRange(chars, offset, end);
+      offset = end;
+      continue;
     }
-    if (previousBlank && indented && !listContinuation) {
-      maskRange(chars, offset, end);
-      inIndented = true;
-      previousBlank = false;
-    } else {
-      previousBlank = blank;
-    }
+    // A normal paragraph ends the list container.
+    listOpen = false;
     offset = end;
   }
 }
@@ -116,8 +114,11 @@ function maskFencedCode(chars: string[]): void {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
     const line = text.slice(offset, newline === -1 ? text.length : newline);
+    // Blockquote containers prefix every line with `>`; fence detection and
+    // closing rules apply to the content, while the whole line is masked.
+    const content = unquoteLine(line);
     if (fenceChar !== null) {
-      const close = FENCE_CLOSE.exec(line);
+      const close = FENCE_CLOSE.exec(content);
       if (
         close !== null &&
         close[1]![0] === fenceChar &&
@@ -130,7 +131,7 @@ function maskFencedCode(chars: string[]): void {
         maskRange(chars, offset, end);
       }
     } else {
-      const open = FENCE_OPEN.exec(line);
+      const open = FENCE_OPEN.exec(content);
       // CommonMark: the info string of a backtick fence may not carry a
       // backtick; such a line is a paragraph, not a code fence.
       if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
