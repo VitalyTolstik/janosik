@@ -374,6 +374,7 @@ describe("Comment revisions API (TASK-185.3, e2e)", () => {
       data: { deletedAt: new Date() },
     });
     await revisions(parentColumnComment, owner.token).expect(404);
+    await revisions(parentColumnComment, outsider.token).expect(404);
     // Give the shared column back before the rest of the suite.
     await prisma.column.update({
       where: { id: "col-revisions" },
