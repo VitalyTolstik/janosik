@@ -81,11 +81,26 @@ export function embedMarkdown(file: File, attachmentId: string): string {
 }
 
 /**
+ * True when the markdown already references this attachment. Used before a
+ * restore append so a stale detached row cannot add the same reference twice.
+ */
+export function hasAttachmentReference(
+  text: string,
+  attachmentId: string,
+): boolean {
+  const id = attachmentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`/attachments/${id}/content`).test(text);
+}
+
+/**
  * TASK-177.9 (G-13): re-embed a file that was removed from a description.
  * The description has no stored position for the reference, so the file is
  * appended as its own block at the end. The original body is kept intact
  * apart from trailing whitespace, and the result goes through the normal
  * `UPDATE_CARD` save, so the server reconciles the file's detached state.
+ *
+ * The returned text has no trailing blank block: the description limit is
+ * measured on the actual content, not on cosmetic paragraph spacing.
  */
 export function appendAttachmentMarkdown(
   text: string,
@@ -93,7 +108,7 @@ export function appendAttachmentMarkdown(
 ): string {
   const block = attachmentMarkdown(attachment);
   const body = text.replace(/\s+$/, "");
-  return body.length === 0 ? `${block}\n\n` : `${body}\n\n${block}\n\n`;
+  return body.length === 0 ? block : `${body}\n\n${block}`;
 }
 
 /**

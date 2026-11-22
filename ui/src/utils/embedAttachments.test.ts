@@ -7,6 +7,7 @@ import {
   attachmentImagePreviewHandler,
   embedMarkdown,
   handleAttachmentImageOpen,
+  hasAttachmentReference,
   openAttachmentBlob,
   openImageLightbox,
 } from "./embedAttachments";
@@ -107,7 +108,7 @@ describe("appendAttachmentMarkdown", () => {
 
   it("appends an image reference as its own block at the end", () => {
     expect(appendAttachmentMarkdown("Existing body", image)).toBe(
-      "Existing body\n\n![shot.png](/api/v1/attachments/att-9/content)\n\n",
+      "Existing body\n\n![shot.png](/api/v1/attachments/att-9/content)",
     );
   });
 
@@ -118,7 +119,7 @@ describe("appendAttachmentMarkdown", () => {
         fileName: "spec.pdf",
         mimeType: "application/pdf",
       }),
-    ).toBe("[spec.pdf](/api/v1/attachments/att-doc/content)\n\n");
+    ).toBe("[spec.pdf](/api/v1/attachments/att-doc/content)");
     expect(
       appendAttachmentMarkdown("Clip", {
         id: "att-v",
@@ -137,8 +138,32 @@ describe("appendAttachmentMarkdown", () => {
 
   it("keeps the body byte-identical apart from trailing whitespace", () => {
     expect(appendAttachmentMarkdown("Line 1\n\n  indented\n\n\n", image)).toBe(
-      "Line 1\n\n  indented\n\n![shot.png](/api/v1/attachments/att-9/content)\n\n",
+      "Line 1\n\n  indented\n\n![shot.png](/api/v1/attachments/att-9/content)",
     );
+  });
+});
+
+describe("hasAttachmentReference", () => {
+  it("matches only the exact attachment id", () => {
+    expect(
+      hasAttachmentReference(
+        "![shot](/api/v1/attachments/att-9/content)",
+        "att-9",
+      ),
+    ).toBe(true);
+    expect(
+      hasAttachmentReference(
+        "![shot](/api/v1/attachments/att-9/content)",
+        "att-90",
+      ),
+    ).toBe(false);
+    expect(hasAttachmentReference("plain text", "att-9")).toBe(false);
+  });
+
+  it("does not treat regex characters in the id as a pattern", () => {
+    expect(
+      hasAttachmentReference("/api/v1/attachments/a+b/content", "a+b"),
+    ).toBe(true);
   });
 });
 

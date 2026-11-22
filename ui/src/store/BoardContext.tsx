@@ -218,6 +218,16 @@ interface BoardActionsValue {
     patch: CardPatch,
     opts?: { quiet?: boolean },
   ) => void;
+  /**
+   * TASK-177.9: same optimistic `UPDATE_CARD`, but resolves with the server's
+   * answer (`true` in local mode). Callers that must not show success before
+   * the save lands use this instead of the fire-and-forget action.
+   */
+  updateCardAndWait: (
+    cardId: string,
+    patch: CardPatch,
+    opts?: { quiet?: boolean },
+  ) => Promise<boolean>;
   /** Stamps the card's `updatedAt` after a burst of quiet live edits. */
   touchCard: (cardId: string) => void;
   deleteCard: (cardId: string) => void;
@@ -2328,7 +2338,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
  * still each see the state the previous one produced.
  */
 function createBoardActions(
-  dispatch: (action: BoardAction) => void,
+  dispatch: (action: BoardAction) => void | Promise<boolean>,
   getBoard: () => Board | undefined,
 ): Pick<
   BoardActionsValue,
@@ -2338,6 +2348,7 @@ function createBoardActions(
   | "deleteColumn"
   | "addCard"
   | "updateCard"
+  | "updateCardAndWait"
   | "touchCard"
   | "deleteCard"
   | "archiveCard"
@@ -2421,6 +2432,22 @@ function createBoardActions(
         activityIds: ids(2),
         at: Date.now(),
       }),
+    updateCardAndWait: async (
+      cardId: string,
+      patch: CardPatch,
+      opts?: { quiet?: boolean },
+    ) => {
+      const result = dispatch({
+        type: "UPDATE_CARD",
+        cardId,
+        ...patch,
+        quiet: opts?.quiet,
+        activityIds: ids(2),
+        at: Date.now(),
+      });
+      // Local mode has no server round-trip: the reducer already applied it.
+      return result === undefined ? true : await result;
+    },
     touchCard: (cardId: string) =>
       dispatch({ type: "TOUCH_CARD", cardId, at: Date.now() }),
     deleteCard: (cardId: string) =>
@@ -2823,6 +2850,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     deleteColumn: noop,
     addCard: noop,
     updateCard: noop,
+    updateCardAndWait: () => Promise.resolve(false),
     touchCard: noop,
     deleteCard: noop,
     archiveCard: noop,

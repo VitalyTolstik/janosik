@@ -111,7 +111,8 @@ function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
 
 /** Outcome of the parent's append-to-description attempt (TASK-177.9). */
 export type RestoreAttachmentOutcome =
-  { ok: true } | { ok: false; reason: "conflict" | "limit" | "error" };
+  | { ok: true; alreadyReferenced?: true }
+  | { ok: false; reason: "conflict" | "limit" | "error" | "stale" };
 
 interface CardAttachmentsProps {
   cardId: string;
@@ -133,7 +134,7 @@ interface CardAttachmentsProps {
    */
   onRestoreToDescription?: (
     attachment: AttachmentDto,
-  ) => RestoreAttachmentOutcome;
+  ) => RestoreAttachmentOutcome | Promise<RestoreAttachmentOutcome>;
 }
 
 /**
@@ -188,6 +189,39 @@ export function CardAttachments({
   const [pendingDeleteDetached, setPendingDeleteDetached] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const detachedRef = useRef<HTMLDetailsElement>(null);
+  const detachedListRef = useRef<HTMLUListElement>(null);
+  // The section is keyed by card upstream; keep a live id so an answer for
+  // the previous card can never mutate this instance.
+  const cardIdRef = useRef(cardId);
+  useEffect(() => {
+    cardIdRef.current = cardId;
+  }, [cardId]);
+
+  /**
+   * After the last detached row disappears its button loses focus. Move focus
+   * to the next restore action, the bin summary, or the section header.
+   */
+  const focusAfterBinChange = (section: HTMLElement | null) => {
+    window.requestAnimationFrame(() => {
+      if (!aliveRef.current) return;
+      const nextRestore = section?.querySelector<HTMLElement>(
+        '[data-testid="card-attachment-restore"]',
+      );
+      if (nextRestore) {
+        nextRestore.focus();
+        return;
+      }
+      const summary = section?.querySelector<HTMLElement>("summary");
+      if (summary) {
+        summary.focus();
+        return;
+      }
+      section
+        ?.querySelector<HTMLElement>('[data-testid="card-attachments-toggle"]')
+        ?.focus();
+    });
+  };
   // Search deep link (TASK-177.13): reveal the matched file once the first
   // list page lands. Row identity is read from data attributes, not spliced
   // into a selector, so a hand-edited URL is only ever an id comparison.
@@ -344,8 +378,9 @@ export function CardAttachments({
 
   /**
    * TASK-177.9: a detached file stays downloadable and linkable without
-   * re-embedding it. The canonical content URL opens through the same
-   * authenticated route as the download action.
+   * re-embedding it. The copied content URL is an authenticated in-app
+   * attachment reference meant to be pasted into a description or comment,
+   * not a public share link.
    */
   const onCopyUrl = async (attachment: AttachmentDto) => {
     try {
@@ -366,28 +401,48 @@ export function CardAttachments({
 
   const onRestore = async (attachment: AttachmentDto) => {
     if (onRestoreToDescription === undefined || restoringId !== null) return;
+    const section = detachedRef.current?.closest("section") ?? null;
+    const targetCardId = cardId;
     setRestoringId(attachment.id);
     try {
       // Re-read the bin first: a file deleted in another tab (or by another
       // member) is no longer restorable, and its old markdown would only
       // leave a dead link in the description.
       const fresh = await api.listDetachedAttachments(cardId);
+      // The card may have changed while the bin was loading. The parent
+      // callback closes over the old card's draft, so it must never run now.
+      if (!aliveRef.current || cardIdRef.current !== targetCardId) return;
       setDetachedItems(fresh);
       if (!fresh.some((item) => item.id === attachment.id)) {
-        toast.error(t("card.attachments.restoreDeleted"));
+        await refreshNewest();
+        toast.error(t("card.attachments.restoreUnavailable"));
+        focusAfterBinChange(section);
         return;
       }
-      const outcome = onRestoreToDescription(attachment);
+      const outcome = await onRestoreToDescription(attachment);
+      if (!aliveRef.current || cardIdRef.current !== targetCardId) return;
       if (!outcome.ok) {
-        toast.error(
-          t(
-            outcome.reason === "conflict"
-              ? "card.attachments.restoreConflict"
-              : outcome.reason === "limit"
-                ? "card.attachments.restoreLimit"
-                : "card.attachments.restoreError",
-          ),
-        );
+        if (outcome.reason !== "stale") {
+          toast.error(
+            t(
+              outcome.reason === "conflict"
+                ? "card.attachments.restoreConflict"
+                : outcome.reason === "limit"
+                  ? "card.attachments.restoreLimit"
+                  : "card.attachments.restoreError",
+            ),
+          );
+        }
+        // The save may have been refused after the optimistic edit: re-read
+        // both lists so the bin and the normal list match the server again.
+        await refreshNewest();
+        if (aliveRef.current) focusAfterBinChange(section);
+        return;
+      }
+      if (outcome.alreadyReferenced === true) {
+        toast.info(t("card.attachments.alreadyReferenced"));
+        await refreshNewest();
+        if (aliveRef.current) focusAfterBinChange(section);
         return;
       }
       setDetachedItems((prev) =>
@@ -403,25 +458,31 @@ export function CardAttachments({
       toast.success(
         t("card.attachments.restored", { name: attachment.fileName }),
       );
+      focusAfterBinChange(section);
     } catch (error) {
+      if (!aliveRef.current || cardIdRef.current !== targetCardId) return;
+      await refreshNewest();
+      if (!aliveRef.current) return;
       if (
         error instanceof ApiError &&
         (error.status === 404 || error.status === 410)
       ) {
-        setDetachedItems((prev) =>
-          prev.filter((item) => item.id !== attachment.id),
-        );
-        toast.error(t("card.attachments.restoreDeleted"));
+        toast.error(t("card.attachments.restoreUnavailable"));
       } else {
         toast.error(t("card.attachments.restoreError"));
       }
+      focusAfterBinChange(section);
     } finally {
+      // Also clears a stale busy row if the same mounted section was
+      // repointed at another card before the answer arrived.
       setRestoringId(null);
     }
   };
 
   const onConfirmDelete = async () => {
     const target = pendingDelete;
+    const wasDetached = pendingDeleteDetached;
+    const section = detachedRef.current?.closest("section") ?? null;
     setPendingDelete(null);
     setPendingDeleteDetached(false);
     if (!target) return;
@@ -430,6 +491,7 @@ export function CardAttachments({
       setItems((prev) => prev.filter((item) => item.id !== target.id));
       setDetachedItems((prev) => prev.filter((item) => item.id !== target.id));
       setTotalCount((prev) => (prev === null ? prev : Math.max(0, prev - 1)));
+      if (wasDetached) focusAfterBinChange(section);
     } catch {
       toast.error(t("card.attachments.deleteError"));
     }
@@ -536,16 +598,23 @@ export function CardAttachments({
 
       {detachedItems.length > 0 ? (
         <details
+          ref={detachedRef}
           className="text-xs text-muted-foreground"
           data-testid="card-detached-attachments"
         >
-          <summary className="cursor-pointer">
+          <summary className="cursor-pointer py-2 max-md:py-3">
             {t("card.attachments.removedFromDescription", {
               count: detachedItems.length,
             })}
           </summary>
-          <p className="mt-1">{t("card.attachments.removedHelp")}</p>
-          <ul className="space-y-1">
+          <p className="mt-1">
+            {t(
+              readOnly
+                ? "card.attachments.removedHelpReadOnly"
+                : "card.attachments.removedHelp",
+            )}
+          </p>
+          <ul ref={detachedListRef} className="space-y-1">
             {detachedItems.map((attachment) => {
               const canRestore =
                 canWrite && onRestoreToDescription !== undefined;
@@ -559,18 +628,29 @@ export function CardAttachments({
                   className="flex items-center gap-2 py-1"
                   data-testid="card-detached-attachment-row"
                 >
-                  <span
-                    className="min-w-0 flex-1 truncate"
-                    title={attachment.fileName}
-                  >
-                    {attachment.fileName}
-                  </span>
+                  <AttachmentPreview attachment={attachment} />
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className="block truncate"
+                      title={attachment.fileName}
+                    >
+                      {attachment.fileName}
+                    </span>
+                    <span className="block text-[11px] tabular-nums">
+                      {formatSize(attachment.sizeBytes)} ·{" "}
+                      {formatDateOnly(attachment.createdAt, lang)}
+                    </span>
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6"
-                    aria-label={t("card.attachments.download")}
-                    title={t("card.attachments.download")}
+                    className="h-6 w-6 max-md:h-11 max-md:w-11"
+                    aria-label={t("card.attachments.downloadNamed", {
+                      name: attachment.fileName,
+                    })}
+                    title={t("card.attachments.downloadNamed", {
+                      name: attachment.fileName,
+                    })}
                     onClick={() => void onDownload(attachment)}
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -578,9 +658,13 @@ export function CardAttachments({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6"
-                    aria-label={t("card.attachments.copyUrl")}
-                    title={t("card.attachments.copyUrl")}
+                    className="h-6 w-6 max-md:h-11 max-md:w-11"
+                    aria-label={t("card.attachments.copyReferenceNamed", {
+                      name: attachment.fileName,
+                    })}
+                    title={t("card.attachments.copyReferenceNamed", {
+                      name: attachment.fileName,
+                    })}
                     onClick={() => void onCopyUrl(attachment)}
                   >
                     {copiedId === attachment.id ? (
@@ -593,9 +677,14 @@ export function CardAttachments({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
-                      aria-label={t("card.attachments.restoreToDescription")}
-                      title={t("card.attachments.restoreToDescription")}
+                      className="h-6 w-6 max-md:h-11 max-md:w-11"
+                      aria-label={t("card.attachments.restoreNamed", {
+                        name: attachment.fileName,
+                      })}
+                      title={t("card.attachments.restoreNamed", {
+                        name: attachment.fileName,
+                      })}
+                      aria-busy={restoring}
                       disabled={restoringId !== null}
                       onClick={() => void onRestore(attachment)}
                       data-testid="card-attachment-restore"
@@ -611,9 +700,13 @@ export function CardAttachments({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
-                      aria-label={t("card.attachments.remove")}
-                      title={t("card.attachments.remove")}
+                      className="h-6 w-6 max-md:h-11 max-md:w-11 text-muted-foreground hover:text-danger"
+                      aria-label={t("card.attachments.removeNamed", {
+                        name: attachment.fileName,
+                      })}
+                      title={t("card.attachments.removeNamed", {
+                        name: attachment.fileName,
+                      })}
                       onClick={() => {
                         setPendingDeleteDetached(true);
                         setPendingDelete(attachment);

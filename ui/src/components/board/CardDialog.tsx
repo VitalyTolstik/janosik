@@ -82,6 +82,7 @@ import { useAuth } from "@/auth/AuthContext";
 import {
   embedMarkdown,
   appendAttachmentMarkdown,
+  hasAttachmentReference,
 } from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
@@ -182,6 +183,7 @@ export function CardDialog({
   const {
     board,
     updateCard,
+    updateCardAndWait,
     touchCard,
     archiveCard,
     unarchiveCard,
@@ -220,6 +222,13 @@ export function CardDialog({
     setDeleteConfirm(false);
   }
   const contentRef = useRef<HTMLDivElement>(null);
+  // TASK-177.9 review: an attachment restore awaits the server. The dialog
+  // can switch cards in that window, so the callback compares the card it was
+  // created for against this live ref before touching the description draft.
+  const liveCardIdRef = useRef(cardId);
+  useLayoutEffect(() => {
+    liveCardIdRef.current = cardId;
+  }, [cardId]);
   // TASK-177.4 UX fix: Radix listens on document capture, so the inline task
   // spec editor must announce itself before Escape reaches the dialog. A ref
   // is enough here: the guard is read from the event handler, never rendered.
@@ -803,18 +812,31 @@ export function CardDialog({
    * typing) is the base, so restoring never drops unsaved text. One
    * `UPDATE_CARD` persists the body; the server's description reconcile then
    * clears `descriptionDetached` and the file returns to the normal list.
-   * The editor remounts from the committed value through the description
-   * epoch, so the image/file renders immediately.
+   *
+   * The promise resolves only after the command is accepted, so the caller
+   * (CardAttachments) keeps the bin row and the spinner until the save lands.
+   * A card switch during the await aborts before touching the new card's
+   * draft, and a failed save puts the staged draft back.
    */
-  const restoreAttachmentToDescription = (
+  const restoreAttachmentToDescription = async (
     attachment: AttachmentDto,
-  ): RestoreAttachmentOutcome => {
-    if (!card || readOnly) return { ok: false, reason: "error" };
+  ): Promise<RestoreAttachmentOutcome> => {
+    if (!card || readOnly || liveCardIdRef.current !== card.id) {
+      return { ok: false, reason: "stale" };
+    }
     // An unresolved foreign edit owns the description: appending now would
     // silently overwrite the other writer's text.
     if (descriptionSync.conflict) return { ok: false, reason: "conflict" };
-    const current =
-      descriptionDraftRef.current?.value ?? card.description ?? "";
+    const draft = descriptionDraftRef.current;
+    if (draft !== null && draft.cardId !== card.id) {
+      return { ok: false, reason: "stale" };
+    }
+    const current = draft?.value ?? card.description ?? "";
+    // A stale "removed" row may point at a file the description already
+    // references (a teammate restored it): never append a duplicate.
+    if (hasAttachmentReference(current, attachment.id)) {
+      return { ok: true, alreadyReferenced: true };
+    }
     const next = appendAttachmentMarkdown(current, attachment);
     if (next.length > LIMITS.description) {
       return { ok: false, reason: "limit" };
@@ -829,7 +851,43 @@ export function CardDialog({
       conflict: false,
       epoch: prev.epoch + 1,
     }));
-    updateCard(card.id, { description: next });
+    let saved: boolean;
+    try {
+      saved = await updateCardAndWait(card.id, { description: next });
+    } catch {
+      saved = false;
+    }
+    // The dialog now shows another card: its editor state belongs to that
+    // card, so the old restore must not touch it.
+    if (liveCardIdRef.current !== card.id) {
+      return { ok: false, reason: "stale" };
+    }
+    if (saved === false) {
+      // The command rolled the optimistic text back. Keep anything typed
+      // during the await; otherwise re-stage the draft that existed before
+      // the restore, so a failure never eats the user's text.
+      const staged = descriptionDraftRef.current ?? draft;
+      if (staged !== null && staged.cardId === card.id) {
+        descriptionDraftRef.current = staged;
+        setHeldDraft(staged.value);
+        setDescriptionSync((prev) => ({
+          ...prev,
+          seen: card.description ?? "",
+          dirty: true,
+          conflict: false,
+          epoch: prev.epoch + 1,
+        }));
+      } else {
+        setDescriptionSync((prev) => ({
+          ...prev,
+          seen: card.description ?? "",
+          dirty: false,
+          conflict: false,
+          epoch: prev.epoch + 1,
+        }));
+      }
+      return { ok: false, reason: "error" };
+    }
     return { ok: true };
   };
 
@@ -1445,7 +1503,7 @@ export function CardDialog({
                         ref={descriptionEditorRef}
                         key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
                         value={
-                          descriptionSync.conflict && heldDraft !== null
+                          heldDraft !== null
                             ? heldDraft
                             : (card.description ?? "")
                         }
