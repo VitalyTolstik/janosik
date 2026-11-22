@@ -255,6 +255,20 @@ interface BoardActionsValue {
   setCardDueDate: (cardId: string, dueDate?: number) => void;
   setCardPriority: (cardId: string, priority: CardPriority) => void;
   setCardAssign: (cardId: string, assigneeId: string | null) => void;
+  /**
+   * Replaces the card's machine-readable task contract (TASK-177.4): each
+   * list is independent, an empty list clears it, and an omitted list stays
+   * unchanged. The command is attributed like every other card edit.
+   */
+  setCardTaskSpec: (
+    cardId: string,
+    spec: { acceptanceCriteria?: string[]; definitionOfDone?: string[] },
+  ) => void;
+  /**
+   * Releases the card's agent claim without ending the agent session
+   * (TASK-177.4). The server still enforces holder/ADMIN rules.
+   */
+  releaseCardClaim: (cardId: string) => void;
   /** Links `cardId` to `targetCardId` (TASK-46); the row lands on `cardId`. */
   addCardLink: (
     cardId: string,
@@ -1812,9 +1826,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       // A command the reducer turned into a no-op (a guard, a limit, an
       // edit that changed nothing) is not a step: it would cost the user an
-      // undo press that does nothing visible.
+      // undo press that does nothing visible. Claim changes are deliberately
+      // never undoable (TASK-177.4): `invert(CLAIM_CARD)` restores the holder
+      // as the local user, not the agent/token identity that held the lease,
+      // so an undo would steal the claim instead of restoring it.
+      const undoable = scoped.type !== "CLAIM_CARD";
       const after = stateRef.current.find((b) => b.id === boardId);
-      if (before !== undefined && after !== before) {
+      if (undoable && before !== undefined && after !== before) {
         recordStep(boardId, before, scoped);
       }
       if (!serverMode) return;
@@ -2340,6 +2358,8 @@ function createBoardActions(
   | "setCardDueDate"
   | "setCardPriority"
   | "setCardAssign"
+  | "setCardTaskSpec"
+  | "releaseCardClaim"
   | "addCardLink"
   | "removeCardLink"
   | "setCardCover"
@@ -2555,6 +2575,31 @@ function createBoardActions(
         type: "SET_CARD_ASSIGN",
         cardId,
         assigneeId,
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    setCardTaskSpec: (
+      cardId: string,
+      spec: { acceptanceCriteria?: string[]; definitionOfDone?: string[] },
+    ) =>
+      dispatch({
+        type: "SET_CARD_TASK_SPEC",
+        cardId,
+        ...(spec.acceptanceCriteria !== undefined
+          ? { acceptanceCriteria: spec.acceptanceCriteria }
+          : {}),
+        ...(spec.definitionOfDone !== undefined
+          ? { definitionOfDone: spec.definitionOfDone }
+          : {}),
+        activityIds: ids(1),
+        at: Date.now(),
+      }),
+    releaseCardClaim: (cardId: string) =>
+      dispatch({
+        type: "CLAIM_CARD",
+        cardId,
+        claimedBy: null,
+        leaseUntil: null,
         activityIds: ids(1),
         at: Date.now(),
       }),
@@ -2798,6 +2843,8 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     setCardDueDate: noop,
     setCardPriority: noop,
     setCardAssign: noop,
+    setCardTaskSpec: noop,
+    releaseCardClaim: noop,
     addCardLink: noop,
     removeCardLink: noop,
     setCardCover: noop,

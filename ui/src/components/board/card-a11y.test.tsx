@@ -47,6 +47,10 @@ const BOARD: Board = {
       title: "A11y card",
       description: "A card used by the accessibility suite.",
       labelIds: ["label-yellow", "label-brand"],
+      acceptanceCriteria: ["Runs the accessibility suite"],
+      definitionOfDone: ["No axe violations in the dialog"],
+      claimedBy: "u-a11y",
+      leaseUntil: Date.now() + 900_000,
       createdAt: 1,
       updatedAt: 1,
       checklists: [
@@ -182,6 +186,14 @@ describe.each(["light", "dark"] as const)("%s theme", (theme) => {
     expect(await axeViolations(dialog)).toEqual([]);
     // The dialog must not introduce a second main landmark.
     expect(document.querySelectorAll("main")).toHaveLength(1);
+  });
+
+  it("has no axe violations with the task-spec editor open", async () => {
+    renderPage();
+    const { dialog } = await openCard();
+    fireEvent.click(await screen.findByTestId("card-task-spec-edit"));
+    await screen.findByTestId("card-task-spec-form");
+    expect(await axeViolations(dialog)).toEqual([]);
   });
 });
 
