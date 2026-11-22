@@ -833,11 +833,16 @@ export function CardDialog({
     }
     const current = draft?.value ?? card.description ?? "";
     // A stale "removed" row may point at a file the description already
-    // references (a teammate restored it): never append a duplicate.
+    // references (a teammate restored it): never append a duplicate. If the
+    // reference exists only in the unsaved draft, save that draft so the
+    // server reconciles it instead of pretending the restore is done.
+    let next: string;
     if (hasAttachmentReference(current, attachment.id)) {
-      return { ok: true, alreadyReferenced: true };
+      if (draft === null) return { ok: true, alreadyReferenced: true };
+      next = current.replace(/\s+$/, "");
+    } else {
+      next = appendAttachmentMarkdown(current, attachment);
     }
-    const next = appendAttachmentMarkdown(current, attachment);
     if (next.length > LIMITS.description) {
       return { ok: false, reason: "limit" };
     }

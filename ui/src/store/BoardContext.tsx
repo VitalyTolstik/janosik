@@ -1816,7 +1816,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // the API afterwards; a refusal rolls the optimistic state back and shows
   // a toast (TASK-29).
   const dispatch = useCallback(
-    (action: BoardAction): void | Promise<boolean> => {
+    (
+      action: BoardAction,
+      opts?: { silentFailure?: boolean },
+    ): void | Promise<boolean> => {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -1892,7 +1895,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             reverted,
           );
         } else {
-          showFailure(outcome.failure);
+          // TASK-177.9: a caller with domain-specific copy suppresses the
+          // generic sync toast so one failure never shows two messages.
+          if (opts?.silentFailure !== true) showFailure(outcome.failure);
           realtimeRef.current?.settled(boardId);
           drainRefetch(boardId);
         }
@@ -2338,7 +2343,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
  * still each see the state the previous one produced.
  */
 function createBoardActions(
-  dispatch: (action: BoardAction) => void | Promise<boolean>,
+  dispatch: (
+    action: BoardAction,
+    opts?: { silentFailure?: boolean },
+  ) => void | Promise<boolean>,
   getBoard: () => Board | undefined,
 ): Pick<
   BoardActionsValue,
@@ -2437,14 +2445,18 @@ function createBoardActions(
       patch: CardPatch,
       opts?: { quiet?: boolean },
     ) => {
-      const result = dispatch({
-        type: "UPDATE_CARD",
-        cardId,
-        ...patch,
-        quiet: opts?.quiet,
-        activityIds: ids(2),
-        at: Date.now(),
-      });
+      const result = dispatch(
+        {
+          type: "UPDATE_CARD",
+          cardId,
+          ...patch,
+          quiet: opts?.quiet,
+          activityIds: ids(2),
+          at: Date.now(),
+        },
+        // The restore UI shows its own specific failure copy.
+        { silentFailure: true },
+      );
       // Local mode has no server round-trip: the reducer already applied it.
       return result === undefined ? true : await result;
     },

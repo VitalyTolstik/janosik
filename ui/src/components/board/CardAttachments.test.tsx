@@ -474,8 +474,13 @@ describe("CardAttachments", () => {
     const copy = screen.getByRole("button", {
       name: "Copy attachment reference for spec.pdf",
     });
-    expect(download).toHaveClass("max-md:h-11", "max-md:w-11");
-    expect(copy).toHaveClass("max-md:h-11", "max-md:w-11");
+    expect(download).toHaveClass("max-lg:h-11", "max-lg:w-11");
+    expect(copy).toHaveClass("max-lg:h-11", "max-lg:w-11");
+    expect(screen.getByTestId("card-detached-actions")).toHaveClass(
+      "max-lg:w-full",
+    );
+    expect(screen.getByText("spec.pdf")).toHaveClass("line-clamp-2");
+    expect(group.querySelector("summary")).toHaveClass("min-h-11");
     // Read-only means no restore and no delete.
     expect(screen.queryByTestId("card-attachment-restore")).toBeNull();
     expect(screen.queryByRole("button", { name: /Delete file/ })).toBeNull();
@@ -642,6 +647,96 @@ describe("CardAttachments", () => {
         }),
       ),
     );
+  });
+
+  it("moves focus to the bin summary when the second row is restored", async () => {
+    const user = userEvent.setup();
+    const first = attachment({ id: "att-1", fileName: "first.pdf" });
+    const second = attachment({ id: "att-2", fileName: "second.pdf" });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
+    renderSection({
+      onRestoreToDescription: vi.fn(() => ({ ok: true as const })),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const restores = screen.getAllByTestId("card-attachment-restore");
+    await user.click(restores[1]!);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(group.querySelector("summary")),
+    );
+  });
+
+  it("keeps focus on the row when a restore is refused and the row stays", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    let resolveSave!: (outcome: { ok: false; reason: "conflict" }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection({
+      onRestoreToDescription: vi.fn(
+        () =>
+          new Promise<{ ok: false; reason: "conflict" }>((resolve) => {
+            resolveSave = resolve;
+          }),
+      ),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const restore = screen.getByTestId("card-attachment-restore");
+    await user.click(restore);
+    await act(async () => {
+      resolveSave({ ok: false, reason: "conflict" });
+    });
+
+    expect(
+      await screen.findByText(
+        "Resolve the description conflict before restoring a file",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore spec.pdf to description",
+        }),
+      ),
+    );
+  });
+
+  it("does not steal focus moved away from the row during the restore", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    renderSection({
+      onRestoreToDescription: vi.fn(
+        () =>
+          new Promise<{ ok: true }>((resolve) => {
+            resolveSave = resolve;
+          }),
+      ),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    const upload = screen.getByTestId("card-attachments-upload");
+    upload.focus();
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(upload);
   });
 
   it("moves focus to the section after deleting the last detached row", async () => {
