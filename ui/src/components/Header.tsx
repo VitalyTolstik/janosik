@@ -121,7 +121,9 @@ export function Header() {
   const pendingBadge = pendingForScope;
   // A VIEWER has no mutating affordances, undo included: a stale local stack
   // after a live demotion would only offer commands the server refuses.
-  const readOnly = role === "VIEWER";
+  // An archived board is read-only too — its card deep link is a view, not
+  // an editing surface (the command path refuses writes for the same reason).
+  const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
   const [settings, setSettings] = useState<{
     boardId: string;
     section: "workflow" | "agents";
@@ -500,7 +502,10 @@ export function Header() {
         ) : null}
 
         {isBoardRoute && !readOnly ? (
-          <div className="hidden items-center gap-0.5 min-[1024px]:flex">
+          // Undo/redo stay in the header at every width: the destructive
+          // confirmations promise "you can undo this right away", and a
+          // touch-only user has no keyboard shortcut to fall back on.
+          <div className="flex items-center gap-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -536,7 +541,10 @@ export function Header() {
         ) : null}
 
         {isBoardRoute ? (
-          <div className="hidden min-[1024px]:block">
+          // Every width keeps the data menu: the card archive is the only
+          // in-app recovery path for an archived card, and it must not be
+          // stranded on phones/tablets (QA-02).
+          <div className="block">
             <DataMenu />
           </div>
         ) : null}

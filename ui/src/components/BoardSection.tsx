@@ -256,7 +256,10 @@ export function BoardSection() {
 
   // VIEWER is read-only: the server answers 403 to every command, so the UI
   // hides the mutating affordances instead of offering actions that bounce.
-  const readOnly = roleOf(board.id) === "VIEWER";
+  // An archived board is read-only for the same reason: the command path
+  // refuses writes until the board is restored from the switcher.
+  const readOnly =
+    roleOf(board.id) === "VIEWER" || board.archivedAt !== undefined;
   // A global-search hit can name the exact comment/attachment under the card
   // (TASK-177.13). The dialog scrolls to it and highlights it; an id that is
   // not in the loaded page/list is ignored, so the fallback is the card with

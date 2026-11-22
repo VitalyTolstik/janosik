@@ -141,6 +141,16 @@ const RESTORE_ACTIONS = new Set<string>([
 ]);
 
 /**
+ * Archived boards are a read-only view (docs/admin/content.md: "the board
+ * becomes read-only for members"). The only command that may run against an
+ * archived board is `UNARCHIVE_BOARD`; everything else has to restore it
+ * first. The UI hides the mutating affordances too, but the server is the
+ * authority — a deep link or a PAT must not be able to write through it.
+ */
+const ARCHIVED_BOARD_MESSAGE =
+  "This board is archived and read-only. Restore it from the board switcher to make changes.";
+
+/**
  * Upper bound on a single delta catch-up (TASK-84). The retention sweep keeps
  * the log bounded anyway; this is the belt-and-braces cap so a `?since=0`
  * request can never materialize an unbounded history.
@@ -983,6 +993,7 @@ export class CommandsService {
     versionOffset?: number;
   }): Promise<void> {
     const { boardId, entry, board, attribution } = params;
+    this.assertBoardWritable(board, entry.action.type);
     const db = this.prisma as unknown as Prisma.TransactionClient;
     await this.assertAssigneeIsBoardMember(db, boardId, entry.action);
     await this.assertClaimIsFree(
@@ -1156,6 +1167,8 @@ export class CommandsService {
       board,
     } = params;
     const { dto, action } = entry;
+
+    this.assertBoardWritable(board, action.type);
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
     await this.assertClaimIsFree(
@@ -1943,6 +1956,17 @@ export class CommandsService {
           ? card.claimedByTokenId === attribution.apiTokenId
           : card.claimedBy === action.claimedBy;
     if (!sameHolder) refuse();
+  }
+
+  /**
+   * Archived-board write guard. A restore is the only command allowed while
+   * the board is archived; it is how the switcher brings the board back.
+   */
+  private assertBoardWritable(board: Board, actionType: string): void {
+    if (board.archivedAt === undefined || actionType === "UNARCHIVE_BOARD") {
+      return;
+    }
+    throw new ConflictException(ARCHIVED_BOARD_MESSAGE);
   }
 
   /**

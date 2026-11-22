@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,14 +41,14 @@ const SERVER_BOARD: Board = {
   updatedAt: 1,
 };
 
-function renderApp() {
+function renderApp(entry = "/board/b-1") {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
-              <MemoryRouter initialEntries={["/board/b-1"]}>
+              <MemoryRouter initialEntries={[entry]}>
                 <ToastProvider>
                   <BoardProvider>
                     <Header />
@@ -103,5 +103,35 @@ describe("BoardSection role wiring (TASK-35)", () => {
     ).toBeInTheDocument();
     expect(container.querySelector("[data-composer-trigger]")).not.toBeNull();
     expect(container.querySelector("[data-add-column-trigger]")).not.toBeNull();
+  });
+
+  it("opens an archived board's card deep link as a read-only view", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 1_700_000 }]);
+    vi.stubGlobal("fetch", server.handle);
+
+    const { container } = renderApp("/board/b-1?card=c-1");
+
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Card details" },
+      { timeout: 15_000 },
+    );
+    expect(within(dialog).getByLabelText("Title")).toHaveAttribute("readonly");
+    // The actions menu keeps the read-only "open in a new tab" entry, but no
+    // mutating item is offered (QA-03).
+    fireEvent.pointerDown(
+      within(dialog).getByRole("button", { name: "Card actions" }),
+      { button: 0, pointerType: "mouse", ctrlKey: false },
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Open in new tab" }),
+    ).toBeInTheDocument();
+    for (const name of ["Duplicate card", "Archive card", "Delete card"]) {
+      expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    }
+    // The header is a readout too: no rename, no undo stack.
+    expect(screen.queryByTestId("board-rename")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(container.querySelector("[data-composer-trigger]")).toBeNull();
   });
 });

@@ -154,6 +154,12 @@ interface BoardStateValue {
 interface BoardIdentityValue {
   id: string | undefined;
   title: string;
+  /**
+   * True while the active board sits in the archive. The header treats it
+   * exactly like a VIEWER: the title is a readout and no write affordances
+   * are offered (the command path refuses them too).
+   */
+  archived: boolean;
 }
 
 /**
@@ -2197,8 +2203,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const identity = useMemo<BoardIdentityValue>(
-    () => ({ id: board?.id, title: board?.title ?? "" }),
-    [board?.id, board?.title],
+    () => ({
+      id: board?.id,
+      title: board?.title ?? "",
+      archived: board?.archivedAt !== undefined,
+    }),
+    [board?.id, board?.title, board?.archivedAt],
   );
 
   // A narrow role slice: the header hides Undo/Redo for a VIEWER, and the
@@ -2796,8 +2806,12 @@ export function ShareBoardProvider({
   );
   const access = useMemo<BoardAccessValue>(() => ({ role: "VIEWER" }), []);
   const identity = useMemo<BoardIdentityValue>(
-    () => ({ id: board.id, title: board.title }),
-    [board.id, board.title],
+    () => ({
+      id: board.id,
+      title: board.title,
+      archived: board.archivedAt !== undefined,
+    }),
+    [board.id, board.title, board.archivedAt],
   );
   const stateValue = useMemo<BoardStateValue>(
     () => ({

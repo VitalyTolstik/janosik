@@ -610,8 +610,9 @@ describe("Agent control contract/security (e2e)", () => {
       (list.body as Array<{ id: string }>).map((board) => board.id),
     ).toEqual([boardA]);
 
-    // Archived is reversible and stays readable/writable; deleted is gone for
-    // both a board-scoped token and an account-wide one.
+    // Archived is reversible and stays readable, but the content is
+    // read-only until the board is restored (docs/admin/content.md). Only
+    // UNARCHIVE_BOARD may write through the archive.
     const archived = await createBoard("Archived board");
     const archivedColumn = await createColumn(archived);
     const archivedCard = await createCard(
@@ -640,11 +641,36 @@ describe("Agent control contract/security (e2e)", () => {
         (board) => board.id === archived,
       )?.archivedAt,
     ).toEqual(expect.any(Number));
-    await command(archivedScoped.token, archived, {
+    const archivedWrite = await command(archivedScoped.token, archived, {
       type: "UPDATE_CARD",
       cardId: archivedCard,
       title: "Archived edit",
+    });
+    expect(archivedWrite.status).toBe(409);
+    expect(archivedWrite.body.message).toContain("archived");
+    const archivedAfter = await server()
+      .get(`/api/v1/boards/${archived}`)
+      .set(auth(archivedScoped.token))
+      .expect(200);
+    expect((archivedAfter.body as Board).cards[archivedCard]?.title).toBe(
+      "Archived card",
+    );
+
+    await command(ownerSession, archived, { type: "UNARCHIVE_BOARD" }).then(
+      (response) => expect(response.status).toBe(200),
+    );
+    await command(archivedScoped.token, archived, {
+      type: "UPDATE_CARD",
+      cardId: archivedCard,
+      title: "Restored edit",
     }).then((response) => expect(response.status).toBe(200));
+    const restoredAfter = await server()
+      .get(`/api/v1/boards/${archived}`)
+      .set(auth(archivedScoped.token))
+      .expect(200);
+    expect((restoredAfter.body as Board).cards[archivedCard]?.title).toBe(
+      "Restored edit",
+    );
 
     const boardCommandsBefore = await prisma.command.count({
       where: { boardId: boardA },

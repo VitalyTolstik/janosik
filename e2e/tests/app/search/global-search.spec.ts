@@ -387,6 +387,13 @@ test("opens an archived card from an archived board", async ({
   await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveValue(
     "Retro notes",
   );
+  // The archived board is a read-only view (QA-03): the deep link cannot
+  // edit the card or start a comment/checklist.
+  await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveAttribute(
+    "readonly",
+    "",
+  );
+  await expect(dialog.getByTestId("comment-input")).toHaveCount(0);
 });
 
 test("scrolls the keyboard selection into view", async ({ page, board }) => {
