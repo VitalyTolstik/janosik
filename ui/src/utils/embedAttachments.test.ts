@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import {
+  appendAttachmentMarkdown,
   attachmentContentUrl,
   attachmentIdFromUrl,
   attachmentImagePreviewHandler,
@@ -94,6 +95,50 @@ describe("embedMarkdown", () => {
   it("falls back to a placeholder name for an empty one", () => {
     const md = embedMarkdown(new File(["x"], "", { type: "image/png" }), "a");
     expect(md).toContain("![file](/api/v1/attachments/a/content)");
+  });
+});
+
+describe("appendAttachmentMarkdown", () => {
+  const image = {
+    id: "att-9",
+    fileName: "shot.png",
+    mimeType: "image/png",
+  };
+
+  it("appends an image reference as its own block at the end", () => {
+    expect(appendAttachmentMarkdown("Existing body", image)).toBe(
+      "Existing body\n\n![shot.png](/api/v1/attachments/att-9/content)\n\n",
+    );
+  });
+
+  it("appends a file link and player directives", () => {
+    expect(
+      appendAttachmentMarkdown("", {
+        id: "att-doc",
+        fileName: "spec.pdf",
+        mimeType: "application/pdf",
+      }),
+    ).toBe("[spec.pdf](/api/v1/attachments/att-doc/content)\n\n");
+    expect(
+      appendAttachmentMarkdown("Clip", {
+        id: "att-v",
+        fileName: "clip.mp4",
+        mimeType: "video/mp4",
+      }),
+    ).toContain('::video{src="/api/v1/attachments/att-v/content"}');
+    expect(
+      appendAttachmentMarkdown("Sound", {
+        id: "att-a",
+        fileName: "take.mp3",
+        mimeType: "audio/mpeg",
+      }),
+    ).toContain('::audio{src="/api/v1/attachments/att-a/content"}');
+  });
+
+  it("keeps the body byte-identical apart from trailing whitespace", () => {
+    expect(appendAttachmentMarkdown("Line 1\n\n  indented\n\n\n", image)).toBe(
+      "Line 1\n\n  indented\n\n![shot.png](/api/v1/attachments/att-9/content)\n\n",
+    );
   });
 });
 

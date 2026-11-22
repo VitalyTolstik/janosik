@@ -71,6 +71,11 @@ function renderSection(
 }
 
 describe("CardAttachments", () => {
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(
+    navigator,
+    "clipboard",
+  );
+
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -79,6 +84,11 @@ describe("CardAttachments", () => {
 
   afterEach(() => {
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 
   it("reveals and focuses a deep-linked attachment", async () => {
@@ -372,6 +382,126 @@ describe("CardAttachments", () => {
     await user.click(screen.getByRole("button", { name: "Delete file" }));
     await waitFor(() => expect(group).not.toBeInTheDocument());
     expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");
+  });
+
+  it("restores a detached file to the description and lists it again", async () => {
+    const user = userEvent.setup();
+    const image = attachment({
+      id: "att-img",
+      fileName: "shot.png",
+      mimeType: "image/png",
+    });
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([image]);
+    vi.spyOn(api, "fetchAttachmentDerivative").mockResolvedValue(
+      new Blob(["thumb"], { type: "image/jpeg" }),
+    );
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    await waitFor(() => expect(onRestore).toHaveBeenCalledWith(image));
+    // The file moves out of the bin and its image renders in the live list.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByAltText("shot.png")).toBeInTheDocument();
+    expect(
+      screen.getByText("shot.png restored to the description"),
+    ).toBeInTheDocument();
+  });
+
+  it("refuses to restore a file that was deleted meanwhile", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments)
+      .mockResolvedValueOnce([file])
+      .mockResolvedValueOnce([]);
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText(
+        "This file was deleted and can no longer be restored",
+      ),
+    ).toBeInTheDocument();
+    expect(onRestore).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId("card-detached-attachments"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps detached files downloadable and linkable for a VIEWER", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection({ readOnly: true });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    expect(
+      screen.getByRole("button", { name: "Download" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Copy file link" }),
+    ).toBeInTheDocument();
+    // Read-only means no restore and no delete.
+    expect(screen.queryByTestId("card-attachment-restore")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete file" })).toBeNull();
+  });
+
+  it("copies the canonical file URL from the detached bin", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const file = attachment();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection();
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByRole("button", { name: "Copy file link" }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/api/v1/attachments/att-1/content`,
+      ),
+    );
+    expect(await screen.findByText("File link copied")).toBeInTheDocument();
+  });
+
+  it("allows a restore at the 20-file cap without a new upload slot", async () => {
+    const user = userEvent.setup();
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    vi.spyOn(api, "attachmentTotal").mockReturnValue(20);
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    // The file already counts toward the live total, so restoring its
+    // reference does not exceed the cap; only new uploads are blocked.
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachments-upload")).toBeDisabled(),
+    );
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() => expect(onRestore).toHaveBeenCalled());
   });
 
   it("counts inline attachments from the server total (L20)", async () => {

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "@/auth/AuthContext";
 import { BoardSection } from "@/components/BoardSection";
+import { createSeedBoard } from "@janosik/shared";
 import { CardDialog } from "@/components/board/CardDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -308,6 +309,12 @@ describe("CardDialog description editor", () => {
     localStorage.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
   it("opens with the stored markdown and streams edits into the board", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
@@ -433,6 +440,50 @@ describe("CardDialog description editor", () => {
         "\n\n[spec.pdf](/api/v1/attachments/att-file/content)\n\n",
       );
     });
+  });
+
+  it("restores a detached file by appending its markdown to the description (G-13)", async () => {
+    // The section only exists in server mode; the fake server provides the
+    // seed board the dialog reads while the attachment list stays stubbed.
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    vi.stubGlobal("fetch", new FakeServer([createSeedBoard()]).handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      {
+        id: "att-restore",
+        cardId: "card-1",
+        fileName: "spec.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 4,
+        uploadedById: "user-1",
+        transcodeStatus: "none",
+        hasThumbnail: false,
+        hasPoster: false,
+        createdAt: 0,
+      },
+    ]);
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Description");
+
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    await waitFor(() => {
+      const value = (
+        within(dialog).getByLabelText("Description") as HTMLTextAreaElement
+      ).value;
+      expect(value).toContain(
+        "[spec.pdf](/api/v1/attachments/att-restore/content)",
+      );
+    });
+    // Dropped from the detached bin, now a normal attachment row.
+    expect(
+      within(dialog).queryByTestId("card-detached-attachments"),
+    ).not.toBeInTheDocument();
   });
 });
 
