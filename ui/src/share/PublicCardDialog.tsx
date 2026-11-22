@@ -9,7 +9,7 @@ import type {
   CommentDto,
   PublicBoardMemberDto,
 } from "@janosik/shared";
-import { LABEL_COLOR_CHIP, LIMITS } from "@janosik/shared";
+import { LABEL_COLOR_CHIP, LIMITS, stripMentionMarkup } from "@janosik/shared";
 import { DueBadge } from "@/components/board/DueBadge";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import {
@@ -201,7 +201,8 @@ function PublicAvatar({
   const initials = userInitials(displayName, "");
   return (
     <span
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${userAvatarColor(
+      data-testid="public-avatar"
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-[var(--avatar-ink)] ${userAvatarColor(
         id,
         color,
       )}`}
@@ -359,7 +360,7 @@ function PublicComments({
                     : (comment.authorName ?? t("share.public.anonymous"))}
                 </p>
                 <p className="whitespace-pre-wrap break-words text-sm">
-                  {comment.text.slice(0, LIMITS.comment)}
+                  {stripMentionMarkup(comment.text).slice(0, LIMITS.comment)}
                 </p>
               </div>
             </li>

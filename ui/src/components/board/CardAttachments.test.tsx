@@ -1,5 +1,12 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AttachmentDto } from "@janosik/shared";
@@ -70,7 +77,34 @@ function renderSection(
   );
 }
 
+/** The real card dialog container, which is Chrome's focus fallback. */
+function renderSectionInDialog(
+  props: Partial<Parameters<typeof CardAttachments>[0]> = {},
+) {
+  return render(
+    <I18nProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <div
+            role="dialog"
+            aria-label="Card details"
+            tabIndex={-1}
+            data-testid="owner-dialog"
+          >
+            <CardAttachments cardId="card-1" boardId="b-1" {...props} />
+          </div>
+        </AuthProvider>
+      </ToastProvider>
+    </I18nProvider>,
+  );
+}
+
 describe("CardAttachments", () => {
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(
+    navigator,
+    "clipboard",
+  );
+
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -79,6 +113,11 @@ describe("CardAttachments", () => {
 
   afterEach(() => {
     delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 
   it("reveals and focuses a deep-linked attachment", async () => {
@@ -365,13 +404,696 @@ describe("CardAttachments", () => {
     const group = await screen.findByTestId("card-detached-attachments");
     await user.click(group.querySelector("summary")!);
     expect(group).toHaveTextContent("spec.pdf");
-    await user.click(screen.getByRole("button", { name: "Delete file" }));
+    await user.click(
+      screen.getByRole("button", { name: "Delete file spec.pdf" }),
+    );
     expect(
       screen.getByText(/not offered in Recently deleted/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete file" }));
     await waitFor(() => expect(group).not.toBeInTheDocument());
     expect(api.deleteAttachment).toHaveBeenCalledWith("att-1");
+  });
+
+  it("restores a detached file to the description and lists it again", async () => {
+    const user = userEvent.setup();
+    const image = attachment({
+      id: "att-img",
+      fileName: "shot.png",
+      mimeType: "image/png",
+    });
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([image]);
+    vi.spyOn(api, "fetchAttachmentDerivative").mockResolvedValue(
+      new Blob(["thumb"], { type: "image/jpeg" }),
+    );
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    await waitFor(() => expect(onRestore).toHaveBeenCalledWith(image));
+    // The file moves out of the bin and its image renders in the live list.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByAltText("shot.png")).toBeInTheDocument();
+    expect(
+      screen.getByText("shot.png restored to the description"),
+    ).toBeInTheDocument();
+  });
+
+  it("refreshes both lists when the bin row was restored or removed", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments)
+      .mockResolvedValueOnce([file])
+      .mockResolvedValueOnce([]);
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText(/no longer in the removed list/),
+    ).toBeInTheDocument();
+    expect(onRestore).not.toHaveBeenCalled();
+    expect(
+      screen.queryByTestId("card-detached-attachments"),
+    ).not.toBeInTheDocument();
+    // Both lists were re-read through refreshNewest, not just the bin.
+    expect(api.listAttachments).toHaveBeenCalledTimes(2);
+    expect(api.listDetachedAttachments).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps detached files downloadable and reference-copyable for a VIEWER", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection({ readOnly: true });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    expect(
+      screen.getByText(/Download one or copy its attachment reference/),
+    ).toBeInTheDocument();
+    // Size and date distinguish same-named files; the type icon is present.
+    expect(group).toHaveTextContent("2 KB");
+    expect(
+      group.querySelector('[data-testid="card-detached-attachment-row"] svg'),
+    ).not.toBeNull();
+    const download = screen.getByRole("button", {
+      name: "Download spec.pdf",
+    });
+    const copy = screen.getByRole("button", {
+      name: "Copy attachment reference for spec.pdf",
+    });
+    expect(download).toHaveClass("max-lg:h-11", "max-lg:w-11");
+    expect(copy).toHaveClass("max-lg:h-11", "max-lg:w-11");
+    expect(screen.getByTestId("card-detached-actions")).toHaveClass(
+      "max-lg:w-full",
+    );
+    expect(screen.getByText("spec.pdf")).toHaveClass("line-clamp-2");
+    expect(screen.getByText("spec.pdf")).not.toHaveClass("block");
+    expect(group.querySelector(".sr-only")).toHaveTextContent("File");
+    expect(group.querySelector("summary")).toHaveClass("min-h-11");
+    // Read-only means no restore and no delete.
+    expect(screen.queryByTestId("card-attachment-restore")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Delete file/ })).toBeNull();
+  });
+
+  it("copies the authenticated attachment reference from the detached bin", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    const file = attachment();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection();
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Copy attachment reference for spec.pdf",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/api/v1/attachments/att-1/content`,
+      ),
+    );
+    expect(
+      await screen.findByText(/Attachment reference copied/),
+    ).toBeInTheDocument();
+  });
+
+  it("allows a restore at the 20-file cap without a new upload slot", async () => {
+    const user = userEvent.setup();
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    vi.spyOn(api, "attachmentTotal").mockReturnValue(20);
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    // The file already counts toward the live total, so restoring its
+    // reference does not exceed the cap; only new uploads are blocked.
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachments-upload")).toBeDisabled(),
+    );
+    expect(group).toHaveTextContent("does not use a new slot");
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() => expect(onRestore).toHaveBeenCalled());
+  });
+
+  it("keeps the bin row and reconciles both lists when the save fails", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    const onRestore = vi.fn(async () => ({
+      ok: false as const,
+      reason: "error" as const,
+    }));
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText("Could not restore the file to the description"),
+    ).toBeInTheDocument();
+    expect(group).toBeInTheDocument();
+    expect(screen.getByText("spec.pdf")).toBeInTheDocument();
+    // The failure refreshed the bin and the normal list from the server.
+    expect(api.listAttachments).toHaveBeenCalledTimes(2);
+    expect(api.listDetachedAttachments).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["conflict", "Resolve the description conflict before restoring a file"],
+    [
+      "limit",
+      "The description would exceed its size limit — the file was not restored",
+    ],
+  ] as const)(
+    "keeps the row when the restore is refused: %s",
+    async (reason, copy) => {
+      const user = userEvent.setup();
+      const file = attachment();
+      vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+      vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+      renderSection({
+        onRestoreToDescription: vi.fn(async () => ({
+          ok: false as const,
+          reason,
+        })),
+      });
+
+      const group = await screen.findByTestId("card-detached-attachments");
+      await user.click(group.querySelector("summary")!);
+      await user.click(screen.getByTestId("card-attachment-restore"));
+      expect(await screen.findByText(copy)).toBeInTheDocument();
+      expect(group).toBeInTheDocument();
+    },
+  );
+
+  it("does not duplicate a reference that is already in the description", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection({
+      onRestoreToDescription: vi.fn(async () => ({
+        ok: true as const,
+        alreadyReferenced: true as const,
+      })),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText("This file is already in the description"),
+    ).toBeInTheDocument();
+    expect(api.listAttachments).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("card-attachment-row")).toBeNull();
+  });
+
+  it("keeps the spinner busy and moves focus to the next restore action", async () => {
+    const user = userEvent.setup();
+    const first = attachment({ id: "att-1", fileName: "first.pdf" });
+    const second = attachment({ id: "att-2", fileName: "second.pdf" });
+    let resolveSave!: (outcome: { ok: true }) => void;
+    const onRestore = vi.fn(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
+    renderSectionInDialog({ onRestoreToDescription: onRestore });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const [firstRestore] = screen.getAllByTestId("card-attachment-restore");
+    await user.click(firstRestore!);
+    await waitFor(() =>
+      expect(firstRestore).toHaveAttribute("aria-busy", "true"),
+    );
+    expect(firstRestore).toBeDisabled();
+    screen.getByTestId("owner-dialog").focus();
+
+    resolveSave({ ok: true });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore second.pdf to description",
+        }),
+      ),
+    );
+  });
+
+  it("moves focus to the previous row when the second row is restored", async () => {
+    const user = userEvent.setup();
+    const first = attachment({ id: "att-1", fileName: "first.pdf" });
+    const second = attachment({ id: "att-2", fileName: "second.pdf" });
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
+    renderSectionInDialog({
+      onRestoreToDescription: vi.fn(
+        () =>
+          new Promise<{ ok: true }>((resolve) => {
+            resolveSave = resolve;
+          }),
+      ),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const restores = screen.getAllByTestId("card-attachment-restore");
+    await user.click(restores[1]!);
+    await waitFor(() =>
+      expect(restores[1]).toHaveAttribute("aria-busy", "true"),
+    );
+    screen.getByTestId("owner-dialog").focus();
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore first.pdf to description",
+        }),
+      ),
+    );
+  });
+
+  it("keeps focus on the row when a restore is refused and the row stays", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    let resolveSave!: (outcome: { ok: false; reason: "conflict" }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([file]);
+    renderSection({
+      onRestoreToDescription: vi.fn(
+        () =>
+          new Promise<{ ok: false; reason: "conflict" }>((resolve) => {
+            resolveSave = resolve;
+          }),
+      ),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const restore = screen.getByTestId("card-attachment-restore");
+    await user.click(restore);
+    await act(async () => {
+      resolveSave({ ok: false, reason: "conflict" });
+    });
+
+    expect(
+      await screen.findByText(
+        "Resolve the description conflict before restoring a file",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore spec.pdf to description",
+        }),
+      ),
+    );
+  });
+
+  it("does not steal focus from another open dialog", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div
+              role="dialog"
+              aria-label="Card details"
+              tabIndex={-1}
+              data-testid="owner-dialog"
+            >
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+            <div
+              role="dialog"
+              aria-label="Label picker"
+              tabIndex={-1}
+              data-testid="other-dialog"
+            />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachment-restore")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    const otherDialog = screen.getByTestId("other-dialog");
+    otherDialog.focus();
+    expect(document.activeElement).toBe(otherDialog);
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(otherDialog);
+  });
+
+  it("hands off when Chrome falls back to the owning dialog", async () => {
+    const user = userEvent.setup();
+    const first = attachment({ id: "att-1", fileName: "first.pdf" });
+    const second = attachment({ id: "att-2", fileName: "second.pdf" });
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([first, second]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div
+              role="dialog"
+              aria-label="Card details"
+              tabIndex={-1}
+              data-testid="owner-dialog"
+            >
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    const restore = screen.getAllByTestId("card-attachment-restore")[0]!;
+    await user.click(restore);
+    await waitFor(() => expect(restore).toHaveAttribute("aria-busy", "true"));
+    const ownerDialog = screen.getByTestId("owner-dialog");
+    ownerDialog.focus();
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("card-attachment-restore")).toHaveLength(1),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", {
+          name: "Restore second.pdf to description",
+        }),
+      ),
+    );
+  });
+
+  it("keeps focus on a control inside the owning dialog", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div role="dialog" aria-label="Card details" tabIndex={-1}>
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachment-restore")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    const upload = screen.getByTestId("card-attachments-upload");
+    upload.focus();
+    expect(document.activeElement).toBe(upload);
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(upload);
+  });
+
+  it("ignores a foreign body-level focus guard", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div role="dialog" aria-label="Card details" tabIndex={-1}>
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachment-restore")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    // A global Radix guard from a menu/select lives directly under <body>;
+    // it must not be mistaken for the card dialog's lost focus.
+    const guard = document.createElement("span");
+    guard.setAttribute("data-radix-focus-guard", "");
+    guard.tabIndex = 0;
+    document.body.appendChild(guard);
+    guard.focus();
+    expect(document.activeElement).toBe(guard);
+
+    try {
+      await act(async () => {
+        resolveSave({ ok: true });
+      });
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId("card-detached-attachments"),
+        ).not.toBeInTheDocument(),
+      );
+      expect(document.activeElement).toBe(guard);
+    } finally {
+      guard.remove();
+    }
+  });
+
+  it("does not steal focus moved away from the row during the restore", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    renderSection({
+      onRestoreToDescription: vi.fn(
+        () =>
+          new Promise<{ ok: true }>((resolve) => {
+            resolveSave = resolve;
+          }),
+      ),
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    const upload = screen.getByTestId("card-attachments-upload");
+    upload.focus();
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(upload);
+  });
+
+  it("moves focus to the section after deleting the last detached row", async () => {
+    const user = userEvent.setup();
+    let resolveDelete!: (value: { status: "ok" }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    vi.spyOn(api, "deleteAttachment").mockReturnValue(
+      new Promise<{ status: "ok" }>((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    renderSectionInDialog();
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(
+      screen.getByRole("button", { name: "Delete file spec.pdf" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Delete file" }),
+    );
+    screen.getByTestId("owner-dialog").focus();
+    await act(async () => {
+      resolveDelete({ status: "ok" });
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByTestId("card-attachments-toggle"),
+      ),
+    );
+  });
+
+  it("has no axe violations with the detached bin open", async () => {
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    const { container } = renderSection();
+    const group = await screen.findByTestId("card-detached-attachments");
+    fireEvent.click(group.querySelector("summary")!);
+    const results = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(results.violations.map((violation) => violation.id)).toEqual([]);
+  });
+
+  it("drops a stale answer when the card switches during the bin re-read", async () => {
+    const user = userEvent.setup();
+    const file = attachment();
+    let resolveFresh!: (items: AttachmentDto[]) => void;
+    const fresh = new Promise<AttachmentDto[]>((resolve) => {
+      resolveFresh = resolve;
+    });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments)
+      .mockResolvedValueOnce([file])
+      .mockReturnValueOnce(fresh)
+      .mockResolvedValue([]);
+    const onRestore = vi.fn(() => ({ ok: true as const }));
+    const { rerender } = renderSection({
+      onRestoreToDescription: onRestore,
+    });
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+
+    const tree = (cardId: string) => (
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <CardAttachments
+              cardId={cardId}
+              boardId="b-1"
+              onRestoreToDescription={onRestore}
+            />
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>
+    );
+    rerender(tree("card-2"));
+    await waitFor(() =>
+      expect(api.listDetachedAttachments).toHaveBeenCalledWith("card-2"),
+    );
+    await act(async () => {
+      resolveFresh([file]);
+    });
+    expect(onRestore).not.toHaveBeenCalled();
   });
 
   it("counts inline attachments from the server total (L20)", async () => {

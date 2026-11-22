@@ -249,6 +249,133 @@ describe("Attachments (TASK-47)", () => {
     expect(await listed()).toContain(uploaded.body.id);
   });
 
+  it("restores a detached description upload by appending its reference (G-13)", async () => {
+    const id = randomUUID();
+    const command = (
+      token: string,
+      action: Record<string, unknown>,
+      expected = 200,
+    ) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(token))
+        .send({
+          commandId: randomUUID(),
+          action: { ...action, at: Date.now() },
+        })
+        .expect(expected);
+    await command(admin.token, {
+      type: "ADD_CARD",
+      newCardId: id,
+      columnId: "col-1",
+      title: "Restore description file",
+    });
+    const upload = async (name: string) =>
+      server()
+        .post(`/api/v1/cards/${id}/attachments?description=1`)
+        .set(auth(member.token))
+        .attach("file", png, { filename: name, contentType: "image/png" })
+        .expect(201);
+    const detachedIds = async () =>
+      (
+        await server()
+          .get(`/api/v1/cards/${id}/attachments?detached=1`)
+          .set(auth(member.token))
+          .expect(200)
+      ).body.map((file: { id: string }) => file.id);
+    const listedIds = async () =>
+      (
+        await server()
+          .get(`/api/v1/cards/${id}/attachments`)
+          .set(auth(member.token))
+          .expect(200)
+      ).body.map((file: { id: string }) => file.id);
+
+    const file = await upload("restore.png");
+    const fileUrl = `/api/v1/attachments/${file.body.id as string}/content`;
+    const embedded = `![restore.png](${fileUrl})`;
+    await command(member.token, {
+      type: "UPDATE_CARD",
+      cardId: id,
+      description: `Intro\n\n${embedded}`,
+    });
+    // Removing the reference hides the file from the ordinary list and makes
+    // its bytes still available from the detached bin (download/copy URL).
+    await command(member.token, {
+      type: "UPDATE_CARD",
+      cardId: id,
+      description: "Intro",
+    });
+    expect(await detachedIds()).toEqual([file.body.id]);
+    expect(await listedIds()).toEqual([]);
+    await server()
+      .get(fileUrl)
+      .set(auth(member.token))
+      .expect(200)
+      .expect("Content-Disposition", /attachment/);
+
+    // VIEWER is read-only; an outsider never reaches the card.
+    await command(
+      viewer.token,
+      {
+        type: "UPDATE_CARD",
+        cardId: id,
+        description: `Intro\n\n${embedded}`,
+      },
+      403,
+    );
+    await server()
+      .get(`/api/v1/cards/${id}/attachments?detached=1`)
+      .set(auth(outsider.token))
+      .expect(403);
+
+    // Restore = append the same attachment-link markdown through the normal
+    // UPDATE_CARD path; reconcile clears descriptionDetached.
+    await command(member.token, {
+      type: "UPDATE_CARD",
+      cardId: id,
+      description: `Intro\n\n${embedded}`,
+    });
+    expect(await detachedIds()).toEqual([]);
+    expect(await listedIds()).toEqual([file.body.id]);
+    const board = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(member.token))
+      .expect(200);
+    expect(board.body.cards[id].description).toBe(`Intro\n\n${embedded}`);
+    await server().get(fileUrl).set(auth(member.token)).expect(200);
+
+    // A file deleted while detached leaves the bin and its bytes are gone:
+    // there is no reference left that a restore could resurrect.
+    const doomed = await upload("doomed.png");
+    const doomedUrl = `/api/v1/attachments/${doomed.body.id as string}/content`;
+    const doomedEmbedded = `![doomed.png](${doomedUrl})`;
+    await command(member.token, {
+      type: "UPDATE_CARD",
+      cardId: id,
+      description: `Intro\n\n${embedded}\n\n${doomedEmbedded}`,
+    });
+    await command(member.token, {
+      type: "UPDATE_CARD",
+      cardId: id,
+      description: `Intro\n\n${embedded}`,
+    });
+    expect(await detachedIds()).toEqual([doomed.body.id]);
+    await server()
+      .delete(`/api/v1/attachments/${doomed.body.id as string}`)
+      .set(auth(member.token))
+      .expect(200);
+    expect(await detachedIds()).toEqual([]);
+    await server().get(doomedUrl).set(auth(member.token)).expect(404);
+
+    // A deleted card is no longer reachable from the attachment routes.
+    await command(admin.token, { type: "DELETE_CARD", cardId: id });
+    await server()
+      .get(`/api/v1/cards/${id}/attachments?detached=1`)
+      .set(auth(member.token))
+      .expect(404);
+  });
+
   it("scrubs a deleted embedded attachment from description and comments (L19)", async () => {
     const command = (action: Record<string, unknown>) =>
       server()

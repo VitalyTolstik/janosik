@@ -1080,7 +1080,10 @@ model AttentionNotification {
   id              String    @id @default(cuid())
   userId          String
   boardId         String?
-  type            String // approval.requested|approval.decided|approval.expired|agent.blocked|agent.needs_human|claim.expired|quota.exceeded
+  type            String // approval.requested|approval.decided|approval.expired|agent.blocked|agent.needs_human|comment.mention|claim.expired|quota.exceeded
+  // TASK-177.12: exact target for comment-scoped rows. A nullable column (no
+  // FK) lets a comment tombstone/hard purge outlive its notification cleanup.
+  commentId       String?
   dedupKey        String    @unique @db.VarChar(300)
   title           String    @db.VarChar(300)
   body            String?   @db.Text
@@ -1097,6 +1100,7 @@ model AttentionNotification {
   @@index([userId, digestedAt])
   @@index([digestMailId])
   @@index([boardId, createdAt])
+  @@index([commentId])
   @@index([createdAt]) // attention retention sweep
 }
 

@@ -71,7 +71,7 @@ test("description image follows deletion, undo and redo", async ({
   await expect(
     removed.getByTestId("card-detached-attachment-row"),
   ).toContainText("pasted.png");
-  await removed.getByRole("button", { name: "Delete file" }).click();
+  await removed.getByRole("button", { name: "Delete file pasted.png" }).click();
   const confirmation = page.getByRole("dialog", { name: "Delete this file?" });
   await expect(confirmation).toContainText(
     "only a platform administrator can restore the row",

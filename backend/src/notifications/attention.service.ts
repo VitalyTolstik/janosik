@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Prisma, Role } from "@prisma/client";
+import { extractMentionUserIds } from "@janosik/shared";
 import type {
   AttentionNotificationDto,
   AttentionNotificationListQuery,
@@ -21,8 +22,16 @@ import {
   notificationMailId,
 } from "@/mailer/notification-delivery.service";
 import type { MailLocale } from "@/mailer/mail.types";
-import { attentionEmail, type AttentionEmailVars } from "@/mailer/templates";
+import {
+  attentionEmail,
+  mentionInboxBody,
+  type AttentionEmailVars,
+} from "@/mailer/templates";
 import { EmailTemplateService } from "@/ops/email-template.service";
+import {
+  deleteCommentMentionAttentionForUsers,
+  escapeLikePrefix,
+} from "./mention-attention";
 
 /** Default/maximum page size of the in-app attention inbox. */
 const DEFAULT_LIMIT = 50;
@@ -54,10 +63,14 @@ interface AttentionRecipient {
 interface AttentionInput {
   type: AttentionNotificationType;
   boardId: string | null;
+  /** Exact comment target for comment-scoped categories. */
+  commentId?: string | null;
   /** Stable base key; the recipient id is appended by the service. */
   dedupKey: string;
   recipients: AttentionRecipient[];
   emailVars: (locale: MailLocale) => AttentionEmailVars;
+  /** Localized in-app body when it must differ from the private e-mail body. */
+  inboxBody?: (locale: MailLocale) => string;
   data?: Record<string, unknown>;
 }
 
@@ -67,6 +80,19 @@ export interface CommentAttentionInput {
   commentId: string;
   kind: "blocker" | "handoff";
   agentName: string | null;
+}
+
+export interface CommentMentionInput {
+  boardId: string;
+  cardId: string;
+  commentId: string;
+  /** The comment author; never notified even when they mention themselves. */
+  authorId: string;
+  actorName: string | null;
+  /** Already validated against the live roster by the comment service. */
+  mentionedUserIds: string[];
+  /** Short plain-text preview; safe as text, escaped by the mail layer. */
+  excerpt: string;
 }
 
 export interface ClaimExpiredInput {
@@ -323,6 +349,7 @@ export class AttentionService {
       await this.notify({
         type,
         boardId: input.boardId,
+        commentId: input.commentId,
         dedupKey: `${type}:${input.commentId}`,
         recipients,
         emailVars: () => ({
@@ -343,6 +370,101 @@ export class AttentionService {
   }
 
   /**
+   * TASK-177.12 — one mention row per mentioned member, never the author.
+   *
+   * The comment id is the dedup base, so the same person mentioned twice in
+   * one comment (or a later edit that keeps the token) gets exactly one row.
+   * The live comment is re-checked here: a delete that raced the fan-out must
+   * not create a row the service would then have to hide.
+   */
+  async notifyCommentMention(input: CommentMentionInput): Promise<void> {
+    try {
+      const [board, card, comment] = await Promise.all([
+        this.boardTitle(input.boardId),
+        this.prisma.card.findFirst({
+          where: {
+            id: input.cardId,
+            deletedAt: null,
+            column: { boardId: input.boardId, deletedAt: null },
+          },
+          select: { title: true },
+        }),
+        this.prisma.comment.findFirst({
+          where: {
+            id: input.commentId,
+            deletedAt: null,
+            cardId: input.cardId,
+            card: {
+              deletedAt: null,
+              column: { boardId: input.boardId, deletedAt: null },
+            },
+          },
+          select: { id: true },
+        }),
+      ]);
+      if (board === null || card === null || comment === null) return;
+      const recipients = (
+        await this.members(input.boardId, input.mentionedUserIds)
+      ).filter((recipient) => recipient.id !== input.authorId);
+      if (recipients.length === 0) return;
+      await this.notify({
+        type: "comment.mention",
+        boardId: input.boardId,
+        commentId: input.commentId,
+        dedupKey: `comment.mention:${input.commentId}`,
+        recipients,
+        emailVars: () => ({
+          board,
+          card: card.title,
+          actor: input.actorName ?? "",
+        }),
+        inboxBody: (locale) =>
+          mentionInboxBody(
+            {
+              board,
+              card: card.title,
+              actor: input.actorName,
+              excerpt: input.excerpt,
+            },
+            locale,
+          ),
+        data: {
+          cardId: input.cardId,
+          commentId: input.commentId,
+          authorId: input.authorId,
+          ...(input.actorName !== null ? { authorName: input.actorName } : {}),
+        },
+      });
+      // The fan-out is post-commit. A concurrent edit may have replaced the
+      // text after our under-lock diff: re-read once and withdraw any row for
+      // an id the committed text no longer carries.
+      const live = await this.prisma.comment.findFirst({
+        where: {
+          id: input.commentId,
+          deletedAt: null,
+          cardId: input.cardId,
+          card: {
+            deletedAt: null,
+            column: { boardId: input.boardId, deletedAt: null },
+          },
+        },
+        select: { text: true },
+      });
+      const liveIds = new Set(extractMentionUserIds(live?.text ?? ""));
+      const staleIds = input.mentionedUserIds.filter((id) => !liveIds.has(id));
+      if (staleIds.length > 0) {
+        await deleteCommentMentionAttentionForUsers(
+          this.prisma,
+          input.commentId,
+          staleIds,
+        );
+      }
+    } catch (error) {
+      this.warn("comment mention", error);
+    }
+  }
+
+  /**
    * TASK-177.11: has this comment already raised blocker/handoff attention?
    * The create path keys rows on `agent.blocked:<commentId>` or
    * `agent.needs_human:<commentId>` plus the recipient, so either prefix means
@@ -351,11 +473,17 @@ export class AttentionService {
    */
   async hasCommentAttention(commentId: string): Promise<boolean> {
     try {
+      const escaped = escapeLikePrefix(commentId);
       const count = await this.prisma.attentionNotification.count({
         where: {
           OR: [
-            { dedupKey: { startsWith: `agent.blocked:${commentId}:` } },
-            { dedupKey: { startsWith: `agent.needs_human:${commentId}:` } },
+            {
+              commentId,
+              type: { in: ["agent.blocked", "agent.needs_human"] },
+            },
+            // Legacy rows written before the exact column existed.
+            { dedupKey: { startsWith: `agent.blocked:${escaped}:` } },
+            { dedupKey: { startsWith: `agent.needs_human:${escaped}:` } },
           ],
         },
       });
@@ -681,7 +809,7 @@ export class AttentionService {
         locale,
       );
       const [title = "Attention", ...rest] = letter.text.split("\n");
-      const body = rest.join("\n").trim();
+      const body = (input.inboxBody?.(locale) ?? rest.join("\n")).trim();
       const dedupKey = `${input.dedupKey}:${recipient.id}`;
       const attentionMailId = recipient.notifyAttention
         ? notificationMailId("attention", dedupKey)
@@ -690,6 +818,7 @@ export class AttentionService {
         userId: recipient.id,
         boardId: input.boardId,
         type: input.type,
+        commentId: input.commentId ?? null,
         dedupKey,
         title,
         body: body === "" ? null : body,

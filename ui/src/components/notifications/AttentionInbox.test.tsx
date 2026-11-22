@@ -131,6 +131,24 @@ describe("AttentionInbox (TASK-177.6)", () => {
     ).toHaveAttribute("href", cardHref("b-1", "c-3"));
   });
 
+  it("deep-links a mention row to its card and comment (TASK-177.12)", () => {
+    renderInbox(
+      page([
+        item({
+          id: "mention",
+          type: "comment.mention",
+          title: "Alice mentioned you",
+          body: "On board “Launch”",
+          data: { cardId: "c-1", commentId: "comment-9" },
+        }),
+      ]),
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Open “Alice mentioned you”" }),
+    ).toHaveAttribute("href", `${cardHref("b-1", "c-1")}&comment=comment-9`);
+  });
+
   it("links approvals to the board approvals tab and focus one request", () => {
     renderInbox(
       page([

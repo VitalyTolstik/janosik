@@ -218,6 +218,16 @@ interface BoardActionsValue {
     patch: CardPatch,
     opts?: { quiet?: boolean },
   ) => void;
+  /**
+   * TASK-177.9: same optimistic `UPDATE_CARD`, but resolves with the server's
+   * answer (`true` in local mode). Callers that must not show success before
+   * the save lands use this instead of the fire-and-forget action.
+   */
+  updateCardAndWait: (
+    cardId: string,
+    patch: CardPatch,
+    opts?: { quiet?: boolean },
+  ) => Promise<boolean>;
   /** Stamps the card's `updatedAt` after a burst of quiet live edits. */
   touchCard: (cardId: string) => void;
   deleteCard: (cardId: string) => void;
@@ -1806,7 +1816,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // the API afterwards; a refusal rolls the optimistic state back and shows
   // a toast (TASK-29).
   const dispatch = useCallback(
-    (action: BoardAction): void | Promise<boolean> => {
+    (
+      action: BoardAction,
+      opts?: { silentFailure?: boolean },
+    ): void | Promise<boolean> => {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
@@ -1882,7 +1895,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             reverted,
           );
         } else {
-          showFailure(outcome.failure);
+          // TASK-177.9: a caller with domain-specific copy suppresses the
+          // generic sync toast so one failure never shows two messages.
+          if (opts?.silentFailure !== true) showFailure(outcome.failure);
           realtimeRef.current?.settled(boardId);
           drainRefetch(boardId);
         }
@@ -2328,7 +2343,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
  * still each see the state the previous one produced.
  */
 function createBoardActions(
-  dispatch: (action: BoardAction) => void,
+  dispatch: (
+    action: BoardAction,
+    opts?: { silentFailure?: boolean },
+  ) => void | Promise<boolean>,
   getBoard: () => Board | undefined,
 ): Pick<
   BoardActionsValue,
@@ -2338,6 +2356,7 @@ function createBoardActions(
   | "deleteColumn"
   | "addCard"
   | "updateCard"
+  | "updateCardAndWait"
   | "touchCard"
   | "deleteCard"
   | "archiveCard"
@@ -2421,6 +2440,26 @@ function createBoardActions(
         activityIds: ids(2),
         at: Date.now(),
       }),
+    updateCardAndWait: async (
+      cardId: string,
+      patch: CardPatch,
+      opts?: { quiet?: boolean },
+    ) => {
+      const result = dispatch(
+        {
+          type: "UPDATE_CARD",
+          cardId,
+          ...patch,
+          quiet: opts?.quiet,
+          activityIds: ids(2),
+          at: Date.now(),
+        },
+        // The restore UI shows its own specific failure copy.
+        { silentFailure: true },
+      );
+      // Local mode has no server round-trip: the reducer already applied it.
+      return result === undefined ? true : await result;
+    },
     touchCard: (cardId: string) =>
       dispatch({ type: "TOUCH_CARD", cardId, at: Date.now() }),
     deleteCard: (cardId: string) =>
@@ -2823,6 +2862,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     deleteColumn: noop,
     addCard: noop,
     updateCard: noop,
+    updateCardAndWait: () => Promise.resolve(false),
     touchCard: noop,
     deleteCard: noop,
     archiveCard: noop,

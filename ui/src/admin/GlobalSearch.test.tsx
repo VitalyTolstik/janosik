@@ -100,6 +100,21 @@ describe("global search result targets", () => {
     expect(line?.secondary).toContain("Ship it");
   });
 
+  it("strips a raw mention token from the comment snippet", () => {
+    const page = results();
+    page.comments = [
+      {
+        ...page.comments[0]!,
+        text: "Hi [@Ann](https://janosik.invalid/mention/u1), look",
+      },
+    ];
+    const line = buildSearchLines(page, groups).find(
+      (entry) => entry.key === "comment-cm-1",
+    );
+    expect(line?.label).toBe("Hi @Ann, look");
+    expect(line?.label).not.toContain("janosik.invalid");
+  });
+
   it("passes the exact attachment id", () => {
     const line = buildSearchLines(results(), groups).find(
       (entry) => entry.key === "attachment-att-1",

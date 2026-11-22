@@ -10,6 +10,7 @@ import {
   lockBoardWrites,
   verifyCommentHistory,
 } from "@/comments/comment-history";
+import { deleteMentionAttentionForComments } from "@/notifications/mention-attention";
 
 /** TASK-166 D22/§12.5: the self-service deletion window. */
 export const ACCOUNT_DELETE_GRACE_DAYS = 7;
@@ -580,6 +581,10 @@ export class AccountDeletionService {
               onlyUpdates: true,
             });
           }
+          // TASK-177.12: mention rows are owned by other recipients, so the
+          // user's own attention purge above does not remove them. Clean the
+          // authored comment targets and their queued letters first.
+          await deleteMentionAttentionForComments(tx, authoredIds);
           await tx.comment.deleteMany({ where: { authorId: userId } });
           await tx.activity.deleteMany({ where: { actorId: userId } });
           // ADR §6.14 purge order: preimages → commands → runs. The preimage

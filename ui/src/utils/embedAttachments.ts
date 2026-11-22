@@ -37,26 +37,78 @@ function linkText(name: string): string {
   return cleaned.length > 0 ? cleaned : "file";
 }
 
+/** The attachment metadata the markdown reference needs. */
+export interface AttachmentMarkdownSource {
+  id: string;
+  fileName: string;
+  mimeType: string;
+}
+
+/**
+ * Inline markdown for one existing attachment: images embed as images, video
+ * and audio as player directives, everything else as a plain download link.
+ * Shared by paste embedding and by restoring a detached description file
+ * (TASK-177.9) so both paths use the exact same attachment-link syntax.
+ */
+export function attachmentMarkdown(
+  attachment: AttachmentMarkdownSource,
+): string {
+  const name = linkText(attachment.fileName);
+  const url = attachmentContentUrl(attachment.id);
+  if (attachment.mimeType.startsWith("image/")) {
+    return `![${name}](${url})`;
+  }
+  if (attachment.mimeType.startsWith("video/")) {
+    return `::video{src="${url}"}`;
+  }
+  if (attachment.mimeType.startsWith("audio/")) {
+    return `::audio{src="${url}"}`;
+  }
+  return `[${name}](${url})`;
+}
+
 /**
  * Markdown for one pasted file, wrapped in paragraph breaks so the pasted
  * media sits on its own block — text, image, video, text keep their order
- * (the "structure" the paste must preserve). Images embed as images, video
- * and audio as player directives, everything else as a plain download link.
+ * (the "structure" the paste must preserve).
  */
 export function embedMarkdown(file: File, attachmentId: string): string {
-  const name = linkText(file.name);
-  const url = attachmentContentUrl(attachmentId);
-  let md: string;
-  if (file.type.startsWith("image/")) {
-    md = `![${name}](${url})`;
-  } else if (file.type.startsWith("video/")) {
-    md = `::video{src="${url}"}`;
-  } else if (file.type.startsWith("audio/")) {
-    md = `::audio{src="${url}"}`;
-  } else {
-    md = `[${name}](${url})`;
-  }
-  return `\n\n${md}\n\n`;
+  return `\n\n${attachmentMarkdown({
+    id: attachmentId,
+    fileName: file.name,
+    mimeType: file.type,
+  })}\n\n`;
+}
+
+/**
+ * True when the markdown already references this attachment. Used before a
+ * restore append so a stale detached row cannot add the same reference twice.
+ */
+export function hasAttachmentReference(
+  text: string,
+  attachmentId: string,
+): boolean {
+  const id = attachmentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`/attachments/${id}/content`).test(text);
+}
+
+/**
+ * TASK-177.9 (G-13): re-embed a file that was removed from a description.
+ * The description has no stored position for the reference, so the file is
+ * appended as its own block at the end. The original body is kept intact
+ * apart from trailing whitespace, and the result goes through the normal
+ * `UPDATE_CARD` save, so the server reconciles the file's detached state.
+ *
+ * The returned text has no trailing blank block: the description limit is
+ * measured on the actual content, not on cosmetic paragraph spacing.
+ */
+export function appendAttachmentMarkdown(
+  text: string,
+  attachment: AttachmentMarkdownSource,
+): string {
+  const block = attachmentMarkdown(attachment);
+  const body = text.replace(/\s+$/, "");
+  return body.length === 0 ? block : `${body}\n\n${block}`;
 }
 
 /**

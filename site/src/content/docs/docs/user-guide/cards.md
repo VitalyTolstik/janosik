@@ -136,11 +136,18 @@ directly stay until explicitly deleted. Older uploads are not automatically
 classified as description uploads.
 
 For undo and saved snapshots, hidden files remain stored and count toward the
-20-file limit. Expand `Removed from descriptions` to delete one and free
-space; that action is not offered in `Recently deleted`, so treat it as final
-unless a platform administrator restores the row. Deleting a file explicitly
-can make it unavailable wherever it is referenced; a regular file can be
-restored from `Recently deleted` during the retention period.
+20-file limit. Expand `Removed from descriptions` to restore a file: `Restore
+to description` appends the same image/file reference at the end of the
+description and saves it, so the file returns to the normal list and renders
+again. You can also `Download` a hidden file or `Copy attachment reference`
+without re-embedding it; both stay available to VIEWERs. The copied reference
+is an authenticated in-app URL for pasting into a description or comment, not
+a public share link. Restoring does not create a new file or use a new slot, so
+it works even when the card is at the 20-file limit. Deleting a hidden file
+frees space; that action is not offered in `Recently deleted`, so treat it as
+final unless a platform administrator restores the row. Deleting a file
+explicitly can make it unavailable wherever it is referenced; a regular file
+can be restored from `Recently deleted` during the retention period.
 
 When video processing is enabled, uploaded videos are converted in the
 background to H.264/AAC MP4. An MP4 original is kept if the result is no
@@ -200,6 +207,22 @@ and before/after diff. Long revisions can reveal their full saved text, and
 `Show older revisions` pages the chain back. The newest 50 revisions are
 kept; an older chain or a legacy/erased/gap state shows an incomplete-history
 banner instead of pretending the list is complete. Comments need server mode.
+
+Type `@` at the start of a word to mention a board member. A picker lists the
+board's active members; type to filter, use `↑`/`↓`, `Home`/`End` or
+`Tab`/`Shift+Tab` to move, then `Enter` to insert. `Esc` closes the picker and
+keeps the text you typed. The
+mention becomes an `@Name` chip and the member receives an attention
+notification (respecting their attention-email setting) with a deep link to the
+comment; the comment author is never notified. Mentions inside top-level or
+blockquote fenced code and inline code never notify; escaped tokens and larger
+URLs are inert too, and HTML comments are not rendered. Fenced code nested
+inside a list item is treated as ordinary text; the composer only creates
+top-level code blocks. The closing fence follows the same 0–3-space
+indentation rule as the opening fence. Indented text is ordinary text: an explicit
+`[@Name](https://janosik.invalid/mention/<userId>)` link there still notifies,
+while a hand-typed `@Name` never does.
+If you remove a mention while editing, its pending notification is withdrawn.
 
 ### History
 

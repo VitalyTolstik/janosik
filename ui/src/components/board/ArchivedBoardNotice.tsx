@@ -53,12 +53,17 @@ export function ArchivedBoardNotice({
       role="status"
       data-testid="archived-board-notice"
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground",
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground max-sm:flex-col max-sm:items-stretch",
         className,
       )}
     >
-      <Archive className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
-      <p className="min-w-0 flex-1">{t("board.archivedReadOnly")}</p>
+      <div className="flex min-w-0 flex-1 items-start gap-2">
+        <Archive
+          className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+          aria-hidden="true"
+        />
+        <p className="min-w-0 flex-1">{t("board.archivedReadOnly")}</p>
+      </div>
       {onOpenArchive ? (
         <Button
           type="button"
