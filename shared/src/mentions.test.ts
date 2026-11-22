@@ -98,6 +98,44 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(
       parseCommentMentions(["- > ```", `  > ${token}`, "  > ```"].join("\n")),
     ).toEqual([]);
+    // Nested list marker carries its own fence.
+    expect(
+      parseCommentMentions(
+        ["- outer", "", "  - ~~~", `    ${token}`, "    ~~~"].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("chains interleaved fence containers and leaves following mentions live", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    const mentioned = [expect.objectContaining({ userId: "user-1" })];
+    for (const prefix of ["> - >", "- > -"]) {
+      const text = [
+        `${prefix} ~~~`,
+        `${prefix} ${token}`,
+        `${prefix} ~~~`,
+        token,
+      ].join("\n");
+      expect(parseCommentMentions(text)).toEqual(mentioned);
+    }
+  });
+
+  it("requires an open list item before accepting a task marker", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`[ ] ~~~\n${token}`)).toEqual([
+      expect.objectContaining({ userId: "user-1" }),
+    ]);
+    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
+  });
+
+  it("handles a fence behind a deep container prefix chain", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    const prefix = "> ".repeat(40);
+    expect(
+      parseCommentMentions(
+        [`${prefix}~~~`, `${prefix}${token}`, `${prefix}~~~`, token].join("\n"),
+      ),
+    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
   });
 
   it("keeps explicit mention links in indented text live; only fenced/inline code suppresses", () => {
