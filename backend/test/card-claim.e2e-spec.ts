@@ -16,7 +16,8 @@ const PASSWORD = "correct horse battery";
  * The claim gate (TASK-157): a `CLAIM_CARD` may not take a lease another
  * member still holds — the atomic "do not steal" rule that lets a swarm
  * parallelise. A lapsed lease (`leaseUntil` in the past) is free, and a
- * release (`claimedBy: null`) clears the fields.
+ * release (`claimedBy: null`) clears the fields. TASK-177.4 adds the two
+ * sanctioned releases: the human owner and a board ADMIN.
  */
 describe("Card claim gate (e2e)", () => {
   let app: INestApplication;
@@ -190,15 +191,50 @@ describe("Card claim gate (e2e)", () => {
     expect(current.leaseUntil).toBeUndefined();
   });
 
-  it("only the live holder may clear a live claim (M7)", async () => {
-    await claim(memberId, Date.now() + 900_000, memberPatA).expect(200);
-    expect((await card()).claimedBy).toBe(memberId);
+  it("refuses a release by another member and lets the owner release their own claim", async () => {
+    await claim(ownerId, Date.now() + 900_000).expect(200);
+    expect((await card()).claimedBy).toBe(ownerId);
 
-    // Another board member (an ADMIN here) cannot release it.
-    await claim(null, null).expect(400);
-    // The owner's browser session is still a different holder.
+    // A plain MEMBER is neither the holder nor an ADMIN.
     await claim(null, null, memberToken).expect(400);
-    // A second PAT of the same user is a different holder too.
+    expect((await card()).claimedBy).toBe(ownerId);
+
+    // The human owner (also the board ADMIN) can clear it.
+    await claim(null, null).expect(200);
+    const current = await card();
+    expect(current.claimedBy).toBeUndefined();
+    expect(current.leaseUntil).toBeUndefined();
+  });
+
+  it("lets a board ADMIN release another member's live claim (TASK-177.4)", async () => {
+    await claim(memberId, Date.now() + 900_000, memberPatA).expect(200);
+
+    await claim(null, null).expect(200);
+    const board = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(ownerToken))
+      .expect(200)
+      .then((res) => res.body as Board);
+    const current = board.cards["card-1"];
+    expect(current.claimedBy).toBeUndefined();
+    expect(current.leaseUntil).toBeUndefined();
+    // The release is a normal command: the ADMIN is its last actor.
+    expect(current.lastActorId).toBe(ownerId);
+  });
+
+  it("lets the human owner release a claim held by their own PAT", async () => {
+    await claim(memberId, Date.now() + 900_000, memberPatA).expect(200);
+
+    await claim(null, null, memberToken).expect(200);
+    const current = await card();
+    expect(current.claimedBy).toBeUndefined();
+    expect(current.leaseUntil).toBeUndefined();
+  });
+
+  it("keeps two PATs of one owner distinct for release (M7)", async () => {
+    await claim(memberId, Date.now() + 900_000, memberPatA).expect(200);
+
+    // A second PAT of the same user is still a different holder.
     await claim(null, null, memberPatB).expect(400);
     expect((await card()).claimedBy).toBe(memberId);
 
