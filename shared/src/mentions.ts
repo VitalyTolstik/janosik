@@ -32,8 +32,6 @@ const MENTION_TOKEN = new RegExp(
 );
 
 const BARE_URL = /https?:\/\/[^\s<>"'`)\]]+/gi;
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
 
 /**
@@ -77,81 +75,55 @@ function removeQuoteMarkers(
   return { content, depth };
 }
 
-const LIST_ITEM = /^( *)([-+*]|\d+[.)])(?:[ \t]+|$)/;
-
-/** Visual leading-space width; a tab advances to the next four-column stop. */
-function leadingIndent(line: string): number {
-  let width = 0;
+/** Expand tabs to their visual 4-column stops before parsing indentation. */
+function expandTabs(line: string): string {
+  let output = "";
+  let column = 0;
   for (const char of line) {
-    if (char === " ") width += 1;
-    else if (char === "\t") width += 4 - (width % 4);
-    else break;
-  }
-  return width;
-}
-
-/**
- * Where the item's content starts: marker indent + marker length + the
- * separator width (one to four columns, tab-stop aware; five or more spaces
- * leave the remainder as content and cap at four).
- */
-function contentIndentAfterMarker(
-  content: string,
-  markerIndent: number,
-  markerLength: number,
-): number {
-  const start = markerIndent + markerLength;
-  let column = start;
-  let index = start;
-  let width = 0;
-  while (index < content.length && width < 4) {
-    const char = content[index];
-    const advance = char === " " ? 1 : char === "\t" ? 4 - (column % 4) : 0;
-    if (advance === 0) break;
-    const used = Math.min(advance, 4 - width);
-    width += used;
-    column += used;
-    index += 1;
-  }
-  return start + (width === 0 ? 1 : width);
-}
-
-/** Strip up to `listIndent` columns, respecting tab stops. */
-function stripListIndent(line: string, listIndent: number | null): string {
-  if (listIndent === null) return line;
-  let removed = 0;
-  let index = 0;
-  while (index < line.length && removed < listIndent) {
-    const char = line[index];
-    if (char === " ") {
-      removed += 1;
-      index += 1;
-    } else if (char === "\t") {
-      const advance = 4 - (removed % 4);
-      if (removed + advance > listIndent) break;
-      removed += advance;
-      index += 1;
+    if (char === "\t") {
+      const width = 4 - (column % 4);
+      output += " ".repeat(width);
+      column += width;
     } else {
-      break;
+      output += char;
+      column += 1;
     }
   }
-  return line.slice(index);
+  return output;
+}
+
+const LIST_MARKER_PREFIX = /^(?:[-+*]|\d+[.)])[ \t]+/;
+
+/**
+ * Fenced code opener on a line after blockquote/list prefixes. The editor
+ * only emits fenced and inline code; indented text is deliberately plain
+ * text and is never masked.
+ */
+function fenceOpener(line: string): { char: string; length: number } | null {
+  const trimmed = line.trimStart().replace(LIST_MARKER_PREFIX, "").trimStart();
+  const match = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
+  if (match === null) return null;
+  const run = match[1]!;
+  // A backtick fence's info string may not contain a backtick.
+  if (run[0] === "`" && match[2]!.includes("`")) return null;
+  return { char: run[0]!, length: run.length };
+}
+
+function fenceCloser(line: string, char: string, length: number): boolean {
+  const trimmed = line.trimStart();
+  const match = /^(`{3,}|~{3,})\s*$/.exec(trimmed);
+  return match !== null && match[1]![0] === char && match[1]!.length >= length;
 }
 
 /**
- * TASK-177.12 — code masking for both indented and fenced blocks.
- *
- * Track the content indent of every open list item, not one flag: a parent
- * continuation after a nested child pops back to the parent level instead of
- * becoming top-level code. A marker at up to `contentIndent + 3` is a nested
- * or sibling item; a non-marker line at `contentIndent + 4` or deeper is code.
- * Fences are detected after stripping blockquote and list indentation and
- * mask through their closing fence.
+ * TASK-177.12 — the code-context contract is intentionally narrow: mention
+ * tokens are ignored inside fenced code blocks (any container) and inline
+ * code. Indented text/code is plain text by design, matching the editor,
+ * which only emits fenced code blocks.
  */
 function maskCodeBlocks(chars: string[]): void {
   const text = chars.join("");
   let offset = 0;
-  const listIndents: number[] = [];
   let fenceChar: string | null = null;
   let fenceLength = 0;
   let fenceQuoteDepth = 0;
@@ -159,24 +131,13 @@ function maskCodeBlocks(chars: string[]): void {
     const newline = text.indexOf("\n", offset);
     const end = newline === -1 ? text.length : newline + 1;
     const line = text.slice(offset, newline === -1 ? text.length : newline);
-    // Blockquote containers prefix every line with `>`; indentation and
-    // fences are judged on the content, while the whole line is masked.
-    const unquoted = removeQuoteMarkers(line);
-    const content = unquoted.content;
-    const indent = leadingIndent(content);
-    const currentIndent = listIndents.at(-1) ?? null;
+    const expanded = expandTabs(line);
 
     if (fenceChar !== null) {
-      // Inside a fence, strip only the opening container's quote depth:
-      // a deeper `> ~~~` line is code content, not a closer.
-      const fenceLine = removeQuoteMarkers(line, fenceQuoteDepth).content;
-      const fenceContent = stripListIndent(fenceLine, currentIndent);
-      const close = FENCE_CLOSE.exec(fenceContent);
-      if (
-        close !== null &&
-        close[1]![0] === fenceChar &&
-        close[1]!.length >= fenceLength
-      ) {
+      // Strip only the opening container's quote depth: a deeper quoted
+      // fence line is code content, never a closer.
+      const fenceLine = removeQuoteMarkers(expanded, fenceQuoteDepth).content;
+      if (fenceCloser(fenceLine, fenceChar, fenceLength)) {
         maskRange(chars, offset, end);
         fenceChar = null;
         fenceLength = 0;
@@ -187,62 +148,13 @@ function maskCodeBlocks(chars: string[]): void {
       offset = end;
       continue;
     }
-    if (content.trim() === "") {
-      offset = end;
-      continue;
-    }
 
-    const marker = LIST_ITEM.exec(content);
-    if (marker !== null) {
-      const markerIndent = marker[1]!.length;
-      while (
-        listIndents.length > 0 &&
-        markerIndent < listIndents[listIndents.length - 1]!
-      ) {
-        listIndents.pop();
-      }
-      const parentIndent = listIndents.at(-1) ?? null;
-      const allowed =
-        parentIndent === null
-          ? markerIndent <= 3
-          : markerIndent <= parentIndent + 3;
-      if (allowed) {
-        listIndents.push(
-          contentIndentAfterMarker(content, markerIndent, marker[2]!.length),
-        );
-        offset = end;
-        continue;
-      }
-    }
-
-    // A non-marker dedent returns to the nearest open parent item.
-    while (
-      listIndents.length > 0 &&
-      indent < listIndents[listIndents.length - 1]!
-    ) {
-      listIndents.pop();
-    }
-    const levelIndent = listIndents.at(-1) ?? null;
-    if (levelIndent !== null && indent >= levelIndent + 4) {
-      maskRange(chars, offset, end);
-      offset = end;
-      continue;
-    }
-
-    const codeLine = stripListIndent(content, levelIndent);
-    const open = FENCE_OPEN.exec(codeLine);
-    // CommonMark: the info string of a backtick fence may not carry a
-    // backtick; such a line is a paragraph, not a code fence.
-    if (open !== null && (open[1]![0] === "~" || !open[2]!.includes("`"))) {
-      fenceChar = open[1]![0]!;
-      fenceLength = open[1]!.length;
+    const unquoted = removeQuoteMarkers(expanded);
+    const opener = fenceOpener(unquoted.content);
+    if (opener !== null) {
+      fenceChar = opener.char;
+      fenceLength = opener.length;
       fenceQuoteDepth = unquoted.depth;
-      maskRange(chars, offset, end);
-      offset = end;
-      continue;
-    }
-
-    if (levelIndent === null && indent >= 4) {
       maskRange(chars, offset, end);
     }
     offset = end;

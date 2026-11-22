@@ -199,9 +199,9 @@ board's active members; type to filter, use `↑`/`↓`, `Home`/`End` or
 keeps the text you typed. The
 mention becomes an `@Name` chip and the member receives an attention
 notification (respecting their attention-email setting) with a deep link to the
-comment; the comment author is never notified. Mentions inside code or an email
-address stay plain text. If you remove a mention while editing, its pending
-notification is withdrawn.
+comment; the comment author is never notified. Mentions inside fenced or
+inline code stay plain text; indented text is plain text too. If you remove a
+mention while editing, its pending notification is withdrawn.
 
 ### History
 

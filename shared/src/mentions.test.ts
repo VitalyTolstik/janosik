@@ -68,64 +68,36 @@ describe("comment mentions (TASK-177.12)", () => {
     ]);
   });
 
-  it("ignores indented code and HTML comments", () => {
+  it("masks fenced code in every container", () => {
     const token = mentionMarkdown("Alice", "user-1");
-    const text = [
-      `Ping ${token}`,
-      "",
-      `    indented code ${token}`,
-      "",
-      `<!-- hidden ${token} -->`,
-    ].join("\n");
-
-    expect(parseCommentMentions(text)).toEqual([
-      expect.objectContaining({ userId: "user-1", label: "Alice" }),
-    ]);
+    expect(parseCommentMentions(`~~~\n${token}\n~~~`)).toEqual([]);
+    expect(parseCommentMentions(`    ~~~\n    ${token}\n    ~~~`)).toEqual([]);
+    expect(parseCommentMentions(`> ~~~\n> ${token}\n> ~~~`)).toEqual([]);
+    expect(
+      parseCommentMentions(`- parent\n\n  ~~~\n  ${token}\n  ~~~`),
+    ).toEqual([]);
+    expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual([]);
+    expect(
+      parseCommentMentions(["- ```", `  ${token}`, "  ```"].join("\n")),
+    ).toEqual([]);
+    expect(parseCommentMentions(`1. ~~~\n   ${token}\n   ~~~`)).toEqual([]);
+    // Tab-indented fences expand to 4-column stops for detection.
+    expect(
+      parseCommentMentions(`- parent\n\n\t~~~\n\t${token}\n\t~~~`),
+    ).toEqual([]);
   });
 
-  it("distinguishes indented code from list context", () => {
+  it("treats indented text and marker-line indentation as plain text", () => {
     const token = mentionMarkdown("Alice", "user-1");
     const mentioned = [expect.objectContaining({ userId: "user-1" })];
-    // Top-level and blockquote code, even when the code starts with a marker.
-    expect(parseCommentMentions(`    - ${token}`)).toEqual([]);
-    expect(parseCommentMentions(`>     - ${token}`)).toEqual([]);
-    // A list keeps its 4-space nested item, 8-space nested item and a
-    // continuation paragraph live.
-    expect(parseCommentMentions(`- parent\n\n    - ${token}`)).toEqual(
+    expect(parseCommentMentions(`    ${token}`)).toEqual(mentioned);
+    expect(parseCommentMentions(`    - ${token}`)).toEqual(mentioned);
+    expect(parseCommentMentions(`>     ${token}`)).toEqual(mentioned);
+    expect(parseCommentMentions(`-     ${token}`)).toEqual(mentioned);
+    expect(parseCommentMentions(`- parent\n\n      ${token}`)).toEqual(
       mentioned,
     );
-    expect(
-      parseCommentMentions(`- parent\n\n    - child\n\n        - ${token}`),
-    ).toEqual(mentioned);
-    expect(
-      parseCommentMentions(`- parent\n\n    continuation ${token}`),
-    ).toEqual(mentioned);
-    // A parent continuation after a nested child returns to the parent level.
-    expect(
-      parseCommentMentions(
-        `- parent\n\n    - child\n\n    continuation ${token}`,
-      ),
-    ).toEqual(mentioned);
-    expect(
-      parseCommentMentions(
-        `> - parent\n>\n>     - child\n>\n>     continuation ${token}`,
-      ),
-    ).toEqual(mentioned);
-    // A normal list item mention stays live.
-    expect(parseCommentMentions(`- ${token}`)).toEqual(mentioned);
-    // The separator width moves the item content; a six-space continuation
-    // under `-   parent` is still live.
-    expect(
-      parseCommentMentions(`-   parent\n\n      continuation ${token}`),
-    ).toEqual(mentioned);
-    // Code *inside* a list is still code.
-    expect(parseCommentMentions(`- parent\n\n      ${token}`)).toEqual([]);
-    expect(
-      parseCommentMentions(`- parent\n\n    ~~~\n    ${token}\n    ~~~`),
-    ).toEqual([]);
-    expect(
-      parseCommentMentions(`- parent\n\n    \`\`\`\n    ${token}\n    \`\`\``),
-    ).toEqual([]);
+    expect(parseCommentMentions(`<!-- hidden ${token} -->`)).toEqual([]);
   });
 
   it("masks blockquote fenced code with tilde and backtick fences", () => {
