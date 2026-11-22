@@ -272,16 +272,19 @@ export function CardAttachments({
       const ownerIsTop =
         ownerDialog !== null &&
         openDialogs[openDialogs.length - 1] === ownerDialog;
-      const activeDialog =
-        active instanceof HTMLElement
-          ? active.closest<HTMLElement>('[role="dialog"]')
-          : null;
-      const dialogFallback =
+      // Only the container itself (Chrome's fallback) or a body-level Radix
+      // guard while this dialog is the sole open dialog count as lost focus.
+      // A focusable control inside the dialog is a deliberate user move.
+      const guardBelongsToOwner =
         ownerIsTop &&
+        openDialogs.length === 1 &&
         active instanceof HTMLElement &&
-        (active === ownerDialog ||
-          activeDialog === ownerDialog ||
-          active.hasAttribute("data-radix-focus-guard"));
+        active.hasAttribute("data-radix-focus-guard") &&
+        active.parentElement === document.body &&
+        (document.body.firstElementChild === active ||
+          document.body.lastElementChild === active);
+      const dialogFallback =
+        ownerIsTop && (active === ownerDialog || guardBelongsToOwner);
       // A real control outside the row owns focus: don't steal it.
       const userMoved =
         active instanceof HTMLElement &&

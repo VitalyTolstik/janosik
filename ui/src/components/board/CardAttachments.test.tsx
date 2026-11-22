@@ -830,6 +830,111 @@ describe("CardAttachments", () => {
     );
   });
 
+  it("keeps focus on a control inside the owning dialog", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div role="dialog" aria-label="Card details" tabIndex={-1}>
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachment-restore")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    const upload = screen.getByTestId("card-attachments-upload");
+    upload.focus();
+    expect(document.activeElement).toBe(upload);
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(upload);
+  });
+
+  it("ignores a focus guard from another dialog", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (outcome: { ok: true }) => void;
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.mocked(api.listDetachedAttachments).mockResolvedValue([attachment()]);
+    render(
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <div role="dialog" aria-label="Card details" tabIndex={-1}>
+              <CardAttachments
+                cardId="card-1"
+                boardId="b-1"
+                onRestoreToDescription={() =>
+                  new Promise<{ ok: true }>((resolve) => {
+                    resolveSave = resolve;
+                  })
+                }
+              />
+            </div>
+            <div role="dialog" aria-label="Another dialog" tabIndex={-1}>
+              <span
+                data-radix-focus-guard=""
+                tabIndex={0}
+                data-testid="foreign-guard"
+              />
+            </div>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>,
+    );
+
+    const group = await screen.findByTestId("card-detached-attachments");
+    await user.click(group.querySelector("summary")!);
+    await user.click(screen.getByTestId("card-attachment-restore"));
+    await waitFor(() =>
+      expect(screen.getByTestId("card-attachment-restore")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      ),
+    );
+    const guard = screen.getByTestId("foreign-guard");
+    guard.focus();
+    expect(document.activeElement).toBe(guard);
+
+    await act(async () => {
+      resolveSave({ ok: true });
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("card-detached-attachments"),
+      ).not.toBeInTheDocument(),
+    );
+    expect(document.activeElement).toBe(guard);
+  });
+
   it("does not steal focus moved away from the row during the restore", async () => {
     const user = userEvent.setup();
     let resolveSave!: (outcome: { ok: true }) => void;
