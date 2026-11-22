@@ -230,7 +230,8 @@ export function BulkActionBar() {
     setFailures((previous) => (previous.length === 0 ? previous : []));
     setLastRun((previous) => (previous === null ? previous : null));
     setLiveMessage((previous) => (previous === "" ? previous : ""));
-    setCountAnnouncement((previous) => (previous === "" ? previous : ""));
+    // Keep the count announcement: dismissing results while a selection
+    // remains must not re-announce the unchanged count.
   }, []);
 
   const dismissResults = useCallback(() => {
@@ -248,6 +249,8 @@ export function BulkActionBar() {
     } else if (!visible && wasVisibleRef.current) {
       pendingBarFocusRef.current = null;
       resetResults();
+      // The bar is gone; a later selection of the same size must announce.
+      setCountAnnouncement("");
       // A view switch disables selection and may unmount the bar; the view
       // switcher keeps focus. An explicit Dismiss/Clear returns focus from
       // every view (the board main is the fallback when Select is hidden).
@@ -272,8 +275,8 @@ export function BulkActionBar() {
   // turn into a stream of live-region messages.
   useEffect(() => {
     if (!visible || busy !== null) return;
-    // A destructive result may leave no selection; do not announce "0
-    // selected" over the run summary. A fresh selection still announces.
+    // A destructive result may leave no selection; the rendered region is
+    // emptied below so a later selection of the same size is a real change.
     if (hasResults && selection.count === 0) return;
     const timer = window.setTimeout(() => {
       setCountAnnouncement(t("bulk.selected", { count: selection.count }));
@@ -685,7 +688,7 @@ export function BulkActionBar() {
         data-testid="bulk-count-announcement"
         className="sr-only"
       >
-        {countAnnouncement}
+        {selection.count === 0 ? "" : countAnnouncement}
       </span>
       <span
         role="status"

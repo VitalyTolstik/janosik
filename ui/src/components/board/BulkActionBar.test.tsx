@@ -321,6 +321,95 @@ describe("bulk card actions", () => {
     expect(screen.getByTestId("bulk-count")).toHaveTextContent("1 selected");
   });
 
+  it("announces the same count again after a destructive run emptied it", async () => {
+    rewriteWith((board) => {
+      const ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
+      board.columns = [
+        { id: "col-todo", title: "Todo", cardIds: ids, createdAt: 1 },
+        { id: "col-doing", title: "Doing", cardIds: [], createdAt: 1 },
+        { id: "col-done", title: "Done", cardIds: [], createdAt: 1 },
+      ];
+      board.cards = Object.fromEntries(
+        ids.map((id, index) => [
+          id,
+          {
+            id,
+            title: `Card ${index + 1}`,
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ]),
+      );
+    });
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    for (const title of ["Card 1", "Card 2", "Card 3"]) {
+      await selectByClick(user, title);
+    }
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-count-announcement")).toHaveTextContent(
+        "3 selected",
+      ),
+    );
+
+    await user.click(screen.getByTestId("bulk-archive"));
+    const confirm = screen.getByRole("dialog", {
+      name: "Archive 3 selected cards?",
+    });
+    await user.click(within(confirm).getByRole("button", { name: "Archive" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+        "Changed: 3 of 3.",
+      ),
+    );
+    expect(screen.getByTestId("bulk-count-announcement").textContent).toBe("");
+
+    await user.click(screen.getByTestId("bulk-select-toggle"));
+    await user.click(screen.getByTestId("bulk-select-all"));
+    expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 selected");
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-count-announcement")).toHaveTextContent(
+        "3 selected",
+      ),
+    );
+  });
+
+  it("does not re-announce the count when results are dismissed with a selection", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Alpha");
+    await user.click(screen.getByTestId("bulk-move"));
+    await user.click(screen.getByTestId("bulk-move-col-done"));
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+        "Changed: 1 of 1.",
+      ),
+    );
+    const announcement = screen.getByTestId("bulk-count-announcement");
+    await waitFor(() => expect(announcement).toHaveTextContent("1 selected"));
+
+    const changes: string[] = [];
+    const observer = new MutationObserver(() => {
+      changes.push(announcement.textContent ?? "");
+    });
+    observer.observe(announcement, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    await user.click(screen.getByTestId("bulk-dismiss"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    observer.disconnect();
+
+    expect(changes).toEqual([]);
+    expect(announcement.textContent).toBe("1 selected");
+  });
+
   it("announces a new selection while the previous results are shown", async () => {
     const user = userEvent.setup();
     tree(<SelectionHarness />);
