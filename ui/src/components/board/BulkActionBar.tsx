@@ -139,6 +139,7 @@ export function BulkActionBar() {
   const shouldRestoreFocusRef = useRef(false);
   const pendingBarFocusRef = useRef<BarFocusTarget | null>(null);
   const hadBarFocusRef = useRef(false);
+  const lastBarFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -294,6 +295,22 @@ export function BulkActionBar() {
     const target = pendingBarFocusRef.current;
     if (target === null) return;
     if (focusSurvivingBarControl(target)) pendingBarFocusRef.current = null;
+  });
+
+  // A control can disappear before React tracks any pending target (a run
+  // finishing across a slow commit). If the focused bar element is detached
+  // and focus fell to <body>, recover into the surviving control.
+  useEffect(() => {
+    if (!visible) return;
+    const last = lastBarFocusRef.current;
+    if (last === null || last.isConnected) return;
+    if (document.activeElement !== document.body) return;
+    const target: BarFocusTarget = hasResults
+      ? "dismiss"
+      : selection.enabled && (selection.mode || selection.count > 0)
+        ? "clear"
+        : "first";
+    if (focusSurvivingBarControl(target)) lastBarFocusRef.current = null;
   });
 
   // Results survive a view switch (selection is disabled there) and a
@@ -733,15 +750,21 @@ export function BulkActionBar() {
       role="region"
       aria-label={t("bulk.region")}
       data-testid="bulk-bar"
-      onFocusCapture={() => {
+      onFocusCapture={(event) => {
         hadBarFocusRef.current = true;
+        lastBarFocusRef.current = event.target as HTMLElement;
       }}
       onBlurCapture={(event) => {
         const next = event.relatedTarget as Node | null;
-        // A removed control drops focus to <body> with no related target:
-        // keep the marker so the report can move focus to Dismiss.
+        const last = lastBarFocusRef.current;
         if (next !== null && !event.currentTarget.contains(next)) {
           hadBarFocusRef.current = false;
+          lastBarFocusRef.current = null;
+        } else if (next === null && last !== null && last.isConnected) {
+          // Focus moved to the page background while the control still
+          // exists: a deliberate click-away, not a disappearing control.
+          hadBarFocusRef.current = false;
+          lastBarFocusRef.current = null;
         }
       }}
       className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/95 p-2 shadow-lg outline-none backdrop-blur-sm focus-visible:ring-2 focus-visible:ring-ring sm:p-3"
