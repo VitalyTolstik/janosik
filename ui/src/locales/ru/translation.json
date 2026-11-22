@@ -872,6 +872,7 @@
   "bulk.deleted_many": "Удалено {{count}} карточек.",
   "bulk.deleted_other": "Удалены {{count}} карточки.",
   "bulk.deselectCard": "Снять выбор с «{{title}}»",
+  "bulk.dismissResults": "Закрыть результаты",
   "bulk.failed_one": "Не изменена {{count}} карточка",
   "bulk.failed_few": "Не изменены {{count}} карточки",
   "bulk.failed_many": "Не изменено {{count}} карточек",

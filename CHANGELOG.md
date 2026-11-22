@@ -17,9 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   visible sort order; each run is capped at 100 cards. Every card still travels
   through the normal command path, so workflow, definition-of-done conditions,
   WIP limits, column caps and the per-card label cap are enforced and undo
-  stays one step per card. A running batch stays visible after switching to
-  Calendar or Watch, and cancelling keeps failed and never-processed cards
-  selected. VIEWERs and archived boards keep the read-only surface. EN/RU copy, the user guide,
+  stays one step per card. A running batch and its result stay visible after
+  switching to Calendar or Watch until dismissed, and cancelling keeps failed
+  and never-processed cards selected. VIEWERs and archived boards keep the
+  read-only surface. EN/RU copy, the user guide,
   component tests and focused e2e coverage are included.
 
 - TASK-185.5/185.6 comment history in the admin panel and closeout. Every

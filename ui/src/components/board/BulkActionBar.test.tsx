@@ -390,14 +390,23 @@ describe("bulk card actions", () => {
     await user.click(within(confirm).getByRole("button", { name: "Archive" }));
 
     await waitFor(() =>
+      expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+        "Changed: 2 of 2.",
+      ),
+    );
+    expect(screen.getByTestId("bulk-bar")).toBeVisible();
+    expect(screen.queryByTestId("bulk-count")).toBeNull();
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bravo")).not.toBeInTheDocument();
+    expect(screen.getByText("Charlie")).toBeVisible();
+
+    await user.click(screen.getByTestId("bulk-dismiss"));
+    await waitFor(() =>
       expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument(),
     );
     await waitFor(() =>
       expect(screen.getByTestId("bulk-select-toggle")).toHaveFocus(),
     );
-    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
-    expect(screen.queryByText("Bravo")).not.toBeInTheDocument();
-    expect(screen.getByText("Charlie")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(screen.getByText("Bravo")).toBeVisible());
@@ -419,7 +428,13 @@ describe("bulk card actions", () => {
     await waitFor(() =>
       expect(screen.queryByText("Charlie")).not.toBeInTheDocument(),
     );
-    expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+      "Changed: 1 of 1.",
+    );
+    await user.click(screen.getByTestId("bulk-dismiss"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument(),
+    );
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(screen.getByText("Charlie")).toBeVisible());
@@ -791,7 +806,7 @@ describe("bulk card actions", () => {
     expect(calendar).toHaveFocus();
   });
 
-  it("keeps a running batch visible after switching to Calendar", async () => {
+  it("keeps progress and partial results after switching to Calendar", async () => {
     vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
     api.clearAccessToken();
     api.onAuthLost = null;
@@ -806,6 +821,7 @@ describe("bulk card actions", () => {
     await enterSelectionMode(user);
     await user.click(screen.getByTestId("bulk-select-all"));
 
+    server.failNextCommand(409, { conflict: "version" });
     const release = server.holdNextCommand();
     await user.click(screen.getByTestId("bulk-archive"));
     const confirm = screen.getByRole("dialog", {
@@ -822,12 +838,25 @@ describe("bulk card actions", () => {
     expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 selected");
     expect(calendar).toHaveFocus();
 
-    await user.keyboard("{Escape}");
-    expect(screen.getByTestId("bulk-bar")).toBeVisible();
     act(() => release());
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+        "Changed: 2 of 3.",
+      ),
+    );
+    expect(screen.getByTestId("bulk-errors")).toHaveTextContent("Alpha");
+    expect(screen.getByTestId("bulk-errors")).toHaveTextContent(
+      "The server refused this card.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Board" }));
+    expect(screen.getByTestId("bulk-errors")).toHaveTextContent("Alpha");
+    await user.click(screen.getByRole("button", { name: "Calendar" }));
+    await user.click(screen.getByTestId("bulk-dismiss"));
     await waitFor(() =>
       expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument(),
     );
+    expect(screen.getByTestId("board-main")).toHaveFocus();
   });
 
   it("keeps failed and unprocessed cards selected after Cancel", async () => {

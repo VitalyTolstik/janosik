@@ -133,6 +133,7 @@ export function BulkActionBar() {
   const wasVisibleRef = useRef(false);
   const boardIdRef = useRef(board?.id);
   const resultSelectionRef = useRef<string | null>(null);
+  const shouldRestoreFocusRef = useRef(false);
   useEffect(() => {
     aliveRef.current = true;
     return () => {
@@ -140,11 +141,13 @@ export function BulkActionBar() {
     };
   }, []);
 
-  // A running batch is a board task, not a view task: Calendar/Watch disable
-  // selection but must still show progress, Cancel and Escape while the
-  // commands continue in the background.
+  // A batch and its result are board tasks, not view tasks: Calendar/Watch
+  // disable selection but must still show progress, Cancel, and the final
+  // summary/failures until the user dismisses them.
+  const hasResults = lastRun !== null || failures.length > 0;
   const visible =
     busy !== null ||
+    hasResults ||
     (selection.enabled && (selection.mode || selection.count > 0));
   const role = board ? roleOf(board.id) : undefined;
   const readOnly = role === "VIEWER" || board?.archivedAt !== undefined;
@@ -178,14 +181,27 @@ export function BulkActionBar() {
     setCountAnnouncement((previous) => (previous === "" ? previous : ""));
   }, []);
 
+  const dismissResults = useCallback(() => {
+    if (busy !== null) return;
+    const willClose =
+      !selection.enabled || (!selection.mode && selection.count === 0);
+    if (willClose) shouldRestoreFocusRef.current = true;
+    resultSelectionRef.current = null;
+    resetResults();
+  }, [busy, resetResults, selection.count, selection.enabled, selection.mode]);
+
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
       barRef.current?.focus();
     } else if (!visible && wasVisibleRef.current) {
       resetResults();
       // A view switch disables selection and may unmount the bar; the view
-      // switcher keeps focus. Only an explicit close returns focus.
-      if (selection.enabled) focusToggleOrMain();
+      // switcher keeps focus. An explicit Dismiss/Clear returns focus from
+      // every view (the board main is the fallback when Select is hidden).
+      if (shouldRestoreFocusRef.current || selection.enabled) {
+        focusToggleOrMain();
+      }
+      shouldRestoreFocusRef.current = false;
     }
     wasVisibleRef.current = visible;
   }, [focusToggleOrMain, resetResults, selection.enabled, visible]);
@@ -201,6 +217,13 @@ export function BulkActionBar() {
       resetResults();
       return;
     }
+    if (!selection.enabled) {
+      // Calendar/Watch cannot change the selection, so the result bar is
+      // authoritative there. Adopt the current key so returning to the board
+      // does not mistake it for a fresh user selection.
+      resultSelectionRef.current = selectionKey;
+      return;
+    }
     if (resultSelectionRef.current === selectionKey) {
       resultSelectionRef.current = null;
       return;
@@ -210,17 +233,17 @@ export function BulkActionBar() {
     // `busy` is intentionally not a dependency: a run ending is not a user
     // selection change, and the report keeps its own failures.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board?.id, resetResults, selectionKey]);
+  }, [board?.id, resetResults, selection.enabled, selectionKey]);
 
   // Announce the selection count once it settles; a checkbox storm must not
   // turn into a stream of live-region messages.
   useEffect(() => {
-    if (!visible || busy !== null) return;
+    if (!visible || busy !== null || hasResults) return;
     const timer = window.setTimeout(() => {
       setCountAnnouncement(t("bulk.selected", { count: selection.count }));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [busy, selection.count, t, visible]);
+  }, [busy, hasResults, selection.count, t, visible]);
 
   useEffect(() => {
     if (!visible || readOnly) return;
@@ -231,6 +254,11 @@ export function BulkActionBar() {
         if (busy !== null) {
           event.preventDefault();
           requestCancel();
+          return;
+        }
+        if (hasResults) {
+          event.preventDefault();
+          dismissResults();
           return;
         }
         if (selection.count > 0 || selection.mode) {
@@ -250,7 +278,15 @@ export function BulkActionBar() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, readOnly, requestCancel, selection, visible]);
+  }, [
+    busy,
+    dismissResults,
+    hasResults,
+    readOnly,
+    requestCancel,
+    selection,
+    visible,
+  ]);
 
   const runAction = useCallback(
     async (action: BoardAction): Promise<boolean> => {
@@ -361,7 +397,12 @@ export function BulkActionBar() {
             : result.failures.map((failure) => failure.cardId);
       }
       if (nextSelection !== null) {
-        resultSelectionRef.current = nextSelection.join("\u0000");
+        // Calendar/Watch disable selection: the provider cannot hold the
+        // failed ids there, so exempt the current (empty) key instead of a
+        // key the selection will never adopt. The result bar persists.
+        resultSelectionRef.current = selection.enabled
+          ? nextSelection.join("\u0000")
+          : selectionKey;
         if (nextSelection.length === 0) selection.clear();
         else selection.replace(nextSelection);
       }
@@ -393,7 +434,7 @@ export function BulkActionBar() {
         );
       }
     },
-    [selection, t, toast, tp],
+    [selection, selectionKey, t, toast, tp],
   );
 
   const moveSelected = useCallback(
@@ -625,12 +666,14 @@ export function BulkActionBar() {
         {liveMessage}
       </span>
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          data-testid="bulk-count"
-          className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-sm font-semibold tabular-nums text-primary"
-        >
-          {t("bulk.selected", { count: displayedCount })}
-        </span>
+        {displayedCount > 0 ? (
+          <span
+            data-testid="bulk-count"
+            className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-sm font-semibold tabular-nums text-primary"
+          >
+            {t("bulk.selected", { count: displayedCount })}
+          </span>
+        ) : null}
 
         <Button
           type="button"
@@ -644,6 +687,7 @@ export function BulkActionBar() {
               : undefined
           }
           disabled={
+            !selection.enabled ||
             busy !== null ||
             selection.visibleIds.length === 0 ||
             selection.count ===
@@ -664,7 +708,9 @@ export function BulkActionBar() {
                 size="sm"
                 data-testid="bulk-move"
                 className={cn(ACTION_BUTTON, "gap-1.5")}
-                disabled={busy !== null || selection.count === 0}
+                disabled={
+                  !selection.enabled || busy !== null || selection.count === 0
+                }
               >
                 <MoveRight className="h-3.5 w-3.5" aria-hidden />
                 {t("bulk.move")}
@@ -702,7 +748,9 @@ export function BulkActionBar() {
                 size="sm"
                 data-testid="bulk-label"
                 className={cn(ACTION_BUTTON, "gap-1.5")}
-                disabled={busy !== null || selection.count === 0}
+                disabled={
+                  !selection.enabled || busy !== null || selection.count === 0
+                }
               >
                 <Tag className="h-3.5 w-3.5" aria-hidden />
                 {t("bulk.label")}
@@ -768,7 +816,9 @@ export function BulkActionBar() {
                   size="sm"
                   data-testid="bulk-assign"
                   className={cn(ACTION_BUTTON, "gap-1.5")}
-                  disabled={busy !== null || selection.count === 0}
+                  disabled={
+                    !selection.enabled || busy !== null || selection.count === 0
+                  }
                 >
                   <UserRound className="h-3.5 w-3.5" aria-hidden />
                   {t("bulk.assign")}
@@ -844,7 +894,9 @@ export function BulkActionBar() {
             size="sm"
             data-testid="bulk-archive"
             className={cn(ACTION_BUTTON, "gap-1.5")}
-            disabled={busy !== null || selection.count === 0}
+            disabled={
+              !selection.enabled || busy !== null || selection.count === 0
+            }
             onClick={() => setArchiveOpen(true)}
           >
             <Archive className="h-3.5 w-3.5" aria-hidden />
@@ -856,30 +908,53 @@ export function BulkActionBar() {
             size="sm"
             data-testid="bulk-delete"
             className={cn(ACTION_BUTTON, "gap-1.5")}
-            disabled={busy !== null || selection.count === 0}
+            disabled={
+              !selection.enabled || busy !== null || selection.count === 0
+            }
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden />
             {t("bulk.delete")}
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            data-testid="bulk-clear"
-            className={cn(ACTION_BUTTON, "gap-1.5")}
-            onClick={() => {
-              if (requestCancel()) return;
-              selection.clear();
-            }}
-          >
-            {busy !== null ? (
-              <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
+          {hasResults && busy === null ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="bulk-dismiss"
+              className={cn(ACTION_BUTTON, "gap-1.5")}
+              onClick={dismissResults}
+            >
               <X className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {busy !== null ? t("bulk.cancel") : t("bulk.clear")}
-          </Button>
+              {t("bulk.dismissResults")}
+            </Button>
+          ) : null}
+          {busy !== null || selection.enabled ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="bulk-clear"
+              className={cn(ACTION_BUTTON, "gap-1.5")}
+              disabled={
+                busy === null && selection.count === 0 && !selection.mode
+              }
+              onClick={() => {
+                if (requestCancel()) return;
+                selection.clear();
+              }}
+            >
+              {busy !== null ? (
+                <LoaderCircle
+                  className="h-3.5 w-3.5 animate-spin"
+                  aria-hidden
+                />
+              ) : (
+                <X className="h-3.5 w-3.5" aria-hidden />
+              )}
+              {busy !== null ? t("bulk.cancel") : t("bulk.clear")}
+            </Button>
+          ) : null}
         </div>
       </div>
 

@@ -846,6 +846,7 @@
   "bulk.deleted_one": "Deleted {{count}} card.",
   "bulk.deleted_other": "Deleted {{count}} cards.",
   "bulk.deselectCard": "Deselect {{title}}",
+  "bulk.dismissResults": "Dismiss results",
   "bulk.failed_one": "{{count}} card failed",
   "bulk.failed_other": "{{count}} cards failed",
   "bulk.failureList": "Failed cards",

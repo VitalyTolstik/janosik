@@ -73,8 +73,8 @@ views; those views otherwise keep their existing behaviour.
 - Commands are applied one card at a time, so undo also works one card at a
   time. `Cancel` stops a run after the current card and keeps the failed and
   never-processed cards selected; `Clear selection` exits the mode. A running
-  batch keeps its progress bar in Calendar and Watch too, so it can always be
-  cancelled from there.
+  batch keeps its progress bar in Calendar and Watch too, and its summary and
+  failed cards remain there until `Dismiss results` is clicked.
 
 ## Watch
 
