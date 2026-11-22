@@ -30,6 +30,10 @@ import { RealtimeService } from "@/realtime/realtime.service";
 import type { CreateCommentDto } from "./dto/create-comment.dto";
 import type { UpdateCommentDto } from "./dto/update-comment.dto";
 import { reconcileDescriptionAttachments } from "@/commands/command-writers";
+import {
+  commentHistoryGapException,
+  writeCommentUpdate,
+} from "./comment-history";
 
 /** Default page size of `GET /cards/:id/comments` (`?limit=`). */
 const DEFAULT_LIMIT = 50;
@@ -264,11 +268,12 @@ export class CommentsService {
   }
 
   /**
-   * Edit the caller's own comment (TASK-176.2, TASK-177.11). Author-only, like
-   * delete: the text and/or structured kind change and `editedAt` moves;
-   * attribution and the original `createdAt` stay untouched. Inline media
-   * removed from the text is soft-deleted under the same board lock, and the
-   * change lands in the activity feed / SSE stream as `comment_updated`.
+   * Edit the caller's own comment (TASK-176.2, TASK-177.11, TASK-185.1).
+   * Author-only, like delete. A text change moves `editedAt` and appends a
+   * revision; a kind-only change does neither. Attribution and the original
+   * `createdAt` stay untouched. Inline media removed from the text is
+   * soft-deleted under the same board lock, and the change lands in the
+   * activity feed / SSE stream as `comment_updated`.
    *
    * A kind change never re-sends blocker/handoff attention for a comment whose
    * notification was already delivered: the create path keys attention on
@@ -340,76 +345,80 @@ export class CommentsService {
       );
     }
     const boardId = comment.card.column.boardId;
-    const nextText = text ?? comment.text;
 
     const updated = await this.boardWrite.run(
       boardId,
       async (tx) => {
         await assertBoardAcceptsWrites(tx, boardId);
-        // `deletedAt: null` makes the write conditional: a comment that was
-        // soft-deleted after the pre-read is a 404, never an edit on a tombstone.
-        const written = await tx.comment.updateMany({
-          where: { id: comment.id, deletedAt: null },
-          data: {
-            ...(textProvided ? { text } : {}),
-            ...(kindProvided ? { kind: dto.kind } : {}),
-            editedAt: new Date(),
-          },
-        });
-        if (written.count === 0) {
-          throw new NotFoundException("Comment not found");
-        }
-        const row = await tx.comment.findUniqueOrThrow({
-          where: { id: comment.id },
-          include: AUTHOR_INCLUDE,
-        });
-        if (textProvided) {
-          await reconcileDescriptionAttachments(
-            tx,
-            boardId,
-            comment.text,
-            nextText,
-          );
-          // Inline pasted media lives outside `reconcileDescriptionAttachments`
-          // (it tracks description embeds only), so the URLs that disappeared
-          // from this comment are unlinked explicitly — like a delete does for
-          // the whole body.
-          const beforeIds = inlineAttachmentIds(comment.text);
-          const afterIds = inlineAttachmentIds(nextText);
-          const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
-          await this.unlinkInlineAttachmentIds(
-            tx,
-            boardId,
-            removedIds,
-            userId,
-            attribution,
-          );
-        }
-        const activity = await tx.activity.create({
-          data: {
-            boardId,
-            cardId: comment.cardId,
-            type: "comment_updated",
-            actorId: userId,
-            actorType: attribution.actorType,
-            apiTokenId: attribution.apiTokenId,
-            agentSessionId: attribution.agentSessionId,
-            agentName: attribution.agentName,
-            details: { commentId: comment.id, text: nextText },
-          },
-        });
-        return {
-          comment: row,
-          activityId: activity.id,
-          at: activity.createdAt.getTime(),
+        // TASK-185.1: the common writer re-reads the live row under the lock,
+        // reconciles the cutover chain before the no-op comparison and writes
+        // one revision + Activity for a real text change.
+        const written = await writeCommentUpdate(tx, {
+          commentId: comment.id,
           boardId,
+          ...(textProvided ? { text } : {}),
+          ...(kindProvided ? { kind: dto.kind } : {}),
+          editorId: userId,
+          attribution,
+          cause: "author_edit",
+          authorize: (current) => {
+            if (current.authorId !== userId) {
+              throw new ForbiddenException({
+                message: "Only the author can edit a comment",
+                code: "scope_denied",
+                requiredScope: "worker",
+                action: "comment.update",
+              });
+            }
+          },
+          reconcileMedia: async (beforeText, afterText) => {
+            await reconcileDescriptionAttachments(
+              tx,
+              boardId,
+              beforeText,
+              afterText,
+            );
+            // Inline pasted media lives outside
+            // `reconcileDescriptionAttachments` (it tracks description embeds
+            // only), so the URLs that disappeared from this comment are
+            // unlinked explicitly — like a delete does for the whole body.
+            const beforeIds = inlineAttachmentIds(beforeText);
+            const afterIds = inlineAttachmentIds(afterText);
+            const removedIds = [...beforeIds].filter((id) => !afterIds.has(id));
+            await this.unlinkInlineAttachmentIds(
+              tx,
+              boardId,
+              removedIds,
+              userId,
+              attribution,
+            );
+          },
+        });
+        if (written.status === "gap") return { gap: true as const };
+        if (written.status === "unchanged") {
+          return {
+            gap: false as const,
+            changed: false as const,
+            comment: written.comment,
+          };
+        }
+        return {
+          gap: false as const,
+          changed: true as const,
+          comment: written.comment,
+          activityId: written.activityId,
+          at: written.at,
         };
       },
       pauseGateFor(principal, attribution.agentSessionId),
     );
 
+    // The mark is committed: reconciliation failures answer 409 only now.
+    if (updated.gap) throw commentHistoryGapException();
+    if (!updated.changed) return toCommentDto(updated.comment);
+
     this.publishActivity(
-      updated.boardId,
+      boardId,
       comment.cardId,
       updated.activityId,
       userId,
@@ -491,69 +500,88 @@ export class CommentsService {
     attribution: RequestAttribution = HUMAN_ATTRIBUTION,
     principal?: AuthPrincipal,
   ): Promise<void> {
-    const comment = await this.prisma.comment.findFirst({
+    const preRead = await this.prisma.comment.findFirst({
       where: { id: commentId, deletedAt: null },
       select: {
         id: true,
-        authorId: true,
         cardId: true,
-        apiTokenId: true,
-        // The text rides into the Activity snapshot, so the history feed
-        // can render the deletion as a `text → null` diff (TASK-37).
-        text: true,
         card: { select: { column: { select: { boardId: true } } } },
       },
     });
-    if (!comment) {
+    if (!preRead) {
       throw new NotFoundException("Comment not found");
     }
-    // TASK-166 own-rule: for a PAT the row is owned by the same apiTokenId;
-    // a legacy row without one falls back to the author. A browser session
-    // keeps the historical author-only rule.
-    if (comment.authorId !== userId) {
-      throw new ForbiddenException({
-        message: "Only the author can delete a comment",
-        code: "scope_denied",
-        requiredScope: "worker",
-        action: "comment.delete",
-      });
-    }
-    if (
-      attribution.actorType === "agent" &&
-      comment.apiTokenId !== null &&
-      comment.apiTokenId !== attribution.apiTokenId
-    ) {
-      throw new ForbiddenException({
-        message: "Only the author token can delete a comment",
-        code: "scope_denied",
-        requiredScope: "worker",
-        action: "comment.delete",
-      });
-    }
     const removed = await this.boardWrite.run(
-      comment.card.column.boardId,
+      preRead.card.column.boardId,
       async (tx) => {
-        await assertBoardAcceptsWrites(tx, comment.card.column.boardId);
+        await assertBoardAcceptsWrites(tx, preRead.card.column.boardId);
+        // TASK-185.1: re-read under the board lock. A concurrent edit may have
+        // moved the text; the tombstone snapshot and media reconcile must use
+        // the committed body, never the pre-lock copy.
+        const comment = await tx.comment.findFirst({
+          where: {
+            id: commentId,
+            deletedAt: null,
+            card: {
+              deletedAt: null,
+              column: {
+                boardId: preRead.card.column.boardId,
+                deletedAt: null,
+              },
+            },
+          },
+          select: {
+            id: true,
+            authorId: true,
+            cardId: true,
+            apiTokenId: true,
+            text: true,
+            card: { select: { column: { select: { boardId: true } } } },
+          },
+        });
+        if (!comment) {
+          throw new NotFoundException("Comment not found");
+        }
+        if (comment.authorId !== userId) {
+          throw new ForbiddenException({
+            message: "Only the author can delete a comment",
+            code: "scope_denied",
+            requiredScope: "worker",
+            action: "comment.delete",
+          });
+        }
+        if (
+          attribution.actorType === "agent" &&
+          comment.apiTokenId !== null &&
+          comment.apiTokenId !== attribution.apiTokenId
+        ) {
+          throw new ForbiddenException({
+            message: "Only the author token can delete a comment",
+            code: "scope_denied",
+            requiredScope: "worker",
+            action: "comment.delete",
+          });
+        }
         await tx.comment.update({
           where: { id: comment.id },
           data: { deletedAt: new Date() },
         });
         await reconcileDescriptionAttachments(
           tx,
-          comment.card.column.boardId,
+          preRead.card.column.boardId,
           comment.text,
           undefined,
         );
         await this.unlinkInlineAttachments(
           tx,
-          comment.card.column.boardId,
+          preRead.card.column.boardId,
           comment.text,
           userId,
           attribution,
         );
         const activity = await tx.activity.create({
           data: {
-            boardId: comment.card.column.boardId,
+            boardId: preRead.card.column.boardId,
             cardId: comment.cardId,
             type: "comment_deleted",
             actorId: userId,
@@ -566,7 +594,8 @@ export class CommentsService {
         });
         return {
           activityId: activity.id,
-          boardId: comment.card.column.boardId,
+          boardId: preRead.card.column.boardId,
+          cardId: comment.cardId,
           at: activity.createdAt.getTime(),
         };
       },
@@ -574,12 +603,12 @@ export class CommentsService {
     );
     this.publishActivity(
       removed.boardId,
-      comment.cardId,
+      removed.cardId,
       removed.activityId,
       userId,
       removed.at,
       "comment_deleted",
-      comment.id,
+      commentId,
       attribution,
     );
     await touchAgentSessionAfterWrite(

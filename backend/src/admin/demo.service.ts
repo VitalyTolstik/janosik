@@ -18,6 +18,7 @@ import { withBoardWriteContext } from "@/common/request-context";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { CommentsService } from "@/comments/comments.service";
+import { deleteCommentActivitySnapshots } from "@/comments/comment-history";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
 import { ShareService } from "@/share/share.service";
 import { DemoQueueService } from "./demo-queue.service";
@@ -886,9 +887,22 @@ export class DemoService implements OnModuleDestroy {
           })),
         },
       });
-      await tx.comment.deleteMany({
+      const demoCommentRows = await tx.comment.findMany({
         where: { card: { column: { boardId } }, authorId: demoUsers },
+        select: { id: true },
       });
+      const demoCommentIds = demoCommentRows.map((row) => row.id);
+      if (demoCommentIds.length > 0) {
+        // TASK-185.1: remove immutable revisions and their feed snapshots
+        // before the direct Comment.deleteMany.
+        await deleteCommentActivitySnapshots(tx, demoCommentIds);
+        await tx.commentRevision.deleteMany({
+          where: { commentId: { in: demoCommentIds } },
+        });
+        await tx.comment.deleteMany({
+          where: { id: { in: demoCommentIds } },
+        });
+      }
       await tx.activity.deleteMany({ where: { boardId, actorId: demoUsers } });
       await tx.command.deleteMany({ where: { boardId, actorId: demoUsers } });
       // Keep recorded parents when other users have added dependent rows.
@@ -955,6 +969,7 @@ export class DemoService implements OnModuleDestroy {
           assignedCards: { none: { NOT: demoCards } },
           commands: { none: {} },
           comments: { none: {} },
+          commentRevisions: { none: {} },
           attachments: { none: {} },
           activity: { none: {} },
           apiTokens: { none: {} },

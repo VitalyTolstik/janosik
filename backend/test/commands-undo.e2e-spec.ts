@@ -351,6 +351,7 @@ describe("Undo contract: command then inverse (e2e)", () => {
     await db.cardLabel.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();
+    await db.commentRevision.deleteMany();
     await db.comment.deleteMany();
     await db.activity.deleteMany();
     await db.command.deleteMany();

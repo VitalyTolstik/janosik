@@ -219,6 +219,7 @@ describe("Board writes under concurrency (e2e)", () => {
 async function wipe(prisma: PrismaService): Promise<void> {
   await prisma.command.deleteMany();
   await prisma.activity.deleteMany();
+  await prisma.commentRevision.deleteMany();
   await prisma.comment.deleteMany();
   await prisma.attachment.deleteMany();
   await prisma.checklistItem.deleteMany();

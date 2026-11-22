@@ -33,6 +33,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
     const deleteUser = jest.fn();
     const tx = {
       $queryRaw: jest.fn(),
+      $executeRaw: jest.fn(),
       user: {
         findUnique: jest.fn().mockResolvedValue({ disabledAt: null }),
         delete: deleteUser,

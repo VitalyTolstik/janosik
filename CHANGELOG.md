@@ -8,11 +8,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-185.1 comment history foundation. Every real text edit now writes one
+  immutable `CommentRevision` under the board-write lock, together with one
+  `comment_updated` Activity carrying the before/after text; `editedAt` and the
+  verified pair move with the same timestamp and only a text change moves them.
+  Existing comments are fenced at one migration timestamp, keep their last
+  `editedAt` as a verified point and are marked `legacy_cutover`; no history is
+  reconstructed. The writer keeps the newest 50 revisions, reconciles an old
+  writer before a no-op PATCH and rejects it with `409 comment_history_gap`
+  after persisting `writer_gap`. Attachment deletion scrubs comments through
+  the same writer with `attachment_deleted` attribution and aborts on a gap.
+  Hard purge, demo cleanup and GDPR erase explicitly remove revisions and their
+  Activity snapshots before comments/users; exports still exclude them. The
+  read API and UI remain in later 185.x subtasks. See
+  [the foundation notes](docs/TASK-185.1-comment-history-foundation.md).
+
+- TASK-185.1 hardening. An attachment-delete gap now releases its claimed
+  destructive approval instead of burning it; a plain repeated attachment
+  delete is an idempotent no-op, while an approved retry whose row vanished
+  releases the claim and still answers `404`. Under one global erase key, GDPR
+  erase collects the board union and takes the sorted board-lock set, re-reads
+  the verified chain, and replays on a late board before merging `gdpr_erase`
+  atomically. Every purge pass re-checks the soft-deleted flag in its delete
+  predicate,
+  attachments remove only blobs of rows that actually went, and the board
+  subtree is purged one board at a time in its board-locked transaction so a
+  restore wins. Activity `commentId`/`revisionId` lookups have expression
+  indexes. The 409 names operator reconciliation until the automated sweep
+  lands in 185.2/185.6.
+
 - TASK-177.11 comment kind edit and filter. An author can now retype a
   comment's structured kind (note, status, question, blocker, evidence,
-  handoff) in the same inline editor as the text; the change stamps `editedAt`
-  and writes `comment_updated` history, and blocker/handoff attention already
-  sent for that comment is not duplicated. The comments thread also gains
+  handoff) in the same inline editor as the text; the change writes
+  `comment_updated` history (TASK-185.1 later made `editedAt` text-only), and
+  blocker/handoff attention already sent for that comment is not duplicated.
+  The comments thread also gains
   `All`/kind filter chips backed by the server's `?kind=` query, with EN/RU
   copy, accessible pressed state, 44 px touch targets and cursor paging kept
   inside the selected kind. The PATCH body and the API docs accept `text`

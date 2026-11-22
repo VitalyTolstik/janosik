@@ -339,6 +339,7 @@ describe("Invitations API (e2e)", () => {
   async function wipe(db: PrismaService): Promise<void> {
     await db.command.deleteMany();
     await db.activity.deleteMany();
+    await db.commentRevision.deleteMany();
     await db.comment.deleteMany();
     await db.checklistItem.deleteMany();
     await db.checklist.deleteMany();
