@@ -473,7 +473,7 @@ export function AgentsAutomation({
                 type="button"
                 onClick={onOpenLiveControls}
                 data-testid="agent-policy-open-live"
-                className="inline-flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+                className="inline-flex max-xl:min-h-11 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap text-[11px] font-semibold leading-[1.45] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t("board.settings.agents.openLive")}
                 <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
@@ -754,7 +754,7 @@ export function AgentsAutomation({
               type="button"
               onClick={() => setShowKeys((value) => !value)}
               data-testid="agents-automation-show-keys"
-              className="ml-auto inline-flex items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:min-h-11"
+              className="ml-auto inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Terminal className="h-[11px] w-[11px]" aria-hidden />
               {showKeys
