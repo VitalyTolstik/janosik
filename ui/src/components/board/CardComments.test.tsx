@@ -2931,6 +2931,92 @@ describe("CardComments", () => {
     ).toHaveAttribute("data-reason", "gdpr_erase");
   });
 
+  it("applies an erased older page that started before a later refresh", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-1", text: "Edited", editedAt: 1_700_000_100_000 }),
+    ]);
+    server.seedRevisions(
+      "comment-1",
+      Array.from({ length: 25 }, (_, index) =>
+        revision({
+          id: `revision-${index + 1}`,
+          revisionNumber: index + 1,
+          beforeText: `Before ${index + 1}`,
+          afterText: `After ${index + 1}`,
+        }),
+      ),
+    );
+    let releaseOlder!: () => void;
+    const olderGate = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    let olderStarted = false;
+    let pageLoads = 0;
+    let refreshDone = false;
+    renderComments(server, false, async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/revisions")) {
+        if (url.searchParams.get("cursor") === "20") {
+          olderStarted = true;
+          await olderGate;
+          return Response.json({
+            items: [],
+            nextCursor: null,
+            historyIncomplete: true,
+            historyIncompleteReason: "gdpr_erase",
+          });
+        }
+        if (url.searchParams.get("limit") === "20") {
+          const response = await server.handle(input, init);
+          pageLoads += 1;
+          if (pageLoads === 2) refreshDone = true;
+          return response;
+        }
+      }
+      return server.handle(input, init);
+    });
+    fireEvent.click(await screen.findByTestId("comment-edited"));
+    const dialog = await screen.findByTestId("comment-history-dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getAllByTestId("comment-history-revision"),
+      ).toHaveLength(20),
+    );
+    await waitStream(server);
+
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-older-refresh",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_updated",
+        commentId: "comment-1",
+        revisionId: "revision-25",
+      });
+    });
+    await screen.findByTestId("comment-history-refresh");
+
+    fireEvent.click(within(dialog).getByTestId("comment-history-show-older"));
+    await waitFor(() => expect(olderStarted).toBe(true));
+    fireEvent.click(screen.getByTestId("comment-history-refresh"));
+    await waitFor(() => expect(refreshDone).toBe(true));
+
+    act(() => releaseOlder());
+
+    expect(
+      await within(dialog).findByTestId("comment-history-empty"),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByTestId("comment-history-revision"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByTestId("comment-history-banner"),
+    ).toHaveAttribute("data-reason", "gdpr_erase");
+  });
+
   it("does not stale a recheck that lands right after the first page", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [

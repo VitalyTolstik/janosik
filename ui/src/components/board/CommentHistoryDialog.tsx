@@ -270,18 +270,21 @@ export function CommentHistoryDialog({
     const cursor = nextCursor;
     if (cursor === null || loadingOlder) return;
     const seq = seqRef.current;
+    const session = sessionRef.current;
     setLoadingOlder(true);
     setOlderError(false);
     try {
       const page = await api.listCommentRevisions(commentId, cursor, PAGE_SIZE);
-      if (seq !== seqRef.current) return;
+      if (session !== sessionRef.current) return;
       if (erasesHistory(page)) {
         // GDPR erase and writer gaps invalidate every loaded snapshot; do not
-        // keep page 1 visible under the banner. A trimmed/legacy empty page
-        // is not an erase: keep the loaded rows and just end the cursor.
+        // keep page 1 visible under the banner. This check must precede the
+        // seq guard: a Refresh that started while this page was in flight may
+        // have bumped the epoch, and clearHistory invalidates that refresh.
         clearHistory(page.historyIncompleteReason);
         return;
       }
+      if (seq !== seqRef.current) return;
       setItems((current) => {
         const seen = new Set(current.map((revision) => revision.id));
         const next = [
