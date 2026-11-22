@@ -230,6 +230,29 @@ function rewriteWith(change: (board: Board) => void, options?: SeedOptions) {
   return board;
 }
 
+function seedSixCards() {
+  rewriteWith((board) => {
+    const ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
+    board.columns = [
+      { id: "col-todo", title: "Todo", cardIds: ids, createdAt: 1 },
+      { id: "col-doing", title: "Doing", cardIds: [], createdAt: 1 },
+      { id: "col-done", title: "Done", cardIds: [], createdAt: 1 },
+    ];
+    board.cards = Object.fromEntries(
+      ids.map((id, index) => [
+        id,
+        {
+          id,
+          title: `Card ${index + 1}`,
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]),
+    );
+  });
+}
+
 function renderBoardSection() {
   return tree(<BoardSection />);
 }
@@ -322,26 +345,7 @@ describe("bulk card actions", () => {
   });
 
   it("announces the same count again after a destructive run emptied it", async () => {
-    rewriteWith((board) => {
-      const ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
-      board.columns = [
-        { id: "col-todo", title: "Todo", cardIds: ids, createdAt: 1 },
-        { id: "col-doing", title: "Doing", cardIds: [], createdAt: 1 },
-        { id: "col-done", title: "Done", cardIds: [], createdAt: 1 },
-      ];
-      board.cards = Object.fromEntries(
-        ids.map((id, index) => [
-          id,
-          {
-            id,
-            title: `Card ${index + 1}`,
-            labelIds: [],
-            createdAt: 1,
-            updatedAt: 1,
-          },
-        ]),
-      );
-    });
+    seedSixCards();
     const user = userEvent.setup();
     tree(<SelectionHarness />);
     await enterSelectionMode(user);
@@ -374,6 +378,50 @@ describe("bulk card actions", () => {
         "3 selected",
       ),
     );
+  });
+
+  it("has no stale count flash when one card follows a three-card run", async () => {
+    seedSixCards();
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    for (const title of ["Card 1", "Card 2", "Card 3"]) {
+      await selectByClick(user, title);
+    }
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-count-announcement")).toHaveTextContent(
+        "3 selected",
+      ),
+    );
+    await user.click(screen.getByTestId("bulk-archive"));
+    const confirm = screen.getByRole("dialog", {
+      name: "Archive 3 selected cards?",
+    });
+    await user.click(within(confirm).getByRole("button", { name: "Archive" }));
+    const announcement = screen.getByTestId("bulk-count-announcement");
+    await waitFor(() => expect(announcement.textContent).toBe(""));
+
+    const changes: string[] = [];
+    const observer = new MutationObserver(() => {
+      changes.push(announcement.textContent ?? "");
+    });
+    observer.observe(announcement, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+
+    await user.click(screen.getByTestId("bulk-select-toggle"));
+    await selectByClick(user, "Card 4");
+    expect(announcement.textContent).not.toBe("3 selected");
+    await waitFor(() => expect(announcement).toHaveTextContent("1 selected"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    observer.disconnect();
+
+    expect(changes).not.toContain("3 selected");
+    expect(changes).toContain("1 selected");
   });
 
   it("does not re-announce the count when results are dismissed with a selection", async () => {

@@ -275,14 +275,18 @@ export function BulkActionBar() {
   // turn into a stream of live-region messages.
   useEffect(() => {
     if (!visible || busy !== null) return;
-    // A destructive result may leave no selection; the rendered region is
-    // emptied below so a later selection of the same size is a real change.
-    if (hasResults && selection.count === 0) return;
+    // A destructive result may leave no selection; clear the stale text so
+    // the next selection announces even when its size matches the old one.
+    if (selection.count === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing a stale live-region text is the required effect
+      setCountAnnouncement((previous) => (previous === "" ? previous : ""));
+      return;
+    }
     const timer = window.setTimeout(() => {
       setCountAnnouncement(t("bulk.selected", { count: selection.count }));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [busy, hasResults, selection.count, t, visible]);
+  }, [busy, selection.count, t, visible]);
 
   useEffect(() => {
     if (!visible || readOnly) return;
