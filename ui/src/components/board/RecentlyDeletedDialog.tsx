@@ -144,7 +144,11 @@ function RecentlyDeletedContent({
   }, [load]);
 
   useEffect(() => {
-    if (data === null) return;
+    // TASK-177.7: data can commit while the restore request's `finally` has
+    // not cleared `busyKey` yet. Every restore button is disabled until then,
+    // so focusing here would silently no-op and drop the pending target.
+    // Wait for both the fresh page and an enabled row before applying focus.
+    if (data === null || busyKey !== null) return;
     const pending = pendingFocusRef.current;
     if (pending === null) return;
     pendingFocusRef.current = null;
@@ -163,7 +167,7 @@ function RecentlyDeletedContent({
             null);
     }
     (target ?? titleRef.current)?.focus();
-  }, [data, titleRef]);
+  }, [data, busyKey, titleRef]);
 
   useEffect(() => {
     if (error) retryRef.current?.focus();

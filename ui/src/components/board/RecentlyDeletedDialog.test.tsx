@@ -121,6 +121,55 @@ describe("RecentlyDeletedDialog", () => {
     );
   });
 
+  it("keeps restore disabled across the refetch and focuses an enabled row", async () => {
+    let resolveRestore!: (value: { status: "ok" }) => void;
+    let resolveList!: (value: typeof page) => void;
+    hoisted.listDeleted.mockResolvedValueOnce(page).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveList = resolve;
+      }),
+    );
+    hoisted.restoreDeleted.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRestore = resolve;
+      }),
+    );
+    renderDialog();
+
+    await screen.findByText("Retired card");
+    const cardRow = (await screen.findAllByTestId("deleted-row")).find((row) =>
+      within(row).queryByText("Retired card"),
+    );
+    expect(cardRow).toBeDefined();
+    await userEvent.click(
+      within(cardRow!).getByRole("button", { name: /Restore/ }),
+    );
+
+    resolveRestore({ status: "ok" });
+    await waitFor(() => expect(hoisted.listDeleted).toHaveBeenCalledTimes(2));
+
+    // The refetched page is still in flight: every restore stays disabled and
+    // focus has not been handed to a button that cannot take it yet.
+    const nextButton = screen
+      .getAllByTestId("deleted-restore")
+      .find(
+        (button) =>
+          button.getAttribute("aria-label") === "Restore A deleted remark",
+      );
+    expect(nextButton).toBeDefined();
+    expect(nextButton).toBeDisabled();
+    expect(nextButton).not.toHaveFocus();
+
+    resolveList({ ...page, items: [comment] });
+    await waitFor(() =>
+      expect(screen.queryByText("Retired card")).not.toBeInTheDocument(),
+    );
+    const focused = document.activeElement as HTMLElement | null;
+    expect(focused).not.toBeNull();
+    expect(focused).toHaveAttribute("aria-label", "Restore A deleted remark");
+    expect(focused).toBeEnabled();
+  });
+
   it("drops an item that is past retention, refetches and explains why", async () => {
     const { ApiError } = await import("@/api/client");
     hoisted.listDeleted
