@@ -172,6 +172,228 @@ describe("AdminApp", () => {
     expect(screen.queryByTestId("admin-login-form")).toBeNull();
   });
 
+  it("retries a throttled refresh instead of signing the master out (QA-A3)", async () => {
+    const server = serverWith();
+    server.failNextStatuses.push({
+      path: "/admin/auth/refresh",
+      status: 429,
+      body: { message: "ThrottlerException: Too Many Requests" },
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin();
+
+    // The boot screen says it is retrying; the sign-in form must not appear.
+    expect(await screen.findByTestId("admin-boot-recovering")).toBeTruthy();
+    expect(screen.queryByTestId("admin-login-form")).toBeNull();
+
+    expect(
+      await screen.findByText(
+        t("admin.dashboard.registrations"),
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("admin-login-form")).toBeNull();
+  });
+
+  it.each([429, 500])(
+    "bounds boot refresh retries and offers retry and sign-in (%i)",
+    async (status) => {
+      const server = serverWith();
+      let refreshCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const path = new URL(
+            typeof input === "string" ? input : input.toString(),
+            "http://api.test",
+          ).pathname;
+          if (path.endsWith("/admin/auth/refresh")) {
+            refreshCalls += 1;
+            return jsonResponse({ message: "down" }, status);
+          }
+          return server.fetchImpl(input, init);
+        },
+      );
+      vi.useFakeTimers({ toFake: ["setTimeout"] });
+      try {
+        renderAdmin();
+        await act(async () => {
+          await Promise.resolve();
+        });
+        for (const delay of [1000, 2000, 4000]) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(delay);
+          });
+        }
+        expect(refreshCalls).toBe(4);
+        expect(screen.getByTestId("admin-boot-failed")).toBeInTheDocument();
+        expect(
+          screen.queryByTestId("admin-login-form"),
+        ).not.toBeInTheDocument();
+
+        fireEvent.click(
+          screen.getByRole("button", { name: t("admin.common.retry") }),
+        );
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(refreshCalls).toBe(5);
+        expect(screen.getByTestId("admin-boot-recovering")).toBeInTheDocument();
+        for (const delay of [1000, 2000, 4000]) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(delay);
+          });
+        }
+        expect(screen.getByTestId("admin-boot-failed")).toBeInTheDocument();
+
+        fireEvent.click(
+          screen.getByRole("button", { name: t("admin.boot.signIn") }),
+        );
+        await act(async () => {
+          await Promise.resolve();
+        });
+        expect(screen.getByTestId("admin-login-form")).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("times out a hung create-master request and re-enables Cancel", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.click(await screen.findByTestId("admin-create-master"));
+    fireEvent.change(await screen.findByTestId("admin-master-email"), {
+      target: { value: "timeout-master@example.com" },
+    });
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    server.holds.push({
+      match: "/admin/admins",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(within(dialog).getByTestId("admin-master-submit"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(cancel).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.masters.create.timeout")),
+      ).toBeInTheDocument();
+      expect(cancel).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out a hung promote request and re-enables Cancel", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByTestId("admin-user-promote"));
+    const dialog = await screen.findByTestId("admin-promote-user-dialog");
+    fireEvent.change(within(dialog).getByTestId("admin-promote-user-input"), {
+      target: { value: "member@example.com" },
+    });
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    server.holds.push({
+      match: "/admin/users/u-1/promote",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(within(dialog).getByTestId("admin-promote-user-submit"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(cancel).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.userDetail.promote.timeout")),
+      ).toBeInTheDocument();
+      expect(cancel).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("times out a hung boot refresh and maps it to unavailable", async () => {
+    const server = serverWith();
+    let refreshCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        ).pathname;
+        if (path.endsWith("/admin/auth/refresh")) {
+          refreshCalls += 1;
+          return new Promise<Response>((_, reject) => {
+            const abort = () =>
+              reject(new DOMException("aborted", "AbortError"));
+            if (init?.signal?.aborted === true) abort();
+            else init?.signal?.addEventListener("abort", abort, { once: true });
+          });
+        }
+        return server.fetchImpl(input, init);
+      },
+    );
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      renderAdmin();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      for (const [timeout, backoff] of [
+        [15_000, 1_000],
+        [15_000, 2_000],
+        [15_000, 4_000],
+        [15_000, 0],
+      ]) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(timeout);
+        });
+        if (backoff > 0) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(backoff);
+          });
+        }
+      }
+      expect(refreshCalls).toBe(4);
+      expect(screen.getByTestId("admin-boot-failed")).toHaveTextContent(
+        t("admin.boot.failed.unavailable"),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("signs in, and signs out back to the login screen", async () => {
     const server = serverWith();
     server.sessionAlive = false;
@@ -391,6 +613,46 @@ describe("AdminApp", () => {
     expect(await screen.findByText("new@example.com")).toBeTruthy();
   });
 
+  it("times out a hung create-user request and releases the dialog", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users");
+
+    fireEvent.click(await screen.findByTestId("admin-create-user"));
+    fireEvent.change(await screen.findByTestId("admin-user-email"), {
+      target: { value: "timeout-user@example.com" },
+    });
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    server.holds.push({
+      match: "/admin/users",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(within(dialog).getByTestId("admin-user-submit"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(cancel).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.users.create.timeout")),
+      ).toBeInTheDocument();
+      expect(cancel).not.toBeDisabled();
+      fireEvent.click(cancel);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("validates the create-user email before submitting", async () => {
     const server = serverWith();
     vi.stubGlobal("fetch", server.fetchImpl);
@@ -541,6 +803,338 @@ describe("AdminApp", () => {
     ).not.toBeNull();
   });
 
+  it("purges with the visible retention draft, once, and counts with it (QA-A1/A7)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    fireEvent.change(input, { target: { value: "365" } });
+    expect(await screen.findByTestId("admin-ops-retention-dirty")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
+
+    fireEvent.click(screen.getByTestId("admin-ops-purge"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("365");
+
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/retention/purge",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    const accept = within(dialog).getByTestId("admin-confirm-accept");
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await waitFor(() => expect(accept).toBeDisabled());
+    release();
+
+    await waitFor(() => {
+      const purges = server.requests.filter(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/admin/retention/purge",
+      );
+      expect(purges).toHaveLength(1);
+      expect(purges[0]?.body).toEqual({ retentionDays: 365 });
+    });
+    // The eligible counts are fetched for the same visible window.
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "GET" &&
+            request.path === "/admin/retention" &&
+            request.query.get("retentionDays") === "365",
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("varies retention counts by window and keeps data inside a 365-day draft (QA review)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    // One soft-deleted row that is 60 days old.
+    server.retentionDeletedAges = [60];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 1,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+
+    fireEvent.change(input, { target: { value: "365" } });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 0,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByTestId("admin-ops-purge"));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByTestId(
+        "admin-confirm-accept",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.path === "/admin/retention/purge" &&
+            (request.body as { retentionDays?: number }).retentionDays === 365,
+        ),
+      ).toBe(true),
+    );
+    // The 60-day row is inside the 365-day window and must survive.
+    expect(server.retentionDeletedAges).toEqual([60]);
+
+    // Moving back to the saved 30-day window makes it eligible.
+    fireEvent.change(input, { target: { value: "30" } });
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 1,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
+    fireEvent.click(screen.getByTestId("admin-ops-purge"));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByTestId(
+        "admin-confirm-accept",
+      ),
+    );
+    await waitFor(() => expect(server.retentionDeletedAges).toEqual([]));
+  });
+
+  it("does not claim zero rows or no backup directory when retention status fails (QA review)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    server.failNextStatuses.push({ path: "/admin/retention", status: 500 });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    expect(await screen.findByTestId("admin-ops-retention-error")).toBeTruthy();
+    expect(screen.queryByText(t("admin.ops.backups.none"))).toBeNull();
+    expect(screen.getByTestId("admin-ops-purge")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("admin-ops-retention-retry"));
+    expect(
+      await screen.findByTestId("admin-ops-retention-counts"),
+    ).toHaveTextContent(
+      t("admin.ops.retention.purgeable", {
+        cards: 0,
+        comments: 0,
+        attachments: 0,
+        columns: 0,
+      }),
+    );
+    expect(screen.getByText(t("admin.ops.backups.none"))).toBeTruthy();
+    expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled();
+  });
+
+  it("keeps an unsaved retention draft across sweeps and a flag failure (QA review)", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    server.retentionDeletedAges = [60];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    fireEvent.change(input, { target: { value: "365" } });
+    await screen.findByTestId("admin-ops-retention-dirty");
+    const counts365 = t("admin.ops.retention.purgeable", {
+      cards: 0,
+      comments: 0,
+      attachments: 0,
+      columns: 0,
+    });
+    const expect365Ready = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("admin-ops-retention-counts"),
+        ).toHaveTextContent(counts365),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+      );
+      expect(input).toHaveValue("365");
+    };
+    await expect365Ready();
+
+    let before = server.requests.filter(
+      (request) => request.path === "/admin/retention",
+    ).length;
+    fireEvent.click(screen.getByTestId("admin-ops-run-sweeps"));
+    await waitFor(() =>
+      expect(
+        server.requests.filter(
+          (request) => request.path === "/admin/retention",
+        ),
+      ).toHaveLength(before + 1),
+    );
+    await expect365Ready();
+
+    server.failNext.push("/admin/flags/registration_open");
+    before = server.requests.filter(
+      (request) => request.path === "/admin/retention",
+    ).length;
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    await waitFor(() =>
+      expect(
+        server.requests.filter(
+          (request) => request.path === "/admin/retention",
+        ),
+      ).toHaveLength(before + 1),
+    );
+    await expect365Ready();
+  });
+
+  it("shows one invalid hint and never saves an out-of-range retention draft", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    for (const invalid of ["0", "3651"]) {
+      fireEvent.change(input, { target: { value: invalid } });
+      // Exactly one validation message: the field hint.
+      expect(screen.getAllByTestId("admin-ops-retention-invalid")).toHaveLength(
+        1,
+      );
+      expect(
+        screen.queryByTestId("admin-ops-retention-invalid-state"),
+      ).toBeNull();
+      expect(
+        screen.queryByText(
+          t("admin.ops.retention.olderThan", { days: Number(invalid) }),
+        ),
+      ).toBeNull();
+      expect(screen.queryByTestId("admin-ops-retention-loading")).toBeNull();
+      expect(screen.queryByTestId("admin-ops-retention-counts")).toBeNull();
+      expect(screen.getByTestId("admin-ops-purge")).toBeDisabled();
+
+      // Every Save entry point is disabled, including the retention panel.
+      for (const id of [
+        "admin-ops-save",
+        "admin-ops-rate-limit-save",
+        "admin-ops-retention-save",
+        "admin-ops-schedule-save",
+        "admin-ops-comms-save",
+      ]) {
+        const button = screen.getByTestId(id);
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+      }
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "PUT" && request.path === "/admin/ops",
+        ),
+      ).toBe(false);
+    }
+
+    fireEvent.change(input, { target: { value: "365" } });
+    expect(
+      await screen.findByTestId("admin-ops-retention-counts"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-ops-retention-invalid")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-retention-save")).not.toBeDisabled(),
+    );
+  });
+
+  it("keeps an edit made while a sweep reload is in flight", async () => {
+    const server = serverWith();
+    server.ops.retentionDays = 30;
+    server.retentionDeletedAges = [60];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/settings?tab=general");
+
+    const input = await screen.findByTestId("admin-ops-retention");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 1,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/maintenance/run",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    fireEvent.click(screen.getByTestId("admin-ops-run-sweeps"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) => request.path === "/admin/maintenance/run",
+        ),
+      ).toBe(true),
+    );
+
+    // Edit while the sweep request is still in flight; the reload it triggers
+    // must read this newer draft, not the value captured at click time.
+    fireEvent.change(input, { target: { value: "365" } });
+    release();
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("admin-ops-retention-counts"),
+      ).toHaveTextContent(
+        t("admin.ops.retention.purgeable", {
+          cards: 0,
+          comments: 0,
+          attachments: 0,
+          columns: 0,
+        }),
+      ),
+    );
+    expect(input).toHaveValue("365");
+    await waitFor(() =>
+      expect(screen.getByTestId("admin-ops-purge")).not.toBeDisabled(),
+    );
+  });
+
   it("previews a mail template with sample placeholder values", async () => {
     const server = serverWith();
     vi.stubGlobal("fetch", server.fetchImpl);
@@ -578,6 +1172,25 @@ describe("AdminApp", () => {
     expect(
       await screen.findByTestId("admin-template-reset-verification_code"),
     ).toBeTruthy();
+
+    // QA-A6: resetting authored content confirms first.
+    fireEvent.click(
+      screen.getByTestId("admin-template-reset-verification_code"),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(server.requests.some((request) => request.method === "DELETE")).toBe(
+      false,
+    );
+    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (request) =>
+            request.method === "DELETE" &&
+            request.path === "/admin/email-templates/verification_code",
+        ),
+      ).toBe(true),
+    );
   });
 
   it("unlocks a locked master", async () => {
@@ -622,11 +1235,253 @@ describe("AdminApp", () => {
       await screen.findByText(t("admin.masters.action.resetPassword")),
     );
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByTestId("admin-confirm-accept"));
+
+    // QA-A5: the confirm is single-flight; a double click must not mint a
+    // second temporary password.
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/admins/master-2/password/reset",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    const accept = within(dialog).getByTestId("admin-confirm-accept");
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await waitFor(() => expect(accept).toBeDisabled());
+    release();
 
     expect(
       await screen.findByTestId("admin-master-password"),
     ).toHaveTextContent("reset-one-time-pass");
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" &&
+          request.path === "/admin/admins/master-2/password/reset",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("times out a hung master reset and releases the confirm", async () => {
+    const server = serverWith();
+    server.masters = [adminMaster()];
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    fireEvent.click(
+      await screen.findByText(t("admin.masters.action.resetPassword")),
+    );
+    const dialog = await screen.findByRole("dialog");
+    server.holds.push({
+      match: "/admin/admins/master-2/password/reset",
+      promise: new Promise<void>(() => {
+        /* held forever */
+      }),
+    });
+    const accept = within(dialog).getByTestId("admin-confirm-accept");
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(accept);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(accept).toBeDisabled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        screen.getByText(t("admin.masters.reset.timeout")),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The roster is usable again: the same reset action can be started.
+    fireEvent.pointerDown(
+      screen.getByTestId("admin-master-menu-operator@example.com"),
+      { button: 0 },
+    );
+    expect(
+      await screen.findByText(t("admin.masters.action.resetPassword")),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the reset-password dialog open until the one-time secret arrives (QA-A2)", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/users/u-1/password/reset",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    fireEvent.click(await screen.findByTestId("admin-user-reset-password"));
+
+    const dialog = await screen.findByTestId("admin-reset-password-dialog");
+    // The X is gone and the footer Close is disabled while the request runs.
+    expect(within(dialog).queryByTestId("dialog-close")).toBeNull();
+    const close = within(dialog).getByRole("button", {
+      name: t("admin.common.close"),
+    });
+    expect(close).toBeDisabled();
+    fireEvent.click(close);
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByTestId("admin-reset-password-dialog")).toBeTruthy();
+
+    release();
+    expect(
+      await screen.findByTestId("admin-reset-password-value"),
+    ).toHaveTextContent("Temp-pass-123");
+  });
+
+  it("guards the create-master secret while pending and clears it on reopen", async () => {
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/masters");
+
+    fireEvent.click(await screen.findByTestId("admin-create-master"));
+    fireEvent.change(await screen.findByTestId("admin-master-email"), {
+      target: { value: "new-owner@example.com" },
+    });
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/admins",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-master-submit"));
+    await waitFor(() => expect(cancel).toBeDisabled());
+    expect(within(dialog).queryByTestId("dialog-close")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    release();
+    expect(await screen.findByTestId("admin-master-password")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("admin-master-done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Reopening starts clean: the previous one-time secret is gone.
+    fireEvent.click(screen.getByTestId("admin-create-master"));
+    expect(await screen.findByTestId("admin-master-email")).toHaveValue("");
+    expect(screen.queryByTestId("admin-master-password")).toBeNull();
+  });
+
+  it("guards the promote secret while pending and clears it on reopen", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    let release!: () => void;
+    server.holds.push({
+      match: "/admin/users/u-1/promote",
+      promise: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    const openDialog = async () => {
+      fireEvent.pointerDown(
+        await screen.findByTestId("admin-user-detail-actions"),
+        { button: 0 },
+      );
+      fireEvent.click(await screen.findByTestId("admin-user-promote"));
+    };
+    await openDialog();
+    const dialog = await screen.findByTestId("admin-promote-user-dialog");
+    fireEvent.change(within(dialog).getByTestId("admin-promote-user-input"), {
+      target: { value: "member@example.com" },
+    });
+    const cancel = within(dialog).getByRole("button", {
+      name: t("admin.common.cancel"),
+    });
+    fireEvent.click(within(dialog).getByTestId("admin-promote-user-submit"));
+    await waitFor(() => expect(cancel).toBeDisabled());
+    expect(within(dialog).queryByTestId("dialog-close")).toBeNull();
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+    expect(screen.getByTestId("admin-promote-user-dialog")).toBeTruthy();
+
+    release();
+    expect(
+      await screen.findByTestId("admin-promote-password"),
+    ).toHaveTextContent("Temp-pass-123");
+    fireEvent.click(
+      within(dialog).getAllByRole("button", {
+        name: t("admin.common.close"),
+      })[0],
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("admin-promote-user-dialog")).toBeNull(),
+    );
+
+    await openDialog();
+    await screen.findByTestId("admin-promote-user-dialog");
+    expect(screen.queryByTestId("admin-promote-password")).toBeNull();
+  });
+
+  it("times out a hung reset and re-enables Close (QA review)", async () => {
+    const state = serverWith().state;
+    state.users = [adminUser()];
+    const server = new FakeAdminServer(state);
+    server.holds.push({
+      match: "/admin/users/u-1/password/reset",
+      promise: new Promise<void>(() => {
+        /* never resolves */
+      }),
+    });
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin/users/u-1");
+
+    fireEvent.pointerDown(
+      await screen.findByTestId("admin-user-detail-actions"),
+      { button: 0 },
+    );
+    const resetItem = await screen.findByTestId("admin-user-reset-password");
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      fireEvent.click(resetItem);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const dialog = screen.getByTestId("admin-reset-password-dialog");
+      expect(
+        within(dialog).getByRole("button", { name: t("admin.common.close") }),
+      ).toBeDisabled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(
+        within(dialog).getByText(t("admin.userDetail.reset.timeout")),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getAllByRole("button", {
+          name: t("admin.common.close"),
+        })[0],
+      ).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("surfaces a rejected login lockout as a dedicated message", async () => {
@@ -653,6 +1508,35 @@ describe("AdminApp", () => {
     await screen.findByTestId("admin-login-form");
     await login();
     expect(await screen.findByText(t("admin.login.locked"))).toBeTruthy();
+  });
+
+  it("hides the closed phone drawer from focus and names icon-only controls (QA-A11/A12)", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(max-width: 639px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin");
+
+    const sidebar = await screen.findByTestId("admin-sidebar");
+    await waitFor(() => expect(sidebar).toHaveAttribute("inert"));
+    // Icon-only controls keep an accessible name at phone widths.
+    expect(
+      screen.getByRole("button", { name: t("admin.search.title") }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: t("admin.nav.logout") }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("admin-sidebar-toggle"));
+    await waitFor(() => expect(sidebar).not.toHaveAttribute("inert"));
   });
 
   it("collapses the sidebar to an icon rail and remembers the choice", async () => {

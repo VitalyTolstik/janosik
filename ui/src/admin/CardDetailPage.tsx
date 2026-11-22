@@ -560,7 +560,7 @@ export function CardDetailPage() {
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 shrink-0"
+          className="h-7 w-7 shrink-0 max-sm:h-11 max-sm:w-11"
           asChild
         >
           <Link
@@ -908,7 +908,7 @@ export function CardDetailPage() {
                       aria-current={anchored ? "true" : undefined}
                       className={anchored ? "bg-warning/10" : undefined}
                     >
-                      <Td>
+                      <Td label={t("admin.attachments.column.file")}>
                         <span className="inline-flex items-center gap-2">
                           <AttachmentThumb
                             attachmentId={file.id}
@@ -922,10 +922,10 @@ export function CardDetailPage() {
                           />
                         </span>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.size")}>
                         <SizeCell bytes={file.sizeBytes} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.uploader")}>
                         <EntityLink
                           to={userHref(file.uploadedById)}
                           copyValue={file.uploadedByEmail}
@@ -933,10 +933,10 @@ export function CardDetailPage() {
                           {file.uploadedByEmail}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.created")}>
                         <DateCell value={file.createdAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.attachments.column.status")}>
                         {file.deletedAt !== null ? (
                           <Badge variant="danger">
                             {t("admin.status.deleted")}
@@ -947,7 +947,7 @@ export function CardDetailPage() {
                           </Badge>
                         )}
                       </Td>
-                      <Td className="text-right">
+                      <Td label="" className="text-right">
                         <RowActions
                           testId={`admin-card-attachment-actions-${file.id}`}
                           actions={
@@ -1020,7 +1020,10 @@ export function CardDetailPage() {
                       aria-current={anchored ? "true" : undefined}
                       className={anchored ? "bg-warning/10" : undefined}
                     >
-                      <Td className="max-w-[30rem] whitespace-normal">
+                      <Td
+                        label={t("admin.comments.column.text")}
+                        className="max-w-[30rem] whitespace-normal"
+                      >
                         {comment.text}
                         {comment.editedAt !== null ? (
                           <span
@@ -1034,7 +1037,7 @@ export function CardDetailPage() {
                           </span>
                         ) : null}
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.author")}>
                         <EntityLink
                           to={userHref(comment.authorId)}
                           copyValue={comment.authorEmail}
@@ -1043,10 +1046,10 @@ export function CardDetailPage() {
                           {comment.authorEmail}
                         </EntityLink>
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.created")}>
                         <DateCell value={comment.createdAt} />
                       </Td>
-                      <Td>
+                      <Td label={t("admin.comments.column.status")}>
                         {comment.deletedAt !== null ? (
                           <Badge variant="danger">
                             {t("admin.status.deleted")}
@@ -1057,7 +1060,7 @@ export function CardDetailPage() {
                           </Badge>
                         )}
                       </Td>
-                      <Td className="text-right">
+                      <Td label="" className="text-right">
                         <RowActions
                           testId={`admin-card-comment-actions-${comment.id}`}
                           actions={

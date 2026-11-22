@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,11 @@ import { useToast } from "@/components/Toast";
 import { ApiError } from "@/api/client";
 import { useI18n } from "@/i18n";
 import { docsPageUrl } from "@/utils/docs-url";
-import { adminApi } from "./admin-client";
+import {
+  adminApi,
+  withAdminRequestTimeout,
+  AdminRequestTimeoutError,
+} from "./admin-client";
 import { useAdminT } from "./admin-i18n";
 import {
   ADMIN_PASSWORD_MAX,
@@ -23,6 +27,9 @@ import {
 } from "@janosik/shared";
 import { CharCount, Field } from "./ui";
 import { fieldError, isValid } from "./validation";
+
+/** QA review: a hung reset must fall back to a closable error state. */
+const RESET_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Creation dialogs for the generic entity pages (TASK-48): users (with the
@@ -44,6 +51,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
     password: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+  const requestRef = useRef(0);
 
   const emailError = fieldError(t, email, { required: true, email: true });
   const nameError = fieldError(t, displayName, { max: 50 });
@@ -71,14 +79,22 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (busy) return;
+    const request = ++requestRef.current;
     setBusy(true);
     setError(null);
     try {
-      const response = await adminApi.createUser({
-        email: email.trim(),
-        displayName: displayName.trim() || undefined,
-        password: password === "" ? undefined : password,
-      });
+      const response = await withAdminRequestTimeout((signal) =>
+        adminApi.createUser(
+          {
+            email: email.trim(),
+            displayName: displayName.trim() || undefined,
+            password: password === "" ? undefined : password,
+          },
+          { signal },
+        ),
+      );
+      if (requestRef.current !== request) return;
       toast.success(
         t("admin.users.toast.created", { email: response.user.email }),
       );
@@ -93,7 +109,10 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
         reset();
       }
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 409) {
+      if (requestRef.current !== request) return;
+      if (cause instanceof AdminRequestTimeoutError) {
+        setError(t("admin.users.create.timeout"));
+      } else if (cause instanceof ApiError && cause.status === 409) {
         setError(t("admin.users.changeEmail.taken"));
       } else if (cause instanceof ApiError && cause.messageText) {
         setError(cause.messageText);
@@ -101,11 +120,13 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
         setError(t("admin.common.error"));
       }
     } finally {
-      setBusy(false);
+      if (requestRef.current === request) setBusy(false);
     }
   };
 
   const closeAll = () => {
+    requestRef.current += 1;
+    setBusy(false);
     setOpen(false);
     reset();
   };
@@ -122,9 +143,9 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
       </Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => (next ? undefined : closeAll())}
+        onOpenChange={(next) => (next || busy ? undefined : closeAll())}
       >
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-sm" hideClose={busy}>
           {temporary ? (
             <>
               <DialogHeader>
@@ -546,31 +567,64 @@ export function ResetUserPasswordDialog({
   const [password, setPassword] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // QA-A2: while the one-time password is in flight the dialog must not be
+  // dismissible — closing it would leave the account with an unknown password.
+  const [busy, setBusy] = useState(false);
+  const requestRef = useRef(0);
 
-  // Fire the reset whenever a user is opened.
+  // Fire the reset whenever a user is opened. A generation guard plus a
+  // timeout/abort means a late or hung response can never keep the dialog
+  // trapped or reveal a secret from an older attempt.
   useEffect(() => {
     if (user === null) return;
+    const request = ++requestRef.current;
     let active = true;
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new Error("reset_timeout"));
+      }, RESET_REQUEST_TIMEOUT_MS);
+    });
     setPassword(null);
     setError(null);
     setCopied(false);
-    adminApi
-      .resetUserPassword(user.id)
+    setBusy(true);
+    void Promise.race([
+      adminApi.resetUserPassword(user.id, { signal: controller.signal }),
+      timeout,
+    ])
       .then((result) => {
-        if (!active) return;
+        if (!active || requestRef.current !== request) return;
         setPassword(result.temporaryPassword);
         toast.success(t("admin.userDetail.reset.done"));
       })
       .catch(() => {
-        if (active) setError(t("admin.common.actionFailed"));
+        if (!active || requestRef.current !== request) return;
+        setError(
+          timedOut
+            ? t("admin.userDetail.reset.timeout")
+            : t("admin.common.actionFailed"),
+        );
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (active && requestRef.current === request) setBusy(false);
       });
     return () => {
       active = false;
+      clearTimeout(timer);
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on user id
   }, [user?.id]);
 
   const close = () => {
+    if (busy) return;
+    requestRef.current += 1;
     setPassword(null);
     onClose();
   };
@@ -591,6 +645,8 @@ export function ResetUserPasswordDialog({
       <DialogContent
         className="max-w-sm"
         data-testid="admin-reset-password-dialog"
+        hideClose={busy}
+        aria-busy={busy}
       >
         <DialogHeader>
           <DialogTitle>
@@ -618,7 +674,18 @@ export function ResetUserPasswordDialog({
               <p className="text-[11px] text-muted-foreground">
                 {t("admin.userDetail.reset.oneTime")}
               </p>
-              <Button size="sm" variant="outline" type="button" onClick={copy}>
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                aria-label={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                title={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                onClick={copy}
+              >
                 {copied ? (
                   <Check className="h-3.5 w-3.5" aria-hidden />
                 ) : (
@@ -629,7 +696,13 @@ export function ResetUserPasswordDialog({
           </div>
         )}
         <DialogFooter>
-          <Button size="sm" variant="ghost" type="button" onClick={close}>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            disabled={busy}
+            onClick={close}
+          >
             {t("admin.common.close")}
           </Button>
         </DialogFooter>
@@ -761,28 +834,47 @@ export function PromoteUserDialog({
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const close = () => {
+    if (busy) return;
+    requestRef.current += 1;
     setTyped("");
     setPassword(null);
     setCopied(false);
+    setError(null);
     onClose();
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!user || typed.trim().toLowerCase() !== user.email.toLowerCase())
+    if (
+      !user ||
+      busy ||
+      typed.trim().toLowerCase() !== user.email.toLowerCase()
+    )
       return;
+    const request = ++requestRef.current;
     setBusy(true);
+    setError(null);
     try {
-      const result = await adminApi.promoteUser(user.id);
+      const result = await withAdminRequestTimeout((signal) =>
+        adminApi.promoteUser(user.id, { signal }),
+      );
+      if (requestRef.current !== request) return;
       setPassword(result.temporaryPassword);
       toast.success(t("admin.userDetail.promote.done"));
       onDone();
-    } catch {
-      toast.error(t("admin.common.actionFailed"));
+    } catch (cause) {
+      if (requestRef.current !== request) return;
+      if (cause instanceof AdminRequestTimeoutError) {
+        setError(t("admin.userDetail.promote.timeout"));
+      } else {
+        toast.error(t("admin.common.actionFailed"));
+      }
     } finally {
-      setBusy(false);
+      if (requestRef.current === request) setBusy(false);
     }
   };
 
@@ -802,11 +894,12 @@ export function PromoteUserDialog({
   return (
     <Dialog
       open={user !== null}
-      onOpenChange={(next) => (next ? undefined : close())}
+      onOpenChange={(next) => (next || busy ? undefined : close())}
     >
       <DialogContent
         className="max-w-sm"
         data-testid="admin-promote-user-dialog"
+        hideClose={busy}
       >
         <DialogHeader>
           <DialogTitle>
@@ -833,8 +926,23 @@ export function PromoteUserDialog({
                 onChange={(event) => setTyped(event.target.value)}
               />
             </Field>
+            {error !== null ? (
+              <p
+                role="alert"
+                className="text-xs text-danger"
+                data-testid="admin-promote-error"
+              >
+                {error}
+              </p>
+            ) : null}
             <DialogFooter className="gap-2">
-              <Button size="sm" type="button" variant="ghost" onClick={close}>
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={close}
+              >
                 {t("admin.common.cancel")}
               </Button>
               <Button
@@ -863,7 +971,18 @@ export function PromoteUserDialog({
               >
                 {password}
               </code>
-              <Button size="sm" variant="outline" type="button" onClick={copy}>
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                aria-label={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                title={
+                  copied ? t("admin.common.copied") : t("admin.common.copy")
+                }
+                onClick={copy}
+              >
                 {copied ? (
                   <Check className="h-3.5 w-3.5" aria-hidden />
                 ) : (

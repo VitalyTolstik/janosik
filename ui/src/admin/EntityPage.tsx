@@ -424,14 +424,13 @@ export function EntityPage<E extends AdminEntity>({
     });
   };
 
-  const tabsClassName = filterSurface
-    ? "admin-tab-strip max-w-full max-sm:h-auto max-sm:overflow-x-auto max-sm:[&_button]:h-11 max-sm:[&_button]:shrink-0"
-    : undefined;
+  const tabsClassName =
+    "admin-tab-strip max-w-full max-sm:h-auto max-sm:overflow-x-auto max-sm:[&_button]:h-11 max-sm:[&_button]:shrink-0";
   const renderHeader = (filterTrigger?: ReactNode) => (
     <PageHeader
       title={config.title}
       subtitle={config.subtitle?.replaceAll("{total}", String(list.total))}
-      actionsClassName={filterSurface ? "max-w-full max-sm:w-full" : undefined}
+      actionsClassName="max-w-full max-sm:w-full"
       actions={
         <>
           <SearchInput
@@ -439,7 +438,7 @@ export function EntityPage<E extends AdminEntity>({
             className={
               filterSurface
                 ? "max-sm:h-11 max-sm:min-w-0 max-sm:flex-1 max-sm:basis-40"
-                : undefined
+                : "max-sm:w-full"
             }
             onChange={(value) =>
               withSelectionReset(() => list.setSearch(value))
@@ -832,7 +831,7 @@ export function EntityPage<E extends AdminEntity>({
         )}
         {!list.loading &&
         !list.error &&
-        (list.items.length > 0 || (filterSurface && list.total > 0))
+        (list.items.length > 0 || list.total > 0)
           ? pagination
           : null}
       </Panel>

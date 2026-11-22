@@ -229,9 +229,19 @@ export function ObservabilityPage() {
           <tbody>
             {data.database.tables.map((table) => (
               <tr key={table.name} className="border-b last:border-0">
-                <Td>{table.name}</Td>
-                <Td className="tabular-nums">{table.rows}</Td>
-                <Td className="tabular-nums">
+                <Td label={t("admin.observability.table.name")}>
+                  {table.name}
+                </Td>
+                <Td
+                  label={t("admin.observability.table.rows")}
+                  className="tabular-nums"
+                >
+                  {table.rows}
+                </Td>
+                <Td
+                  label={t("admin.observability.table.size")}
+                  className="tabular-nums"
+                >
                   {(table.sizeBytes / 1024).toFixed(0)} KB
                 </Td>
               </tr>

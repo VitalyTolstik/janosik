@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AdminFeatureFlagDto,
   AdminOpsSettingsDto,
@@ -45,34 +45,110 @@ export function OpsPage() {
   const [reminderLead, setReminderLead] = useState("0");
   const [busy, setBusy] = useState(false);
   const [purging, setPurging] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [openingQueues, setOpeningQueues] = useState(false);
+  const [retentionState, setRetentionState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  // Only the latest retention-count request may write state; a slow answer
+  // for an older draft window must not overwrite the current one.
+  const retentionRequest = useRef(0);
+  const lastRetentionRequestDays = useRef<number | null>(null);
+  const savedRetentionDays = useRef<number | null>(null);
+  // Live draft mirror: a reload that resolves after the owner edits the field
+  // must read the newest value, not the one captured when the action started.
+  const retentionDraft = useRef("");
 
-  const load = useCallback(() => {
-    Promise.all([
-      adminApi.listFlags(),
-      adminApi.getOps(),
-      adminApi.getRetention(),
-    ])
-      .then(([nextFlags, nextOps, nextRetention]) => {
+  const setRetentionDraft = useCallback((value: string) => {
+    retentionDraft.current = value;
+    setRetentionDays(value);
+  }, []);
+
+  const fetchRetention = useCallback(
+    async (days?: number): Promise<boolean> => {
+      const request = ++retentionRequest.current;
+      if (days !== undefined) lastRetentionRequestDays.current = days;
+      setRetentionState("loading");
+      try {
+        const next = await adminApi.getRetention(days);
+        if (retentionRequest.current !== request) return false;
+        setRetention(next);
+        setRetentionState("ready");
+        return true;
+      } catch {
+        if (retentionRequest.current !== request) return false;
+        setRetentionState("error");
+        return false;
+      }
+    },
+    [],
+  );
+
+  const load = useCallback(
+    async (options: { preserveDrafts?: boolean } = {}) => {
+      try {
+        const [nextFlags, nextOps] = await Promise.all([
+          adminApi.listFlags(),
+          adminApi.getOps(),
+        ]);
         setFlags(nextFlags);
         setOps(nextOps);
-        setRetention(nextRetention);
         setMessage(nextOps.maintenanceMessage ?? "");
         setPerUser(nextOps.perUserRateLimit?.toString() ?? "");
         // Default retention window: 30 days (mirrors the backend default).
-        setRetentionDays(String(nextOps.retentionDays ?? 30));
+        const days = nextOps.retentionDays ?? 30;
+        const previousSaved = savedRetentionDays.current;
+        savedRetentionDays.current = days;
+        const currentDraft = retentionDraft.current;
+        const keepDraft =
+          options.preserveDrafts === true &&
+          previousSaved !== null &&
+          currentDraft !== String(previousSaved) &&
+          days === previousSaved;
+        const effectiveDraft = keepDraft
+          ? currentDraft.trim() === ""
+            ? 30
+            : Number(currentDraft)
+          : days;
+        if (!keepDraft) setRetentionDraft(String(days));
         setMaintInterval(String(nextOps.maintenanceIntervalMinutes ?? 0));
         setDigestHours(String(nextOps.digestIntervalHours ?? 0));
         setReminderLead(String(nextOps.reminderLeadHours ?? 0));
+        // Gate `ready` on the initial retention answer: the panel must not
+        // briefly claim zero eligible rows or "no backup directory". When a
+        // preserved draft is active, fetch counts for the draft, not the
+        // stale saved window.
+        const validDraft =
+          Number.isFinite(effectiveDraft) &&
+          effectiveDraft >= 1 &&
+          effectiveDraft <= 3_650;
+        if (validDraft) await fetchRetention(effectiveDraft);
         setPhase("ready");
-      })
-      .catch(() => setPhase("error"));
-  }, []);
+      } catch {
+        setPhase("error");
+      }
+    },
+    [fetchRetention, setRetentionDraft],
+  );
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
+
+  // QA-A1: the "eligible" counts must describe the window the owner sees, not
+  // the last saved setting. Debounced so typing 365 does not fire a request
+  // per digit.
+  useEffect(() => {
+    if (phase !== "ready") return;
+    const days = retentionDays.trim() === "" ? 30 : Number(retentionDays);
+    if (!Number.isFinite(days) || days < 1 || days > 3_650) return;
+    if (lastRetentionRequestDays.current === days) return;
+    const timer = setTimeout(() => {
+      void fetchRetention(days);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [retentionDays, phase, fetchRetention]);
 
   const toggleFlag = useCallback(
     async (flag: AdminFeatureFlagDto, next: boolean) => {
@@ -89,13 +165,17 @@ export function OpsPage() {
         toast.success(t("admin.ops.saved"));
       } catch {
         toast.error(t("admin.common.actionFailed"));
-        load();
+        void load({ preserveDrafts: true });
       }
     },
     [load, t, toast],
   );
 
   const saveOps = useCallback(async () => {
+    const draftDays = retentionDays.trim() === "" ? 30 : Number(retentionDays);
+    if (!Number.isFinite(draftDays) || draftDays < 1 || draftDays > 3_650) {
+      return;
+    }
     setBusy(true);
     try {
       const updated = await adminApi.updateOps({
@@ -108,6 +188,7 @@ export function OpsPage() {
         reminderLeadHours: Number(reminderLead) || 0,
       });
       setOps(updated);
+      savedRetentionDays.current = updated.retentionDays ?? 30;
       toast.success(t("admin.ops.saved"));
     } catch {
       toast.error(t("admin.common.actionFailed"));
@@ -138,7 +219,7 @@ export function OpsPage() {
         );
         toast.success(t("admin.ops.runNow.done", { count: removed }));
       }
-      load();
+      void load({ preserveDrafts: true });
     } catch {
       toast.error(t("admin.common.actionFailed"));
     } finally {
@@ -178,23 +259,41 @@ export function OpsPage() {
   );
 
   const purge = useCallback(async () => {
+    if (purging) return;
+    const days = retentionDays.trim() === "" ? 30 : Number(retentionDays);
+    if (!Number.isFinite(days) || days < 1 || days > 3_650) return;
     setPurging(true);
     try {
-      const result = await adminApi.purgeSoftDeleted();
+      // QA-A1: always send the visible window. The server validates it and
+      // never falls back to a stale saved value for this run.
+      const result = await adminApi.purgeSoftDeleted(days);
       toast.success(
         t("admin.ops.retention.purged", { count: result.affected }),
       );
-      load();
+      setPurgeOpen(false);
+      // Refresh the counts for the same window without resetting the draft.
+      void fetchRetention(days);
     } catch {
       toast.error(t("admin.common.actionFailed"));
     } finally {
       setPurging(false);
     }
-  }, [load, t, toast]);
+  }, [fetchRetention, purging, retentionDays, t, toast]);
 
   const effectiveDays =
     retentionDays.trim() === "" ? 30 : Number(retentionDays);
-  const daysValid = Number.isFinite(effectiveDays) && effectiveDays >= 1;
+  const daysValid =
+    Number.isFinite(effectiveDays) &&
+    effectiveDays >= 1 &&
+    effectiveDays <= 3_650;
+  const savedDays = ops?.retentionDays ?? 30;
+  const retentionDirty = daysValid && effectiveDays !== savedDays;
+  const retentionMatches =
+    retentionState === "ready" &&
+    retention !== null &&
+    retention.retentionDays === effectiveDays;
+  const retentionData = retentionMatches ? retention : null;
+  const retentionFailed = retentionState === "error";
 
   if (phase === "loading")
     return <SettingsSkeleton testId="admin-ops-skeleton" panels={3} wide />;
@@ -203,7 +302,7 @@ export function OpsPage() {
       <ErrorState
         onRetry={() => {
           setPhase("loading");
-          load();
+          void load();
         }}
       />
     );
@@ -286,7 +385,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-save"
             onClick={() => void saveOps()}
           >
@@ -322,7 +421,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-rate-limit-save"
             onClick={() => void saveOps()}
           >
@@ -344,14 +443,29 @@ export function OpsPage() {
               max={3650}
               value={retentionDays}
               ariaLabel={t("admin.ops.retentionDays")}
+              ariaDescribedBy={
+                daysValid ? undefined : "admin-ops-retention-invalid"
+              }
+              invalid={!daysValid}
               increaseLabel={t("admin.common.increase")}
               decreaseLabel={t("admin.common.decrease")}
               disabled={!isOwner}
-              onChange={setRetentionDays}
+              onChange={setRetentionDraft}
             />
-            <span className="text-[11px] text-muted-foreground">
-              {t("admin.ops.retentionDaysHint")}
-            </span>
+            {daysValid ? (
+              <span className="text-[11px] text-muted-foreground">
+                {t("admin.ops.retentionDaysHint")}
+              </span>
+            ) : (
+              <span
+                id="admin-ops-retention-invalid"
+                role="alert"
+                className="text-[11px] text-danger"
+                data-testid="admin-ops-retention-invalid"
+              >
+                {t("admin.ops.retention.invalid")}
+              </span>
+            )}
             <div className="flex flex-wrap gap-1.5">
               {[30, 90, 365].map((preset) => (
                 <Button
@@ -363,7 +477,7 @@ export function OpsPage() {
                   }
                   data-testid={`admin-ops-retention-preset-${preset}`}
                   disabled={!isOwner}
-                  onClick={() => setRetentionDays(String(preset))}
+                  onClick={() => setRetentionDraft(String(preset))}
                 >
                   {t("admin.ops.retentionPreset", { days: preset })}
                 </Button>
@@ -374,41 +488,98 @@ export function OpsPage() {
         <div className="mt-2 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-retention-save"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
           </Button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {t("admin.ops.retention.olderThan", { days: effectiveDays })}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("admin.ops.retention.purgeable", {
-            cards: retention?.purgeable.cards ?? 0,
-            comments: retention?.purgeable.comments ?? 0,
-            attachments: retention?.purgeable.attachments ?? 0,
-            columns: retention?.purgeable.columns ?? 0,
-          })}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {retention?.backups.mode === "external"
-            ? t("admin.ops.backups.external", {
-                location: retention.backups.location ?? "",
-              })
-            : t("admin.ops.backups.none")}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("admin.ops.backups.notAutomatic")}
-        </p>
+        {daysValid ? (
+          <>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t("admin.ops.retention.olderThan", { days: effectiveDays })}
+            </p>
+            {retentionDirty ? (
+              <p
+                className="mt-1 text-xs text-warning"
+                data-testid="admin-ops-retention-dirty"
+              >
+                {t("admin.ops.retention.draftHint", { days: effectiveDays })}
+              </p>
+            ) : null}
+            {retentionData === null ? (
+              retentionFailed ? (
+                <div
+                  className="mt-1 flex flex-wrap items-center gap-2"
+                  data-testid="admin-ops-retention-error"
+                >
+                  <p role="alert" className="text-xs text-danger">
+                    {t("admin.ops.retention.loadError")}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    disabled={!daysValid}
+                    data-testid="admin-ops-retention-retry"
+                    onClick={() => void fetchRetention(effectiveDays)}
+                  >
+                    {t("admin.common.retry")}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="mt-1 flex items-center"
+                  data-testid="admin-ops-retention-loading"
+                  aria-busy
+                >
+                  <span className="sr-only">
+                    {t("admin.ops.retention.loading")}
+                  </span>
+                  <span
+                    className="h-3 w-64 animate-pulse rounded bg-hover"
+                    aria-hidden
+                  />
+                </div>
+              )
+            ) : (
+              <>
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="admin-ops-retention-counts"
+                >
+                  {t("admin.ops.retention.purgeable", {
+                    cards: retentionData.purgeable.cards,
+                    comments: retentionData.purgeable.comments,
+                    attachments: retentionData.purgeable.attachments,
+                    columns: retentionData.purgeable.columns,
+                  })}
+                </p>
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="admin-ops-backup-status"
+                >
+                  {retentionData.backups.mode === "external"
+                    ? t("admin.ops.backups.external", {
+                        location: retentionData.backups.location ?? "",
+                      })
+                    : t("admin.ops.backups.none")}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("admin.ops.backups.notAutomatic")}
+                </p>
+              </>
+            )}
+          </>
+        ) : null}
         <div className="mt-3 flex justify-end">
           <Button
             variant="destructive"
             size="sm"
-            disabled={!daysValid || !isOwner}
+            disabled={!daysValid || !isOwner || purging || !retentionMatches}
             data-testid="admin-ops-purge"
-            onClick={() => setPurging(true)}
+            onClick={() => setPurgeOpen(true)}
           >
             {t("admin.ops.retention.purge")}
           </Button>
@@ -451,7 +622,7 @@ export function OpsPage() {
           </Button>
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-schedule-save"
             onClick={() => void saveOps()}
           >
@@ -502,7 +673,7 @@ export function OpsPage() {
         <div className="mt-3 flex justify-end">
           <Button
             size="sm"
-            disabled={busy || !isOwner}
+            disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-comms-save"
             onClick={() => void saveOps()}
           >
@@ -534,13 +705,15 @@ export function OpsPage() {
       ) : null}
 
       <ConfirmDialog
-        open={purging}
+        open={purgeOpen}
         title={t("admin.ops.retention.confirm.title")}
         body={t("admin.ops.retention.confirm.body", { days: effectiveDays })}
         confirmLabel={t("admin.ops.retention.purge")}
-        busy={false}
+        busy={purging}
         onConfirm={() => void purge()}
-        onClose={() => setPurging(false)}
+        onClose={() => {
+          if (!purging) setPurgeOpen(false);
+        }}
       />
     </div>
   );

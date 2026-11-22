@@ -44,6 +44,7 @@ test("S19: saving and resetting a mail template restores the default", async ({
     await expect(page.getByText("custom", { exact: true })).toBeVisible();
 
     await page.getByTestId("admin-template-reset-verification_code").click();
+    await page.getByTestId("admin-confirm-accept").click();
     await expectToast(page, "Template reset");
     await expect(page.getByText("custom", { exact: true })).toHaveCount(0);
     await expect(subject).toHaveValue(original);

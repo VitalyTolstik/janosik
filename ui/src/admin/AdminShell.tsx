@@ -195,6 +195,7 @@ export function AdminShell() {
 
       <AdminSidebar
         collapsed={effectiveCollapsed}
+        mobile={mobile}
         mobileOpen={mobileOpen}
         onNavigate={() => setMobileOpen(false)}
       />

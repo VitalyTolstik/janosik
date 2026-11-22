@@ -231,8 +231,12 @@ const en = {
   "admin.userDetail.reset.done": "Temporary password issued",
   "admin.userDetail.reset.oneTime":
     "Hand this password over now — it will not be shown again.",
+  "admin.userDetail.reset.timeout":
+    "The reset request timed out. Close this dialog and try again; if the old password stops working, reset it once more.",
   "admin.userDetail.resend.done": "Verification code sent",
   "admin.userDetail.promote.done": "Master account created",
+  "admin.userDetail.promote.timeout":
+    "The promotion request timed out. The account may already be a master with a new password — retry, or reset it from the roster once it appears.",
   "admin.userDetail.exported": "Export downloaded",
   "admin.userDetail.impersonate.done": "Impersonation link opened in a new tab",
 
@@ -307,8 +311,15 @@ const en = {
   "admin.ops.retention": "Soft-deleted data",
   "admin.ops.retention.olderThan":
     "Only already-deleted items older than {days} days are eligible.",
+  "admin.ops.retention.draftHint":
+    "Purge uses this {days}-day window right now. Save first to make it the default — this run never falls back to the saved value.",
   "admin.ops.retention.purgeable":
     "{cards} cards · {comments} comments · {attachments} attachments · {columns} columns",
+  "admin.ops.retention.loading":
+    "Loading eligible rows and backup status for this window…",
+  "admin.ops.retention.loadError":
+    "Could not load the retention status for this window.",
+  "admin.ops.retention.invalid": "Enter a whole number from 1 to 3650 days.",
   "admin.ops.retention.purge": "Purge now",
   "admin.ops.retention.confirm.title": "Purge soft-deleted data?",
   "admin.ops.retention.confirm.body":
@@ -437,6 +448,9 @@ const en = {
   "admin.comms.templates.previewNote":
     "Placeholders show sample values — the real letter uses the recipient's data. Rendered exactly as an email client sees it.",
   "admin.comms.templates.reset": "Reset to default",
+  "admin.comms.templates.resetConfirm.title": "Reset the “{name}” template?",
+  "admin.comms.templates.resetConfirm.body":
+    "Your custom subject and HTML body will be replaced by the built-in letter. This cannot be undone.",
   "admin.comms.templates.resetDone": "Template reset to the built-in letter",
   "admin.comms.saved": "Template saved",
   "admin.comms.field.title": "Title",
@@ -562,6 +576,15 @@ const en = {
   "admin.demo.cleanupPending":
     "Cleanup is still pending because some demo rows have dependencies. Check the board and retry cleanup.",
 
+  "admin.boot.recovering.rateLimited":
+    "The session check was rate-limited. Your session is still valid; retrying automatically…",
+  "admin.boot.recovering.unavailable":
+    "Could not check your session (server or network unavailable). Retrying automatically…",
+  "admin.boot.failed.rateLimited":
+    "The session check is still rate-limited. Your session may be valid — retry in a moment or sign in again.",
+  "admin.boot.failed.unavailable":
+    "Could not check your session. The server or network may be unavailable — retry or sign in again.",
+  "admin.boot.signIn": "Go to sign in",
   "admin.login.title": "Sign in to Janosik",
   "admin.login.subtitle": "Master console",
   "admin.login.backToSite": "Back to site",
@@ -821,6 +844,8 @@ const en = {
   "admin.users.create.passwordHint":
     "Leave empty to generate a strong password and show it once.",
   "admin.users.create.submit": "Create",
+  "admin.users.create.timeout":
+    "The create request timed out. The user and a temporary password may already exist — check the roster, then reset the password if needed.",
   "admin.users.created.title": "User created",
   "admin.users.created.passwordOnce": "Password (shown once)",
   "admin.users.created.done": "Done",
@@ -1158,10 +1183,14 @@ const en = {
   "admin.masters.create.ownerHint":
     "Owners can manage other masters; operators cannot.",
   "admin.masters.create.submit": "Create",
+  "admin.masters.create.timeout":
+    "The create request timed out. The master and a temporary password may already exist — check the roster, then reset the password if needed.",
   "admin.masters.created.title": "Master created",
   "admin.masters.created.passwordOnce":
     "One-time password — hand it over and have it changed",
   "admin.masters.reset.title": "Password reset",
+  "admin.masters.reset.timeout":
+    "The reset request timed out. The password may already have been changed — check the master and reset again if the new password is unknown.",
   "admin.masters.created.done": "Done",
   "admin.masters.toast.created": "Master {email} created",
   "admin.masters.toast.disabled": "{email} blocked",
@@ -1761,8 +1790,12 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.userDetail.reset.done": "Временный пароль выдан",
   "admin.userDetail.reset.oneTime":
     "Передайте этот пароль сейчас — он больше не будет показан.",
+  "admin.userDetail.reset.timeout":
+    "Запрос на сброс не ответил вовремя. Закройте окно и повторите; если старый пароль перестал работать, сбросьте его ещё раз.",
   "admin.userDetail.resend.done": "Код подтверждения отправлен",
   "admin.userDetail.promote.done": "Мастер-аккаунт создан",
+  "admin.userDetail.promote.timeout":
+    "Запрос на повышение не ответил вовремя. Аккаунт мог уже стать мастером с новым паролем — повторите или сбросьте пароль из списка, когда он появится.",
   "admin.userDetail.exported": "Выгрузка скачана",
   "admin.userDetail.impersonate.done": "Ссылка входа открыта в новой вкладке",
 
@@ -1840,8 +1873,15 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.ops.retention": "Удалённые (soft-delete) данные",
   "admin.ops.retention.olderThan":
     "Под очистку попадают только уже удалённые элементы старше {days} дней.",
+  "admin.ops.retention.draftHint":
+    "Очистка использует это окно в {days} дней прямо сейчас. Нажмите «Сохранить», чтобы сделать его значением по умолчанию — этот запуск не использует сохранённое значение.",
   "admin.ops.retention.purgeable":
     "{cards} карточек · {comments} комментариев · {attachments} вложений · {columns} колонок",
+  "admin.ops.retention.loading":
+    "Загружаем подходящие строки и статус бэкапов для этого окна…",
+  "admin.ops.retention.loadError":
+    "Не удалось загрузить статус хранения для этого окна.",
+  "admin.ops.retention.invalid": "Введите целое число от 1 до 3650 дней.",
   "admin.ops.retention.purge": "Очистить",
   "admin.ops.retention.confirm.title": "Очистить soft-deleted данные?",
   "admin.ops.retention.confirm.body":
@@ -1970,6 +2010,9 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.comms.templates.previewNote":
     "Плейсхолдеры показаны с примерными значениями — в реальном письме подставятся данные получателя. Отрендерено ровно так, как увидит почтовый клиент.",
   "admin.comms.templates.reset": "Сбросить к стандартному",
+  "admin.comms.templates.resetConfirm.title": "Сбросить шаблон «{name}»?",
+  "admin.comms.templates.resetConfirm.body":
+    "Ваши тема и HTML-тело будут заменены встроенным письмом. Отменить это нельзя.",
   "admin.comms.templates.resetDone": "Шаблон сброшен к встроенному",
   "admin.comms.saved": "Шаблон сохранён",
   "admin.comms.field.title": "Заголовок",
@@ -2097,6 +2140,15 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.demo.cleanupPending":
     "Очистка ещё не завершена: от некоторых демо-данных зависят другие записи. Проверьте доску и повторите очистку.",
 
+  "admin.boot.recovering.rateLimited":
+    "Превышен лимит проверок сессии. Сессия ещё действительна; повторяем автоматически…",
+  "admin.boot.recovering.unavailable":
+    "Не удалось проверить сессию (сервер или сеть недоступны). Повторяем автоматически…",
+  "admin.boot.failed.rateLimited":
+    "Проверки сессии всё ещё ограничены по частоте. Сессия может быть действительна — повторите через минуту или войдите заново.",
+  "admin.boot.failed.unavailable":
+    "Не удалось проверить сессию. Сервер или сеть могут быть недоступны — повторите или войдите заново.",
+  "admin.boot.signIn": "Перейти ко входу",
   "admin.login.title": "Вход в Janosik",
   "admin.login.subtitle": "Мастер-консоль",
   "admin.login.backToSite": "На сайт",
@@ -2358,6 +2410,8 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.users.create.passwordHint":
     "Оставь пустым — сгенерируем надёжный пароль и покажем один раз.",
   "admin.users.create.submit": "Создать",
+  "admin.users.create.timeout":
+    "Запрос на создание не ответил вовремя. Пользователь и временный пароль могли уже появиться — проверьте список и при необходимости сбросьте пароль.",
   "admin.users.created.title": "Пользователь создан",
   "admin.users.created.passwordOnce": "Пароль (показывается один раз)",
   "admin.users.created.done": "Готово",
@@ -2698,10 +2752,14 @@ const ru: Record<AdminMessageKey, string> = {
   "admin.masters.create.ownerHint":
     "Owner может управлять мастерами; operator — нет.",
   "admin.masters.create.submit": "Создать",
+  "admin.masters.create.timeout":
+    "Запрос на создание не ответил вовремя. Мастер и временный пароль могли уже появиться — проверьте список и при необходимости сбросьте пароль.",
   "admin.masters.created.title": "Мастер создан",
   "admin.masters.created.passwordOnce":
     "Одноразовый пароль — передай его и попроси сменить",
   "admin.masters.reset.title": "Пароль сброшен",
+  "admin.masters.reset.timeout":
+    "Запрос на сброс не ответил вовремя. Пароль мог уже измениться — проверьте мастера и сбросьте ещё раз, если новый пароль неизвестен.",
   "admin.masters.created.done": "Готово",
   "admin.masters.toast.created": "Мастер {email} создан",
   "admin.masters.toast.disabled": "{email} заблокирован",

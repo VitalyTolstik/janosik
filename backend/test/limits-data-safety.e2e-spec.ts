@@ -1022,6 +1022,108 @@ describe("Limits & data safety (e2e)", () => {
       });
     });
 
+    it("counts eligible rows for the requested retention window (QA review)", async () => {
+      const board = await createBoardWith(token, "Retention counts");
+      const columnId = randomUUID();
+      await prisma.column.create({
+        data: {
+          id: columnId,
+          boardId: board.id,
+          title: "Retention counts column",
+          position: 0,
+        },
+      });
+      await prisma.card.create({
+        data: {
+          id: randomUUID(),
+          columnId,
+          title: "Soft-deleted 60 days ago",
+          description: "",
+          position: 0,
+          deletedAt: new Date(Date.now() - 60 * 86_400_000),
+        },
+      });
+      const adminToken = await loginAdmin();
+
+      const young = await server()
+        .get("/api/v1/admin/retention?retentionDays=30")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(young.body).toMatchObject({
+        retentionDays: 30,
+        purgeable: { cards: 1 },
+      });
+
+      const old = await server()
+        .get("/api/v1/admin/retention?retentionDays=365")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(old.body).toMatchObject({
+        retentionDays: 365,
+        purgeable: { cards: 0 },
+      });
+
+      // No query uses the saved/default window (30).
+      const fallback = await server()
+        .get("/api/v1/admin/retention")
+        .set(auth(adminToken))
+        .expect(200);
+      expect(fallback.body).toMatchObject({
+        retentionDays: 30,
+        purgeable: { cards: 1 },
+      });
+    });
+
+    it("keeps data inside the window sent with the purge (QA-A1)", async () => {
+      const board = await createBoardWith(token, "Retention window");
+      await server()
+        .delete(`/api/v1/boards/${board.id}`)
+        .set(auth(token))
+        .expect(200);
+      const deletedAt = new Date(Date.now() - 60 * 86_400_000);
+      await prisma.board.update({
+        where: { id: board.id },
+        data: { deletedAt },
+      });
+      const adminToken = await loginAdmin();
+
+      // The dialog says 365 days: the 60-day-old row must survive.
+      await server()
+        .post("/api/v1/admin/retention/purge")
+        .set(auth(adminToken))
+        .send({ retentionDays: 365 })
+        .expect(201);
+      expect(
+        (await prisma.board.findUnique({ where: { id: board.id } }))?.deletedAt,
+      ).not.toBeNull();
+      const audit = await prisma.adminAuditLog.findFirst({
+        where: { action: "retention.changed" },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit?.details).toMatchObject({ retentionDays: 365 });
+
+      // Saving (or confirming) 30 days makes the same row eligible.
+      await server()
+        .post("/api/v1/admin/retention/purge")
+        .set(auth(adminToken))
+        .send({ retentionDays: 30 })
+        .expect(201);
+      expect(
+        await prisma.board.findUnique({ where: { id: board.id } }),
+      ).toBeNull();
+    });
+
+    it("rejects a purge window outside 1–3650 days", async () => {
+      const adminToken = await loginAdmin();
+      for (const retentionDays of [0, 3651]) {
+        await server()
+          .post("/api/v1/admin/retention/purge")
+          .set(auth(adminToken))
+          .send({ retentionDays })
+          .expect(400);
+      }
+    });
+
     it("keeps deletion lifecycle markers beyond the audit window", async () => {
       await prisma.securityAuditLog.create({
         data: {
