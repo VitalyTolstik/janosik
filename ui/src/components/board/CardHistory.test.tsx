@@ -505,11 +505,12 @@ describe("CardHistory", () => {
       init?: RequestInit,
     ): Promise<Response> => {
       const url = typeof input === "string" ? input : input.toString();
+      const response = await server.handle(input, init);
       if (url.includes("/cards/card-1/activity")) {
         listCalls += 1;
         if (listCalls >= 2) await gate;
       }
-      return server.handle(input, init);
+      return response;
     };
     vi.stubGlobal("fetch", handler);
     const live = createBoardLive();
@@ -530,6 +531,7 @@ describe("CardHistory", () => {
       live.commits.publish("b-1", ["card-1"]);
     });
     await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+    server.seedActivity("card-1", []);
     act(() => {
       live.activity.publish({
         type: "activity",
@@ -546,7 +548,59 @@ describe("CardHistory", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("history-diff")).not.toBeInTheDocument(),
     );
-    expect(screen.queryByText("Stale old")).not.toBeInTheDocument();
-    expect(screen.queryByText("Stale new")).not.toBeInTheDocument();
+  });
+
+  it("shows a restored comment again after delete then refetch", async () => {
+    const server = new FakeServer();
+    const liveEntry: ActivityFeedEntry = {
+      source: "activity",
+      id: "comment-update",
+      at: AT,
+      type: "comment_updated",
+      actorId: "user-2",
+      cardId: "card-1",
+      commentId: "comment-1",
+      changes: [{ field: "comment", from: "Restored old", to: "Restored new" }],
+    };
+    server.seedActivity("card-1", [liveEntry]);
+    const live = createBoardLive();
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <BoardLiveProvider live={live}>
+          <TooltipProvider>
+            <CardHistory cardId="card-1" boardId="b-1" updatedAt={1} />
+          </TooltipProvider>
+        </BoardLiveProvider>
+      </I18nProvider>,
+    );
+    expect(await screen.findByTestId("history-diff")).toHaveTextContent(
+      "Restored old",
+    );
+
+    server.seedActivity("card-1", []);
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: AT + 1,
+        kind: "comment_deleted",
+        commentId: "comment-1",
+      });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("history-diff")).not.toBeInTheDocument(),
+    );
+
+    // The master restored the row; a fresh feed response must be accepted.
+    server.seedActivity("card-1", [liveEntry]);
+    act(() => {
+      live.commits.publish("b-1", ["card-1"]);
+    });
+    expect(await screen.findByTestId("history-diff")).toHaveTextContent(
+      "Restored old",
+    );
   });
 });

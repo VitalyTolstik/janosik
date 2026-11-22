@@ -1813,6 +1813,7 @@ describe("CardComments", () => {
     });
     const handler: FetchHandler = async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
+      const response = await server.handle(input, init);
       if (
         url.includes("/cards/card-1/comments") &&
         (init?.method ?? "GET") === "GET"
@@ -1820,7 +1821,7 @@ describe("CardComments", () => {
         listCalls += 1;
         if (listCalls >= 2) await gate;
       }
-      return server.handle(input, init);
+      return response;
     };
     renderComments(server, false, handler);
     await screen.findByText("Stale body");
@@ -1831,6 +1832,9 @@ describe("CardComments", () => {
     });
     await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
 
+    // The server has committed the delete; only the response captured above
+    // is stale and must not resurrect the row.
+    server.seedComments("card-1", []);
     act(() => {
       server.publishActivity("b-1", {
         type: "activity",
@@ -1847,6 +1851,45 @@ describe("CardComments", () => {
     await waitFor(() =>
       expect(screen.queryByText("Stale body")).not.toBeInTheDocument(),
     );
+  });
+
+  it("restores a comment and count after delete then refetch", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-restored", text: "Restorable" }),
+    ]);
+    let count: ActivityCount | null | undefined;
+    renderComments(server, false, server.handle, "card-1", (next) => {
+      count = next;
+    });
+    await screen.findByText("Restorable");
+    await waitStream(server);
+
+    server.seedComments("card-1", []);
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-restored",
+      });
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("Restorable")).not.toBeInTheDocument(),
+    );
+
+    act(() => {
+      server.seedComments("card-1", [
+        comment({ id: "comment-restored", text: "Restored" }),
+      ]);
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(await screen.findByText("Restored")).toBeInTheDocument();
+    await waitFor(() => expect(count?.visible).toBe(1));
   });
 
   it("invalidates by commentId on an actor-less master deletion and closes the preview", async () => {

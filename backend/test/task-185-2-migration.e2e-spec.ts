@@ -193,4 +193,66 @@ describe("TASK-185.2 Activity commentId migration (e2e)", () => {
         .catch(() => undefined);
     }
   });
+
+  it("applies when the column and typed index already exist", async () => {
+    const precreated = `task185_2_pre_${Date.now()}_${process.pid}`;
+    await createBaseSchema(precreated);
+    try {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE ${quote(precreated)}."Activity" ADD COLUMN "commentId" TEXT`,
+      );
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX "Activity_commentId_idx"
+           ON ${quote(precreated)}."Activity"("commentId")`,
+      );
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO ${quote(precreated)}."Board" ("id") VALUES ('board-pre')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO ${quote(precreated)}."Column" ("id", "boardId")
+          VALUES ('col-pre', 'board-pre')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO ${quote(precreated)}."Card" ("id", "columnId")
+          VALUES ('card-pre', 'col-pre')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO ${quote(precreated)}."Comment" ("id", "cardId")
+          VALUES ('c-pre', 'card-pre')
+      `);
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO ${quote(precreated)}."Activity"
+          ("id", "type", "boardId", "cardId", "details", "commentId") VALUES
+          ('pre-existing', 'comment_added', 'board-pre', 'card-pre',
+            '{"commentId":"c-pre","text":"kept"}', 'manual-id')
+      `);
+
+      // A deploy script may have created the column/index first; the migration
+      // must be a no-op for both and still backfill missing links.
+      await applyMigration(precreated);
+      await applyMigration(precreated);
+      const rows = await prisma.$queryRawUnsafe<
+        Array<{ id: string; commentId: string | null }>
+      >(
+        `SELECT "id", "commentId" FROM ${quote(precreated)}."Activity"
+          WHERE "id" = 'pre-existing'`,
+      );
+      expect(rows[0]!.commentId).toBe("manual-id");
+      const indexes = await prisma.$queryRawUnsafe<
+        Array<{ indexname: string }>
+      >(
+        `SELECT indexname FROM pg_indexes
+          WHERE schemaname = '${precreated}'
+            AND tablename = 'Activity'
+          ORDER BY indexname`,
+      );
+      expect(indexes.map((row) => row.indexname)).toContain(
+        "Activity_commentId_idx",
+      );
+    } finally {
+      await prisma
+        .$executeRawUnsafe(`DROP SCHEMA IF EXISTS ${quote(precreated)} CASCADE`)
+        .catch(() => undefined);
+    }
+  });
 });

@@ -30,6 +30,7 @@ import { useBoardLive, useBoardMember } from "@/store/board-live";
 import {
   FIELD_KEYS,
   isStaleDeletedCommentEntry,
+  reconcileRestoredComments,
   sentenceFor,
 } from "@/utils/activity";
 import { AgentAttribution } from "@/components/agents/AgentAttribution";
@@ -78,21 +79,36 @@ export function CardHistory({
   const [loaded, setLoaded] = useState(!serverMode);
   const aliveRef = useRef(true);
   // TASK-185.2: an in-flight page can resolve after the deletion frame.
-  const deletedCommentIdsRef = useRef(new Set<string>());
-  const withoutStaleDeleted = useCallback((items: ActivityFeedEntry[]) => {
-    return items.filter(
-      (entry) =>
-        !isStaleDeletedCommentEntry(entry, deletedCommentIdsRef.current),
-    );
-  }, []);
+  const deletedCommentIdsRef = useRef(new Map<string, number>());
+  const deletionGenerationRef = useRef(0);
+  const withoutStaleDeleted = useCallback(
+    (items: ActivityFeedEntry[], requestGeneration: number) => {
+      reconcileRestoredComments(
+        items,
+        deletedCommentIdsRef.current,
+        requestGeneration,
+        (entry) => entry.commentId ?? entry.detail,
+      );
+      return items.filter(
+        (entry) =>
+          !isStaleDeletedCommentEntry(
+            entry,
+            deletedCommentIdsRef.current,
+            requestGeneration,
+          ),
+      );
+    },
+    [],
+  );
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const loadFirst = useCallback(async () => {
     if (!serverMode) return;
+    const generation = deletionGenerationRef.current;
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setFeed({ ...page, items: withoutStaleDeleted(page.items) });
+      setFeed({ ...page, items: withoutStaleDeleted(page.items, generation) });
     } catch {
       if (!aliveRef.current) return;
       toast.error(t("history.loadError"));
@@ -104,7 +120,6 @@ export function CardHistory({
   // Threads are keyed by card id upstream, so mount state is the reset.
   useEffect(() => {
     aliveRef.current = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
     void loadFirst();
     return () => {
       aliveRef.current = false;
@@ -113,12 +128,16 @@ export function CardHistory({
 
   const refreshNewest = useCallback(async () => {
     if (!serverMode) return;
+    const generation = deletionGenerationRef.current;
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
       setFeed((current) => {
         const merged = current ? mergeNewestActivity(current, page) : page;
-        return { ...merged, items: withoutStaleDeleted(merged.items) };
+        return {
+          ...merged,
+          items: withoutStaleDeleted(merged.items, generation),
+        };
       });
     } catch {
       /* best effort */
@@ -144,7 +163,11 @@ export function CardHistory({
       if (event.kind === "comment_deleted") {
         const deletedId = event.commentId ?? event.detail;
         if (deletedId) {
-          deletedCommentIdsRef.current.add(deletedId);
+          deletionGenerationRef.current += 1;
+          deletedCommentIdsRef.current.set(
+            deletedId,
+            deletionGenerationRef.current,
+          );
           // TASK-185.2: drop the cached text/diff immediately and let the
           // refetch return the text-free tombstones. Keying on the typed id
           // also works for an actor-less master frame.
@@ -178,13 +201,17 @@ export function CardHistory({
 
   const handleShowOlder = async () => {
     if (nextCursor === null || loadingOlder) return;
+    const generation = deletionGenerationRef.current;
     setLoadingOlder(true);
     try {
       const page = await api.cardActivity(cardId, nextCursor, PAGE_SIZE);
       setFeed((current) => {
         if (!current) return current;
         const merged = appendOlderActivity(current, page, nextCursor);
-        return { ...merged, items: withoutStaleDeleted(merged.items) };
+        return {
+          ...merged,
+          items: withoutStaleDeleted(merged.items, generation),
+        };
       });
     } catch {
       toast.error(t("history.loadError"));

@@ -9,7 +9,7 @@
 -- event, including rows whose comment (or parent) is already deleted. No
 -- revision is synthesised and no text changes.
 
-ALTER TABLE "Activity" ADD COLUMN "commentId" TEXT;
+ALTER TABLE "Activity" ADD COLUMN IF NOT EXISTS "commentId" TEXT;
 
 UPDATE "Activity" a
 SET "commentId" = a."details"->>'commentId'
@@ -31,7 +31,7 @@ WHERE a."type" IN ('comment_added', 'comment_updated', 'comment_deleted')
       AND col."boardId" = a."boardId"
   );
 
-CREATE INDEX "Activity_commentId_idx" ON "Activity"("commentId");
+CREATE INDEX IF NOT EXISTS "Activity_commentId_idx" ON "Activity"("commentId");
 
 -- The 185.1 expression index served the same lookup; the typed column
 -- replaces it. The revision-link expression index stays: revision ids still

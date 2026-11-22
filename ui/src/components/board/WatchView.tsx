@@ -22,6 +22,7 @@ import {
   FIELD_KEYS,
   formatChangeValue,
   isStaleDeletedCommentEntry,
+  reconcileRestoredComments,
   sentenceFor,
 } from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
@@ -131,13 +132,27 @@ export function WatchView({ boardId }: WatchViewProps) {
   const pageRef = useRef(0);
   const inFlight = useRef(false);
   // TASK-185.2: an in-flight page can resolve after the deletion frame.
-  const deletedCommentIdsRef = useRef(new Set<string>());
-  const withoutStaleDeleted = useCallback((items: ActivityFeedEntry[]) => {
-    return items.filter(
-      (entry) =>
-        !isStaleDeletedCommentEntry(entry, deletedCommentIdsRef.current),
-    );
-  }, []);
+  const deletedCommentIdsRef = useRef(new Map<string, number>());
+  const deletionGenerationRef = useRef(0);
+  const withoutStaleDeleted = useCallback(
+    (items: ActivityFeedEntry[], requestGeneration: number) => {
+      reconcileRestoredComments(
+        items,
+        deletedCommentIdsRef.current,
+        requestGeneration,
+        (entry) => entry.commentId ?? entry.detail,
+      );
+      return items.filter(
+        (entry) =>
+          !isStaleDeletedCommentEntry(
+            entry,
+            deletedCommentIdsRef.current,
+            requestGeneration,
+          ),
+      );
+    },
+    [],
+  );
   // Mirror the page for the stable poll callback without reading a ref in
   // render (react-hooks/refs).
   useEffect(() => {
@@ -198,8 +213,9 @@ export function WatchView({ boardId }: WatchViewProps) {
       if (cached !== undefined) return cached;
       if (!cursorByPage.current.has(index)) return null;
       const cursor = cursorByPage.current.get(index) ?? undefined;
+      const generation = deletionGenerationRef.current;
       const result = await api.boardActivity(boardId, cursor, pageSize);
-      const items = withoutStaleDeleted(result.items);
+      const items = withoutStaleDeleted(result.items, generation);
       pageCache.current.set(index, items);
       if (result.nextCursor === null) {
         atEndRef.current = true;
@@ -246,8 +262,9 @@ export function WatchView({ boardId }: WatchViewProps) {
   /** Load page 0 at `size` and reset the cursor chain to it. */
   const loadFirst = useCallback(
     async (size: number) => {
+      const generation = deletionGenerationRef.current;
       const result = await api.boardActivity(boardId, undefined, size);
-      const items = withoutStaleDeleted(result.items);
+      const items = withoutStaleDeleted(result.items, generation);
       pageCache.current.clear();
       pageCache.current.set(0, items);
       cursorByPage.current.clear();
@@ -348,7 +365,11 @@ export function WatchView({ boardId }: WatchViewProps) {
       if (event.kind === "comment_deleted") {
         const deletedId = event.commentId ?? event.detail;
         if (deletedId) {
-          deletedCommentIdsRef.current.add(deletedId);
+          deletionGenerationRef.current += 1;
+          deletedCommentIdsRef.current.set(
+            deletedId,
+            deletionGenerationRef.current,
+          );
           // Drop any cached comment diff immediately; the coalesced refetch
           // then returns the metadata-only tombstone.
           setItems((current) =>

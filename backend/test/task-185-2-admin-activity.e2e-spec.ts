@@ -138,6 +138,27 @@ describe("Admin comment activity projection (TASK-185.2, e2e)", () => {
     const json = JSON.stringify(page);
     expect(json).not.toContain("Original private body");
     expect(json).not.toContain("Edited private body");
+
+    // Filtering happens before paging: two one-row pages still total two and
+    // the deleted edit never occupies a slot at either offset.
+    const base =
+      `/api/v1/admin/entities/activity?boardId=${boardId}` +
+      "&type=comment_added&type=comment_updated&type=comment_deleted";
+    const first = await admin(`${base}&limit=1&offset=0`).expect(200);
+    const second = await admin(`${base}&limit=1&offset=1`).expect(200);
+    expect(first.body.total).toBe(2);
+    expect(second.body.total).toBe(2);
+    expect(first.body.items).toHaveLength(1);
+    expect(second.body.items).toHaveLength(1);
+    expect(
+      [
+        ...first.body.items.map((item: { type: string }) => item.type),
+        ...second.body.items.map((item: { type: string }) => item.type),
+      ].sort(),
+    ).toEqual(["comment_added", "comment_deleted"]);
+    expect(JSON.stringify([first.body, second.body])).not.toContain(
+      "Edited private body",
+    );
   });
 
   it("projects the user activity tab without deleted text or details", async () => {
