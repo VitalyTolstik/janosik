@@ -85,6 +85,18 @@ describe("UpdatePrompt", () => {
     expect(prompt).not.toHaveTextContent("Reload the page to get the latest");
   });
 
+  it("keeps the floating prompt above the home-indicator safe area", () => {
+    renderPrompt("floating");
+    announceUpdate();
+
+    // F5: `bottom-4` put the card 15–18 px into a 34 px bottom inset. The
+    // calc keeps the old 16 px margin on desktop (env = 0) and adds the
+    // inset on a notched phone/PWA.
+    expect(screen.getByTestId("update-prompt-shell").className).toContain(
+      "bottom-[calc(1rem_+_env(safe-area-inset-bottom))]",
+    );
+  });
+
   it("keeps the announcement when the prompt moves between placements", () => {
     const Harness = ({ variant }: { variant: "inline" | "floating" }) => (
       <I18nProvider>
