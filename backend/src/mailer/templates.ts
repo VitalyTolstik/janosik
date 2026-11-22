@@ -446,7 +446,10 @@ export function dueReminderEmail(
     ? "{{countLabel}}"
     : dueCountLabel(count, locale);
   if (locale === "ru") {
-    const heading = `${russianForm(count, "Задача", "Задачи", "Задачи")} с приближающимся сроком`;
+    const heading =
+      Number(count) === 1
+        ? "Задача с приближающимся сроком"
+        : "Задачи с приближающимся сроком";
     return {
       subject: `${BRAND}: ${countLabel} с приближающимся сроком`,
       text: `${heading}:\n${htmlToText(tasksHtml)}`,

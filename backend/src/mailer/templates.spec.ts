@@ -408,6 +408,9 @@ describe("digestEmail attention summary", () => {
     expect(dueReminderEmail(5, "<li>Ship it</li>", "ru").subject).toContain(
       "5 задач с приближающимся сроком",
     );
+    const due21 = dueReminderEmail(21, "<li>Ship it</li>", "ru");
+    expect(due21.subject).toContain("21 задача с приближающимся сроком");
+    expect(due21.text).toContain("Задачи с приближающимся сроком:");
   });
 
   it("adds aggregated categories in both locales", () => {

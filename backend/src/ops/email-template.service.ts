@@ -56,6 +56,23 @@ export const EMAIL_TEMPLATE_KEYS = [
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]["key"];
 
+/**
+ * A row equal to the built-in default was saved without edits. Digest and
+ * due-reminder defaults must then use the localized direct builder, not the
+ * English template text with a localized count phrase.
+ */
+function isBuiltInDefault(
+  key: EmailTemplateKey,
+  row: { subject: string; bodyHtml: string },
+): boolean {
+  const fallback = EMAIL_TEMPLATE_DEFAULTS[key];
+  return (
+    fallback !== undefined &&
+    row.subject === fallback.subject &&
+    row.bodyHtml === fallback.bodyHtml
+  );
+}
+
 export interface RenderedEmail {
   subject: string;
   text: string;
@@ -188,7 +205,7 @@ export class EmailTemplateService {
     attention: DigestAttentionCount[] = [],
   ): Promise<RenderedEmail> {
     const row = await this.row("digest");
-    if (row) {
+    if (row && !isBuiltInDefault("digest", row)) {
       const vars = {
         board: escapeHtml(board),
         count,
@@ -235,7 +252,7 @@ export class EmailTemplateService {
     locale: MailLocale,
   ): Promise<RenderedEmail> {
     const row = await this.row("due_reminder");
-    if (row) {
+    if (row && !isBuiltInDefault("due_reminder", row)) {
       const vars = {
         count,
         // The editable default is English; keep the phrase English even when
