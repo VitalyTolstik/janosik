@@ -123,7 +123,9 @@ function maskCodeBlocks(chars: string[]): void {
 
     if (fenceChar !== null) {
       // A blockquote fence also ends when its container does: a shallower
-      // line is processed normally (and never masked by this fence).
+      // line is processed normally (and never masked by this fence). A
+      // matching fence at the outer level therefore starts a new top-level
+      // fence, while ordinary dedented text (including a mention) stays live.
       if (
         fenceQuoteDepth > 0 &&
         countLeadingQuotes(line).depth < fenceQuoteDepth

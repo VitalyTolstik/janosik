@@ -117,6 +117,18 @@ describe("comment mentions (TASK-177.12)", () => {
     );
   });
 
+  it("opens a new top-level fence when a matching fence dedents", () => {
+    const bob = mentionMarkdown("Bob", "user-2");
+    expect(parseCommentMentions(`> ~~~\n> code\n~~~\n${bob}`)).toEqual([]);
+  });
+
+  it("parses a dedented line that itself contains a mention", () => {
+    const token = mentionMarkdown("Alice", "user-1");
+    expect(parseCommentMentions(`> ~~~\n> code\n${token}`)).toEqual([
+      expect.objectContaining({ userId: "user-1" }),
+    ]);
+  });
+
   it("keeps list-marker lines inside a top-level fence inert", () => {
     const token = mentionMarkdown("Alice", "user-1");
     expect(
