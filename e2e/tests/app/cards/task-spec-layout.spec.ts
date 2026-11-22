@@ -104,6 +104,18 @@ for (const viewport of VIEWPORTS) {
         await expectTouchHeight(dialog.getByTestId("card-task-spec-edit"));
         await expectTouchHeight(dialog.getByTestId("card-task-spec-clear"));
 
+        await dialog.getByTestId("card-task-spec-clear").click();
+        const clearDialog = page.getByRole("dialog", {
+          name: "Clear the task spec?",
+        });
+        await expectTouchHeight(
+          clearDialog.getByRole("button", { name: "Cancel" }),
+        );
+        await expectTouchHeight(
+          clearDialog.getByRole("button", { name: "Clear" }),
+        );
+        await clearDialog.getByRole("button", { name: "Cancel" }).click();
+
         await dialog.getByTestId("card-task-spec-edit").click();
         await expectTouchHeight(dialog.getByTestId("card-task-spec-save"));
         await expectTouchHeight(dialog.getByTestId("card-task-spec-cancel"));
