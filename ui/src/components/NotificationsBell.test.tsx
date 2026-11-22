@@ -1,4 +1,11 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -200,6 +207,89 @@ describe("NotificationsBell (TASK-35 addendum)", () => {
       "/api/v1/users/me/notifications/older/read",
       "/api/v1/users/me/notifications/read-all",
     ]);
+  });
+
+  it("ignores an older list response that resolves after a row was read", async () => {
+    const server = new FakeServer();
+    let unread = true;
+    let attentionCalls = 0;
+    let releaseStale!: () => void;
+    const staleGate = new Promise<void>((resolve) => {
+      releaseStale = resolve;
+    });
+    let staleStarted!: () => void;
+    const staleStartedGate = new Promise<void>((resolve) => {
+      staleStarted = resolve;
+    });
+    const item = () => ({
+      id: "blocked",
+      type: "agent.blocked",
+      title: "Approval needed",
+      body: null,
+      boardId: "b-1",
+      data: null,
+      createdAt: 1_700_000_000_000,
+      readAt: unread ? null : 1_700_000_000_001,
+    });
+    const handler: FetchHandler = async (input, init) => {
+      const url = new URL(String(input), "http://api.test");
+      if (url.pathname === "/api/v1/users/me/notifications") {
+        attentionCalls += 1;
+        const snapshotUnread = unread;
+        if (attentionCalls === 3) {
+          // A background poll that left before the read and lands after it.
+          staleStarted();
+          await staleGate;
+          return Response.json({
+            items: [{ ...item(), readAt: null }],
+            nextCursor: null,
+            unreadCount: 1,
+          });
+        }
+        return Response.json({
+          items: [item()],
+          nextCursor: null,
+          unreadCount: snapshotUnread ? 1 : 0,
+        });
+      }
+      if (url.pathname.endsWith("/notifications/blocked/read")) {
+        unread = false;
+        return Response.json({ ...item(), readAt: 1_700_000_000_001 });
+      }
+      return server.handle(input, init);
+    };
+    renderBell(server, handler);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("notifications-badge")).toHaveTextContent("1"),
+    );
+    const bell = screen.getByRole("button", {
+      name: "Notifications (1 unread)",
+    });
+    await userEvent.click(bell);
+    expect(await screen.findByText("Approval needed")).toBeVisible();
+
+    // Opening held response #2 already; this focus poll is the stale one.
+    fireEvent.focus(window);
+    await staleStartedGate;
+    await userEvent.click(screen.getByRole("button", { name: "Mark as read" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("notifications-badge")).toBeNull(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Mark as read" }),
+    ).not.toBeInTheDocument();
+
+    releaseStale();
+    await act(async () => {
+      await staleGate;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(screen.queryByTestId("notifications-badge")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Mark as read" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows an older-page error for an invalid cursor and leaves the newest page visible", async () => {

@@ -61,6 +61,9 @@ export function NotificationsBell() {
     null,
   );
   const [attentionError, setAttentionError] = useState(false);
+  // A focus poll can resolve after the row was read; only the newest list
+  // response may overwrite the read state the user just saw.
+  const attentionRequest = useRef(0);
   const [open, setOpen] = useState(false);
   const [inboxSession, setInboxSession] = useState(0);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -80,11 +83,14 @@ export function NotificationsBell() {
   }, []);
 
   const loadAttention = useCallback(async () => {
+    const request = ++attentionRequest.current;
     try {
-      setAttention(await api.listAttentionNotifications());
+      const next = await api.listAttentionNotifications();
+      if (request !== attentionRequest.current) return;
+      setAttention(next);
       setAttentionError(false);
     } catch {
-      setAttentionError(true);
+      if (request === attentionRequest.current) setAttentionError(true);
     }
   }, []);
 
