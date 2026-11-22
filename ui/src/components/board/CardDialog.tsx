@@ -927,7 +927,7 @@ export function CardDialog({
             </DialogDescription>
             {/* The mobile close is 44 px while this 32 px trigger is not:
                 offset the top by 6 px so both icons share a centre line. */}
-            <div className="absolute right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)] top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)] md:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)] md:top-[max(1rem,env(safe-area-inset-top))]">
+            <div className="absolute right-[calc(max(0.75rem,env(safe-area-inset-right))_+_3rem)] top-[calc(max(0.75rem,env(safe-area-inset-top))_+_0.375rem)] md:right-[calc(max(1rem,env(safe-area-inset-right))_+_3.25rem)] md:top-[max(1rem,env(safe-area-inset-top))] lg:right-[calc(max(1rem,env(safe-area-inset-right))_+_2.25rem)]">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

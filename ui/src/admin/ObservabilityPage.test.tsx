@@ -168,6 +168,11 @@ describe("ObservabilityPage", () => {
     expect(
       within(panel).getByTestId("history-revisions").parentElement,
     ).toHaveClass("grid-cols-1", "sm:grid-cols-2");
+    // The baseline row is scoped to the history panel; runtime fields keep
+    // the stacked layout that lets long commits and versions wrap.
+    expect(
+      screen.getByText(t("admin.observability.version")).parentElement,
+    ).not.toHaveClass("flex");
     const value = (id: string) =>
       within(panel).getByTestId(`${id}-value`).textContent ?? "";
     expect(value("history-revisions")).toBe("51");

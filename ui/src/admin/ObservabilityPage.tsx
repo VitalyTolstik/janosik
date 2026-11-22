@@ -257,43 +257,43 @@ export function ObservabilityPage() {
           {t("admin.observability.history.cache")}
         </p>
         <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <Field
+          <MetricRow
             testId="history-revisions"
             label={t("admin.observability.history.revisions")}
             value={historyValue(String(data.commentHistory.revisions.count))}
           />
-          <Field
+          <MetricRow
             testId="history-revision-bytes"
             label={t("admin.observability.history.revisionBytes")}
             value={historyValue(
               formatBytes(data.commentHistory.revisions.bytes),
             )}
           />
-          <Field
+          <MetricRow
             testId="history-activity"
             label={t("admin.observability.history.activity")}
             value={historyValue(String(data.commentHistory.activity.count))}
           />
-          <Field
+          <MetricRow
             testId="history-activity-bytes"
             label={t("admin.observability.history.activityBytes")}
             value={historyValue(
               formatBytes(data.commentHistory.activity.bytes),
             )}
           />
-          <Field
+          <MetricRow
             testId="history-derived-trims"
             label={t("admin.observability.history.derivedTrims")}
             value={historyValue(
               String(data.commentHistory.derivedTrimmedRevisions),
             )}
           />
-          <Field
+          <MetricRow
             testId="history-incomplete"
             label={t("admin.observability.history.incomplete")}
             value={historyValue(String(data.commentHistory.incompleteComments))}
           />
-          <Field
+          <MetricRow
             testId="history-over-budget"
             label={t("admin.observability.history.overBudget")}
             value={historyValue(
@@ -305,26 +305,26 @@ export function ObservabilityPage() {
           className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"
           data-testid="admin-observability-history-reasons"
         >
-          <Field
+          <MetricRow
             testId="history-reason-legacy_cutover"
             label={t("admin.observability.history.reason.legacy_cutover")}
             value={historyValue(
               String(data.commentHistory.reasons.legacy_cutover),
             )}
           />
-          <Field
+          <MetricRow
             testId="history-reason-revision_limit"
             label={t("admin.observability.history.reason.revision_limit")}
             value={historyValue(
               String(data.commentHistory.reasons.revision_limit),
             )}
           />
-          <Field
+          <MetricRow
             testId="history-reason-gdpr_erase"
             label={t("admin.observability.history.reason.gdpr_erase")}
             value={historyValue(String(data.commentHistory.reasons.gdpr_erase))}
           />
-          <Field
+          <MetricRow
             testId="history-reason-writer_gap"
             label={t("admin.observability.history.reason.writer_gap")}
             value={historyValue(String(data.commentHistory.reasons.writer_gap))}
@@ -409,14 +409,29 @@ export function ObservabilityPage() {
   );
 }
 
-function Field({
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-medium">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Comment-history metric row: the value shares the label's first-line
+ * baseline, so a wrapped label never pushes the value out of line with its
+ * neighbour. Scoped to the history panel; the runtime/frontend/jobs fields
+ * keep the stacked layout that lets long commits wrap.
+ */
+function MetricRow({
   label,
   value,
   testId,
 }: {
   label: string;
   value: string;
-  testId?: string;
+  testId: string;
 }) {
   return (
     <div
@@ -426,7 +441,7 @@ function Field({
       <p className="min-w-0 text-xs text-muted-foreground">{label}</p>
       <p
         className="shrink-0 text-right font-medium tabular-nums"
-        data-testid={testId !== undefined ? `${testId}-value` : undefined}
+        data-testid={`${testId}-value`}
       >
         {value}
       </p>
