@@ -191,7 +191,10 @@ names the author and quotes the comment; the deletion cannot be undone. Edit a
 comment with the pencil next to the delete icon: the same editor and kind
 picker appear, `Save` or Ctrl/Cmd+Enter applies the change, `Escape` cancels.
 An edited comment keeps its place in the thread and shows an `edited` marker;
-only the author can edit or delete a comment. Comments need server mode.
+only the author can edit or delete a comment. Click the `edited` marker to open
+the read-only edit history: every saved revision with its time, editor, cause
+and before/after diff. Long revisions can reveal their full saved text, and
+`Show older revisions` pages the chain back. Comments need server mode.
 
 ### History
 

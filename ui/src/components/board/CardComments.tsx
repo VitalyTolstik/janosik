@@ -29,6 +29,7 @@ import {
   commentAuthorLabel,
   commentExcerpt,
 } from "@/components/board/comment-delete";
+import { CommentHistoryDialog } from "@/components/board/CommentHistoryDialog";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { useCommentDraft } from "@/components/board/use-comment-draft";
@@ -1175,6 +1176,9 @@ function CommentRow({
   const email = comment.authorEmail ?? member?.email ?? "";
   const displayName = comment.authorName ?? member?.displayName ?? null;
   const name = userLabel(displayName, email) || "?";
+  const editedDate = comment.editedAt
+    ? formatDate(comment.editedAt, lang, hour12)
+    : null;
 
   // Inline edit (TASK-176.2, TASK-177.11): the row stays in place; its body
   // swaps for the same markdown editor the composer uses, and the author may
@@ -1186,6 +1190,18 @@ function CommentRow({
   const [editorNonce, setEditorNonce] = useState(0);
   const editButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasEditingRef = useRef(false);
+  // “Edited” is the history trigger (TASK-185.4). Like the inline editor, it
+  // returns keyboard focus to itself when the overlay closes.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const editedButtonRef = useRef<HTMLButtonElement | null>(null);
+  const wasHistoryOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (wasHistoryOpenRef.current && !historyOpen) {
+      editedButtonRef.current?.focus();
+    }
+    wasHistoryOpenRef.current = historyOpen;
+  }, [historyOpen]);
 
   // Return focus to the Edit button when the inline editor closes, so a
   // keyboard edit does not drop focus to the dialog body (DoD §17).
@@ -1310,13 +1326,21 @@ function CommentRow({
                 className="flex min-w-0 shrink-0 flex-wrap items-center gap-2 max-sm:basis-full"
               >
                 {comment.editedAt ? (
-                  <span
+                  <button
+                    ref={editedButtonRef}
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-expanded={historyOpen}
+                    aria-label={t("comment.history.open", {
+                      date: editedDate ?? "",
+                    })}
+                    title={editedDate ?? undefined}
                     data-testid="comment-edited"
-                    className="shrink-0 cursor-help text-[11px] text-muted-foreground"
-                    title={formatDate(comment.editedAt, lang, hour12)}
+                    onClick={() => setHistoryOpen(true)}
+                    className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm px-1 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:min-w-11 no-hover:min-h-11 no-hover:min-w-11"
                   >
                     {t("comment.edited")}
-                  </span>
+                  </button>
                 ) : null}
                 {comment.kind !== DEFAULT_COMMENT_KIND ? (
                   <span
@@ -1437,6 +1461,14 @@ function CommentRow({
           )}
         </div>
       </div>
+      <CommentHistoryDialog
+        open={historyOpen}
+        commentId={comment.id}
+        boardId={boardId}
+        cardId={cardId}
+        editedAt={comment.editedAt}
+        onOpenChange={setHistoryOpen}
+      />
     </li>
   );
 }
