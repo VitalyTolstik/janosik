@@ -2682,6 +2682,129 @@ describe("CardComments", () => {
     },
   );
 
+  it.each(["gdpr_erase", "writer_gap"] as const)(
+    "keeps current revisions when a recheck answers %s with rows",
+    async (reason) => {
+      const server = new FakeServer([seedBoard()]);
+      server.seedComments("card-1", [
+        comment({
+          id: "comment-1",
+          text: "Second edit",
+          editedAt: 1_700_000_100_000,
+        }),
+      ]);
+      server.seedRevisions("comment-1", [revision()]);
+      renderComments(server);
+      fireEvent.click(await screen.findByTestId("comment-edited"));
+      const dialog = await screen.findByTestId("comment-history-dialog");
+      await within(dialog).findByTestId("comment-history-revision");
+
+      server.seedRevisions("comment-1", [
+        revision({
+          id: "revision-2",
+          revisionNumber: 2,
+          beforeText: "First, edited",
+          afterText: "Second edit",
+        }),
+        revision(),
+      ]);
+      server.seedHistoryReason("comment-1", reason);
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      await waitFor(() =>
+        expect(
+          within(dialog).getAllByTestId("comment-history-revision"),
+        ).toHaveLength(2),
+      );
+      expect(
+        within(dialog).queryByTestId("comment-history-empty"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByTestId("comment-history-banner"),
+      ).toHaveAttribute("data-reason", reason);
+    },
+  );
+
+  it.each(["gdpr_erase", "writer_gap"] as const)(
+    "reloads current revisions when an older page answers %s with rows",
+    async (reason) => {
+      const server = new FakeServer([seedBoard()]);
+      server.seedComments("card-1", [
+        comment({
+          id: "comment-1",
+          text: "Second edit",
+          editedAt: 1_700_000_100_000,
+        }),
+      ]);
+      server.seedRevisions(
+        "comment-1",
+        Array.from({ length: 25 }, (_, index) =>
+          revision({
+            id: `revision-${index + 1}`,
+            revisionNumber: index + 1,
+            beforeText: `Before ${index + 1}`,
+            afterText: `After ${index + 1}`,
+          }),
+        ),
+      );
+      renderComments(server, false, async (input, init) => {
+        const url = new URL(String(input));
+        if (
+          url.pathname.endsWith("/revisions") &&
+          url.searchParams.get("cursor") === "20"
+        ) {
+          return Response.json({
+            items: [
+              revision({
+                id: "revision-current",
+                revisionNumber: 2,
+                beforeText: "First, edited",
+                afterText: "Second edit",
+              }),
+            ],
+            nextCursor: null,
+            historyIncomplete: true,
+            historyIncompleteReason: reason,
+          });
+        }
+        return server.handle(input, init);
+      });
+      fireEvent.click(await screen.findByTestId("comment-edited"));
+      const dialog = await screen.findByTestId("comment-history-dialog");
+      await waitFor(() =>
+        expect(
+          within(dialog).getAllByTestId("comment-history-revision"),
+        ).toHaveLength(20),
+      );
+
+      server.seedRevisions("comment-1", [
+        revision({
+          id: "revision-2",
+          revisionNumber: 2,
+          beforeText: "First, edited",
+          afterText: "Second edit",
+        }),
+        revision(),
+      ]);
+      server.seedHistoryReason("comment-1", reason);
+      fireEvent.click(within(dialog).getByTestId("comment-history-show-older"));
+
+      await waitFor(() =>
+        expect(
+          within(dialog).getAllByTestId("comment-history-revision"),
+        ).toHaveLength(2),
+      );
+      expect(
+        within(dialog).queryByTestId("comment-history-empty"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog).getByTestId("comment-history-banner"),
+      ).toHaveAttribute("data-reason", reason);
+    },
+  );
+
   it("lets an erase recheck win over an in-flight first page", async () => {
     const server = new FakeServer([seedBoard()]);
     server.seedComments("card-1", [

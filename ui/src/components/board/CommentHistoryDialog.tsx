@@ -52,13 +52,13 @@ function isGone(error: unknown): boolean {
 }
 
 /**
- * A live recheck page that must replace the visible list with an empty state:
- * GDPR erase and writer gaps delete or disavow the saved revisions, and any
- * empty page that declares incomplete history can no longer be appended to.
+ * An empty live page that must replace the visible list with the empty state.
+ * A page that still carries current revisions is handled by reloading the
+ * first page instead; only a chain with no rows becomes "no revisions".
  */
 function clearsHistory(page: CommentRevisionPage): boolean {
   return (
-    erasesHistory(page) || (page.items.length === 0 && page.historyIncomplete)
+    page.items.length === 0 && (erasesHistory(page) || page.historyIncomplete)
   );
 }
 
@@ -277,11 +277,18 @@ export function CommentHistoryDialog({
       const page = await api.listCommentRevisions(commentId, cursor, PAGE_SIZE);
       if (session !== sessionRef.current) return;
       if (erasesHistory(page)) {
-        // GDPR erase and writer gaps invalidate every loaded snapshot; do not
-        // keep page 1 visible under the banner. This check must precede the
-        // seq guard: a Refresh that started while this page was in flight may
-        // have bumped the epoch, and clearHistory invalidates that refresh.
-        clearHistory(page.historyIncompleteReason);
+        if (page.items.length === 0) {
+          // A fully erased/gapped chain: do not keep page 1 under the banner.
+          // This check precedes the seq guard so a later Refresh cannot
+          // restore the erased rows.
+          clearHistory(page.historyIncompleteReason);
+          return;
+        }
+        // The page still has current revisions: only the older loaded slice
+        // is invalid. Replace the list with the current first page and keep
+        // the reason banner instead of reporting an empty history.
+        setReason(page.historyIncompleteReason);
+        void loadFirst(true);
         return;
       }
       if (seq !== seqRef.current) return;
@@ -319,7 +326,15 @@ export function CommentHistoryDialog({
     } finally {
       if (seq === seqRef.current) setLoadingOlder(false);
     }
-  }, [commentId, clearHistory, loadingOlder, nextCursor, onOpenChange, reset]);
+  }, [
+    commentId,
+    clearHistory,
+    loadFirst,
+    loadingOlder,
+    nextCursor,
+    onOpenChange,
+    reset,
+  ]);
 
   useEffect(() => {
     if (status !== "ready") return;
@@ -363,6 +378,20 @@ export function CommentHistoryDialog({
         clearHistory(page.historyIncompleteReason);
         return;
       }
+      if (erasesHistory(page) && page.items.length > 0) {
+        // Current revisions survive the erase/gap; replace the stale loaded
+        // list with the current first page and keep the reason banner.
+        setReason(page.historyIncompleteReason);
+        if (statusRef.current === "loading") {
+          latestRecheckRevisionRef.current = Math.max(
+            latestRecheckRevisionRef.current,
+            page.items[0]?.revisionNumber ?? 0,
+          );
+        } else {
+          void loadFirst(true);
+        }
+        return;
+      }
       if (seq !== seqRef.current) return;
       setReason(page.historyIncompleteReason);
       const newest = page.items[0]?.revisionNumber ?? 0;
@@ -386,7 +415,7 @@ export function CommentHistoryDialog({
         onOpenChange(false);
       }
     }
-  }, [clearHistory, commentId, onOpenChange, reset]);
+  }, [clearHistory, commentId, loadFirst, onOpenChange, reset]);
 
   useEffect(() => {
     if (!open) return;
