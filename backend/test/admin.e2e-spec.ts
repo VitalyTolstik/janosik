@@ -3107,6 +3107,16 @@ describe("Admin API (e2e)", () => {
         deletedAt: null,
       });
 
+      await prisma.attentionNotification.create({
+        data: {
+          userId,
+          boardId,
+          type: "comment.mention",
+          commentId,
+          dedupKey: `comment.mention:${commentId}:${userId}`,
+          title: "You were mentioned",
+        },
+      });
       await server()
         .delete(`/api/v1/admin/comments/${commentId}`)
         .set("Authorization", `Bearer ${adminToken}`)
@@ -3117,6 +3127,11 @@ describe("Admin API (e2e)", () => {
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
       expect(after.body.items[0].deletedAt).toBeGreaterThan(0);
+      expect(
+        await prisma.attentionNotification.count({
+          where: { commentId, type: "comment.mention" },
+        }),
+      ).toBe(0);
     });
 
     it("deletes a column's cards with it and restores the subtree (TASK-149)", async () => {

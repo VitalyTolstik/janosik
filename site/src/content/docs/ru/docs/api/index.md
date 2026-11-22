@@ -708,8 +708,11 @@ ADMIN для истёкшего резервирования, самому ак�
 `at:id` и `unreadCount`. `boardId` требует активного участия в доске. Типы
 событий: `approval.requested`, `approval.decided`, `approval.cancelled`,
 `approval.consumed`, `approval.expired`, `agent.blocked`,
-`agent.needs_human`, `claim.expired`, `quota.exceeded` и `token.revoked`
-(только владелец). Запланированная сводка также один раз включает ещё не
+`agent.needs_human`, `comment.mention`, `claim.expired`, `quota.exceeded` и
+`token.revoked` (только владелец). Строка `comment.mention` сообщает
+упомянутому участнику, кто его упомянул, в какой карточке и на какой доске,
+даёт короткий фрагмент и ссылку на комментарий; в немедленном письме текста
+комментария нет. Запланированная сводка также один раз включает ещё не
 включённые в неё категории внимания; немедленное письмо не задерживает
 запрос, который его породил.
 

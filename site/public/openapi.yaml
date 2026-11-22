@@ -3382,6 +3382,7 @@ components:
             - approval.expired
             - agent.blocked
             - agent.needs_human
+            - comment.mention
             - claim.expired
             - quota.exceeded
             - token.revoked
@@ -6268,6 +6269,15 @@ components:
           type: [string, "null"]
         agentName:
           type: [string, "null"]
+        mentionedUserIds:
+          type: array
+          description: |
+            TASK-177.12 — user ids carried by explicit
+            `[@Name](https://janosik.invalid/mention/<userId>)` links in `text`, in
+            first-mention order. Every id was validated against the board's
+            active roster at write time; a bare `@Name` is plain text.
+          items:
+            type: string
         createdAt:
           type: integer
           description: Unix ms.
@@ -6356,6 +6366,11 @@ components:
           type: string
           minLength: 1
           maxLength: 10000
+          description: |
+            Markdown comment body. TASK-177.12 mentions are explicit
+            `[@Name](https://janosik.invalid/mention/<userId>)` links; the server validates
+            each id against the board's active roster and answers `400`
+            `mention_not_member` for anyone outside it.
         kind:
           $ref: "#/components/schemas/CommentKind"
         commandId:
@@ -6373,6 +6388,9 @@ components:
           type: string
           minLength: 1
           maxLength: 10000
+          description: |
+            A text edit may add mentions; only newly mentioned members get a
+            `comment.mention` attention row, and every id is re-validated.
         kind:
           $ref: "#/components/schemas/CommentKind"
     Attachment:

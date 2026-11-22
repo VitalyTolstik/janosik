@@ -14,6 +14,10 @@ import { COMMENT_KINDS, LIMITS, type CommentKind } from "@janosik/shared";
  * or do both in one save. `@ValidateIf` (not `@IsOptional`) makes an explicit
  * `null` fail validation instead of silently acting as "omitted"; the service
  * rejects an empty body.
+ *
+ * TASK-177.12: a text edit may add `https://janosik.invalid/mention/<userId>` links; the service
+ * validates and notifies only newly mentioned members (repeat edits keep the
+ * original deduplicated row).
  */
 export class UpdateCommentDto {
   @ValidateIf((_object, value: unknown) => value !== undefined)

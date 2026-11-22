@@ -688,8 +688,11 @@ Pass `nextCursor` unchanged to fetch an older page. Malformed cursors and
 timestamps outside the supported date range return `400 bad_request`.
 `boardId` requires live membership. Event types are `approval.requested`,
 `approval.decided`, `approval.cancelled`, `approval.consumed`,
-`approval.expired`, `agent.blocked`, `agent.needs_human`, `claim.expired`,
-`quota.exceeded` and `token.revoked` (owner only). The scheduled digest also
+`approval.expired`, `agent.blocked`, `agent.needs_human`, `comment.mention`,
+`claim.expired`, `quota.exceeded` and `token.revoked` (owner only). A
+`comment.mention` row tells a mentioned board member who mentioned them, on
+which card and board, with a short excerpt and a deep link to the comment; the
+immediate e-mail omits the comment text. The scheduled digest also
 includes undigested attention categories once per recipient; immediate
 attention e-mail does not block the approval or comment request that produced
 it.

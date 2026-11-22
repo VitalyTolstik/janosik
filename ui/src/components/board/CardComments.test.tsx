@@ -143,7 +143,7 @@ function renderComments(
   focusId?: string,
 ) {
   vi.stubGlobal("fetch", handler);
-  const tree = (open: boolean) => (
+  const tree = (open: boolean, currentFocus = focusId) => (
     <I18nProvider>
       <ToastProvider>
         <AuthProvider>
@@ -156,7 +156,7 @@ function renderComments(
                       cardId={cardId}
                       boardId="b-1"
                       readOnly={readOnly}
-                      focusId={focusId}
+                      focusId={currentFocus}
                       onCountChange={onCountChange}
                     />
                   )}
@@ -169,7 +169,11 @@ function renderComments(
     </I18nProvider>
   );
   const result = render(tree(true));
-  return { ...result, setOpen: (open: boolean) => result.rerender(tree(open)) };
+  return {
+    ...result,
+    setOpen: (open: boolean) => result.rerender(tree(open)),
+    setFocus: (next: string | undefined) => result.rerender(tree(true, next)),
+  };
 }
 
 /**
@@ -554,6 +558,23 @@ describe("CardComments", () => {
     expect(send).toBeDisabled();
     fireEvent.change(input, { target: { value: "ok" } });
     expect(send).toBeEnabled();
+  });
+
+  it("names the comment avatar with its visible initials", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({
+        authorId: "user-vk",
+        authorName: "Vitaliy Kowalczyk-Shcherbakovsky",
+      }),
+    ]);
+    renderComments(server);
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Vitaliy Kowalczyk-Shcherbakovsky VK — open profile",
+      }),
+    ).toBeVisible();
   });
 
   it("clears the draft with Cancel and sends nothing", async () => {
@@ -1088,17 +1109,52 @@ describe("CardComments", () => {
       "comment-50",
     );
 
-    // The first page does not contain the target: no reveal is claimed yet.
+    // The deep link loads older pages by itself until the target arrives.
     await screen.findByText("Comment 0");
-    expect(screen.queryByText("Comment 50")).toBeNull();
-    expect(scroll).not.toHaveBeenCalled();
-
-    fireEvent.click(await screen.findByTestId("comments-show-older"));
-
     const row = await screen.findByText("Comment 50");
     await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
     expect(row.closest("li")).toHaveAttribute("data-search-highlight", "true");
     expect(document.activeElement).toBe(row.closest("li"));
+  });
+
+  it("resets an active kind filter for a deep link outside it", async () => {
+    const scroll = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments(
+      "card-1",
+      Array.from({ length: 51 }, (_, index) =>
+        comment({
+          id: `comment-${index}`,
+          text: `Comment ${index}`,
+          kind: index === 50 ? "blocker" : "note",
+          createdAt: 1_700_000_000_000 - index,
+        }),
+      ),
+    );
+    const view = renderComments(server);
+
+    await screen.findByText("Comment 0");
+    fireEvent.click(screen.getByTestId("comment-filter-note"));
+    await waitFor(() =>
+      expect(screen.getByTestId("comment-filter-note")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    expect(screen.queryByText("Comment 50")).toBeNull();
+
+    act(() => view.setFocus("comment-50"));
+
+    expect(await screen.findByText("Comment 50")).toBeInTheDocument();
+    expect(screen.getByTestId("comment-filter-all")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
   });
 
   it("leaves the card intact for an unknown comment deep link", async () => {
@@ -1121,6 +1177,9 @@ describe("CardComments", () => {
     const row = await screen.findByTestId("comment");
     expect(row).not.toHaveAttribute("data-search-highlight");
     expect(scroll).not.toHaveBeenCalled();
+    expect(
+      await screen.findByTestId("comment-focus-missing"),
+    ).toHaveTextContent("That comment is not in this thread.");
   });
 
   it("drops a comment deleted elsewhere", async () => {

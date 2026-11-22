@@ -4,6 +4,8 @@ import {
   announcementFallbackSubjectPrefix,
   attentionEmail,
   digestEmail,
+  htmlToText,
+  mentionInboxBody,
 } from "./templates";
 
 describe("announcementEmail", () => {
@@ -107,6 +109,7 @@ describe("attentionEmail", () => {
     risk: "high",
     status: "approved",
     agent: "builder",
+    actor: "Alice",
     limit: 2,
     current: 2,
     expiresAt: "2026-11-10T12:00:00.000Z",
@@ -123,6 +126,7 @@ describe("attentionEmail", () => {
       "approval.expired",
       "agent.blocked",
       "agent.needs_human",
+      "comment.mention",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -143,6 +147,7 @@ describe("attentionEmail", () => {
       "approval.expired",
       "agent.blocked",
       "agent.needs_human",
+      "comment.mention",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -190,6 +195,55 @@ describe("attentionEmail", () => {
     expect(attentionEmail("token.revoked", vars, "ru").subject).toContain(
       "API-ключ отозван",
     );
+    expect(attentionEmail("comment.mention", vars, "en").text).toContain(
+      "Alice mentioned you",
+    );
+    expect(attentionEmail("comment.mention", vars, "en").text).not.toContain(
+      "Ping @Bob",
+    );
+    expect(attentionEmail("comment.mention", vars, "ru").subject).toContain(
+      "вас упомянули",
+    );
+  });
+
+  it("keeps comment text out of the mention letter but in the inbox body", () => {
+    const excerpt = "Ping @Bob about the private release";
+    const mail = attentionEmail("comment.mention", vars, "en");
+    expect(mail.text).not.toContain(excerpt);
+    expect(mail.html).not.toContain(excerpt);
+
+    const inbox = mentionInboxBody(
+      { board: "Launch", card: "Ship it", actor: "Alice", excerpt },
+      "en",
+    );
+    expect(inbox).toContain(excerpt);
+    expect(inbox).toContain("Alice mentioned you");
+    expect(inbox).toContain("Ship it");
+    expect(inbox).toContain("Launch");
+    expect(
+      mentionInboxBody(
+        { board: "Launch", card: "Ship it", actor: "Alice", excerpt: "" },
+        "ru",
+      ),
+    ).not.toContain("«»");
+  });
+
+  it("decodes entities in the subject and plain-text body", () => {
+    const mail = attentionEmail(
+      "comment.mention",
+      { ...vars, board: 'A "quoted" & B', card: "Café" },
+      "en",
+    );
+    expect(mail.subject).toContain('A "quoted" & B');
+    expect(mail.subject).not.toContain("&quot;");
+    expect(mail.subject).not.toContain("&amp;");
+
+    expect(htmlToText("<p>&quot;hi&quot; &amp; &#39;there&#39;</p>")).toBe(
+      `"hi" & 'there'`,
+    );
+    // Entities decode before tags are stripped, so an encoded tag cannot
+    // reappear in the plain-text output.
+    expect(htmlToText("<p>&lt;b&gt;bold&lt;/b&gt; x</p>")).toBe("bold x");
   });
 });
 

@@ -8,7 +8,14 @@ import {
 } from "class-validator";
 import { COMMENT_KINDS, LIMITS, type CommentKind } from "@janosik/shared";
 
-/** Body of `POST /cards/:id/comments` (§7.4, plain text). */
+/**
+ * Body of `POST /cards/:id/comments` (§7.4, markdown text).
+ *
+ * TASK-177.12 mentions are part of the text, not a parallel field: the
+ * composer inserts `[@Name](https://janosik.invalid/mention/<userId>)` and the service
+ * validates every carried id against the board's active roster. A bare
+ * `@Name` typed by hand stays plain text and notifies nobody.
+ */
 export class CreateCommentDto {
   @IsString()
   @IsNotEmpty()

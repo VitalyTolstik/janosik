@@ -128,6 +128,29 @@ describe("PublicCardDialog", () => {
     }
   });
 
+  it("renders a mention as plain @name without the raw token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        commentPage(
+          [
+            {
+              ...comment(1),
+              text: "Hi [@Ann](https://janosik.invalid/mention/u1)!",
+            },
+          ],
+          null,
+        ),
+      ),
+    );
+
+    renderDialog(board(), { includeComments: true });
+
+    const list = await screen.findByTestId("public-comments");
+    expect(within(list).getByText("Hi @Ann!")).toBeVisible();
+    expect(within(list).queryByText(/janosik\.invalid/)).toBeNull();
+  });
+
   it("loads older public comments instead of stopping at the first 50", async () => {
     const firstPage = Array.from({ length: 50 }, (_, index) =>
       comment(54 - index),

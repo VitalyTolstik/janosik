@@ -21,7 +21,11 @@ import {
   Clock,
   RotateCcw,
 } from "lucide-react";
-import { ADMIN_DETAIL_LIMITS, LIMITS } from "@janosik/shared";
+import {
+  ADMIN_DETAIL_LIMITS,
+  LIMITS,
+  stripMentionMarkup,
+} from "@janosik/shared";
 import type {
   AdminCardDetailDto,
   AdminCardDetailSection,
@@ -1027,7 +1031,7 @@ export function CardDetailPage() {
                       >
                         <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
                           <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]">
-                            {comment.text}
+                            {stripMentionMarkup(comment.text)}
                           </div>
                           <AdminCommentHistoryButton comment={comment} />
                         </div>
