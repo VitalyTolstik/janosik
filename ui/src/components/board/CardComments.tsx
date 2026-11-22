@@ -1337,7 +1337,7 @@ function CommentRow({
                     title={editedDate ?? undefined}
                     data-testid="comment-edited"
                     onClick={() => setHistoryOpen(true)}
-                    className="inline-flex shrink-0 items-center justify-center rounded-sm px-1 text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:bg-hover hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:min-w-11 no-hover:min-h-11 no-hover:min-w-11"
+                    className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm px-1 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:min-w-11 no-hover:min-h-11 no-hover:min-w-11"
                   >
                     {t("comment.edited")}
                   </button>

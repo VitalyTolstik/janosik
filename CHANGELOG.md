@@ -12,10 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a keyboard-accessible button that opens its read-only revision list:
   localized revision number and time, the current editor name (or “Editor
   unavailable”), the change cause, an escaped character-level before/after
-  diff, and a full-snapshot toggle for long revisions. The list uses the
+  diff, and a full-text snapshot toggle for the revision. The list uses the
   TASK-185.3 cursor API at 20 revisions per page with loading, retry, empty
   and end states. A banner follows `historyIncompleteReason`: the cutover copy
-  names the release from `CHANGELOG.md`, the other reasons stay neutral. Open
+  names the pinned release that introduced edit history, the other reasons
+  stay neutral. Open
   history marks itself stale on a new edit, closes and clears on deletion,
   rechecks access on focus/reconnect, and returns focus to the trigger. EN/RU
   copy and the 390/768 px layouts are covered; the admin history dialog remains

@@ -2,17 +2,11 @@ import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
-import { changelogRelease } from "./vite/changelog-release.ts";
-
 // Vitest config — mirrors the app's `@/` and `@janosik/shared` aliases; runs
 // in jsdom with React Testing Library and a shared setup file. CSS is not
 // loaded in tests.
 export default defineConfig({
   plugins: [react()],
-  // Mirror the app build so TASK-185.4 banner tests read the same release.
-  define: {
-    __CHANGELOG_RELEASE__: JSON.stringify(changelogRelease()),
-  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),

@@ -87,6 +87,15 @@ export function CommentHistoryDialog({
   // Every first-page load or close invalidates an in-flight response. A
   // slower reload must never overwrite a newer deletion or access check.
   const seqRef = useRef(0);
+  // Transient controls (Refresh, retry, Show older) unmount when their state
+  // lands. Move focus to the dialog first so it never falls to <body>, and to
+  // the end marker once the last older page replaces the button.
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const endRef = useRef<HTMLParagraphElement | null>(null);
+  const focusEndRef = useRef(false);
+  const keepFocusInDialog = useCallback(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   const reset = useCallback(() => {
     setItems([]);
@@ -187,6 +196,7 @@ export function CommentHistoryDialog({
       // The reason describes the live comment and is repeated on every page;
       // the latest page wins without ever hiding an older banner.
       setReason(page.historyIncompleteReason);
+      if (page.nextCursor === null) focusEndRef.current = true;
     } catch (error) {
       if (seq !== seqRef.current) return;
       if (isGone(error)) {
@@ -200,6 +210,14 @@ export function CommentHistoryDialog({
       if (seq === seqRef.current) setLoadingOlder(false);
     }
   }, [commentId, loadingOlder, nextCursor, onOpenChange, reset]);
+
+  useEffect(() => {
+    if (!focusEndRef.current || status !== "ready" || nextCursor !== null) {
+      return;
+    }
+    focusEndRef.current = false;
+    endRef.current?.focus();
+  }, [nextCursor, status]);
 
   // A background tab, reconnect or focus can hide a revoked membership or a
   // deleted comment. Probe the same protected endpoint; only 403/404 close
@@ -246,7 +264,9 @@ export function CommentHistoryDialog({
       const changedId = event.commentId ?? event.detail;
       if (changedId !== commentId) return;
       if (event.kind === "comment_updated") {
-        setStale(true);
+        // A kind-only PATCH has no revision and does not move text history;
+        // only a real text edit invalidates the open revision list.
+        if (event.revisionId) setStale(true);
         return;
       }
       if (event.kind === "comment_deleted") {
@@ -269,9 +289,12 @@ export function CommentHistoryDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
+        ref={dialogRef}
+        tabIndex={-1}
         data-testid="comment-history-dialog"
         data-reason={reason ?? undefined}
-        className="max-w-2xl gap-3 overflow-x-hidden"
+        closeClassName="h-11 w-11 md:h-11 md:w-11"
+        className="max-w-2xl gap-3 overflow-x-hidden outline-none"
       >
         <DialogHeader className="pr-8">
           <DialogTitle>{t("comment.history.title")}</DialogTitle>
@@ -308,7 +331,10 @@ export function CommentHistoryDialog({
               size="sm"
               data-testid="comment-history-refresh"
               className="max-md:min-h-11 no-hover:min-h-11"
-              onClick={() => void loadFirst(true)}
+              onClick={() => {
+                keepFocusInDialog();
+                void loadFirst(true);
+              }}
             >
               {t("comment.history.refresh")}
             </Button>
@@ -344,7 +370,10 @@ export function CommentHistoryDialog({
                 size="sm"
                 data-testid="comment-history-retry"
                 className="max-md:min-h-11 no-hover:min-h-11"
-                onClick={() => void loadFirst(true)}
+                onClick={() => {
+                  keepFocusInDialog();
+                  void loadFirst(true);
+                }}
               >
                 {t("comment.history.retry")}
               </Button>
@@ -376,7 +405,10 @@ export function CommentHistoryDialog({
                   disabled={loadingOlder}
                   data-testid="comment-history-show-older"
                   className="max-md:min-h-11 no-hover:min-h-11"
-                  onClick={() => void loadOlder()}
+                  onClick={() => {
+                    keepFocusInDialog();
+                    void loadOlder();
+                  }}
                 >
                   {loadingOlder ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -385,8 +417,10 @@ export function CommentHistoryDialog({
                 </Button>
               ) : (
                 <p
+                  ref={endRef}
+                  tabIndex={-1}
                   data-testid="comment-history-end"
-                  className="text-xs text-muted-foreground"
+                  className="rounded text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {t("comment.history.end")}
                 </p>
@@ -405,7 +439,10 @@ export function CommentHistoryDialog({
                     size="sm"
                     data-testid="comment-history-older-retry"
                     className="max-md:min-h-11 no-hover:min-h-11"
-                    onClick={() => void loadOlder()}
+                    onClick={() => {
+                      keepFocusInDialog();
+                      void loadOlder();
+                    }}
                   >
                     {t("comment.history.retry")}
                   </Button>
@@ -453,6 +490,24 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
         >
           {editorName}
         </span>
+        {revision.actorType === "agent" ? (
+          <span
+            data-testid="comment-history-agent"
+            className="inline-flex min-w-0 items-center gap-1"
+          >
+            <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t("activity.agent")}
+            </span>
+            {revision.agentName ? (
+              <span
+                data-testid="comment-history-agent-name"
+                className="min-w-0 break-words"
+              >
+                {revision.agentName}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
         <span
           data-testid="comment-history-cause"
           className="rounded-full border border-border/70 px-1.5 py-px text-[10px] font-medium"
@@ -488,10 +543,15 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
       <button
         type="button"
         aria-expanded={full}
-        aria-controls={snapshotId}
+        aria-controls={full ? snapshotId : undefined}
+        aria-label={
+          full
+            ? t("comment.history.hideSnapshotFor", { number })
+            : t("comment.history.showSnapshotFor", { number })
+        }
         data-testid={`comment-history-snapshot-toggle-${number}`}
         onClick={() => setFull((current) => !current)}
-        className="mt-2 inline-flex min-h-11 items-center rounded-md px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8"
+        className="mt-2 inline-flex min-h-11 items-center rounded-md px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring no-hover:min-h-11"
       >
         {full
           ? t("comment.history.hideSnapshot")

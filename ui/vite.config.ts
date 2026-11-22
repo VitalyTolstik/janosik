@@ -4,7 +4,6 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-import { changelogRelease } from "./vite/changelog-release.ts";
 import { serviceWorkerPlugin } from "./vite/sw-plugin.ts";
 
 // Vite config: React plugin + Tailwind v4 plugin + `@/` path alias.
@@ -20,11 +19,6 @@ export default defineConfig({
   // standalone deployments are unchanged; the value must keep both slashes.
   base: process.env.UI_BASE ?? "/",
   plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
-  // TASK-185.4: the comment-history banner names the release that added edit
-  // history, read from CHANGELOG.md at build time.
-  define: {
-    __CHANGELOG_RELEASE__: JSON.stringify(changelogRelease()),
-  },
   // Same-origin API in dev (TASK-29): the UI calls `/api/v1`, Vite forwards
   // to the backend on :3000 — production nginx proxies the same path.
   // `UI_API_PROXY` lets a secondary checkout (E2E against a disposable stack)
