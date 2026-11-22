@@ -1713,6 +1713,7 @@ TASK-36 и TASK-37.)*
 | 113 | TASK-182 `admin-label-calendar-resilience` | `docs/TASK-182-admin-label-and-calendar-ux.md` | §7.31: help-поповер у заголовка Labels + один обновляемый keyed success-toast (без label command concurrency/dedup) и card-local fallback для падения lazy-календаря due-date: Retry и native datetime-local вместо замены всей панели | **Запланировано (docs-only):** фаза 1 — help «About labels» + EN/RU, keyed refresh `admin.card.labels:${card.id}`, clear только после accepted команды, fresh append, timer/map cleanup; `SET_CARD_LABEL`/cap/`onSaved: () => void` не меняются, а `send`/`toggleLabel` получают optional key, keyed clear/success и post-await card/mounted guard для toast/onSaved/errors/busy; inline-ошибки остаются; same-label double-click и reload ordering — residual out of scope. Фаза 2 — `calendarFallback: ComponentType<...>` заменяет calendar+time, опциональный `calendarLoader` через `CardFieldsPanel`, native input с label, Retry/locale catch; `DateTimeField`/`calendar-lazy`/announcements/board по умолчанию не меняются. См. §7.31 |
 | 114 | TASK-183 `demo-label-integrity` | `docs/TASK-183-demo-label-integrity.md` → отдельные `feat/TASK-183.x-*` | §7.32: две независимые находки TASK-176 demo investigation — (1) воспроизводимый demo-fixture: полный mutation inventory, drop/recreate reset, manifest/verify, DB/API binding guard и удаление ручных артефактов `Card claim visibility 123`, `фывфыв`, checklist `123`, random link, 60 comments, extra users/admin/security rows; (2) `SET_CARD_LABEL` обновляет `Card.updatedAt` вместе с версией, inverse `cardUpdatedAt` проходит `CARD_STAMPED_TYPES`, аудит `DELETE_LABEL`/`RESTORE_LABEL` и тесты | **Запланировано:** docs-only spec; 183.1 demo hygiene, 183.2 label timestamp; reset дважды после checklist+link; без изменений admin demo runner и TASK-176.9. См. §7.32 |
 | 115 | TASK-185 `comment-history` | [Спецификация](docs/TASK-185-comment-history.md) → отдельные `feat/TASK-185.x-*` | [§7.33](#733-comment-edit-history-and-diff-task-185) — ревизии текста, cutover fence и сверка; оба API возвращают `historyIncompleteReason` (`legacy_cutover`, `revision_limit`, `gdpr_erase`, `writer_gap`). Activity скрывает правки удалённых комментариев и сохраняет tombstones добавления/удаления. Public SSE использует allowlist. Admin DTO получает аддитивные поля истории с сохранением `text` и `kind` | **Запланировано** — 6 подзадач, 10–15 инженерных дней. TASK-176.2 в базе. Контракт `kind` согласуется с TASK-177.11; политика удалённых admin-строк, модерация и share defaults остаются в отложенной TASK-174.1 |
+| 116 | TASK-200 `agent-scale-performance` | [`docs/TASK-200-agent-scale-performance.md`](docs/TASK-200-agent-scale-performance.md) → отдельные `feat/TASK-200.x-*` | [§7.34](#734-agent-scale-performance-ultra-light-janosik-for-hundreds-of-agents-task-200) — убрать амплификацию агентского пути: ready/work endpoint вместо полного board-поллинга, per-entity CAS, дедуп aggregate, TTL-кэши auth/membership/flags, gzip/ETag/singleflight, MCP HTTP gateway, read model и aggregate cache; Go/Fastify/React/worker threads — только по замеру | **Запланировано:** 15 подзадач (200.1–200.15), 3 волны; research — [`docs/PERF-AGENT-SCALE.md`](docs/PERF-AGENT-SCALE.md); запуск после текущей волны TASK-177/185, TASK-167 не начинаем. SLO: 500 агентов/20 досок p95 <500 мс, 1 000/50 <1 с, 3 000 SSE <800 МБ. См. §7.34 |
 
 > **TASK-38a выполнена 2026-10-26; TASK-38b завершена публичным релизом `v0.1.1` 2026-11-04 (PR #159/#160).** Self-host hardening + release
 > artifacts. Backend: `COOKIE_SECURE` с fail-fast boot-guard (`assertBootSecurity`
@@ -5583,6 +5584,64 @@ share по умолчанию остаются в TASK-174.1.
 до cutover.
 
 **Оценка.** 10–15 инженерных дней.
+
+---
+
+### 7.34. Agent-scale performance: ultra-light Janosik for hundreds of agents (TASK-200)
+
+> **Полный spec:** [`docs/TASK-200-agent-scale-performance.md`](docs/TASK-200-agent-scale-performance.md).
+> **Research и evidence:** [`docs/PERF-AGENT-SCALE.md`](docs/PERF-AGENT-SCALE.md).
+
+**Зачем.** Приложение уже рассчитано на рой агентов, но платит полным
+чтением доски на каждом шаге. При 100–500 агентах первыми ломаются
+холостой поллинг `wait_for_work` (500 агентов ≈ 100 полных чтений/с),
+board-wide CAS в MCP (конфликты на несвязанных карточках), тройная
+загрузка aggregate на PAT-команде, общий board-лимит 600 req/min и
+некэшированные auth/membership/flags. Это не проблема языка или
+фреймворка: raw HTTP — ~5 600 req/s, чтение доски — ~430 req/s, команды
+одной доски — ~42–48/с; узкое место — усиление работы на запрос.
+
+**Что уже известно.** 3,37 МБ и 128 мс на доску в 5 000 карточек;
+64–131 МБ transient на одновременное открытие; 30–40 запросов и до трёх
+aggregate на команду; 3 000 SSE ≈ 703 МБ; MCP — 108 МБ на процесс;
+500 одновременных чтений 1 000 карточек ≈ 6,5 ГБ. WSL-рестарты — история
+dev-окружения (Docker, Astro, Vite, Chromium), не продукта: API idle
+123–173 МБ.
+
+**Подзадачи.**
+
+| # | Что | Приоритет |
+|---|---|---|
+| 200.1 | Harness S1–S6, `pg_stat_statements`, baseline и профиль | P0 |
+| 200.2 | Server-side `ready/work` endpoint + long-poll в MCP | P0 |
+| 200.3 | Пересмотр board budget; MCP `429`/`Retry-After` | P0 |
+| 200.4 | Убрать дубли aggregate на PAT-команде; сузить PAT select | P0 |
+| 200.5 | TTL-кэши PAT/membership/flags; `presence=0` для агентов | P1 |
+| 200.6 | gzip/ETag/singleflight и семафор конкурентных чтений | P1 |
+| 200.7 | Per-entity CAS / targeted intents вместо board-wide CAS | P1 |
+| 200.8 | MCP Streamable HTTP gateway (отдельный сервис) | P1 |
+| 200.9 | Read model v1: summary + cursor pages + card detail | P1 |
+| 200.10 | Per-board aggregate cache по `aggregateRevision` | P2 |
+| 200.11 | Партиционирование command log / вынос details | P2 |
+| 200.12 | Реплики API + nginx/Caddy + лимиты | P1 |
+| 200.13 | Pre-serialized SSE frames и keep-alive | P2 |
+| 200.14 | Сертификация ёмкости, nightly perf gate, docs | P1 |
+| 200.15 | Gate: worker threads/Fastify/Go — только по замеру | P2 |
+
+**Порядок.**
+
+`200.1 → [200.2 ∥ 200.3 ∥ 200.4 ∥ 200.12] → [200.5 ∥ 200.6] → [200.7 ∥ 200.8 ∥ 200.9] → 200.10 → [200.11 ∥ 200.13 ∥ 200.14] → 200.15 (gate)`
+
+**Не входит.** Полный Go rewrite (1,2–2× при идентичном порте),
+Fastify adapter (<10% hot path), React rewrite (клиентский путь),
+worker threads по умолчанию (горячий CPU внутри транзакции), read
+replicas/PgBouncer без замеров, «поднять heap» как лечение OOM,
+per-card concurrency без доказанной необходимости.
+
+**DoD.** Baseline и профиль; все P0/P1 в `main`; профили A–F
+подтверждены (500 агентов/20 досок p95 <500 мс, 1 000/50 <1 с,
+100/1 без 429, 3 000 SSE <800 МБ); нет регрессий correctness/undo/SSE;
+nightly gate и PR-smoke; docs EN/RU; решение по 200.15 записано.
 
 ---
 
