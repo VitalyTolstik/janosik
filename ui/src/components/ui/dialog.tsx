@@ -46,11 +46,21 @@ const DialogContent = React.forwardRef<
       closeClassName,
       hideClose = false,
       overlayClassName,
+      onOpenAutoFocus,
+      onCloseAutoFocus,
       ...props
     },
     ref,
   ) => {
     const { t } = useI18n();
+    /**
+     * A dialog opened from component state (no `DialogTrigger`) has no Radix
+     * trigger to return focus to. Remember what held focus before the portal
+     * took over and restore it on close; trigger-based dialogs keep Radix's
+     * own behavior because their internal handler only runs when this one
+     * does not prevent the event.
+     */
+    const opener = React.useRef<HTMLElement | null>(null);
     return (
       <DialogPortal>
         <DialogOverlay className={overlayClassName} />
@@ -72,6 +82,28 @@ const DialogContent = React.forwardRef<
             className,
           )}
           {...props}
+          onOpenAutoFocus={(event) => {
+            // Runs before Radix focuses its own content/trigger, so the
+            // activeElement here is still the control that opened us.
+            if (
+              opener.current === null &&
+              document.activeElement instanceof HTMLElement &&
+              document.activeElement !== document.body
+            ) {
+              opener.current = document.activeElement;
+            }
+            onOpenAutoFocus?.(event);
+          }}
+          onCloseAutoFocus={(event) => {
+            const target = opener.current;
+            opener.current = null;
+            onCloseAutoFocus?.(event);
+            if (event.defaultPrevented) return;
+            if (target?.isConnected) {
+              event.preventDefault();
+              target.focus();
+            }
+          }}
           // Radix marks the Popover's DismissableLayer as highest only in a
           // passive effect. An immediate Escape right after opening a
           // portalled combobox listbox can race that update and close the
