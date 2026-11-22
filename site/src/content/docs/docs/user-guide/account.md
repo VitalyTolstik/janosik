@@ -168,11 +168,16 @@ Offline edits are not saved, and reloading loses unsaved changes.
 
 The data menu in the header manages your data.
 
+- `Export this board` downloads the open board as `janosik-board.json`. It is
+  disabled when no board is open and is separate from the all-boards file. A
+  board above 25 MB is refused with advice to use `pg_dump`, because an export
+  must import back.
 - `Export JSON` downloads all your boards as `janosik-boards.json`. A file
   above 25 MB is refused with advice to use `pg_dump` (the same limit applies
   to a single server board export), so an export can always be imported back.
 - `Import JSON` reads a Janosik export and adds the imported boards to your
-  account. Server mode imposes no 10-board product limit; an operator may set
+  account. A file from `Export this board` imports as one new board. Server
+  mode imposes no 10-board product limit; an operator may set
   `MAX_BOARDS_PER_USER` in the environment, and an import above that cap is
   rejected without creating anything.
 - `Card archive` opens the active board's archived cards. Search and select
@@ -182,6 +187,12 @@ The data menu in the header manages your data.
   Selected cards disappear from the archive immediately while the operation
   runs in the background. Keep Janosik open until it finishes; if it stops,
   cards that were not processed appear again.
+- `Recently deleted` lists cards, columns, comments and files removed from the
+  open board during the retention window (30 days by default; the operator can
+  change it). Any board ADMIN or MEMBER can restore an item; a card deleted by
+  a column restore comes back with its column. The maintenance sweep removes
+  older rows permanently. Inline images that a deleted comment unlinked stay
+  deleted, so a restored comment can show a missing image.
 
 ![The card archive: archived cards of the active board, with restore and delete.](/screens/archive.png)
 

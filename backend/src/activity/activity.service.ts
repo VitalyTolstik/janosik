@@ -350,7 +350,8 @@ function readCommentSnapshot(
   if (
     type !== "comment_added" &&
     type !== "comment_deleted" &&
-    type !== "comment_updated"
+    type !== "comment_updated" &&
+    type !== "comment_restored"
   ) {
     return {};
   }
@@ -365,9 +366,9 @@ function readCommentSnapshot(
     text === undefined || type === "comment_updated"
       ? undefined
       : [
-          type === "comment_added"
-            ? { field: "comment", from: null, to: text }
-            : { field: "comment", from: text, to: null },
+          type === "comment_deleted"
+            ? { field: "comment", from: text, to: null }
+            : { field: "comment", from: null, to: text },
         ];
   return {
     ...(commentId !== undefined ? { detail: commentId } : {}),
@@ -381,7 +382,9 @@ function readActivitySnapshot(
   value: Prisma.JsonValue | null,
 ): { detail?: string; changes?: ActivityChange[] } {
   const attachment =
-    (type === "attachment_added" || type === "attachment_deleted") &&
+    (type === "attachment_added" ||
+      type === "attachment_deleted" ||
+      type === "attachment_restored") &&
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&

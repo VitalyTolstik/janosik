@@ -417,6 +417,9 @@ export function CardComments({
         }));
         void refreshNewest();
       }
+      if (event.kind === "comment_restored") {
+        void refreshNewest();
+      }
     });
   }, [activity, boardId, cardId, serverMode, refreshNewest, refreshEdited]);
 

@@ -6,6 +6,7 @@ import {
   Download,
   HardDrive,
   HardDriveDownload,
+  Undo2,
   Upload,
   Workflow,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { BackupDialog } from "@/components/board/BackupDialog";
+import { RecentlyDeletedDialog } from "@/components/board/RecentlyDeletedDialog";
 import { WorkflowRulesDialog } from "@/components/board/WorkflowRulesDialog";
 import {
   DropdownMenu,
@@ -31,7 +33,7 @@ import {
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { MAX_BOARD_EXPORT_BYTES, MAX_IMPORT_BYTES } from "@janosik/shared";
-import { isApiEnabled } from "@/api/client";
+import { ApiError, isApiEnabled } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
 import { parseExport, serializeExport } from "@janosik/shared";
 import { downloadTextFile } from "@/utils/download";
@@ -52,7 +54,7 @@ export function DataMenu() {
   const { t } = useI18n();
   const toast = useToast();
   const location = useLocation();
-  const { boards, board, importBoards, exportBoards } = useBoard();
+  const { boards, board, importBoards, exportBoards, exportBoard } = useBoard();
   // The data menu acts on the board in the URL, not on "the active board":
   // an archived board is only reachable through a `?card=` deep link, and its
   // archive must not silently become the active board's archive.
@@ -81,6 +83,7 @@ export function DataMenu() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [deletedOpen, setDeletedOpen] = useState(false);
 
   // Counted only while the menu is open (TASK-21.4.1): this component
   // re-renders on every keystroke anywhere on the board, and walking every
@@ -129,6 +132,34 @@ export function DataMenu() {
         t("data.exportAllSuccess", { count: completeBoards.length }),
       );
     } catch {
+      toast.error(t("data.exportFailed"));
+    }
+  };
+
+  /**
+   * TASK-177.7: one board, one envelope. Server mode uses the existing
+   * `GET /boards/:id/export`; local mode serializes the viewed board with
+   * the same format. The all-boards action above stays a separate item with
+   * its own "All boards exported (N)" copy.
+   */
+  const handleExportBoard = async () => {
+    const target = menuBoard;
+    if (!target) return;
+    try {
+      const raw = await exportBoard(target.id);
+      // The server answers 413 before streaming, so this is the local-mode
+      // guard and a belt-and-braces check for a proxied older server.
+      if (new TextEncoder().encode(raw).length > MAX_BOARD_EXPORT_BYTES) {
+        toast.error(t("data.exportBoardTooLarge"));
+        return;
+      }
+      downloadTextFile("janosik-board.json", raw);
+      toast.success(t("data.exportSuccess"));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 413) {
+        toast.error(t("data.exportBoardTooLarge"));
+        return;
+      }
       toast.error(t("data.exportFailed"));
     }
   };
@@ -197,6 +228,14 @@ export function DataMenu() {
         </Tooltip>
         <DropdownMenuContent align="end" className="w-64">
           <DropdownMenuLabel>{t("data.tooltip")}</DropdownMenuLabel>
+          <DropdownMenuItem
+            data-testid="data-export-board"
+            disabled={menuBoard === undefined}
+            onClick={() => void handleExportBoard()}
+          >
+            <Download className="h-4 w-4" />
+            {t("data.exportBoard")}
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => void handleExport()}>
             <Download className="h-4 w-4" />
             {t("data.export")}
@@ -222,6 +261,16 @@ export function DataMenu() {
               ? `${t("data.archiveTitle")} · ${archivedCount}`
               : t("data.archiveTitle")}
           </DropdownMenuItem>
+          {serverMode ? (
+            <DropdownMenuItem
+              data-testid="data-deleted"
+              disabled={menuBoard === undefined}
+              onClick={() => setDeletedOpen(true)}
+            >
+              <Undo2 className="h-4 w-4" />
+              {t("deleted.title")}
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             data-testid="data-workflow-rules"
             onClick={() => setRulesOpen(true)}
@@ -264,6 +313,11 @@ export function DataMenu() {
       <ArchiveDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
+        boardId={menuBoard?.id}
+      />
+      <RecentlyDeletedDialog
+        open={deletedOpen && menuBoard !== undefined}
+        onOpenChange={setDeletedOpen}
         boardId={menuBoard?.id}
       />
       {!serverMode ? (

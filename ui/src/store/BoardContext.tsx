@@ -21,6 +21,7 @@ import {
   boardReducer,
   boardStarterPlan,
   LIMITS,
+  serializeExport,
   type BoardAction,
   type BoardStarterLocale,
   type BoardState,
@@ -329,6 +330,12 @@ interface BoardActionsValue {
   importBoards: (boards: BoardState) => void | Promise<boolean>;
   /** Read every board for export, refusing incomplete or stale snapshots. */
   exportBoards: () => Promise<BoardState>;
+  /**
+   * TASK-177.7: one board as an importable JSON envelope, after drafts are
+   * flushed and pending commands drain — the same barrier as `exportBoards`
+   * without reading every other board.
+   */
+  exportBoard: (boardId: string) => Promise<string>;
   /**
    * Re-runs server hydration (`GET /boards` + aggregates) — used after
    * accepting an invitation so the fresh board shows up without a reload.
@@ -1291,6 +1298,42 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return snapshots.map(({ board }) => board);
   }, [flushDrafts, serverMode, sync]);
 
+  const exportBoard = useCallback(
+    async (boardId: string): Promise<string> => {
+      if (!flushDrafts()) throw new Error("An editor could not save its draft");
+      if (!serverMode) {
+        const target = stateRef.current.find((board) => board.id === boardId);
+        if (!target) throw new Error("Board not found");
+        return serializeExport([target]);
+      }
+      const boardEpoch = boardMutationsRef.current.epoch;
+      if (boardMutationsRef.current.pending > 0) {
+        throw new Error("Board changes are still being saved");
+      }
+      const failures = sync.failureCount;
+      await sync.drain();
+      if (sync.failureCount !== failures) {
+        throw new Error("A board change could not be saved");
+      }
+      if (sync.isBusy(boardId)) {
+        throw new Error("Board changes are still being saved");
+      }
+      const seq = seqsRef.current.get(boardId) ?? 0;
+      const raw = await api.exportBoard(boardId);
+      if (
+        boardMutationsRef.current.pending > 0 ||
+        boardMutationsRef.current.epoch !== boardEpoch ||
+        sync.failureCount !== failures ||
+        sync.isBusy(boardId) ||
+        (seqsRef.current.get(boardId) ?? 0) < seq
+      ) {
+        throw new Error("Board changed while preparing the export");
+      }
+      return raw;
+    },
+    [flushDrafts, serverMode, sync],
+  );
+
   useEffect(() => {
     if (!serverMode) return;
     let cancelled = false;
@@ -2173,6 +2216,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       redo,
       importBoards,
       exportBoards,
+      exportBoard,
       refreshBoards: hydrateBoards,
       dismissDataIssue,
       registerDraftFlush,
@@ -2191,6 +2235,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       redo,
       importBoards,
       exportBoards,
+      exportBoard,
       hydrateBoards,
       dismissDataIssue,
       registerDraftFlush,
@@ -2768,6 +2813,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     redo: noop,
     importBoards: noop,
     exportBoards: () => Promise.resolve([]),
+    exportBoard: () => Promise.resolve(""),
     refreshBoards: () => Promise.resolve(),
     dismissDataIssue: noop,
     registerDraftFlush: () => noop,

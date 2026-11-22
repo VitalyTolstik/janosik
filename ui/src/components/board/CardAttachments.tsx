@@ -253,6 +253,7 @@ export function CardAttachments({
       if (
         event.kind === "attachment_added" ||
         event.kind === "attachment_deleted" ||
+        event.kind === "attachment_restored" ||
         event.kind === "comment_added" ||
         event.kind === "comment_deleted" ||
         event.kind === "comment_updated" ||

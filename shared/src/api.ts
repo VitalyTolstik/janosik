@@ -625,6 +625,8 @@ export const ACTIVITY_EVENT_TYPES = [
   "comment_added",
   "comment_deleted",
   "comment_updated",
+  "comment_restored",
+  "attachment_restored",
   // TASK-166 agent control / approvals / pause.
   "approval_requested",
   "approval_approved",
@@ -1010,6 +1012,49 @@ export interface BoardImportPreviewDto {
   labels: number;
   /** True when the operator cap would accept this envelope right now. */
   withinLimit: boolean;
+}
+
+/**
+ * TASK-177.7: soft-deleted board content that a board ADMIN/MEMBER can still
+ * restore. Cards and columns return through the command log; comments and
+ * attachments are restored in place because they live outside it.
+ */
+export const DELETED_ITEM_TYPES = [
+  "cards",
+  "columns",
+  "comments",
+  "attachments",
+] as const;
+
+export type DeletedItemType = (typeof DELETED_ITEM_TYPES)[number];
+
+/** One row of `GET /boards/:id/deleted` (TASK-177.7). */
+export interface DeletedBoardItemDto {
+  type: DeletedItemType;
+  id: string;
+  /** Card/column title, comment excerpt or attachment file name. */
+  title: string;
+  /** Unix ms when the item was soft-deleted. */
+  deletedAt: number;
+  /** Unix ms after which the purge sweep may remove it for good. */
+  purgeAt: number;
+  /** Cards and attachments name their card; columns do not. */
+  cardId?: string;
+  cardTitle?: string;
+  /** Comments keep the author's display name for the row. */
+  authorName?: string | null;
+  /** Attachments only. */
+  sizeBytes?: number;
+}
+
+/** `GET /boards/:id/deleted` body (TASK-177.7). */
+export interface DeletedBoardItemsDto {
+  /** Operator retention window, in days. */
+  retentionDays: number;
+  /** Newest deletion first; capped so the dialog stays bounded. */
+  items: DeletedBoardItemDto[];
+  /** True when older rows fall outside the returned page. */
+  truncated: boolean;
 }
 
 /** Public user projection returned by the auth endpoints (§7.4, TASK-24). */
