@@ -398,6 +398,32 @@ export function CardComments({
     };
   }, [focusId, loaded, settleFocusRow]);
 
+  // A window/dialog resize after the settle window can push the target out.
+  // Keep the active deep link centered on resize; the debounce clears on
+  // unmount/close so no timer outlives the row.
+  useEffect(() => {
+    if (!focusId || !loaded) return;
+    let timer: number | undefined;
+    const recenter = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (aliveRef.current) settleFocusRow(focusId);
+      }, 100);
+    };
+    window.addEventListener("resize", recenter);
+    const scroller = listRef.current ? findScrollParent(listRef.current) : null;
+    let observer: ResizeObserver | undefined;
+    if (scroller !== null && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(recenter);
+      observer.observe(scroller);
+    }
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", recenter);
+      observer?.disconnect();
+    };
+  }, [focusId, loaded, settleFocusRow]);
+
   const commentCount = items.filter((item) => !isPendingComment(item)).length;
   const { total } = thread;
   useEffect(() => {

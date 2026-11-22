@@ -149,6 +149,15 @@ for (const viewport of VIEWPORTS) {
         "aria-pressed",
         "true",
       );
+      await expect(row).toBeFocused();
+      await expectRowInsideScroller(row);
+
+      // A live resize must not leave the focused target clipped.
+      await page.setViewportSize({
+        width: Math.max(360, viewport.width - 80),
+        height: Math.max(640, viewport.height - 120),
+      });
+      await expect(row).toBeFocused();
       await expectRowInsideScroller(row);
     });
 
@@ -174,7 +183,8 @@ for (const viewport of VIEWPORTS) {
         .locator('[contenteditable="true"]');
       await editor.click();
       await page.keyboard.type("@");
-      await expect(dialog.getByTestId("mention-picker")).toBeVisible();
+      // The picker is portalled to document.body, outside the dialog node.
+      await expect(page.getByTestId("mention-picker")).toBeVisible();
       expect(
         await axeViolations(page, '[data-testid="mention-picker"]'),
       ).toEqual([]);
