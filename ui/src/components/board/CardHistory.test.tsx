@@ -203,6 +203,51 @@ describe("CardHistory", () => {
     expect(entry).not.toHaveTextContent("comment-1");
   });
 
+  it("invalidates a legacy comment row that only carries detail", async () => {
+    const server = new FakeServer();
+    server.seedActivity("card-1", [
+      {
+        source: "activity",
+        id: "legacy-comment",
+        at: AT,
+        type: "comment_added",
+        actorId: "user-3",
+        cardId: "card-1",
+        detail: "comment-legacy",
+        changes: [{ field: "comment", from: null, to: "Legacy body" }],
+      },
+    ]);
+    const live = createBoardLive();
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <BoardLiveProvider live={live}>
+          <TooltipProvider>
+            <CardHistory cardId="card-1" boardId="b-1" updatedAt={1} />
+          </TooltipProvider>
+        </BoardLiveProvider>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("Legacy body")).toBeInTheDocument();
+
+    server.seedActivity("card-1", []);
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-legacy-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: AT + 1,
+        kind: "comment_deleted",
+        detail: "comment-legacy",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Legacy body")).not.toBeInTheDocument(),
+    );
+  });
+
   it("marks an agent-issued command with a badge (TASK-157)", async () => {
     const server = new FakeServer();
     server.seedActivity("card-1", [
@@ -602,5 +647,57 @@ describe("CardHistory", () => {
     expect(await screen.findByTestId("history-diff")).toHaveTextContent(
       "Restored old",
     );
+  });
+
+  it("replaces a same-id comment_added projection after restore", async () => {
+    const server = new FakeServer();
+    const liveEntry: ActivityFeedEntry = {
+      source: "activity",
+      id: "comment-added",
+      at: AT,
+      type: "comment_added",
+      actorId: "user-2",
+      cardId: "card-1",
+      commentId: "comment-1",
+      changes: [{ field: "comment", from: null, to: "Restored body" }],
+    };
+    server.seedActivity("card-1", [liveEntry]);
+    const live = createBoardLive();
+    vi.stubGlobal("fetch", server.handle);
+    render(
+      <I18nProvider>
+        <BoardLiveProvider live={live}>
+          <TooltipProvider>
+            <CardHistory cardId="card-1" boardId="b-1" updatedAt={1} />
+          </TooltipProvider>
+        </BoardLiveProvider>
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("Restored body")).toBeInTheDocument();
+
+    server.seedActivity("card-1", [{ ...liveEntry, changes: undefined }]);
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: AT + 1,
+        kind: "comment_deleted",
+        commentId: "comment-1",
+      });
+      live.commits.publish("b-1", ["card-1"]);
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("Restored body")).not.toBeInTheDocument(),
+    );
+
+    // Restore keeps the same Activity id but changes the projection back to a
+    // body-bearing comment_added row; the newest page must win.
+    server.seedActivity("card-1", [liveEntry]);
+    act(() => {
+      live.commits.publish("b-1", ["card-1"]);
+    });
+    expect(await screen.findByText("Restored body")).toBeInTheDocument();
   });
 });

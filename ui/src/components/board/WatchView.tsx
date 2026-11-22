@@ -373,7 +373,9 @@ export function WatchView({ boardId }: WatchViewProps) {
           // Drop any cached comment diff immediately; the coalesced refetch
           // then returns the metadata-only tombstone.
           setItems((current) =>
-            current.filter((entry) => entry.commentId !== deletedId),
+            current.filter(
+              (entry) => (entry.commentId ?? entry.detail) !== deletedId,
+            ),
           );
           pageCache.current.clear();
         }

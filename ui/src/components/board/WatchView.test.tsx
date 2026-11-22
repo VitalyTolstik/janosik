@@ -269,6 +269,45 @@ describe("WatchView (TASK-142)", () => {
     expect(entry).not.toHaveTextContent("Show full values");
   });
 
+  it("invalidates a legacy comment row that only carries detail", async () => {
+    hoisted.enabled.value = true;
+    const live = createBoardLive();
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "legacy-comment",
+          at: Date.now(),
+          type: "comment_added",
+          actorId: "u-1",
+          cardId: "card-1",
+          detail: "comment-legacy",
+          changes: [{ field: "comment", from: null, to: "Legacy body" }],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch(live);
+    expect(await screen.findByText(/Legacy body/)).toBeInTheDocument();
+
+    hoisted.boardActivity.mockResolvedValue({ items: [], nextCursor: null });
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-legacy-deleted",
+        boardId: BOARD_ID,
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        detail: "comment-legacy",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Legacy body/)).not.toBeInTheDocument(),
+    );
+  });
+
   it("renders a comment edit as a character-level diff and truncates it", async () => {
     hoisted.enabled.value = true;
     const before = `${"Long context ".repeat(20)}old ending`;

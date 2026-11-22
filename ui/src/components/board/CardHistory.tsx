@@ -81,7 +81,7 @@ export function CardHistory({
   // TASK-185.2: an in-flight page can resolve after the deletion frame.
   const deletedCommentIdsRef = useRef(new Map<string, number>());
   const deletionGenerationRef = useRef(0);
-  const withoutStaleDeleted = useCallback(
+  const reconcileFreshPage = useCallback(
     (items: ActivityFeedEntry[], requestGeneration: number) => {
       reconcileRestoredComments(
         items,
@@ -89,14 +89,26 @@ export function CardHistory({
         requestGeneration,
         (entry) => entry.commentId ?? entry.detail,
       );
-      return items.filter(
+    },
+    [],
+  );
+  const withoutStaleDeleted = useCallback(
+    (items: ActivityFeedEntry[], requestGeneration: number) =>
+      items.filter(
         (entry) =>
           !isStaleDeletedCommentEntry(
             entry,
             deletedCommentIdsRef.current,
             requestGeneration,
           ),
-      );
+      ),
+    [],
+  );
+  /** Fresh page rows win on an id collision (a restore changes the projection). */
+  const replacePageRows = useCallback(
+    (items: ActivityFeedEntry[], pageItems: ActivityFeedEntry[]) => {
+      const fresh = new Map(pageItems.map((entry) => [entry.id, entry]));
+      return items.map((entry) => fresh.get(entry.id) ?? entry);
     },
     [],
   );
@@ -108,6 +120,7 @@ export function CardHistory({
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
+      reconcileFreshPage(page.items, generation);
       setFeed({ ...page, items: withoutStaleDeleted(page.items, generation) });
     } catch {
       if (!aliveRef.current) return;
@@ -115,7 +128,7 @@ export function CardHistory({
     } finally {
       if (aliveRef.current) setLoaded(true);
     }
-  }, [cardId, serverMode, t, toast, withoutStaleDeleted]);
+  }, [cardId, reconcileFreshPage, serverMode, t, toast, withoutStaleDeleted]);
 
   // Threads are keyed by card id upstream, so mount state is the reset.
   useEffect(() => {
@@ -132,17 +145,27 @@ export function CardHistory({
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
+      reconcileFreshPage(page.items, generation);
       setFeed((current) => {
         const merged = current ? mergeNewestActivity(current, page) : page;
         return {
           ...merged,
-          items: withoutStaleDeleted(merged.items, generation),
+          items: withoutStaleDeleted(
+            replacePageRows(merged.items, page.items),
+            generation,
+          ),
         };
       });
     } catch {
       /* best effort */
     }
-  }, [cardId, serverMode, withoutStaleDeleted]);
+  }, [
+    cardId,
+    reconcileFreshPage,
+    replacePageRows,
+    serverMode,
+    withoutStaleDeleted,
+  ]);
 
   // A committed edit moves `updatedAt` (once per editing session — quiet
   // keystrokes only touch it at the end), so this is a cheap trigger for a
@@ -176,7 +199,7 @@ export function CardHistory({
               ? {
                   ...current,
                   items: current.items.filter(
-                    (entry) => entry.commentId !== deletedId,
+                    (entry) => (entry.commentId ?? entry.detail) !== deletedId,
                   ),
                 }
               : current,
@@ -205,12 +228,16 @@ export function CardHistory({
     setLoadingOlder(true);
     try {
       const page = await api.cardActivity(cardId, nextCursor, PAGE_SIZE);
+      reconcileFreshPage(page.items, generation);
       setFeed((current) => {
         if (!current) return current;
         const merged = appendOlderActivity(current, page, nextCursor);
         return {
           ...merged,
-          items: withoutStaleDeleted(merged.items, generation),
+          items: withoutStaleDeleted(
+            replacePageRows(merged.items, page.items),
+            generation,
+          ),
         };
       });
     } catch {

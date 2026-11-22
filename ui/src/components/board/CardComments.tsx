@@ -438,8 +438,12 @@ export function CardComments({
         const restoredTarget =
           target !== undefined ? byId.get(target) : undefined;
         if (restoredTarget !== undefined) {
-          // A fresh response contains the row again: it was restored.
-          deletedIdsRef.current.delete(restoredTarget.id);
+          // Only a response that started after the deletion may clear the
+          // marker; a stale edit response must not resurrect the body.
+          const deletedAt = deletedIdsRef.current.get(restoredTarget.id);
+          if (deletedAt !== undefined && deletedAt <= generation) {
+            deletedIdsRef.current.delete(restoredTarget.id);
+          }
         }
         setThread((current) => {
           const items = current.items.flatMap((comment) => {
