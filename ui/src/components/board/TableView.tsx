@@ -546,11 +546,11 @@ export function TableView({
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-32 lg:w-48"
+                className="w-24 sm:w-28 lg:w-48"
               />
               <th
                 scope="col"
-                className="hidden w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell lg:w-44"
+                className="hidden w-36 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell lg:w-44"
               >
                 {t("view.table.labels")}
               </th>

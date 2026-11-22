@@ -35,6 +35,21 @@ async function expectDialogFits(page: Page, locator: Locator, label: string) {
 }
 
 /**
+ * The house press affordance scales any button to 0.97 while it is `:active`,
+ * so a tap followed by an immediate `boundingBox()` can read 42.68 px for a
+ * real 44 px target. Wait for the press transition instead of failing the
+ * target-size check mid-press.
+ */
+async function expectTouchTarget(locator: Locator) {
+  await expect
+    .poll(async () => {
+      const box = await locator.boundingBox();
+      return box ? Math.min(box.width, box.height) : 0;
+    })
+    .toBeGreaterThanOrEqual(44);
+}
+
+/**
  * Some board chrome is deliberately desktop-only at 390 px (TASK-179 hides
  * Members/Share/Settings there). The dialogs still render full-screen for
  * phone-sized viewports, so exercise their geometry without reintroducing a
@@ -205,20 +220,14 @@ test("the card archive is reachable on the phone and restores a card", async ({
     archive.getByTestId("archive-delete"),
     archive.getByRole("checkbox", { name: "Select Archived on phone" }),
   ]) {
-    const box = await target.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    await expectTouchTarget(target);
   }
   await archive.getByTestId("archive-delete").tap();
   for (const target of [
     archive.getByRole("button", { name: "Yes, delete" }),
     archive.getByRole("button", { name: "Cancel", exact: true }),
   ]) {
-    const box = await target.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    await expectTouchTarget(target);
   }
   await archive.getByRole("button", { name: "Cancel", exact: true }).tap();
   await archive.getByTestId("archive-restore").tap();

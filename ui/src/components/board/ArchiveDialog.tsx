@@ -446,7 +446,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-11 w-11 text-success hover:text-success lg:h-6 lg:w-6"
+                          className="h-11 w-11 shrink-0 text-success hover:text-success lg:h-6 lg:w-6"
                           aria-label={t("archive.deleteConfirmYes")}
                           disabled={busy}
                           onClick={() => {
@@ -461,7 +461,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-11 w-11 text-muted-foreground lg:h-6 lg:w-6"
+                          className="h-11 w-11 shrink-0 text-muted-foreground lg:h-6 lg:w-6"
                           aria-label={t("archive.deleteConfirmCancel")}
                           disabled={busy}
                           onClick={() => setConfirmDeleteId(null)}
@@ -476,7 +476,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-11 w-11 text-muted-foreground hover:text-foreground lg:h-6 lg:w-6"
+                              className="h-11 w-11 shrink-0 text-muted-foreground hover:text-foreground lg:h-6 lg:w-6"
                               aria-label={t("card.unarchive")}
                               data-testid="archive-restore"
                               disabled={busy}
@@ -528,7 +528,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-11 w-11 text-muted-foreground hover:text-destructive lg:h-6 lg:w-6"
+                          className="h-11 w-11 shrink-0 text-muted-foreground hover:text-destructive lg:h-6 lg:w-6"
                           aria-label={t("archive.delete")}
                           data-testid="archive-delete"
                           disabled={busy}
