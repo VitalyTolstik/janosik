@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -12,13 +13,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "@/auth/AuthContext";
 import { BoardSection } from "@/components/BoardSection";
+import { createSeedBoard, LIMITS, type AttachmentDto } from "@janosik/shared";
 import { CardDialog } from "@/components/board/CardDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
-import { BoardProvider } from "@/store/BoardContext";
+import { BoardProvider, useBoard } from "@/store/BoardContext";
 import { ToastProvider } from "@/components/Toast";
 import { api } from "@/api/client";
 import { FakeServer } from "@/test/fake-server";
@@ -108,6 +110,67 @@ function renderBoard(entry = "/") {
       </BoardBackgroundProvider>
     </ThemeProvider>,
   );
+}
+
+function RestoreSwitchHarness() {
+  const [cardId, setCardId] = useState("card-1");
+  const { updateCard } = useBoard();
+  return (
+    <>
+      <button type="button" onClick={() => setCardId("card-2")}>
+        Switch card
+      </button>
+      <button
+        type="button"
+        onClick={() => updateCard("card-1", { description: "Remote text" })}
+      >
+        Remote edit
+      </button>
+      <CardDialog cardId={cardId} open onOpenChange={() => {}} />
+    </>
+  );
+}
+
+function renderRestoreSwitchHarness() {
+  return render(
+    <ThemeProvider>
+      <BoardBackgroundProvider>
+        <BoardGlassProvider>
+          <I18nProvider>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/board/board-main"]}>
+                <ToastProvider>
+                  <AuthProvider>
+                    <BoardProvider>
+                      <RestoreSwitchHarness />
+                    </BoardProvider>
+                  </AuthProvider>
+                </ToastProvider>
+              </MemoryRouter>
+            </TooltipProvider>
+          </I18nProvider>
+        </BoardGlassProvider>
+      </BoardBackgroundProvider>
+    </ThemeProvider>,
+  );
+}
+
+function detachedAttachment(
+  overrides: Partial<AttachmentDto> = {},
+): AttachmentDto {
+  return {
+    id: "att-restore",
+    cardId: "card-1",
+    fileName: "spec.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 4,
+    uploadedById: "user-1",
+    transcodeStatus: "none",
+    hasThumbnail: false,
+    hasPoster: false,
+    createdAt: 0,
+    ...overrides,
+  };
 }
 
 describe("CardDialog comment drafts", () => {
@@ -308,6 +371,12 @@ describe("CardDialog description editor", () => {
     localStorage.clear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
   it("opens with the stored markdown and streams edits into the board", async () => {
     const dialog = await openCardDialog("Design the new onboarding flow");
 
@@ -433,6 +502,400 @@ describe("CardDialog description editor", () => {
         "\n\n[spec.pdf](/api/v1/attachments/att-file/content)\n\n",
       );
     });
+  });
+
+  it("restores a detached file by appending its markdown to the description (G-13)", async () => {
+    // The section only exists in server mode; the fake server provides the
+    // seed board the dialog reads while the attachment list stays stubbed.
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      detachedAttachment(),
+    ]);
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Description");
+
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    await waitFor(() => {
+      const value = (
+        within(dialog).getByLabelText("Description") as HTMLTextAreaElement
+      ).value;
+      expect(value).toContain(
+        "[spec.pdf](/api/v1/attachments/att-restore/content)",
+      );
+    });
+    // The fake server received the real UPDATE_CARD save.
+    const command = server.requests.find((request) => {
+      if (!request.path.endsWith("/commands")) return false;
+      const body = request.body as {
+        action?: { type?: string; cardId?: string; description?: string };
+      };
+      return (
+        body.action?.type === "UPDATE_CARD" &&
+        body.action.cardId === "card-1" &&
+        body.action.description?.includes(
+          "/api/v1/attachments/att-restore/content",
+        ) === true
+      );
+    });
+    expect(command).toBeDefined();
+    // Dropped from the detached bin, now a normal attachment row.
+    expect(
+      within(dialog).queryByTestId("card-detached-attachments"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the bin row and the description when the restore save fails", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      detachedAttachment(),
+    ]);
+    server.failNextCommand(400, { message: "save failed" });
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    const before = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText("Could not restore the file to the description"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByTestId("card-detached-attachments"),
+    ).toBeInTheDocument();
+    const editor = within(dialog).getByLabelText(
+      "Description",
+    ) as HTMLTextAreaElement;
+    expect(editor.value).toBe(before.value);
+    expect(editor.value).not.toContain("att-restore");
+    // The generic sync toast is suppressed: only the restore copy appears.
+    expect(
+      screen.queryByText("The server rejected the change"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("restores onto the latest same-card description after a remote edit", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    let resolveFresh!: (items: AttachmentDto[]) => void;
+    const fresh = new Promise<AttachmentDto[]>((resolve) => {
+      resolveFresh = resolve;
+    });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments")
+      .mockResolvedValueOnce([detachedAttachment()])
+      .mockReturnValueOnce(fresh)
+      .mockResolvedValue([]);
+    renderRestoreSwitchHarness();
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Description");
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    fireEvent.click(screen.getByText("Remote edit"));
+    await waitFor(() =>
+      expect(
+        (within(dialog).getByLabelText("Description") as HTMLTextAreaElement)
+          .value,
+      ).toBe("Remote text"),
+    );
+
+    await act(async () => {
+      resolveFresh([detachedAttachment()]);
+    });
+
+    await waitFor(() => {
+      const value = (
+        within(dialog).getByLabelText("Description") as HTMLTextAreaElement
+      ).value;
+      expect(value).toContain("Remote text");
+      expect(value).toContain(
+        "[spec.pdf](/api/v1/attachments/att-restore/content)",
+      );
+    });
+    const updates = server.requests.filter((request) => {
+      if (!request.path.endsWith("/commands")) return false;
+      const body = request.body as {
+        action?: { type?: string; description?: string };
+      };
+      return (
+        body.action?.type === "UPDATE_CARD" &&
+        body.action.description?.includes("att-restore") === true
+      );
+    });
+    expect(updates).toHaveLength(1);
+    const body = updates[0]!.body as { action: { description: string } };
+    expect(body.action.description).toContain("Remote text");
+  });
+
+  it("refuses the restore when a same-card remote edit conflicts with a draft", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    let resolveFresh!: (items: AttachmentDto[]) => void;
+    const fresh = new Promise<AttachmentDto[]>((resolve) => {
+      resolveFresh = resolve;
+    });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments")
+      .mockResolvedValueOnce([detachedAttachment()])
+      .mockReturnValueOnce(fresh)
+      .mockResolvedValue([]);
+    renderRestoreSwitchHarness();
+    const dialog = await screen.findByRole("dialog");
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+    fireEvent.change(editor, { target: { value: "Local draft" } });
+    fireEvent.click(screen.getByText("Remote edit"));
+    expect(
+      await screen.findByText(/Someone else changed this description/),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      resolveFresh([detachedAttachment()]);
+    });
+
+    expect(
+      await screen.findByText(
+        "Resolve the description conflict before restoring a file",
+      ),
+    ).toBeInTheDocument();
+    const restoreUpdate = server.requests.find((request) => {
+      if (!request.path.endsWith("/commands")) return false;
+      const body = request.body as {
+        action?: { type?: string; description?: string };
+      };
+      return (
+        body.action?.type === "UPDATE_CARD" &&
+        body.action.description?.includes("att-restore") === true
+      );
+    });
+    expect(restoreUpdate).toBeUndefined();
+    expect(
+      (within(dialog).getByLabelText("Description") as HTMLTextAreaElement)
+        .value,
+    ).toBe("Local draft");
+    // Resolve the conflict so the module-level held draft cannot leak into
+    // the next test that reuses the seed board and card ids.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reload" }));
+  });
+
+  it("enforces the real description limit guard", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const board = createSeedBoard();
+    board.cards["card-1"]!.description = "x".repeat(LIMITS.description - 1);
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      detachedAttachment(),
+    ]);
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Description");
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText(
+        "The description would exceed its size limit — the file was not restored",
+      ),
+    ).toBeInTheDocument();
+    const restoreUpdate = server.requests.find((request) => {
+      if (!request.path.endsWith("/commands")) return false;
+      const body = request.body as {
+        action?: { type?: string; description?: string };
+      };
+      return (
+        body.action?.type === "UPDATE_CARD" &&
+        body.action.description?.includes("att-restore") === true
+      );
+    });
+    expect(restoreUpdate).toBeUndefined();
+  });
+
+  it("keeps a staged draft after the restore save fails", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      detachedAttachment(),
+    ]);
+    server.failNextCommand(400, { message: "save failed" });
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "My unsaved draft" } });
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText("Could not restore the file to the description"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const current = (
+        within(dialog).getByLabelText("Description") as HTMLTextAreaElement
+      ).value;
+      expect(current).toBe("My unsaved draft");
+      expect(current).not.toContain("att-restore");
+    });
+  });
+
+  it("saves a reference that exists only in the unsaved draft", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      detachedAttachment(),
+    ]);
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(editor, {
+      target: {
+        value: "Draft\n\n[spec.pdf](/api/v1/attachments/att-restore/content)",
+      },
+    });
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    await waitFor(() => {
+      const updates = server.requests.filter((request) => {
+        if (!request.path.endsWith("/commands")) return false;
+        const body = request.body as {
+          action?: { type?: string; description?: string };
+        };
+        return (
+          body.action?.type === "UPDATE_CARD" &&
+          body.action.description?.includes("att-restore") === true
+        );
+      });
+      expect(updates).toHaveLength(1);
+      const body = updates[0]!.body as { action: { description: string } };
+      expect(body.action.description).toContain("Draft");
+      expect(body.action.description.match(/att-restore/g)).toHaveLength(1);
+    });
+  });
+
+  it("does not duplicate a reference already present in the description", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const board = createSeedBoard();
+    board.cards["card-1"]!.description =
+      "![spec.pdf](/api/v1/attachments/att-restore/content)";
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments").mockResolvedValue([
+      detachedAttachment(),
+    ]);
+    renderBoard("/board/board-main?card=card-1");
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Description");
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    expect(
+      await screen.findByText("This file is already in the description"),
+    ).toBeInTheDocument();
+    const updates = server.requests.filter((request) => {
+      if (!request.path.endsWith("/commands")) return false;
+      const body = request.body as { action?: { type?: string } };
+      return body.action?.type === "UPDATE_CARD";
+    });
+    expect(updates).toEqual([]);
+  });
+
+  it("never applies a restore to the next card after a switch during the await", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    const server = new FakeServer([createSeedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    let resolveFresh!: (items: AttachmentDto[]) => void;
+    const fresh = new Promise<AttachmentDto[]>((resolve) => {
+      resolveFresh = resolve;
+    });
+    vi.spyOn(api, "listAttachments").mockResolvedValue([]);
+    vi.spyOn(api, "listDetachedAttachments")
+      .mockResolvedValueOnce([detachedAttachment()])
+      .mockReturnValueOnce(fresh)
+      .mockResolvedValue([]);
+    renderRestoreSwitchHarness();
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Description");
+    const group = await within(dialog).findByTestId(
+      "card-detached-attachments",
+    );
+    fireEvent.click(group.querySelector("summary")!);
+    fireEvent.click(within(dialog).getByTestId("card-attachment-restore"));
+
+    fireEvent.click(screen.getByText("Switch card"));
+    const editor = (await within(dialog).findByLabelText(
+      "Description",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "New card draft" } });
+    expect(editor.value).toBe("New card draft");
+
+    await act(async () => {
+      resolveFresh([detachedAttachment()]);
+    });
+
+    // The old card's callback never ran: the new draft is intact and no
+    // UPDATE_CARD was sent for card-1.
+    expect(editor.value).toBe("New card draft");
+    const updates = server.requests.filter((request) => {
+      if (!request.path.endsWith("/commands")) return false;
+      const body = request.body as {
+        action?: { type?: string; cardId?: string; description?: string };
+      };
+      return (
+        body.action?.type === "UPDATE_CARD" &&
+        body.action.description?.includes("att-restore") === true
+      );
+    });
+    expect(updates).toEqual([]);
   });
 });
 

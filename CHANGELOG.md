@@ -28,6 +28,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   other recipients. EN/RU copy, API/OpenAPI docs, user guide, touch targets,
   axe coverage and focused parser/backend/UI tests are included.
 
+- TASK-177.9 detached attachment restore (G-13). Files under `Removed from
+  descriptions` now offer `Restore to description`, `Download` and `Copy
+  attachment reference`. Restore appends the existing attachment-link markdown
+  at the end of the description and saves through `UPDATE_CARD`, so the server
+  reconciles `descriptionDetached`, the file returns to the normal list and its
+  image or file renders after a reload; the UI waits for the save before moving
+  the row, keeps an in-progress description draft, re-reads the latest
+  same-card description after the bin re-check, aborts if the card changes
+  during the request and refuses an unresolved conflict or the description size
+  limit with clear copy. The reference is an authenticated in-app URL meant to
+  be pasted into a description or comment, not a public share link.
+  Download/copy work for every board member, including VIEWERs, and restoring
+  at the 20-file cap is allowed because the hidden file already counts. A file
+  deleted in another tab is re-checked against the detached bin and cannot be
+  restored. The bin shows type/size/date, keeps a readable two-line filename
+  with 44 px mobile actions and moves focus only when the acted-on row loses it.
+  EN/RU copy and the cards user guide are updated.
+
 - TASK-185.5/185.6 comment history in the admin panel and closeout. Every
   admin comment row (card detail, user detail and the comments entity table)
   now carries `revisionCount` and `historyIncomplete`; a live row opens the

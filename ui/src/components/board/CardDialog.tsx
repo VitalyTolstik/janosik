@@ -26,7 +26,10 @@ import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { CardDescriptionSkeleton } from "@/components/board/CardSectionSkeleton";
 import { CardActivity } from "@/components/board/CardActivity";
 import { CardChecklists } from "@/components/board/CardChecklists";
-import { CardAttachments } from "@/components/board/CardAttachments";
+import {
+  CardAttachments,
+  type RestoreAttachmentOutcome,
+} from "@/components/board/CardAttachments";
 import { CollapsibleSection } from "@/components/board/CollapsibleSection";
 import { CardDueDate } from "@/components/board/CardDueDate";
 import { CardPriority } from "@/components/board/CardPriority";
@@ -76,7 +79,11 @@ import {
 } from "@/components/ui/dialog";
 import { api, ApiError } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-import { embedMarkdown } from "@/utils/embedAttachments";
+import {
+  embedMarkdown,
+  appendAttachmentMarkdown,
+  hasAttachmentReference,
+} from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
 import {
@@ -89,7 +96,7 @@ import { appShareUrl } from "@/utils/app-path";
 import { cardPath } from "@/utils/card-nav";
 import { cn } from "@/lib/utils";
 import { canEditCardTaskSpec } from "@/utils/card-permissions";
-import type { LabelColor } from "@janosik/shared";
+import type { AttachmentDto, LabelColor } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
 import {
@@ -176,6 +183,7 @@ export function CardDialog({
   const {
     board,
     updateCard,
+    updateCardAndWait,
     touchCard,
     archiveCard,
     unarchiveCard,
@@ -214,6 +222,13 @@ export function CardDialog({
     setDeleteConfirm(false);
   }
   const contentRef = useRef<HTMLDivElement>(null);
+  // TASK-177.9 review: an attachment restore awaits the server. The dialog
+  // can switch cards in that window, so the callback compares the card it was
+  // created for against this live ref before touching the description draft.
+  const liveCardIdRef = useRef(cardId);
+  useLayoutEffect(() => {
+    liveCardIdRef.current = cardId;
+  }, [cardId]);
   // TASK-177.4 UX fix: Radix listens on document capture, so the inline task
   // spec editor must announce itself before Escape reaches the dialog. A ref
   // is enough here: the guard is read from the event handler, never rendered.
@@ -790,6 +805,96 @@ export function CardDialog({
   useEffect(() => {
     descriptionChangeRef.current = commitDescriptionChange;
   });
+
+  /**
+   * TASK-177.9 (G-13): put a detached description file back by appending its
+   * inline markdown to the description. The staged draft (if the user was
+   * typing) is the base, so restoring never drops unsaved text. One
+   * `UPDATE_CARD` persists the body; the server's description reconcile then
+   * clears `descriptionDetached` and the file returns to the normal list.
+   *
+   * The promise resolves only after the command is accepted, so the caller
+   * (CardAttachments) keeps the bin row and the spinner until the save lands.
+   * A card switch during the await aborts before touching the new card's
+   * draft, and a failed save puts the staged draft back.
+   */
+  const restoreAttachmentToDescription = async (
+    attachment: AttachmentDto,
+  ): Promise<RestoreAttachmentOutcome> => {
+    if (!card || readOnly || liveCardIdRef.current !== card.id) {
+      return { ok: false, reason: "stale" };
+    }
+    // An unresolved foreign edit owns the description: appending now would
+    // silently overwrite the other writer's text.
+    if (descriptionSync.conflict) return { ok: false, reason: "conflict" };
+    const draft = descriptionDraftRef.current;
+    if (draft !== null && draft.cardId !== card.id) {
+      return { ok: false, reason: "stale" };
+    }
+    const current = draft?.value ?? card.description ?? "";
+    // A stale "removed" row may point at a file the description already
+    // references (a teammate restored it): never append a duplicate. If the
+    // reference exists only in the unsaved draft, save that draft so the
+    // server reconciles it instead of pretending the restore is done.
+    let next: string;
+    if (hasAttachmentReference(current, attachment.id)) {
+      if (draft === null) return { ok: true, alreadyReferenced: true };
+      next = current.replace(/\s+$/, "");
+    } else {
+      next = appendAttachmentMarkdown(current, attachment);
+    }
+    if (next.length > LIMITS.description) {
+      return { ok: false, reason: "limit" };
+    }
+    descriptionDraftRef.current = null;
+    conflictedDrafts.delete(conflictedKey(boardId, card.id));
+    setHeldDraft(null);
+    setDescriptionSync((prev) => ({
+      ...prev,
+      seen: next,
+      dirty: false,
+      conflict: false,
+      epoch: prev.epoch + 1,
+    }));
+    let saved: boolean;
+    try {
+      saved = await updateCardAndWait(card.id, { description: next });
+    } catch {
+      saved = false;
+    }
+    // The dialog now shows another card: its editor state belongs to that
+    // card, so the old restore must not touch it.
+    if (liveCardIdRef.current !== card.id) {
+      return { ok: false, reason: "stale" };
+    }
+    if (saved === false) {
+      // The command rolled the optimistic text back. Keep anything typed
+      // during the await; otherwise re-stage the draft that existed before
+      // the restore, so a failure never eats the user's text.
+      const staged = descriptionDraftRef.current ?? draft;
+      if (staged !== null && staged.cardId === card.id) {
+        descriptionDraftRef.current = staged;
+        setHeldDraft(staged.value);
+        setDescriptionSync((prev) => ({
+          ...prev,
+          seen: card.description ?? "",
+          dirty: true,
+          conflict: false,
+          epoch: prev.epoch + 1,
+        }));
+      } else {
+        setDescriptionSync((prev) => ({
+          ...prev,
+          seen: card.description ?? "",
+          dirty: false,
+          conflict: false,
+          epoch: prev.epoch + 1,
+        }));
+      }
+      return { ok: false, reason: "error" };
+    }
+    return { ok: true };
+  };
 
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
@@ -1403,7 +1508,7 @@ export function CardDialog({
                         ref={descriptionEditorRef}
                         key={`${card.id}:${overflowTick}:${descriptionSync.epoch}`}
                         value={
-                          descriptionSync.conflict && heldDraft !== null
+                          heldDraft !== null
                             ? heldDraft
                             : (card.description ?? "")
                         }
@@ -1465,6 +1570,9 @@ export function CardDialog({
                   boardId={board.id}
                   readOnly={readOnly}
                   focusId={focusAttachmentId}
+                  onRestoreToDescription={
+                    readOnly ? undefined : restoreAttachmentToDescription
+                  }
                 />
 
                 <CardChecklists
