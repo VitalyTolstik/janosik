@@ -216,7 +216,7 @@ export function CardTaskSpec({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-1 px-2 text-xs max-md:min-h-11 no-hover:min-h-11"
+            className="h-8 gap-1 px-2 text-xs max-lg:h-11 no-hover:min-h-11"
             data-testid="card-task-spec-clear"
             onClick={() => {
               clearOrigin.current = "header";
@@ -232,7 +232,7 @@ export function CardTaskSpec({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 gap-1 px-2 text-xs max-md:min-h-11 no-hover:min-h-11"
+          className="h-8 gap-1 px-2 text-xs max-lg:h-11 no-hover:min-h-11"
           data-testid="card-task-spec-edit"
           onClick={startEditing}
         >
@@ -357,7 +357,7 @@ export function CardTaskSpec({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="max-md:min-h-11 no-hover:min-h-11"
+                className="max-lg:h-11 no-hover:min-h-11"
                 data-testid="card-task-spec-cancel"
                 onClick={closeEditor}
               >
@@ -366,7 +366,7 @@ export function CardTaskSpec({
               <Button
                 type="submit"
                 size="sm"
-                className="max-md:min-h-11 no-hover:min-h-11"
+                className="max-lg:h-11 no-hover:min-h-11"
                 data-testid="card-task-spec-save"
               >
                 {t("card.taskSpec.save")}

@@ -222,9 +222,15 @@ export function CardDialog({
     taskSpecEditingRef.current = editing;
   }, []);
   const focusTaskSpecControl = useCallback(() => {
-    contentRef.current
-      ?.querySelector<HTMLButtonElement>('[data-testid="card-task-spec-edit"]')
-      ?.focus();
+    const content = contentRef.current;
+    const target =
+      content?.querySelector<HTMLButtonElement>(
+        '[data-testid="card-task-spec-edit"]',
+      ) ??
+      content?.querySelector<HTMLButtonElement>(
+        '[data-testid="card-task-spec"]',
+      );
+    target?.focus();
   }, []);
   // The element focused when this card opened (the board card face/handle or
   // a table/calendar row). Captured in a layout effect so it runs before

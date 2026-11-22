@@ -30,6 +30,11 @@ async function expectNoPageOverflow(page: Page) {
   expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
 }
 
+async function expectTouchHeight(locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+}
+
 const VIEWPORTS = [
   { width: 390, height: 844 },
   { width: 768, height: 900 },
@@ -39,7 +44,11 @@ const VIEWPORTS = [
 
 for (const viewport of VIEWPORTS) {
   test.describe(`${viewport.width}px task spec layout`, () => {
-    test.use({ viewport });
+    test.use({
+      viewport,
+      hasTouch: viewport.width === 390,
+      isMobile: viewport.width === 390,
+    });
 
     test("wraps a 500-character item and the claim pill without horizontal scroll", async ({
       page,
@@ -82,6 +91,23 @@ for (const viewport of VIEWPORTS) {
           items.some((item) => item.scrollWidth > item.clientWidth + 1),
         );
       expect(itemOverflow).toBe(false);
+
+      if (viewport.width <= 768) {
+        if (viewport.width === 768) {
+          expect(
+            await page.evaluate(
+              () => window.matchMedia("(pointer: fine)").matches,
+            ),
+          ).toBe(true);
+        }
+        await expectTouchHeight(dialog.getByTestId("card-claim-release"));
+        await expectTouchHeight(dialog.getByTestId("card-task-spec-edit"));
+        await expectTouchHeight(dialog.getByTestId("card-task-spec-clear"));
+
+        await dialog.getByTestId("card-task-spec-edit").click();
+        await expectTouchHeight(dialog.getByTestId("card-task-spec-save"));
+        await expectTouchHeight(dialog.getByTestId("card-task-spec-cancel"));
+      }
     });
   });
 }

@@ -70,7 +70,13 @@ test("an agent contract survives a human edit and the claim releases without end
       .getByTestId("card-task-spec-criteria-input")
       .fill("human criterion");
     await dialog.getByTestId("card-task-spec-done-input").fill("human done");
+    const saveCommand = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/boards/${board.id}/commands`) &&
+        response.request().method() === "POST",
+    );
     await dialog.getByTestId("card-task-spec-save").click();
+    expect((await saveCommand).ok()).toBeTruthy();
 
     await expect(dialog.getByTestId("card-task-spec-acceptance")).toContainText(
       "human criterion",
@@ -118,9 +124,15 @@ test("an agent contract survives a human edit and the claim releases without end
     const clearDialog = page.getByRole("dialog", {
       name: "Clear the task spec?",
     });
+    const clearCommand = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/boards/${board.id}/commands`) &&
+        response.request().method() === "POST",
+    );
     await clearDialog
       .getByRole("button", { name: "Clear", exact: true })
       .click();
+    expect((await clearCommand).ok()).toBeTruthy();
     await expect(dialog.getByTestId("card-task-spec-empty")).toBeVisible();
     await expect(dialog.getByTestId("card-task-spec-edit")).toBeFocused();
 
@@ -133,6 +145,53 @@ test("an agent contract survives a human edit and the claim releases without end
   } finally {
     await agent.dispose();
   }
+});
+
+test("releasing while the spec editor is open keeps the draft and moves focus to the section", async ({
+  page,
+  board,
+}) => {
+  const todo = await board.column("Todo");
+  const cardId = await board.card(todo, "Editing release card");
+  await board.command({
+    type: "SET_CARD_TASK_SPEC",
+    cardId,
+    acceptanceCriteria: ["draft target"],
+    definitionOfDone: ["stay open"],
+  });
+  await board.command({
+    type: "CLAIM_CARD",
+    cardId,
+    claimedBy: board.userId,
+    leaseUntil: Date.now() + 900_000,
+  });
+
+  await board.open(page);
+  await page
+    .getByTestId("card-title")
+    .filter({ hasText: "Editing release card" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Card details" });
+  await dialog.getByTestId("card-task-spec-edit").click();
+  await dialog
+    .getByTestId("card-task-spec-criteria-input")
+    .fill("draft survives release");
+
+  await dialog.getByTestId("card-claim-release").click();
+  const releaseDialog = page.getByRole("dialog", {
+    name: "Release this claim?",
+  });
+  await releaseDialog
+    .getByRole("button", { name: "Release claim", exact: true })
+    .click();
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId("card-task-spec-form")).toBeVisible();
+  await expect(dialog.getByTestId("card-task-spec-criteria-input")).toHaveValue(
+    "draft survives release",
+  );
+  await expect(dialog.getByTestId("card-task-spec")).toBeFocused();
+  await expect(dialog.getByTestId("card-claim")).toHaveCount(0);
 });
 
 test("a MEMBER sees the claim but a non-owner gets no release control", async ({

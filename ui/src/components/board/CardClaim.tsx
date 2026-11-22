@@ -112,7 +112,7 @@ export function CardClaim({
             type="button"
             variant="outline"
             size="sm"
-            className="ml-auto h-7 shrink-0 px-2 text-xs max-md:min-h-11 no-hover:min-h-11"
+            className="ml-auto h-7 shrink-0 px-2 text-xs max-lg:h-11 no-hover:min-h-11"
             data-testid="card-claim-release"
             onClick={() => setConfirm(true)}
           >

@@ -136,6 +136,31 @@ describe("CardDialog task spec and claim (TASK-177.4)", () => {
     expect(screen.queryByTestId("card-claim")).toBeNull();
   });
 
+  it("falls back to the spec toggle when releasing while the editor is open", async () => {
+    renderDialog();
+    await screen.findByRole("dialog", { name: "Card details" });
+    fireEvent.click(await screen.findByTestId("card-task-spec-edit"));
+    fireEvent.change(screen.getByTestId("card-task-spec-criteria-input"), {
+      target: { value: "draft survives release" },
+    });
+
+    fireEvent.click(await screen.findByTestId("card-claim-release"));
+    const confirm = screen.getByRole("dialog", {
+      name: "Release this claim?",
+    });
+    fireEvent.click(
+      within(confirm).getByRole("button", { name: "Release claim" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("card-task-spec")).toHaveFocus(),
+    );
+    expect(screen.getByTestId("card-task-spec-form")).toBeInTheDocument();
+    expect(screen.getByTestId("card-task-spec-criteria-input")).toHaveValue(
+      "draft survives release",
+    );
+  });
+
   it("renders a VIEWER card without edit, clear or release controls", async () => {
     renderDialog(true);
     await screen.findByRole("dialog", { name: "Card details" });

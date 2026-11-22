@@ -187,6 +187,14 @@ describe.each(["light", "dark"] as const)("%s theme", (theme) => {
     // The dialog must not introduce a second main landmark.
     expect(document.querySelectorAll("main")).toHaveLength(1);
   });
+
+  it("has no axe violations with the task-spec editor open", async () => {
+    renderPage();
+    const { dialog } = await openCard();
+    fireEvent.click(await screen.findByTestId("card-task-spec-edit"));
+    await screen.findByTestId("card-task-spec-form");
+    expect(await axeViolations(dialog)).toEqual([]);
+  });
 });
 
 describe("card dialog focus and checklist names", () => {
