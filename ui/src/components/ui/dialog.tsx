@@ -54,11 +54,9 @@ const DialogContent = React.forwardRef<
   ) => {
     const { t } = useI18n();
     /**
-     * A dialog opened from component state (no `DialogTrigger`) has no Radix
-     * trigger to return focus to. Remember what held focus before the portal
-     * took over and restore it on close; trigger-based dialogs keep Radix's
-     * own behavior because their internal handler only runs when this one
-     * does not prevent the event.
+     * A state-driven dialog has no Radix trigger to remember. Capture the
+     * element focused before the portal mounts and return focus there on
+     * close unless the caller's `onCloseAutoFocus` handles it.
      */
     const opener = React.useRef<HTMLElement | null>(null);
     return (

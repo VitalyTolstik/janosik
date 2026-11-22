@@ -83,8 +83,12 @@ describe("EmailChangeDialog (TASK-51)", () => {
 
     const hint = screen.getByTestId("email-change-code-hint");
     expect(hint).toHaveTextContent(email);
-    expect(hint).toHaveClass("min-w-0");
-    expect(hint.querySelector("span")).toHaveClass("min-w-0", "break-words");
+    expect(hint).toHaveClass("w-full", "min-w-0");
+    expect(hint.querySelector("span")).toHaveClass(
+      "min-w-0",
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
   });
 
   it("shows an inline error for an invalid new email", async () => {

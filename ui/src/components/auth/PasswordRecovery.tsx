@@ -232,6 +232,7 @@ export function PasswordRecovery({
             type="submit"
             data-testid="recovery-submit"
             disabled={pending}
+            className="max-lg:min-h-11"
           >
             {step === "request" ? (
               <MailCheck className="mr-2 h-4 w-4" />
@@ -251,7 +252,7 @@ export function PasswordRecovery({
               setStep("request");
               setError(null);
             }}
-            className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center max-lg:justify-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             {t("auth.recovery.tryAgain")}
           </button>
@@ -260,7 +261,7 @@ export function PasswordRecovery({
           type="button"
           data-testid="recovery-back"
           onClick={onBack}
-          className="inline-flex items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex min-h-11 items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
           {t("auth.recovery.back")}

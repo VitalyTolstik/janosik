@@ -572,9 +572,12 @@ describe("Limits & data safety (e2e)", () => {
         .get("/api/v1/users/me/export/latest")
         .set(auth(token))
         .expect(200);
-      // Nest serializes a null body as an empty object over supertest; the
-      // contract that matters is that the expired row is not offered.
-      expect(latest.body.id).toBeUndefined();
+      // The latest expired row is still the latest export: report it as
+      // expired so the UI can offer a fresh copy.
+      expect(latest.body).toMatchObject({
+        id: created.body.id,
+        status: "expired",
+      });
     });
 
     it("refuses a second export while one is pending", async () => {

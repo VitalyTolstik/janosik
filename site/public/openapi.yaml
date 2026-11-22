@@ -2613,6 +2613,7 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "410": { $ref: "#/components/responses/Gone" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /users/me/delete/request-code:
     post:
@@ -3129,6 +3130,18 @@ components:
             $ref: "#/components/schemas/ApiErrorEnvelope"
     NotFound:
       description: Unknown, soft-deleted or inaccessible resource (`404 not_found`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    Gone:
+      description: |
+        The resource existed but its time-limited artifact is gone
+        (`410 gone`). For an account export this means the seven-day download
+        window passed; prepare a new copy.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
@@ -6472,7 +6485,11 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, ready, failed]
+          enum: [pending, ready, failed, expired]
+          description: |
+            `expired` means the seven-day artifact lifetime passed; the row
+            no longer has a downloadable bundle and the client should prepare
+            a new copy.
         createdAt:
           type: integer
         expiresAt:

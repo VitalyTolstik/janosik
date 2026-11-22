@@ -91,7 +91,7 @@
   "account.data.status.pending": "Preparing…",
   "account.data.status.ready": "Ready",
   "account.data.status.failed": "Export failed",
-  "account.data.status.expired": "Expired — prepare a new copy",
+  "account.data.status.expired": "Expired",
   "account.data.deleteTitle": "Delete account",
   "account.data.deleteHint": "The account is disabled immediately and permanently erased after 7 days. This cannot be undone once the window passes. Previously published public board snapshots can keep copies of your comments and files.",
   "account.data.confirmEmail": "Type your account email to confirm",

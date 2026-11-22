@@ -187,10 +187,10 @@ export function EmailChangeDialog({
           ) : (
             <DialogDescription
               data-testid="email-change-code-hint"
-              className="flex min-w-0 items-center gap-1.5"
+              className="flex w-full min-w-0 items-center gap-1.5"
             >
               <MailCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span className="min-w-0 break-words">
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">
                 {t("account.email.codeHint", { email: newEmail.trim() })}
               </span>
             </DialogDescription>

@@ -94,7 +94,11 @@ describe("EmailVerificationGate (TASK-53)", () => {
 
     const subtitle = screen.getByTestId("email-verify-subtitle");
     expect(subtitle).toHaveTextContent(email);
-    expect(subtitle).toHaveClass("min-w-0", "break-words");
+    expect(subtitle).toHaveClass(
+      "w-full",
+      "max-w-full",
+      "[overflow-wrap:anywhere]",
+    );
   });
 
   it("shows an inline error for a wrong code and stays", async () => {

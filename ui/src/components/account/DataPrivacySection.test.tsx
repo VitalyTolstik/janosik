@@ -120,21 +120,48 @@ describe("DataPrivacySection (TASK-166)", () => {
     );
   });
 
-  it("treats a ready row whose expiresAt passed as expired", async () => {
+  it("prepares a new copy from the expired state", async () => {
     vi.mocked(api.latestAccountExport).mockResolvedValue({
       id: "old",
-      status: "ready",
+      status: "expired",
       createdAt: 1,
-      expiresAt: Date.now() - 1_000,
+      expiresAt: 2,
       sizeBytes: 10,
       error: null,
     });
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      "fetch",
+      fakeApi((call) => {
+        calls.push(call);
+        return json({
+          id: "fresh",
+          status: "ready",
+          createdAt: 3,
+          expiresAt: Date.now() + 60_000,
+          sizeBytes: 20,
+          error: null,
+        });
+      }),
+    );
     renderSection();
-
     expect(
       await screen.findByTestId("account-export-status"),
     ).toHaveTextContent("Expired");
-    expect(screen.queryByTestId("account-export-download")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("account-export-request"));
+
+    expect(
+      await screen.findByTestId("account-export-status"),
+    ).toHaveTextContent("Ready");
+    expect(await screen.findByTestId("account-export-download")).toBeVisible();
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        method: "POST",
+        url: expect.stringMatching(/\/users\/me\/export$/),
+      }),
+    );
+    expect(localStorage.getItem("janosik:account-export:user-1")).toBe("fresh");
   });
 
   it("requests an export, shows it ready and downloads the blob", async () => {
@@ -177,6 +204,65 @@ describe("DataPrivacySection (TASK-166)", () => {
     );
     await userEvent.click(screen.getByTestId("account-export-download"));
     await waitFor(() => expect(mocks.downloadBlob).toHaveBeenCalledTimes(1));
+  });
+
+  it("retires the download action when the artifact reports 410", async () => {
+    vi.mocked(api.latestAccountExport).mockResolvedValue({
+      id: "exp-1",
+      status: "ready",
+      createdAt: 1,
+      expiresAt: Date.now() + 60_000,
+      sizeBytes: 10,
+      error: null,
+    });
+    vi.stubGlobal(
+      "fetch",
+      fakeApi((call) =>
+        call.url.endsWith("/download")
+          ? json({ message: "Export has expired" }, 410)
+          : json({}),
+      ),
+    );
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("account-export-download"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("account-export-status")).toHaveTextContent(
+        "Expired",
+      ),
+    );
+    expect(screen.queryByTestId("account-export-download")).toBeNull();
+    expect(screen.queryByTestId("account-export-error")).toBeNull();
+  });
+
+  it("keeps a download failure next to the export controls", async () => {
+    vi.mocked(api.latestAccountExport).mockResolvedValue({
+      id: "exp-1",
+      status: "ready",
+      createdAt: 1,
+      expiresAt: Date.now() + 60_000,
+      sizeBytes: 10,
+      error: null,
+    });
+    vi.stubGlobal(
+      "fetch",
+      fakeApi((call) =>
+        call.url.endsWith("/download")
+          ? json({ message: "Unavailable" }, 500)
+          : json({}),
+      ),
+    );
+    renderSection();
+
+    await userEvent.click(await screen.findByTestId("account-export-download"));
+
+    const panel = screen.getByTestId("account-export-panel");
+    expect(
+      await within(panel).findByTestId("account-export-error"),
+    ).toHaveTextContent("Could not download the export");
+    expect(screen.queryByTestId("account-data-error")).toBeNull();
+    expect(screen.getByTestId("account-export-download")).toBeVisible();
   });
 
   it("explains a concurrent export instead of silently failing", async () => {

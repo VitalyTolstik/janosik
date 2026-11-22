@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Bot,
   Database,
@@ -88,7 +89,10 @@ export function AccountDialog({
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const [railEdges, setRailEdges] = useState({ start: true, end: false });
   const externalTrigger = useRef<HTMLElement | null>(null);
+  const dialogContent = useRef<HTMLDivElement>(null);
+  const navRail = useRef<HTMLElement>(null);
   const sectionButtons = useRef<
     Partial<Record<AccountSection, HTMLButtonElement | null>>
   >({});
@@ -124,15 +128,25 @@ export function AccountDialog({
       window.removeEventListener("janosik:open-api-keys", openTokens);
   }, []);
 
+  const measureRail = useCallback(() => {
+    const rail = navRail.current;
+    if (!rail) return;
+    const max = rail.scrollWidth - rail.clientWidth;
+    const start = rail.scrollLeft <= 1;
+    const end = max <= 1 || rail.scrollLeft >= max - 1;
+    setRailEdges((current) =>
+      current.start === start && current.end === end ? current : { start, end },
+    );
+  }, []);
+
   /**
-   * The rail is a horizontal scroller below `sm`. Opening on Data or coming
-   * back to a section must not leave the active tab off-screen, where the
-   * only clue would be an undiscovered swipe.
+   * The rail is a horizontal scroller below `sm`. Center the active tab so
+   * neither edge cue covers it, and keep the cues in step with the scroll.
    */
   const revealSection = useCallback((target: AccountSection) => {
     const button = sectionButtons.current[target];
     if (button && typeof button.scrollIntoView === "function") {
-      button.scrollIntoView({ block: "nearest", inline: "nearest" });
+      button.scrollIntoView({ block: "nearest", inline: "center" });
     }
   }, []);
 
@@ -140,21 +154,29 @@ export function AccountDialog({
     if (!open) return;
     // Radix mounts the portal content one layout pass after `open` flips, so
     // wait for that paint before measuring the rail.
-    const timer = window.setTimeout(() => revealSection(section), 0);
-    return () => window.clearTimeout(timer);
-  }, [open, revealSection, section]);
+    const timer = window.setTimeout(() => {
+      revealSection(section);
+      measureRail();
+    }, 0);
+    window.addEventListener("resize", measureRail);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", measureRail);
+    };
+  }, [measureRail, open, revealSection, section]);
 
   /**
-   * A parent dialog must not dismiss itself while a nested dialog owns the
-   * keyboard. Radix normally keeps only the top layer live, but an Escape
-   * racing the nested layer's registration can reach the account panel too.
+   * Only a dialog layered above this account panel owns Escape. An unrelated
+   * dialog underneath must not swallow the panel's close key.
    */
   const keepOpenForNestedDialog = useCallback((event: Event) => {
-    if (
-      document.querySelectorAll('[role="dialog"][data-state="open"]').length > 1
-    ) {
-      event.preventDefault();
-    }
+    const dialogs = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[role="dialog"][data-state="open"]',
+      ),
+    );
+    const top = dialogs[dialogs.length - 1];
+    if (top && top !== dialogContent.current) event.preventDefault();
   }, []);
 
   if (!isApiEnabled() || user === null) {
@@ -236,6 +258,7 @@ export function AccountDialog({
       </Tooltip>
 
       <DialogContent
+        ref={dialogContent}
         onOpenAutoFocus={(event) => {
           // A deep link must land on the section it names, not Radix's first
           // default target. Tab switches keep the focus the user gave them.
@@ -287,7 +310,9 @@ export function AccountDialog({
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
           <div className="relative shrink-0 sm:contents">
             <nav
+              ref={navRail}
               aria-label={t("account.nav")}
+              onScroll={measureRail}
               className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3"
             >
               {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
@@ -334,16 +359,32 @@ export function AccountDialog({
                 <LogOut className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="whitespace-nowrap">{t("auth.logout")}</span>
               </button>
+              {/* Let the last real tab scroll clear of the right edge cue. */}
+              <span
+                aria-hidden="true"
+                className="h-11 w-9 shrink-0 sm:hidden"
+              />
             </nav>
+            {!railEdges.start ? (
+              <span
+                aria-hidden="true"
+                data-testid="account-nav-overflow-start"
+                className="pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r from-popover via-popover/80 to-transparent sm:hidden"
+              >
+                <ChevronLeft className="absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </span>
+            ) : null}
             {/* A fade plus chevron is the mobile cue that the rail continues
                 past Data and Sign out; it never intercepts a swipe. */}
-            <span
-              aria-hidden="true"
-              data-testid="account-nav-overflow"
-              className="pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l from-popover via-popover/80 to-transparent sm:hidden"
-            >
-              <ChevronRight className="absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </span>
+            {!railEdges.end ? (
+              <span
+                aria-hidden="true"
+                data-testid="account-nav-overflow"
+                className="pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l from-popover via-popover/80 to-transparent sm:hidden"
+              >
+                <ChevronRight className="absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </span>
+            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">

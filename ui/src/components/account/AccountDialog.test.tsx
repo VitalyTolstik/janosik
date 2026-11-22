@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   fireEvent,
   render,
@@ -13,6 +14,7 @@ import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { ToastProvider } from "@/components/Toast";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -32,6 +34,7 @@ function renderAccount(
     init?: RequestInit,
   ) => Promise<Response> = server.handle,
   entry: string | string[] = "/",
+  before?: ReactNode,
 ) {
   const entries = Array.isArray(entry) ? entry : [entry];
   vi.stubGlobal("fetch", handler);
@@ -46,6 +49,7 @@ function renderAccount(
                   initialEntries={entries}
                   initialIndex={entries.length - 1}
                 >
+                  {before}
                   <AccountDialog />
                   <HistoryProbe />
                 </MemoryRouter>
@@ -55,6 +59,16 @@ function renderAccount(
         </I18nProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
+  );
+}
+
+function OlderDialog() {
+  return (
+    <Dialog open>
+      <DialogContent data-testid="unrelated-dialog">
+        <DialogTitle>Token info</DialogTitle>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -369,10 +383,15 @@ describe("AccountDialog (TASK-36.1)", () => {
     expect(screen.getByTestId("account-profile")).toBeInTheDocument();
   });
 
-  it("reveals the active mobile rail tab and signals overflow", async () => {
+  it("reveals and focuses the active mobile rail tab, with edge cues", async () => {
     const scrolled: Element[] = [];
-    const scrollIntoView = vi.fn(function (this: Element) {
+    const scrollOptions: Array<ScrollIntoViewOptions | undefined> = [];
+    const scrollIntoView = vi.fn(function (
+      this: Element,
+      options?: ScrollIntoViewOptions,
+    ) {
       scrolled.push(this);
+      scrollOptions.push(options);
     });
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
@@ -384,14 +403,47 @@ describe("AccountDialog (TASK-36.1)", () => {
     await screen.findByTestId("account-dialog");
     const dataTab = await screen.findByTestId("account-nav-data");
     await waitFor(() => expect(scrolled).toContain(dataTab));
+    await waitFor(() => expect(dataTab).toHaveFocus());
+    expect(scrollOptions[scrollOptions.length - 1]).toEqual({
+      block: "nearest",
+      inline: "center",
+    });
     expect(dataTab).toHaveAttribute("aria-current", "page");
     expect(dataTab).toHaveClass("max-md:min-h-11");
     expect(screen.getByTestId("account-logout")).toHaveClass("max-md:min-h-11");
-    expect(screen.getByTestId("account-nav-overflow")).toBeInTheDocument();
     expect(dataTab.closest("nav")).toHaveClass("overflow-x-auto");
 
-    // Reopening on Data must reveal the same section again. The portal
-    // remounts, so hold the new tab node rather than the old one.
+    // Simulate the real rail: the right cue shows while content continues,
+    // and swaps to the left cue once scrolled to the end.
+    const nav = dataTab.closest("nav")!;
+    Object.defineProperty(nav, "clientWidth", {
+      configurable: true,
+      value: 364,
+    });
+    Object.defineProperty(nav, "scrollWidth", {
+      configurable: true,
+      value: 736,
+    });
+    Object.defineProperty(nav, "scrollLeft", {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+    fireEvent.scroll(nav);
+    expect(
+      await screen.findByTestId("account-nav-overflow"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("account-nav-overflow-start")).toBeNull();
+
+    nav.scrollLeft = 372;
+    fireEvent.scroll(nav);
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-nav-overflow")).toBeNull(),
+    );
+    expect(screen.getByTestId("account-nav-overflow-start")).toBeVisible();
+
+    // Reopening on Data must reveal and focus the same section again. The
+    // portal remounts, so hold the new tab node rather than the old one.
     await userEvent.keyboard("{Escape}");
     await waitFor(() =>
       expect(screen.queryByTestId("account-dialog")).toBeNull(),
@@ -400,7 +452,28 @@ describe("AccountDialog (TASK-36.1)", () => {
     const reopened = await screen.findByTestId("account-dialog");
     const reopenedTab = await screen.findByTestId("account-nav-data");
     await waitFor(() => expect(scrolled).toContain(reopenedTab));
+    await waitFor(() => expect(reopenedTab).toHaveFocus());
     expect(within(reopened).getByTestId("account-data")).toBeVisible();
+  });
+
+  it("closes on Escape when an unrelated dialog is underneath", async () => {
+    const server = new FakeServer();
+    renderAccount(
+      server,
+      server.handle,
+      "/board/b-1?account=tokens",
+      <OlderDialog />,
+    );
+
+    expect(await screen.findByTestId("account-dialog")).toBeVisible();
+    expect(screen.getByTestId("unrelated-dialog")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("account-dialog")).toBeNull(),
+    );
+    expect(screen.getByTestId("unrelated-dialog")).toBeVisible();
   });
 
   it("returns focus to a nested dialog opener and closes only the top layer", async () => {

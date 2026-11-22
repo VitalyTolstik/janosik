@@ -131,4 +131,34 @@ describe("AccountDataService export status", () => {
       ).exportStatus("user-1", "exp-1"),
     ).resolves.toMatchObject({ status: "failed" });
   });
+
+  it("returns the latest expired ready export as expired", async () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: "exp-1" });
+    const exports = {
+      row: jest
+        .fn()
+        .mockResolvedValue(
+          row({ status: "ready", expiresAt: Date.now() - 1_000 }),
+        ),
+    };
+    const service = new AccountDataService(
+      { dataExport: { findFirst } } as never,
+      exports as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.latestExport("user-1")).resolves.toMatchObject({
+      id: "exp-1",
+      status: "expired",
+    });
+    // TTL is applied by exportStatus, not by dropping the row from "latest".
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: "user-1", status: { in: ["pending", "ready"] } },
+      }),
+    );
+  });
 });

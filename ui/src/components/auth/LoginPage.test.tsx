@@ -281,6 +281,7 @@ describe("LoginPage", () => {
 
     renderPage(["/board/b-1?card=c-1#details"]);
     const google = await screen.findByTestId("login-oauth-google");
+    expect(google).toHaveClass("max-lg:min-h-11");
     expect(google.closest("a")).toHaveAttribute(
       "href",
       "http://api.test/api/v1/auth/oauth/google/start?returnTo=%2Fboard%2Fb-1%3Fcard%3Dc-1%23details",
@@ -326,10 +327,27 @@ describe("LoginPage", () => {
       expect(screen.getByTestId("login-submit")).toBeVisible(),
     );
 
-    expect(screen.getByTestId("login-submit")).toHaveClass("max-md:min-h-11");
+    expect(screen.getByTestId("login-submit")).toHaveClass("max-lg:min-h-11");
     expect(screen.getByTestId("forgot-password")).toHaveClass(
-      "max-md:min-h-11",
+      "max-lg:min-h-11",
     );
-    expect(screen.getByTestId("login-toggle")).toHaveClass("max-md:min-h-11");
+    expect(screen.getByTestId("login-toggle")).toHaveClass("max-lg:min-h-11");
+  });
+
+  it("gives password-recovery actions a 44 px target", async () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId("forgot-password"));
+    expect(screen.getByTestId("recovery-submit")).toHaveClass(
+      "max-lg:min-h-11",
+    );
+    expect(screen.getByTestId("recovery-back")).toHaveClass("min-h-11");
+
+    fireEvent.change(screen.getByTestId("recovery-email"), {
+      target: { value: "person@example.com" },
+    });
+    fireEvent.click(screen.getByTestId("recovery-submit"));
+    expect(await screen.findByTestId("recovery-retry")).toHaveClass(
+      "max-lg:min-h-11",
+    );
   });
 });

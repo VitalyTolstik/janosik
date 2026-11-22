@@ -202,7 +202,7 @@ export function LoginPage() {
         <a
           href={siteUrl}
           data-testid="auth-back-to-site"
-          className="absolute top-6 left-6 z-10 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-6 left-6 z-10 inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           {t("auth.backToSite")}
@@ -302,7 +302,7 @@ export function LoginPage() {
                 type="button"
                 data-testid="forgot-password"
                 onClick={() => setRecovering(true)}
-                className="max-md:inline-flex max-md:min-h-11 max-md:items-center self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
               >
                 {t("auth.recovery.forgot")}
               </button>
@@ -322,7 +322,7 @@ export function LoginPage() {
               type="submit"
               data-testid="login-submit"
               disabled={pending}
-              className="max-md:min-h-11"
+              className="max-lg:min-h-11"
             >
               {isRegister ? t("auth.register") : t("auth.login")}
             </Button>
@@ -342,6 +342,7 @@ export function LoginPage() {
                     variant="outline"
                     asChild
                     data-testid={`login-oauth-${provider.id}`}
+                    className="max-lg:min-h-11"
                   >
                     <a
                       href={api.oauthStartUrl(
@@ -363,7 +364,7 @@ export function LoginPage() {
                 type="button"
                 data-testid="login-toggle"
                 onClick={toggleMode}
-                className="max-md:inline-flex max-md:min-h-11 max-md:items-center max-md:justify-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center max-lg:justify-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
               >
                 {isRegister
                   ? t("auth.switchToLogin")

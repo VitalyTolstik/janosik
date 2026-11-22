@@ -434,7 +434,15 @@ export function ApiTokensSection() {
       ) : null}
 
       <Dialog open={createOpen} onOpenChange={closeCreate}>
-        <DialogContent className="sm:max-w-md" data-testid="token-dialog">
+        <DialogContent
+          className="sm:max-w-md"
+          data-testid="token-dialog"
+          onEscapeKeyDown={(event) => {
+            // The plaintext is shown once. Escape must not discard it before
+            // the user has copied it; Done/Cancel remain explicit exits.
+            if (reveal !== null) event.preventDefault();
+          }}
+        >
           {reveal === null ? (
             <form noValidate onSubmit={handleCreate} className="space-y-4">
               <DialogHeader>
@@ -942,7 +950,7 @@ function TokenRow({
             size="sm"
             variant="ghost"
             data-testid="token-edit"
-            aria-label={t("account.tokens.edit")}
+            aria-label={`${t("account.tokens.edit")}: ${token.name}`}
             disabled={busy}
             onClick={onEdit}
             className="max-md:min-h-11 max-md:min-w-11"
@@ -956,7 +964,7 @@ function TokenRow({
               size="sm"
               variant="ghost"
               data-testid="token-resume"
-              aria-label={t("account.tokens.resume")}
+              aria-label={`${t("account.tokens.resume")}: ${token.name}`}
               disabled={busy}
               onClick={onResume}
               className="max-md:min-h-11 max-md:min-w-11"
@@ -972,7 +980,7 @@ function TokenRow({
               size="sm"
               variant="ghost"
               data-testid="token-pause"
-              aria-label={t("account.tokens.pause")}
+              aria-label={`${t("account.tokens.pause")}: ${token.name}`}
               disabled={busy}
               onClick={onPause}
               className="max-md:min-h-11 max-md:min-w-11"
@@ -988,7 +996,7 @@ function TokenRow({
             size="sm"
             variant="ghost"
             data-testid="token-revoke"
-            aria-label={t("account.tokens.revoke")}
+            aria-label={`${t("account.tokens.revoke")}: ${token.name}`}
             className="text-danger hover:bg-danger/10 hover:text-(--chip-red) max-md:min-h-11 max-md:min-w-11"
             onClick={onRevoke}
           >

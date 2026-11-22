@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { API_ERROR_CODES } from "../shared/src/api.ts";
+import {
+  API_ERROR_CODES,
+  USER_DATA_EXPORT_STATUSES,
+} from "../shared/src/api.ts";
 import {
   OpenApiLintError,
   lintSpec,
@@ -144,6 +147,20 @@ test("publishes the public auth config and password recovery contracts", async (
     );
     assert.ok(responses[429]);
   }
+});
+
+test("keeps the account-export status enum in sync with the shared contract", async () => {
+  const { spec } = await validateOpenApi();
+  const { UserDataExport } = spec.components.schemas;
+  assert.deepEqual(UserDataExport.properties.status.enum, [
+    ...USER_DATA_EXPORT_STATUSES,
+  ]);
+  assert.match(UserDataExport.properties.status.description, /expired/);
+  assert.match(UserDataExport.properties.status.description, /seven-day/);
+
+  const download = spec.paths["/users/me/export/{exportId}/download"].get;
+  assert.equal(download.responses[410].$ref, "#/components/responses/Gone");
+  assert.match(spec.components.responses.Gone.description, /410 gone/);
 });
 
 test("lint catches a duplicate operationId", async () => {

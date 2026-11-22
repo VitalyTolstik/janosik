@@ -31,9 +31,6 @@ export function DataPrivacySection() {
   const [deleting, setDeleting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Frozen at mount so the expired check never calls an impure function while
-  // rendering; the backend status already accounts for the TTL.
-  const [now] = useState(() => Date.now());
   const exportKey = user ? `janosik:account-export:${user.id}` : null;
   // Bumped whenever a newer export starts; a slow initial lookup must not
   // replace the row the user just requested.
@@ -174,7 +171,15 @@ export function DataPrivacySection() {
     try {
       const blob = await api.downloadAccountExport(exportRow.id);
       downloadBlob(`janosik-account-${exportRow.id}.json`, blob);
-    } catch {
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 410) {
+        // The artifact outlived the row's TTL between the two calls. Adopt
+        // the server's verdict so the dead Download action disappears.
+        setExportRow((row) =>
+          row === null ? null : { ...row, status: "expired" },
+        );
+        return;
+      }
       setExportError(t("account.data.downloadFailed"));
     }
   };
@@ -227,10 +232,9 @@ export function DataPrivacySection() {
     }
   };
 
-  const exportExpired =
-    exportRow !== null &&
-    (exportRow.status === "expired" ||
-      (exportRow.status === "ready" && exportRow.expiresAt <= now));
+  // The server owns the export lifecycle: `expired` is authoritative, and a
+  // 410 download is folded back into this state.
+  const exportExpired = exportRow?.status === "expired";
 
   return (
     <section className="space-y-5" data-testid="account-data">
