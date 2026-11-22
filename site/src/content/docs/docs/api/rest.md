@@ -221,10 +221,12 @@ Mentions are explicit Markdown links to the reserved
 link at write time, rejects an id outside the board's active roster with
 `400 mention_not_member`, and returns the resolved ids in
 `CommentDto.mentionedUserIds` (first-mention order, duplicates collapsed).
-Mentions inside fenced or inline code are inert, as are escaped tokens and
-larger URLs. Indented text is ordinary text: an explicit
+Mentions inside top-level or blockquote fenced code and inline code are
+inert. Fenced code nested inside a list item is treated as ordinary text; the
+composer only creates top-level code blocks. Escaped tokens and larger URLs
+are inert too. Indented text is ordinary text: an explicit
 `[@Alice](https://janosik.invalid/mention/clx…)` link there is live and
-notifies; a hand-typed `@Alice` never notifies.
+notifies, while a hand-typed `@Alice` never notifies.
 
 `GET` accepts `?cursor=` (opaque), `?limit=` and `?kind=` (one comment kind).
 The default limit is 50, the maximum is 100; a limit outside `1` to `100`

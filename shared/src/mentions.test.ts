@@ -68,106 +68,29 @@ describe("comment mentions (TASK-177.12)", () => {
     ]);
   });
 
-  it("masks fenced code in every container", () => {
+  it("masks top-level, ≤3-space indented and blockquote fenced code", () => {
     const token = mentionMarkdown("Alice", "user-1");
     expect(parseCommentMentions(`~~~\n${token}\n~~~`)).toEqual([]);
     expect(parseCommentMentions("```\n" + token + "\n```")).toEqual([]);
-    expect(parseCommentMentions(`    ~~~\n    ${token}\n    ~~~`)).toEqual([]);
+    expect(parseCommentMentions(` ~~~\n ${token}\n ~~~`)).toEqual([]);
+    expect(parseCommentMentions(`   ~~~\n   ${token}\n   ~~~`)).toEqual([]);
     expect(parseCommentMentions(`> ~~~\n> ${token}\n> ~~~`)).toEqual([]);
-    expect(
-      parseCommentMentions(`- parent\n\n  ~~~\n  ${token}\n  ~~~`),
-    ).toEqual([]);
-    expect(
-      parseCommentMentions(
-        ["- parent", "", "  ```", `  ${token}`, "  ```"].join("\n"),
-      ),
-    ).toEqual([]);
-    expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual([]);
-    expect(
-      parseCommentMentions(["- ```", `  ${token}`, "  ```"].join("\n")),
-    ).toEqual([]);
-    expect(parseCommentMentions(`1. ~~~\n   ${token}\n   ~~~`)).toEqual([]);
-    // Tab-indented fences expand to 4-column stops for detection.
-    expect(
-      parseCommentMentions(`- parent\n\n\t~~~\n\t${token}\n\t~~~`),
-    ).toEqual([]);
-    expect(parseCommentMentions(`-\t~~~\n\t${token}\n\t~~~`)).toEqual([]);
-    // Container combinations: list + list, list + task, list + blockquote.
-    expect(parseCommentMentions(`- - ~~~\n  ${token}\n  ~~~`)).toEqual([]);
-    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
-    expect(
-      parseCommentMentions(["- > ```", `  > ${token}`, "  > ```"].join("\n")),
-    ).toEqual([]);
-    // Nested list marker carries its own fence.
-    expect(
-      parseCommentMentions(
-        ["- outer", "", "  - ~~~", `    ${token}`, "    ~~~"].join("\n"),
-      ),
-    ).toEqual([]);
-    // A deeper list/task prefix cannot close a top-level fence early.
-    expect(parseCommentMentions(`~~~\n- ~~~\n${token}\n~~~`)).toEqual([]);
-    expect(parseCommentMentions(`~~~\n- [ ] ~~~\n${token}\n~~~`)).toEqual([]);
+    expect(parseCommentMentions(`> > ~~~\n> > ${token}\n> > ~~~`)).toEqual([]);
   });
 
-  it("closes a list fence on an indented or marker line without over-matching", () => {
-    const token = mentionMarkdown("Alice", "user-1");
-    expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual([]);
-    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
-    expect(parseCommentMentions(`- ~~~\n  ${token}\n- ~~~`)).toEqual([]);
-    // Same prefix count but a different kind shape is content, not a closer.
-    expect(
-      parseCommentMentions(`- [ ] ~~~\n  ${token}\n- - ~~~\n${token}`),
-    ).toEqual([]);
-    expect(
-      parseCommentMentions(`- - ~~~\n  ${token}\n- [ ] ~~~\n${token}`),
-    ).toEqual([]);
-    // A thin list closer is a prefix of the opener's shape and closes.
-    expect(
-      parseCommentMentions(`- [ ] ~~~\n  ${token}\n- ~~~\n${token}`),
-    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
-    // `[ ]` without an open list item is not a task prefix.
-    expect(parseCommentMentions(`> [ ] ~~~\n${token}`)).toEqual([
-      expect.objectContaining({ userId: "user-1" }),
-    ]);
-    // The bounded prefix loop still handles exactly 64 nested markers.
-    const thick = "- ".repeat(64);
-    expect(
-      parseCommentMentions(
-        [`${thick}~~~`, `${thick}${token}`, `${thick}~~~`, token].join("\n"),
-      ),
-    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
-  });
-
-  it("chains interleaved fence containers and leaves following mentions live", () => {
+  it("treats 4-space and list-contained fences as ordinary text", () => {
     const token = mentionMarkdown("Alice", "user-1");
     const mentioned = [expect.objectContaining({ userId: "user-1" })];
-    for (const prefix of ["> - >", "- > -"]) {
-      const text = [
-        `${prefix} ~~~`,
-        `${prefix} ${token}`,
-        `${prefix} ~~~`,
-        token,
-      ].join("\n");
-      expect(parseCommentMentions(text)).toEqual(mentioned);
-    }
-  });
-
-  it("requires an open list item before accepting a task marker", () => {
-    const token = mentionMarkdown("Alice", "user-1");
-    expect(parseCommentMentions(`[ ] ~~~\n${token}`)).toEqual([
-      expect.objectContaining({ userId: "user-1" }),
-    ]);
-    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual([]);
-  });
-
-  it("handles a fence behind a deep container prefix chain", () => {
-    const token = mentionMarkdown("Alice", "user-1");
-    const prefix = "> ".repeat(40);
+    expect(parseCommentMentions(`    ~~~\n    ${token}\n    ~~~`)).toEqual(
+      mentioned,
+    );
+    expect(parseCommentMentions(`- ~~~\n  ${token}\n  ~~~`)).toEqual(mentioned);
+    expect(parseCommentMentions(`- [ ] ~~~\n  ${token}\n  ~~~`)).toEqual(
+      mentioned,
+    );
     expect(
-      parseCommentMentions(
-        [`${prefix}~~~`, `${prefix}${token}`, `${prefix}~~~`, token].join("\n"),
-      ),
-    ).toEqual([expect.objectContaining({ userId: "user-1" })]);
+      parseCommentMentions(["- > ~~~", `  > ${token}`, "  > ~~~"].join("\n")),
+    ).toEqual(mentioned);
   });
 
   it("keeps explicit mention links in indented text live; only fenced/inline code suppresses", () => {

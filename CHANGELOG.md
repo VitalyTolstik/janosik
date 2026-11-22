@@ -13,9 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and flipped so the dialog never clips it); selecting a member inserts an
   explicit `[@Name](https://janosik.invalid/mention/<userId>)` markdown link.
   The backend validates every id against the active roster and rejects
-  non-members. Fenced and inline code, escaped tokens and larger URLs are
-  inert; explicit mention links in indented text stay live, while a hand-typed
-  `@Name` never notifies. Each
+  non-members. Mentions are inert in top-level/blockquote fenced code and
+  inline code; list-contained fences and indented text are ordinary text, so
+  explicit mention links there stay live while a hand-typed `@Name` never
+  notifies. Each
   mentioned member gets one deduplicated `comment.mention` attention row with
   actor, card, board, excerpt and a card/comment deep link; the author is
   skipped, `notifyAttention` still controls e-mail, and the immediate letter
