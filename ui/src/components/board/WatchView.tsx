@@ -18,8 +18,15 @@ import {
   useBoardMembersList,
   useBoardPresence,
 } from "@/store/board-live";
-import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
+import {
+  FIELD_KEYS,
+  formatChangeValue,
+  isStaleDeletedCommentEntry,
+  reconcileRestoredComments,
+  sentenceFor,
+} from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
+import { diffSides, type DiffSides } from "@/utils/diff-words";
 
 /** Entries per page of the watch feed (server max is 100). */
 const PAGE_SIZE = 50;
@@ -124,6 +131,28 @@ export function WatchView({ boardId }: WatchViewProps) {
   const atEndRef = useRef(false);
   const pageRef = useRef(0);
   const inFlight = useRef(false);
+  // TASK-185.2: an in-flight page can resolve after the deletion frame.
+  const deletedCommentIdsRef = useRef(new Map<string, number>());
+  const deletionGenerationRef = useRef(0);
+  const withoutStaleDeleted = useCallback(
+    (items: ActivityFeedEntry[], requestGeneration: number) => {
+      reconcileRestoredComments(
+        items,
+        deletedCommentIdsRef.current,
+        requestGeneration,
+        (entry) => entry.commentId ?? entry.detail,
+      );
+      return items.filter(
+        (entry) =>
+          !isStaleDeletedCommentEntry(
+            entry,
+            deletedCommentIdsRef.current,
+            requestGeneration,
+          ),
+      );
+    },
+    [],
+  );
   // Mirror the page for the stable poll callback without reading a ref in
   // render (react-hooks/refs).
   useEffect(() => {
@@ -184,8 +213,10 @@ export function WatchView({ boardId }: WatchViewProps) {
       if (cached !== undefined) return cached;
       if (!cursorByPage.current.has(index)) return null;
       const cursor = cursorByPage.current.get(index) ?? undefined;
+      const generation = deletionGenerationRef.current;
       const result = await api.boardActivity(boardId, cursor, pageSize);
-      pageCache.current.set(index, result.items);
+      const items = withoutStaleDeleted(result.items, generation);
+      pageCache.current.set(index, items);
       if (result.nextCursor === null) {
         atEndRef.current = true;
         setAtEnd(true);
@@ -193,9 +224,9 @@ export function WatchView({ boardId }: WatchViewProps) {
         cursorByPage.current.set(index + 1, result.nextCursor);
         setMaxPage(Math.max(...cursorByPage.current.keys()));
       }
-      return result.items;
+      return items;
     },
-    [boardId, pageSize],
+    [boardId, pageSize, withoutStaleDeleted],
   );
 
   const goToPage = useCallback(
@@ -231,9 +262,11 @@ export function WatchView({ boardId }: WatchViewProps) {
   /** Load page 0 at `size` and reset the cursor chain to it. */
   const loadFirst = useCallback(
     async (size: number) => {
+      const generation = deletionGenerationRef.current;
       const result = await api.boardActivity(boardId, undefined, size);
+      const items = withoutStaleDeleted(result.items, generation);
       pageCache.current.clear();
-      pageCache.current.set(0, result.items);
+      pageCache.current.set(0, items);
       cursorByPage.current.clear();
       cursorByPage.current.set(0, null);
       atEndRef.current = result.nextCursor === null;
@@ -242,13 +275,13 @@ export function WatchView({ boardId }: WatchViewProps) {
         cursorByPage.current.set(1, result.nextCursor);
       }
       setMaxPage(Math.max(...cursorByPage.current.keys()));
-      setItems(result.items);
-      rememberAgents(result.items);
+      setItems(items);
+      rememberAgents(items);
       setPage(0);
       pageRef.current = 0;
       setError(false);
     },
-    [boardId, rememberAgents],
+    [boardId, rememberAgents, withoutStaleDeleted],
   );
 
   // The newest page stays live; when the user pages into history, polling
@@ -328,7 +361,26 @@ export function WatchView({ boardId }: WatchViewProps) {
   useEffect(() => {
     if (!serverMode) return;
     const offActivity = activity.subscribe((event) => {
-      if (event.boardId === boardId) scheduleRefresh();
+      if (event.boardId !== boardId) return;
+      if (event.kind === "comment_deleted") {
+        const deletedId = event.commentId ?? event.detail;
+        if (deletedId) {
+          deletionGenerationRef.current += 1;
+          deletedCommentIdsRef.current.set(
+            deletedId,
+            deletionGenerationRef.current,
+          );
+          // Drop any cached comment diff immediately; the coalesced refetch
+          // then returns the metadata-only tombstone.
+          setItems((current) =>
+            current.filter(
+              (entry) => (entry.commentId ?? entry.detail) !== deletedId,
+            ),
+          );
+          pageCache.current.clear();
+        }
+      }
+      scheduleRefresh();
     });
     const offCommits = commits.subscribe((id) => {
       if (id === boardId) scheduleRefresh();
@@ -405,9 +457,9 @@ export function WatchView({ boardId }: WatchViewProps) {
         </span>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(14rem,20rem)_1fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(14rem,20rem)_1fr]">
         {/* Left rail: column status + who is online. */}
-        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 md:border-b-0 md:border-r">
+        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 lg:border-b-0 lg:border-r">
           <Section title={t("watch.columnList")}>
             <ul data-testid="watch-column-list">
               {board.columns.map((column) => {
@@ -786,6 +838,8 @@ interface DetailPart {
   /** Absent for a creation/comment (nothing to strike through). */
   from?: string;
   to: string;
+  /** Character-level common prefix/suffix split for a two-sided text change. */
+  sides?: DiffSides;
 }
 
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -839,11 +893,13 @@ function WatchRow({
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
   const details = detailsFor(entry, t, memberName, lang, hour12, expanded);
   const canExpand =
-    (entry.changes ?? []).some(
+    entry.type !== "comment_deleted" &&
+    ((entry.changes ?? []).some(
       (change) =>
         (change.from?.length ?? 0) > MAX_VALUE_CHARS ||
         (change.to?.length ?? 0) > MAX_VALUE_CHARS,
-    ) || (entry.detail?.length ?? 0) > MAX_VALUE_CHARS;
+    ) ||
+      (entry.detail?.length ?? 0) > MAX_VALUE_CHARS);
   const clock = new Date(entry.at).toLocaleTimeString(
     lang === "ru" ? "ru-RU" : "en-US",
     { hour12, hour: "2-digit", minute: "2-digit", second: "2-digit" },
@@ -856,16 +912,18 @@ function WatchRow({
       // time + actor share the first line and the sentence gets the full
       // width on the next one. The fixed time/actor widths only return when
       // the header can afford them (QA-05).
-      className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:gap-x-0 lg:gap-y-0 lg:divide-x lg:divide-muted-foreground/40 lg:[&>*]:px-2 lg:[&>*:first-child]:pl-0 lg:[&>*:last-child]:pr-0"
+      className="grid max-w-full grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:items-start lg:gap-x-0 lg:gap-y-0 lg:divide-x lg:divide-muted-foreground/40 lg:[&>*]:px-2 lg:[&>*:first-child]:pl-0 lg:[&>*:last-child]:pr-0"
     >
       <time
-        className="whitespace-nowrap tabular-nums text-muted-foreground"
+        data-testid="watch-entry-time"
+        className="whitespace-nowrap pl-0 tabular-nums text-muted-foreground lg:border-r lg:border-muted-foreground/40 lg:px-2"
         dateTime={new Date(entry.at).toISOString()}
       >
         {clock}
       </time>
       <span
-        className="flex min-w-0 items-center gap-1.5 text-foreground/80"
+        data-testid="watch-entry-actor"
+        className="flex min-w-0 items-center gap-1.5 text-foreground/80 lg:border-r lg:border-muted-foreground/40 lg:px-2"
         title={actorName}
       >
         <span className="truncate">{actorName}</span>
@@ -879,63 +937,80 @@ function WatchRow({
           </span>
         ) : null}
       </span>
-      <span
-        data-testid="watch-entry-sentence"
-        className="col-span-2 min-w-0 break-words text-foreground/90 [overflow-wrap:anywhere] lg:col-span-1"
+      <div
+        data-testid="watch-entry-body"
+        className="col-span-2 min-w-0 max-w-full break-words text-foreground/90 [overflow-wrap:anywhere] lg:col-span-1 lg:px-2 lg:pr-0"
       >
-        {card ? (
-          <span
-            className="text-muted-foreground [overflow-wrap:anywhere]"
-            title={card.title}
-          >
-            {card.title} ·{" "}
-          </span>
-        ) : null}
-        {t(sentence.key, sentence.params)}
-        {details.length > 0 ? (
-          <span className="ml-2 inline-flex flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
-            {details.map((detail, index) => (
-              <span key={`${detail.label}-${index}`} className="min-w-0">
-                {detail.label ? (
-                  <span className="text-muted-foreground">
-                    {detail.label}:{" "}
-                  </span>
-                ) : null}
-                {detail.from !== undefined ? (
-                  <>
-                    <span className="text-(--chip-red) line-through [overflow-wrap:anywhere]">
-                      {detail.from}
+        <span
+          data-testid="watch-entry-sentence"
+          className="block min-w-0 break-words [overflow-wrap:anywhere]"
+        >
+          {card ? (
+            <span
+              className="text-muted-foreground [overflow-wrap:anywhere]"
+              title={card.title}
+            >
+              {card.title} ·{" "}
+            </span>
+          ) : null}
+          {t(sentence.key, sentence.params)}
+          {details.length > 0 ? (
+            <span className="ml-2 inline-flex max-w-[calc(100%_-_0.5rem)] min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
+              {details.map((detail, index) => (
+                <span key={`${detail.label}-${index}`} className="min-w-0">
+                  {detail.label ? (
+                    <span className="text-muted-foreground">
+                      {detail.label}:{" "}
                     </span>
-                    <span className="mx-1 text-muted-foreground">→</span>
-                  </>
-                ) : null}
-                <span className="text-(--chip-green) [overflow-wrap:anywhere]">
-                  {detail.to}
+                  ) : null}
+                  {detail.from !== undefined && detail.sides === undefined ? (
+                    <>
+                      <span className="whitespace-pre-wrap text-(--chip-red) line-through [overflow-wrap:anywhere]">
+                        {detail.from}
+                      </span>
+                      <span className="mx-1 text-muted-foreground">→</span>
+                    </>
+                  ) : null}
+                  {detail.sides !== undefined ? (
+                    <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1 [overflow-wrap:anywhere]">
+                      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                        <DiffSegments segments={detail.sides.left} />
+                      </span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                        <DiffSegments segments={detail.sides.right} />
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="whitespace-pre-wrap text-(--chip-green) [overflow-wrap:anywhere]">
+                      {detail.to}
+                    </span>
+                  )}
                 </span>
-              </span>
-            ))}
-          </span>
-        ) : null}
-        {entry.actorType === "agent" ? (
-          <AgentAttribution
-            apiTokenId={entry.apiTokenId}
-            agentSessionId={entry.agentSessionId}
-            runId={entry.runId}
-            agentName={entry.agentName}
-            compact
-            className="ml-2 align-baseline"
-          />
-        ) : null}
-        {canExpand ? (
-          <button
-            type="button"
-            className="ml-2 text-xs text-primary underline"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {t(expanded ? "watch.showLess" : "watch.showMore")}
-          </button>
-        ) : null}
-      </span>
+              ))}
+            </span>
+          ) : null}
+          {entry.actorType === "agent" ? (
+            <AgentAttribution
+              apiTokenId={entry.apiTokenId}
+              agentSessionId={entry.agentSessionId}
+              runId={entry.runId}
+              agentName={entry.agentName}
+              compact
+              className="ml-2 align-baseline"
+            />
+          ) : null}
+          {canExpand ? (
+            <button
+              type="button"
+              className="ml-2 text-xs text-primary underline"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {t(expanded ? "watch.showLess" : "watch.showMore")}
+            </button>
+          ) : null}
+        </span>
+      </div>
     </li>
   );
 }
@@ -949,6 +1024,10 @@ function detailsFor(
   hour12: boolean,
   expanded: boolean,
 ): DetailPart[] {
+  // A deletion is always a text-free tombstone, even when an old cached
+  // payload still carries `changes`/`details`/`detail` from the pre-185.2
+  // contract.
+  if (entry.type === "comment_deleted") return [];
   const display = (value: string) => (expanded ? value : shorten(value));
   const changes: ActivityChange[] = (entry.changes ?? []).filter(
     (change) => change.field !== "checklistItemDone",
@@ -965,36 +1044,118 @@ function detailsFor(
     parts.push({ label: "", to: display(entry.detail) });
   }
   for (const change of changes) {
+    // TASK-185.2: a long text field uses the shared character-level common
+    // prefix/suffix split, so a long comment shows the changed fragment
+    // instead of two almost identical walls. Short values keep the plain
+    // `from → to` contract (`watch-details.spec`: one line-through with the
+    // whole saved value). Collapsed rows are head-only so the value's hidden
+    // tail cannot leak before "Show full values"; expanded rows fall back to
+    // the full stored snapshot (the feed's stand-in until the revisions view).
+    const longValue =
+      (change.from?.length ?? 0) > MAX_VALUE_CHARS ||
+      (change.to?.length ?? 0) > MAX_VALUE_CHARS;
+    const diffable =
+      !expanded &&
+      longValue &&
+      change.from !== null &&
+      change.to !== null &&
+      change.field !== "dueDate" &&
+      change.field !== "priority" &&
+      change.field !== "assignee" &&
+      change.field !== "claimedBy" &&
+      change.field !== "role" &&
+      change.field !== "expiresAt";
+    const sides =
+      diffable && change.from !== null && change.to !== null
+        ? diffSides(change.from, change.to, { headOnly: true })
+        : null;
     if (change.field === "comment") {
       parts.push({
         label: "",
-        ...(change.from !== null ? { from: `“${display(change.from)}”` } : {}),
-        to: change.to === null ? "—" : `“${display(change.to)}”`,
+        ...(sides !== null
+          ? { to: "", sides }
+          : {
+              ...(change.from !== null
+                ? { from: `“${display(change.from)}”` }
+                : {}),
+              to: change.to === null ? "—" : `“${display(change.to)}”`,
+            }),
       });
       continue;
     }
     parts.push({
       label: t(FIELD_KEYS[change.field] ?? "history.field.title"),
-      ...(change.from !== null
-        ? {
-            from: display(
+      ...(sides !== null
+        ? { to: "", sides }
+        : {
+            ...(change.from !== null
+              ? {
+                  from: display(
+                    formatChangeValue(
+                      change.field,
+                      change.from,
+                      lang,
+                      hour12,
+                      memberName,
+                    ),
+                  ),
+                }
+              : {}),
+            to: display(
               formatChangeValue(
                 change.field,
-                change.from,
+                change.to,
                 lang,
                 hour12,
                 memberName,
               ),
             ),
-          }
-        : {}),
-      to: display(
-        formatChangeValue(change.field, change.to, lang, hour12, memberName),
-      ),
+          }),
     });
   }
-  if (parts.length === 0 && entry.detail) {
+  // TASK-185.2: never fall back to a raw comment id. A `comment_updated`
+  // row without a confirmed revision (or a legacy snapshot) keeps only the
+  // localized sentence.
+  if (
+    parts.length === 0 &&
+    entry.detail &&
+    !entry.type.startsWith("comment_")
+  ) {
     parts.push({ label: "", to: display(entry.detail) });
   }
   return parts;
+}
+
+/**
+ * One half of a character diff: unchanged context muted, removed text struck
+ * through, added text green. Text is rendered as text — no markdown, mentions
+ * or URLs are interpreted — and `whitespace-pre-wrap` keeps line breaks.
+ */
+function DiffSegments({ segments }: { segments: DiffSides["left"] }) {
+  return (
+    <>
+      {segments.map((segment, index) => {
+        if (segment.kind === "same") {
+          return (
+            <span key={index} className="whitespace-pre-wrap">
+              {segment.text}
+            </span>
+          );
+        }
+        return (
+          <span
+            key={index}
+            data-diff={segment.kind}
+            className={
+              segment.kind === "removed"
+                ? "whitespace-pre-wrap rounded-sm bg-danger/10 px-0.5 font-medium text-(--chip-red) line-through decoration-danger/50"
+                : "whitespace-pre-wrap rounded-sm bg-success/10 px-0.5 font-medium text-(--chip-green)"
+            }
+          >
+            {segment.text}
+          </span>
+        );
+      })}
+    </>
+  );
 }

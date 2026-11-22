@@ -23,6 +23,10 @@ const INLINE_CARD = "inline-only-card";
 const ARCHIVED_CARD = "archived-parent";
 const DELETED_CARD = "deleted-parent";
 const OTHER_CARD = "other-card";
+const COLUMN_DELETED_BOARD = "column-deleted-board";
+const COLUMN_DELETED_CARD = "column-deleted-card";
+const BOARD_DELETED_BOARD = "board-deleted-board";
+const BOARD_DELETED_CARD = "board-deleted-card";
 const USER = "moderation-author";
 const OTHER_USER = "moderation-colleague";
 const EMAIL = "moderation-operator@example.com";
@@ -71,6 +75,12 @@ describe("Admin moderation facets (e2e)", () => {
       data: [
         { id: BOARD, title: BOARD_TITLE, archivedAt: new Date(BOUNDARY) },
         { id: OTHER_BOARD, title: "Elsewhere" },
+        { id: COLUMN_DELETED_BOARD, title: "Deleted column parent" },
+        {
+          id: BOARD_DELETED_BOARD,
+          title: "Deleted board parent",
+          deletedAt: new Date(BOUNDARY),
+        },
       ],
     });
     await prisma.boardMember.create({
@@ -89,6 +99,23 @@ describe("Admin moderation facets (e2e)", () => {
         position: 0,
       })),
     });
+    await prisma.column.createMany({
+      data: [
+        {
+          id: `${COLUMN_DELETED_BOARD}-column`,
+          boardId: COLUMN_DELETED_BOARD,
+          title: "Gone column",
+          position: 0,
+          deletedAt: new Date(BOUNDARY),
+        },
+        {
+          id: `${BOARD_DELETED_BOARD}-column`,
+          boardId: BOARD_DELETED_BOARD,
+          title: "Gone board column",
+          position: 0,
+        },
+      ],
+    });
     await prisma.card.createMany({
       data: [CARD, INLINE_CARD, ARCHIVED_CARD, DELETED_CARD, OTHER_CARD].map(
         (id, position) => ({
@@ -100,6 +127,22 @@ describe("Admin moderation facets (e2e)", () => {
           position,
         }),
       ),
+    });
+    await prisma.card.createMany({
+      data: [
+        {
+          id: COLUMN_DELETED_CARD,
+          title: "Deleted column card",
+          columnId: `${COLUMN_DELETED_BOARD}-column`,
+          position: 10,
+        },
+        {
+          id: BOARD_DELETED_CARD,
+          title: "Deleted board card",
+          columnId: `${BOARD_DELETED_BOARD}-column`,
+          position: 11,
+        },
+      ],
     });
 
     await prisma.comment.createMany({
@@ -127,6 +170,16 @@ describe("Admin moderation facets (e2e)", () => {
         },
         { id: "c-deleted", kind: "blocker", deletedAt: new Date(BOUNDARY) },
         { id: "c-other-board", kind: "blocker", cardId: OTHER_CARD },
+        {
+          id: "c-column-deleted",
+          kind: "note",
+          cardId: COLUMN_DELETED_CARD,
+        },
+        {
+          id: "c-board-deleted",
+          kind: "note",
+          cardId: BOARD_DELETED_CARD,
+        },
       ].map((row) => ({
         cardId: CARD,
         authorId: USER,
@@ -135,6 +188,39 @@ describe("Admin moderation facets (e2e)", () => {
         ...row,
       })),
     });
+    // TASK-185.5: one live comment with saved revisions, one live comment
+    // with an incomplete chain and no revisions. Deleted rows and rows under
+    // a deleted parent stay without history.
+    await prisma.commentRevision.createMany({
+      data: [
+        {
+          id: "rev-c-blocker-1",
+          commentId: "c-blocker",
+          revisionNumber: 1,
+          beforeText: "moderation draft",
+          afterText: "moderation c-blocker",
+          editorId: USER,
+          cause: "author_edit",
+        },
+        {
+          id: "rev-c-blocker-2",
+          commentId: "c-blocker",
+          revisionNumber: 2,
+          beforeText: "moderation c-blocker",
+          afterText: "moderation c-blocker final",
+          editorId: USER,
+          cause: "attachment_deleted",
+        },
+      ],
+    });
+    await prisma.comment.update({
+      where: { id: "c-question" },
+      data: {
+        editedAt: new Date(BOUNDARY + 10),
+        historyIncompleteReason: "legacy_cutover",
+      },
+    });
+
     await prisma.attachment.createMany({
       data: [
         {
@@ -438,6 +524,110 @@ describe("Admin moderation facets (e2e)", () => {
       expect(body.comments).toEqual(
         expect.arrayContaining([expect.objectContaining(comment)]),
       );
+    }
+  });
+
+  it("serves TASK-185.5 revision counts and hides unavailable history", async () => {
+    for (const specialized of [false, true]) {
+      const page = await comments(
+        `boardId=${BOARD}&status=all&limit=100`,
+        specialized,
+      );
+      const byId = new Map(page.items.map((row) => [row.id, row]));
+
+      // A live comment keeps `text`, its kind and its saved count.
+      expect(byId.get("c-blocker")).toMatchObject({
+        text: "moderation c-blocker",
+        kind: "blocker",
+        revisionCount: 2,
+        historyIncomplete: false,
+      });
+      // Zero revisions is a real answer; the persisted reason still shows.
+      expect(byId.get("c-question")).toMatchObject({
+        revisionCount: 0,
+        historyIncomplete: true,
+      });
+      expect(byId.get("c-note")).toMatchObject({
+        revisionCount: 0,
+        historyIncomplete: false,
+      });
+      // Deleted row and deleted parent: both fields are null.
+      expect(byId.get("c-deleted")).toMatchObject({
+        revisionCount: null,
+        historyIncomplete: null,
+      });
+      expect(byId.get("c-handoff")).toMatchObject({
+        revisionCount: null,
+        historyIncomplete: null,
+      });
+      for (const [boardId, id] of [
+        [COLUMN_DELETED_BOARD, "c-column-deleted"],
+        [BOARD_DELETED_BOARD, "c-board-deleted"],
+      ]) {
+        const parentPage = await comments(
+          `boardId=${boardId}&status=all&limit=100`,
+          specialized,
+        );
+        expect(parentPage.items).toMatchObject([
+          { id, revisionCount: null, historyIncomplete: null },
+        ]);
+      }
+      for (const row of page.items) expect(typeof row.text).toBe("string");
+
+      // TASK-181 kind filtering and TASK-176.3 totals stay untouched.
+      const blocked = await comments(
+        `boardId=${BOARD}&kind=blocker&status=all&limit=100`,
+        specialized,
+      );
+      expect(blocked.total).toBe(2);
+      expect(blocked.items.map((row) => row.id).sort()).toEqual([
+        "c-blocker",
+        "c-deleted",
+      ]);
+    }
+
+    const card = (await get(`cards/${CARD}/detail`).expect(200)).body;
+    expect(card.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c-blocker",
+          text: "moderation c-blocker",
+          revisionCount: 2,
+          historyIncomplete: false,
+        }),
+      ]),
+    );
+    const user = (
+      await get(`users/${USER}/detail?includeDeleted=true`).expect(200)
+    ).body;
+    expect(user.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c-deleted",
+          revisionCount: null,
+          historyIncomplete: null,
+        }),
+      ]),
+    );
+    const otherUser = (
+      await get(`users/${OTHER_USER}/detail?includeDeleted=true`).expect(200)
+    ).body;
+    expect(otherUser.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "c-handoff",
+          revisionCount: null,
+          historyIncomplete: null,
+        }),
+      ]),
+    );
+
+    const revisions = (await get("comments/c-blocker/revisions").expect(200))
+      .body;
+    expect(revisions.items).toHaveLength(2);
+    expect(revisions.historyIncomplete).toBe(false);
+    for (const id of ["c-handoff", "c-column-deleted", "c-board-deleted"]) {
+      await get(`comments/${id}/revisions`).expect(404);
     }
   });
 

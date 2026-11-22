@@ -1802,4 +1802,216 @@ describe("CardComments", () => {
     expect(await screen.findByText("Edited on page two")).toBeInTheDocument();
     expect(screen.queryByText("Comment 55")).not.toBeInTheDocument();
   });
+
+  it("discards an in-flight list response that lands after a deletion", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-race", text: "Stale body" }),
+    ]);
+    let listCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const response = await server.handle(input, init);
+      if (
+        url.includes("/cards/card-1/comments") &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        listCalls += 1;
+        if (listCalls >= 2) await gate;
+      }
+      return response;
+    };
+    renderComments(server, false, handler);
+    await screen.findByText("Stale body");
+    await waitStream(server);
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+
+    // The server has committed the delete; only the response captured above
+    // is stale and must not resurrect the row.
+    server.seedComments("card-1", []);
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-race",
+      });
+    });
+    act(() => release());
+
+    await waitFor(() =>
+      expect(screen.queryByText("Stale body")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("does not let a stale edit response resurrect a deleted body", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-edit-race", text: "Editing body" }),
+    ]);
+    let listCalls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handler: FetchHandler = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const response = await server.handle(input, init);
+      if (
+        url.includes("/cards/card-1/comments") &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        listCalls += 1;
+        if (listCalls >= 2) await gate;
+      }
+      return response;
+    };
+    renderComments(server, false, handler);
+    await screen.findByText("Editing body");
+    await waitStream(server);
+
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-updated",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_updated",
+        commentId: "comment-edit-race",
+      });
+    });
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+
+    server.seedComments("card-1", []);
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-edit-race",
+      });
+    });
+    act(() => release());
+
+    await waitFor(() =>
+      expect(screen.queryByText("Editing body")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("restores a comment and count after delete then refetch", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-restored", text: "Restorable" }),
+    ]);
+    let count: ActivityCount | null | undefined;
+    renderComments(server, false, server.handle, "card-1", (next) => {
+      count = next;
+    });
+    await screen.findByText("Restorable");
+    await waitStream(server);
+
+    server.seedComments("card-1", []);
+    act(() => {
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-deleted",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-restored",
+      });
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("Restorable")).not.toBeInTheDocument(),
+    );
+
+    act(() => {
+      server.seedComments("card-1", [
+        comment({ id: "comment-restored", text: "Restored" }),
+      ]);
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(await screen.findByText("Restored")).toBeInTheDocument();
+    await waitFor(() => expect(count?.visible).toBe(1));
+  });
+
+  it("invalidates by commentId on an actor-less master deletion and closes the preview", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-9", text: "Delete me" }),
+    ]);
+    renderComments(server);
+    await screen.findByText("Delete me");
+    await waitStream(server);
+
+    fireEvent.click(screen.getByTestId("comment-delete"));
+    expect(
+      await screen.findByTestId("comment-delete-preview"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      server.seedComments("card-1", []);
+      // Master moderation: no actor and no legacy detail — only commentId.
+      server.publishActivity("b-1", {
+        type: "activity",
+        id: "activity-master",
+        boardId: "b-1",
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        commentId: "comment-9",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete me")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByTestId("comment-delete-preview"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-reads the thread on focus to catch access loss or a remote delete", async () => {
+    const server = new FakeServer([seedBoard()]);
+    server.seedComments("card-1", [
+      comment({ id: "comment-focus", text: "Before focus" }),
+    ]);
+    let denied = false;
+    const handler: FetchHandler = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (denied && url.includes("/cards/card-1/comments")) {
+        return new Response(null, { status: 403 });
+      }
+      return server.handle(input, init);
+    };
+    renderComments(server, false, handler);
+    await screen.findByText("Before focus");
+    await waitStream(server);
+
+    act(() => {
+      denied = true;
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Before focus")).not.toBeInTheDocument(),
+    );
+  });
 });

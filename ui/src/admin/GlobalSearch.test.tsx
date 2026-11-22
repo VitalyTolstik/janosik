@@ -50,6 +50,8 @@ function results(): AdminGlobalSearchDto {
         editedAt: null,
         kind: "note",
         deletedAt: null,
+        revisionCount: 0,
+        historyIncomplete: false,
       },
     ],
     attachments: [

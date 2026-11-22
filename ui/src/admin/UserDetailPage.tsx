@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { appPath } from "@/utils/app-path";
 import { docsPageUrl } from "@/utils/docs-url";
 import { adminApi } from "./admin-client";
+import { AdminCommentHistoryButton } from "./CommentHistoryDialog";
 import { readReturnTo } from "./admin-navigation";
 import { useAdminT } from "./admin-i18n";
 import { useAdminAuth } from "./AdminAuthContext";
@@ -1199,9 +1200,14 @@ export function UserDetailPage() {
                     <tr key={comment.id}>
                       <Td
                         label={t("admin.comments.column.text")}
-                        className="max-w-[26rem]"
+                        className="max-w-[26rem] break-words [overflow-wrap:anywhere]"
                       >
-                        <TextCell value={comment.text} maxWidth="26rem" />
+                        <div className="flex min-w-0 max-w-full flex-col items-start gap-1">
+                          <div className="w-full min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
+                            {comment.text}
+                          </div>
+                          <AdminCommentHistoryButton comment={comment} />
+                        </div>
                       </Td>
                       <Td label={t("admin.comments.column.card")}>
                         <EntityLink to={cardHref(comment.cardId)}>

@@ -14,7 +14,6 @@ import type {
   AdminChecklistRowDto,
   AdminColumnRowDto,
   AdminCommandRowDto,
-  AdminCommentRowDto,
   AdminDetailWindowDto,
   AdminEntity,
   AdminEntityRowMap,
@@ -32,12 +31,20 @@ import {
   readBoardWorkflow,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import {
+  isCommentActivity,
+  visibleActivityIdPage,
+} from "@/activity/activity-visibility";
 import type {
   AdminCardDetailQueryDto,
   AdminUserDetailQueryDto,
 } from "./dto/admin-detail-query.dto";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
 import { auditIdsForCommands } from "./audit-correlation";
+import {
+  ADMIN_COMMENT_ROW_SELECT,
+  toAdminCommentRow,
+} from "./admin-comment-row";
 import { AdminService } from "./admin.service";
 import { CommsService } from "./comms.service";
 
@@ -875,71 +882,40 @@ export class AdminEntitiesService {
   async listActivity(
     query: AdminListQueryDto,
   ): Promise<AdminPage<AdminActivityRowDto>> {
-    const where: Prisma.ActivityWhereInput = {};
-    if (query.boardId) where.boardId = query.boardId;
-    if (query.cardId) where.cardId = query.cardId;
-    if (query.actorId) where.actorId = { in: query.actorId };
-    if (query.type) where.type = { in: query.type };
-    if (query.columnId || query.singleLabelId) {
-      where.card = {
-        ...(query.columnId ? { columnId: query.columnId } : {}),
-        ...(query.singleLabelId
-          ? { labels: { some: { labelId: query.singleLabelId } } }
-          : {}),
-      };
-    }
-    if (query.search) {
-      where.OR = [
-        { id: { contains: query.search } },
-        { type: like(query.search) },
-        { boardId: { contains: query.search } },
-        { cardId: { contains: query.search } },
-        { actorId: { contains: query.search } },
-        { actor: { email: like(query.search) } },
-        { board: { title: like(query.search) } },
-        { card: { title: like(query.search) } },
-      ];
-    }
-    where.createdAt = {};
-    if (query.from !== undefined) where.createdAt.gte = new Date(query.from);
-    if (query.to !== undefined) where.createdAt.lte = new Date(query.to);
-
     const { limit, offset } = window(query);
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.activity.findMany({
-        where,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        skip: offset,
-        take: limit,
-        select: {
-          id: true,
-          type: true,
-          details: true,
-          createdAt: true,
-          boardId: true,
-          cardId: true,
-          actorId: true,
-          board: { select: { title: true } },
-          card: { select: { title: true } },
-          actor: { select: { email: true } },
-        },
-      }),
-      this.prisma.activity.count({ where }),
-    ]);
+    // TASK-185.2: the live-comment predicate runs inside the ID/count query,
+    // so a deleted edit cannot occupy a slot or inflate the total. Admin
+    // search/facets stay exact because they are part of the same SQL page.
+    const { ids, total } = await visibleActivityIdPage(
+      this.prisma,
+      {
+        ...(query.boardId ? { boardId: query.boardId } : {}),
+        ...(query.cardId ? { cardId: query.cardId } : {}),
+        ...(query.actorId ? { actorIds: query.actorId } : {}),
+        ...(query.type ? { types: query.type } : {}),
+        ...(query.columnId ? { columnId: query.columnId } : {}),
+        ...(query.singleLabelId ? { labelId: query.singleLabelId } : {}),
+        ...(query.search ? { search: query.search } : {}),
+        ...(query.from !== undefined ? { from: new Date(query.from) } : {}),
+        ...(query.to !== undefined ? { to: new Date(query.to) } : {}),
+      },
+      limit,
+      offset,
+    );
+    const rows =
+      ids.length === 0
+        ? []
+        : await this.prisma.activity.findMany({
+            where: { id: { in: ids } },
+            select: ACTIVITY_SELECT,
+          });
+    const byId = new Map(rows.map((row) => [row.id, row] as const));
 
     return {
-      items: items.map((entry) => ({
-        id: entry.id,
-        boardId: entry.boardId,
-        boardTitle: entry.board.title,
-        cardId: entry.cardId,
-        cardTitle: entry.card?.title ?? null,
-        type: entry.type,
-        actorId: entry.actorId,
-        actorEmail: entry.actor.email,
-        details: (entry.details as Record<string, unknown> | null) ?? null,
-        createdAt: entry.createdAt.getTime(),
-      })),
+      items: ids.flatMap((id) => {
+        const entry = byId.get(id);
+        return entry ? [toActivityRow(entry)] : [];
+      }),
       total,
       limit,
       offset,
@@ -1080,7 +1056,7 @@ export class AdminEntitiesService {
           },
           orderBy: { createdAt: "desc" },
           take: 5,
-          select: COMMENT_SELECT,
+          select: ADMIN_COMMENT_ROW_SELECT,
         }),
         this.prisma.attachment.findMany({
           where: {
@@ -1140,7 +1116,7 @@ export class AdminEntitiesService {
         deletedAt: MS(board.deletedAt),
       })),
       cards: cards.map(toCardRow),
-      comments: comments.map(toCommentRow),
+      comments: comments.map(toAdminCommentRow),
       attachments: attachments.map(toAttachmentRow),
       labels: labels.map((label) => ({
         id: label.id,
@@ -1191,6 +1167,14 @@ export class AdminEntitiesService {
       type: { in: ["ADD_CARD", "DUPLICATE_CARD"] },
     } satisfies Prisma.CommandWhereInput;
     const wants = (key: string) => section === undefined || section === key;
+    // TASK-185.2: the exact total and the page both come from the visible-ID
+    // query; deleted comment edits never enter either.
+    const activityPage = await visibleActivityIdPage(
+      this.prisma,
+      { actorIds: [userId] },
+      limit,
+      offset,
+    );
 
     const [
       membershipsTotal,
@@ -1205,7 +1189,6 @@ export class AdminEntitiesService {
       tokensLive,
       tokensHidden,
       commandCount,
-      activityTotal,
       boardCount,
     ] = await this.prisma.$transaction([
       this.prisma.boardMember.count({ where: { userId } }),
@@ -1239,7 +1222,6 @@ export class AdminEntitiesService {
         where: { userId, revokedAt: { not: null } },
       }),
       this.prisma.command.count({ where: { actorId: userId } }),
-      this.prisma.activity.count({ where: { actorId: userId } }),
       this.prisma.boardMember.count({
         where: {
           userId,
@@ -1306,7 +1288,7 @@ export class AdminEntitiesService {
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             skip: offset,
             take: limit,
-            select: COMMENT_SELECT,
+            select: ADMIN_COMMENT_ROW_SELECT,
           })
         : Promise.resolve([]),
       wants("attachments")
@@ -1350,16 +1332,21 @@ export class AdminEntitiesService {
             select: COMMAND_SELECT,
           })
         : Promise.resolve([]),
-      wants("activity")
+      wants("activity") && activityPage.ids.length > 0
         ? this.prisma.activity.findMany({
-            where: { actorId: userId },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            skip: offset,
-            take: limit,
+            where: { id: { in: activityPage.ids } },
             select: ACTIVITY_SELECT,
           })
         : Promise.resolve([]),
     ]);
+
+    const activityById = new Map(
+      recentActivity.map((row) => [row.id, row] as const),
+    );
+    const orderedActivity = activityPage.ids.flatMap((id) => {
+      const row = activityById.get(id);
+      return row ? [toActivityRow(row)] : [];
+    });
 
     // Created cards are a window over the user's create commands: the total
     // is the exact number of recorded creates, not the length of a card page.
@@ -1471,7 +1458,7 @@ export class AdminEntitiesService {
         activity: windowOf(
           offset,
           limit,
-          activityTotal,
+          activityPage.total,
           recentActivity.length,
           false,
         ),
@@ -1496,12 +1483,12 @@ export class AdminEntitiesService {
       })),
       createdCards,
       assignedCards: assignedCards.map(toCardRow),
-      comments: comments.map(toCommentRow),
+      comments: comments.map(toAdminCommentRow),
       attachments: attachments.map(toAttachmentRow),
       sessions: sessions.map(toSessionRow),
       tokens: tokens.map(toTokenRow),
       recentCommands: recentCommands.map(toCommandRow),
-      recentActivity: recentActivity.map(toActivityRow),
+      recentActivity: orderedActivity,
     };
   }
 
@@ -1651,7 +1638,6 @@ export class AdminEntitiesService {
       commentsDeleted,
       attachmentsLive,
       attachmentsDeleted,
-      activityTotal,
       commandTotal,
     ] = await this.prisma.$transaction([
       this.prisma.comment.count({ where: { cardId, deletedAt: null } }),
@@ -1662,7 +1648,6 @@ export class AdminEntitiesService {
       this.prisma.attachment.count({
         where: { cardId, deletedAt: { not: null } },
       }),
-      this.prisma.activity.count({ where: { cardId } }),
       this.prisma.command.count({ where: { touches: { has: cardTouch } } }),
     ]);
 
@@ -1732,7 +1717,7 @@ export class AdminEntitiesService {
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             skip: commentsOffset,
             take: limit,
-            select: COMMENT_SELECT,
+            select: ADMIN_COMMENT_ROW_SELECT,
           })
         : Promise.resolve([]),
       wants("attachments")
@@ -1753,15 +1738,21 @@ export class AdminEntitiesService {
     // commands whose `touches` include the card); the total is their exact
     // sum, so the UI can say `50 of N` instead of silently slicing.
     const timelineTake = requestedOffset + limit;
-    const [activity, commands] = await Promise.all([
-      wants("timeline")
-        ? this.prisma.activity.findMany({
-            where: { cardId },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            take: timelineTake,
+    // TASK-185.2: visible IDs first, so a deleted edit is excluded from both
+    // the merged timeline and its exact total.
+    const activityPage = await visibleActivityIdPage(
+      this.prisma,
+      { cardId },
+      timelineTake,
+      0,
+    );
+    const [activityRows, commands] = await Promise.all([
+      activityPage.ids.length === 0 || !wants("timeline")
+        ? Promise.resolve([])
+        : this.prisma.activity.findMany({
+            where: { id: { in: activityPage.ids } },
             select: ACTIVITY_SELECT,
-          })
-        : Promise.resolve([]),
+          }),
       wants("timeline")
         ? this.prisma.command.findMany({
             where: { touches: { has: cardTouch } },
@@ -1773,6 +1764,13 @@ export class AdminEntitiesService {
           })
         : Promise.resolve([]),
     ]);
+    const activityById = new Map(
+      activityRows.map((row) => [row.id, row] as const),
+    );
+    const activity = activityPage.ids.flatMap((id) => {
+      const row = activityById.get(id);
+      return row ? [row] : [];
+    });
 
     const timeline = [
       ...activity.map((entry) => ({
@@ -1782,7 +1780,9 @@ export class AdminEntitiesService {
         actorId: entry.actorId,
         actorEmail: entry.actor.email,
         auditId: null,
-        details: (entry.details as Record<string, unknown> | null) ?? null,
+        details: isCommentActivity(entry.type)
+          ? null
+          : ((entry.details as Record<string, unknown> | null) ?? null),
         createdAt: entry.createdAt.getTime(),
       })),
       ...commands.map((entry) => ({
@@ -1828,7 +1828,7 @@ export class AdminEntitiesService {
           ? (timelineAuditIds.get(entry.id) ?? null)
           : null,
     }));
-    const timelineTotal = activityTotal + commandTotal;
+    const timelineTotal = activityPage.total + commandTotal;
     const commentsTotal =
       commentsLive + (includeDeletedComments ? commentsDeleted : 0);
     const attachmentsTotal =
@@ -1926,7 +1926,7 @@ export class AdminEntitiesService {
         comments: commentsDeleted,
         attachments: attachmentsDeleted,
       },
-      comments: comments.map(toCommentRow),
+      comments: comments.map(toAdminCommentRow),
       attachments: attachments.map(toAttachmentRow),
       timeline: timelineWithAudit,
       createdBy,
@@ -2113,50 +2113,6 @@ export class AdminEntitiesService {
 
   // -------------------------------------------------------------- mappings
 }
-
-type CommentJoin = {
-  id: string;
-  text: string;
-  kind: string;
-  createdAt: Date;
-  updatedAt: Date;
-  editedAt: Date | null;
-  deletedAt: Date | null;
-  cardId: string;
-  authorId: string;
-  card: { title: string };
-  author: { email: string };
-};
-
-function toCommentRow(comment: CommentJoin): AdminCommentRowDto {
-  return {
-    id: comment.id,
-    cardId: comment.cardId,
-    cardTitle: comment.card.title,
-    authorId: comment.authorId,
-    authorEmail: comment.author.email,
-    text: comment.text,
-    kind: comment.kind as AdminCommentRowDto["kind"],
-    createdAt: comment.createdAt.getTime(),
-    updatedAt: comment.updatedAt.getTime(),
-    editedAt: MS(comment.editedAt),
-    deletedAt: MS(comment.deletedAt),
-  };
-}
-
-const COMMENT_SELECT = {
-  id: true,
-  text: true,
-  kind: true,
-  createdAt: true,
-  updatedAt: true,
-  editedAt: true,
-  deletedAt: true,
-  cardId: true,
-  authorId: true,
-  card: { select: { title: true } },
-  author: { select: { email: true } },
-} satisfies Prisma.CommentSelect;
 
 type AttachmentJoin = {
   id: string;
@@ -2355,7 +2311,11 @@ function toActivityRow(entry: ActivityJoin): AdminActivityRowDto {
     type: entry.type,
     actorId: entry.actorId,
     actorEmail: entry.actor.email,
-    details: (entry.details as Record<string, unknown> | null) ?? null,
+    // TASK-185.2: the admin timeline/activity list uses the same allowlist
+    // as the member feed — comment rows never expose raw deleted text.
+    details: isCommentActivity(entry.type)
+      ? null
+      : ((entry.details as Record<string, unknown> | null) ?? null),
     createdAt: entry.createdAt.getTime(),
   };
 }

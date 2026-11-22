@@ -21,6 +21,7 @@ import type {
 } from "@janosik/shared";
 import { ANNOUNCEMENT_LOCALES } from "@janosik/shared";
 import { adminApi } from "./admin-client";
+import { AdminCommentHistoryButton } from "./CommentHistoryDialog";
 import {
   adminAuditEntryHref,
   adminCardsHref,
@@ -897,9 +898,14 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comments.column.text"),
             render: (comment) => (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <TextCell value={comment.text} maxWidth="26rem" />
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+                <TextCell
+                  value={comment.text}
+                  maxWidth="26rem"
+                  className="min-w-0 max-w-full"
+                />
                 <Badge>{t(`admin.filters.kind.${comment.kind}`)}</Badge>
+                <AdminCommentHistoryButton comment={comment} />
               </div>
             ),
             className: "max-w-[26rem]",
@@ -1124,12 +1130,15 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           },
           {
             label: t("admin.activity.column.details"),
-            render: (entry) => (
-              <JsonCell
-                value={entry.details}
-                testId={`admin-activity-details-${entry.id}`}
-              />
-            ),
+            render: (entry) =>
+              entry.details && !entry.type.startsWith("comment_") ? (
+                <JsonCell
+                  value={entry.details}
+                  testId={`admin-activity-details-${entry.id}`}
+                />
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
           },
           {
             label: t("admin.activity.column.created"),

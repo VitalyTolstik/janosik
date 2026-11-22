@@ -42,12 +42,16 @@ for (const kind of ["comment", "attachment"] as const) {
       .getByRole("button", { name: "Watch" })
       .click();
     const feed = page.getByTestId("watch-feed");
-    await expect(feed).toContainText(
-      kind === "comment" ? "Moderated comment" : "moderated.txt",
-    );
-    await expect(feed).not.toContainText(
-      kind === "comment" ? "Deleted a comment" : "Deleted an attachment",
-    );
+    if (kind === "comment") {
+      // TASK-185.2: the add row survives as a metadata-only tombstone and
+      // the deleted body never reaches Watch.
+      await expect(feed).toContainText("Added a comment");
+      await expect(feed).not.toContainText("Moderated comment");
+      await expect(feed).not.toContainText("Deleted a comment");
+    } else {
+      await expect(feed).toContainText("moderated.txt");
+      await expect(feed).not.toContainText("Deleted an attachment");
+    }
     const restored = await admin.post(
       `/api/v1/admin/entities/${kind === "comment" ? "comments" : "attachments"}/${id}/restore`,
     );

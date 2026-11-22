@@ -252,6 +252,20 @@ export interface AdminCommentRowDto {
   /** Unix ms of the last author edit (TASK-176.2); `null` = never edited. */
   editedAt: number | null;
   deletedAt: number | null;
+  /**
+   * Saved text revisions of this comment (TASK-185.5, §3.4). `0` is a real
+   * answer — a live comment can have no revisions yet and still carry a
+   * `historyIncomplete` banner. `null` means the history is unavailable
+   * because the comment, its card, column or board is deleted; the UI then
+   * hides the history link and never calls the revisions route.
+   */
+  revisionCount: number | null;
+  /**
+   * Whether the saved history is incomplete (TASK-185.5). `null` whenever
+   * `revisionCount` is `null`; `true` opens the dialog even at zero revisions
+   * so the reason is visible.
+   */
+  historyIncomplete: boolean | null;
 }
 
 /** A row of `GET /admin/commands` — the cross-board command log. */

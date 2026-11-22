@@ -754,6 +754,12 @@ model Activity {
   card           Card?    @relation(fields: [cardId], references: [id])
   cardId         String?
   type           String // member_invited | member_role_changed | member_removed | comment_added
+  // TASK-185.2: typed comment link for `comment_*` events. No FK — comments
+  // are soft-deleted and a tombstone must survive a hard purge; the writer
+  // fills it for every new event and the migration backs it from legacy
+  // `details.commentId`. `comment_updated` reads are additionally guarded by
+  // a live comment/card/column/board EXISTS predicate.
+  commentId      String?
   actor          User     @relation(fields: [actorId], references: [id])
   actorId        String // now a real user
   actorType      String   @default("human") // TASK-157: human | agent
@@ -767,6 +773,7 @@ model Activity {
 
   @@index([boardId, createdAt])
   @@index([cardId, createdAt])
+  @@index([commentId])
   @@index([createdAt]) // activity retention sweep (TASK-148)
   @@index([actorId, createdAt])
   @@index([type, createdAt])

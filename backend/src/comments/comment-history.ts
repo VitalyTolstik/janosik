@@ -1,7 +1,15 @@
 import { NotFoundException, ConflictException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Comment } from "@prisma/client";
+import type {
+  CommentHistoryIncompleteReason,
+  CommentRevisionCause,
+} from "@janosik/shared";
 import type { RequestAttribution } from "@/auth/request-attribution";
+
+// The wire contract owns these unions; the writer and the read API must not
+// drift into two copies of the same enum.
+export type { CommentHistoryIncompleteReason, CommentRevisionCause };
 
 /**
  * TASK-185.1 — the single writer for comment text edits.
@@ -22,12 +30,6 @@ export const COMMENT_ACTIVITY_TYPES = [
   "comment_deleted",
   "comment_restored",
 ] as const;
-
-export type CommentHistoryIncompleteReason =
-  "legacy_cutover" | "revision_limit" | "gdpr_erase" | "writer_gap";
-
-export type CommentRevisionCause =
-  "author_edit" | "attachment_deleted" | "system";
 
 /**
  * Most severe reason wins. A writer gap is an integrity incident, so it is
@@ -204,7 +206,7 @@ export async function deleteCommentActivitySnapshots(
     Prisma.sql`
       DELETE FROM "Activity"
       WHERE ${types}
-        AND "details"->>'commentId' IN (${Prisma.join([...commentIds])})
+        AND "commentId" IN (${Prisma.join([...commentIds])})
     `,
   );
 }
@@ -385,6 +387,9 @@ export async function writeCommentUpdate(
       boardId: params.boardId,
       cardId: comment.cardId,
       type: "comment_updated",
+      // TASK-185.2: the typed link drives the live-comment filter and the
+      // HTTP revision check without parsing free JSON.
+      commentId: comment.id,
       actorId: params.editorId ?? comment.authorId,
       actorType: params.attribution.actorType,
       apiTokenId: params.attribution.apiTokenId,

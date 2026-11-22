@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type {
   ActivityChange,
   ActivityFeedEntry,
@@ -8,6 +8,13 @@ import type {
 } from "@janosik/shared";
 import { attributionFields } from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import {
+  commentActivityLiveSql,
+  isCommentActivity,
+  readCommentActivityContext,
+  readCommentActivityProjection,
+  type CommentActivityContext,
+} from "./activity-visibility";
 
 /** A stored actor type, defaulting to "human" for legacy/garbage rows. */
 function toActorType(value: string): ActorType {
@@ -117,24 +124,6 @@ export class ActivityService {
       ...(filters.type !== undefined ? { type: filters.type } : {}),
       ...commandOlderThan(cursor),
     };
-    const activityWhere: Prisma.ActivityWhereInput = {
-      boardId,
-      ...(cardId ? { cardId } : {}),
-      ...(createdAt ? { createdAt } : {}),
-      ...(filters.actorType !== undefined
-        ? { actorType: filters.actorType }
-        : {}),
-      ...(filters.apiTokenId !== undefined
-        ? { apiTokenId: filters.apiTokenId }
-        : {}),
-      ...(filters.agentSessionId !== undefined
-        ? { agentSessionId: filters.agentSessionId }
-        : {}),
-      ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
-      ...(filters.type !== undefined ? { type: filters.type } : {}),
-      ...activityOlderThan(cursor),
-    };
-
     const [commands, activities] = await Promise.all([
       this.prisma.command.findMany({
         where: commandWhere,
@@ -156,17 +145,21 @@ export class ActivityService {
           actor: { select: { displayName: true, email: true } },
         },
       }),
-      this.prisma.activity.findMany({
-        where: activityWhere,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: limit + 1,
-        include: { actor: { select: { displayName: true, email: true } } },
-      }),
+      // TASK-185.2: a `comment_updated` row is visible only while its comment
+      // and the whole parent chain are live. The EXISTS runs in the database
+      // before LIMIT/cursor, so a tombstone/restored edit cannot shift a page
+      // or leave a hole. `comment_added`/`comment_deleted` stay as tombstones
+      // with metadata even after a hard purge.
+      this.findActivityRows(boardId, cardId, filters, createdAt, cursor, limit),
     ]);
 
+    const commentContext = await readCommentActivityContext(
+      this.prisma,
+      activities,
+    );
     const merged = [
       ...commands.map(toCommandEntry),
-      ...activities.map(toActivityEntry),
+      ...activities.map((row) => toActivityEntry(row, commentContext)),
     ].sort(compareNewerFirst);
 
     const items = merged.slice(0, limit);
@@ -176,6 +169,88 @@ export class ActivityService {
       nextCursor: merged.length > limit && last ? encodeCursor(last) : null,
     };
   }
+
+  /**
+   * The Activity half of a feed, read through raw SQL because the
+   * `comment_updated` liveness predicate has no Prisma relation: `Activity`
+   * deliberately carries no FK to a comment (a tombstone must outlive a hard
+   * purge). Every other filter mirrors the old `ActivityWhereInput`.
+   */
+  private findActivityRows(
+    boardId: string,
+    cardId: string | undefined,
+    filters: ActivityFilters,
+    createdAt: { gte?: Date; lte?: Date } | undefined,
+    cursor: Cursor | null,
+    limit: number,
+  ): Promise<ActivityRow[]> {
+    const conditions: Prisma.Sql[] = [Prisma.sql`a."boardId" = ${boardId}`];
+    if (cardId) conditions.push(Prisma.sql`a."cardId" = ${cardId}`);
+    if (createdAt?.gte) {
+      conditions.push(Prisma.sql`a."createdAt" >= ${createdAt.gte}`);
+    }
+    if (createdAt?.lte) {
+      conditions.push(Prisma.sql`a."createdAt" <= ${createdAt.lte}`);
+    }
+    if (filters.actorType !== undefined) {
+      conditions.push(Prisma.sql`a."actorType" = ${filters.actorType}`);
+    }
+    if (filters.apiTokenId !== undefined) {
+      conditions.push(Prisma.sql`a."apiTokenId" = ${filters.apiTokenId}`);
+    }
+    if (filters.agentSessionId !== undefined) {
+      conditions.push(
+        Prisma.sql`a."agentSessionId" = ${filters.agentSessionId}`,
+      );
+    }
+    if (filters.runId !== undefined) {
+      conditions.push(Prisma.sql`a."runId" = ${filters.runId}`);
+    }
+    if (filters.type !== undefined) {
+      conditions.push(Prisma.sql`a."type" = ${filters.type}`);
+    }
+    if (cursor !== null) {
+      const at = new Date(cursor.at);
+      conditions.push(
+        cursor.source === "a"
+          ? Prisma.sql`(a."createdAt" < ${at} OR (a."createdAt" = ${at} AND a."id" < ${cursor.key}))`
+          : Prisma.sql`a."createdAt" <= ${at}`,
+      );
+    }
+    conditions.push(commentActivityLiveSql("a"));
+
+    return this.prisma.$queryRaw<ActivityRow[]>(Prisma.sql`
+      SELECT a."id", a."boardId", a."cardId", a."type", a."commentId",
+             a."actorId", a."actorType", a."apiTokenId", a."agentSessionId",
+             a."runId", a."agentName", a."details", a."createdAt",
+             u."displayName" AS "actorDisplayName",
+             u."email" AS "actorEmail"
+        FROM "Activity" a
+        LEFT JOIN "User" u ON u."id" = a."actorId"
+       WHERE ${Prisma.join(conditions, " AND ")}
+       ORDER BY a."createdAt" DESC, a."id" DESC
+       LIMIT ${limit + 1}
+    `);
+  }
+}
+
+/** One raw Activity row plus the actor join. */
+interface ActivityRow {
+  id: string;
+  boardId: string;
+  cardId: string | null;
+  type: string;
+  commentId: string | null;
+  actorId: string;
+  actorType: string;
+  apiTokenId: string | null;
+  agentSessionId: string | null;
+  runId: string | null;
+  agentName: string | null;
+  details: Prisma.JsonValue | null;
+  createdAt: Date;
+  actorDisplayName: string | null;
+  actorEmail: string | null;
 }
 
 /** A feed entry plus the raw sort fields the cursor uses. */
@@ -294,21 +369,20 @@ function readCommandSnapshot(value: Prisma.JsonValue | null): {
   };
 }
 
-function toActivityEntry(row: {
-  id: string;
-  type: string;
-  cardId: string | null;
-  actorId: string;
-  actorType: string;
-  apiTokenId: string | null;
-  agentSessionId: string | null;
-  runId: string | null;
-  agentName: string | null;
-  details: Prisma.JsonValue | null;
-  createdAt: Date;
-  actor: ActorIdentity | null;
-}): RankedEntry {
-  const snapshot = readActivitySnapshot(row.type, row.details);
+function toActivityEntry(
+  row: ActivityRow,
+  context: CommentActivityContext,
+): RankedEntry {
+  const isComment = isCommentActivity(row.type);
+  const snapshot = isComment
+    ? readCommentActivityProjection(row, context)
+    : readActivitySnapshot(row.type, row.details);
+  const detail = isComment
+    ? undefined
+    : (snapshot as { detail?: string }).detail;
+  const projectedCommentId = isComment
+    ? (snapshot as { commentId?: string }).commentId
+    : undefined;
   const entry: ActivityFeedEntry = {
     source: "activity",
     id: row.id,
@@ -319,64 +393,38 @@ function toActivityEntry(row: {
     // membership rows store the target's email, which must not be mistaken
     // for the admin who performed the change.
     ...actorFields(
-      row.actor,
+      {
+        displayName: row.actorDisplayName,
+        email: row.actorEmail ?? "",
+      },
       row.type === "member_left" ? row.details : null,
       true,
     ),
     actorType: toActorType(row.actorType),
     ...attributionFields(row),
     ...(row.cardId ? { cardId: row.cardId } : {}),
-    details: (row.details as Record<string, unknown> | null) ?? null,
-    ...(snapshot.detail !== undefined ? { detail: snapshot.detail } : {}),
+    ...(projectedCommentId !== undefined
+      ? { commentId: projectedCommentId }
+      : {}),
+    // TASK-185.2: comment rows never expose the raw JSON snapshot (deleted
+    // text, legacy ids, revision internals). `changes` below is the only
+    // text-bearing projection, and only under its read rules.
+    ...(isComment
+      ? {}
+      : {
+          details: (row.details as Record<string, unknown> | null) ?? null,
+        }),
+    ...(detail !== undefined ? { detail } : {}),
     ...(snapshot.changes !== undefined ? { changes: snapshot.changes } : {}),
   };
   return { entry, at: entry.at, source: "a", key: row.id };
 }
 
 /**
- * Comment rows carry their text in `Activity.details`, frozen at write
- * time (TASK-37) — the feed turns it into the same Jira-style diff the
- * command log renders: added is `null → text`, deleted is `text → null`,
- * and `detail` keeps the comment id the SSE frames reference. An update has
- * no meaningful before/after in the frozen `{ commentId, text }` snapshot,
- * so it renders as a sentence with the id and no diff. The column is free
- * JSON (legacy rows may lack the text), so the shape is validated here — a
- * malformed row degrades to a sentence-only entry, never a 500.
+ * Comment or membership: whichever the row's type matches. Comment text is
+ * handled separately by the shared visibility projection (TASK-185.2) so the
+ * raw snapshot can never leak through this generic path.
  */
-function readCommentSnapshot(
-  type: string,
-  value: Prisma.JsonValue | null,
-): { detail?: string; changes?: ActivityChange[] } {
-  if (
-    type !== "comment_added" &&
-    type !== "comment_deleted" &&
-    type !== "comment_updated" &&
-    type !== "comment_restored"
-  ) {
-    return {};
-  }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-  const record = value as Record<string, unknown>;
-  const commentId =
-    typeof record.commentId === "string" ? record.commentId : undefined;
-  const text = typeof record.text === "string" ? record.text : undefined;
-  const changes =
-    text === undefined || type === "comment_updated"
-      ? undefined
-      : [
-          type === "comment_deleted"
-            ? { field: "comment", from: text, to: null }
-            : { field: "comment", from: null, to: text },
-        ];
-  return {
-    ...(commentId !== undefined ? { detail: commentId } : {}),
-    ...(changes !== undefined ? { changes } : {}),
-  };
-}
-
-/** Comment or membership: whichever the row's type matches. */
 function readActivitySnapshot(
   type: string,
   value: Prisma.JsonValue | null,
@@ -392,7 +440,6 @@ function readActivitySnapshot(
       ? value.fileName
       : undefined;
   return {
-    ...readCommentSnapshot(type, value),
     ...readMembershipSnapshot(type, value),
     ...(attachment !== undefined ? { detail: attachment } : {}),
   };
@@ -463,20 +510,6 @@ function commandOlderThan(cursor: Cursor | null): Prisma.CommandWhereInput {
     };
   }
   return { createdAt: { lt: new Date(cursor.at) } };
-}
-
-/** Rows strictly older than the cursor: activities half of the tie-break. */
-function activityOlderThan(cursor: Cursor | null): Prisma.ActivityWhereInput {
-  if (!cursor) return {};
-  if (cursor.source === "a") {
-    return {
-      OR: [
-        { createdAt: { lt: new Date(cursor.at) } },
-        { createdAt: new Date(cursor.at), id: { lt: cursor.key } },
-      ],
-    };
-  }
-  return { createdAt: { lte: new Date(cursor.at) } };
 }
 
 /** `at:source:key` — opaque to clients, never parsed by them. */

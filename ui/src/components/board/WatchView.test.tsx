@@ -241,7 +241,7 @@ describe("WatchView (TASK-142)", () => {
     expect(feed).toHaveTextContent("Looks good");
   });
 
-  it("shows deleted comment text as the previous value", async () => {
+  it("renders a deleted comment as a text-free tombstone", async () => {
     hoisted.enabled.value = true;
     hoisted.boardActivity.mockResolvedValue({
       items: [
@@ -252,16 +252,141 @@ describe("WatchView (TASK-142)", () => {
           type: "comment_deleted",
           actorId: "u-1",
           cardId: "card-1",
-          changes: [{ field: "comment", from: "Old text", to: null }],
+          commentId: "comment-1",
+          detail: "comment-1",
+          details: { text: "Old body" },
+          changes: [{ field: "comment", from: "Old body", to: null }],
         },
       ],
       nextCursor: null,
     });
     renderWatch();
     const entry = await screen.findByTestId("watch-entry");
-    expect(entry).toHaveTextContent("Old text");
-    expect(entry.querySelector(".line-through")).toHaveTextContent("Old text");
-    expect(entry).toHaveTextContent("→—");
+    expect(entry).toHaveTextContent("Deleted a comment");
+    expect(entry.querySelector(".line-through")).toBeNull();
+    expect(entry).not.toHaveTextContent("Old body");
+    expect(entry).not.toHaveTextContent("comment-1");
+    expect(entry).not.toHaveTextContent("Show full values");
+  });
+
+  it("invalidates a legacy comment row that only carries detail", async () => {
+    hoisted.enabled.value = true;
+    const live = createBoardLive();
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "legacy-comment",
+          at: Date.now(),
+          type: "comment_added",
+          actorId: "u-1",
+          cardId: "card-1",
+          detail: "comment-legacy",
+          changes: [{ field: "comment", from: null, to: "Legacy body" }],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch(live);
+    expect(await screen.findByText(/Legacy body/)).toBeInTheDocument();
+
+    hoisted.boardActivity.mockResolvedValue({ items: [], nextCursor: null });
+    act(() => {
+      live.activity.publish({
+        type: "activity",
+        id: "activity-legacy-deleted",
+        boardId: BOARD_ID,
+        cardId: "card-1",
+        at: Date.now(),
+        kind: "comment_deleted",
+        detail: "comment-legacy",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Legacy body/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it("renders a comment edit as a character-level diff and truncates it", async () => {
+    hoisted.enabled.value = true;
+    const before = `${"Long context ".repeat(20)}old ending`;
+    const after = `${"Long context ".repeat(20)}new ending`;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "edit",
+          at: Date.now(),
+          type: "comment_updated",
+          actorId: "u-1",
+          cardId: "card-1",
+          changes: [{ field: "comment", from: before, to: after }],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry.querySelector('[data-diff="removed"]')).toHaveTextContent(
+      "old",
+    );
+    expect(entry.querySelector('[data-diff="added"]')).toHaveTextContent("new");
+    // The feed is a snippet: the full repeated context is not rendered.
+    expect(entry.textContent?.length).toBeLessThan(before.length);
+    expect(entry.querySelector(".whitespace-pre-wrap")).not.toBeNull();
+  });
+
+  it("keeps a short change as one plain line-through pair", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "rename",
+          at: Date.now(),
+          type: "UPDATE_CARD",
+          actorId: "u-1",
+          cardId: "card-1",
+          changes: [
+            { field: "title", from: "Initial title", to: "Updated title" },
+          ],
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    // `watch-details.spec` relies on the collapsed row showing the whole
+    // stored value once, struck through — no character split.
+    expect(entry.querySelectorAll(".line-through")).toHaveLength(1);
+    expect(entry.querySelector(".line-through")).toHaveTextContent(
+      "Initial title",
+    );
+    expect(entry.querySelector("[data-diff]")).toBeNull();
+    expect(entry).toHaveTextContent("Initial title→Updated title");
+  });
+
+  it("never falls back to a raw comment id", async () => {
+    hoisted.enabled.value = true;
+    hoisted.boardActivity.mockResolvedValue({
+      items: [
+        {
+          source: "activity",
+          id: "update",
+          at: Date.now(),
+          type: "comment_updated",
+          actorId: "u-1",
+          cardId: "card-1",
+          detail: "comment-raw-id",
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWatch();
+    const entry = await screen.findByTestId("watch-entry");
+    expect(entry).not.toHaveTextContent("comment-raw-id");
+    expect(entry).toHaveTextContent("Edited a comment");
   });
 
   it("does not drop fields when an entry has more than three changes", async () => {

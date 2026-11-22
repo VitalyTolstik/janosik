@@ -177,6 +177,7 @@ export class CommentsService {
               boardId,
               cardId,
               type: "comment_added",
+              commentId: comment.id,
               actorId: authorId,
               actorType: attribution.actorType,
               apiTokenId: attribution.apiTokenId,
@@ -408,6 +409,7 @@ export class CommentsService {
           changed: true as const,
           comment: written.comment,
           activityId: written.activityId,
+          revisionId: written.revisionId,
           at: written.at,
         };
       },
@@ -427,6 +429,7 @@ export class CommentsService {
       "comment_updated",
       comment.id,
       attribution,
+      updated.revisionId,
     );
     await touchAgentSessionAfterWrite(
       this.prisma,
@@ -585,12 +588,14 @@ export class CommentsService {
             boardId: preRead.card.column.boardId,
             cardId: comment.cardId,
             type: "comment_deleted",
+            commentId: comment.id,
             actorId: userId,
             actorType: attribution.actorType,
             apiTokenId: attribution.apiTokenId,
             agentSessionId: attribution.agentSessionId,
             agentName: attribution.agentName,
-            details: { commentId: comment.id, text: comment.text },
+            // TASK-185.2: deletion is a tombstone — no text snapshot.
+            details: { commentId: comment.id },
           },
         });
         return {
@@ -675,6 +680,9 @@ export class CommentsService {
           boardId,
           cardId: comment.cardId,
           type: "comment_restored",
+          // TASK-185.2: the typed link keeps purge/erase and the liveness
+          // projection working without parsing the free-JSON snapshot.
+          commentId: comment.id,
           actorId,
           actorType: attribution.actorType,
           apiTokenId: attribution.apiTokenId,
@@ -802,7 +810,11 @@ export class CommentsService {
       | "comment_restored",
     commentId: string,
     attribution: RequestAttribution,
+    revisionId?: string | null,
   ): void {
+    // TASK-185.2: the frame is a refetch signal, never a body. The typed
+    // `commentId` is the new contract; `detail = commentId` stays for open
+    // tabs that only read the transitional field.
     this.realtime.publish(boardId, {
       type: "activity",
       id: activityId,
@@ -812,7 +824,9 @@ export class CommentsService {
       actorType: attribution.actorType,
       at,
       kind,
+      commentId,
       detail: commentId,
+      ...(revisionId ? { revisionId } : {}),
       ...(attribution.apiTokenId ? { apiTokenId: attribution.apiTokenId } : {}),
       ...(attribution.agentSessionId
         ? { agentSessionId: attribution.agentSessionId }

@@ -73,6 +73,7 @@ import { TtlCache } from "@/common/ttl-cache";
 import { BoardWriteService } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
 import { TrafficService } from "@/common/traffic.service";
+import { RealtimeService } from "@/realtime/realtime.service";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { MailerService } from "@/mailer/mailer.service";
@@ -100,6 +101,10 @@ import { SecurityAuditService } from "@/common/security-audit/security-audit.ser
 import type { RequestAttribution } from "@/auth/request-attribution";
 import type { AdminPrincipal } from "./admin.types";
 import type { AdminListQueryDto } from "./dto/admin-list-query.dto";
+import {
+  ADMIN_COMMENT_ROW_SELECT,
+  toAdminCommentRow,
+} from "./admin-comment-row";
 import { auditIdsForCommands } from "./audit-correlation";
 import type { AdminUpdateEmailSettingsDto } from "./dto/admin-update-email-settings.dto";
 import type { AdminEmailTestDto } from "./dto/admin-email-test.dto";
@@ -198,6 +203,7 @@ export class AdminService {
     private readonly maintenance: MaintenanceService,
     private readonly accountDeletion: AccountDeletionService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -2071,37 +2077,13 @@ export class AdminService {
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
-        select: {
-          id: true,
-          cardId: true,
-          authorId: true,
-          text: true,
-          kind: true,
-          createdAt: true,
-          updatedAt: true,
-          editedAt: true,
-          deletedAt: true,
-          card: { select: { title: true } },
-          author: { select: { email: true } },
-        },
+        select: ADMIN_COMMENT_ROW_SELECT,
       }),
       this.prisma.comment.count({ where }),
     ]);
 
     return {
-      items: items.map((comment) => ({
-        id: comment.id,
-        cardId: comment.cardId,
-        cardTitle: comment.card.title,
-        authorId: comment.authorId,
-        authorEmail: comment.author.email,
-        text: comment.text,
-        kind: comment.kind as AdminCommentRowDto["kind"],
-        createdAt: comment.createdAt.getTime(),
-        updatedAt: comment.updatedAt.getTime(),
-        editedAt: comment.editedAt?.getTime() ?? null,
-        deletedAt: comment.deletedAt?.getTime() ?? null,
-      })),
+      items: items.map(toAdminCommentRow),
       total,
       limit,
       offset,
@@ -2114,19 +2096,71 @@ export class AdminService {
   ): Promise<{ status: "ok" }> {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, author: { select: { email: true } } },
+      select: {
+        id: true,
+        cardId: true,
+        deletedAt: true,
+        author: { select: { email: true } },
+        card: { select: { column: { select: { boardId: true } } } },
+      },
     });
     if (!comment) {
       throw new NotFoundException("Comment not found");
     }
-    await this.prisma.comment.update({
-      where: { id: commentId },
-      data: { deletedAt: new Date() },
-    });
+    // TASK-185.2: a duplicate delete is a quiet 200 — no second tombstone
+    // frame and no second audit-visible mutation.
+    if (comment.deletedAt === null) {
+      const removed = await this.boardWrite.run(
+        comment.card.column.boardId,
+        async (tx) => {
+          // Re-read under the board lock: a concurrent author delete or edit
+          // must decide the transition, not the pre-lock copy.
+          const live = await tx.comment.findFirst({
+            where: { id: commentId, deletedAt: null },
+            select: { id: true, cardId: true },
+          });
+          if (!live) return null;
+          const updated = await tx.comment.updateMany({
+            where: { id: commentId, deletedAt: null },
+            data: { deletedAt: new Date() },
+          });
+          return updated.count > 0 ? live : null;
+        },
+      );
+      if (removed !== null) {
+        this.publishMasterCommentDeleted(
+          comment.card.column.boardId,
+          removed.cardId,
+          commentId,
+        );
+      }
+    }
     await this.audit(admin, "comment.delete", "comment", commentId, {
       authorEmail: comment.author.email,
     });
     return { status: "ok" };
+  }
+
+  /**
+   * TASK-185.2 master deletion frame: a new client reconciles by
+   * `commentId ?? detail`, but the frame carries no actor id or attribution —
+   * the master identity lives only in `AdminAuditLog`.
+   */
+  private publishMasterCommentDeleted(
+    boardId: string,
+    cardId: string,
+    commentId: string,
+  ): void {
+    this.realtime.publish(boardId, {
+      type: "activity",
+      id: randomUUID(),
+      boardId,
+      cardId,
+      at: Date.now(),
+      kind: "comment_deleted",
+      commentId,
+      detail: commentId,
+    });
   }
 
   // ------------------------------------------------------- log and audit
@@ -3318,16 +3352,35 @@ export class AdminService {
         const row = await this.prisma.comment.findUnique({
           where: { id },
           select: {
+            cardId: true,
+            deletedAt: true,
             card: { select: { column: { select: { boardId: true } } } },
           },
         });
         if (!row) throw new NotFoundException("Comment not found");
-        await this.boardWrite.run(row.card.column.boardId, (tx) =>
-          tx.comment.update({
-            where: { id },
+        const boardId = row.card.column.boardId;
+        if (when === null) {
+          await this.boardWrite.run(boardId, (tx) =>
+            tx.comment.update({
+              where: { id },
+              data: { deletedAt: when },
+            }),
+          );
+          return;
+        }
+        // TASK-185.2: deleting through a master entity/bulk action runs under
+        // the board-write lock and publishes one tombstone only on a real
+        // null → deleted transition. A duplicate publishes nothing.
+        const removed = await this.boardWrite.run(boardId, async (tx) => {
+          const updated = await tx.comment.updateMany({
+            where: { id, deletedAt: null },
             data: { deletedAt: when },
-          }),
-        );
+          });
+          return updated.count > 0;
+        });
+        if (removed) {
+          this.publishMasterCommentDeleted(boardId, row.cardId, id);
+        }
         return;
       }
       case "attachments": {

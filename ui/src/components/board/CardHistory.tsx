@@ -27,7 +27,12 @@ import { useToast } from "@/components/Toast";
 import { cn } from "@/lib/utils";
 import { formatDate, formatRelative, useHour12, useI18n } from "@/i18n";
 import { useBoardLive, useBoardMember } from "@/store/board-live";
-import { FIELD_KEYS, sentenceFor } from "@/utils/activity";
+import {
+  FIELD_KEYS,
+  isStaleDeletedCommentEntry,
+  reconcileRestoredComments,
+  sentenceFor,
+} from "@/utils/activity";
 import { AgentAttribution } from "@/components/agents/AgentAttribution";
 import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSegment } from "@/utils/diff-words";
@@ -73,26 +78,61 @@ export function CardHistory({
   // Distinguishes a real empty history from the first page still in flight.
   const [loaded, setLoaded] = useState(!serverMode);
   const aliveRef = useRef(true);
+  // TASK-185.2: an in-flight page can resolve after the deletion frame.
+  const deletedCommentIdsRef = useRef(new Map<string, number>());
+  const deletionGenerationRef = useRef(0);
+  const reconcileFreshPage = useCallback(
+    (items: ActivityFeedEntry[], requestGeneration: number) => {
+      reconcileRestoredComments(
+        items,
+        deletedCommentIdsRef.current,
+        requestGeneration,
+        (entry) => entry.commentId ?? entry.detail,
+      );
+    },
+    [],
+  );
+  const withoutStaleDeleted = useCallback(
+    (items: ActivityFeedEntry[], requestGeneration: number) =>
+      items.filter(
+        (entry) =>
+          !isStaleDeletedCommentEntry(
+            entry,
+            deletedCommentIdsRef.current,
+            requestGeneration,
+          ),
+      ),
+    [],
+  );
+  /** Fresh page rows win on an id collision (a restore changes the projection). */
+  const replacePageRows = useCallback(
+    (items: ActivityFeedEntry[], pageItems: ActivityFeedEntry[]) => {
+      const fresh = new Map(pageItems.map((entry) => [entry.id, entry]));
+      return items.map((entry) => fresh.get(entry.id) ?? entry);
+    },
+    [],
+  );
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const loadFirst = useCallback(async () => {
     if (!serverMode) return;
+    const generation = deletionGenerationRef.current;
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setFeed(page);
+      reconcileFreshPage(page.items, generation);
+      setFeed({ ...page, items: withoutStaleDeleted(page.items, generation) });
     } catch {
       if (!aliveRef.current) return;
       toast.error(t("history.loadError"));
     } finally {
       if (aliveRef.current) setLoaded(true);
     }
-  }, [cardId, serverMode, t, toast]);
+  }, [cardId, reconcileFreshPage, serverMode, t, toast, withoutStaleDeleted]);
 
   // Threads are keyed by card id upstream, so mount state is the reset.
   useEffect(() => {
     aliveRef.current = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
     void loadFirst();
     return () => {
       aliveRef.current = false;
@@ -101,16 +141,31 @@ export function CardHistory({
 
   const refreshNewest = useCallback(async () => {
     if (!serverMode) return;
+    const generation = deletionGenerationRef.current;
     try {
       const page = await api.cardActivity(cardId, undefined, PAGE_SIZE);
       if (!aliveRef.current) return;
-      setFeed((current) =>
-        current ? mergeNewestActivity(current, page) : page,
-      );
+      reconcileFreshPage(page.items, generation);
+      setFeed((current) => {
+        const merged = current ? mergeNewestActivity(current, page) : page;
+        return {
+          ...merged,
+          items: withoutStaleDeleted(
+            replacePageRows(merged.items, page.items),
+            generation,
+          ),
+        };
+      });
     } catch {
       /* best effort */
     }
-  }, [cardId, serverMode]);
+  }, [
+    cardId,
+    reconcileFreshPage,
+    replacePageRows,
+    serverMode,
+    withoutStaleDeleted,
+  ]);
 
   // A committed edit moves `updatedAt` (once per editing session — quiet
   // keystrokes only touch it at the end), so this is a cheap trigger for a
@@ -128,6 +183,29 @@ export function CardHistory({
     if (!serverMode) return;
     return activity.subscribe((event: ActivitySseEvent) => {
       if (event.boardId !== boardId || event.cardId !== cardId) return;
+      if (event.kind === "comment_deleted") {
+        const deletedId = event.commentId ?? event.detail;
+        if (deletedId) {
+          deletionGenerationRef.current += 1;
+          deletedCommentIdsRef.current.set(
+            deletedId,
+            deletionGenerationRef.current,
+          );
+          // TASK-185.2: drop the cached text/diff immediately and let the
+          // refetch return the text-free tombstones. Keying on the typed id
+          // also works for an actor-less master frame.
+          setFeed((current) =>
+            current
+              ? {
+                  ...current,
+                  items: current.items.filter(
+                    (entry) => (entry.commentId ?? entry.detail) !== deletedId,
+                  ),
+                }
+              : current,
+          );
+        }
+      }
       void refreshNewest();
     });
   }, [activity, boardId, cardId, serverMode, refreshNewest]);
@@ -146,12 +224,22 @@ export function CardHistory({
 
   const handleShowOlder = async () => {
     if (nextCursor === null || loadingOlder) return;
+    const generation = deletionGenerationRef.current;
     setLoadingOlder(true);
     try {
       const page = await api.cardActivity(cardId, nextCursor, PAGE_SIZE);
-      setFeed((current) =>
-        current ? appendOlderActivity(current, page, nextCursor) : current,
-      );
+      reconcileFreshPage(page.items, generation);
+      setFeed((current) => {
+        if (!current) return current;
+        const merged = appendOlderActivity(current, page, nextCursor);
+        return {
+          ...merged,
+          items: withoutStaleDeleted(
+            replacePageRows(merged.items, page.items),
+            generation,
+          ),
+        };
+      });
     } catch {
       toast.error(t("history.loadError"));
     } finally {
@@ -301,7 +389,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
           );
 
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
-  const changes = renderedChanges(entry.changes);
+  const changes = renderedChanges(entry);
 
   return (
     <li
@@ -440,10 +528,13 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
  * value the reader needs to see.
  */
 function renderedChanges(
-  changes: ActivityChange[] | undefined,
+  entry: ActivityFeedEntry,
 ): ActivityChange[] | undefined {
-  if (changes === undefined) return undefined;
-  const visible = changes.filter(
+  // Deletion is a metadata-only tombstone: a legacy/cached payload must not
+  // resurrect the old body or a text → null diff.
+  if (entry.type === "comment_deleted") return undefined;
+  if (entry.changes === undefined) return undefined;
+  const visible = entry.changes.filter(
     (change) => change.field !== "checklistItemDone",
   );
   return visible.length > 0 ? visible : undefined;
@@ -459,7 +550,10 @@ function DiffSegments({ segments }: { segments: DiffSegment[] }) {
       {segments.map((segment, index) => {
         if (segment.kind === "same") {
           return (
-            <span key={index} className="text-foreground/70">
+            <span
+              key={index}
+              className="whitespace-pre-wrap text-foreground/70"
+            >
               {segment.text}
             </span>
           );
@@ -469,7 +563,7 @@ function DiffSegments({ segments }: { segments: DiffSegment[] }) {
             key={index}
             data-diff={segment.kind}
             className={cn(
-              "rounded-sm px-0.5 font-medium",
+              "whitespace-pre-wrap rounded-sm px-0.5 font-medium",
               segment.kind === "removed"
                 ? "bg-danger/10 text-(--chip-red) line-through decoration-danger/50"
                 : "bg-success/10 text-(--chip-green)",
@@ -530,5 +624,9 @@ function HistoryValue({
       </span>
     );
   }
-  return <span className={cn("text-foreground/80", className)}>{value}</span>;
+  return (
+    <span className={cn("whitespace-pre-wrap text-foreground/80", className)}>
+      {value}
+    </span>
+  );
 }

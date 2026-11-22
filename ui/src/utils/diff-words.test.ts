@@ -60,6 +60,25 @@ describe("diffSides", () => {
     });
   });
 
+  it("keeps only the head when the collapsed row must hide its tail", () => {
+    const long = "0123456789".repeat(10);
+    const sides = diffSides(`${long}old end`, `${long}new end`, {
+      headOnly: true,
+    });
+    expect(text(sides!.left)).toBe(`same:…${long.slice(-12)}|removed:old`);
+    expect(text(sides!.right)).toBe(`same:…${long.slice(-12)}|added:new`);
+
+    const replaced = diffSides("x".repeat(300), "z".repeat(300), {
+      headOnly: true,
+    });
+    expect(replaced!.left).toEqual([
+      { text: `${"x".repeat(60)}…`, kind: "removed" },
+    ]);
+    expect(replaced!.right).toEqual([
+      { text: `${"z".repeat(60)}…`, kind: "added" },
+    ]);
+  });
+
   it("deals with a complete replacement (no common parts)", () => {
     const sides = diffSides("aaaa", "bbbb");
     expect(text(sides!.left)).toBe("removed:aaaa");

@@ -154,6 +154,49 @@ export function CardComments({
   const [pendingDelete, setPendingDelete] = useState<CommentDto | null>(null);
   const pendingAuthor = useBoardMember(boardId, pendingDelete?.authorId);
   const deletingIdRef = useRef<string | null>(null);
+  // TASK-185.2: an in-flight list fetch can resolve after the delete frame.
+  // Map id → deletion generation so a response that started after the delete
+  // is authoritative (it may contain a restored comment), while an older
+  // in-flight page cannot put the body back.
+  const deletedIdsRef = useRef(new Map<string, number>());
+  const deletionGenerationRef = useRef(0);
+  const markCommentDeleted = useCallback((commentId: string) => {
+    deletionGenerationRef.current += 1;
+    deletedIdsRef.current.set(commentId, deletionGenerationRef.current);
+  }, []);
+  const scrubItems = useCallback(
+    <T extends { id: string }>(items: T[], requestGeneration: number) => {
+      const kept: T[] = [];
+      for (const item of items) {
+        const deletedAt = deletedIdsRef.current.get(item.id);
+        if (deletedAt === undefined) {
+          kept.push(item);
+        } else if (deletedAt <= requestGeneration) {
+          // A fresh response still has the row: it was restored, stop hiding.
+          deletedIdsRef.current.delete(item.id);
+          kept.push(item);
+        }
+      }
+      return { items: kept, removed: items.length - kept.length };
+    },
+    [],
+  );
+  const scrubPage = useCallback(
+    (
+      page: ActivityPage<CommentDto>,
+      requestGeneration: number,
+    ): ActivityPage<CommentDto> => {
+      const { items, removed } = scrubItems(page.items, requestGeneration);
+      return {
+        ...page,
+        items,
+        ...(page.total !== undefined
+          ? { total: Math.max(0, page.total - removed) }
+          : {}),
+      };
+    },
+    [scrubItems],
+  );
   const pendingAuthorName = commentAuthorLabel(
     pendingDelete?.authorId ?? "",
     pendingAuthor,
@@ -175,10 +218,11 @@ export function CardComments({
     async (kind: CommentKind | undefined) => {
       if (!serverMode) return;
       const seq = ++loadSeqRef.current;
+      const generation = deletionGenerationRef.current;
       try {
         const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
         if (!aliveRef.current || seq !== loadSeqRef.current) return;
-        setThread(page);
+        setThread(scrubPage(page, generation));
         setStatus("ready");
         loadedKindRef.current = kind;
         setLoadedKind(kind);
@@ -199,14 +243,13 @@ export function CardComments({
         }
       }
     },
-    [cardId, markUnavailable, serverMode, t, toast],
+    [cardId, markUnavailable, scrubPage, serverMode, t, toast],
   );
 
   // A different card means a different thread: the parent remounts this
   // component with `key={cardId}`, so the initial state is the reset.
   useEffect(() => {
     aliveRef.current = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the thread lands after the await, not synchronously
     void loadFirst(requestedKind);
     return () => {
       aliveRef.current = false;
@@ -324,19 +367,33 @@ export function CardComments({
     // SSE can fire while a chip change is in flight; read and merge only for
     // the kind the visible thread was actually loaded with.
     const kind = loadedKindRef.current;
+    const generation = deletionGenerationRef.current;
     try {
       const page = await api.listComments(cardId, undefined, PAGE_SIZE, kind);
       if (!aliveRef.current || kind !== loadedKindRef.current) return;
-      setThread((current) =>
-        mergeNewestActivity(current, page, isPendingComment),
-      );
+      const cleanPage = scrubPage(page, generation);
+      setThread((current) => {
+        const merged = mergeNewestActivity(
+          current,
+          cleanPage,
+          isPendingComment,
+        );
+        const { items, removed } = scrubItems(merged.items, generation);
+        return {
+          ...merged,
+          items,
+          ...(merged.total !== undefined
+            ? { total: Math.max(0, merged.total - removed) }
+            : {}),
+        };
+      });
       setStatus("ready");
     } catch (error) {
       if (aliveRef.current && kind === loadedKindRef.current) {
         markUnavailable(error);
       }
     }
-  }, [cardId, markUnavailable, serverMode]);
+  }, [cardId, markUnavailable, scrubItems, scrubPage, serverMode]);
 
   // An edit is not in the frame body either: re-read the loaded pages until
   // the edited row is found and replace matching rows in place, keeping the
@@ -349,8 +406,14 @@ export function CardComments({
       const kind = loadedKindRef.current;
       const loaded = itemsRef.current;
       const target = commentId === "" ? undefined : commentId;
-      // An edit of a row this client has not loaded is not rendered here.
-      if (target !== undefined && !loaded.some((item) => item.id === target)) {
+      const generation = deletionGenerationRef.current;
+      // An edit of a row this client has not loaded is not rendered here —
+      // unless it is a restore of a locally tombstoned comment.
+      if (
+        target !== undefined &&
+        !loaded.some((item) => item.id === target) &&
+        !deletedIdsRef.current.has(target)
+      ) {
         return;
       }
       try {
@@ -372,9 +435,18 @@ export function CardComments({
           cursor = page.nextCursor;
         }
         if (!aliveRef.current || kind !== loadedKindRef.current) return;
-        setThread((current) => ({
-          ...current,
-          items: current.items.flatMap((comment) => {
+        const restoredTarget =
+          target !== undefined ? byId.get(target) : undefined;
+        if (restoredTarget !== undefined) {
+          // Only a response that started after the deletion may clear the
+          // marker; a stale edit response must not resurrect the body.
+          const deletedAt = deletedIdsRef.current.get(restoredTarget.id);
+          if (deletedAt !== undefined && deletedAt <= generation) {
+            deletedIdsRef.current.delete(restoredTarget.id);
+          }
+        }
+        setThread((current) => {
+          const items = current.items.flatMap((comment) => {
             // Under a kind filter an edit can move the row out of the
             // visible page; drop it instead of leaving a stale chip match.
             if (
@@ -385,15 +457,29 @@ export function CardComments({
               return [];
             }
             return [byId.get(comment.id) ?? comment];
-          }),
-        }));
+          });
+          if (
+            restoredTarget !== undefined &&
+            !items.some((item) => item.id === restoredTarget.id)
+          ) {
+            items.push(restoredTarget);
+          }
+          const scrubbed = scrubItems(items, generation);
+          return {
+            ...current,
+            items: scrubbed.items,
+            ...(current.total !== undefined
+              ? { total: Math.max(0, current.total - scrubbed.removed) }
+              : {}),
+          };
+        });
       } catch (error) {
         if (aliveRef.current && kind === loadedKindRef.current) {
           markUnavailable(error);
         }
       }
     },
-    [cardId, markUnavailable, serverMode],
+    [cardId, markUnavailable, scrubItems, serverMode],
   );
 
   useEffect(() => {
@@ -405,11 +491,22 @@ export function CardComments({
         return;
       }
       if (event.kind === "comment_updated") {
-        void refreshEdited(event.detail ?? "");
+        void refreshEdited(event.commentId ?? event.detail ?? "");
         return;
       }
-      if (event.kind === "comment_deleted" && event.detail) {
-        const deletedId = event.detail;
+      if (event.kind === "comment_deleted") {
+        const deletedId = event.commentId ?? event.detail;
+        if (!deletedId) return;
+        // TASK-185.2: a master/admin frame omits the actor, so invalidation
+        // must key on the comment id, never on attribution. Drop the loaded
+        // body and any open confirmation that still quotes it.
+        markCommentDeleted(deletedId);
+        if (itemsRef.current.some((item) => item.id === deletedId)) {
+          adjustUnfilteredCount(-1);
+        }
+        setPendingDelete((current) =>
+          current?.id === deletedId ? null : current,
+        );
         setThread((current) => ({
           ...current,
           items: current.items.filter((comment) => comment.id !== deletedId),
@@ -421,7 +518,37 @@ export function CardComments({
         void refreshNewest();
       }
     });
-  }, [activity, boardId, cardId, serverMode, refreshNewest, refreshEdited]);
+  }, [
+    activity,
+    adjustUnfilteredCount,
+    boardId,
+    cardId,
+    serverMode,
+    refreshNewest,
+    refreshEdited,
+    markCommentDeleted,
+  ]);
+
+  // Coming back to a background tab, restoring the network or reconnecting
+  // can all hide a revoked membership or a deleted comment. Re-check the
+  // newest page; a 403/404 drops the loaded thread through `markUnavailable`.
+  useEffect(() => {
+    if (!serverMode) return;
+    const recheck = () => {
+      void refreshNewest();
+    };
+    const onVisibility = () => {
+      if (!document.hidden) recheck();
+    };
+    window.addEventListener("focus", recheck);
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshNewest, serverMode]);
 
   const trimmed = draft.trim();
   const canSend =
@@ -516,6 +643,7 @@ export function CardComments({
     // works instead of silently dropping the second confirmation.
     if (comment === null || deletingIdRef.current === comment.id) return;
     deletingIdRef.current = comment.id;
+    markCommentDeleted(comment.id);
     const index = itemsRef.current.findIndex((item) => item.id === comment.id);
     const previousTotal = total;
     setPendingDelete(null);
@@ -543,6 +671,8 @@ export function CardComments({
         return;
       }
       toast.error(t("comment.deleteError"));
+      // The DELETE failed: allow the restored row through future merges.
+      deletedIdsRef.current.delete(comment.id);
       // Keep the loaded pages intact: reinsert the row where it was instead
       // of resetting to page 1 (which would drop comments loaded from 2+).
       setThread((current) => {
@@ -563,11 +693,23 @@ export function CardComments({
   const handleShowOlder = async () => {
     if (nextCursor === null || loadingOlder) return;
     const kind = loadedKindRef.current;
+    const generation = deletionGenerationRef.current;
     setLoadingOlder(true);
     try {
       const page = await api.listComments(cardId, nextCursor, PAGE_SIZE, kind);
       if (kind !== loadedKindRef.current) return;
-      setThread((current) => appendOlderActivity(current, page, nextCursor));
+      const cleanPage = scrubPage(page, generation);
+      setThread((current) => {
+        const merged = appendOlderActivity(current, cleanPage, nextCursor);
+        const { items, removed } = scrubItems(merged.items, generation);
+        return {
+          ...merged,
+          items,
+          ...(merged.total !== undefined
+            ? { total: Math.max(0, merged.total - removed) }
+            : {}),
+        };
+      });
     } catch (error) {
       markUnavailable(error);
       toast.error(t("comment.loadError"));

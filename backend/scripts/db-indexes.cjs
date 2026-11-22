@@ -41,9 +41,10 @@ const STATEMENTS = [
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailVerificationCode_consumedAt_idx" ON "EmailVerificationCode"("consumedAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailChangeCode_expiresAt_idx" ON "EmailChangeCode"("expiresAt")`,
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "EmailChangeCode_consumedAt_idx" ON "EmailChangeCode"("consumedAt")`,
-  // TASK-185.1: comment-history trim/purge look up Activity snapshots by
-  // JSON details while holding a board lock.
-  `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_commentId_expr_idx" ON "Activity" ((("details"->>'commentId')))`,
+  // TASK-185.2 deliberately does not prebuild `Activity_commentId_idx`: the
+  // `commentId` column is added by migration 20261122120000, so a concurrent
+  // prebuild would fail on an older install. That migration creates the
+  // index inline with IF NOT EXISTS instead.
   `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Activity_revisionId_expr_idx" ON "Activity" ((("details"->>'revisionId')))`,
 ];
 

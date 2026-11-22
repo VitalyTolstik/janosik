@@ -1978,6 +1978,10 @@ paths:
       description: |
         Merges the command log with Activity rows, newest first. Every board
         member can read it. The same audit filters apply to both sources.
+        TASK-185.2: `comment_updated` rows are visible only while the comment
+        and its parent chain are live; `comment_added` / `comment_deleted`
+        stay as metadata-only tombstones. Comment text is exposed only through
+        the protected `changes` projection, never raw `details`.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -2195,6 +2199,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusOk"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /comments/{commentId}/revisions:
+    parameters:
+      - $ref: "#/components/parameters/CommentId"
+    get:
+      tags: [Comments]
+      operationId: listCommentRevisions
+      summary: List the edit history of a live comment
+      description: |
+        Read-only. Board `ADMIN`, `MEMBER` and an active `VIEWER` may read the
+        history with a JWT or a scoped PAT that grants board read access; a
+        non-member or an expired membership answers `403`. A missing or deleted
+        comment, card, column or board answers `404`. Pages are ordered by
+        `revisionNumber` descending. `limit` defaults to 20 and caps at 100;
+        `cursor` is opaque and bound to this comment, and a malformed or foreign
+        cursor answers `400` after the access check. Every page — including an
+        empty one — carries the live `historyIncomplete` flag and reason. If
+        the writer chain fails reconciliation, the route returns `items: []`,
+        `nextCursor: null`, `historyIncomplete: true` and
+        `historyIncompleteReason: writer_gap` even before the reconciliation
+        sweep persists the reason. `editorName` is the editor's current public
+        display name and is `null` when the editor or the name is unavailable.
+        Token and session identifiers are never returned.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/RevisionLimit"
+      responses:
+        "200":
+          description: A page of immutable text-edit snapshots, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentRevisionPage"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -3080,6 +3121,15 @@ components:
       in: query
       required: false
       description: Page size; default 50, maximum 100. Values outside 1–100 are `400`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    RevisionLimit:
+      name: limit
+      in: query
+      required: false
+      description: Revision page size; default 20, maximum 100. Values outside 1–100 are `400`.
       schema:
         type: integer
         minimum: 1
@@ -6234,6 +6284,70 @@ components:
             $ref: "#/components/schemas/Comment"
         nextCursor:
           type: [string, "null"]
+    CommentRevisionCause:
+      type: string
+      description: Why the snapshot was written.
+      enum: [author_edit, attachment_deleted, system]
+    CommentHistoryIncompleteReason:
+      type: string
+      description: Most severe reason the saved history is incomplete.
+      enum: [legacy_cutover, revision_limit, gdpr_erase, writer_gap]
+    CommentRevision:
+      type: object
+      required:
+        [
+          id,
+          revisionNumber,
+          createdAt,
+          editorId,
+          editorName,
+          actorType,
+          agentName,
+          cause,
+          beforeText,
+          afterText,
+        ]
+      properties:
+        id:
+          type: string
+        revisionNumber:
+          type: integer
+          minimum: 1
+          description: Monotonic per comment, even after trimming and erase.
+        createdAt:
+          type: integer
+          description: Unix ms of the edit.
+        editorId:
+          type: [string, "null"]
+        editorName:
+          type: [string, "null"]
+          description: Current public display name; null when the editor or the name is unavailable.
+        actorType:
+          $ref: "#/components/schemas/ActorType"
+        agentName:
+          type: [string, "null"]
+        cause:
+          $ref: "#/components/schemas/CommentRevisionCause"
+        beforeText:
+          type: string
+        afterText:
+          type: string
+    CommentRevisionPage:
+      type: object
+      required: [items, nextCursor, historyIncomplete, historyIncompleteReason]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommentRevision"
+        nextCursor:
+          type: [string, "null"]
+        historyIncomplete:
+          type: boolean
+        historyIncompleteReason:
+          oneOf:
+            - $ref: "#/components/schemas/CommentHistoryIncompleteReason"
+            - type: "null"
     CreateCommentRequest:
       type: object
       required: [text]
@@ -6347,6 +6461,9 @@ components:
           type: string
         cardId:
           type: string
+        commentId:
+          type: string
+          description: TASK-185.2 comment link for `comment_*` entries; no text.
         details:
           type: [object, "null"]
           additionalProperties: true

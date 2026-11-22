@@ -1753,7 +1753,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           // thing in `Card.lastActorId`, so a reload seeds the identical
           // value). Someone else's comment earns the 2 s ring, exactly
           // like a foreign command; my own stays anonymous to me.
-          if (event.kind === "comment_added" && event.cardId !== undefined) {
+          if (
+            event.kind === "comment_added" &&
+            event.cardId !== undefined &&
+            event.actorId !== undefined
+          ) {
             live.attribution.stamp(
               event.boardId,
               event.actorId,

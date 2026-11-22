@@ -79,7 +79,7 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     );
   });
 
-  it("offers a 44 px close hit area on mobile and a compact one on desktop", async () => {
+  it("offers a 44 px close hit area on touch layouts and a compact one on desktop", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: "Open" }));
@@ -90,7 +90,9 @@ describe("modal focus trap and return (TASK-179.9)", () => {
     expect(close).not.toBeNull();
     expect(close?.className).toContain("h-11");
     expect(close?.className).toContain("w-11");
-    expect(close?.className).toContain("md:h-8");
+    // TASK-177.7: tablet widths keep the 44 px target; only desktop compacts.
+    expect(close?.className).toContain("lg:h-8");
+    expect(close?.className).toContain("lg:w-8");
   });
 
   it("closes on Escape even when the dialog contains an expanded inline combobox", async () => {
