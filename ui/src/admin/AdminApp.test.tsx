@@ -805,6 +805,37 @@ describe("AdminApp", () => {
     expect(await screen.findByText(t("admin.login.locked"))).toBeTruthy();
   });
 
+  it("hides the closed phone drawer from focus and names icon-only controls (QA-A11/A12)", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(max-width: 639px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin");
+
+    const sidebar = await screen.findByTestId("admin-sidebar");
+    await waitFor(() => expect(sidebar).toHaveAttribute("inert"));
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    // Icon-only controls keep an accessible name at phone widths.
+    expect(
+      screen.getByRole("button", { name: t("admin.search.title") }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: t("admin.nav.logout") }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("admin-sidebar-toggle"));
+    await waitFor(() => expect(sidebar).not.toHaveAttribute("inert"));
+    expect(sidebar).not.toHaveAttribute("aria-hidden");
+  });
+
   it("collapses the sidebar to an icon rail and remembers the choice", async () => {
     localStorage.clear();
     const server = serverWith();

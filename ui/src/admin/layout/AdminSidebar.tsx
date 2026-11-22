@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
@@ -42,10 +42,12 @@ import {
  */
 export function AdminSidebar({
   collapsed,
+  mobile,
   mobileOpen,
   onNavigate,
 }: {
   collapsed: boolean;
+  mobile: boolean;
   mobileOpen: boolean;
   onNavigate: () => void;
 }) {
@@ -55,6 +57,20 @@ export function AdminSidebar({
   const [allOpen, setAllOpen] = useState(false);
   const activeTab = new URLSearchParams(search).get("tab");
   const isOwner = admin?.role === "OWNER";
+  const asideRef = useRef<HTMLElement | null>(null);
+
+  // QA-A12: the phone drawer is only translated off-screen while closed, so
+  // keyboard focus could still reach invisible links. Mark the panel inert
+  // (and hidden from assistive tech) until it is actually open.
+  useEffect(() => {
+    const node = asideRef.current;
+    if (node === null) return;
+    if (mobile && !mobileOpen) {
+      node.setAttribute("inert", "");
+      return;
+    }
+    node.removeAttribute("inert");
+  }, [mobile, mobileOpen]);
 
   const activeHub = (key: AdminHubKey): boolean => {
     if (key === "overview")
@@ -73,10 +89,12 @@ export function AdminSidebar({
   return (
     <>
       <aside
+        ref={asideRef}
         data-testid="admin-sidebar"
         data-collapsed={collapsed ? "true" : "false"}
         data-mobile-open={mobileOpen ? "true" : "false"}
         aria-label={t("admin.hub.navLabel")}
+        aria-hidden={mobile && !mobileOpen ? true : undefined}
         className="admin-sidebar flex shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm"
       >
         <NavLink
