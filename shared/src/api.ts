@@ -2069,7 +2069,8 @@ export interface PlanApplyResponse extends CommandBatchResponse {
  * Stable wire names of the attention categories (ADR §10.5). `token.revoked`
  * is emitted by the personal-token revocation path; the owner is the only
  * recipient. `comment.mention` (TASK-177.12) goes to each mentioned board
- * member except the comment author.
+ * member except the comment author. `card.assigned` (TASK-177.20) goes to the
+ * new assignee once per command batch, coalescing several cards into one row.
  */
 export const ATTENTION_NOTIFICATION_TYPES = [
   "approval.requested",
@@ -2080,6 +2081,7 @@ export const ATTENTION_NOTIFICATION_TYPES = [
   "agent.blocked",
   "agent.needs_human",
   "comment.mention",
+  "card.assigned",
   "claim.expired",
   "quota.exceeded",
   "token.revoked",

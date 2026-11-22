@@ -3383,6 +3383,7 @@ components:
             - agent.blocked
             - agent.needs_human
             - comment.mention
+            - card.assigned
             - claim.expired
             - quota.exceeded
             - token.revoked

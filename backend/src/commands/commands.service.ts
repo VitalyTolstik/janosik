@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
 import type { ApprovalRequest, Prisma } from "@prisma/client";
@@ -67,6 +68,7 @@ import {
   type InternalCommandEvent,
   RealtimeService,
 } from "@/realtime/realtime.service";
+import { AttentionService } from "@/notifications/attention.service";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import {
   type EntityParentageLedger,
@@ -171,6 +173,43 @@ export interface RunContext {
   clientRunId?: string;
   planHash?: string;
   revertsRunId?: string;
+}
+
+/** One changed assignment after collapsing a batch to its last write per card. */
+export interface AppliedCardAssignment {
+  cardId: string;
+  assigneeId: string | null;
+  seq: number;
+}
+
+/**
+ * TASK-177.20: the assignment fan-out sees only commands this call actually
+ * wrote. A replay returns a stored response and contributes no event, and a
+ * no-op assignment has no `card:` touch, so neither can notify. Keeping the
+ * last change per card also lets a trailing unassign cancel an earlier
+ * assignment in the same batch.
+ */
+export function changedCardAssignments(
+  events: ReadonlyArray<
+    Pick<InternalCommandEvent, "action" | "touches" | "seq">
+  >,
+): AppliedCardAssignment[] {
+  const latest = new Map<string, AppliedCardAssignment>();
+  for (const event of events) {
+    const action = event.action;
+    if (action.type !== "SET_CARD_ASSIGN") continue;
+    if (!event.touches.includes(`card:${action.cardId}`)) continue;
+    const assigneeId =
+      action.assigneeId === null || action.assigneeId.trim() === ""
+        ? null
+        : action.assigneeId;
+    latest.set(action.cardId, {
+      cardId: action.cardId,
+      assigneeId,
+      seq: event.seq,
+    });
+  }
+  return [...latest.values()];
 }
 
 /** Result of {@link CommandsService.applyBatch}. */
@@ -287,6 +326,7 @@ export class CommandsService {
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
     private readonly approvals: ApprovalsService,
+    @Optional() private readonly attention?: AttentionService,
   ) {}
 
   /**
@@ -867,6 +907,17 @@ export class CommandsService {
       this.realtime,
       attribution.agentSessionId,
     );
+    // TASK-177.20: notifications run after the board transaction committed
+    // and only for commands this call wrote. Replays and no-ops contribute no
+    // event/touch, so neither can resurrect a row or send a letter.
+    const assignments = changedCardAssignments(applied.events);
+    if (assignments.length > 0) {
+      await this.attention?.notifyCardsAssigned({
+        boardId,
+        actorId,
+        assignments,
+      });
+    }
     return {
       results: applied.responses,
       runId: applied.runId,

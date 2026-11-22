@@ -340,6 +340,10 @@ const DIGEST_ATTENTION_LABELS: Record<
     ru: "агентов ждут человека",
   },
   "comment.mention": { en: "mentions", ru: "упоминаний" },
+  "card.assigned": {
+    en: "cards assigned to you",
+    ru: "назначенных вам карточек",
+  },
   "claim.expired": { en: "expired claims", ru: "истёкших захватов" },
   "quota.exceeded": { en: "limit warnings", ru: "предупреждений о лимитах" },
   "token.revoked": { en: "revoked API keys", ru: "отозванных API-ключей" },
@@ -419,6 +423,7 @@ export const ATTENTION_EMAIL_TEMPLATE_KEYS: Record<
   "agent.blocked": "attention_agent_blocked",
   "agent.needs_human": "attention_agent_needs_human",
   "comment.mention": "attention_comment_mention",
+  "card.assigned": "attention_card_assigned",
   "claim.expired": "attention_claim_expired",
   "quota.exceeded": "attention_quota_exceeded",
   "token.revoked": "attention_token_revoked",
@@ -434,6 +439,8 @@ export interface AttentionEmailVars {
   action?: string;
   actor?: string;
   agent?: string;
+  /** Pre-rendered card titles for an assignment letter (bounded list). */
+  cards?: string;
   comment?: string;
   limit?: string | number;
   current?: string | number;
@@ -508,6 +515,7 @@ export function attentionEmail(
   const summary = escapeHtml(vars.summary ?? "");
   const agent = escapeHtml(vars.agent ?? "");
   const actor = escapeHtml(vars.actor ?? "");
+  const cards = escapeHtml(vars.cards ?? "");
   const risk = escapeHtml(vars.risk ?? "");
   const action = escapeHtml(vars.action ?? "");
   const expiresAt = escapeHtml(vars.expiresAt ?? "");
@@ -678,6 +686,24 @@ export function attentionEmail(
             ],
           );
     }
+    case "card.assigned":
+      return ru
+        ? attentionLetter(
+            "Новое назначение",
+            `${BRAND}: вам назначили карточки на доске «${board}»`,
+            [
+              `Вам назначены карточки на доске <b>${board}</b>: ${cards}.`,
+              "Откройте доску, чтобы посмотреть детали.",
+            ],
+          )
+        : attentionLetter(
+            "New card assignment",
+            `${BRAND}: cards assigned to you on "${board}"`,
+            [
+              `You were assigned cards on board <b>${board}</b>: ${cards}.`,
+              "Open the board to see the details.",
+            ],
+          );
     case "claim.expired":
       return ru
         ? attentionLetter(
@@ -948,6 +974,11 @@ const commentMentionDefault = attentionDefault(
   { board: "{{board}}", card: "{{card}}", actor: "{{actor}}" },
   ["board", "card", "actor"],
 );
+const cardAssignedDefault = attentionDefault(
+  "card.assigned",
+  { board: "{{board}}", cards: "{{cards}}" },
+  ["board", "cards"],
+);
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
@@ -999,6 +1030,7 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   attention_agent_blocked: agentBlockedDefault,
   attention_agent_needs_human: agentNeedsHumanDefault,
   attention_comment_mention: commentMentionDefault,
+  attention_card_assigned: cardAssignedDefault,
   attention_claim_expired: claimExpiredDefault,
   attention_quota_exceeded: quotaExceededDefault,
   attention_token_revoked: tokenRevokedDefault,

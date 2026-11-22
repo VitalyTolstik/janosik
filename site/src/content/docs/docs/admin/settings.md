@@ -372,7 +372,9 @@ disables it). The due reminder lead is in hours (0 to 720; 0 disables it).
 Recipients can opt out of both. The digest summarises what changed on each
 board since the last run. The reminder lists the cards assigned to a user whose
 due date falls inside the lead window. Each reminder is sent once per card,
-user and due date. Reminders use the recipient's saved locale (EN or RU), with
+user and due date. Reminders exist only while `reminderLeadHours > 0`; each
+listed card is an absolute link that opens that card. Reminders use the
+recipient's saved locale (EN or RU), with
 English as the default. A grouped reminder can be canceled if the recipient
 opts out or loses access to any board in the letter. The card, user and due-date
 markers remain reserved, so restoring access or opting back in does not requeue
