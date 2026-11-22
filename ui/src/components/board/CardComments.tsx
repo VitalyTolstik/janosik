@@ -736,6 +736,7 @@ export function CardComments({
             key={user.id}
             user={user}
             cardId={cardId}
+            boardId={boardId}
             draft={draft}
             sending={composer.sending}
             canSend={canSend}
@@ -881,6 +882,7 @@ export function CardComments({
 interface CommentComposerProps {
   user: AuthUserDto;
   cardId: string;
+  boardId: string;
   draft: string;
   sending: boolean;
   canSend: boolean;
@@ -1054,6 +1056,7 @@ function CommentKindPicker({
 function CommentComposer({
   user,
   cardId,
+  boardId,
   draft,
   sending,
   canSend,
@@ -1092,6 +1095,7 @@ function CommentComposer({
           <CommentComposerEditor
             key={editorNonce}
             cardId={cardId}
+            boardId={boardId}
             value={draft}
             onChange={onDraftChange}
             onSubmit={onSubmit}
@@ -1372,6 +1376,7 @@ function CommentRow({
                 <CommentComposerEditor
                   key={editorNonce}
                   cardId={cardId}
+                  boardId={boardId}
                   value={draft}
                   onChange={(value) => {
                     // While the PATCH is in flight the draft is frozen, so a

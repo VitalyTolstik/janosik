@@ -975,6 +975,12 @@ export interface CommentDto {
   apiTokenId?: string | null;
   agentSessionId?: string | null;
   agentName?: string | null;
+  /**
+   * TASK-177.12 — user ids carried by explicit `https://janosik.invalid/mention/<userId>` links in
+   * `text`, in first-mention order. The backend validates every id against
+   * the board's active roster at write time; a bare `@name` is not a mention.
+   */
+  mentionedUserIds?: string[];
   /** Unix ms. */
   createdAt: number;
   /**
@@ -2014,7 +2020,8 @@ export interface PlanApplyResponse extends CommandBatchResponse {
 /**
  * Stable wire names of the attention categories (ADR §10.5). `token.revoked`
  * is emitted by the personal-token revocation path; the owner is the only
- * recipient.
+ * recipient. `comment.mention` (TASK-177.12) goes to each mentioned board
+ * member except the comment author.
  */
 export const ATTENTION_NOTIFICATION_TYPES = [
   "approval.requested",
@@ -2024,6 +2031,7 @@ export const ATTENTION_NOTIFICATION_TYPES = [
   "approval.expired",
   "agent.blocked",
   "agent.needs_human",
+  "comment.mention",
   "claim.expired",
   "quota.exceeded",
   "token.revoked",

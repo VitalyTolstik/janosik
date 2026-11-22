@@ -45,6 +45,7 @@ export const EMAIL_TEMPLATE_KEYS = [
     key: "attention_agent_needs_human",
     label: "Attention: agent needs a human",
   },
+  { key: "attention_comment_mention", label: "Attention: comment mention" },
   { key: "attention_claim_expired", label: "Attention: card claim expired" },
   { key: "attention_quota_exceeded", label: "Attention: limit reached" },
   { key: "attention_token_revoked", label: "Attention: API key revoked" },

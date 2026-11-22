@@ -1279,6 +1279,21 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 .mdxeditor.janosik-mdx .janosik-md-content a:hover {
   text-decoration-color: var(--primary);
 }
+/* TASK-177.12: a mention reads as a person chip, not as a web link. */
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  a[href^="https://janosik.invalid/mention/"] {
+  border-radius: 0.25rem;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  padding: 0.05rem 0.25rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.mdxeditor.janosik-mdx
+  .janosik-md-content
+  a[href^="https://janosik.invalid/mention/"]:hover {
+  background: color-mix(in oklab, var(--primary) 20%, transparent);
+}
 .mdxeditor.janosik-mdx .janosik-md-content ul {
   margin: 0.45rem 0;
   padding-left: 1.5rem;

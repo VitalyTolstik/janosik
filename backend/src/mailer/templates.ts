@@ -339,6 +339,7 @@ const DIGEST_ATTENTION_LABELS: Record<
     en: "agents waiting for a human",
     ru: "агентов ждут человека",
   },
+  "comment.mention": { en: "mentions", ru: "упоминаний" },
   "claim.expired": { en: "expired claims", ru: "истёкших захватов" },
   "quota.exceeded": { en: "limit warnings", ru: "предупреждений о лимитах" },
   "token.revoked": { en: "revoked API keys", ru: "отозванных API-ключей" },
@@ -417,6 +418,7 @@ export const ATTENTION_EMAIL_TEMPLATE_KEYS: Record<
   "approval.expired": "attention_approval_expired",
   "agent.blocked": "attention_agent_blocked",
   "agent.needs_human": "attention_agent_needs_human",
+  "comment.mention": "attention_comment_mention",
   "claim.expired": "attention_claim_expired",
   "quota.exceeded": "attention_quota_exceeded",
   "token.revoked": "attention_token_revoked",
@@ -432,6 +434,8 @@ export interface AttentionEmailVars {
   action?: string;
   actor?: string;
   agent?: string;
+  /** Short plain-text preview of a mentioning comment. */
+  excerpt?: string;
   comment?: string;
   limit?: string | number;
   current?: string | number;
@@ -502,10 +506,12 @@ export function attentionEmail(
   const card = escapeHtml(vars.card ?? "");
   const summary = escapeHtml(vars.summary ?? "");
   const agent = escapeHtml(vars.agent ?? "");
+  const actor = escapeHtml(vars.actor ?? "");
   const risk = escapeHtml(vars.risk ?? "");
   const action = escapeHtml(vars.action ?? "");
   const expiresAt = escapeHtml(vars.expiresAt ?? "");
   const comment = escapeHtml(vars.comment ?? "");
+  const excerpt = escapeHtml(vars.excerpt ?? "");
   const limit = String(vars.limit ?? "");
   const current = String(vars.current ?? "");
   const runId = escapeHtml(vars.runId ?? "");
@@ -651,6 +657,29 @@ export function attentionEmail(
               "Open the board and the handoff comment to continue.",
             ],
           );
+    case "comment.mention": {
+      const who =
+        actor === "" ? (ru ? "Участник доски" : "A board member") : actor;
+      return ru
+        ? attentionLetter(
+            "Вас упомянули",
+            `${BRAND}: вас упомянули на доске «${board}»`,
+            [
+              `${who} упомянул(а) вас в комментарии к карточке <b>${card}</b> на доске <b>${board}</b>.`,
+              ...(excerpt !== "" ? [`«${excerpt}»`] : []),
+              "Откройте карточку, чтобы ответить в обсуждении.",
+            ],
+          )
+        : attentionLetter(
+            "You were mentioned",
+            `${BRAND}: you were mentioned on "${board}"`,
+            [
+              `${who} mentioned you in a comment on card <b>${card}</b> on board <b>${board}</b>.`,
+              ...(excerpt !== "" ? [`“${excerpt}”`] : []),
+              "Open the card to reply in the discussion.",
+            ],
+          );
+    }
     case "claim.expired":
       return ru
         ? attentionLetter(
@@ -879,6 +908,16 @@ const agentNeedsHumanDefault = attentionDefault(
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
   ["board", "card", "agent"],
 );
+const commentMentionDefault = attentionDefault(
+  "comment.mention",
+  {
+    board: "{{board}}",
+    card: "{{card}}",
+    actor: "{{actor}}",
+    excerpt: "{{excerpt}}",
+  },
+  ["board", "card", "actor", "excerpt"],
+);
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
@@ -929,6 +968,7 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   attention_approval_expired: approvalExpiredDefault,
   attention_agent_blocked: agentBlockedDefault,
   attention_agent_needs_human: agentNeedsHumanDefault,
+  attention_comment_mention: commentMentionDefault,
   attention_claim_expired: claimExpiredDefault,
   attention_quota_exceeded: quotaExceededDefault,
   attention_token_revoked: tokenRevokedDefault,

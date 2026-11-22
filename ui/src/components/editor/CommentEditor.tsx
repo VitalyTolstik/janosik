@@ -5,6 +5,7 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type ClipboardEvent as ReactClipboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -14,15 +15,24 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useToast } from "@/components/Toast";
 import { api, ApiError } from "@/api/client";
+import { MentionPicker } from "@/components/board/MentionPicker";
+import { useOpenProfile } from "@/components/board/UserProfileDialog";
+import { useBoardMembersList } from "@/store/board-live";
 import { sanitizeMarkdownForImport } from "@/utils/sanitizeMarkdown";
 import { autolinkMarkdown } from "@/utils/linkify";
 import { emojify } from "@/utils/emoji";
+import { mentionMemberLabel } from "@/utils/mentions";
 import {
   embedMarkdown,
   handleAttachmentImageOpen,
   handleAttachmentLinkClick,
 } from "@/utils/embedAttachments";
-import { LIMITS } from "@janosik/shared";
+import {
+  LIMITS,
+  mentionIdFromHref,
+  mentionMarkdown,
+  type BoardMemberDto,
+} from "@janosik/shared";
 import {
   commentEditorPlugins,
   descriptionViewerPlugins,
@@ -38,6 +48,8 @@ export interface CommentComposerEditorHandle {
 
 interface CommentComposerEditorProps {
   cardId: string;
+  /** Board roster used by the `@` picker (TASK-177.12). */
+  boardId: string;
   /** The draft markdown — read once per mount (the parent remounts to reset). */
   value: string;
   onChange: (markdown: string) => void;
@@ -65,12 +77,38 @@ export const CommentComposerEditor = forwardRef<
   CommentComposerEditorHandle,
   CommentComposerEditorProps
 >(function CommentComposerEditor(
-  { cardId, value, onChange, onSubmit, onCancel, autoFocus, placeholder },
+  {
+    cardId,
+    boardId,
+    value,
+    onChange,
+    onSubmit,
+    onCancel,
+    autoFocus,
+    placeholder,
+  },
   ref,
 ) {
   const { lang, t } = useI18n();
   const toast = useToast();
+  const openProfile = useOpenProfile();
   const methodsRef = useRef<MDXEditorMethods | null>(null);
+  const members = useBoardMembersList(boardId);
+  const [mentionOpen, setMentionOpen] = useState(false);
+
+  const insertMention = (member: BoardMemberDto) => {
+    methodsRef.current?.insertMarkdown(
+      `${mentionMarkdown(mentionMemberLabel(member), member.userId)} `,
+    );
+    setMentionOpen(false);
+  };
+
+  const cancelMention = (query: string | undefined) => {
+    setMentionOpen(false);
+    // Escape/no-match restores the literal text the author typed; an outside
+    // click discards it, so clicking Send cannot inject a stray `@`.
+    if (query !== undefined) methodsRef.current?.insertMarkdown(`@${query}`);
+  };
 
   useImperativeHandle(
     ref,
@@ -122,7 +160,21 @@ export const CommentComposerEditor = forwardRef<
   return (
     <div
       data-testid="comment-input"
+      className="relative"
       onKeyDown={(event) => {
+        if (
+          event.key === "@" &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey
+        ) {
+          // The picker owns the following keystrokes; the literal `@` is
+          // restored on Escape/no match and the token inserted on selection.
+          event.preventDefault();
+          event.stopPropagation();
+          setMentionOpen(true);
+          return;
+        }
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
           event.stopPropagation();
@@ -136,9 +188,17 @@ export const CommentComposerEditor = forwardRef<
         }
       }}
       onPasteCapture={onPasteCapture}
-      onClickCapture={(event: ReactMouseEvent) =>
-        handleAttachmentLinkClick(event)
-      }
+      onClickCapture={(event: ReactMouseEvent) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+        const mentionId = mentionIdFromHref(anchor?.getAttribute("href"));
+        if (mentionId !== null) {
+          event.preventDefault();
+          event.stopPropagation();
+          openProfile(mentionId);
+          return;
+        }
+        handleAttachmentLinkClick(event);
+      }}
       onDoubleClickCapture={(event: ReactMouseEvent) =>
         handleAttachmentImageOpen(event)
       }
@@ -161,6 +221,13 @@ export const CommentComposerEditor = forwardRef<
         iconComponentFor={janosikIconFor}
         plugins={commentEditorPlugins}
       />
+      {mentionOpen ? (
+        <MentionPicker
+          members={members}
+          onSelect={insertMention}
+          onCancel={cancelMention}
+        />
+      ) : null}
     </div>
   );
 });
@@ -180,6 +247,7 @@ export function CommentBody({
   className?: string;
 }) {
   const { lang } = useI18n();
+  const openProfile = useOpenProfile();
   const methodsRef = useRef<MDXEditorMethods | null>(null);
   const markdown = emojify(autolinkMarkdown(sanitizeMarkdownForImport(text)));
 
@@ -193,6 +261,17 @@ export function CommentBody({
   return (
     <div
       onClickCapture={(event) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+        const mentionId = mentionIdFromHref(anchor?.getAttribute("href"));
+        if (mentionId !== null) {
+          // A mention is a profile link inside the board, not a URL. The
+          // reserved `.invalid` address never reaches the browser's
+          // navigation.
+          event.preventDefault();
+          event.stopPropagation();
+          openProfile(mentionId);
+          return;
+        }
         handleAttachmentLinkClick(event);
         handleAttachmentImageOpen(event);
       }}

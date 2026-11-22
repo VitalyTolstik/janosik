@@ -1073,6 +1073,9 @@ export class BoardsService {
         approvalApplied,
       }),
     );
+    // TASK-177.12: a deleted board takes its mention notifications with it,
+    // so a later restore cannot resurrect a dead comment link.
+    await this.attention.removeBoardMentions(boardId);
   }
 
   /**

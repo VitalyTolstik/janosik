@@ -69,6 +69,19 @@ export interface CommentAttentionInput {
   agentName: string | null;
 }
 
+export interface CommentMentionInput {
+  boardId: string;
+  cardId: string;
+  commentId: string;
+  /** The comment author; never notified even when they mention themselves. */
+  authorId: string;
+  actorName: string | null;
+  /** Already validated against the live roster by the comment service. */
+  mentionedUserIds: string[];
+  /** Short plain-text preview; safe as text, escaped by the mail layer. */
+  excerpt: string;
+}
+
 export interface ClaimExpiredInput {
   boardId: string;
   cardId: string;
@@ -339,6 +352,123 @@ export class AttentionService {
       });
     } catch (error) {
       this.warn("agent blocker", error);
+    }
+  }
+
+  /**
+   * TASK-177.12 — one mention row per mentioned member, never the author.
+   *
+   * The comment id is the dedup base, so the same person mentioned twice in
+   * one comment (or a later edit that keeps the token) gets exactly one row.
+   * The live comment is re-checked here: a delete that raced the fan-out must
+   * not create a row the service would then have to hide.
+   */
+  async notifyCommentMention(input: CommentMentionInput): Promise<void> {
+    try {
+      const [board, card, comment] = await Promise.all([
+        this.boardTitle(input.boardId),
+        this.prisma.card.findFirst({
+          where: {
+            id: input.cardId,
+            deletedAt: null,
+            column: { boardId: input.boardId, deletedAt: null },
+          },
+          select: { title: true },
+        }),
+        this.prisma.comment.findFirst({
+          where: {
+            id: input.commentId,
+            deletedAt: null,
+            cardId: input.cardId,
+            card: {
+              deletedAt: null,
+              column: { boardId: input.boardId, deletedAt: null },
+            },
+          },
+          select: { id: true },
+        }),
+      ]);
+      if (board === null || card === null || comment === null) return;
+      const recipients = (
+        await this.members(input.boardId, input.mentionedUserIds)
+      ).filter((recipient) => recipient.id !== input.authorId);
+      if (recipients.length === 0) return;
+      await this.notify({
+        type: "comment.mention",
+        boardId: input.boardId,
+        dedupKey: `comment.mention:${input.commentId}`,
+        recipients,
+        emailVars: () => ({
+          board,
+          card: card.title,
+          actor: input.actorName ?? "",
+          excerpt: input.excerpt,
+        }),
+        data: {
+          cardId: input.cardId,
+          commentId: input.commentId,
+          authorId: input.authorId,
+          ...(input.actorName !== null ? { authorName: input.actorName } : {}),
+        },
+      });
+    } catch (error) {
+      this.warn("comment mention", error);
+    }
+  }
+
+  /**
+   * TASK-177.12 — deleting the source removes its mention rows (and their
+   * still-queued letters) so a poll or a board restore cannot bring a dead
+   * notification back.
+   */
+  async removeCommentMentions(commentId: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const rows = await tx.attentionNotification.findMany({
+          where: { dedupKey: { startsWith: `comment.mention:${commentId}:` } },
+          select: { id: true, attentionMailId: true },
+        });
+        if (rows.length === 0) return;
+        await tx.attentionNotification.deleteMany({
+          where: { id: { in: rows.map((row) => row.id) } },
+        });
+        const mailIds = rows.flatMap((row) =>
+          row.attentionMailId === null ? [] : [row.attentionMailId],
+        );
+        if (mailIds.length > 0) {
+          await tx.notificationMail.deleteMany({
+            where: { id: { in: mailIds }, finishedAt: null },
+          });
+        }
+      });
+    } catch (error) {
+      this.warn("remove comment mentions", error);
+    }
+  }
+
+  /** TASK-177.12 — a deleted board drops every mention row it produced. */
+  async removeBoardMentions(boardId: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const rows = await tx.attentionNotification.findMany({
+          where: { boardId, type: "comment.mention" },
+          select: { id: true, attentionMailId: true },
+        });
+        if (rows.length === 0) return;
+        await tx.attentionNotification.deleteMany({
+          where: { id: { in: rows.map((row) => row.id) } },
+        });
+        const mailIds = rows.flatMap((row) =>
+          row.attentionMailId === null ? [] : [row.attentionMailId],
+        );
+        if (mailIds.length > 0) {
+          await tx.notificationMail.deleteMany({
+            where: { id: { in: mailIds }, finishedAt: null },
+          });
+        }
+      });
+    } catch (error) {
+      this.warn("remove board mentions", error);
     }
   }
 
