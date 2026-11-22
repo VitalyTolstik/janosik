@@ -327,7 +327,9 @@ describe("LoginPage", () => {
     );
 
     expect(screen.getByTestId("login-submit")).toHaveClass("max-md:min-h-11");
-    expect(screen.getByTestId("forgot-password")).toHaveClass("max-md:min-h-11");
+    expect(screen.getByTestId("forgot-password")).toHaveClass(
+      "max-md:min-h-11",
+    );
     expect(screen.getByTestId("login-toggle")).toHaveClass("max-md:min-h-11");
   });
 });

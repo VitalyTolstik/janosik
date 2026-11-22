@@ -74,7 +74,9 @@ describe("AccountDataService deletion races", () => {
 });
 
 describe("AccountDataService export status", () => {
-  const row = (overrides: Partial<AdminExportRowDto> = {}): AdminExportRowDto => ({
+  const row = (
+    overrides: Partial<AdminExportRowDto> = {},
+  ): AdminExportRowDto => ({
     id: "exp-1",
     userId: "user-1",
     userEmail: "user@example.com",
@@ -104,9 +106,9 @@ describe("AccountDataService export status", () => {
       row({ status: "ready", expiresAt: Date.now() - 1_000 }),
     );
 
-    await expect(service.exportStatus("user-1", "exp-1")).resolves.toMatchObject(
-      { id: "exp-1", status: "expired" },
-    );
+    await expect(
+      service.exportStatus("user-1", "exp-1"),
+    ).resolves.toMatchObject({ id: "exp-1", status: "expired" });
   });
 
   it("reports a pending export whose TTL has passed as expired", async () => {
@@ -114,9 +116,9 @@ describe("AccountDataService export status", () => {
       row({ status: "pending", expiresAt: Date.now() - 1_000 }),
     );
 
-    await expect(service.exportStatus("user-1", "exp-1")).resolves.toMatchObject(
-      { status: "expired" },
-    );
+    await expect(
+      service.exportStatus("user-1", "exp-1"),
+    ).resolves.toMatchObject({ status: "expired" });
   });
 
   it("keeps a live ready export and a failed export unchanged", async () => {

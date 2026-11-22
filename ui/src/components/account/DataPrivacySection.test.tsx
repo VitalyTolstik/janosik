@@ -111,9 +111,9 @@ describe("DataPrivacySection (TASK-166)", () => {
     });
     renderSection();
 
-    expect(await screen.findByTestId("account-export-status")).toHaveTextContent(
-      "Expired",
-    );
+    expect(
+      await screen.findByTestId("account-export-status"),
+    ).toHaveTextContent("Expired");
     expect(screen.queryByTestId("account-export-download")).toBeNull();
     expect(screen.getByTestId("account-export-request")).toHaveTextContent(
       "Prepare a new copy",
@@ -131,9 +131,9 @@ describe("DataPrivacySection (TASK-166)", () => {
     });
     renderSection();
 
-    expect(await screen.findByTestId("account-export-status")).toHaveTextContent(
-      "Expired",
-    );
+    expect(
+      await screen.findByTestId("account-export-status"),
+    ).toHaveTextContent("Expired");
     expect(screen.queryByTestId("account-export-download")).toBeNull();
   });
 
