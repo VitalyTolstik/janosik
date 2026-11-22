@@ -76,6 +76,21 @@ describe("EmailChangeDialog (TASK-51)", () => {
     });
   });
 
+  it("wraps a long unbroken new address in the code hint", async () => {
+    const server = new FakeServer();
+    const email = `owner@${"d".repeat(63)}.example`;
+    await requestCode(server, email);
+
+    const hint = screen.getByTestId("email-change-code-hint");
+    expect(hint).toHaveTextContent(email);
+    expect(hint).toHaveClass("w-full", "min-w-0");
+    expect(hint.querySelector("span")).toHaveClass(
+      "min-w-0",
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
+  });
+
   it("shows an inline error for an invalid new email", async () => {
     const server = new FakeServer();
     renderDialog(server);

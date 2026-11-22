@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Bot,
   Database,
   KeyRound,
@@ -87,7 +89,10 @@ export function AccountDialog({
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<AccountSection>("profile");
   const [confirmingLogout, setConfirmingLogout] = useState(false);
+  const [railEdges, setRailEdges] = useState({ start: true, end: false });
   const externalTrigger = useRef<HTMLElement | null>(null);
+  const dialogContent = useRef<HTMLDivElement>(null);
+  const navRail = useRef<HTMLElement>(null);
   const sectionButtons = useRef<
     Partial<Record<AccountSection, HTMLButtonElement | null>>
   >({});
@@ -121,6 +126,57 @@ export function AccountDialog({
     window.addEventListener("janosik:open-api-keys", openTokens);
     return () =>
       window.removeEventListener("janosik:open-api-keys", openTokens);
+  }, []);
+
+  const measureRail = useCallback(() => {
+    const rail = navRail.current;
+    if (!rail) return;
+    const max = rail.scrollWidth - rail.clientWidth;
+    const start = rail.scrollLeft <= 1;
+    const end = max <= 1 || rail.scrollLeft >= max - 1;
+    setRailEdges((current) =>
+      current.start === start && current.end === end ? current : { start, end },
+    );
+  }, []);
+
+  /**
+   * The rail is a horizontal scroller below `sm`. Center the active tab so
+   * neither edge cue covers it, and keep the cues in step with the scroll.
+   */
+  const revealSection = useCallback((target: AccountSection) => {
+    const button = sectionButtons.current[target];
+    if (button && typeof button.scrollIntoView === "function") {
+      button.scrollIntoView({ block: "nearest", inline: "center" });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    // Radix mounts the portal content one layout pass after `open` flips, so
+    // wait for that paint before measuring the rail.
+    const timer = window.setTimeout(() => {
+      revealSection(section);
+      measureRail();
+    }, 0);
+    window.addEventListener("resize", measureRail);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", measureRail);
+    };
+  }, [lang, measureRail, open, revealSection, section]);
+
+  /**
+   * Only a dialog layered above this account panel owns Escape. An unrelated
+   * dialog underneath must not swallow the panel's close key.
+   */
+  const keepOpenForNestedDialog = useCallback((event: Event) => {
+    const dialogs = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[role="dialog"][data-state="open"]',
+      ),
+    );
+    const top = dialogs[dialogs.length - 1];
+    if (top && top !== dialogContent.current) event.preventDefault();
   }, []);
 
   if (!isApiEnabled() || user === null) {
@@ -202,12 +258,16 @@ export function AccountDialog({
       </Tooltip>
 
       <DialogContent
+        ref={dialogContent}
         onOpenAutoFocus={(event) => {
           // A deep link must land on the section it names, not Radix's first
           // default target. Tab switches keep the focus the user gave them.
           event.preventDefault();
           sectionButtons.current[section]?.focus();
+          // The portal is mounted by now; keep the active tab in the rail.
+          revealSection(section);
         }}
+        onEscapeKeyDown={keepOpenForNestedDialog}
         onCloseAutoFocus={(event) => {
           if (externalTrigger.current?.isConnected) {
             event.preventDefault();
@@ -248,55 +308,91 @@ export function AccountDialog({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-          <nav
-            aria-label={t("account.nav")}
-            className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3"
+          <aside
+            data-testid="account-rail"
+            className="flex shrink-0 flex-col border-b sm:w-52 sm:border-b-0 sm:border-r"
           >
-            {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
-              <button
-                key={id}
-                ref={(node) => {
-                  sectionButtons.current[id] = node;
-                }}
-                type="button"
-                data-testid={`account-nav-${id}`}
-                aria-current={section === id ? "page" : undefined}
-                onClick={() => selectSection(id)}
-                className={cn(
-                  "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors sm:w-full",
-                  section === id
-                    ? "bg-primary/10 font-medium text-primary"
-                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
-                )}
+            <div className="relative min-w-0">
+              <nav
+                ref={navRail}
+                aria-label={t("account.nav")}
+                onScroll={measureRail}
+                className="flex gap-1 overflow-x-auto p-2 sm:flex-col sm:overflow-visible sm:p-3"
               >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="min-w-0 truncate">{t(labelKey)}</span>
-              </button>
-            ))}
-            {onOpenAgents ? (
+                {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
+                  <button
+                    key={id}
+                    ref={(node) => {
+                      sectionButtons.current[id] = node;
+                    }}
+                    type="button"
+                    data-testid={`account-nav-${id}`}
+                    aria-current={section === id ? "page" : undefined}
+                    onClick={() => selectSection(id)}
+                    className={cn(
+                      "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors max-lg:min-h-11 sm:w-full",
+                      section === id
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="min-w-0 truncate">{t(labelKey)}</span>
+                  </button>
+                ))}
+                {onOpenAgents ? (
+                  <button
+                    type="button"
+                    data-testid="account-open-agents"
+                    onClick={() => {
+                      setOpen(false);
+                      onOpenAgents();
+                    }}
+                    className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11 sm:w-full"
+                  >
+                    <Bot className="h-4 w-4 shrink-0" aria-hidden />
+                    {t("agents.open")}
+                  </button>
+                ) : null}
+                {/* Let the last real tab scroll clear of the right edge cue. */}
+                <span
+                  aria-hidden="true"
+                  className="h-11 w-9 shrink-0 sm:hidden"
+                />
+              </nav>
+              {!railEdges.start ? (
+                <span
+                  aria-hidden="true"
+                  data-testid="account-nav-overflow-start"
+                  className="pointer-events-none absolute inset-y-0 left-0 w-9 bg-gradient-to-r from-popover via-popover/80 to-transparent sm:hidden"
+                >
+                  <ChevronLeft className="absolute left-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </span>
+              ) : null}
+              {/* A fade plus chevron is the mobile cue that the rail continues
+                  past Data; it never intercepts a swipe. */}
+              {!railEdges.end ? (
+                <span
+                  aria-hidden="true"
+                  data-testid="account-nav-overflow"
+                  className="pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l from-popover via-popover/80 to-transparent sm:hidden"
+                >
+                  <ChevronRight className="absolute right-1 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </span>
+              ) : null}
+            </div>
+            <div className="border-t p-2 sm:mt-auto sm:border-t-0 sm:p-3">
               <button
                 type="button"
-                data-testid="account-open-agents"
-                onClick={() => {
-                  setOpen(false);
-                  onOpenAgents();
-                }}
-                className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground sm:w-full"
+                data-testid="account-logout"
+                onClick={() => setConfirmingLogout(true)}
+                className="flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 max-lg:min-h-11"
               >
-                <Bot className="h-4 w-4 shrink-0" aria-hidden />
-                {t("agents.open")}
+                <LogOut className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="whitespace-nowrap">{t("auth.logout")}</span>
               </button>
-            ) : null}
-            <button
-              type="button"
-              data-testid="account-logout"
-              onClick={() => setConfirmingLogout(true)}
-              className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 sm:mt-auto sm:w-full"
-            >
-              <LogOut className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="whitespace-nowrap">{t("auth.logout")}</span>
-            </button>
-          </nav>
+            </div>
+          </aside>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {section === "profile" ? <ProfileSection /> : null}

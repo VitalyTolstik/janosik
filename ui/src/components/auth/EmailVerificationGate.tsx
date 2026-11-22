@@ -109,7 +109,10 @@ export function EmailVerificationGate() {
           <h1 className="text-base font-semibold">
             {t("auth.verifyEmail.title")}
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p
+            data-testid="email-verify-subtitle"
+            className="w-full max-w-full break-words text-sm text-muted-foreground [overflow-wrap:anywhere]"
+          >
             {t("auth.verifyEmail.subtitle", {
               email: user?.email ?? "",
             })}

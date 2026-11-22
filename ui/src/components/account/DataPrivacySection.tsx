@@ -29,7 +29,8 @@ export function DataPrivacySection() {
   const [codeSent, setCodeSent] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const exportKey = user ? `janosik:account-export:${user.id}` : null;
   // Bumped whenever a newer export starts; a slow initial lookup must not
   // replace the row the user just requested.
@@ -115,7 +116,7 @@ export function DataPrivacySection() {
   const requestExport = async () => {
     const epoch = ++exportEpoch.current;
     setExporting(true);
-    setError(null);
+    setExportError(null);
     try {
       const row = await api.requestAccountExport();
       if (epoch !== exportEpoch.current) return;
@@ -156,9 +157,9 @@ export function DataPrivacySection() {
           }
           setExportRow(row);
         } catch {
-          setError(exportError(cause, t));
+          setExportError(exportErrorMessage(cause, t));
         }
-      } else setError(exportError(cause, t));
+      } else setExportError(exportErrorMessage(cause, t));
     } finally {
       setExporting(false);
     }
@@ -166,17 +167,28 @@ export function DataPrivacySection() {
 
   const downloadExport = async () => {
     if (!exportRow) return;
+    const attemptedId = exportRow.id;
+    setExportError(null);
     try {
-      const blob = await api.downloadAccountExport(exportRow.id);
-      downloadBlob(`janosik-account-${exportRow.id}.json`, blob);
-    } catch {
-      setError(t("account.data.downloadFailed"));
+      const blob = await api.downloadAccountExport(attemptedId);
+      downloadBlob(`janosik-account-${attemptedId}.json`, blob);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 410) {
+        // The artifact outlived the row's TTL between the two calls. Adopt
+        // the server's verdict only for the row that was actually attempted;
+        // a newer export started meanwhile must stay downloadable.
+        setExportRow((row) =>
+          row?.id === attemptedId ? { ...row, status: "expired" } : row,
+        );
+        return;
+      }
+      setExportError(t("account.data.downloadFailed"));
     }
   };
 
   const requestCode = async () => {
     setSendingCode(true);
-    setError(null);
+    setDeleteError(null);
     try {
       await api.requestAccountDeletionCode({
         oauthProof: await oauthProofToken(),
@@ -184,7 +196,7 @@ export function DataPrivacySection() {
       setCodeSent(true);
       toast.success(t("account.data.codeSent"));
     } catch (cause) {
-      setError(requestCodeError(cause, t));
+      setDeleteError(requestCodeError(cause, t));
     } finally {
       setSendingCode(false);
     }
@@ -194,7 +206,7 @@ export function DataPrivacySection() {
     event.preventDefault();
     if (!canDelete) return;
     setDeleting(true);
-    setError(null);
+    setDeleteError(null);
     try {
       await api.deleteAccount({
         confirmEmail: confirmEmail.trim(),
@@ -208,7 +220,7 @@ export function DataPrivacySection() {
       toast.success(t("account.data.deleteScheduled"));
       await logout();
     } catch (cause) {
-      setError(
+      setDeleteError(
         cause instanceof ApiError && cause.status === 401
           ? emailCodeFlow
             ? t("account.data.oauthProofFailed")
@@ -222,6 +234,10 @@ export function DataPrivacySection() {
     }
   };
 
+  // The server owns the export lifecycle: `expired` is authoritative, and a
+  // 410 download is folded back into this state.
+  const exportExpired = exportRow?.status === "expired";
+
   return (
     <section className="space-y-5" data-testid="account-data">
       <header className="space-y-1">
@@ -234,7 +250,10 @@ export function DataPrivacySection() {
         </p>
       </header>
 
-      <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+      <div
+        className="space-y-3 rounded-lg border bg-muted/30 p-4"
+        data-testid="account-export-panel"
+      >
         <h4 className="text-xs font-medium text-muted-foreground">
           {t("account.data.exportTitle")}
         </h4>
@@ -254,7 +273,7 @@ export function DataPrivacySection() {
               ? t("account.data.exportAgain")
               : t("account.data.exportRequest")}
           </Button>
-          {exportRow?.status === "ready" ? (
+          {exportRow?.status === "ready" && !exportExpired ? (
             <Button
               type="button"
               size="sm"
@@ -266,18 +285,31 @@ export function DataPrivacySection() {
             </Button>
           ) : null}
           <span
+            role="status"
+            aria-live="polite"
             className="text-xs text-muted-foreground"
             data-testid="account-export-status"
           >
             {exportRow === null
               ? t("account.data.status.none")
-              : exportRow.status === "pending"
-                ? t("account.data.status.pending")
-                : exportRow.status === "ready"
-                  ? t("account.data.status.ready")
-                  : t("account.data.status.failed")}
+              : exportExpired
+                ? t("account.data.status.expired")
+                : exportRow.status === "pending"
+                  ? t("account.data.status.pending")
+                  : exportRow.status === "ready"
+                    ? t("account.data.status.ready")
+                    : t("account.data.status.failed")}
           </span>
         </div>
+        {exportError ? (
+          <p
+            role="alert"
+            data-testid="account-export-error"
+            className="text-xs text-danger"
+          >
+            {exportError}
+          </p>
+        ) : null}
       </div>
 
       <form
@@ -358,13 +390,13 @@ export function DataPrivacySection() {
             />
           </div>
         )}
-        {error ? (
+        {deleteError ? (
           <p
             role="alert"
             data-testid="account-data-error"
             className="text-xs text-danger"
           >
-            {error}
+            {deleteError}
           </p>
         ) : null}
         <div className="flex justify-end">
@@ -399,7 +431,10 @@ function requestCodeError(
     : t("account.data.genericError");
 }
 
-function exportError(cause: unknown, t: (key: MessageKey) => string): string {
+function exportErrorMessage(
+  cause: unknown,
+  t: (key: MessageKey) => string,
+): string {
   if (!(cause instanceof ApiError)) return t("account.data.genericError");
   if (cause.code === "export_in_progress") {
     return t("account.data.exportInProgress");
