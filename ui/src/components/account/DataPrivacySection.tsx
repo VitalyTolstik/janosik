@@ -31,6 +31,9 @@ export function DataPrivacySection() {
   const [deleting, setDeleting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Frozen at mount so the expired check never calls an impure function while
+  // rendering; the backend status already accounts for the TTL.
+  const [now] = useState(() => Date.now());
   const exportKey = user ? `janosik:account-export:${user.id}` : null;
   // Bumped whenever a newer export starts; a slow initial lookup must not
   // replace the row the user just requested.
@@ -227,7 +230,7 @@ export function DataPrivacySection() {
   const exportExpired =
     exportRow !== null &&
     (exportRow.status === "expired" ||
-      (exportRow.status === "ready" && exportRow.expiresAt <= Date.now()));
+      (exportRow.status === "ready" && exportRow.expiresAt <= now));
 
   return (
     <section className="space-y-5" data-testid="account-data">

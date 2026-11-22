@@ -381,7 +381,7 @@ describe("AccountDialog (TASK-36.1)", () => {
     const server = new FakeServer();
     renderAccount(server, server.handle, "/board/b-1?account=data");
 
-    const dialog = await screen.findByTestId("account-dialog");
+    await screen.findByTestId("account-dialog");
     const dataTab = await screen.findByTestId("account-nav-data");
     await waitFor(() => expect(scrolled).toContain(dataTab));
     expect(dataTab).toHaveAttribute("aria-current", "page");
