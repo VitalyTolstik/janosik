@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { Board, BoardEnvelope } from "@janosik/shared";
-import { normalizeBoards } from "@janosik/shared";
+import {
+  LIMITS,
+  normalizeBoards,
+  parseExport,
+  serializeExport,
+} from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import { BoardsService } from "@/boards/boards.service";
@@ -1404,6 +1409,114 @@ describe("Boards API (e2e)", () => {
       expect(page.truncated).toBe(true);
     });
 
+    it("refuses an attachment restore at the 20-file cap", async () => {
+      const boardId = await createBoard("Deleted attachment cap");
+      const columnId = randomUUID();
+      const cardId = randomUUID();
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Files",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Full card",
+      }).expect(200);
+
+      const upload = async (name: string) =>
+        (
+          await server()
+            .post(`/api/v1/cards/${cardId}/attachments`)
+            .set(auth(adminToken))
+            .attach("file", Buffer.from("hello"), {
+              filename: name,
+              contentType: "text/plain",
+            })
+            .expect(201)
+        ).body.id as string;
+      const first = await upload("first.txt");
+      for (let index = 1; index < LIMITS.attachmentsPerCard; index += 1) {
+        await upload(`file-${index}.txt`);
+      }
+      await server()
+        .delete(`/api/v1/attachments/${first}`)
+        .set(auth(adminToken))
+        .expect(200);
+      // Fill the freed slot, then try to restore the deleted file.
+      await upload("replacement.txt");
+
+      const refused = await server()
+        .post(`/api/v1/boards/${boardId}/deleted/attachments/${first}/restore`)
+        .set(auth(adminToken))
+        .expect(409);
+      expect(refused.body.code).toBe("attachment_limit");
+      expect(refused.body.limit).toBe(LIMITS.attachmentsPerCard);
+    });
+
+    it("answers 410 for comments and files outside retention", async () => {
+      const boardId = await createBoard("Deleted expiry");
+      const columnId = randomUUID();
+      const cardId = randomUUID();
+      await applyCommand(boardId, {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Expiry",
+      }).expect(200);
+      await applyCommand(boardId, {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Expired items",
+      }).expect(200);
+
+      const comment = await server()
+        .post(`/api/v1/cards/${cardId}/comments`)
+        .set(auth(adminToken))
+        .send({ text: "Too old to restore" })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/comments/${comment.body.id}`)
+        .set(auth(adminToken))
+        .expect(200);
+      await prisma.comment.update({
+        where: { id: comment.body.id },
+        data: { deletedAt: new Date(Date.now() - 400 * 86_400_000) },
+      });
+      const expiredComment = await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/comments/${comment.body.id}/restore`,
+        )
+        .set(auth(adminToken))
+        .expect(410);
+      expect(expiredComment.body.code).toBe("retention_expired");
+
+      const file = await server()
+        .post(`/api/v1/cards/${cardId}/attachments`)
+        .set(auth(adminToken))
+        .attach("file", Buffer.from("hello"), {
+          filename: "expired.txt",
+          contentType: "text/plain",
+        })
+        .expect(201);
+      await server()
+        .delete(`/api/v1/attachments/${file.body.id}`)
+        .set(auth(adminToken))
+        .expect(200);
+      await prisma.attachment.update({
+        where: { id: file.body.id },
+        data: { deletedAt: new Date(Date.now() - 400 * 86_400_000) },
+      });
+      const expiredFile = await server()
+        .post(
+          `/api/v1/boards/${boardId}/deleted/attachments/${file.body.id}/restore`,
+        )
+        .set(auth(adminToken))
+        .expect(410);
+      expect(expiredFile.body.code).toBe("retention_expired");
+    });
+
     it("keeps the view behind board membership and refuses an expired row", async () => {
       const boardId = await createBoard("Deleted permissions");
       await server()
@@ -1488,6 +1601,22 @@ describe("Boards API (e2e)", () => {
 
       expect(canonicalize(envelope.boards[0])).toEqual(
         canonicalize(secondExport.body.boards[0]),
+      );
+
+      // The per-board export is a real importable file, not just the right
+      // shape: run it through the shared parser and import the result again.
+      const parsed = parseExport(JSON.stringify(envelope));
+      const reimported = await server()
+        .post("/api/v1/boards/import")
+        .set(auth(adminToken))
+        .send(JSON.parse(serializeExport(parsed)))
+        .expect(201);
+      const reimportedExport = await server()
+        .get(`/api/v1/boards/${reimported.body[0].id}/export`)
+        .set(auth(adminToken))
+        .expect(200);
+      expect(canonicalize(envelope.boards[0])).toEqual(
+        canonicalize(reimportedExport.body.boards[0]),
       );
     });
 

@@ -189,10 +189,10 @@ The data menu in the header manages your data.
   cards that were not processed appear again.
 - `Recently deleted` lists cards, columns, comments and files removed from the
   open board during the retention window (30 days by default; the operator can
-  change it). Any board ADMIN or MEMBER can restore an item; a card deleted by
-  a column restore comes back with its column. The maintenance sweep removes
-  older rows permanently. Inline images that a deleted comment unlinked stay
-  deleted, so a restored comment can show a missing image.
+  change it). Any board ADMIN or MEMBER can restore an item; a card deleted with
+  its column comes back when the column is restored. The maintenance sweep
+  removes older rows permanently. Inline images that a deleted comment unlinked
+  stay deleted, so a restored comment can show a missing image.
 
 ![The card archive: archived cards of the active board, with restore and delete.](/screens/archive.png)
 
