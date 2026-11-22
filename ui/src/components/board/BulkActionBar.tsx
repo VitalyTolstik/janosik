@@ -126,7 +126,10 @@ export function BulkActionBar() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [liveMessage, setLiveMessage] = useState("");
-  const [countAnnouncement, setCountAnnouncement] = useState("");
+  const [countAnnouncement, setCountAnnouncement] = useState<{
+    count: number;
+    text: string;
+  } | null>(null);
 
   const cancelRef = useRef(false);
   const aliveRef = useRef(true);
@@ -250,7 +253,7 @@ export function BulkActionBar() {
       pendingBarFocusRef.current = null;
       resetResults();
       // The bar is gone; a later selection of the same size must announce.
-      setCountAnnouncement("");
+      setCountAnnouncement(null);
       // A view switch disables selection and may unmount the bar; the view
       // switcher keeps focus. An explicit Dismiss/Clear returns focus from
       // every view (the board main is the fallback when Select is hidden).
@@ -274,16 +277,21 @@ export function BulkActionBar() {
   // Announce the selection count once it settles; a checkbox storm must not
   // turn into a stream of live-region messages.
   useEffect(() => {
-    if (!visible || busy !== null) return;
-    // A destructive result may leave no selection; clear the stale text so
-    // the next selection announces even when its size matches the old one.
+    if (!visible) return;
+    // A destructive run may empty the selection while still busy; clear the
+    // stale text before the busy guard so a new selection cannot flash it.
     if (selection.count === 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing a stale live-region text is the required effect
-      setCountAnnouncement((previous) => (previous === "" ? previous : ""));
+      setCountAnnouncement((previous) => (previous === null ? previous : null));
       return;
     }
+    if (busy !== null) return;
+    const count = selection.count;
     const timer = window.setTimeout(() => {
-      setCountAnnouncement(t("bulk.selected", { count: selection.count }));
+      setCountAnnouncement({
+        count,
+        text: t("bulk.selected", { count }),
+      });
     }, 350);
     return () => window.clearTimeout(timer);
   }, [busy, selection.count, t, visible]);
@@ -692,7 +700,9 @@ export function BulkActionBar() {
         data-testid="bulk-count-announcement"
         className="sr-only"
       >
-        {selection.count === 0 ? "" : countAnnouncement}
+        {selection.count > 0 && countAnnouncement?.count === selection.count
+          ? countAnnouncement.text
+          : ""}
       </span>
       <span
         role="status"

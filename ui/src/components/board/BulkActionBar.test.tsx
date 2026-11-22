@@ -231,7 +231,7 @@ function rewriteWith(change: (board: Board) => void, options?: SeedOptions) {
 }
 
 function seedSixCards() {
-  rewriteWith((board) => {
+  return rewriteWith((board) => {
     const ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
     board.columns = [
       { id: "col-todo", title: "Todo", cardIds: ids, createdAt: 1 },
@@ -422,6 +422,44 @@ describe("bulk card actions", () => {
 
     expect(changes).not.toContain("3 selected");
     expect(changes).toContain("1 selected");
+  });
+
+  it("has no stale count when a selection starts during a busy destructive run", async () => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+    const server = new FakeServer([seedBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    expect(
+      await screen.findByText("Alpha", {}, { timeout: 15_000 }),
+    ).toBeVisible();
+    await enterSelectionMode(user);
+    await selectByClick(user, "Alpha");
+    const announcement = screen.getByTestId("bulk-count-announcement");
+    await waitFor(() => expect(announcement).toHaveTextContent("1 selected"));
+
+    const release = server.holdNextCommand();
+    await user.click(screen.getByTestId("bulk-archive"));
+    const confirm = screen.getByRole("dialog", {
+      name: "Archive 1 selected card?",
+    });
+    await user.click(within(confirm).getByRole("button", { name: "Archive" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-progress")).toBeInTheDocument(),
+    );
+    await waitFor(() => expect(announcement.textContent).toBe(""));
+
+    await selectByClick(user, "Bravo");
+    expect(announcement.textContent).toBe("");
+    act(() => release());
+    await waitFor(() =>
+      expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+        "Changed: 1 of 1.",
+      ),
+    );
   });
 
   it("does not re-announce the count when results are dismissed with a selection", async () => {
