@@ -154,8 +154,9 @@ test("clamps a long detached filename to two lines at 390 and 768", async ({
 }) => {
   const column = await board.column("Files");
   const cardId = await board.card(column, "Long detached filename");
-  const longName =
-    "this-is-a-very-long-attachment-filename-that-must-clamp-to-two-lines-on-mobile.png";
+  // 200 characters after the server's filename trim: wide glyphs need 3+
+  // lines at 768 and are visibly clipped at 390.
+  const longName = `${"W".repeat(196)}.png`;
   await seedDetachedFiles(board, cardId, [longName]);
   await page.setViewportSize({ width: 390, height: 844 });
   await board.open(page);
@@ -176,7 +177,8 @@ test("clamps a long detached filename to two lines at 390 and 768", async ({
       const lineHeight = Number.parseFloat(style.lineHeight) || 16;
       return {
         overflow: style.overflow,
-        height: element.getBoundingClientRect().height,
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
         lineHeight,
       };
     });
@@ -184,11 +186,13 @@ test("clamps a long detached filename to two lines at 390 and 768", async ({
 
   const narrow = await measured();
   expect(narrow.overflow).toBe("hidden");
-  expect(narrow.height).toBeLessThanOrEqual(narrow.lineHeight * 2 + 1);
+  expect(narrow.clientHeight).toBeLessThanOrEqual(narrow.lineHeight * 2 + 1);
+  expect(narrow.scrollHeight).toBeGreaterThan(narrow.clientHeight);
 
   await page.setViewportSize({ width: 768, height: 1024 });
   await expect(name).toBeVisible();
   const tablet = await measured();
   expect(tablet.overflow).toBe("hidden");
-  expect(tablet.height).toBeLessThanOrEqual(tablet.lineHeight * 2 + 1);
+  expect(tablet.clientHeight).toBeLessThanOrEqual(tablet.lineHeight * 2 + 1);
+  expect(tablet.scrollHeight).toBeGreaterThan(tablet.clientHeight);
 });
