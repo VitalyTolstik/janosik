@@ -101,7 +101,7 @@ function CountBadgeTrigger({ degree }: { degree: number }) {
             type="button"
             aria-label={t("card.links.badgeTooltip", { count: degree })}
             data-testid="card-links-badge"
-            className="inline-flex h-5 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:border-primary/40 group-hover:text-primary"
+            className="inline-flex h-6 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:border-primary/40 group-hover:text-primary"
             onClick={(event) => {
               // Don't let the click open the card dialog.
               event.stopPropagation();

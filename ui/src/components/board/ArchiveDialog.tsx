@@ -144,11 +144,24 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
   ).length;
   const allVisibleSelected =
     visible.length > 0 && visible.every((card) => selectedIds.has(card.id));
-  const canManage = role !== undefined && role !== "VIEWER";
+  // Restoring/deleting is a write: VIEWERs and an archived board's read-only
+  // view keep every per-row and bulk action hidden (QA-04). The server
+  // refuses both, so an offered control would only be a dead action.
+  const canManage =
+    role !== undefined && role !== "VIEWER" && !board.archivedAt;
 
   const runBulk = (kind: "delete" | "restore", columnId?: string) => {
     if (busy || selected.length === 0) return;
-    const actions = selected.map((card) =>
+    // The list is newest-archived first, and a restore appends to the target
+    // column. Restoring oldest-first keeps the original archive order
+    // (`Live, One, Two, Three`) instead of reversing it (QA-07).
+    const targets =
+      kind === "restore"
+        ? [...selected].sort(
+            (a, b) => (a.archivedAt ?? 0) - (b.archivedAt ?? 0),
+          )
+        : selected;
+    const actions = targets.map((card) =>
       bulkAction(kind, board.id, card.id, columnId),
     );
     if (startArchiveBatch(board.id, actions)) {
@@ -197,7 +210,9 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
               id={selectAllId}
               checked={allVisibleSelected}
               className={
-                allVisibleSelected ? undefined : "border-muted-foreground"
+                allVisibleSelected
+                  ? "h-6 w-6"
+                  : "h-6 w-6 border-muted-foreground"
               }
               disabled={busy || visible.length === 0}
               aria-label={t("archive.selectVisible")}
@@ -347,8 +362,8 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                       }
                       className={
                         selectedIds.has(card.id)
-                          ? undefined
-                          : "border-muted-foreground"
+                          ? "h-6 w-6"
+                          : "h-6 w-6 border-muted-foreground"
                       }
                     />
                   )}
@@ -373,95 +388,99 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                       })}
                     </div>
                   </div>
-                  {confirming ? (
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <span className="text-xs text-muted-foreground">
-                        {t("archive.deleteConfirm")}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-success hover:text-success"
-                        aria-label={t("archive.deleteConfirmYes")}
-                        disabled={busy}
-                        onClick={() => {
-                          setConfirmDeleteId(null);
-                          deleteCard(card.id);
-                        }}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground"
-                        aria-label={t("archive.deleteConfirmCancel")}
-                        disabled={busy}
-                        onClick={() => setConfirmDeleteId(null)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            aria-label={t("card.unarchive")}
-                            data-testid="archive-restore"
-                            disabled={busy}
-                          >
-                            <ArchiveRestore className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuLabel>
-                            {t("card.restoreTo")}
-                          </DropdownMenuLabel>
-                          {board.columns.map((column) => {
-                            const reason = restoreTargetBlockReason(
-                              board,
-                              card,
-                              column,
-                              role,
-                              t,
-                            );
-                            return (
-                              <DropdownMenuItem
-                                key={column.id}
-                                disabled={reason !== null}
-                                title={reason ?? undefined}
-                                onSelect={() =>
-                                  unarchiveCard(card.id, column.id)
-                                }
-                              >
-                                <span className="truncate">{column.title}</span>
-                                {column.wipLimit !== undefined && (
-                                  <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
-                                    {column.cardIds.length}/{column.wipLimit}
+                  {canManage ? (
+                    confirming ? (
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <span className="text-xs text-muted-foreground">
+                          {t("archive.deleteConfirm")}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-success hover:text-success"
+                          aria-label={t("archive.deleteConfirmYes")}
+                          disabled={busy}
+                          onClick={() => {
+                            setConfirmDeleteId(null);
+                            deleteCard(card.id);
+                          }}
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground"
+                          aria-label={t("archive.deleteConfirmCancel")}
+                          disabled={busy}
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                              aria-label={t("card.unarchive")}
+                              data-testid="archive-restore"
+                              disabled={busy}
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuLabel>
+                              {t("card.restoreTo")}
+                            </DropdownMenuLabel>
+                            {board.columns.map((column) => {
+                              const reason = restoreTargetBlockReason(
+                                board,
+                                card,
+                                column,
+                                role,
+                                t,
+                              );
+                              return (
+                                <DropdownMenuItem
+                                  key={column.id}
+                                  disabled={reason !== null}
+                                  title={reason ?? undefined}
+                                  onSelect={() =>
+                                    unarchiveCard(card.id, column.id)
+                                  }
+                                >
+                                  <span className="truncate">
+                                    {column.title}
                                   </span>
-                                )}
-                              </DropdownMenuItem>
-                            );
-                          })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                        aria-label={t("archive.delete")}
-                        data-testid="archive-delete"
-                        disabled={busy}
-                        onClick={() => setConfirmDeleteId(card.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  )}
+                                  {column.wipLimit !== undefined && (
+                                    <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                      {column.cardIds.length}/{column.wipLimit}
+                                    </span>
+                                  )}
+                                </DropdownMenuItem>
+                              );
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          aria-label={t("archive.delete")}
+                          data-testid="archive-delete"
+                          disabled={busy}
+                          onClick={() => setConfirmDeleteId(card.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )
+                  ) : null}
                 </li>
               );
             })}

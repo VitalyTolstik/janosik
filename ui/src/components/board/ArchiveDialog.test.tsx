@@ -7,8 +7,10 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Board } from "@janosik/shared";
+import { api } from "@/api/client";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
@@ -16,6 +18,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
+import { FakeServer } from "@/test/fake-server";
 import { BoardProvider } from "@/store/BoardContext";
 
 /**
@@ -220,6 +223,42 @@ describe("ArchiveDialog", () => {
     );
   });
 
+  it("restores a bulk selection oldest-first so the column keeps the archived order", async () => {
+    addArchivedCards(3);
+    renderArchive();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select all matching cards" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Restore selected" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "To do" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("archive-list")).toHaveTextContent(
+        "The archive is empty.",
+      ),
+    );
+    await waitFor(
+      () => {
+        const [board] = JSON.parse(
+          localStorage.getItem("janosik-boards")!,
+        ) as Board[];
+        expect(
+          board.columns[0].cardIds.map((id) => board.cards[id].title),
+        ).toEqual([
+          "Active thing",
+          "Extra 0",
+          "Extra 1",
+          "Extra 2",
+          "Archived thing",
+        ]);
+      },
+      { timeout: 2_000 },
+    );
+  });
+
   it("does not offer a target without enough room for all selected cards", async () => {
     addArchivedCards(2, 3);
     renderArchive();
@@ -262,5 +301,57 @@ describe("ArchiveDialog", () => {
         "The archive is empty.",
       ),
     );
+  });
+});
+
+const SERVER_BOARD: Board = {
+  id: "b-1",
+  title: "Alpha",
+  columns: [{ id: "col-1", title: "To do", cardIds: [], createdAt: 1 }],
+  cards: {
+    "c-old": {
+      id: "c-old",
+      title: "Archived thing",
+      labelIds: [],
+      createdAt: 2000,
+      updatedAt: 3000,
+      archivedAt: 3000,
+    },
+  },
+  labels: [],
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+describe("ArchiveDialog permissions", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("gives a VIEWER a read-only archive: no per-row or bulk write actions", async () => {
+    const server = new FakeServer([SERVER_BOARD]);
+    server.role = "VIEWER";
+    vi.stubGlobal("fetch", server.handle);
+    renderArchive();
+
+    const row = await screen.findByTestId(
+      "archive-row",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(row).toHaveTextContent("Archived thing");
+    expect(within(row).queryByTestId("archive-restore")).toBeNull();
+    expect(within(row).queryByTestId("archive-delete")).toBeNull();
+    expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+    // Opening the archived card stays available for reading.
+    expect(within(row).getByTestId("archive-row-title")).toBeEnabled();
   });
 });

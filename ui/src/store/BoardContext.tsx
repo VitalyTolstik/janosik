@@ -1850,6 +1850,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         (action) => (action as { cardId?: string }).cardId,
       );
       if (cardIds.some((id) => id === undefined)) return false;
+      // Restores are individual commands (one WIP check and one undo step
+      // per card). Say so instead of implying a single bulk undo (QA-07).
+      const restoring = batch.every(
+        (action) => action.type === "UNARCHIVE_CARD",
+      );
       archiveBatchRunning.current = true;
       setArchiveBatch({
         boardId,
@@ -1883,6 +1888,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
               toast.error(
                 t("archive.backgroundFailed", { count: batch.length - done }),
               );
+            else if (restoring)
+              toast.success(t("archive.backgroundRestored", { count: done }));
             else toast.success(t("archive.backgroundDone", { count: done }));
           }
         }

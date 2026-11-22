@@ -630,6 +630,7 @@
   "archive.progress": "Processing {{done}} of {{total}} cards in the background. Keep Janosik open until it finishes.",
   "archive.backgroundStarted": "Processing cards in the background. Keep Janosik open until it finishes.",
   "archive.backgroundDone": "Finished processing {{count}} cards.",
+  "archive.backgroundRestored": "Restored {{count}} cards. Undo removes them one at a time.",
   "archive.backgroundFailed": "The operation stopped. {{count}} cards were not processed; check the archive and try again.",
   "archive.backgroundOtherBoard": "An archive operation is running on another board. Keep Janosik open until it finishes.",
   "archive.backgroundEmpty": "Selected cards are being processed…",
