@@ -148,7 +148,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
   // view keep every per-row and bulk action hidden (QA-04). The server
   // refuses both, so an offered control would only be a dead action.
   const canManage =
-    role !== undefined && role !== "VIEWER" && !board.archivedAt;
+    role !== undefined && role !== "VIEWER" && board.archivedAt === undefined;
 
   const runBulk = (kind: "delete" | "restore", columnId?: string) => {
     if (busy || selected.length === 0) return;
@@ -487,6 +487,14 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
           </ul>
         )}
       </div>
+      {canManage ? (
+        <p
+          data-testid="archive-undo-hint"
+          className="text-xs text-muted-foreground"
+        >
+          {t("archive.restoreUndoHint")}
+        </p>
+      ) : null}
       {visible.length > pageSize && (
         <div
           className="flex items-center justify-between gap-3 border-t pt-3"
@@ -523,9 +531,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
         open={confirmBulkDelete}
         onOpenChange={setConfirmBulkDelete}
         title={t("archive.bulkDeleteTitle")}
-        description={t("archive.bulkDeleteDescription", {
-          count: selected.length,
-        })}
+        description={t("archive.bulkDeleteDescription")}
         confirmLabel={t("archive.deleteSelected")}
         destructive
         onConfirm={() => void runBulk("delete")}

@@ -33,6 +33,7 @@ import { CardAssignee } from "@/components/board/CardAssignee";
 import { CardTaskSpec } from "@/components/board/CardTaskSpec";
 import { CardLinks } from "@/components/board/CardLinks";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
+import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { LabelPicker } from "@/components/board/LabelPicker";
 // MDXEditor + Lexical are ~half of the app bundle but only needed once the
 // user opens a card — load them on demand (TASK-19). vi.mock in tests
@@ -647,7 +648,12 @@ export function CardDialog({
     setTitleDraft(value);
     if (titleTimerRef.current !== null) {
       window.clearTimeout(titleTimerRef.current);
+      titleTimerRef.current = null;
     }
+    // A blank draft must not be written or reverted under the user's hands
+    // while they are still editing: the hint explains the rule, and blur or
+    // close restores the stored title (QA-14 review).
+    if (value.trim() === "") return;
     titleTimerRef.current = window.setTimeout(() => {
       titleTimerRef.current = null;
       flushTitleRef.current();
@@ -930,6 +936,9 @@ export function CardDialog({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+            {board?.archivedAt !== undefined ? (
+              <ArchivedBoardNotice boardId={board.id} className="mb-2" />
+            ) : null}
             <div className="space-y-1.5">
               <label htmlFor="card-title-input" className="sr-only">
                 {t("card.titleLabel")}
@@ -979,6 +988,16 @@ export function CardDialog({
                 limit={LIMITS.cardTitle}
                 testId="card-title-counter"
               />
+              {!readOnly && titleDraft.trim() === "" ? (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  data-testid="card-title-blank-hint"
+                  className="text-xs text-amber-600"
+                >
+                  {t("card.titleBlankHint")}
+                </p>
+              ) : null}
               {titleConflict && !readOnly ? (
                 <div
                   role="alert"

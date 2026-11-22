@@ -144,7 +144,22 @@ test("undo and the data menu are touch-reachable on the phone", async ({
   await board.open(page);
 
   // The delete confirmation promises undo; the control must be there for a
-  // touch-only user with no Ctrl+Z (QA-01).
+  // touch-only user with no Ctrl+Z (QA-01). Both the phone and the tablet get
+  // the house 44 px target (QA-10 UX review).
+  for (const width of [390, 768]) {
+    await page.setViewportSize({
+      width,
+      height: width === 390 ? 844 : 1024,
+    });
+    for (const name of ["Undo", "Redo", "Data & backups"]) {
+      const box = await page.getByRole("button", { name }).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+
   const undo = page.getByRole("button", { name: "Undo" });
   await expect(undo).toBeVisible();
   await expect(page.getByRole("button", { name: "Redo" })).toBeVisible();

@@ -393,7 +393,19 @@ test("opens an archived card from an archived board", async ({
     "readonly",
     "",
   );
+  const notice = dialog.getByTestId("archived-board-notice");
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("This board is archived and read-only.");
+  await expect(
+    notice.getByRole("button", { name: "Restore board" }),
+  ).toBeVisible();
   await expect(dialog.getByTestId("comment-input")).toHaveCount(0);
+  // Restoring from the notice turns the same deep link back into an editor.
+  await notice.getByRole("button", { name: "Restore board" }).click();
+  await expect(dialog.getByTestId("archived-board-notice")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("textbox", { name: "Title" }),
+  ).not.toHaveAttribute("readonly");
 });
 
 test("scrolls the keyboard selection into view", async ({ page, board }) => {

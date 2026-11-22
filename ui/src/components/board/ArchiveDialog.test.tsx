@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "@janosik/shared";
 import { api } from "@/api/client";
 import { ArchiveDialog } from "@/components/board/ArchiveDialog";
+import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/routes";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -87,14 +88,16 @@ function renderArchive() {
           <I18nProvider>
             <TooltipProvider>
               <MemoryRouter initialEntries={[routes.board("b-1")]}>
-                <BoardProvider>
-                  <Routes>
-                    <Route
-                      path={routes.boardPattern}
-                      element={<ArchiveDialog open onOpenChange={() => {}} />}
-                    />
-                  </Routes>
-                </BoardProvider>
+                <ToastProvider>
+                  <BoardProvider>
+                    <Routes>
+                      <Route
+                        path={routes.boardPattern}
+                        element={<ArchiveDialog open onOpenChange={() => {}} />}
+                      />
+                    </Routes>
+                  </BoardProvider>
+                </ToastProvider>
               </MemoryRouter>
             </TooltipProvider>
           </I18nProvider>
@@ -155,7 +158,7 @@ describe("ArchiveDialog", () => {
     await waitFor(() => expect(screen.queryByTestId("archive-row")).toBeNull());
   });
 
-  it("deletes an archived card for good after inline confirm", async () => {
+  it("removes an archived card after inline confirm", async () => {
     renderArchive();
     fireEvent.click(screen.getByTestId("archive-delete"));
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete" }));
@@ -226,6 +229,9 @@ describe("ArchiveDialog", () => {
   it("restores a bulk selection oldest-first so the column keeps the archived order", async () => {
     addArchivedCards(3);
     renderArchive();
+    expect(screen.getByTestId("archive-undo-hint")).toHaveTextContent(
+      "one at a time",
+    );
     await userEvent.click(
       screen.getByRole("checkbox", { name: "Select all matching cards" }),
     );
@@ -235,6 +241,11 @@ describe("ArchiveDialog", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "To do" }),
     );
+    expect(
+      await screen.findByText(
+        "Restored 4 cards. Undo removes them one at a time.",
+      ),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByTestId("archive-list")).toHaveTextContent(
         "The archive is empty.",
@@ -257,6 +268,22 @@ describe("ArchiveDialog", () => {
       },
       { timeout: 2_000 },
     );
+  });
+
+  it("singularises the bulk restore toast for one card", async () => {
+    renderArchive();
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Select all matching cards" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Restore selected" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "To do" }),
+    );
+    expect(
+      await screen.findByText("Restored 1 card. Undo removes it right away."),
+    ).toBeInTheDocument();
   });
 
   it("does not offer a target without enough room for all selected cards", async () => {
@@ -283,7 +310,9 @@ describe("ArchiveDialog", () => {
       screen.getByRole("button", { name: "Delete selected" }),
     );
     expect(
-      screen.getByText("Permanently delete 3 selected cards from the archive?"),
+      screen.getByText(
+        "Delete the selected cards from the archive? You can undo this right away, one card at a time.",
+      ),
     ).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getAllByTestId("archive-row")).toHaveLength(3);
@@ -291,7 +320,7 @@ describe("ArchiveDialog", () => {
       screen.getByRole("button", { name: "Delete selected" }),
     );
     const confirmation = screen.getByRole("dialog", {
-      name: "Delete selected cards?",
+      name: "Delete selected cards from the archive?",
     });
     await userEvent.click(
       within(confirmation).getByRole("button", { name: "Delete selected" }),

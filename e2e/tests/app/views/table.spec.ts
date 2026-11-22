@@ -380,6 +380,11 @@ test("keeps the title readable at 768 with a long assignee e-mail", async ({
   expect(assigneeBox).not.toBeNull();
   expect(titleBox!.width).toBeGreaterThan(140);
   expect(assigneeBox!.width).toBeLessThan(200);
+  const assigneeName = row
+    .getByTestId("table-assignee")
+    .getByTitle(board.email, { exact: true });
+  await expect(assigneeName).toHaveText(board.email);
+  await expect(assigneeName).toHaveAttribute("title", board.email);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(768);

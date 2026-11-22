@@ -200,13 +200,38 @@ describe("CardDialog comment drafts", () => {
   it("reverts a blank title instead of storing an unlabeled card", async () => {
     renderBoard("/board/b-1?card=draft-a");
     const title = await screen.findByLabelText("Title");
-    await userEvent.clear(title);
-    await userEvent.tab();
+    fireEvent.change(title, { target: { value: "" } });
+    expect(title).toHaveValue("");
+    fireEvent.blur(title);
     await waitFor(() => expect(title).toHaveValue("Draft card A"));
 
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
     await userEvent.click(screen.getByText("Draft card A"));
     expect(await screen.findByLabelText("Title")).toHaveValue("Draft card A");
+  });
+
+  it("keeps a blank title draft while focused and explains the rule", async () => {
+    renderBoard("/board/b-1?card=draft-a");
+    const title = await screen.findByLabelText("Title");
+    await userEvent.click(title);
+    fireEvent.change(title, { target: { value: "" } });
+    expect(title).toHaveFocus();
+    expect(title).toHaveValue("");
+
+    // The old 400 ms quiet-commit timer reverted the field under the user's
+    // hands; a blank draft must stay put until blur/close (QA-14 review).
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(title).toHaveFocus();
+    expect(title).toHaveValue("");
+    expect(screen.getByTestId("card-title-blank-hint")).toHaveTextContent(
+      "A card needs a title",
+    );
+
+    fireEvent.blur(title);
+    await waitFor(() => expect(title).toHaveValue("Draft card A"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("card-title-blank-hint")).toBeNull(),
+    );
   });
 
   it("restores only the source card's draft when following a link and returning", async () => {

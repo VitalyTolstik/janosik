@@ -117,6 +117,22 @@ describe("BoardSection role wiring (TASK-35)", () => {
       { timeout: 15_000 },
     );
     expect(within(dialog).getByLabelText("Title")).toHaveAttribute("readonly");
+    // Both the board surface and the dialog say why nothing is editable, and
+    // an ADMIN can restore the board right here (QA-03 UX review).
+    const boardNotice = within(screen.getByTestId("board-main")).getByTestId(
+      "archived-board-notice",
+    );
+    expect(boardNotice).toHaveTextContent(/archived and read-only/i);
+    expect(
+      within(boardNotice).getByTestId("archived-board-restore"),
+    ).toBeVisible();
+    const dialogNotice = within(dialog).getByTestId("archived-board-notice");
+    expect(dialogNotice).toHaveTextContent(/archived and read-only/i);
+    expect(
+      await within(dialogNotice).findByRole("button", {
+        name: "Restore board",
+      }),
+    ).toBeVisible();
     // The actions menu keeps the read-only "open in a new tab" entry, but no
     // mutating item is offered (QA-03).
     fireEvent.pointerDown(
@@ -133,5 +149,24 @@ describe("BoardSection role wiring (TASK-35)", () => {
     expect(screen.queryByTestId("board-rename")).toBeNull();
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
     expect(container.querySelector("[data-composer-trigger]")).toBeNull();
+  });
+
+  it("asks a non-admin to have an archived board restored", async () => {
+    const server = new FakeServer([{ ...SERVER_BOARD, archivedAt: 1_700_000 }]);
+    server.role = "MEMBER";
+    vi.stubGlobal("fetch", server.handle);
+
+    renderApp("/board/b-1?card=c-1");
+
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Card details" },
+      { timeout: 15_000 },
+    );
+    const dialogNotice = within(dialog).getByTestId("archived-board-notice");
+    expect(dialogNotice).toHaveTextContent(/ask a board admin/i);
+    expect(
+      within(dialogNotice).queryByTestId("archived-board-restore"),
+    ).toBeNull();
   });
 });

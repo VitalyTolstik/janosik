@@ -1,9 +1,6 @@
 import { test, expect } from "@/fixtures/board.js";
 
-test("deletes an archived card forever from the archive", async ({
-  page,
-  board,
-}) => {
+test("removes an archived card from the archive", async ({ page, board }) => {
   const column = await board.column("Archive");
   const cardId = await board.card(column, "Delete forever");
   await board.command({ type: "ARCHIVE_CARD", cardId });

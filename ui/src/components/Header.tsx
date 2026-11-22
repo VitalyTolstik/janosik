@@ -514,7 +514,7 @@ export function Header() {
                   aria-label={t("undo.aria")}
                   disabled={!canUndo}
                   onClick={undo}
-                  className="md:h-8 md:w-8 md:min-w-8"
+                  className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-8 lg:min-w-8"
                 >
                   <LazyAnimatedIcon name="arrow-left" size={16} />
                 </Button>
@@ -530,7 +530,7 @@ export function Header() {
                   aria-label={t("redo.aria")}
                   disabled={!canRedo}
                   onClick={redo}
-                  className="md:h-8 md:w-8 md:min-w-8"
+                  className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-8 lg:min-w-8"
                 >
                   <LazyAnimatedIcon name="arrow-right" size={16} />
                 </Button>

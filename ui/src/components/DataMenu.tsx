@@ -163,6 +163,7 @@ export function DataMenu() {
                 variant="ghost"
                 size="icon"
                 aria-label={t("data.tooltip")}
+                className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11"
               >
                 {/* Cloud + restore-cycle: the recognizable “backup” symbol
                  * (same as OneDrive/iCloud sync badges). Intentionally static. */}
