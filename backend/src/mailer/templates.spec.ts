@@ -3,6 +3,7 @@ import {
   announcementFallbackNotice,
   announcementFallbackSubjectPrefix,
   attentionEmail,
+  digestAttentionHtml,
   digestEmail,
   htmlToText,
   mentionInboxBody,
@@ -127,6 +128,7 @@ describe("attentionEmail", () => {
       "agent.blocked",
       "agent.needs_human",
       "comment.mention",
+      "card.assigned",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -148,6 +150,7 @@ describe("attentionEmail", () => {
       "agent.blocked",
       "agent.needs_human",
       "comment.mention",
+      "card.assigned",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -204,6 +207,26 @@ describe("attentionEmail", () => {
     expect(attentionEmail("comment.mention", vars, "ru").subject).toContain(
       "вас упомянули",
     );
+    expect(
+      attentionEmail(
+        "card.assigned",
+        { ...vars, cards: "Ship it, Release, QA" },
+        "en",
+      ).text,
+    ).toContain("Ship it, Release, QA");
+    expect(
+      attentionEmail("card.assigned", { ...vars, cards: "Ship it" }, "ru")
+        .subject,
+    ).toContain("назначили карточки");
+  });
+
+  it("labels assignment attention in the digest in both languages (TASK-177.20)", () => {
+    expect(
+      digestAttentionHtml([{ type: "card.assigned", count: 2 }], "en"),
+    ).toContain("cards assigned to you: <b>2</b>");
+    expect(
+      digestAttentionHtml([{ type: "card.assigned", count: 2 }], "ru"),
+    ).toContain("назначенных вам карточек: <b>2</b>");
   });
 
   it("keeps comment text out of the mention letter but in the inbox body", () => {
