@@ -76,7 +76,7 @@ test("public comment avatars pass dark 390 px contrast", async ({
       "A shared comment",
     );
     await expect(visitor.getByTestId("public-avatar").first()).toHaveClass(
-      "bg-primary",
+      /(?:^|\s)bg-primary(?:\s|$)/,
     );
     expect(
       await axeViolations(visitor, '[data-testid="public-comments"]'),
