@@ -200,8 +200,10 @@ keeps the text you typed. The
 mention becomes an `@Name` chip and the member receives an attention
 notification (respecting their attention-email setting) with a deep link to the
 comment; the comment author is never notified. Mentions inside fenced or
-inline code stay plain text; indented text is plain text too. If you remove a
-mention while editing, its pending notification is withdrawn.
+inline code never notify, and neither do escaped tokens or larger URLs.
+Indented text is ordinary text: an explicit `[@Name](…)` link there still
+notifies, while a hand-typed `@Name` never does. If you remove a mention while
+editing, its pending notification is withdrawn.
 
 ### History
 

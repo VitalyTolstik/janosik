@@ -100,9 +100,11 @@ describe("comment mentions (TASK-177.12)", () => {
     ).toEqual([]);
   });
 
-  it("treats indented text and marker-line indentation as plain text", () => {
+  it("keeps explicit mention links in indented text live; only fenced/inline code suppresses", () => {
     const token = mentionMarkdown("Alice", "user-1");
     const mentioned = [expect.objectContaining({ userId: "user-1" })];
+    // Indentation does not make an explicit link inert: only fenced and
+    // inline code suppress it.
     expect(parseCommentMentions(`    ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`    - ${token}`)).toEqual(mentioned);
     expect(parseCommentMentions(`>     ${token}`)).toEqual(mentioned);
@@ -111,6 +113,10 @@ describe("comment mentions (TASK-177.12)", () => {
     expect(parseCommentMentions(`- parent\n\n      ${token}`)).toEqual(
       mentioned,
     );
+  });
+
+  it("ignores mention-shaped text inside HTML comments", () => {
+    const token = mentionMarkdown("Alice", "user-1");
     expect(parseCommentMentions(`<!-- hidden ${token} -->`)).toEqual([]);
   });
 
