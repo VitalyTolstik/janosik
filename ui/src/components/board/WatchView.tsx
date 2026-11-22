@@ -20,6 +20,7 @@ import {
 } from "@/store/board-live";
 import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
+import { diffSides, type DiffSides } from "@/utils/diff-words";
 
 /** Entries per page of the watch feed (server max is 100). */
 const PAGE_SIZE = 50;
@@ -328,7 +329,19 @@ export function WatchView({ boardId }: WatchViewProps) {
   useEffect(() => {
     if (!serverMode) return;
     const offActivity = activity.subscribe((event) => {
-      if (event.boardId === boardId) scheduleRefresh();
+      if (event.boardId !== boardId) return;
+      if (event.kind === "comment_deleted") {
+        const deletedId = event.commentId ?? event.detail;
+        if (deletedId) {
+          // Drop any cached comment diff immediately; the coalesced refetch
+          // then returns the metadata-only tombstone.
+          setItems((current) =>
+            current.filter((entry) => entry.commentId !== deletedId),
+          );
+          pageCache.current.clear();
+        }
+      }
+      scheduleRefresh();
     });
     const offCommits = commits.subscribe((id) => {
       if (id === boardId) scheduleRefresh();
@@ -786,6 +799,8 @@ interface DetailPart {
   /** Absent for a creation/comment (nothing to strike through). */
   from?: string;
   to: string;
+  /** Character-level common prefix/suffix split for a two-sided text change. */
+  sides?: DiffSides;
 }
 
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -894,17 +909,29 @@ function WatchRow({
                     {detail.label}:{" "}
                   </span>
                 ) : null}
-                {detail.from !== undefined ? (
+                {detail.from !== undefined && detail.sides === undefined ? (
                   <>
-                    <span className="text-(--chip-red) line-through [overflow-wrap:anywhere]">
+                    <span className="whitespace-pre-wrap text-(--chip-red) line-through [overflow-wrap:anywhere]">
                       {detail.from}
                     </span>
                     <span className="mx-1 text-muted-foreground">→</span>
                   </>
                 ) : null}
-                <span className="text-(--chip-green) [overflow-wrap:anywhere]">
-                  {detail.to}
-                </span>
+                {detail.sides !== undefined ? (
+                  <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1 [overflow-wrap:anywhere]">
+                    <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                      <DiffSegments segments={detail.sides.left} />
+                    </span>
+                    <span className="text-muted-foreground">→</span>
+                    <span className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+                      <DiffSegments segments={detail.sides.right} />
+                    </span>
+                  </span>
+                ) : (
+                  <span className="whitespace-pre-wrap text-(--chip-green) [overflow-wrap:anywhere]">
+                    {detail.to}
+                  </span>
+                )}
               </span>
             ))}
           </span>
@@ -958,36 +985,111 @@ function detailsFor(
     parts.push({ label: "", to: display(entry.detail) });
   }
   for (const change of changes) {
+    // TASK-185.2: text fields use the shared character-level common
+    // prefix/suffix split, so a long comment shows the changed fragment
+    // instead of two almost identical walls. Expanded rows fall back to the
+    // full stored snapshot (the feed's stand-in until the revisions view).
+    const diffable =
+      !expanded &&
+      change.from !== null &&
+      change.to !== null &&
+      change.field !== "dueDate" &&
+      change.field !== "priority" &&
+      change.field !== "assignee" &&
+      change.field !== "claimedBy" &&
+      change.field !== "role" &&
+      change.field !== "expiresAt";
+    const sides =
+      diffable && change.from !== null && change.to !== null
+        ? diffSides(change.from, change.to)
+        : null;
     if (change.field === "comment") {
       parts.push({
         label: "",
-        ...(change.from !== null ? { from: `“${display(change.from)}”` } : {}),
-        to: change.to === null ? "—" : `“${display(change.to)}”`,
+        ...(sides !== null
+          ? { to: "", sides }
+          : {
+              ...(change.from !== null
+                ? { from: `“${display(change.from)}”` }
+                : {}),
+              to: change.to === null ? "—" : `“${display(change.to)}”`,
+            }),
       });
       continue;
     }
     parts.push({
       label: t(FIELD_KEYS[change.field] ?? "history.field.title"),
-      ...(change.from !== null
-        ? {
-            from: display(
+      ...(sides !== null
+        ? { to: "", sides }
+        : {
+            ...(change.from !== null
+              ? {
+                  from: display(
+                    formatChangeValue(
+                      change.field,
+                      change.from,
+                      lang,
+                      hour12,
+                      memberName,
+                    ),
+                  ),
+                }
+              : {}),
+            to: display(
               formatChangeValue(
                 change.field,
-                change.from,
+                change.to,
                 lang,
                 hour12,
                 memberName,
               ),
             ),
-          }
-        : {}),
-      to: display(
-        formatChangeValue(change.field, change.to, lang, hour12, memberName),
-      ),
+          }),
     });
   }
-  if (parts.length === 0 && entry.detail) {
+  // TASK-185.2: never fall back to a raw comment id. A `comment_updated`
+  // row without a confirmed revision (or a legacy snapshot) keeps only the
+  // localized sentence.
+  if (
+    parts.length === 0 &&
+    entry.detail &&
+    !entry.type.startsWith("comment_")
+  ) {
     parts.push({ label: "", to: display(entry.detail) });
   }
   return parts;
+}
+
+/**
+ * One half of a character diff: unchanged context muted, removed text struck
+ * through, added text green. Text is rendered as text — no markdown, mentions
+ * or URLs are interpreted — and `whitespace-pre-wrap` keeps line breaks.
+ */
+function DiffSegments({ segments }: { segments: DiffSides["left"] }) {
+  return (
+    <>
+      {segments.map((segment, index) => {
+        if (segment.kind === "same") {
+          return (
+            <span key={index} className="whitespace-pre-wrap">
+              {segment.text}
+            </span>
+          );
+        }
+        return (
+          <span
+            key={index}
+            data-diff={segment.kind}
+            className={
+              segment.kind === "removed"
+                ? "whitespace-pre-wrap rounded-sm bg-danger/10 px-0.5 font-medium text-(--chip-red) line-through decoration-danger/50"
+                : "whitespace-pre-wrap rounded-sm bg-success/10 px-0.5 font-medium text-(--chip-green)"
+            }
+          >
+            {segment.text}
+          </span>
+        );
+      })}
+    </>
+  );
 }

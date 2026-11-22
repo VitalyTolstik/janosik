@@ -203,7 +203,7 @@ export async function deleteCommentActivitySnapshots(
     Prisma.sql`
       DELETE FROM "Activity"
       WHERE ${types}
-        AND "details"->>'commentId' IN (${Prisma.join([...commentIds])})
+        AND "commentId" IN (${Prisma.join([...commentIds])})
     `,
   );
 }
@@ -384,6 +384,9 @@ export async function writeCommentUpdate(
       boardId: params.boardId,
       cardId: comment.cardId,
       type: "comment_updated",
+      // TASK-185.2: the typed link drives the live-comment filter and the
+      // HTTP revision check without parsing free JSON.
+      commentId: comment.id,
       actorId: params.editorId ?? comment.authorId,
       actorType: params.attribution.actorType,
       apiTokenId: params.attribution.apiTokenId,

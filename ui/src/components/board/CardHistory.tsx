@@ -128,6 +128,24 @@ export function CardHistory({
     if (!serverMode) return;
     return activity.subscribe((event: ActivitySseEvent) => {
       if (event.boardId !== boardId || event.cardId !== cardId) return;
+      if (event.kind === "comment_deleted") {
+        const deletedId = event.commentId ?? event.detail;
+        if (deletedId) {
+          // TASK-185.2: drop the cached text/diff immediately and let the
+          // refetch return the text-free tombstones. Keying on the typed id
+          // also works for an actor-less master frame.
+          setFeed((current) =>
+            current
+              ? {
+                  ...current,
+                  items: current.items.filter(
+                    (entry) => entry.commentId !== deletedId,
+                  ),
+                }
+              : current,
+          );
+        }
+      }
       void refreshNewest();
     });
   }, [activity, boardId, cardId, serverMode, refreshNewest]);
@@ -459,7 +477,10 @@ function DiffSegments({ segments }: { segments: DiffSegment[] }) {
       {segments.map((segment, index) => {
         if (segment.kind === "same") {
           return (
-            <span key={index} className="text-foreground/70">
+            <span
+              key={index}
+              className="whitespace-pre-wrap text-foreground/70"
+            >
               {segment.text}
             </span>
           );
@@ -469,7 +490,7 @@ function DiffSegments({ segments }: { segments: DiffSegment[] }) {
             key={index}
             data-diff={segment.kind}
             className={cn(
-              "rounded-sm px-0.5 font-medium",
+              "whitespace-pre-wrap rounded-sm px-0.5 font-medium",
               segment.kind === "removed"
                 ? "bg-danger/10 text-(--chip-red) line-through decoration-danger/50"
                 : "bg-success/10 text-(--chip-green)",
@@ -530,5 +551,9 @@ function HistoryValue({
       </span>
     );
   }
-  return <span className={cn("text-foreground/80", className)}>{value}</span>;
+  return (
+    <span className={cn("whitespace-pre-wrap text-foreground/80", className)}>
+      {value}
+    </span>
+  );
 }

@@ -434,11 +434,27 @@ export interface ActivitySseEvent {
   id: string;
   boardId: string;
   cardId?: string;
-  actorId: string;
+  /**
+   * Who caused the event. Optional since TASK-185.2: a master-admin comment
+   * deletion deliberately omits the master id (it lives only in the admin
+   * audit); clients fall back to a nameless localized sentence.
+   */
+  actorId?: string;
   /** TASK-166: keep `actorType` on activity frames too. */
   actorType?: ActorType;
   at: number;
   kind: string;
+  /**
+   * TASK-185.2: the comment this frame is about. New clients read
+   * `commentId ?? detail`; `detail` stays for one release of compatibility.
+   */
+  commentId?: string;
+  /**
+   * TASK-185.2: the text revision a `comment_updated` frame refers to.
+   * Frames never carry text, snapshots, diffs or raw `details`.
+   */
+  revisionId?: string;
+  /** Transitional alias of `commentId` (TASK-37 contract). */
   detail?: string;
   /** TASK-166 attribution — same contract as `CommandDeltaEntry`. */
   apiTokenId?: string;
@@ -696,12 +712,19 @@ export interface ActivityFeedEntry {
   agentName?: string;
   /** Command entries: the single card the command touched, when unambiguous. */
   cardId?: string;
+  /**
+   * TASK-185.2: the comment a `comment_*` entry refers to. Allowed metadata
+   * only — the text-bearing `changes` projection stays separate, and `detail`
+   * is never a comment id on this feed.
+   */
+  commentId?: string;
   /** `Activity.details` snapshot (member email/role, comment text, …). */
   details?: Record<string, unknown> | null;
   /** Write-time snapshot for the sentence (label, item text, comment id). */
   detail?: string;
   /** Before → after lines captured at write time (TASK-37): commands freeze
-   *  the display snapshot at apply time, comment rows carry their text. */
+   *  the display snapshot at apply time; comment rows expose only the
+   *  protected text projection (snapshot/diff) allowed by TASK-185.2. */
   changes?: ActivityChange[];
 }
 

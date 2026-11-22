@@ -1912,6 +1912,10 @@ paths:
       description: |
         Merges the command log with Activity rows, newest first. Every board
         member can read it. The same audit filters apply to both sources.
+        TASK-185.2: `comment_updated` rows are visible only while the comment
+        and its parent chain are live; `comment_added` / `comment_deleted`
+        stay as metadata-only tombstones. Comment text is exposed only through
+        the protected `changes` projection, never raw `details`.
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -6228,6 +6232,9 @@ components:
           type: string
         cardId:
           type: string
+        commentId:
+          type: string
+          description: TASK-185.2 comment link for `comment_*` entries; no text.
         details:
           type: [object, "null"]
           additionalProperties: true

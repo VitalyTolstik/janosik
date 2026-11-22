@@ -405,11 +405,21 @@ export function CardComments({
         return;
       }
       if (event.kind === "comment_updated") {
-        void refreshEdited(event.detail ?? "");
+        void refreshEdited(event.commentId ?? event.detail ?? "");
         return;
       }
-      if (event.kind === "comment_deleted" && event.detail) {
-        const deletedId = event.detail;
+      if (event.kind === "comment_deleted") {
+        const deletedId = event.commentId ?? event.detail;
+        if (!deletedId) return;
+        // TASK-185.2: a master/admin frame omits the actor, so invalidation
+        // must key on the comment id, never on attribution. Drop the loaded
+        // body and any open confirmation that still quotes it.
+        if (itemsRef.current.some((item) => item.id === deletedId)) {
+          adjustUnfilteredCount(-1);
+        }
+        setPendingDelete((current) =>
+          current?.id === deletedId ? null : current,
+        );
         setThread((current) => ({
           ...current,
           items: current.items.filter((comment) => comment.id !== deletedId),
@@ -418,7 +428,36 @@ export function CardComments({
         void refreshNewest();
       }
     });
-  }, [activity, boardId, cardId, serverMode, refreshNewest, refreshEdited]);
+  }, [
+    activity,
+    adjustUnfilteredCount,
+    boardId,
+    cardId,
+    serverMode,
+    refreshNewest,
+    refreshEdited,
+  ]);
+
+  // Coming back to a background tab, restoring the network or reconnecting
+  // can all hide a revoked membership or a deleted comment. Re-check the
+  // newest page; a 403/404 drops the loaded thread through `markUnavailable`.
+  useEffect(() => {
+    if (!serverMode) return;
+    const recheck = () => {
+      void refreshNewest();
+    };
+    const onVisibility = () => {
+      if (!document.hidden) recheck();
+    };
+    window.addEventListener("focus", recheck);
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshNewest, serverMode]);
 
   const trimmed = draft.trim();
   const canSend =
