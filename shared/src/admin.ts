@@ -1794,6 +1794,22 @@ export interface AdminObservabilityDto {
       backend: "redis" | "memory";
     }>;
   };
+  /** TASK-185.6 §3.5: counts and text bytes only — never comment text. */
+  commentHistory: {
+    revisions: { count: number; bytes: number };
+    activity: { count: number; bytes: number };
+    /** Revision rows removed by the 50-per-comment window (all time). */
+    trimmedRevisions: number;
+    incompleteComments: number;
+    reasons: {
+      legacy_cutover: number;
+      revision_limit: number;
+      gdpr_erase: number;
+      writer_gap: number;
+    };
+    /** Comments over the 4 MB revision / 6 MB Activity text budgets. */
+    overBudget: { revisions: number; activity: number };
+  };
   health: Array<{ name: string; ok: boolean; detail: string }>;
 }
 

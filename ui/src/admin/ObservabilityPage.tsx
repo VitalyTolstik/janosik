@@ -28,6 +28,21 @@ const SERVICE_WORKER_LABEL: Record<ServiceWorkerStatus, AdminMessageKey> = {
 };
 
 /**
+ * TASK-185.6: human-readable text bytes for the comment-history panel.
+ * The API sends counts and byte sizes only, never comment text.
+ */
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+/**
  * Observability (TASK-64): version/deploy, database size + biggest tables,
  * background jobs, health, and the state of the frontend serving the panel.
  * The announcement history lives on its own entity page
@@ -212,6 +227,51 @@ export function ObservabilityPage() {
             </div>
           </div>
         ) : null}
+      </Panel>
+
+      <Panel className="p-4" data-testid="admin-observability-comment-history">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-medium">
+            {t("admin.observability.history")}
+          </h2>
+          <span className="text-xs text-muted-foreground">
+            {t("admin.observability.history.hint")}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <Field
+            label={t("admin.observability.history.revisions")}
+            value={String(data.commentHistory.revisions.count)}
+          />
+          <Field
+            label={t("admin.observability.history.revisionBytes")}
+            value={formatBytes(data.commentHistory.revisions.bytes)}
+          />
+          <Field
+            label={t("admin.observability.history.activity")}
+            value={String(data.commentHistory.activity.count)}
+          />
+          <Field
+            label={t("admin.observability.history.activityBytes")}
+            value={formatBytes(data.commentHistory.activity.bytes)}
+          />
+          <Field
+            label={t("admin.observability.history.trimmed")}
+            value={String(data.commentHistory.trimmedRevisions)}
+          />
+          <Field
+            label={t("admin.observability.history.incomplete")}
+            value={String(data.commentHistory.incompleteComments)}
+          />
+          <Field
+            label={t("admin.observability.history.writerGap")}
+            value={String(data.commentHistory.reasons.writer_gap)}
+          />
+          <Field
+            label={t("admin.observability.history.overBudget")}
+            value={`${data.commentHistory.overBudget.revisions} / ${data.commentHistory.overBudget.activity}`}
+          />
+        </div>
       </Panel>
 
       <Panel className="p-0">

@@ -686,6 +686,19 @@ export class FakeAdminServer {
       ],
     },
     health: [{ name: "database", ok: true, detail: "ok" }],
+    commentHistory: {
+      revisions: { count: 0, bytes: 0 },
+      activity: { count: 0, bytes: 0 },
+      trimmedRevisions: 0,
+      incompleteComments: 0,
+      reasons: {
+        legacy_cutover: 0,
+        revision_limit: 0,
+        gdpr_erase: 0,
+        writer_gap: 0,
+      },
+      overBudget: { revisions: 0, activity: 0 },
+    },
   };
 
   /** Board members keyed by boardId (TASK-60 moderation tests). */

@@ -134,4 +134,34 @@ describe("ObservabilityPage", () => {
     expect(panel).toHaveTextContent(t("admin.observability.frontend.build"));
     expect(await screen.findAllByText("—")).not.toHaveLength(0);
   });
+
+  it("shows comment-history counts and bytes without any comment text", async () => {
+    const server = new FakeAdminServer();
+    server.observability.commentHistory = {
+      revisions: { count: 51, bytes: 2_048 },
+      activity: { count: 50, bytes: 3_072 },
+      trimmedRevisions: 3,
+      incompleteComments: 2,
+      reasons: {
+        legacy_cutover: 1,
+        revision_limit: 1,
+        gdpr_erase: 0,
+        writer_gap: 0,
+      },
+      overBudget: { revisions: 0, activity: 1 },
+    };
+    vi.stubGlobal("fetch", fetchWithManifest(server));
+    renderObservability();
+
+    const panel = await screen.findByTestId(
+      "admin-observability-comment-history",
+    );
+    expect(panel).toHaveTextContent(t("admin.observability.history"));
+    expect(panel).toHaveTextContent("51");
+    expect(panel).toHaveTextContent("2.0 KB");
+    expect(panel).toHaveTextContent("3.0 KB");
+    expect(panel).toHaveTextContent("3");
+    expect(panel).toHaveTextContent("2");
+    expect(panel).toHaveTextContent("0 / 1");
+  });
 });
