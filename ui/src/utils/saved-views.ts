@@ -83,7 +83,23 @@ export interface PrunedSavedViews {
   views: SavedView[];
   /** A view referenced a label/assignee id that is no longer on the board. */
   missingOptions: boolean;
+  /** Views still active, but with missing options removed from their filter. */
+  changedViewNames: string[];
+  /** Views whose last facet disappeared; they are no longer usable and are dropped. */
+  droppedViewNames: string[];
 }
+
+/** Why a write was refused; the UI maps these to truthful status copy. */
+export type SavedViewsWriteError =
+  | "storage"
+  /** Another tab/app version wrote a newer payload; never overwrite it. */
+  | "newer-version"
+  /** Damaged data could not be quarantined, so writing would destroy it. */
+  | "corrupt";
+
+export type SaveSavedViewsResult =
+  | { ok: true; views: SavedView[] }
+  | { ok: false; reason: SavedViewsWriteError };
 
 /** Storage key: one namespace per account *and* board. */
 export function savedViewsKey(userId: string, boardId: string): string {
@@ -265,19 +281,60 @@ export function loadSavedViews(
 }
 
 /**
- * Persist views (sanitized first) in the current envelope. Returns false when
- * localStorage rejects the write; callers keep the in-memory list for the
- * session and can surface the failure.
+ * Cheap read for the trigger badge: parse without quarantining or rewriting.
+ * Damage/newer payloads simply read as zero — the panel explains them when
+ * opened. Keeping this side-effect free avoids double-quarantining a broken
+ * key before the panel's real load.
+ */
+export function peekSavedViewsCount(userId: string, boardId: string): number {
+  const raw = readRaw(savedViewsKey(userId, boardId));
+  if (raw === null) return 0;
+  try {
+    const payload = parsePayload(JSON.parse(raw) as unknown);
+    return payload.kind === "views"
+      ? sanitizeSavedViews(payload.views).length
+      : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Persist views (sanitized first) in the current envelope. The existing key is
+ * inspected at write time as well: a newer payload version is never
+ * overwritten, and damaged data is only replaced after a quarantine copy
+ * exists. Returns the exact sanitized list that was written.
  */
 export function saveSavedViews(
   userId: string,
   boardId: string,
   views: readonly SavedView[],
-): boolean {
-  return saveJSON(savedViewsKey(userId, boardId), {
-    version: SAVED_VIEWS_VERSION,
-    views: sanitizeSavedViews(views),
-  });
+): SaveSavedViewsResult {
+  const key = savedViewsKey(userId, boardId);
+  const stored = readJSON<unknown>(key);
+  if (stored.status === "ok") {
+    const payload = parsePayload(stored.value);
+    if (payload.kind === "unsupported") {
+      return { ok: false, reason: "newer-version" };
+    }
+    if (payload.kind === "invalid") {
+      // Valid JSON of the wrong shape is only replaceable once its raw bytes
+      // are safely copied aside.
+      const raw = readRaw(key);
+      if (raw === null || quarantineValue(key, raw) === null) {
+        return { ok: false, reason: "corrupt" };
+      }
+    }
+  } else if (stored.status === "corrupt" && stored.quarantineKey === null) {
+    // The read-time copy failed (quota/private mode): the unparsable text is
+    // the user's only copy, so lock writes instead of destroying it.
+    return { ok: false, reason: "corrupt" };
+  }
+
+  const sanitized = sanitizeSavedViews(views);
+  return saveJSON(key, { version: SAVED_VIEWS_VERSION, views: sanitized })
+    ? { ok: true, views: sanitized }
+    : { ok: false, reason: "storage" };
 }
 
 /**
@@ -351,10 +408,12 @@ export function removeSavedView(
 
 /**
  * TASK-177.20.2 drift policy: labels and assignees that were deleted from
- * the board are removed from every saved filter. The views themselves stay;
- * `missingOptions` lets the menu tell the user that the restored filter is
- * not identical to the one they saved. A facet whose option source is not
- * loaded yet is left alone (undefined means unknown, not empty).
+ * the board are removed from every saved filter. A view whose last facet was
+ * one of those options becomes an empty filter and is dropped — applying it
+ * would silently clear the board instead of restoring a view. `changed` and
+ * `dropped` are scoped lists so the menu can warn only about the view the
+ * user actually applied. A facet whose option source is not loaded yet is
+ * left alone (undefined means unknown, not empty).
  */
 export function pruneSavedViews(
   views: readonly SavedView[],
@@ -365,11 +424,18 @@ export function pruneSavedViews(
   const assignees =
     options.assigneeIds === undefined ? null : new Set(options.assigneeIds);
   if (labels === null && assignees === null) {
-    return { views: [...views], missingOptions: false };
+    return {
+      views: [...views],
+      missingOptions: false,
+      changedViewNames: [],
+      droppedViewNames: [],
+    };
   }
 
-  let missingOptions = false;
-  const next = views.map((view) => {
+  const next: SavedView[] = [];
+  const changedViewNames: string[] = [];
+  const droppedViewNames: string[] = [];
+  for (const view of views) {
     const labelIds = labels
       ? view.filter.labelIds.filter((id) => labels.has(id))
       : view.filter.labelIds;
@@ -379,12 +445,22 @@ export function pruneSavedViews(
     const changed =
       labelIds.length !== view.filter.labelIds.length ||
       assigneeIds.length !== view.filter.assignees.length;
-    if (!changed) return view;
-    missingOptions = true;
-    return {
-      ...view,
-      filter: { ...view.filter, labelIds, assignees: assigneeIds },
-    };
-  });
-  return { views: next, missingOptions };
+    if (!changed) {
+      next.push(view);
+      continue;
+    }
+    const filter = { ...view.filter, labelIds, assignees: assigneeIds };
+    if (!isFilterActive(filter)) {
+      droppedViewNames.push(view.name);
+      continue;
+    }
+    changedViewNames.push(view.name);
+    next.push({ ...view, filter });
+  }
+  return {
+    views: next,
+    missingOptions: changedViewNames.length > 0 || droppedViewNames.length > 0,
+    changedViewNames,
+    droppedViewNames,
+  };
 }

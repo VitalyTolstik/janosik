@@ -1,6 +1,13 @@
 import { Bookmark, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
+import { useToast } from "@/components/Toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LimitCounter } from "@/components/ui/limit-counter";
@@ -20,14 +27,17 @@ import {
   isSavedViewProjection,
   loadSavedViews,
   MAX_SAVED_VIEWS,
+  peekSavedViewsCount,
   pruneSavedViews,
   removeSavedView,
   renameSavedView,
   SAVED_VIEW_NAME_LIMIT,
+  sanitizeSavedViews,
   saveSavedViews,
   type SavedView,
   type SavedViewError,
   type SavedViewProjection,
+  type SavedViewsWriteError,
 } from "@/utils/saved-views";
 import { isFilterActive, type CardFilter } from "@/utils/filter";
 import type { BoardView } from "./ViewSwitcher";
@@ -38,22 +48,34 @@ import type { BoardView } from "./ViewSwitcher";
  * The component is preparatory and is intentionally **not mounted yet**;
  * 177.19 is still touching BoardSection/FilterBar. Integration note:
  *
+ *   const members = useBoardMembersList(board.id);
  *   <SavedViewsMenu
  *     userId={user.id}
  *     boardId={board.id}
  *     filter={filter}
  *     view={view}
  *     labels={board.labels}
- *     assigneeIds={members.map((member) => member.userId)}
+ *     // undefined while the roster loads/fails — an empty array is treated
+ *     // as "not loaded" so a loading board never prunes every assignee.
+ *     assigneeIds={members.length > 0
+ *       ? members.map((member) => member.userId)
+ *       : undefined}
  *     onApply={(nextFilter, nextView) => {
  *       setFilter(nextFilter);          // one URL write, preserves ?card=
  *       if (nextView) setView(nextView);
  *     }}
  *   />
  *
+ * Applying closes the popover and returns focus to the trigger; saved-view
+ * drift/damage notices go through the app toast stack, not a stale panel.
  * `setFilter` in BoardSection uses `replace`, so applying a view adds no
  * history entry and never auto-restores on reload. `view` is optional in a
  * saved view; "watch" is never persisted.
+ *
+ * Keyboard pattern: every saved-view row exposes three explicit tab stops
+ * (apply, rename, delete) — this is a list of actions, not a composite menu,
+ * so there is no roving tabindex. Escape cancels an open form or delete
+ * confirmation first; a second Escape closes the popover.
  */
 
 const PROJECTION_LABEL: Record<SavedViewProjection, MessageKey> = {
@@ -70,7 +92,16 @@ const ERROR_LABEL: Record<SavedViewError, MessageKey> = {
   "not-found": "savedViews.error",
 };
 
-type PanelError = SavedViewError | "storage";
+const WRITE_ERROR_LABEL: Record<SavedViewsWriteError, MessageKey> = {
+  storage: "savedViews.storageError",
+  "newer-version": "savedViews.unsupported",
+  corrupt: "savedViews.corruptLocked",
+};
+
+/** Keyed so a clean apply can clear the previous view's drift notice. */
+const DRIFT_TOAST_KEY = "saved-views-drift";
+
+type PanelError = SavedViewError | SavedViewsWriteError;
 type Mode =
   { kind: "list" } | { kind: "create" } | { kind: "rename"; name: string };
 
@@ -85,7 +116,11 @@ export interface SavedViewsMenuProps {
   view: BoardView;
   /** Board labels, used to prune deleted label ids on apply. */
   labels?: ReadonlyArray<{ id: string }>;
-  /** Board member ids, used to prune removed assignees on apply. */
+  /**
+   * Board member ids once the roster loaded. Keep this undefined while the
+   * roster is loading or failed; an empty array is also treated as unloaded
+   * because a live board always contains at least the current user.
+   */
   assigneeIds?: readonly string[];
   /** Apply a stored view. The caller owns the URL/history write. */
   onApply: (filter: CardFilter, view?: SavedViewProjection) => void;
@@ -104,20 +139,51 @@ export function SavedViewsMenu({
   disabled = false,
 }: SavedViewsMenuProps) {
   const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [count, setCount] = useState(() =>
+    peekSavedViewsCount(userId, boardId),
+  );
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const label =
+    count > 0 ? t("savedViews.menuCount", { count }) : t("savedViews.menu");
+
+  const closeAndRestoreFocus = () => {
+    setOpen(false);
+    const focus = () => triggerRef.current?.focus();
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(focus);
+    } else {
+      window.setTimeout(focus, 0);
+    }
+  };
+
   return (
     <Tooltip>
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <Button
+              ref={triggerRef}
               variant="ghost"
               size="icon"
-              aria-label={t("savedViews.menu")}
+              aria-label={label}
+              title={label}
               data-testid="saved-views-menu"
               disabled={disabled}
               className="shrink-0 text-muted-foreground hover:text-foreground max-lg:h-11 max-lg:w-11"
             >
-              <Bookmark className="h-5 w-5" aria-hidden />
+              <span className="relative">
+                <Bookmark className="h-5 w-5" aria-hidden />
+                {count > 0 && (
+                  <span
+                    aria-hidden
+                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+                    data-testid="saved-views-count-badge"
+                  >
+                    {count}
+                  </span>
+                )}
+              </span>
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -126,13 +192,16 @@ export function SavedViewsMenu({
           aria-label={t("savedViews.menu")}
           align="end"
           sideOffset={8}
+          collisionPadding={8}
           onEscapeKeyDown={(event) => {
-            // Escape first cancels an inline create/rename; only the next one
-            // closes the menu (the capture listener would otherwise close it
-            // before the form sees the key).
+            // Escape first cancels an inline create/rename or delete
+            // confirmation; only the next one closes the menu. The capture
+            // listener would otherwise close it before the row sees the key.
             if (
               event.target instanceof Element &&
-              event.target.closest("[data-saved-view-editing]") !== null
+              event.target.closest(
+                "[data-saved-view-editing], [data-saved-view-confirm]",
+              ) !== null
             ) {
               event.preventDefault();
             }
@@ -148,10 +217,12 @@ export function SavedViewsMenu({
             labels={labels}
             assigneeIds={assigneeIds}
             onApply={onApply}
+            onClose={closeAndRestoreFocus}
+            onCountChange={setCount}
           />
         </PopoverContent>
       </Popover>
-      <TooltipContent>{t("savedViews.menu")}</TooltipContent>
+      <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
 }
@@ -164,21 +235,49 @@ function SavedViewsPanel({
   labels,
   assigneeIds,
   onApply,
-}: Omit<SavedViewsMenuProps, "disabled">) {
+  onClose,
+  onCountChange,
+}: Omit<SavedViewsMenuProps, "disabled"> & {
+  onClose: () => void;
+  onCountChange: (count: number) => void;
+}) {
   const { t } = useI18n();
+  const toast = useToast();
   const [loaded] = useState(() => loadSavedViews(userId, boardId));
   const [views, setViews] = useState<SavedView[]>(loaded.views);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<PanelError | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(() => {
-    if (loaded.status === "corrupt") return t("savedViews.corrupt");
-    if (loaded.status === "unsupported") return t("savedViews.unsupported");
-    return null;
-  });
+  const [writeLock, setWriteLock] = useState<SavedViewsWriteError | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const applyRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  const locked = loaded.status === "unsupported";
+  useEffect(() => {
+    onCountChange(views.length);
+  }, [onCountChange, views.length]);
+
+  const corruptNoCopy =
+    loaded.status === "corrupt" && loaded.quarantineKey === null;
+  const writeBlocked =
+    writeLock !== null ||
+    loaded.status === "unsupported" ||
+    loaded.status === "unavailable" ||
+    corruptNoCopy;
+  const stateNotice =
+    writeLock !== null
+      ? t(WRITE_ERROR_LABEL[writeLock])
+      : loaded.status === "unavailable"
+        ? t("savedViews.unavailable")
+        : loaded.status === "unsupported"
+          ? t("savedViews.unsupported")
+          : loaded.status === "corrupt"
+            ? corruptNoCopy
+              ? t("savedViews.corruptLocked")
+              : t("savedViews.corrupt")
+            : null;
+
   const filterActive = isFilterActive(filter);
   const atLimit = views.length >= MAX_SAVED_VIEWS;
   const createName = draft.trim();
@@ -188,7 +287,7 @@ function SavedViewsPanel({
       (saved) => saved.name.toLowerCase() === createName.toLowerCase(),
     );
   const canCreate =
-    !locked &&
+    !writeBlocked &&
     filterActive &&
     !atLimit &&
     createName !== "" &&
@@ -204,34 +303,89 @@ function SavedViewsPanel({
         saved.name.toLowerCase() === renameName.toLowerCase(),
     );
   const canRename =
-    mode.kind === "rename" && !locked && renameName !== "" && !renameDuplicate;
+    mode.kind === "rename" &&
+    !writeBlocked &&
+    renameName !== "" &&
+    !renameDuplicate;
+
+  /**
+   * An empty member list is the pre-load/failure state, not "everyone was
+   * removed": the current user is always a member of a live board. Skipping
+   * the prune prevents a loading screen from deleting every assignee facet.
+   */
+  const knownAssigneeIds =
+    assigneeIds === undefined || assigneeIds.length === 0
+      ? undefined
+      : assigneeIds;
+
+  const focusSoon = (target: () => void) => {
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(target);
+    } else {
+      window.setTimeout(target, 0);
+    }
+  };
+  const focusSaveButton = () =>
+    focusSoon(() => {
+      const button = saveButtonRef.current;
+      if (button !== null && !button.disabled) button.focus();
+      else panelRef.current?.focus();
+    });
+  const focusView = (name: string) =>
+    focusSoon(() => {
+      const target = applyRefs.current.get(name);
+      if (target !== undefined) target.focus();
+      else panelRef.current?.focus();
+    });
+  const setApplyRef = (name: string) => (element: HTMLButtonElement | null) => {
+    if (element === null) applyRefs.current.delete(name);
+    else applyRefs.current.set(name, element);
+  };
 
   const errorText = (value: PanelError): string => {
-    if (value === "storage") return t("savedViews.storageError");
     if (value === "limit") {
       return t("savedViews.limit", { count: MAX_SAVED_VIEWS });
+    }
+    if (
+      value === "storage" ||
+      value === "newer-version" ||
+      value === "corrupt"
+    ) {
+      return t(WRITE_ERROR_LABEL[value]);
     }
     return t(ERROR_LABEL[value]);
   };
 
-  const persist = (next: SavedView[]): boolean => {
-    setViews(next);
-    const ok = saveSavedViews(userId, boardId, next);
-    setError(ok ? null : "storage");
-    return ok;
+  const persist = (next: SavedView[]): SavedView[] | null => {
+    const result = saveSavedViews(userId, boardId, next);
+    if (!result.ok) {
+      if (result.reason === "newer-version" || result.reason === "corrupt") {
+        setWriteLock(result.reason);
+      }
+      setError(result.reason);
+      return null;
+    }
+    setViews(result.views);
+    setError(null);
+    onCountChange(result.views.length);
+    toast.clear(DRIFT_TOAST_KEY);
+    return result.views;
   };
+
+  const returnToList = (focusAfter: () => void) => {
+    setMode({ kind: "list" });
+    setDraft("");
+    setError(null);
+    focusAfter();
+  };
+  const cancelCreate = () => returnToList(focusSaveButton);
+  const cancelRename = (name: string) => returnToList(() => focusView(name));
 
   const openCreate = () => {
     setMode({ kind: "create" });
     setDraft("");
     setError(null);
     setConfirmDelete(null);
-  };
-
-  const cancelEditing = () => {
-    setMode({ kind: "list" });
-    setDraft("");
-    setError(null);
   };
 
   const submitCreate = (event: FormEvent<HTMLFormElement>) => {
@@ -246,9 +400,8 @@ function SavedViewsPanel({
       setError(result.reason);
       return;
     }
-    const saved = persist(result.views);
-    cancelEditing();
-    if (!saved) setError("storage");
+    if (persist(result.views) === null) return;
+    returnToList(focusSaveButton);
   };
 
   const startRename = (saved: SavedView) => {
@@ -267,42 +420,103 @@ function SavedViewsPanel({
       return;
     }
     const saved = persist(result.views);
-    cancelEditing();
-    if (!saved) setError("storage");
+    if (saved === null) return;
+    returnToList(() => focusView(result.view.name));
   };
 
   const deleteView = (name: string) => {
-    persist(removeSavedView(views, name));
+    const index = views.findIndex((saved) => saved.name === name);
+    const nextName = views[index + 1]?.name ?? views[index - 1]?.name;
+    const remaining = persist(removeSavedView(views, name));
+    if (remaining === null) return;
     setConfirmDelete(null);
-    if (mode.kind === "rename" && mode.name === name) cancelEditing();
+    if (nextName !== undefined && remaining.some((v) => v.name === nextName)) {
+      focusView(nextName);
+    } else {
+      focusSaveButton();
+    }
+  };
+
+  const cancelDelete = (name: string) => {
+    setConfirmDelete(null);
+    setError(null);
+    focusView(name);
   };
 
   const applyView = (saved: SavedView) => {
     const pruned = pruneSavedViews(views, {
       labelIds: labels?.map((label) => label.id),
-      assigneeIds,
+      assigneeIds: knownAssigneeIds,
     });
-    const applied =
-      pruned.views.find((entry) => entry.name === saved.name) ?? saved;
-    if (pruned.missingOptions) {
-      setViews(pruned.views);
-      setNotice(t("savedViews.missingOptions"));
-      if (!saveSavedViews(userId, boardId, pruned.views)) {
-        setError("storage");
-      }
+    const sanitized = sanitizeSavedViews(pruned.views);
+    const target = sanitized.find((entry) => entry.name === saved.name);
+    const dropped =
+      pruned.droppedViewNames.includes(saved.name) || target === undefined;
+    const changed = pruned.changedViewNames.includes(saved.name);
+    const cleanupNeeded =
+      pruned.missingOptions || sanitized.length !== views.length;
+    const persisted = cleanupNeeded ? persist(sanitized) : null;
+    const saveFailed = cleanupNeeded && persisted === null;
+
+    if (saveFailed && dropped) {
+      // The emptied view could not be removed durably; keep the panel open
+      // rather than pretending it was dropped.
+      return;
     }
-    onApply(applied.filter, applied.view);
+
+    if (dropped) {
+      toast.info(t("savedViews.droppedNotice", { name: saved.name }), {
+        key: DRIFT_TOAST_KEY,
+      });
+      onClose();
+      return;
+    }
+
+    if (target === undefined) return;
+    if (saveFailed) {
+      toast.clear(DRIFT_TOAST_KEY);
+      toast.error(t("savedViews.storageError"));
+    } else if (changed) {
+      toast.info(t("savedViews.prunedNotice", { name: saved.name }), {
+        key: DRIFT_TOAST_KEY,
+      });
+    } else {
+      toast.clear(DRIFT_TOAST_KEY);
+    }
+    onApply(target.filter, target.view);
+    onClose();
   };
 
   const cancelWithEscape = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     event.stopPropagation();
-    cancelEditing();
+    if (mode.kind === "create") cancelCreate();
+    else if (mode.kind === "rename") cancelRename(mode.name);
   };
 
+  const confirmWithEscape = (
+    event: KeyboardEvent<HTMLElement>,
+    name: string,
+  ) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancelDelete(name);
+  };
+
+  const projectionLabel = (saved: SavedView) =>
+    saved.view === undefined
+      ? t("savedViews.currentView")
+      : t(PROJECTION_LABEL[saved.view]);
+
   return (
-    <div data-testid="saved-views-panel">
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      data-testid="saved-views-panel"
+      className="outline-none"
+    >
       <div className="flex items-start justify-between gap-3 border-b border-border/60 px-3 py-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">{t("savedViews.menu")}</h2>
@@ -310,7 +524,17 @@ function SavedViewsPanel({
             {t("savedViews.localHint")}
           </p>
         </div>
-        <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+        <span
+          aria-label={t("savedViews.countLabel", {
+            count: views.length,
+            max: MAX_SAVED_VIEWS,
+          })}
+          title={t("savedViews.countLabel", {
+            count: views.length,
+            max: MAX_SAVED_VIEWS,
+          })}
+          className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground"
+        >
           {t("savedViews.count", {
             count: views.length,
             max: MAX_SAVED_VIEWS,
@@ -319,13 +543,13 @@ function SavedViewsPanel({
       </div>
 
       <div className="space-y-2 px-3 pt-3">
-        {notice !== null && (
+        {stateNotice !== null && views.length > 0 && (
           <p
             role="status"
             data-testid="saved-views-notice"
             className="rounded-md border border-border/60 bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground"
           >
-            {notice}
+            {stateNotice}
           </p>
         )}
         {error !== null && (
@@ -357,6 +581,7 @@ function SavedViewsPanel({
               autoFocus
               value={draft}
               maxLength={SAVED_VIEW_NAME_LIMIT}
+              invalid={createDuplicate}
               onChange={(event) => setDraft(event.target.value)}
               placeholder={t("savedViews.namePlaceholder")}
               aria-describedby={
@@ -373,6 +598,7 @@ function SavedViewsPanel({
             {createDuplicate && (
               <p
                 id="saved-view-name-error"
+                role="alert"
                 className="text-xs text-danger"
                 data-testid="saved-views-duplicate"
               >
@@ -393,7 +619,7 @@ function SavedViewsPanel({
                 type="button"
                 size="sm"
                 variant="ghost"
-                onClick={cancelEditing}
+                onClick={cancelCreate}
                 className="max-lg:h-11"
               >
                 {t("savedViews.cancel")}
@@ -402,10 +628,11 @@ function SavedViewsPanel({
           </form>
         ) : (
           <Button
+            ref={saveButtonRef}
             type="button"
             variant="outline"
             onClick={openCreate}
-            disabled={locked || !filterActive || atLimit}
+            disabled={writeBlocked || !filterActive || atLimit}
             className="h-11 w-full justify-start gap-2"
             data-testid="saved-views-save-current"
           >
@@ -413,22 +640,25 @@ function SavedViewsPanel({
             {t("savedViews.saveCurrent")}
           </Button>
         )}
-        {!filterActive && (
+        {!filterActive && !writeBlocked && (
           <p className="text-[11px] text-muted-foreground">
             {t("savedViews.filterRequired")}
           </p>
         )}
-        {atLimit && (
+        {atLimit && !writeBlocked && (
           <p className="text-[11px] text-muted-foreground">
             {t("savedViews.limit", { count: MAX_SAVED_VIEWS })}
           </p>
         )}
       </div>
 
-      <div className="mt-3 max-h-[min(50vh,22rem)] overflow-y-auto border-t border-border/60 p-2">
+      <div className="mt-3 max-h-[min(50vh,22rem)] overscroll-contain overflow-y-auto border-t border-border/60 p-2">
         {views.length === 0 ? (
-          <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-            {t("savedViews.empty")}
+          <p
+            className="px-2 py-4 text-center text-xs text-muted-foreground"
+            data-testid="saved-views-empty"
+          >
+            {stateNotice ?? t("savedViews.empty")}
           </p>
         ) : (
           <ul className="space-y-1" aria-label={t("savedViews.menu")}>
@@ -453,15 +683,26 @@ function SavedViewsPanel({
                         autoFocus
                         value={draft}
                         maxLength={SAVED_VIEW_NAME_LIMIT}
+                        invalid={renameDuplicate}
                         onChange={(event) => setDraft(event.target.value)}
+                        onFocus={(event) => event.currentTarget.select()}
                         aria-label={t("savedViews.renameLabel", {
                           name: saved.name,
                         })}
+                        aria-describedby={
+                          renameDuplicate
+                            ? "saved-view-rename-error"
+                            : undefined
+                        }
                         className="h-11"
                         data-testid="saved-views-rename-input"
                       />
                       {renameDuplicate && (
-                        <p className="text-xs text-danger">
+                        <p
+                          id="saved-view-rename-error"
+                          role="alert"
+                          className="text-xs text-danger"
+                        >
                           {t("savedViews.duplicate")}
                         </p>
                       )}
@@ -479,7 +720,7 @@ function SavedViewsPanel({
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={cancelEditing}
+                          onClick={() => cancelRename(saved.name)}
                           className="max-lg:h-11"
                         >
                           {t("savedViews.cancel")}
@@ -487,15 +728,25 @@ function SavedViewsPanel({
                       </div>
                     </form>
                   ) : deleting ? (
-                    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-1 py-1">
-                      <span className="truncate text-sm">
-                        {t("savedViews.deleteConfirm")}
+                    <div
+                      data-saved-view-confirm
+                      onKeyDown={(event) =>
+                        confirmWithEscape(event, saved.name)
+                      }
+                      className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-1 py-1"
+                    >
+                      <span role="alert" className="min-w-0 text-sm">
+                        {t("savedViews.deleteConfirm", { name: saved.name })}
                       </span>
                       <div className="flex shrink-0 items-center gap-1">
                         <Button
+                          autoFocus
                           type="button"
                           size="sm"
                           variant="destructive"
+                          aria-label={t("savedViews.deleteConfirmAction", {
+                            name: saved.name,
+                          })}
                           onClick={() => deleteView(saved.name)}
                           className="h-11 lg:h-8"
                           data-testid="saved-views-confirm-delete"
@@ -506,7 +757,7 @@ function SavedViewsPanel({
                           type="button"
                           size="sm"
                           variant="ghost"
-                          onClick={() => setConfirmDelete(null)}
+                          onClick={() => cancelDelete(saved.name)}
                           className="h-11 lg:h-8"
                         >
                           {t("savedViews.cancel")}
@@ -516,11 +767,15 @@ function SavedViewsPanel({
                   ) : (
                     <>
                       <button
+                        ref={setApplyRef(saved.name)}
                         type="button"
                         onClick={() => applyView(saved)}
                         aria-label={t("savedViews.applyAria", {
                           name: saved.name,
+                          view: projectionLabel(saved),
                         })}
+                        title={saved.name}
+                        data-saved-view-apply
                         className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <Bookmark
@@ -531,11 +786,9 @@ function SavedViewsPanel({
                           <span className="block truncate text-sm font-medium">
                             {saved.name}
                           </span>
-                          {saved.view !== undefined && (
-                            <span className="block text-[11px] text-muted-foreground">
-                              {t(PROJECTION_LABEL[saved.view])}
-                            </span>
-                          )}
+                          <span className="block text-[11px] text-muted-foreground">
+                            {projectionLabel(saved)}
+                          </span>
                         </span>
                       </button>
                       <Button
@@ -546,7 +799,7 @@ function SavedViewsPanel({
                           name: saved.name,
                         })}
                         onClick={() => startRename(saved)}
-                        disabled={locked}
+                        disabled={writeBlocked}
                         className="h-11 w-11 shrink-0 text-muted-foreground lg:h-8 lg:w-8"
                       >
                         <Pencil className="h-4 w-4" aria-hidden />
@@ -562,7 +815,7 @@ function SavedViewsPanel({
                           setConfirmDelete(saved.name);
                           setError(null);
                         }}
-                        disabled={locked}
+                        disabled={writeBlocked}
                         className="h-11 w-11 shrink-0 text-muted-foreground hover:text-danger lg:h-8 lg:w-8"
                       >
                         <Trash2 className="h-4 w-4" aria-hidden />

@@ -1,8 +1,9 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SavedViewsMenu } from "./SavedViewsMenu";
+import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 import { EMPTY_FILTER, type CardFilter } from "@/utils/filter";
@@ -44,18 +45,20 @@ function renderMenu({
   const onApply = vi.fn();
   render(
     <I18nProvider>
-      <TooltipProvider>
-        <SavedViewsMenu
-          userId={USER}
-          boardId={BOARD}
-          filter={filter}
-          view={view}
-          labels={labels}
-          assigneeIds={assigneeIds}
-          onApply={onApply}
-          disabled={disabled}
-        />
-      </TooltipProvider>
+      <ToastProvider>
+        <TooltipProvider>
+          <SavedViewsMenu
+            userId={USER}
+            boardId={BOARD}
+            filter={filter}
+            view={view}
+            labels={labels}
+            assigneeIds={assigneeIds}
+            onApply={onApply}
+            disabled={disabled}
+          />
+        </TooltipProvider>
+      </ToastProvider>
     </I18nProvider>,
   );
   return { onApply };
@@ -66,8 +69,20 @@ async function openMenu() {
   return screen.findByRole("dialog", { name: "Saved views" });
 }
 
+async function expectDialogClosed() {
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Saved views" }),
+    ).not.toBeInTheDocument(),
+  );
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("SavedViewsMenu", () => {
-  it("saves the current filter and projection", async () => {
+  it("saves the current filter and projection, then returns focus", async () => {
     const { onApply } = renderMenu({ view: "table" });
     await openMenu();
 
@@ -87,11 +102,42 @@ describe("SavedViewsMenu", () => {
     ]);
     expect(onApply).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: "Apply view Overdue work" }),
+      screen.getByRole("button", {
+        name: /Apply view.*Overdue work.*Table/,
+      }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("saved-views-save-current")).toHaveFocus(),
+    );
   });
 
-  it("applies a view, prunes missing options and warns once", async () => {
+  it("applies a clean view, closes the popover and restores trigger focus", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Clean",
+        filter: { ...EMPTY_FILTER, query: "bug" },
+        view: "calendar",
+      }),
+    ]);
+    const { onApply } = renderMenu();
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Clean.*Calendar/ }),
+    );
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "bug" }),
+      "calendar",
+    );
+    await expectDialogClosed();
+    await waitFor(() =>
+      expect(screen.getByTestId("saved-views-menu")).toHaveFocus(),
+    );
+    expect(screen.queryByText(/no longer exist/)).not.toBeInTheDocument();
+  });
+
+  it("applies a drifted view, warns externally and closes", async () => {
     saveSavedViews(USER, BOARD, [
       savedView({
         name: "Tidy",
@@ -111,7 +157,7 @@ describe("SavedViewsMenu", () => {
     await openMenu();
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Apply view Tidy" }),
+      screen.getByRole("button", { name: /Apply view.*Tidy/ }),
     );
 
     expect(onApply).toHaveBeenCalledWith(
@@ -122,18 +168,118 @@ describe("SavedViewsMenu", () => {
       }),
       "calendar",
     );
-    expect(screen.getByTestId("saved-views-notice")).toHaveTextContent(
-      "Some options in this view no longer exist",
-    );
+    expect(
+      await screen.findByText(
+        "Saved view “Tidy” was updated: some options no longer exist.",
+      ),
+    ).toBeInTheDocument();
+    await expectDialogClosed();
     expect(loadSavedViews(USER, BOARD).views[0].filter.labelIds).toEqual([
       "l1",
     ]);
+  });
+
+  it("drops an emptied view instead of applying an empty filter", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Only missing",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [{ id: "l1" }] });
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Only missing/ }),
+    );
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(
+        "Saved view “Only missing” was removed because all its filter options no longer exist.",
+      ),
+    ).toBeInTheDocument();
+    await expectDialogClosed();
+    expect(loadSavedViews(USER, BOARD).views).toEqual([]);
+  });
+
+  it("scopes drift to the applied view and clears the prior warning", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Drifted",
+        filter: {
+          ...EMPTY_FILTER,
+          query: "drift",
+          labelIds: ["gone-label"],
+        },
+      }),
+      savedView({
+        name: "Clean",
+        filter: { ...EMPTY_FILTER, query: "clean" },
+      }),
+      savedView({
+        name: "Other",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [] });
+
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Drifted/ }),
+    );
+    expect(
+      await screen.findByText(
+        "Saved view “Drifted” was updated: some options no longer exist.",
+      ),
+    ).toBeInTheDocument();
+
+    await openMenu();
+    onApply.mockClear();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Clean/ }),
+    );
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "clean" }),
+      "table",
+    );
+    expect(screen.queryByText(/no longer exist/)).not.toBeInTheDocument();
+    const stored = loadSavedViews(USER, BOARD).views;
+    expect(stored.map((view) => view.name)).toEqual(["Drifted", "Clean"]);
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["empty", []],
+  ])("preserves assignees while the roster is %s", async (_label, roster) => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Mine",
+        filter: {
+          ...EMPTY_FILTER,
+          assignees: ["u1"],
+        },
+      }),
+    ]);
+    const { onApply } = renderMenu({ assigneeIds: roster });
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Mine/ }),
+    );
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ assignees: ["u1"] }),
+      "table",
+    );
     expect(loadSavedViews(USER, BOARD).views[0].filter.assignees).toEqual([
       "u1",
     ]);
+    expect(screen.queryByText(/no longer exist/)).not.toBeInTheDocument();
   });
 
-  it("renames a view from the row", async () => {
+  it("renames a view, selects the draft and focuses the renamed row", async () => {
     saveSavedViews(USER, BOARD, [savedView({ name: "Before" })]);
     renderMenu();
     await openMenu();
@@ -141,35 +287,114 @@ describe("SavedViewsMenu", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Rename view Before" }),
     );
-    const input = screen.getByLabelText("New name for view Before");
+    const input = screen.getByLabelText(
+      "New name for view Before",
+    ) as HTMLInputElement;
     expect(input).toHaveFocus();
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe("Before".length);
 
     await userEvent.clear(input);
     await userEvent.type(input, "After{Enter}");
 
     expect(loadSavedViews(USER, BOARD).views[0].name).toBe("After");
-    expect(
-      screen.getByRole("button", { name: "Apply view After" }),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Apply view.*After/ }),
+      ).toHaveFocus(),
+    );
   });
 
-  it("deletes a view only after confirmation", async () => {
-    saveSavedViews(USER, BOARD, [savedView({ name: "Remove me" })]);
+  it("cancels rename with Escape and focuses the row", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Keep" })]);
+    renderMenu();
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Rename view Keep" }),
+    );
+    await userEvent.keyboard("{Escape}");
+
+    expect(
+      screen.queryByTestId("saved-views-rename-input"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Saved views" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Apply view.*Keep/ }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("deletes only after confirmation and focuses the next row", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({ name: "Remove me" }),
+      savedView({ name: "Stay" }),
+    ]);
     renderMenu();
     await openMenu();
 
     await userEvent.click(
       screen.getByRole("button", { name: "Delete view Remove me" }),
     );
-    expect(screen.getByText("Delete this view?")).toBeInTheDocument();
+    expect(screen.getByText(/Delete.*Remove me/)).toBeInTheDocument();
+    const confirm = screen.getByRole("button", {
+      name: "Delete “Remove me”",
+    });
+    expect(confirm).toHaveFocus();
+    await userEvent.click(confirm);
+
+    expect(loadSavedViews(USER, BOARD).views.map((view) => view.name)).toEqual([
+      "Stay",
+    ]);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Apply view.*Stay/ }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("cancels delete confirmation and keeps the view", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Keep" })]);
+    renderMenu();
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete view Keep" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
     expect(loadSavedViews(USER, BOARD).views).toHaveLength(1);
+    expect(screen.queryByText(/Delete.*Keep/)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Apply view.*Keep/ }),
+      ).toHaveFocus(),
+    );
+  });
 
-    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+  it("cancels delete confirmation with Escape before closing the popover", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Keep" })]);
+    renderMenu();
+    await openMenu();
 
-    expect(loadSavedViews(USER, BOARD).views).toEqual([]);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete view Keep" }),
+    );
+    await userEvent.keyboard("{Escape}");
+
+    expect(loadSavedViews(USER, BOARD).views).toHaveLength(1);
+    expect(screen.queryByText(/Delete.*Keep/)).not.toBeInTheDocument();
     expect(
-      screen.getByText("No saved views for this board yet."),
+      screen.getByRole("dialog", { name: "Saved views" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Apply view.*Keep/ }),
+      ).toHaveFocus(),
+    );
   });
 
   it("disables saving at the 20-view cap", async () => {
@@ -204,7 +429,7 @@ describe("SavedViewsMenu", () => {
     const trigger = screen.getByTestId("saved-views-menu");
     act(() => trigger.focus());
     await userEvent.keyboard("{Enter}");
-    const dialog = await screen.findByRole("dialog", { name: "Saved views" });
+    await screen.findByRole("dialog", { name: "Saved views" });
 
     await userEvent.click(screen.getByTestId("saved-views-save-current"));
     const input = screen.getByLabelText("View name");
@@ -215,16 +440,190 @@ describe("SavedViewsMenu", () => {
 
     expect(screen.queryByTestId("saved-views-name")).not.toBeInTheDocument();
     expect(loadSavedViews(USER, BOARD).views).toEqual([]);
-    expect(dialog).toBeInTheDocument();
-
-    await userEvent.click(screen.getByTestId("saved-views-save-current"));
-    await userEvent.type(screen.getByLabelText("View name"), "Keyboard view");
-    await userEvent.keyboard("{Enter}");
-
-    expect(loadSavedViews(USER, BOARD).views[0].name).toBe("Keyboard view");
+    expect(
+      screen.getByRole("dialog", { name: "Saved views" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("saved-views-save-current")).toHaveFocus(),
+    );
   });
 
-  it("fits a 390px viewport and keeps mobile touch targets at 44px", async () => {
+  it("closes from Escape or an outside click", async () => {
+    renderMenu();
+    await openMenu();
+    await userEvent.keyboard("{Escape}");
+    await expectDialogClosed();
+
+    await openMenu();
+    await userEvent.click(document.body);
+    await expectDialogClosed();
+  });
+
+  it("marks duplicate names invalid and describes the error", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Existing" })]);
+    renderMenu();
+    await openMenu();
+
+    await userEvent.click(screen.getByTestId("saved-views-save-current"));
+    const input = screen.getByLabelText("View name");
+    await userEvent.type(input, " existing ");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", "saved-view-name-error");
+    expect(screen.getByTestId("saved-views-duplicate")).toHaveTextContent(
+      "A view with this name already exists.",
+    );
+    expect(screen.getByTestId("saved-views-confirm-save")).toBeDisabled();
+  });
+
+  it("marks a duplicate rename invalid and describes the error", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({ name: "One" }),
+      savedView({ name: "Two" }),
+    ]);
+    renderMenu();
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Rename view One" }),
+    );
+    const input = screen.getByLabelText("New name for view One");
+    await userEvent.clear(input);
+    await userEvent.type(input, "two");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute(
+      "aria-describedby",
+      "saved-view-rename-error",
+    );
+    expect(screen.getByTestId("saved-views-confirm-rename")).toBeDisabled();
+  });
+
+  it("rolls back a failed save and keeps the form open with a status", async () => {
+    renderMenu();
+    await openMenu();
+    await userEvent.click(screen.getByTestId("saved-views-save-current"));
+    await userEvent.type(screen.getByLabelText("View name"), "Not saved");
+
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByTestId("saved-views-name")).toBeInTheDocument();
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Could not save views in this browser.",
+    );
+    expect(loadSavedViews(USER, BOARD).views).toEqual([]);
+  });
+
+  it("quarantines damaged storage and reports it instead of an empty list", async () => {
+    localStorage.setItem(savedViewsKey(USER, BOARD), "{broken");
+    renderMenu();
+    await openMenu();
+
+    expect(screen.getByTestId("saved-views-empty")).toHaveTextContent(
+      "Saved views were damaged; a copy was kept.",
+    );
+    expect(
+      screen.queryByText("No saved views for this board yet."),
+    ).not.toBeInTheDocument();
+    expect(
+      Object.keys(localStorage).some((key) => key.includes(".corrupt.")),
+    ).toBe(true);
+    expect(screen.getByTestId("saved-views-save-current")).toBeEnabled();
+  });
+
+  it("locks writes when damaged data could not be copied aside", async () => {
+    const raw = "{broken";
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+    renderMenu();
+    await openMenu();
+
+    expect(screen.getByTestId("saved-views-empty")).toHaveTextContent(
+      "Saving is locked to protect the damaged data.",
+    );
+    expect(screen.getByTestId("saved-views-save-current")).toBeDisabled();
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
+  it("locks writes for a newer payload version", async () => {
+    const raw = `{"version":2,"views":[]}`;
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    renderMenu();
+    await openMenu();
+
+    expect(screen.getByTestId("saved-views-empty")).toHaveTextContent(
+      "Saved views were created by a newer version.",
+    );
+    expect(screen.getByTestId("saved-views-save-current")).toBeDisabled();
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
+  it("locks writes when a newer payload appears before saving", async () => {
+    const raw = `{"version":2,"views":[]}`;
+    renderMenu();
+    await openMenu();
+    await userEvent.click(screen.getByTestId("saved-views-save-current"));
+    await userEvent.type(screen.getByLabelText("View name"), "Race");
+
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Saved views were created by a newer version.",
+    );
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("saved-views-save-current")).toBeDisabled();
+    expect(screen.getByTestId("saved-views-empty")).toHaveTextContent(
+      "Saved views were created by a newer version.",
+    );
+  });
+
+  it("handles unavailable storage with a notice and locked controls", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    renderMenu();
+    await openMenu();
+
+    expect(screen.getByTestId("saved-views-empty")).toHaveTextContent(
+      "Saved views are unavailable in this browser.",
+    );
+    expect(screen.getByTestId("saved-views-save-current")).toBeDisabled();
+  });
+
+  it("shows the count on the trigger before opening and labels the badge", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({ name: "One" }),
+      savedView({ name: "Two" }),
+    ]);
+    renderMenu();
+
+    expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
+      "aria-label",
+      "Saved views (2)",
+    );
+    expect(screen.getByTestId("saved-views-count-badge")).toHaveTextContent(
+      "2",
+    );
+
+    await openMenu();
+    expect(screen.getByText("2 / 20")).toHaveAttribute(
+      "aria-label",
+      "2 of 20 saved views",
+    );
+    expect(
+      screen.getByRole("button", { name: /Apply view.*One/ }),
+    ).toHaveAttribute("title", "One");
+  });
+
+  it("fits a 390px viewport and keeps 44px targets at 768px", async () => {
     renderMenu();
     expect(screen.getByTestId("saved-views-menu")).toHaveClass(
       "max-lg:h-11",
@@ -234,19 +633,6 @@ describe("SavedViewsMenu", () => {
     const dialog = await openMenu();
     expect(dialog).toHaveClass("w-[min(24rem,calc(100vw_-_1rem))]");
     expect(screen.getByTestId("saved-views-save-current")).toHaveClass("h-11");
-  });
-
-  it("quarantines damaged storage and says so", async () => {
-    localStorage.setItem(savedViewsKey(USER, BOARD), "{broken");
-    renderMenu();
-    await openMenu();
-
-    expect(screen.getByTestId("saved-views-notice")).toHaveTextContent(
-      "Saved views were damaged",
-    );
-    expect(
-      Object.keys(localStorage).some((key) => key.includes(".corrupt.")),
-    ).toBe(true);
   });
 
   it("can be disabled by its parent", () => {

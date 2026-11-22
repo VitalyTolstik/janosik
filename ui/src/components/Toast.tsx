@@ -45,7 +45,7 @@ export interface ToastOptions {
 export interface ToastApi {
   success: (message: string, options?: ToastOptions) => void;
   error: (message: string) => void;
-  info: (message: string) => void;
+  info: (message: string, options?: ToastOptions) => void;
   /** Remove the keyed toast and cancel its timer (TASK-182.1). */
   clear: (key: string) => void;
 }
@@ -153,7 +153,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     () => ({
       success: (message, options) => push(message, "success", options),
       error: (message) => push(message, "error"),
-      info: (message) => push(message, "info"),
+      info: (message, options) => push(message, "info", options),
       clear,
     }),
     [push, clear],

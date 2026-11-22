@@ -5,6 +5,7 @@ import {
   createSavedView,
   loadSavedViews,
   MAX_SAVED_VIEWS,
+  peekSavedViewsCount,
   pruneSavedViews,
   removeSavedView,
   renameSavedView,
@@ -50,7 +51,10 @@ describe("saved views storage", () => {
   it("round-trips views through the versioned envelope", () => {
     const saved = view();
 
-    expect(saveSavedViews(USER, BOARD, [saved])).toBe(true);
+    expect(saveSavedViews(USER, BOARD, [saved])).toEqual({
+      ok: true,
+      views: [saved],
+    });
     expect(loadSavedViews(USER, BOARD)).toEqual({
       status: "ok",
       views: [saved],
@@ -87,14 +91,57 @@ describe("saved views storage", () => {
     });
   });
 
-  it("leaves a newer payload version untouched", () => {
-    seedRaw({ version: SAVED_VIEWS_VERSION + 1, views: [view()] });
+  it("upgrades a legacy payload to the versioned envelope on the next write", () => {
+    seedRaw([view()]);
+    expect(loadSavedViews(USER, BOARD).migrated).toBe(true);
+
+    expect(saveSavedViews(USER, BOARD, [view()]).ok).toBe(true);
+    expect(
+      JSON.parse(localStorage.getItem(savedViewsKey(USER, BOARD)) ?? ""),
+    ).toEqual({ version: SAVED_VIEWS_VERSION, views: [view()] });
+  });
+
+  it("leaves a newer payload version untouched at write time too", () => {
+    const raw = `{"version":${SAVED_VIEWS_VERSION + 1},"views":[]}`;
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
 
     expect(loadSavedViews(USER, BOARD)).toEqual({
       status: "unsupported",
       views: [],
     });
-    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).not.toBeNull();
+    expect(saveSavedViews(USER, BOARD, [view()])).toEqual({
+      ok: false,
+      reason: "newer-version",
+    });
+    // Byte-for-byte preservation: not reformatted, not overwritten.
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
+  it("refuses to overwrite damaged data when the quarantine copy failed", () => {
+    const raw = "{not json";
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+
+    expect(saveSavedViews(USER, BOARD, [view()])).toEqual({
+      ok: false,
+      reason: "corrupt",
+    });
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
+  it("replaces quarantined damage only after the copy succeeds", () => {
+    localStorage.setItem(savedViewsKey(USER, BOARD), "{not json");
+
+    expect(saveSavedViews(USER, BOARD, [view()])).toEqual({
+      ok: true,
+      views: [view()],
+    });
+    expect(
+      Object.keys(localStorage).some((key) => key.includes(".corrupt.")),
+    ).toBe(true);
+    expect(loadSavedViews(USER, BOARD).views).toEqual([view()]);
   });
 
   it("quarantines unparsable JSON", () => {
@@ -137,7 +184,44 @@ describe("saved views storage", () => {
       throw new Error("quota exceeded");
     });
 
-    expect(saveSavedViews(USER, BOARD, [view()])).toBe(false);
+    expect(saveSavedViews(USER, BOARD, [view()])).toEqual({
+      ok: false,
+      reason: "storage",
+    });
+  });
+
+  it("applies the cap and uniqueness through a direct save", () => {
+    const many = Array.from({ length: MAX_SAVED_VIEWS + 5 }, (_, index) =>
+      view({ name: `View ${index}` }),
+    );
+    many.push(view({ name: "view 0" }));
+
+    const written = saveSavedViews(USER, BOARD, many);
+
+    expect(written.ok).toBe(true);
+    if (!written.ok) throw new Error("expected a write");
+    expect(written.views).toHaveLength(MAX_SAVED_VIEWS);
+    expect(loadSavedViews(USER, BOARD).views).toHaveLength(MAX_SAVED_VIEWS);
+  });
+
+  it("drops an emptied view on save and does not resurrect it on load", () => {
+    const written = saveSavedViews(USER, BOARD, [
+      view({ filter: { ...EMPTY_FILTER } }),
+    ]);
+
+    expect(written).toEqual({ ok: true, views: [] });
+    expect(loadSavedViews(USER, BOARD).views).toEqual([]);
+  });
+
+  it("peeks at the trigger count without quarantining damaged data", () => {
+    saveSavedViews(USER, BOARD, [view(), view({ name: "Second" })]);
+    expect(peekSavedViewsCount(USER, BOARD)).toBe(2);
+
+    localStorage.setItem(savedViewsKey(USER, BOARD), "{broken");
+    expect(peekSavedViewsCount(USER, BOARD)).toBe(0);
+    expect(
+      Object.keys(localStorage).some((key) => key.includes(".corrupt.")),
+    ).toBe(false);
   });
 });
 
@@ -382,10 +466,26 @@ describe("pruneSavedViews", () => {
     });
 
     expect(result.missingOptions).toBe(true);
+    expect(result.changedViewNames).toEqual(["Drifted"]);
+    expect(result.droppedViewNames).toEqual([]);
     expect(result.views[0].filter.labelIds).toEqual(["l1"]);
     expect(result.views[0].filter.assignees).toEqual(["u1"]);
     expect(result.views[0].filter.unassigned).toBe(true);
     expect(drifted.filter.labelIds).toEqual(["l1", "gone-label"]);
+  });
+
+  it("drops a view instead of leaving it with an empty filter", () => {
+    const onlyMissing = view({
+      name: "Only missing",
+      filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+    });
+
+    const result = pruneSavedViews([onlyMissing], { labelIds: ["l1"] });
+
+    expect(result.views).toEqual([]);
+    expect(result.missingOptions).toBe(true);
+    expect(result.changedViewNames).toEqual([]);
+    expect(result.droppedViewNames).toEqual(["Only missing"]);
   });
 
   it("reports no drift when every referenced option still exists", () => {
@@ -403,24 +503,56 @@ describe("pruneSavedViews", () => {
         labelIds: ["l1"],
         assigneeIds: ["u1"],
       }),
-    ).toEqual({ views: [clean], missingOptions: false });
+    ).toEqual({
+      views: [clean],
+      missingOptions: false,
+      changedViewNames: [],
+      droppedViewNames: [],
+    });
   });
 
   it("leaves facets alone while their option source is unknown", () => {
     expect(pruneSavedViews([drifted], {})).toEqual({
       views: [drifted],
       missingOptions: false,
+      changedViewNames: [],
+      droppedViewNames: [],
     });
   });
 
-  it("prunes everything when the board has no matching options", () => {
-    const result = pruneSavedViews([drifted], {
+  it("drops a view when the board has no matching options left", () => {
+    const onlyMissing = view({
+      name: "Drifted",
+      filter: {
+        ...EMPTY_FILTER,
+        labelIds: ["gone-label"],
+        assignees: ["gone-user"],
+      },
+    });
+    const result = pruneSavedViews([onlyMissing], {
       labelIds: [],
       assigneeIds: [],
     });
 
     expect(result.missingOptions).toBe(true);
-    expect(result.views[0].filter.labelIds).toEqual([]);
-    expect(result.views[0].filter.assignees).toEqual([]);
+    expect(result.views).toEqual([]);
+    expect(result.droppedViewNames).toEqual(["Drifted"]);
+  });
+
+  it("scopes changes to the drifted view, not its clean neighbours", () => {
+    const clean = view({
+      name: "Clean",
+      filter: { ...EMPTY_FILTER, query: "x" },
+    });
+    const other = view({
+      name: "Other",
+      filter: { ...EMPTY_FILTER, labelIds: ["gone"] },
+    });
+
+    const result = pruneSavedViews([clean, other], { labelIds: [] });
+
+    expect(result.views).toEqual([clean]);
+    expect(result.changedViewNames).toEqual([]);
+    expect(result.droppedViewNames).toEqual(["Other"]);
   });
 });
