@@ -223,12 +223,6 @@ export function BulkActionBar() {
     [],
   );
 
-  useEffect(() => {
-    const target = pendingBarFocusRef.current;
-    if (target === null) return;
-    if (focusSurvivingBarControl(target)) pendingBarFocusRef.current = null;
-  });
-
   // Keep the fixed toast stack above the in-flow result bar. The bar can
   // wrap to several rows on phones, so measure it and publish the reserved
   // height as a CSS variable consumed by the toast viewport.
@@ -270,7 +264,12 @@ export function BulkActionBar() {
   }, [busy, resetResults, selection.count, selection.enabled, selection.mode]);
 
   useEffect(() => {
-    if (visible && !wasVisibleRef.current) {
+    if (
+      visible &&
+      !wasVisibleRef.current &&
+      selection.enabled &&
+      pendingBarFocusRef.current === null
+    ) {
       barRef.current?.focus();
     } else if (!visible && wasVisibleRef.current) {
       pendingBarFocusRef.current = null;
@@ -287,6 +286,14 @@ export function BulkActionBar() {
     }
     wasVisibleRef.current = visible;
   }, [focusToggleOrMain, resetResults, selection.enabled, visible]);
+
+  // Runs after the open/close focus pass so a surviving-control target wins
+  // even when a transient busy→result render briefly reopens the bar.
+  useEffect(() => {
+    const target = pendingBarFocusRef.current;
+    if (target === null) return;
+    if (focusSurvivingBarControl(target)) pendingBarFocusRef.current = null;
+  });
 
   // Results survive a view switch (selection is disabled there) and a
   // selection change; only a board switch or the explicit Dismiss/Clear/new
