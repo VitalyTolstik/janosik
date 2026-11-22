@@ -154,6 +154,12 @@ interface BoardStateValue {
 interface BoardIdentityValue {
   id: string | undefined;
   title: string;
+  /**
+   * True while the active board sits in the archive. The header treats it
+   * exactly like a VIEWER: the title is a readout and no write affordances
+   * are offered (the command path refuses them too).
+   */
+  archived: boolean;
 }
 
 /**
@@ -1848,6 +1854,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         (action) => (action as { cardId?: string }).cardId,
       );
       if (cardIds.some((id) => id === undefined)) return false;
+      // Restores are individual commands (one WIP check and one undo step
+      // per card). Say so instead of implying a single bulk undo (QA-07).
+      const restoring = batch.every(
+        (action) => action.type === "UNARCHIVE_CARD",
+      );
       archiveBatchRunning.current = true;
       setArchiveBatch({
         boardId,
@@ -1881,6 +1892,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
               toast.error(
                 t("archive.backgroundFailed", { count: batch.length - done }),
               );
+            else if (restoring)
+              toast.success(t("archive.backgroundRestored", { count: done }));
             else toast.success(t("archive.backgroundDone", { count: done }));
           }
         }
@@ -2201,8 +2214,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   const identity = useMemo<BoardIdentityValue>(
-    () => ({ id: board?.id, title: board?.title ?? "" }),
-    [board?.id, board?.title],
+    () => ({
+      id: board?.id,
+      title: board?.title ?? "",
+      archived: board?.archivedAt !== undefined,
+    }),
+    [board?.id, board?.title, board?.archivedAt],
   );
 
   // A narrow role slice: the header hides Undo/Redo for a VIEWER, and the
@@ -2800,8 +2817,12 @@ export function ShareBoardProvider({
   );
   const access = useMemo<BoardAccessValue>(() => ({ role: "VIEWER" }), []);
   const identity = useMemo<BoardIdentityValue>(
-    () => ({ id: board.id, title: board.title }),
-    [board.id, board.title],
+    () => ({
+      id: board.id,
+      title: board.title,
+      archived: board.archivedAt !== undefined,
+    }),
+    [board.id, board.title, board.archivedAt],
   );
   const stateValue = useMemo<BoardStateValue>(
     () => ({

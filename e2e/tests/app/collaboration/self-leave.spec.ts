@@ -106,3 +106,49 @@ test("a MEMBER can leave a board and loses direct access", async ({
   // The owner still sees the leaver's card; leaving is not a content delete.
   await expect(ownerPage.getByText("Authored by the leaver")).toBeVisible();
 });
+
+for (const width of [390, 768]) {
+  test(`a VIEWER can leave an archived board from the switcher at ${width}px`, async ({
+    board,
+    partner,
+    partnerBrowser,
+  }) => {
+    await board.column("Todo");
+    await partner.invite("VIEWER");
+    await partner.accept();
+
+    // The leaver keeps an active board to open; the shared board is archived
+    // and can only be reached through the switcher row.
+    const ownTitle = `Partner board ${randomUUID()}`;
+    const ownBoard = await partner.api.post("/api/v1/boards", {
+      data: { title: ownTitle },
+    });
+    expect(ownBoard.status()).toBe(201);
+    const ownId = (
+      (await ownBoard.json()) as {
+        id: string;
+      }
+    ).id;
+    await board.command({ type: "ARCHIVE_BOARD" });
+
+    const page = partnerBrowser.page;
+    await page.setViewportSize({ width, height: 1024 });
+    await page.goto(new URL(`board/${ownId}`, appUrl).href);
+    await expect(
+      page.getByRole("button", { name: "Switch board" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Switch board" }).click();
+    const archived = page.getByTestId("archived-section");
+    const leave = archived.getByTestId("board-switcher-archived-leave");
+    await expect(leave).toHaveAccessibleName(`Leave board — ${board.title}`);
+    await leave.click();
+    await archived.getByRole("button", { name: "Yes, leave" }).click();
+
+    await expect(page.getByText("You left the board")).toBeVisible();
+    const listed = await partner.api.get("/api/v1/boards");
+    expect(listed.ok()).toBeTruthy();
+    const boards = (await listed.json()) as { id: string }[];
+    expect(boards.map((entry) => entry.id)).not.toContain(board.id);
+  });
+}

@@ -908,42 +908,22 @@ function WatchRow({
   return (
     <li
       data-testid="watch-entry"
-      className="max-w-full border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:items-start"
+      // Below 1024 px the feed pane is too narrow for the three-column row:
+      // time + actor share the first line and the sentence gets the full
+      // width on the next one. The fixed time/actor widths only return when
+      // the header can afford them (QA-05).
+      className="grid max-w-full grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:items-start lg:gap-x-0 lg:gap-y-0 lg:divide-x lg:divide-muted-foreground/40 lg:[&>*]:px-2 lg:[&>*:first-child]:pl-0 lg:[&>*:last-child]:pr-0"
     >
-      {/* Below lg the time/actor pair sits above the sentence: three fixed
-          columns at 768 px used to leave ~78 px for the story. */}
-      <div className="mb-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground lg:hidden">
-        <time
-          className="whitespace-nowrap tabular-nums"
-          dateTime={new Date(entry.at).toISOString()}
-          data-testid="watch-entry-time"
-        >
-          {clock}
-        </time>
-        <span
-          className="flex min-w-0 max-w-full items-center gap-1.5 text-foreground/80"
-          title={actorName}
-          data-testid="watch-entry-actor"
-        >
-          <span className="truncate">{actorName}</span>
-          {entry.actorType === "agent" ? (
-            <span
-              className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-              title={t("activity.agent")}
-            >
-              {t("activity.agent")}
-            </span>
-          ) : null}
-        </span>
-      </div>
       <time
-        className="hidden whitespace-nowrap pl-0 tabular-nums text-muted-foreground lg:block lg:border-r lg:border-muted-foreground/40 lg:px-2"
+        data-testid="watch-entry-time"
+        className="whitespace-nowrap pl-0 tabular-nums text-muted-foreground lg:border-r lg:border-muted-foreground/40 lg:px-2"
         dateTime={new Date(entry.at).toISOString()}
       >
         {clock}
       </time>
       <span
-        className="hidden min-w-0 items-center gap-1.5 text-foreground/80 lg:flex lg:border-r lg:border-muted-foreground/40 lg:px-2"
+        data-testid="watch-entry-actor"
+        className="flex min-w-0 items-center gap-1.5 text-foreground/80 lg:border-r lg:border-muted-foreground/40 lg:px-2"
         title={actorName}
       >
         <span className="truncate">{actorName}</span>
@@ -959,72 +939,77 @@ function WatchRow({
       </span>
       <div
         data-testid="watch-entry-body"
-        className="min-w-0 max-w-full break-words text-foreground/90 [overflow-wrap:anywhere] lg:px-2 lg:pr-0"
+        className="col-span-2 min-w-0 max-w-full break-words text-foreground/90 [overflow-wrap:anywhere] lg:col-span-1 lg:px-2 lg:pr-0"
       >
-        {card ? (
-          <span
-            className="text-muted-foreground [overflow-wrap:anywhere]"
-            title={card.title}
-          >
-            {card.title} ·{" "}
-          </span>
-        ) : null}
-        {t(sentence.key, sentence.params)}
-        {details.length > 0 ? (
-          <span className="ml-2 inline-flex max-w-[calc(100%_-_0.5rem)] min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
-            {details.map((detail, index) => (
-              <span key={`${detail.label}-${index}`} className="min-w-0">
-                {detail.label ? (
-                  <span className="text-muted-foreground">
-                    {detail.label}:{" "}
-                  </span>
-                ) : null}
-                {detail.from !== undefined && detail.sides === undefined ? (
-                  <>
-                    <span className="whitespace-pre-wrap text-(--chip-red) line-through [overflow-wrap:anywhere]">
-                      {detail.from}
+        <span
+          data-testid="watch-entry-sentence"
+          className="block min-w-0 break-words [overflow-wrap:anywhere]"
+        >
+          {card ? (
+            <span
+              className="text-muted-foreground [overflow-wrap:anywhere]"
+              title={card.title}
+            >
+              {card.title} ·{" "}
+            </span>
+          ) : null}
+          {t(sentence.key, sentence.params)}
+          {details.length > 0 ? (
+            <span className="ml-2 inline-flex max-w-[calc(100%_-_0.5rem)] min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
+              {details.map((detail, index) => (
+                <span key={`${detail.label}-${index}`} className="min-w-0">
+                  {detail.label ? (
+                    <span className="text-muted-foreground">
+                      {detail.label}:{" "}
                     </span>
-                    <span className="mx-1 text-muted-foreground">→</span>
-                  </>
-                ) : null}
-                {detail.sides !== undefined ? (
-                  <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1 [overflow-wrap:anywhere]">
-                    <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
-                      <DiffSegments segments={detail.sides.left} />
+                  ) : null}
+                  {detail.from !== undefined && detail.sides === undefined ? (
+                    <>
+                      <span className="whitespace-pre-wrap text-(--chip-red) line-through [overflow-wrap:anywhere]">
+                        {detail.from}
+                      </span>
+                      <span className="mx-1 text-muted-foreground">→</span>
+                    </>
+                  ) : null}
+                  {detail.sides !== undefined ? (
+                    <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1 [overflow-wrap:anywhere]">
+                      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                        <DiffSegments segments={detail.sides.left} />
+                      </span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                        <DiffSegments segments={detail.sides.right} />
+                      </span>
                     </span>
-                    <span className="text-muted-foreground">→</span>
-                    <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
-                      <DiffSegments segments={detail.sides.right} />
+                  ) : (
+                    <span className="whitespace-pre-wrap text-(--chip-green) [overflow-wrap:anywhere]">
+                      {detail.to}
                     </span>
-                  </span>
-                ) : (
-                  <span className="whitespace-pre-wrap text-(--chip-green) [overflow-wrap:anywhere]">
-                    {detail.to}
-                  </span>
-                )}
-              </span>
-            ))}
-          </span>
-        ) : null}
-        {entry.actorType === "agent" ? (
-          <AgentAttribution
-            apiTokenId={entry.apiTokenId}
-            agentSessionId={entry.agentSessionId}
-            runId={entry.runId}
-            agentName={entry.agentName}
-            compact
-            className="ml-2 align-baseline"
-          />
-        ) : null}
-        {canExpand ? (
-          <button
-            type="button"
-            className="ml-2 text-xs text-primary underline"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {t(expanded ? "watch.showLess" : "watch.showMore")}
-          </button>
-        ) : null}
+                  )}
+                </span>
+              ))}
+            </span>
+          ) : null}
+          {entry.actorType === "agent" ? (
+            <AgentAttribution
+              apiTokenId={entry.apiTokenId}
+              agentSessionId={entry.agentSessionId}
+              runId={entry.runId}
+              agentName={entry.agentName}
+              compact
+              className="ml-2 align-baseline"
+            />
+          ) : null}
+          {canExpand ? (
+            <button
+              type="button"
+              className="ml-2 text-xs text-primary underline"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {t(expanded ? "watch.showLess" : "watch.showMore")}
+            </button>
+          ) : null}
+        </span>
       </div>
     </li>
   );

@@ -626,6 +626,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
             </p>
             {filteredArchived.map((b) => {
               const isConfirming = confirmDeleteId === b.id;
+              const isConfirmingLeave = confirmLeaveId === b.id;
               return (
                 <div
                   key={b.id}
@@ -640,7 +641,37 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                   <span className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground">
                     {b.title}
                   </span>
-                  {isConfirming ? (
+                  {isConfirmingLeave ? (
+                    <span
+                      data-testid="board-switcher-archived-leave-confirm"
+                      className="flex items-center gap-1"
+                    >
+                      <span className="text-xs text-muted-foreground">
+                        {t("board.members.leaveConfirm")}
+                      </span>
+                      <button
+                        aria-label={t("board.members.leaveConfirmYes")}
+                        disabled={leavingId === b.id}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-danger hover:bg-danger/10 disabled:opacity-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleLeave(b);
+                        }}
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        aria-label={t("common.cancel")}
+                        className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-hover"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmLeaveId(null);
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
+                  ) : isConfirming ? (
                     <span className="flex items-center gap-1">
                       <span className="text-xs text-muted-foreground">
                         {t("board.switcher.deleteConfirm")}
@@ -691,6 +722,19 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
                             <Trash2 size={14} />
                           </button>
                         </>
+                      ) : serverMode && roleOf(b.id) !== "ADMIN" ? (
+                        <button
+                          aria-label={`${t("board.members.leave")} — ${b.title}`}
+                          data-testid="board-switcher-archived-leave"
+                          disabled={leavingId === b.id}
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmLeaveId(b.id);
+                          }}
+                        >
+                          <LogOut size={14} />
+                        </button>
                       ) : null}
                     </>
                   )}

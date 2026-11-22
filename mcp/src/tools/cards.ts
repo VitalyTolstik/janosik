@@ -544,6 +544,8 @@ export function registerCardTools(
         cardId: cardIdSchema,
         title: z
           .string()
+          .trim()
+          .min(1)
           .max(LIMITS.cardTitle)
           .optional()
           .describe("Title for the copy."),

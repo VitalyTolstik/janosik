@@ -73,8 +73,9 @@ Open the menu with the `⋮` button in the column header. It holds `Rename`,
   column to manual order.
 - **Archive all cards** moves every card in the column to the archive, where
   you can restore it later.
-- **Delete column** removes the column and its cards permanently, after a
-  confirmation that names the column and the number of cards.
+- **Delete column** removes the column and its cards after a confirmation
+  that names the column and the number of cards. Undo restores the column and
+  its cards.
 
 ### WIP limits
 

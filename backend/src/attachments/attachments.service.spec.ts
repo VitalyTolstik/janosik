@@ -105,6 +105,9 @@ describe("AttachmentsService.create — blob cleanup after the rename (TASK-156,
     boardWriteRun.mockImplementation(
       (_boardId: string, fn: (tx: unknown) => Promise<unknown>) =>
         fn({
+          board: {
+            findFirst: jest.fn().mockResolvedValue({ archivedAt: null }),
+          },
           attachment: {
             // The authoritative count under the board lock is at the cap.
             count: jest.fn().mockResolvedValue(LIMITS.attachmentsPerCard),
@@ -159,6 +162,9 @@ describe("AttachmentsService.create — blob cleanup after the rename (TASK-156,
     boardWriteRun.mockImplementation(
       (_boardId: string, fn: (tx: unknown) => Promise<unknown>) =>
         fn({
+          board: {
+            findFirst: jest.fn().mockResolvedValue({ archivedAt: null }),
+          },
           attachment: {
             count: jest.fn().mockResolvedValue(0),
             create: jest.fn().mockResolvedValue(row),
