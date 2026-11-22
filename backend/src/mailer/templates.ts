@@ -328,11 +328,11 @@ export function digestEmail(
     : digestCountLabel(count, locale);
   if (locale === "ru") {
     return {
-      subject: `${BRAND}: ${board} — ${countLabel}`,
-      text: `Изменения на доске «${board}» за последние ${hours} ч: ${countLabel}.${attentionText}`,
+      subject: `${BRAND}: ${board} — изменений: ${count}`,
+      text: `В доске «${board}» за последние ${hours} ч было ${countLabel}.${attentionText}`,
       html: shell(
         "Изменения на доске",
-        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Изменения на доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч: <b>${countLabel}</b>.</p>${attentionHtml}`,
+        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">В доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч было <b>${countLabel}</b>.</p>${attentionHtml}`,
       ),
     };
   }
@@ -446,12 +446,13 @@ export function dueReminderEmail(
     ? "{{countLabel}}"
     : dueCountLabel(count, locale);
   if (locale === "ru") {
+    const heading = `${russianForm(count, "Задача", "Задачи", "Задачи")} с приближающимся сроком`;
     return {
-      subject: `${BRAND}: ${countLabel} со сроком скоро`,
-      text: `${countLabel} с приближающимся сроком:\n${htmlToText(tasksHtml)}`,
+      subject: `${BRAND}: ${countLabel} с приближающимся сроком`,
+      text: `${heading}:\n${htmlToText(tasksHtml)}`,
       html: shell(
         "Скоро срок",
-        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${countLabel} с приближающимся сроком:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${heading}:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
       ),
     };
   }
@@ -467,12 +468,18 @@ export function dueReminderEmail(
       ),
     };
   }
+  const heading = countForm(count, "Task", "Tasks");
+  const intro = countForm(
+    count,
+    "Task with an approaching due date",
+    "Tasks with an approaching due date",
+  );
   return {
     subject: `${BRAND}: ${countLabel} due soon`,
-    text: `${countLabel} due soon:\n${htmlToText(tasksHtml)}`,
+    text: `${heading} due soon:\n${htmlToText(tasksHtml)}`,
     html: shell(
-      "Due soon",
-      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${countLabel} due soon:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      heading === "Task" ? "Task due soon" : "Tasks due soon",
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${intro}:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
     ),
   };
 }
@@ -1126,12 +1133,12 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   digest: {
     subject: digestDefault.subject,
     bodyHtml: digestDefault.html,
-    placeholders: ["board", "count", "countLabel", "hours", "attention"],
+    placeholders: ["board", "countLabel", "hours", "attention"],
   },
   due_reminder: {
     subject: dueReminderDefault.subject,
     bodyHtml: dueReminderDefault.html,
-    placeholders: ["count", "countLabel", "tasks"],
+    placeholders: ["countLabel", "tasks"],
   },
   attention_approval_requested: approvalRequestedDefault,
   attention_approval_decided: approvalDecidedDefault,

@@ -192,7 +192,9 @@ export class EmailTemplateService {
       const vars = {
         board: escapeHtml(board),
         count,
-        countLabel: digestCountLabel(count, locale),
+        // Saved templates are single-language English defaults; a localized
+        // count phrase would produce “Board activity …: 1 изменение”.
+        countLabel: digestCountLabel(count, "en"),
         hours,
         attention: digestAttentionHtml(attention, locale),
       };
@@ -236,7 +238,9 @@ export class EmailTemplateService {
     if (row) {
       const vars = {
         count,
-        countLabel: dueCountLabel(count, locale),
+        // The editable default is English; keep the phrase English even when
+        // the recipient locale is RU.
+        countLabel: dueCountLabel(count, "en"),
         tasks: tasksHtml,
       };
       const subject = fillTemplate(row.subject, vars);

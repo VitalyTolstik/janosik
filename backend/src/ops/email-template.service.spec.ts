@@ -93,4 +93,46 @@ describe("EmailTemplateService saved defaults", () => {
     expect(rendered.text).toContain("Due soon: 1 task");
     expect(rendered.text).not.toContain("Tasks due soon");
   });
+
+  it("keeps saved-default count labels English for RU recipients", async () => {
+    const digest = await service("digest").digestEmail("Board", 1, 24, "ru");
+    expect(digest.subject).toContain("1 change");
+    expect(digest.text).toContain(": 1 change.");
+    expect(digest.text).not.toContain("изменение");
+
+    const due = await service("due_reminder").dueReminderEmail(
+      1,
+      "<li>Ship it</li>",
+      "ru",
+    );
+    expect(due.subject).toContain("1 task due soon");
+    expect(due.text).toContain("Due soon: 1 task");
+    expect(due.text).not.toContain("задача");
+  });
+
+  it("keeps saved-default counts plural-aware", async () => {
+    const digest = await service("digest").digestEmail("Board", 2, 24, "en");
+    expect(digest.subject).toContain("2 changes");
+    expect(digest.text).toContain(": 2 changes.");
+    const due = await service("due_reminder").dueReminderEmail(
+      2,
+      "<li>Ship it</li>",
+      "en",
+    );
+    expect(due.subject).toContain("2 tasks due soon");
+    expect(due.text).toContain("Due soon: 2 tasks");
+  });
+
+  it("does not advertise raw count when the default uses countLabel", () => {
+    expect(EMAIL_TEMPLATE_DEFAULTS.digest!.placeholders).not.toContain("count");
+    expect(EMAIL_TEMPLATE_DEFAULTS.digest!.placeholders).toContain(
+      "countLabel",
+    );
+    expect(EMAIL_TEMPLATE_DEFAULTS.due_reminder!.placeholders).not.toContain(
+      "count",
+    );
+    expect(EMAIL_TEMPLATE_DEFAULTS.due_reminder!.placeholders).toContain(
+      "countLabel",
+    );
+  });
 });

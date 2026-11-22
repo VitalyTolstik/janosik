@@ -372,30 +372,41 @@ describe("digestEmail attention summary", () => {
       "Janosik: 2 tasks due soon",
     );
     expect(dueReminderEmail(1, "<li>Ship it</li>", "en").text).toContain(
-      "1 task due soon:",
+      "Task due soon:",
     );
     expect(dueReminderEmail(2, "<li>Ship it</li>", "en").text).toContain(
-      "2 tasks due soon:",
+      "Tasks due soon:",
+    );
+    // The saved-default neutral branch must not leak into direct letters.
+    expect(dueReminderEmail(1, "<li>Ship it</li>", "en").text).not.toContain(
+      "Due soon: 1 task",
+    );
+    expect(digestEmail("Board", 1, 24, "en").text).not.toContain(
+      "Board activity",
     );
   });
 
   it("uses Russian plural forms for one, few and many", () => {
     const one = digestEmail("Доска", 1, 24, "ru");
-    expect(one.subject).toContain("1 изменение");
-    expect(one.text).toContain("1 изменение");
+    expect(one.subject).toContain("изменений: 1");
+    expect(one.text).toContain("было 1 изменение");
     expect(one.text).not.toContain("1 изменений");
-    expect(digestEmail("Доска", 2, 24, "ru").subject).toContain("2 изменения");
-    expect(digestEmail("Доска", 5, 24, "ru").subject).toContain("5 изменений");
+    const two = digestEmail("Доска", 2, 24, "ru");
+    expect(two.subject).toContain("изменений: 2");
+    expect(two.text).toContain("было 2 изменения");
+    expect(digestEmail("Доска", 5, 24, "ru").text).toContain(
+      "было 5 изменений",
+    );
 
     const dueOne = dueReminderEmail(1, "<li>Ship it</li>", "ru");
-    expect(dueOne.subject).toContain("1 задача");
-    expect(dueOne.text).toContain("1 задача");
+    expect(dueOne.subject).toContain("1 задача с приближающимся сроком");
+    expect(dueOne.text).toContain("Задача с приближающимся сроком:");
     expect(dueOne.text).not.toContain("1 задач ");
-    expect(dueReminderEmail(2, "<li>Ship it</li>", "ru").subject).toContain(
-      "2 задачи",
-    );
+    const dueTwo = dueReminderEmail(2, "<li>Ship it</li>", "ru");
+    expect(dueTwo.subject).toContain("2 задачи с приближающимся сроком");
+    expect(dueTwo.text).toContain("Задачи с приближающимся сроком:");
     expect(dueReminderEmail(5, "<li>Ship it</li>", "ru").subject).toContain(
-      "5 задач",
+      "5 задач с приближающимся сроком",
     );
   });
 
