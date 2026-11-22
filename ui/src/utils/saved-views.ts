@@ -8,7 +8,13 @@ import {
   type DueFilter,
   type LabelMatch,
 } from "@/utils/filter";
-import { quarantineValue, readJSON, readRaw, saveJSON } from "@/utils/storage";
+import {
+  listQuarantineKeys,
+  quarantineValue,
+  readJSON,
+  readRaw,
+  saveJSON,
+} from "@/utils/storage";
 
 /**
  * Local-only saved board views (TASK-177.20.2).
@@ -226,14 +232,21 @@ function parsePayload(value: unknown): ParsedPayload {
   if (Array.isArray(value))
     return { kind: "views", views: value, migrated: true };
   const raw = asRecord(value);
-  if (raw === null || !Array.isArray(raw.views)) return { kind: "invalid" };
-  if (raw.version === undefined) {
-    return { kind: "views", views: raw.views, migrated: true };
+  if (raw === null) return { kind: "invalid" };
+  // Version first: a future envelope may rename/move `views`, and that must
+  // still read as "newer", not as damaged data that gets quarantined.
+  if (typeof raw.version === "number") {
+    if (raw.version > SAVED_VIEWS_VERSION) return { kind: "unsupported" };
+    if (raw.version !== SAVED_VIEWS_VERSION) return { kind: "invalid" };
+  } else if (raw.version !== undefined) {
+    return { kind: "invalid" };
   }
-  if (typeof raw.version !== "number") return { kind: "invalid" };
-  if (raw.version > SAVED_VIEWS_VERSION) return { kind: "unsupported" };
-  if (raw.version !== SAVED_VIEWS_VERSION) return { kind: "invalid" };
-  return { kind: "views", views: raw.views, migrated: false };
+  if (!Array.isArray(raw.views)) return { kind: "invalid" };
+  return {
+    kind: "views",
+    views: raw.views,
+    migrated: raw.version === undefined,
+  };
 }
 
 /**
@@ -299,6 +312,11 @@ export function peekSavedViewsCount(userId: string, boardId: string): number {
   }
 }
 
+/** Does an existing quarantine copy hold exactly these raw bytes? */
+function hasQuarantineCopy(key: string, raw: string): boolean {
+  return listQuarantineKeys(key).some((copy) => readRaw(copy) === raw);
+}
+
 /**
  * Persist views (sanitized first) in the current envelope. The existing key is
  * inspected at write time as well: a newer payload version is never
@@ -319,16 +337,26 @@ export function saveSavedViews(
     }
     if (payload.kind === "invalid") {
       // Valid JSON of the wrong shape is only replaceable once its raw bytes
-      // are safely copied aside.
+      // are safely copied aside. A copy from the earlier load counts too —
+      // retrying the copy after a quota failure must not create a false lock.
       const raw = readRaw(key);
-      if (raw === null || quarantineValue(key, raw) === null) {
+      if (
+        raw === null ||
+        (!hasQuarantineCopy(key, raw) && quarantineValue(key, raw) === null)
+      ) {
         return { ok: false, reason: "corrupt" };
       }
     }
-  } else if (stored.status === "corrupt" && stored.quarantineKey === null) {
-    // The read-time copy failed (quota/private mode): the unparsable text is
-    // the user's only copy, so lock writes instead of destroying it.
-    return { ok: false, reason: "corrupt" };
+  } else if (stored.status === "corrupt") {
+    const raw = readRaw(key);
+    if (
+      raw === null ||
+      (!hasQuarantineCopy(key, raw) && quarantineValue(key, raw) === null)
+    ) {
+      // The read-time copy failed (quota/private mode): the unparsable text is
+      // the user's only copy, so lock writes instead of destroying it.
+      return { ok: false, reason: "corrupt" };
+    }
   }
 
   const sanitized = sanitizeSavedViews(views);
@@ -398,12 +426,13 @@ export function renameSavedView(
   return { ok: true, views: next, view };
 }
 
-/** Remove a view by name; unknown names are a no-op. */
+/** Remove a view by name (case-insensitively); unknown names are a no-op. */
 export function removeSavedView(
   views: readonly SavedView[],
   targetName: string,
 ): SavedView[] {
-  return views.filter((view) => view.name !== targetName);
+  const target = targetName.trim().toLowerCase();
+  return views.filter((view) => view.name.toLowerCase() !== target);
 }
 
 /**

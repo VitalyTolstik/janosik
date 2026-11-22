@@ -13,6 +13,7 @@ import {
   savedViewsKey,
   saveSavedViews,
   type SavedView,
+  type SavedViewProjection,
 } from "@/utils/saved-views";
 import type { BoardView } from "./ViewSwitcher";
 
@@ -29,39 +30,63 @@ function savedView(overrides: Partial<SavedView> = {}): SavedView {
   };
 }
 
-function renderMenu({
-  filter = ACTIVE_FILTER,
-  view = "board",
-  labels,
-  assigneeIds,
-  disabled = false,
-}: {
+interface RenderMenuOptions {
+  userId?: string;
+  boardId?: string;
   filter?: CardFilter;
   view?: BoardView;
   labels?: ReadonlyArray<{ id: string }>;
   assigneeIds?: readonly string[];
   disabled?: boolean;
-} = {}) {
-  const onApply = vi.fn();
-  render(
+}
+
+function menuTree(
+  options: Required<
+    Pick<
+      RenderMenuOptions,
+      "userId" | "boardId" | "filter" | "view" | "disabled"
+    >
+  > &
+    RenderMenuOptions & {
+      onApply: (filter: CardFilter, view?: SavedViewProjection) => void;
+    },
+) {
+  return (
     <I18nProvider>
       <ToastProvider>
         <TooltipProvider>
           <SavedViewsMenu
-            userId={USER}
-            boardId={BOARD}
-            filter={filter}
-            view={view}
-            labels={labels}
-            assigneeIds={assigneeIds}
-            onApply={onApply}
-            disabled={disabled}
+            userId={options.userId}
+            boardId={options.boardId}
+            filter={options.filter}
+            view={options.view}
+            labels={options.labels}
+            assigneeIds={options.assigneeIds}
+            onApply={options.onApply}
+            disabled={options.disabled}
           />
         </TooltipProvider>
       </ToastProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { onApply };
+}
+
+function renderMenu(options: RenderMenuOptions = {}) {
+  const resolved = {
+    userId: USER,
+    boardId: BOARD,
+    filter: ACTIVE_FILTER,
+    view: "board" as BoardView,
+    disabled: false,
+    ...options,
+  };
+  const onApply = vi.fn();
+  const rendered = render(menuTree({ ...resolved, onApply }));
+  return {
+    onApply,
+    rerender: (next: RenderMenuOptions = {}) =>
+      rendered.rerender(menuTree({ ...resolved, ...next, onApply })),
+  };
 }
 
 async function openMenu() {
@@ -203,7 +228,65 @@ describe("SavedViewsMenu", () => {
     expect(loadSavedViews(USER, BOARD).views).toEqual([]);
   });
 
-  it("scopes drift to the applied view and clears the prior warning", async () => {
+  it("leaves an unrelated drifted view byte-for-byte intact on a clean apply", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Clean",
+        filter: { ...EMPTY_FILTER, query: "clean" },
+      }),
+      savedView({
+        name: "Other",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [] });
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Clean/ }),
+    );
+
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "clean" }),
+      "table",
+    );
+    expect(screen.queryByText(/no longer exist/)).not.toBeInTheDocument();
+    const stored = loadSavedViews(USER, BOARD).views;
+    expect(stored.map((view) => view.name)).toEqual(["Clean", "Other"]);
+    expect(stored[1].filter.labelIds).toEqual(["gone-label"]);
+  });
+
+  it("drops only the applied emptied view and leaves its neighbour intact", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Only missing",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+      savedView({
+        name: "Other",
+        filter: { ...EMPTY_FILTER, query: "other" },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [] });
+    await openMenu();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Only missing/ }),
+    );
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(
+        "Saved view “Only missing” was removed because all its filter options no longer exist.",
+      ),
+    ).toBeInTheDocument();
+    await expectDialogClosed();
+    expect(loadSavedViews(USER, BOARD).views.map((v) => v.name)).toEqual([
+      "Other",
+    ]);
+  });
+
+  it("clears a prior drift warning on the next clean apply", async () => {
     saveSavedViews(USER, BOARD, [
       savedView({
         name: "Drifted",
@@ -216,10 +299,6 @@ describe("SavedViewsMenu", () => {
       savedView({
         name: "Clean",
         filter: { ...EMPTY_FILTER, query: "clean" },
-      }),
-      savedView({
-        name: "Other",
-        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
       }),
     ]);
     const { onApply } = renderMenu({ labels: [] });
@@ -247,6 +326,89 @@ describe("SavedViewsMenu", () => {
     expect(screen.queryByText(/no longer exist/)).not.toBeInTheDocument();
     const stored = loadSavedViews(USER, BOARD).views;
     expect(stored.map((view) => view.name)).toEqual(["Drifted", "Clean"]);
+    expect(stored[0].filter.labelIds).toEqual([]);
+  });
+
+  it("keeps a dropped view open and reports storage failure", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Only missing",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [] });
+    await openMenu();
+
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Only missing/ }),
+    );
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Could not save views in this browser.",
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Saved views" }),
+    ).toBeInTheDocument();
+    expect(loadSavedViews(USER, BOARD).views).toHaveLength(1);
+  });
+
+  it("reports a newer-version apply failure instead of a generic storage error", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Only missing",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [] });
+    await openMenu();
+
+    const raw = `{"version":2,"views":[]}`;
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Only missing/ }),
+    );
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Saved views were created by a newer version.",
+    );
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+    expect(
+      screen.getByRole("dialog", { name: "Saved views" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reports a corrupt apply failure when the quarantine copy cannot be made", async () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({
+        name: "Only missing",
+        filter: { ...EMPTY_FILTER, labelIds: ["gone-label"] },
+      }),
+    ]);
+    const { onApply } = renderMenu({ labels: [] });
+    await openMenu();
+
+    const raw = "{broken";
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /Apply view.*Only missing/ }),
+    );
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Saving is locked to protect the damaged data.",
+    );
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+    expect(
+      screen.getByRole("dialog", { name: "Saved views" }),
+    ).toBeInTheDocument();
   });
 
   it.each([
@@ -517,6 +679,77 @@ describe("SavedViewsMenu", () => {
     expect(loadSavedViews(USER, BOARD).views).toEqual([]);
   });
 
+  it("rolls back a failed rename and keeps the draft", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Before" })]);
+    renderMenu();
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Rename view Before" }),
+    );
+    const input = screen.getByLabelText("New name for view Before");
+    await userEvent.clear(input);
+    await userEvent.type(input, "After");
+
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Save name" }));
+
+    expect(screen.getByLabelText("New name for view Before")).toHaveValue(
+      "After",
+    );
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Could not save views in this browser.",
+    );
+    expect(loadSavedViews(USER, BOARD).views[0].name).toBe("Before");
+  });
+
+  it("rolls back a failed delete and keeps the confirmation open", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Keep" })]);
+    renderMenu();
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete view Keep" }),
+    );
+
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete “Keep”" }),
+    );
+
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Could not save views in this browser.",
+    );
+    expect(loadSavedViews(USER, BOARD).views).toHaveLength(1);
+    expect(screen.getByText(/Delete.*Keep/)).toBeInTheDocument();
+  });
+
+  it("disables the delete confirmation when writes lock", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Keep" })]);
+    renderMenu();
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete view Keep" }),
+    );
+
+    localStorage.setItem(
+      savedViewsKey(USER, BOARD),
+      `{"version":2,"views":[]}`,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete “Keep”" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Delete “Keep”" }),
+    ).toBeDisabled();
+    expect(screen.getByTestId("saved-views-error")).toHaveTextContent(
+      "Saved views were created by a newer version.",
+    );
+  });
+
   it("quarantines damaged storage and reports it instead of an empty list", async () => {
     localStorage.setItem(savedViewsKey(USER, BOARD), "{broken");
     renderMenu();
@@ -621,6 +854,30 @@ describe("SavedViewsMenu", () => {
     expect(
       screen.getByRole("button", { name: /Apply view.*One/ }),
     ).toHaveAttribute("title", "One");
+  });
+
+  it("re-peeks the trigger count when the board changes", () => {
+    saveSavedViews(USER, BOARD, [
+      savedView({ name: "One" }),
+      savedView({ name: "Two" }),
+    ]);
+    saveSavedViews(USER, "board-2", [savedView({ name: "Other" })]);
+    const { rerender } = renderMenu();
+
+    expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
+      "aria-label",
+      "Saved views (2)",
+    );
+
+    rerender({ boardId: "board-2" });
+
+    expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
+      "aria-label",
+      "Saved views (1)",
+    );
+    expect(screen.getByTestId("saved-views-count-badge")).toHaveTextContent(
+      "1",
+    );
   });
 
   it("fits a 390px viewport and keeps 44px targets at 768px", async () => {

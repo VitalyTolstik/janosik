@@ -117,6 +117,20 @@ describe("saved views storage", () => {
     expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
   });
 
+  it("reads the version before validating a future envelope shape", () => {
+    const raw = `{"version":${SAVED_VIEWS_VERSION + 1},"savedViews":[]}`;
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+
+    expect(loadSavedViews(USER, BOARD)).toEqual({
+      status: "unsupported",
+      views: [],
+    });
+    expect(
+      Object.keys(localStorage).some((key) => key.includes(".corrupt.")),
+    ).toBe(false);
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
   it("refuses to overwrite damaged data when the quarantine copy failed", () => {
     const raw = "{not json";
     localStorage.setItem(savedViewsKey(USER, BOARD), raw);
@@ -129,6 +143,45 @@ describe("saved views storage", () => {
       reason: "corrupt",
     });
     expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
+  it("refuses a wrong-shape payload when its first quarantine copy failed", () => {
+    const raw = JSON.stringify({ version: SAVED_VIEWS_VERSION, views: "nope" });
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
+
+    expect(saveSavedViews(USER, BOARD, [view()])).toEqual({
+      ok: false,
+      reason: "corrupt",
+    });
+    expect(localStorage.getItem(savedViewsKey(USER, BOARD))).toBe(raw);
+  });
+
+  it("reuses an existing quarantine copy before locking a wrong-shape payload", () => {
+    const raw = JSON.stringify({ version: SAVED_VIEWS_VERSION, views: "nope" });
+    localStorage.setItem(savedViewsKey(USER, BOARD), raw);
+    const loaded = loadSavedViews(USER, BOARD);
+    expect(loaded.status).toBe("corrupt");
+    expect(loaded.quarantineKey).not.toBeNull();
+
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key.includes(".corrupt.")) throw new Error("quota exceeded");
+      originalSetItem.call(this, key, value);
+    });
+
+    expect(saveSavedViews(USER, BOARD, [view()])).toEqual({
+      ok: true,
+      views: [view()],
+    });
+    expect(localStorage.getItem(loaded.quarantineKey ?? "")).toBe(raw);
+    expect(loadSavedViews(USER, BOARD).views).toEqual([view()]);
   });
 
   it("replaces quarantined damage only after the copy succeeds", () => {
@@ -439,10 +492,11 @@ describe("rename and delete", () => {
     });
   });
 
-  it("removes only the named view", () => {
+  it("removes only the named view, case-insensitively", () => {
     const views = [view({ name: "One" }), view({ name: "Two" })];
 
     expect(removeSavedView(views, "One")).toEqual([views[1]]);
+    expect(removeSavedView(views, " one ")).toEqual([views[1]]);
     expect(removeSavedView(views, "Missing")).toEqual(views);
   });
 });

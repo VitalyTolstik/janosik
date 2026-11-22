@@ -1,6 +1,8 @@
 import { Bookmark, Pencil, Plus, Trash2 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -140,8 +142,20 @@ export function SavedViewsMenu({
 }: SavedViewsMenuProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [count, setCount] = useState(() =>
-    peekSavedViewsCount(userId, boardId),
+  const scope = `${userId}:${boardId}`;
+  const peekedCount = useMemo(
+    () => peekSavedViewsCount(userId, boardId),
+    [userId, boardId],
+  );
+  const [countOverride, setCountOverride] = useState<{
+    scope: string;
+    count: number;
+  } | null>(null);
+  const count =
+    countOverride?.scope === scope ? countOverride.count : peekedCount;
+  const updateCount = useCallback(
+    (next: number) => setCountOverride({ scope, count: next }),
+    [scope],
   );
   const triggerRef = useRef<HTMLButtonElement>(null);
   const label =
@@ -218,7 +232,7 @@ export function SavedViewsMenu({
             assigneeIds={assigneeIds}
             onApply={onApply}
             onClose={closeAndRestoreFocus}
-            onCountChange={setCount}
+            onCountChange={updateCount}
           />
         </PopoverContent>
       </Popover>
@@ -444,27 +458,21 @@ function SavedViewsPanel({
   };
 
   const applyView = (saved: SavedView) => {
-    const pruned = pruneSavedViews(views, {
+    // Only the applied view is checked against the current board. Other saved
+    // views may also have drifted, but they are left byte-for-byte alone until
+    // the user applies them — an unrelated cleanup is not a user action.
+    const pruned = pruneSavedViews([saved], {
       labelIds: labels?.map((label) => label.id),
       assigneeIds: knownAssigneeIds,
     });
-    const sanitized = sanitizeSavedViews(pruned.views);
-    const target = sanitized.find((entry) => entry.name === saved.name);
+    const target = sanitizeSavedViews(pruned.views)[0];
     const dropped =
       pruned.droppedViewNames.includes(saved.name) || target === undefined;
     const changed = pruned.changedViewNames.includes(saved.name);
-    const cleanupNeeded =
-      pruned.missingOptions || sanitized.length !== views.length;
-    const persisted = cleanupNeeded ? persist(sanitized) : null;
-    const saveFailed = cleanupNeeded && persisted === null;
-
-    if (saveFailed && dropped) {
-      // The emptied view could not be removed durably; keep the panel open
-      // rather than pretending it was dropped.
-      return;
-    }
 
     if (dropped) {
+      const remaining = removeSavedView(views, saved.name);
+      if (persist(remaining) === null) return;
       toast.info(t("savedViews.droppedNotice", { name: saved.name }), {
         key: DRIFT_TOAST_KEY,
       });
@@ -473,10 +481,11 @@ function SavedViewsPanel({
     }
 
     if (target === undefined) return;
-    if (saveFailed) {
-      toast.clear(DRIFT_TOAST_KEY);
-      toast.error(t("savedViews.storageError"));
-    } else if (changed) {
+    if (changed) {
+      const next = views.map((entry) =>
+        entry.name === saved.name ? target : entry,
+      );
+      if (persist(next) === null) return;
       toast.info(t("savedViews.prunedNotice", { name: saved.name }), {
         key: DRIFT_TOAST_KEY,
       });
@@ -744,6 +753,7 @@ function SavedViewsPanel({
                           type="button"
                           size="sm"
                           variant="destructive"
+                          disabled={writeBlocked}
                           aria-label={t("savedViews.deleteConfirmAction", {
                             name: saved.name,
                           })}
