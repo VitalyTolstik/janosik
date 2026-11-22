@@ -418,6 +418,14 @@ describe("ArchiveDialog permissions", () => {
     expect(within(row).queryByTestId("archive-restore")).toBeNull();
     expect(within(row).queryByTestId("archive-delete")).toBeNull();
     expect(screen.queryByTestId("archive-bulk-controls")).toBeNull();
+
+    await userEvent.click(screen.getByTestId("archived-board-restore"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("archived-board-notice")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("archive-search")).toHaveFocus(),
+    );
   });
 
   it("tells a VIEWER to ask an admin instead of offering restore", async () => {

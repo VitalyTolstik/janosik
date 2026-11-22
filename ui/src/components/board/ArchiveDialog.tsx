@@ -1,4 +1,4 @@
-import { useId, useState, useSyncExternalStore } from "react";
+import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArchiveRestore,
@@ -106,6 +106,8 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
   const hour12 = useHour12();
   const navigate = useNavigate();
   const selectAllId = useId();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const pageSize = useSyncExternalStore(
     subscribeToResize,
     archivePageSize,
@@ -178,7 +180,13 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{t("archive.title")}</DialogTitle>
+        <DialogTitle
+          ref={titleRef}
+          tabIndex={-1}
+          className="focus:outline-none"
+        >
+          {t("archive.title")}
+        </DialogTitle>
         <DialogDescription>
           {t("archive.subtitle", {
             board: board.title,
@@ -188,13 +196,21 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
       </DialogHeader>
 
       {board.archivedAt !== undefined ? (
-        <ArchivedBoardNotice boardId={board.id} />
+        <ArchivedBoardNotice
+          boardId={board.id}
+          onRestored={() =>
+            window.requestAnimationFrame(() =>
+              (searchRef.current ?? titleRef.current)?.focus(),
+            )
+          }
+        />
       ) : null}
 
       {archived.length > 0 ? (
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchRef}
             name="archive-search"
             value={query}
             onChange={(e) => {
@@ -216,8 +232,8 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
               checked={allVisibleSelected}
               className={
                 allVisibleSelected
-                  ? "h-11 w-11 sm:h-6 sm:w-6"
-                  : "h-11 w-11 border-muted-foreground sm:h-6 sm:w-6"
+                  ? "h-11 w-11 lg:h-6 lg:w-6"
+                  : "h-11 w-11 border-muted-foreground lg:h-6 lg:w-6"
               }
               disabled={busy || visible.length === 0}
               aria-label={t("archive.selectVisible")}
@@ -402,7 +418,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-11 w-11 text-success hover:text-success sm:h-6 sm:w-6"
+                          className="h-11 w-11 text-success hover:text-success lg:h-6 lg:w-6"
                           aria-label={t("archive.deleteConfirmYes")}
                           disabled={busy}
                           onClick={() => {
@@ -415,7 +431,7 @@ function ArchiveContent({ onOpenChange }: ArchiveContentProps) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-11 w-11 text-muted-foreground sm:h-6 sm:w-6"
+                          className="h-11 w-11 text-muted-foreground lg:h-6 lg:w-6"
                           aria-label={t("archive.deleteConfirmCancel")}
                           disabled={busy}
                           onClick={() => setConfirmDeleteId(null)}

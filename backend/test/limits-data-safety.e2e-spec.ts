@@ -5,7 +5,7 @@ import { argon2id, hash as argonHash } from "argon2";
 import { createHash, randomUUID } from "node:crypto";
 import { access, writeFile } from "node:fs/promises";
 import type { Board, BoardEnvelope } from "@janosik/shared";
-import { MAX_IMPORT_BYTES } from "@janosik/shared";
+import { MAX_IMPORT_BYTES, UNTITLED_CARD_TITLE } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import { USER_JWT_AUDIENCE } from "@/auth/auth.types";
@@ -274,6 +274,47 @@ describe("Limits & data safety (e2e)", () => {
           .expect(201);
         expect(imported.body[0].agentPolicy).toBeUndefined();
       }
+    });
+
+    it("repairs a legacy blank card title on import", async () => {
+      const board = await createBoardWith(token, "Legacy blank");
+      const section = (action: Record<string, unknown>) =>
+        server()
+          .post(`/api/v1/boards/${board.id}/commands`)
+          .set(auth(token))
+          .send({
+            commandId: randomUUID(),
+            action: { boardId: board.id, at: Date.now(), ...action },
+          })
+          .expect(200);
+      await section({
+        type: "ADD_COLUMN",
+        newColumnId: "legacy-col",
+        title: "Todo",
+      });
+      await section({
+        type: "ADD_CARD",
+        newCardId: "legacy-card",
+        columnId: "legacy-col",
+        title: "Card",
+      });
+
+      const envelope = await exportEnvelope(board.id);
+      envelope.boards[0].cards["legacy-card"].title = "   ";
+      const imported = await server()
+        .post("/api/v1/boards/import")
+        .set(auth(token))
+        .send(envelope)
+        .expect(201);
+      const importedBoard = await server()
+        .get(`/api/v1/boards/${imported.body[0].id}`)
+        .set(auth(token))
+        .expect(200);
+      const titles = Object.values(
+        importedBoard.body.cards as Record<string, { title: string }>,
+      ).map((entry) => entry.title);
+      expect(titles).toContain(UNTITLED_CARD_TITLE);
+      expect(titles).not.toContain("");
     });
 
     it("previews an import with dryRun=1 without writing", async () => {

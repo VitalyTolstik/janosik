@@ -1313,8 +1313,10 @@ function checkImportedCard(key: string, value: unknown, field: string): void {
   const card = asRecord(value, field);
   const id = readId(card, "id", `${field}.id`);
   if (id !== key) fail(`${field}.id`, "must match the key it is stored under");
+  // Blank titles are repaired by normalizeBoards to the neutral placeholder:
+  // rejecting them here would make a legacy backup (or a hand-edited export)
+  // fail as a whole instead of importing its recoverable content.
   readString(card, "title", `${field}.title`, {
-    nonBlank: true,
     max: LIMITS.cardTitle,
   });
   readOptionalString(card, "description", `${field}.description`);

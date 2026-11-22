@@ -68,13 +68,26 @@ test("keeps the archive row and inline confirm usable at 768", async ({
   expect(triggerBox).not.toBeNull();
   expect(triggerBox!.width).toBeGreaterThanOrEqual(44);
   expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+  const selectAll = page.getByRole("checkbox", {
+    name: "Select all matching cards",
+  });
+  const selectAllBox = await selectAll.boundingBox();
+  expect(selectAllBox).not.toBeNull();
+  expect(selectAllBox!.width).toBeGreaterThanOrEqual(44);
+  expect(selectAllBox!.height).toBeGreaterThanOrEqual(44);
 
   await trigger.click();
   await expect(row).toContainText("Delete?");
-  await expect(row.getByRole("button", { name: "Yes, delete" })).toBeVisible();
-  await expect(
+  for (const button of [
+    row.getByRole("button", { name: "Yes, delete" }),
     row.getByRole("button", { name: "Cancel", exact: true }),
-  ).toBeVisible();
+  ]) {
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
   await row.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(row.getByTestId("archive-delete")).toBeVisible();
 });
