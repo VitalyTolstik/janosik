@@ -33,6 +33,7 @@ import type {
   CommentDto,
   CommentKind,
   CommentPage,
+  CommentRevisionPage,
   CreateShareRequest,
   CreateUserTokenRequest,
   CreateUserTokenResponse,
@@ -1229,6 +1230,21 @@ export class ApiClient {
           ...(kind && kind !== DEFAULT_COMMENT_KIND ? { kind } : {}),
         },
       },
+    );
+  }
+
+  /**
+   * Read-only edit history of one live comment, newest revision first
+   * (TASK-185.3, TASK-185.4). The server pages at 20 by default and caps at
+   * 100; the opaque cursor is bound to this comment.
+   */
+  listCommentRevisions(
+    commentId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<CommentRevisionPage> {
+    return this.request<CommentRevisionPage>(
+      `/comments/${encodeURIComponent(commentId)}/revisions${pageQuery(cursor, limit)}`,
     );
   }
 

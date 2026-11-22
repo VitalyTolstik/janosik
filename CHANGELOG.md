@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-185.4 card comment history. An edited comment’s `edited` marker is now
+  a keyboard-accessible button that opens its read-only revision list:
+  localized revision number and time, the current editor name (or “Editor
+  unavailable”), the change cause, an escaped character-level before/after
+  diff, and a full-snapshot toggle for long revisions. The list uses the
+  TASK-185.3 cursor API at 20 revisions per page with loading, retry, empty
+  and end states. A banner follows `historyIncompleteReason`: the cutover copy
+  names the release from `CHANGELOG.md`, the other reasons stay neutral. Open
+  history marks itself stale on a new edit, closes and clears on deletion,
+  rechecks access on focus/reconnect, and returns focus to the trigger. EN/RU
+  copy and the 390/768 px layouts are covered; the admin history dialog remains
+  in 185.5.
+
 - TASK-185.1 comment history foundation. Every real text edit now writes one
   immutable `CommentRevision` under the board-write lock, together with one
   `comment_updated` Activity carrying the before/after text; `editedAt` and the

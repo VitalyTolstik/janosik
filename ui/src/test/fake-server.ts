@@ -18,7 +18,9 @@ import {
   type CommandResponse,
   type CommandSseEvent,
   type CommentDto,
+  type CommentHistoryIncompleteReason,
   type CommentKind,
+  type CommentRevisionDto,
   type CreateUserTokenRequest,
   type CreateUserTokenResponse,
   type MembershipChange,
@@ -139,6 +141,13 @@ export class FakeServer {
   readonly membersByBoard = new Map<string, BoardMemberDto[]>();
   /** `GET /cards/:id/comments` storage, newest-first (TASK-37). */
   readonly commentsByCard = new Map<string, CommentDto[]>();
+  /** `GET /comments/:id/revisions` storage, newest revision first. */
+  readonly revisionsByComment = new Map<string, CommentRevisionDto[]>();
+  /** Incomplete-history reason per comment; absent/`null` means complete. */
+  readonly historyReasonByComment = new Map<
+    string,
+    CommentHistoryIncompleteReason | null
+  >();
   /** `GET /cards/:id/activity` pages, newest-first (TASK-37). */
   readonly activityByCard = new Map<string, ActivityFeedEntry[]>();
 
@@ -361,6 +370,24 @@ export class FakeServer {
       cardId,
       entries.map((entry) => structuredClone(entry)),
     );
+  }
+
+  /** Seed one comment's revision chain (TASK-185.3/185.4), newest-first. */
+  seedRevisions(commentId: string, revisions: CommentRevisionDto[]): void {
+    this.revisionsByComment.set(
+      commentId,
+      [...revisions]
+        .sort((a, b) => b.revisionNumber - a.revisionNumber)
+        .map((revision) => structuredClone(revision)),
+    );
+  }
+
+  /** Seed the live comment's incomplete-history reason (TASK-185.3). */
+  seedHistoryReason(
+    commentId: string,
+    reason: CommentHistoryIncompleteReason | null,
+  ): void {
+    this.historyReasonByComment.set(commentId, reason);
   }
 
   /**
@@ -878,6 +905,26 @@ export class FakeServer {
       }
     }
     const deleteCommentMatch = /^\/api\/v1\/comments\/([^/]+)$/.exec(path);
+    const revisionMatch = /^\/api\/v1\/comments\/([^/]+)\/revisions$/.exec(
+      path,
+    );
+    if (revisionMatch !== null && method === "GET") {
+      const commentId = revisionMatch[1];
+      const live = [...this.commentsByCard.values()].some((list) =>
+        list.some((comment) => comment.id === commentId),
+      );
+      // The real route serves a live comment only; a deleted row answers 404.
+      if (!live) return json(404, { message: "Comment not found" });
+      const reason = this.historyReasonByComment.get(commentId) ?? null;
+      return json(200, {
+        ...this.pageOf(
+          this.revisionsByComment.get(commentId) ?? [],
+          searchParams,
+        ),
+        historyIncomplete: reason !== null,
+        historyIncompleteReason: reason,
+      });
+    }
     if (deleteCommentMatch !== null && method === "PATCH") {
       const { text, kind } = (body ?? {}) as {
         text?: string;
