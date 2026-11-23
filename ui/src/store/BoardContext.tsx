@@ -18,6 +18,8 @@ import {
 } from "react-router-dom";
 
 import {
+  BOARD_CARD_DETAIL_BATCH_MAX,
+  BOARD_CARD_PAGE_LIMIT_MAX,
   boardReducer,
   boardStarterPlan,
   LIMITS,
@@ -54,6 +56,7 @@ import type {
   BoardMemberDto,
   BoardRole,
   BoardWorkflow,
+  Card,
   CardCover,
   CardLinkType,
   CardPriority,
@@ -64,6 +67,12 @@ import type {
 import { normalizeBoards } from "@janosik/shared";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { changedEntityIds } from "@/store/board-diff";
+import {
+  boardFromSummary,
+  cardFromDetail,
+  cardFromSummary,
+  hasCardDetail,
+} from "@/store/read-model";
 import { hasCard } from "@/utils/card-nav";
 import {
   ServerSync,
@@ -112,7 +121,49 @@ import { useI18n } from "@/i18n";
 
 const BACKUP_THROTTLE_MS = 60_000;
 
+/**
+ * TASK-200.9 initial page per visible column. The summary already carries
+ * every column's ordered ids, so this is a render budget, not a functional
+ * cap: the rest of the summaries stream in through the page endpoint.
+ */
+const READ_MODEL_FIRST_PAGE = 50;
+
+/** Upper bound for one background page request. */
+const READ_MODEL_PAGE = BOARD_CARD_PAGE_LIMIT_MAX;
+
 type CardPatch = Pick<UpdateCardAction, "title" | "description">;
+
+/**
+ * Cards whose full detail must be in the store before a command is applied
+ * (TASK-200.9): the command's local inverse carries a whole card/checklist,
+ * or the optimistic reducer needs fields the summary does not have. Loading
+ * a preimage is a no-op for boards hydrated from the full aggregate.
+ */
+function preimageCardIds(
+  action: BoardAction,
+  board: Board | undefined,
+): string[] {
+  if (board === undefined) return [];
+  switch (action.type) {
+    case "DELETE_CARD":
+    case "DUPLICATE_CARD":
+    case "DELETE_CHECKLIST":
+    case "DELETE_CHECKLIST_ITEM":
+    case "ADD_CARD_LINK":
+    case "REMOVE_CARD_LINK":
+    case "SET_CARD_TASK_SPEC":
+      return [action.cardId];
+    case "DELETE_COLUMN":
+    case "ARCHIVE_COLUMN_CARDS": {
+      const column = board.columns.find(
+        (entry) => entry.id === action.columnId,
+      );
+      return column === undefined ? [] : [...column.cardIds];
+    }
+    default:
+      return [];
+  }
+}
 
 interface ArchiveBatch {
   boardId: string;
@@ -195,6 +246,16 @@ export interface AddBoardOptions {
  */
 interface BoardActionsValue {
   dispatch: (action: BoardAction) => void | Promise<boolean>;
+  /**
+   * TASK-200.9: load one card's full detail (description/checklists/links)
+   * on demand. Resolves `null` for a card that no longer exists.
+   */
+  loadCardDetail: (boardId: string, cardId: string) => Promise<Card | null>;
+  /** Load full preimages for a bounded set (chunks of 50). */
+  loadCardDetails: (
+    boardId: string,
+    ids: readonly string[],
+  ) => Promise<boolean>;
   startArchiveBatch: (boardId: string, actions: BoardAction[]) => boolean;
   /**
    * The caller's role on a board, when the server said so — `ADMIN` for
@@ -695,6 +756,190 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     return boardId ? getBoardById(boardId) : undefined;
   }, [getBoardById]);
 
+  // TASK-200.9: read-model hydration. A summary is applied as soon as its
+  // first pages are in; remaining summaries stream in per column/archive.
+  // The generation prevents a refetch's pages from being applied after a
+  // newer snapshot replaced the board.
+  const readModelGenerationRef = useRef(new Map<string, number>());
+  const nextReadModelGeneration = useCallback((boardId: string) => {
+    const next = (readModelGenerationRef.current.get(boardId) ?? 0) + 1;
+    readModelGenerationRef.current.set(boardId, next);
+    return next;
+  }, []);
+
+  const hydrateRemainingPages = useCallback(
+    async (
+      boardId: string,
+      summary: Awaited<ReturnType<typeof api.getBoardSummary>>,
+      generation: number,
+    ): Promise<void> => {
+      const alive = () =>
+        aliveRef.current &&
+        readModelGenerationRef.current.get(boardId) === generation;
+      const nextPage = async (
+        cursor: string,
+        request: { columnId?: string; archived?: boolean },
+      ): Promise<void> => {
+        let next: string | null = cursor;
+        while (next !== null && alive()) {
+          const page = await api.listBoardCards(boardId, {
+            ...request,
+            cursor: next,
+            limit: READ_MODEL_PAGE,
+          });
+          if (!alive()) return;
+          if (page.cards.length > 0) {
+            apply({
+              type: "HYDRATE_CARDS",
+              boardId,
+              cards: page.cards.map(cardFromSummary),
+            });
+          }
+          next = page.nextCursor;
+        }
+      };
+      await Promise.all(
+        summary.columns.flatMap((column) =>
+          column.nextCursor === null
+            ? []
+            : [
+                nextPage(column.nextCursor, { columnId: column.id }).catch(
+                  () => undefined,
+                ),
+              ],
+        ),
+      );
+      if (summary.archivedNextCursor !== null) {
+        await nextPage(summary.archivedNextCursor, { archived: true }).catch(
+          () => undefined,
+        );
+      }
+    },
+    [apply],
+  );
+
+  /**
+   * Fetch a board through the read model, falling back to the legacy full
+   * aggregate when the server predates `/summary` (404/405) or the route is
+   * disabled. Only the fallback path pays for descriptions/checklists.
+   */
+  const fetchBoardForHydration = useCallback(
+    async (
+      boardId: string,
+    ): Promise<{
+      board: Board;
+      seq: number;
+      summary: Awaited<ReturnType<typeof api.getBoardSummary>> | null;
+    }> => {
+      try {
+        const summary = await api.getBoardSummary(boardId, {
+          limit: READ_MODEL_FIRST_PAGE,
+        });
+        const previous = stateRef.current.find((board) => board.id === boardId);
+        return {
+          board: boardFromSummary(summary, previous),
+          seq: summary.seq,
+          summary,
+        };
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          (error.status === 400 ||
+            error.status === 404 ||
+            error.status === 405 ||
+            error.status === 501)
+        ) {
+          const snapshot = await api.getBoardSnapshot(boardId);
+          return { ...snapshot, summary: null };
+        }
+        throw error;
+      }
+    },
+    [],
+  );
+
+  const startReadModelHydration = useCallback(
+    (
+      boardId: string,
+      summary: Awaited<ReturnType<typeof api.getBoardSummary>> | null,
+    ): void => {
+      if (summary === null) return;
+      const generation = nextReadModelGeneration(boardId);
+      void hydrateRemainingPages(boardId, summary, generation);
+    },
+    [hydrateRemainingPages, nextReadModelGeneration],
+  );
+
+  // One in-flight full-detail request per board:card. The dialog and a
+  // context menu can ask for the same card in the same tick.
+  const detailRequestsRef = useRef(new Map<string, Promise<Card | null>>());
+
+  /** Load a card's full detail (description/checklists/links) on demand. */
+  const loadCardDetail = useCallback(
+    (boardId: string, cardId: string): Promise<Card | null> => {
+      const existing = stateRef.current.find((board) => board.id === boardId)
+        ?.cards[cardId];
+      if (hasCardDetail(existing)) return Promise.resolve(existing!);
+      const key = `${boardId}:${cardId}`;
+      const running = detailRequestsRef.current.get(key);
+      if (running !== undefined) return running;
+      const request = api
+        .getBoardCardDetail(boardId, cardId)
+        .then((detail) => {
+          if (!aliveRef.current) return null;
+          const card = cardFromDetail(detail);
+          apply({ type: "HYDRATE_CARDS", boardId, cards: [card] });
+          return card;
+        })
+        .catch((error: unknown) => {
+          // A card deleted by someone else is a miss, not a crash: the
+          // caller (a deep link) reports it like any unknown card.
+          if (error instanceof ApiError && error.status === 404) return null;
+          throw error;
+        })
+        .finally(() => {
+          if (detailRequestsRef.current.get(key) === request) {
+            detailRequestsRef.current.delete(key);
+          }
+        });
+      detailRequestsRef.current.set(key, request);
+      return request;
+    },
+    [apply],
+  );
+
+  /**
+   * Ensure full preimages for a bounded id set. Destructive commands whose
+   * local inverse carries a whole card (delete/column archive/checklist
+   * removal) call this first so undo never writes a summary back as a card.
+   * Chunks stay under the server's batch cap.
+   */
+  const loadCardDetails = useCallback(
+    async (boardId: string, ids: readonly string[]): Promise<boolean> => {
+      const cardMap = stateRef.current.find(
+        (board) => board.id === boardId,
+      )?.cards;
+      const missing = [...new Set(ids)].filter(
+        (id) => !hasCardDetail(cardMap?.[id]),
+      );
+      for (
+        let index = 0;
+        index < missing.length;
+        index += BOARD_CARD_DETAIL_BATCH_MAX
+      ) {
+        const chunk = missing.slice(index, index + BOARD_CARD_DETAIL_BATCH_MAX);
+        const result = await api.getBoardCardDetails(boardId, chunk);
+        if (!aliveRef.current) return false;
+        const cards = result.cards.map(cardFromDetail);
+        if (cards.length > 0) {
+          apply({ type: "HYDRATE_CARDS", boardId, cards });
+        }
+      }
+      return true;
+    },
+    [apply],
+  );
+
   /** Toast for a command the server refused or the network dropped. */
   const showFailure = useCallback(
     (failure: SendFailure) => {
@@ -1057,7 +1302,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const hydrationGenRef = useRef(0);
   const loadRemainingBoards = useCallback(
     async (ids: string[], order: string[], gen: number): Promise<void> => {
-      const loaded = new Map<string, { board: Board; seq: number }>();
+      const loaded = new Map<
+        string,
+        {
+          board: Board;
+          seq: number;
+          summary: Awaited<ReturnType<typeof api.getBoardSummary>> | null;
+        }
+      >();
       try {
         let missing = ids;
         for (let attempt = 0; missing.length > 0 && attempt < 4; attempt += 1) {
@@ -1068,7 +1320,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           }
           if (!aliveRef.current || hydrationGenRef.current !== gen) return;
           const results = await Promise.allSettled(
-            missing.map((id) => api.getBoardSnapshot(id)),
+            missing.map((id) => fetchBoardForHydration(id)),
           );
           missing = missing.filter((id, index) => {
             const result = results[index];
@@ -1115,6 +1367,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         // Boards created while the list was loading.
         for (const board of byId.values()) merged.push(board);
         apply({ type: "IMPORT_BOARDS", boards: merged });
+        for (const [id, fresh] of loaded) {
+          startReadModelHydration(id, fresh.summary);
+        }
       } finally {
         // Pending rows must clear even when a board was dropped after the
         // retry budget; a newer hydration owns the counter otherwise.
@@ -1123,7 +1378,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [apply, live, t, toast],
+    [apply, fetchBoardForHydration, live, startReadModelHydration, t, toast],
   );
 
   const runHydration = useCallback(async (): Promise<void> => {
@@ -1170,6 +1425,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     let boards: Board[] = [];
     const nextSeqs = new Map<string, number>();
     let rest: string[] = [];
+    let firstSummary: Awaited<ReturnType<typeof api.getBoardSummary>> | null =
+      null;
     if (summaries.length === 0) {
       const legacy = readLegacyBoards();
       if (legacy !== null) {
@@ -1192,8 +1449,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         summaries.find((summary) => summary.id === routed) ??
         summaries.find((summary) => !summary.archivedAt) ??
         summaries[0];
-      const snapshot = await api.getBoardSnapshot(first.id);
+      const snapshot = await fetchBoardForHydration(first.id);
       boards = [snapshot.board];
+      firstSummary = snapshot.summary;
       nextSeqs.set(snapshot.board.id, snapshot.seq);
       rest = summaries
         .map((summary) => summary.id)
@@ -1218,11 +1476,22 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // set would describe entities that no longer exist.
     clearHistory();
     apply({ type: "IMPORT_BOARDS", boards });
+    if (boards.length > 0) {
+      startReadModelHydration(boards[0].id, firstSummary);
+    }
     if (rest.length > 0) {
       const order = summaries.map((summary) => summary.id);
       void loadRemainingBoards(rest, order, gen);
     }
-  }, [apply, clearHistory, dropHistory, live, loadRemainingBoards]);
+  }, [
+    apply,
+    clearHistory,
+    dropHistory,
+    fetchBoardForHydration,
+    live,
+    loadRemainingBoards,
+    startReadModelHydration,
+  ]);
 
   /**
    * The member directory powers names and avatars for attribution (TASK-36):
@@ -1395,9 +1664,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       if (!serverMode) return "skipped";
       if (sync.isBusy(boardId)) return "busy";
       const epoch = epochsRef.current.get(boardId) ?? 0;
-      let snapshot: { board: Board; seq: number };
+      let snapshot: Awaited<ReturnType<typeof fetchBoardForHydration>>;
       try {
-        snapshot = await api.getBoardSnapshot(boardId);
+        snapshot = await fetchBoardForHydration(boardId);
       } catch {
         /* offline / server down — the next focus tries again */
         return "failed";
@@ -1419,9 +1688,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       syncedAtRef.current.set(boardId, Date.now());
       live.attribution.seed(fresh);
       apply({ type: "RESTORE_BOARD", boardId, board: fresh });
+      startReadModelHydration(boardId, snapshot.summary);
       return "applied";
     },
-    [serverMode, sync, markForeign, apply, live],
+    [
+      serverMode,
+      sync,
+      markForeign,
+      apply,
+      live,
+      fetchBoardForHydration,
+      startReadModelHydration,
+    ],
   );
 
   /**
@@ -1660,6 +1938,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
    */
   const onBoardGone = useCallback(
     (boardId: string) => {
+      // A fatal stream answer is an existence check, not a content refresh:
+      // keep the legacy full read here so a board that only lost `/summary`
+      // support is not mistaken for a deleted one, and so the 404 is final.
       void api
         .getBoardSnapshot(boardId)
         .then(() => refetchBoard(boardId, true))
@@ -1815,7 +2096,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // travel through here like any other. In server mode the command reaches
   // the API afterwards; a refusal rolls the optimistic state back and shows
   // a toast (TASK-29).
-  const dispatch = useCallback(
+  const runDispatch = useCallback(
     (
       action: BoardAction,
       opts?: { silentFailure?: boolean },
@@ -1918,6 +2199,50 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       scheduleRefetch,
       reconcileUncertainCommand,
     ],
+  );
+
+  /**
+   * Public dispatch. Commands whose local inverse carries a full card (or
+   * whose optimistic reducer needs one) first load the bounded detail
+   * preimages from the read model. Local mode and full-aggregate boards have
+   * every field already, so the check is a cheap no-op there.
+   */
+  const dispatch = useCallback(
+    (
+      action: BoardAction,
+      opts?: { silentFailure?: boolean },
+    ): void | Promise<boolean> => {
+      const boardId =
+        (action as { boardId?: string }).boardId ?? activeIdRef.current;
+      if (!boardId) return;
+      const board = stateRef.current.find((entry) => entry.id === boardId);
+      const needed = preimageCardIds(action, board).filter(
+        (id) => !hasCardDetail(board?.cards[id]),
+      );
+      if (!serverMode || needed.length === 0) {
+        return runDispatch(action, opts);
+      }
+      return loadCardDetails(boardId, needed)
+        .then(async (ok) => {
+          if (!ok) return false;
+          const result = runDispatch(action, opts);
+          return result === undefined ? true : result;
+        })
+        .catch((error: unknown) => {
+          if (opts?.silentFailure !== true) {
+            showFailure(
+              error instanceof ApiError && error.offline
+                ? { kind: "offline" }
+                : {
+                    kind: "rejected",
+                    status: error instanceof ApiError ? error.status : 0,
+                  },
+            );
+          }
+          return false;
+        });
+    },
+    [serverMode, loadCardDetails, runDispatch, showFailure],
   );
 
   // The archive dialog may close while work is being sent. Keep the queue
@@ -2240,6 +2565,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<BoardActionsValue>(
     () => ({
       dispatch,
+      loadCardDetail,
+      loadCardDetails,
       startArchiveBatch,
       roleOf,
       // `dispatch` is a stable callback that reads refs when *called*; here
@@ -2262,6 +2589,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }),
     [
       dispatch,
+      loadCardDetail,
+      loadCardDetails,
       startArchiveBatch,
       roleOf,
       getActiveBoard,
@@ -2854,6 +3183,8 @@ function createReadOnlyBoardActions(): BoardActionsValue {
   const noop = (): void => undefined;
   return {
     dispatch: noop,
+    loadCardDetail: () => Promise.resolve(null),
+    loadCardDetails: () => Promise.resolve(true),
     startArchiveBatch: () => false,
     roleOf: () => "VIEWER",
     addColumn: noop,

@@ -18,7 +18,11 @@ import type {
   BoardAgentPauseDto,
   BoardAgentPolicyStateDto,
   BoardAggregate,
+  BoardCardDetailDto,
+  BoardCardDetailsDto,
+  BoardCardPageDto,
   BoardCardSearchResult,
+  BoardReadSummaryDto,
   BoardEnvelope,
   BoardInvitationDto,
   AttentionNotificationDto,
@@ -958,8 +962,16 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Legacy full aggregate. TASK-200.9 gated it behind an explicit
+   * `projection=full` for clients that declare the read model; internal
+   * callers (admin, export, old-server fallback) ask for it here.
+   */
   getBoard(boardId: string): Promise<BoardAggregate> {
-    return this.request<BoardAggregate>(`/boards/${boardId}`);
+    return this.request<BoardAggregate>(
+      `/boards/${encodeURIComponent(boardId)}?projection=full`,
+      { headers: { "X-Janosik-Read-Model": "full" } },
+    );
   }
 
   /**
@@ -971,7 +983,8 @@ export class ApiClient {
     boardId: string,
   ): Promise<{ board: BoardAggregate; seq: number }> {
     const { data, headers } = await this.requestWithHeaders<BoardAggregate>(
-      `/boards/${boardId}`,
+      `/boards/${encodeURIComponent(boardId)}?projection=full`,
+      { headers: { "X-Janosik-Read-Model": "full" } },
     );
     const header = headers.get("X-Board-Seq");
     // No header = an older/proxied server with no baseline; a present but
@@ -982,6 +995,75 @@ export class ApiClient {
       board: data,
       seq: Number.isSafeInteger(seq) && seq >= 0 ? seq : 0,
     };
+  }
+
+  /**
+   * TASK-200.9: the board read model's initial view. A `404`/`405` from an
+   * older server means the caller should fall back to `getBoardSnapshot`;
+   * the store does exactly that once per board.
+   */
+  getBoardSummary(
+    boardId: string,
+    opts: { limit?: number } = {},
+  ): Promise<BoardReadSummaryDto> {
+    const params = new URLSearchParams();
+    if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+    const query = params.toString();
+    return this.request<BoardReadSummaryDto>(
+      `/boards/${encodeURIComponent(boardId)}/summary${query === "" ? "" : `?${query}`}`,
+      { headers: { "X-Janosik-Read-Model": "v1" } },
+    );
+  }
+
+  /** TASK-200.9: one bounded summary page for a column or the archive. */
+  listBoardCards(
+    boardId: string,
+    opts: {
+      columnId?: string;
+      archived?: boolean;
+      cursor?: string;
+      limit?: number;
+    },
+  ): Promise<BoardCardPageDto> {
+    const params = new URLSearchParams();
+    if (opts.columnId !== undefined) params.set("columnId", opts.columnId);
+    if (opts.archived === true) params.set("archived", "1");
+    if (opts.cursor !== undefined) params.set("cursor", opts.cursor);
+    if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+    const query = params.toString();
+    return this.request<BoardCardPageDto>(
+      `/boards/${encodeURIComponent(boardId)}/cards${query === "" ? "" : `?${query}`}`,
+      { headers: { "X-Janosik-Read-Model": "v1" } },
+    );
+  }
+
+  /** TASK-200.9: one full card (description, checklists, links). */
+  getBoardCardDetail(
+    boardId: string,
+    cardId: string,
+  ): Promise<BoardCardDetailDto> {
+    return this.request<BoardCardDetailDto>(
+      `/boards/${encodeURIComponent(boardId)}/cards/${encodeURIComponent(cardId)}`,
+      { headers: { "X-Janosik-Read-Model": "v1" } },
+    );
+  }
+
+  /**
+   * TASK-200.9: bounded full-card preimages for undo. Chunked by the caller
+   * at `BOARD_CARD_DETAIL_BATCH_MAX` (50).
+   */
+  getBoardCardDetails(
+    boardId: string,
+    ids: readonly string[],
+  ): Promise<BoardCardDetailsDto> {
+    const params = new URLSearchParams({
+      ids: ids.join(","),
+      detail: "full",
+    });
+    return this.request<BoardCardDetailsDto>(
+      `/boards/${encodeURIComponent(boardId)}/cards?${params.toString()}`,
+      { headers: { "X-Janosik-Read-Model": "v1" } },
+    );
   }
 
   /**

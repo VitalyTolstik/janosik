@@ -1474,7 +1474,11 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         BoardAction,
         {
           type:
-            "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD";
+            | "RESTORE_BOARD"
+            | "IMPORT_BOARDS"
+            | "ADD_BOARD"
+            | "REMOVE_BOARD"
+            | "HYDRATE_CARDS";
         }
       > = action;
       void aggregateOnly;

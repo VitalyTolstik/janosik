@@ -774,6 +774,23 @@ export interface RemoveBoardAction {
   boardId: string;
 }
 
+/**
+ * Merge summary/detail cards into an existing board without touching its
+ * columns, order, timestamps or history (TASK-200.9).
+ *
+ * This is a UI-only hydrate, never a command: it is applied directly through
+ * the board store's `apply`, not dispatched to the server and not recorded
+ * as an undo step. Incoming detail wins; an incoming summary replaces an
+ * older summary (higher `updatedAt`), while a newer local card — typically an
+ * optimistic edit — is kept. `readModel.detailLoaded` cards are never
+ * downgraded to a summary from an older request.
+ */
+export interface HydrateCardsAction {
+  type: "HYDRATE_CARDS";
+  boardId?: string;
+  cards: Card[];
+}
+
 /** Archive a board (data kept, hidden from the normal switcher list). */
 export interface ArchiveBoardAction {
   type: "ARCHIVE_BOARD";
@@ -840,6 +857,7 @@ export type BoardAction =
   | BoardScoped<RestoreColumnCardsAction>
   | RestoreBoardAction
   | ImportBoardsAction
+  | HydrateCardsAction
   | AddBoardAction
   | RemoveBoardAction
   | ArchiveBoardAction
@@ -2682,6 +2700,57 @@ function commit(
 }
 
 /**
+ * Merge read-model cards into a card map (TASK-200.9). Returns the same map
+ * when nothing changed so the reducer can keep its identity and skip a
+ * re-render. Full detail always wins over a summary; an older summary never
+ * replaces a newer local card.
+ */
+function hydrateCards(
+  current: Board["cards"],
+  incoming: readonly Card[],
+): Board["cards"] {
+  let next: Board["cards"] | null = null;
+  for (const card of incoming) {
+    const existing = cardOf({ cards: current } as Board, card.id);
+    if (existing === card) continue;
+    const incomingIsDetail =
+      card.readModel === undefined || card.readModel.detailLoaded;
+    let chosen: Card;
+    if (existing === undefined) {
+      chosen = card;
+    } else if (incomingIsDetail) {
+      chosen =
+        card.activity === undefined && existing.activity !== undefined
+          ? { ...card, activity: existing.activity }
+          : card;
+      if (
+        chosen.title === existing.title &&
+        chosen.updatedAt === existing.updatedAt &&
+        chosen.readModel?.detailLoaded === true &&
+        existing.readModel?.detailLoaded === true
+      ) {
+        continue;
+      }
+    } else if (
+      existing.readModel === undefined ||
+      existing.readModel.detailLoaded
+    ) {
+      // Never downgrade a full card to a summary unless the summary is newer
+      // and the detail may have changed under us.
+      if (card.updatedAt <= existing.updatedAt) continue;
+      chosen = card;
+    } else if (card.updatedAt >= existing.updatedAt) {
+      chosen = card;
+    } else {
+      continue;
+    }
+    next ??= { ...current };
+    next[card.id] = chosen;
+  }
+  return next ?? current;
+}
+
+/**
  * Apply one command. `options` only changes what is *recorded* alongside
  * the result (the activity feed) — never the data itself, so the client and
  * the backend compute the same board from the same command (§7.4.1).
@@ -2728,6 +2797,13 @@ export function boardReducer(
   const index = boardId ? state.findIndex((b) => b.id === boardId) : 0;
   const board = state[index];
   if (!board) return state;
+
+  if (action.type === "HYDRATE_CARDS") {
+    const cards = hydrateCards(board.cards, action.cards);
+    return cards === board.cards
+      ? state
+      : state.map((b, i) => (i === index ? { ...b, cards } : b));
+  }
 
   if (action.type === "RESTORE_BOARD") {
     // A whole-board snapshot (backup restore) — keep its timestamps

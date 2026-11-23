@@ -87,6 +87,11 @@ function build(before: Board, action: BoardAction): BoardAction | null {
   const head = { at, boardId };
 
   switch (action.type) {
+    // A read-model hydrate is not a command: it has no inverse and is never
+    // recorded in history (TASK-200.9).
+    case "HYDRATE_CARDS":
+      return null;
+
     /* ---------------------------------------------------------------- columns */
     case "ADD_COLUMN":
       return { ...head, type: "DELETE_COLUMN", columnId: action.newColumnId };
