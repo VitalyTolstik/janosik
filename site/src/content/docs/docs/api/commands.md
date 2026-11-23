@@ -118,11 +118,16 @@ client from overwriting another user’s changes.
 ### Conflicts
 
 A refused command answers `409` with a `ConflictError` body
-`{ "conflict": "<category>", "currentVersion": n }`. The categories are:
+`{ "conflict": "<category>", "currentVersion": n }`. A `version` conflict
+also carries `versions`, the actual `card:`/`column:`/`board:` versions of
+the entities pinned by `ifMatchVersions`; merge them into the next attempt
+and retry only the touched entity, or switch to the targeted card intents in
+[REST · Targeted card intents](/docs/api/rest/#targeted-card-intents). The categories
+are:
 
 | `conflict` | Meaning                                                              |
 | ---------- | -------------------------------------------------------------------- |
-| `version`  | an `ifMatch` or `ifMatchVersions` precondition is stale              |
+| `version`  | an `ifMatch` or `ifMatchVersions` precondition is stale (`versions`) |
 | `wip`      | the command would break a collection or WIP limit                    |
 | `id`       | the command names an entity id that already belongs to another board |
 | `workflow` | a `MOVE_CARD` is forbidden by the board's configured workflow        |

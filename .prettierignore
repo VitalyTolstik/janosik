@@ -1,4 +1,5 @@
 dist
+dist-http
 coverage
 package-lock.json
 node_modules

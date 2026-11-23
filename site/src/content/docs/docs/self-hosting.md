@@ -9,7 +9,7 @@ separate web server is required, and SSE and cookies work on a single origin.
 
 ## What the stack runs
 
-`docker compose up -d` starts three containers:
+`docker compose up -d` starts three containers by default:
 
 - **`app`** — the site, application, API, master panel and background jobs.
   It listens on port `3000`. Its image is `ghcr.io/vitalytolstik/janosik`;
@@ -19,9 +19,15 @@ separate web server is required, and SSE and cookies work on a single origin.
 - **`redis`** — the `redis:7-alpine` service for background jobs, including
   mail, transcoding, maintenance and exports.
 
-Only the app port is published to the host; `postgres` and `redis` stay
-internal. On boot the `app` container applies database migrations, then starts
-the API.
+A fourth, optional **`mcp`** service (image
+`ghcr.io/vitalytolstik/janosik-mcp`) runs the shared MCP Streamable HTTP
+gateway for many agents when you add `--profile mcp`. It listens on port
+`8080`, is bound to `127.0.0.1` by default, and keeps its sessions in memory.
+See [Connect MCP](#connect-mcp).
+
+`postgres` and `redis` stay internal. The app port is published by default;
+the optional gateway publishes only `127.0.0.1:8080`. On boot the `app`
+container applies database migrations, then starts the API.
 
 The container starts as root only to hand the uploads volume to the
 unprivileged `node` user (volumes created by older images belong to root),
@@ -265,6 +271,21 @@ machine as described in [MCP and agents](/docs/mcp/). For this local trial use
 process needs Node.js and network access to that URL; on another machine or in
 a container, use a reachable HTTPS origin instead of `localhost`.
 
+For many agents, start the shared gateway instead of one stdio process per
+agent: `docker compose --profile mcp up -d`, then point clients at
+`https://your-gateway/mcp` with their own `Authorization: Bearer jnk_…` header.
+The gateway checks local admission (global and per-key caps — 50 by default —
+plus per-IP/token initialize buckets and a negative cache) before validating
+the key with the API. It keeps sessions **in memory**: restarting it drops
+them, and multiple replicas need a session-affine proxy (or clients must
+reconnect). Successful MCP POSTs are SSE streams and gateway errors are JSON,
+so disable proxy buffering and set a read timeout above the longest tool call.
+Defaults are a 500-session cap, a 2 GB memory limit and 2 CPUs. Compose sets
+`stop_grace_period: 20s`; with plain Docker use `--stop-timeout 20` so the
+10 s drain can finish. A large first-time swarm must also raise API
+`THROTTLE_LIMIT` and `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`; see
+[the MCP guide](/docs/mcp/#shared-http-gateway-for-many-agents).
+
 ## Email (optional)
 
 Without SMTP no mail is sent and password registration is unavailable, except for the one-time `ALLOW_BOOTSTRAP_USER` first account. Configure email before opening registration. Accounts created under the former automatic-verification policy require operator review. To link OAuth to an existing password account, sign in and use Account → Security with a provider using the same email address.
@@ -504,7 +525,9 @@ The board command log is stored in monthly PostgreSQL partitions
 months available and drops whole months older than the retention window
 (30 days by default, `PURGE_AFTER_DAYS` or the master-panel setting). The
 command-specific sweep budget is 1M rows per table per hourly run (24M/day);
-if the scheduler is paused, the effective window grows. A busy agent swarm can
+if the scheduler is paused, the effective window grows. Because partitions are
+monthly, the live window is effectively 30–60 days; budget ~2× the nominal
+rows/storage. A busy agent swarm can
 write tens of commands per second; read the `commandLog` field of
 `GET /api/v1/admin/observability` (not rendered on the current admin page) for
 partition size, dead tuples and vacuum times. `defaultRows` is an exact count

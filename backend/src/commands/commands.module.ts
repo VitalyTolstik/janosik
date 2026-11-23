@@ -4,6 +4,8 @@ import { AuthModule } from "@/auth/auth.module";
 import { MembershipGuard } from "@/common/membership.guard";
 import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { RealtimeModule } from "@/realtime/realtime.module";
+import { CardIntentsController } from "./card-intents.controller";
+import { CardIntentsService } from "./card-intents.service";
 import { CommandsController } from "./commands.controller";
 import { CommandsService } from "./commands.service";
 import { EventsController } from "./events.controller";
@@ -13,9 +15,15 @@ import { StreamAccessService } from "./stream-access.service";
 /** Command log: apply column/card actions, delta catch-up, SSE (TASK-26/30). */
 @Module({
   imports: [AuthModule, RealtimeModule, ApprovalsModule],
-  controllers: [CommandsController, EventsController, PresenceController],
+  controllers: [
+    CommandsController,
+    CardIntentsController,
+    EventsController,
+    PresenceController,
+  ],
   providers: [
     CommandsService,
+    CardIntentsService,
     MembershipGuard,
     RealtimeFlagGuard,
     StreamAccessService,

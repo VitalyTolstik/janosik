@@ -1166,6 +1166,7 @@ export class MaintenanceService {
             // Pair the id with its board even though CommandKey makes the id
             // globally unique: a purge page must never cross a board boundary.
             where: {
+              createdAt: { lt: cutoff },
               OR: rows.map((row) => ({
                 id: row.id,
                 boardId: row.boardId,
@@ -1198,6 +1199,7 @@ export class MaintenanceService {
         this.prisma.$executeRaw(Prisma.sql`
           DELETE FROM "CommandKey" k
            WHERE k."id" IN (${Prisma.join(rows.map((row) => row.id))})
+             AND k."createdAt" < ${cutoff}
              AND NOT EXISTS (
                SELECT 1 FROM "Command" c
                 WHERE c."id" = k."id" AND c."boardId" = k."boardId"

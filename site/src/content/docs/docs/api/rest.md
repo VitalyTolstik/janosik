@@ -361,6 +361,82 @@ and a share token does not open the revisions routes.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
 
+## Targeted card intents
+
+TASK-200.7 adds agent-facing card intents that load one card and the board
+shell (columns, labels, workflow), never the whole aggregate. They are the
+preferred path for a swarm: unrelated cards cannot conflict, and a retry does
+not re-download the board.
+
+| Method  | Path                              | Request                  | Response                    |
+| ------- | --------------------------------- | ------------------------ | --------------------------- |
+| `GET`   | `/boards/:id/cards/:cardId/context` | none                   | `CardContext`               |
+| `POST`  | `/boards/:id/cards/:cardId/claim`   | `ClaimCardIntentRequest` | `CardClaimIntentResponse`  |
+| `POST`  | `/boards/:id/cards/:cardId/move`    | `MoveCardIntentRequest`  | `CardMoveIntentResponse`   |
+| `PATCH` | `/boards/:id/cards/:cardId`         | `PatchCardIntentRequest` | `CardIntentResponse`       |
+
+`CardContext` contains the card, its `columnId` and zero-based `cardIndex`, the
+column id/title list, `doneColumnIds` (with the last-column fallback),
+`workflow`, the current board `seq` and actual `board:`, `card:` and `column:`
+versions. Use it for a Definition-of-Done check, a release guard or a
+description compare-and-set without calling `GET /boards/:id`. The context
+route answers `X-Janosik-Intent-API: 1` on success and on its genuine
+missing-card `404` (which keeps the standard `ApiErrorEnvelope` and
+`X-Request-Id`). A context `404` without that header can be a pre-200.7
+server; MCP then falls back to the command API. It can also be a board-level
+guard `404` (for example an unknown board), which is not proof of an old
+server; the fallback then fails with the same access error. Guard-level
+`401`/`403`/`429` do not promise the header.
+
+Every intent body accepts `commandId` (the idempotency key; omitting it lets
+the server mint one, which is safe only when a lost response may create a
+second command), `ifMatchVersions` and `ifMatch`. `ifMatch` is the explicit
+full-board mode; a normal intent omits it. Without `ifMatchVersions`, the
+server pins the version of the card it read. `claim` takes `leaseMs` or
+`release: true`; the server fills the holder and applies the same live-lease
+guard and ADMIN/owner release rules as `CLAIM_CARD`. `move` takes an optional
+`toColumnId` and `position`; the server resolves the source column and both
+indexes before the command transaction and rechecks the pinned card version
+under the board lock. A move of another card in either column is not a
+conflict; the exact insert slot is last-write-wins for unrelated reorders.
+If the move needs approval, the plan hash covers the requested destination
+and position, not the resolved source/slot indexes, so an unrelated reorder
+while the human decides does not turn the retry into `approval_mismatch`. `PATCH` changes `title` and/or `description`, with an optional
+`expectedDescription` compare-and-set.
+
+Idempotency, approvals, agent policy, WIP/workflow, run pre-images, undo data
+and the SSE command log are the same as the command endpoint: each intent
+builds the normal `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD` action and applies it
+through `CommandsService` with a targeted board load. An exact retry with the
+same `commandId` and intent is answered from the stored command before the
+server recomputes the lease, move coordinates or `expectedDescription` check,
+so it never turns into `idempotency_conflict` or `version_conflict`. Identical
+concurrent requests with the same `commandId` are serialized in the API
+process; the second waits for the first and returns its stored result. The
+serialization is in-process only: on multiple replicas two simultaneous
+first attempts can race and one may receive `409 idempotency_conflict`; retry
+it once the first result is stored. A
+different intent under the same key still answers `409 idempotency_conflict`
+because the server stores a stable v2 intent fingerprint (including which
+fields were present and the authenticated actor), not the server-derived
+action. Version pins are excluded, so refreshing `ifMatchVersions` on a retry
+still replays the committed write. A bare v1 hash from the predecessor branch
+is the same hash JSON and is accepted exactly. Only genuinely fingerprint-less
+rows use the older action/card/actor semantic match during a rolling upgrade;
+it compares claim lease length (1 ms tolerance) and the move destination, but
+not a move position (the old action stored only the clamped index). A legacy
+patch with an unverifiable `expectedDescription` is refused rather than
+replayed. If the card or board was deleted after the stored command committed,
+the replay still returns the stored `seq`/`versions`; the response omits the
+optional `card`. A stale precondition
+answers `409 version_conflict` with the board `seq` in `currentVersion` and
+the versions of the pinned entities in `versions`; merge those into
+`ifMatchVersions` and retry the same call, or re-read only
+`/cards/:cardId/context`. A stale `expectedDescription` uses the same
+`currentVersion`/`versions` pair for the card. WIP and workflow conflicts do
+not carry `versions` because no version retry can fix them. Comments are already targeted
+(`POST /cards/:cardId/comments`) and need no board read either.
+
 ## Resource board context
 
 Each route resolves the board of an accessible resource and returns
@@ -1227,7 +1303,7 @@ names the cause.
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
 | `405`  | a write against the public share API                                                                                                                  |
 | `408`  | `code: "request_timeout"`: the command was aborted before it could be applied; nothing was applied; `X-RateLimit-Queued-Ms` reports the queue wait |
-| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
+| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card; a stale version precondition (`versions` carries the pinned entities' actual versions for a targeted retry) |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |

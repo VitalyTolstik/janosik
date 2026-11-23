@@ -103,6 +103,7 @@ const RESERVED_BODY_KEYS = new Set([
   "retryable",
   "requestId",
   "currentVersion",
+  "versions",
   "field",
   "details",
   "conflict",
@@ -240,6 +241,23 @@ function stringArray(value: unknown): string[] | undefined {
     : undefined;
 }
 
+/** Narrow a per-entity version map (`{card:id: 7}`) from a raw body. */
+function versionMapOf(value: unknown): Record<string, number> | undefined {
+  const record = asRecord(value);
+  if (record === undefined) return undefined;
+  const versions: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (
+      typeof entry === "number" &&
+      Number.isSafeInteger(entry) &&
+      entry >= 0
+    ) {
+      versions[key] = entry;
+    }
+  }
+  return Object.keys(versions).length > 0 ? versions : undefined;
+}
+
 function workflowOf(value: unknown): WorkflowConflictDetails | undefined {
   const workflow = asRecord(value);
   if (workflow === undefined) return undefined;
@@ -274,6 +292,7 @@ export function apiErrorEnvelope(
       ? rawMessage.map((item) => String(item))
       : undefined;
   const workflow = workflowOf(body?.workflow);
+  const versions = versionMapOf(body?.versions);
   const conflict = isConflict(body?.conflict) ? body.conflict : undefined;
   const retryAfter =
     numberField(body?.retryAfter) ??
@@ -323,6 +342,7 @@ export function apiErrorEnvelope(
         }
       : {}),
     ...(conflict !== undefined ? { conflict } : {}),
+    ...(versions !== undefined ? { versions } : {}),
     ...(stringField(body?.columnId) !== undefined
       ? { columnId: stringField(body?.columnId) as string }
       : {}),

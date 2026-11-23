@@ -469,7 +469,10 @@ describe("MaintenanceService", () => {
     };
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
     expect(prisma.command.deleteMany).toHaveBeenCalledWith({
-      where: { OR: [{ id: "cmd-1", boardId: "board-1" }] },
+      where: {
+        createdAt: { lt: expect.any(Date) },
+        OR: [{ id: "cmd-1", boardId: "board-1" }],
+      },
     });
   });
 
