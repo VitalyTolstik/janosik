@@ -281,8 +281,13 @@ highest sequence from its results and the batch run ID. Use `seq` as
 - `approval_required` — stop and wait for a human; nothing was applied.
 - `idempotency_conflict` — the key was reused with another body; send the new
   intent under a fresh key.
-- `rate_limited` / `board_write_timeout` — wait `retryAfter` or a moment and
-  retry the identical request; the server marks these `retryable: true`.
+- `rate_limited` / queued `503 rate_limited` — the MCP server already retried
+  these automatically up to four times with jitter; if one still comes back,
+  wait `retryAfter` or a moment and retry the identical request.
+- `request_timeout` / `board_write_timeout` / `service_unavailable` — retryable;
+  resend the identical request with the same `commandId` and, for REST writes,
+  its `Idempotency-Key`. A `502`/`504` can follow an unkeyed write, so do not
+  repeat an unkeyed REST write blindly.
 
 ## The skill: teach the agent how to work
 
@@ -417,8 +422,9 @@ an agent off.
 
 A key can be scoped when you create it in **Account → API keys**: `boardId`
 restricts it to one board, `readOnly` refuses content writes (`403
-pat_read_only`), and `rateLimitPerMinute` gives it its own request budget (over
-the budget answers `429`). If an agent only needs to read data, use a read-only key restricted to one board.
+pat_read_only`), and `rateLimitPerMinute` gives it its own request budget,
+capped at the derived per-token share (over the budget answers `429`, or `503`
+for a queued command). If an agent only needs to read data, use a read-only key restricted to one board.
 
 With an active session, MCP resolves the board of a comment or attachment on
 the server before writing, and sends only that board's session. Upgrade the

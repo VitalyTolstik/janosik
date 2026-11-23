@@ -31,7 +31,7 @@ export class UpdateUserTokenDto {
   @IsString()
   boardId?: string | null;
 
-  /** `null` = no per-token budget; omitted = keep the current value. */
+  /** `null` = no per-token weighted-unit budget; omitted = keep the current value. */
   @IsOptional()
   @IsInt()
   @Min(API_TOKEN_RATE_MIN)

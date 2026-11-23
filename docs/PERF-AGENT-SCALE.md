@@ -14,7 +14,7 @@
 2. **The dominant agent-path cost is full-board read-modify-write.** `loadBoardAggregate` loads every card, description, checklist and link; a PAT command may call it **three times** before it commits (`backend/src/commands/commands.service.ts:404-410`, `:568-573`, `:694`). At 200 cards one command takes ~24 ms; at 5,000 cards a single board read is 3.37 MB and ~128 ms.
 3. **The single worst agent-specific design choice is client-side polling for work.** `janosik_wait_for_work` re-reads the **entire board** (or every board the caller can access) every 5 s by default (`mcp/src/tools/cards.ts:1205-1265`, `:1313-1324`). 500 idle agents = ~100 full-board reads/s. That is the first thing that melts, before any command is applied.
 4. **The second worst is board-wide optimistic concurrency in MCP.** `commandOnFreshBoard` reads the whole board and sends `ifMatch = board seq` (`mcp/src/client.ts:434-465`). Two agents editing unrelated cards conflict. Under a busy board this becomes a retry storm, and each retry re-downloads the board. The UI already uses per-entity `ifMatchVersions`; MCP mostly does not.
-5. **The board rate-limit bucket is sized for "several agents", not a swarm.** `BOARD_RATE_LIMIT` defaults to `max(600, THROTTLE_LIMIT × 2)` requests/min **shared by every agent on that board** (`backend/src/config/rate-limit.ts:29-33`). 600/min = 10 req/s; a MCP action costs two requests (read + command), so a board supports ~5 actions/s total. At 500 agents that is one action per agent per ~100 s. MCP does not retry HTTP 429 (`mcp/src/errors.ts:43-60`, `mcp/src/client.ts:205-227`).
+5. **The board rate-limit bucket is now a safety ceiling, not the per-agent budget.** TASK-200.3 raised `BOARD_RATE_LIMIT` to `max(12000, THROTTLE_LIMIT × 2)` weighted units/min with continuous refill, added a per-token share (`AGENT_TOKEN_RATE_LIMIT`) and a per-session weighted budget, and made MCP retry `429`/queued `503` with `Retry-After` and bounded jitter. The remaining swarm cost is idle polling and full-board reads (200.2/200.7/200.9), not the old 600/min ceiling.
 6. **Per-connection and per-request bookkeeping is heavier than it looks.** A PAT request does a DB lookup for the token (`backend/src/auth/api-token.service.ts:100-129`), then two membership queries (`backend/src/common/membership.guard.ts:120-130`), then per-command session lookups. Every SSE stream re-validates flags, membership, token pause and log head on a 25 s tick (`backend/src/commands/events.controller.ts:219-249`, `:268-304`); at the 5,000-connection cap that is roughly **800–1,200 DB queries/s of pure keep-alive**.
 7. **Memory is dominated by copies, not by the database.** Ten concurrent opens of a 5,000-card board took the API from 173 MB to 809 MB; at 10,000 cards, 1,479 MB (`docs/PERF-CAPACITY.md:31-37`). That is ~64–131 MB of transient memory **per concurrent full-board open**. 500 simultaneous reads of a 1,000-card board are ~6.5 GB by the same linear fit. A shared, pre-serialized read is the fix, not a bigger heap.
 8. **MCP stdio is a client-side scaling trap, not a server-side one.** Each agent spawns one Node process at 108–113 MB measured (`docs/PERF-BASELINE.md:259-260`); 500 agents co-located = 25–55 GB. The MCP process has **no DB pool** (deps are only the MCP SDK and Zod, `mcp/package.json:49-52`) — it is an HTTP proxy. A shared Streamable-HTTP MCP gateway removes the process explosion without touching the control plane.
@@ -108,13 +108,13 @@ These are capacity estimates from measured unit costs, not a 500-agent benchmark
 | Rank | Bottleneck | Why / number | Evidence |
 |---:|---|---|---|
 | 1 | **Idle `wait_for_work` polling** | 100 agents / 5 s = 20 full-board reads/s. At 200 cards that is ~2.7 MB/s wire and ~50 MB/s transient allocation; at 1,000 cards ~13 MB/s and ~260 MB/s allocation. | `mcp/src/tools/cards.ts:1205-1265`; payload/memory fits from §1.3 |
-| 2 | **Board rate-limit bucket** | 20 req/s = 1,200 req/min vs a 600/min shared board budget → roughly half the polls get 429; MCP does not retry 429. 100 agents acting every 20 s already need 2 requests × 5 actions/s = 600/min, exactly the budget. | `backend/src/config/rate-limit.ts:29-33`; `mcp/src/errors.ts:43-60`; `mcp/src/client.ts:205-227` |
+| 2 | **Board rate-limit bucket** | The historical 600/min shared budget is gone: TASK-200.3 uses `max(12000, 2 × THROTTLE_LIMIT)` weighted units/min with continuous refill, per-token/session shares and MCP `429` retry. 100 agents acting every 20 s fit; idle polling is the next fix. | `backend/src/config/rate-limit.ts`; `backend/src/common/board-rate-limit.ts`; `mcp/src/errors.ts` |
 | 3 | **Board-wide CAS conflicts** | Active writers read the whole board and send `ifMatch = seq`; at 42 cmd/s the average inter-commit gap is ~24 ms, so a 30 ms read→write gap has ~70% chance of another commit; each conflict re-reads the board. | `mcp/src/client.ts:434-465`; `docs/PERF-ONE-BOARD.md:43-55` |
 | 4 | **One-board serialization** | At 100 agents × 1 action/10 s = 10 cmd/s, fine; at 1 action/2 s = 50 cmd/s, at the 42–48/s ceiling and latency grows linearly. | `docs/PERF-ONE-BOARD.md:45-53,86` |
 | 5 | Memory from concurrent reads | 100 concurrent 200-card reads ≈ 0.25 GB; at 1,000 cards ≈ 1.3 GB. Survivable on 8 GB, risky on 2 GB. | `docs/PERF-CAPACITY.md:31-37` fitted |
 | 6 | SSE keep-alive | Only if all 100 hold streams: 100 / 25 s × 4–6 queries = 16–24 queries/s. Minor. | `backend/src/commands/events.controller.ts:219-249` |
 
-**Verdict at 100 / one board:** the swarm is not limited by command throughput; it is limited by the **idle polling loop and the 600/min board bucket**. Fix those two and 100 agents at a 10–20 s cadence fit comfortably.
+**Verdict at 100 / one board:** the swarm is not limited by command throughput; the remaining limit is the **idle polling loop**, not the old 600/min board bucket (TASK-200.3 raised it to the high safety ceiling). Fix polling (200.2) and 100 agents at a 10–20 s cadence fit comfortably.
 
 #### 500 agents
 
@@ -123,7 +123,7 @@ These are capacity estimates from measured unit costs, not a 500-agent benchmark
 | 1 | **`wait_for_work` / ready-work polling** | 500 / 5 s = 100 full-board reads/s = 6,000 req/min, **10× the board budget**. At 1,000 cards ~67 MB/s wire and ~1.3 GB/s transient allocation. | `mcp/src/tools/cards.ts:1205-1265` |
 | 2 | **Concurrent full-board read memory** | 500 × 2.5 MB (200 cards) ≈ 1.25 GB; 500 × 13 MB (1,000 cards) ≈ 6.5 GB; 500 × 64 MB (5,000 cards) ≈ 32 GB. The API has no admission control or singleflight for these. | `docs/PERF-CAPACITY.md:31-37`; `backend/src/boards/boards.service.ts:473-494` |
 | 3 | **Board-wide CAS retry storm** | With 500 agents on one board, conflicts are near-certain; each retry is another full-board GET and another command attempt. The server serializes the write but the client's read version is stale by design. | `mcp/src/client.ts:434-465`; `docs/PERF-ONE-BOARD.md:143-146` |
-| 4 | **Board budget + serialization** | 500 agents at 1 action/20 s = 25 cmd/s, inside 42–48/s, but needs 3,000 req/min, 5× the 600/min budget. At 1 action/10 s = 50 cmd/s, at/over the lock ceiling. | `backend/src/config/rate-limit.ts:29-33`; `docs/PERF-ONE-BOARD.md:86` |
+| 4 | **Board budget + serialization** | 500 agents at 1 action/20 s = 25 cmd/s, inside 42–48/s; 3,000 req/min now fits the TASK-200.3 12,000/min ceiling. At 1 action/10 s = 50 cmd/s, at/over the lock ceiling. | `backend/src/config/rate-limit.ts`; `docs/PERF-ONE-BOARD.md:86` |
 | 5 | **MCP process memory on the agent host** | 500 × 108 MB = 54 GB; 500 × 51 MB idle = 25.5 GB. Co-locating agents with the server is impossible. | `docs/PERF-BASELINE.md:259-260`; `mcp/src/index.ts:33-34` |
 | 6 | **Command log growth** | 25–50 cmd/s → 1.2–2.4 GB/day of table at 555 B/row, before indexes/TOAST; 30-day retention → tens to hundreds of GB. | `LOAD-REPORT.md` §5; `maintenance.service.ts:750-788` |
 | 7 | SSE keep-alive if every agent holds a stream | 500 / 25 × 4–6 = 80–120 queries/s; okay in isolation, but bursts compete with the 10-connection pool. | `events.controller.ts:219-249` |
@@ -253,7 +253,7 @@ There are **no `worker_threads`, Piscina, or `new Worker` uses in the backend, M
 2. **The PAT path loads the aggregate three times.** Pre-lock classification, in-transaction plan limits, and the running aggregate. Two of these are redundant for the common non-destructive worker command. This is a pure code-path waste, not a fundamental design choice.
 3. **MCP uses board-wide CAS.** `ifMatch = seq` is correct for a single editor, wrong for a swarm: unrelated edits conflict. The UI already uses per-entity `ifMatchVersions`; MCP sends it only in the plan tool. This is the single biggest agent-specific correctness/performance mismatch.
 4. **MCP polls for work on the client.** `wait_for_work` is a loop of full-board GETs in the MCP process. There is no server-side ready queue, no long-poll, no summary endpoint, no `ETag`. Idle agents are the most expensive state.
-5. **The board rate-limit bucket is sized for a handful of agents.** 600/min shared per board, with MCP actions costing two requests. This caps a 500-agent board at ~5 actions/s by configuration, below the 42–48/s code ceiling. It also returns 429, which MCP does not retry.
+5. **The board rate-limit bucket is no longer sized for a handful of agents.** TASK-200.3 raised the shared ceiling to 12,000+ weighted units/min, added per-token/session shares, and MCP retries `429`/`503` with `Retry-After`. The remaining limit is idle polling and full-board reads.
 6. **Hot-path auth and membership are uncached.** PAT lookup + board lookup + membership lookup on every agent request; feature flags explicitly uncached (`backend/src/ops/feature-flags.service.ts:12-18,38`); SSE keep-alive repeats all of it. At human scale this is fine; at 500 agents it is 1,000+ needless queries/s.
 7. **No singleflight or serialized board cache.** 500 identical concurrent reads each build and serialize their own full board. The measured 64–131 MB per concurrent open means this is an OOM vector, not just CPU.
 8. **SSE fan-out is synchronous and per-subscriber.** `RealtimeService.publish` runs after commit and iterates every subscriber; Nest's `@Sse` JSON-stringifies the same event separately for each connection (`node_modules/@nestjs/core/router/sse-stream.js:12-16`). A description update also publishes an extra `activity` frame (`commands.service.ts:828-840`). At 500 subscribers and a 64 KB description that is ~32 MB of string allocation per command.
@@ -298,6 +298,17 @@ Ranked by impact on agent scale / (effort + risk). "S" ≤ 1 engineer-week, "M" 
 | 6 | **Stop using board-wide CAS in MCP.** Use per-entity `ifMatchVersions` for the entities the command touches (the server already supports it, `commands.service.ts:2170-2203`), or add targeted card intent endpoints that let the server resolve positions. Reserve `ifMatch = seq` for a deliberate "read the whole board" mode. | Removes the retry storm on unrelated edits; fewer full-board re-reads and 409s; higher effective actions/s. | M | Medium. Add entity versions to the board read (header or summary) or track them from command responses; test concurrent move/update on different cards. |
 | 7 | **Agent SSE hygiene.** Default agent streams to `?presence=0`; cache keep-alive validations; jitter the 25 s timer; add an overlap guard; consider 60 s for PAT streams. | Cuts SSE keep-alive DB load 2–5×; avoids 5,000 concurrent tick queries against a 10-connection pool. | S–M | Low. Measure queries/s per 1,000 streams and event-loop lag. |
 | 8 | **MCP HTTP gateway.** Add a Streamable-HTTP transport (token pass-through) as a separate service; keep stdio for desktop clients. | 500 × 50–110 MB → one/few processes of a few hundred MB; no co-location OOM. | M | Low–medium. Verify per-session token isolation and that no token leaks across sessions. |
+
+> **TASK-200.3 update (implemented in this branch).** Recommendation 2 is
+> implemented in `feat/TASK-200.3-rate-budget`:
+> `BOARD_RATE_LIMIT` is now a high, continuously refilling safety ceiling
+> (default `max(12000, 2 × THROTTLE_LIMIT)`), with per-token
+> (`AGENT_TOKEN_RATE_LIMIT`) and per-session budgets providing fairness.
+> Commands over the board ceiling wait briefly and then answer `503
+> rate_limited` + `Retry-After`; the MCP client retries `429`/queued `503` with
+> `Retry-After`, jitter and a four-attempt bound, keeping the same
+> `commandId`/`Idempotency-Key`. Remaining capacity work in this document
+> (ready endpoint, per-entity CAS, aggregate loads) is unchanged.
 
 ### 6.2 Medium-term (the real 5–10× levers)
 
@@ -409,7 +420,7 @@ These are deliberately conservative. The single-board 500-agent profile assumes 
 | **"One MCP process per agent is fine."** | 108 MB × 500 = 54 GB. The MCP process has no DB pool, so it is "just" a client process — but co-locating 500 is impossible. Use an HTTP gateway. |
 | **"Postgres is the bottleneck; we need read replicas."** | Queries are sub-millisecond (0.05–0.76 ms), the fixture DB is 44 MB, and Postgres CPU is ~22% while the API is ~74% on one board. The bottleneck is Node's aggregate assembly. |
 | **"SSE is the agent transport and it must scale to 5,000 agents."** | Agents use HTTP/MCP; SSE is for human/oversight. 5,000 streams is ~1 GB RSS and 800–1,200 keep-alive queries/s. Give agents a summary/ready endpoint, not a full-board stream. |
-| **"We have no rate limits."** | There are global, token, session and board limits. The problem is that the **board** bucket is 600/min shared by all agents, sized for a handful, and MCP does not retry 429. |
+| **"We have no rate limits."** | There are global, token, session and board limits. TASK-200.3 resized the board bucket to a high safety ceiling, added weighted per-token/session shares and MCP `429` retry; the remaining polling cost is a separate 200.2 fix. |
 | **"Batching solves the write bottleneck."** | Batch ×5 measured 2.3–2.5×, not 5×; it does not remove the per-command reducer, two stringifications, id checks or command insert/update. |
 | **"Raise the heap to 8 GB and it will be fine."** | That masks the OOM and increases GC pauses. The measured 64–131 MB per concurrent board open means 10–100 concurrent opens can exhaust any heap. Cap/singleflight/cache first. |
 | **"The 8 GB WSL restarts prove the product is heavy."** | A running dev API is 123 MB; this codebase's measured cold API is 173 MB. The WSL box is carrying Docker, Astro dev (400 MB), Vite (108 MB), Vitest (415 MB) and Chromium. That is dev tooling, not production. |
@@ -426,8 +437,8 @@ These are deliberately conservative. The single-board 500-agent profile assumes 
 | 4 | MCP measured 108–113 MB RSS, 11 ms CPU/call | `docs/PERF-BASELINE.md:259-260` |
 | 5 | MCP reads the full board before a command and sends board-wide `ifMatch` | `mcp/src/client.ts:434-465`; `mcp/src/tools/cards.ts:469-475` |
 | 6 | `wait_for_work` polls full boards every 5 s (default) for up to 30 s | `mcp/src/tools/cards.ts:1205-1265`; `loadBoards` at `:1313-1324` |
-| 7 | Board rate limit is 600/min shared per board, derived from global | `backend/src/config/rate-limit.ts:29-33`; `backend/src/config/env.ts:191-194` |
-| 8 | MCP does not retry 429; only board-busy 503/network errors | `mcp/src/errors.ts:43-60`; `mcp/src/client.ts:205-227` |
+| 7 | Board rate limit is a high safety ceiling with weighted per-token/session shares (TASK-200.3) | `backend/src/config/rate-limit.ts`; `backend/src/config/env.ts` |
+| 8 | Before TASK-200.3 MCP did not retry 429; it now retries 429/queued 503 with `Retry-After` + jitter | `mcp/src/errors.ts`; `mcp/src/client.ts` |
 | 9 | One-board command throughput is ~42–48/s; 290/s across 100 boards | `docs/PERF-ONE-BOARD.md:45-53,86`; `docs/PERF-BASELINE.md:39-40` |
 | 10 | PAT command path can load the full aggregate three times | `backend/src/commands/commands.service.ts:404-410,568-573,694` |
 | 11 | Two full-board `stableStringify` calls per command; 0.5 ms at 200 cards | `commands.service.ts:1206-1212,2471-2482`; `docs/PERF-ONE-BOARD.md:67` |
@@ -469,7 +480,7 @@ These are deliberately conservative. The single-board 500-agent profile assumes 
 
 1. Build the S1/S2 harness (100/500 agents; 1/10/20 boards) and a `pg_stat_statements` profile. Record baseline p50/p95/p99, actions/s, 409/429/5xx, API RSS, event-loop lag, PG QPS/CPU.
 2. Ship the server-side ready/work endpoint and rewrite `janosik_wait_for_work` to long-poll it.
-3. Retune `BOARD_RATE_LIMIT` for swarms; add MCP 429/`Retry-After` handling or server-side queueing.
+3. Retune `BOARD_RATE_LIMIT` for swarms; add MCP 429/`Retry-After` handling or server-side queueing. **Done in TASK-200.3.**
 4. Remove duplicate aggregate loads on the PAT command path; narrow the PAT user select.
 5. Add TTL caches for PAT/membership/flags with invalidation; add `?presence=0` for agent SSE.
 6. Add gzip/ETag + singleflight for board reads; add a read-concurrency semaphore.
@@ -533,7 +544,7 @@ These are deliberately conservative. The single-board 500-agent profile assumes 
 8. **What is the audit/retention requirement for agent commands?** 30 days at 500 agents may be hundreds of GB; 7 days or a separate cold archive may be acceptable.
 9. **Do we need multi-node presence?** Commands fan out via Redis; presence is local-only (`realtime.service.ts:146-157`). If hundreds of humans watch across replicas, presence will diverge.
 10. **What is the 409/retry budget?** A swarm that retries 3× on every conflict triples its read load. Need a measured conflict rate and a policy (per-entity CAS, server-resolved intents, or queueing).
-11. **Is the 600/min board budget a product requirement or an arbitrary default?** If it is a safety ceiling, set it high and rely on per-token/session budgets + server concurrency limits.
+11. **Is the board budget a product requirement or an arbitrary default?** TASK-200.3 treated it as a safety ceiling (`max(12000, 2 × THROTTLE_LIMIT)`) and relies on weighted per-token/session budgets + server concurrency limits.
 12. **What does `pg_stat_statements` say on a real 500-agent run?** We have static query counts, not measured totals. This is the first thing the harness must capture.
 
 ---

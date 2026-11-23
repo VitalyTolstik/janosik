@@ -289,6 +289,10 @@ compose stack fills the ones it needs from `.env`.
 | `ACCESS_TOKEN_TTL` | `15m` | Access-token lifetime, a vercel/ms duration string. |
 | `REFRESH_TOKEN_TTL_DAYS` | `30` | Refresh-token lifetime in days. |
 | `THROTTLE_LIMIT` | `300` | Global API rate limit, requests per minute per principal: the user, the API key, or the IP for anonymous calls. |
+| `AGENT_SESSION_RATE_LIMIT` | `0` (auto) | Per-agent-session weighted units per minute (a batch costs its command count). `0` = `max(600, THROTTLE_LIMIT)`; otherwise at least `100`. |
+| `AGENT_TOKEN_RATE_LIMIT` | `0` (auto) | Per-API-key agent weighted units per minute. `0` = `max(600, ceil(THROTTLE_LIMIT / 4))`; an explicit token `rateLimitPerMinute` is capped at this share. Pinned values are at least `100`. |
+| `BOARD_RATE_LIMIT` | `0` (auto) | Per-board agent weighted-units safety ceiling shared by all agents on the board. `0` = `max(12000, 2 × THROTTLE_LIMIT)`. Size it for a larger swarm; token and session buckets provide fairness. Pinned values are at least `100`. |
+| `AGENT_COMMAND_QUEUE_MS` | `1500` | How long a command over the board ceiling waits for enough tokens/queue capacity before `503` + `Retry-After`; `X-RateLimit-Queued-Ms` reports the total wait (`0` when the 64-queued-request/32-MiB serialized-JSON queue cap rejects immediately). Maximum `30000`. `0` answers immediately. |
 | `TRUST_PROXY` | `0` | Trusted reverse-proxy hops. Set `1` behind one proxy. |
 | `UPLOAD_DIR` | empty | Blob root for attachments and avatars. Empty means `backend/data/uploads`; a relative value anchors to the backend package, never the process working directory. |
 | `STATIC_DIR` | empty | Built UI directory. Empty means API only. The image sets `/app/public`. Inline scripts here are allowed by CSP hashes computed at startup, so restart the API after rebuilding the UI. |

@@ -34,8 +34,9 @@ export const API_TOKEN_NAME_MAX = 50;
 export const API_TOKEN_MAX_TTL_DAYS = 3650;
 
 /**
- * Bounds of a per-token rate limit (requests per minute, TASK-157). `null`
- * means "no per-token limit" — the global limit still applies.
+ * Bounds of a per-token rate limit (weighted units per minute, TASK-157).
+ * `null` means "no per-token limit" — the global limit still applies. A value
+ * below 100 cannot admit a 100-command batch.
  */
 export const API_TOKEN_RATE_MIN = 1;
 export const API_TOKEN_RATE_MAX = 100_000;

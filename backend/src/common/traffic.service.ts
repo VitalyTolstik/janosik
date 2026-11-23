@@ -37,6 +37,8 @@ export interface RequestSample {
     remaining: number;
     resetAt: number;
   };
+  /** TASK-200.3: the response used the `rate_limited` envelope. */
+  rateLimited?: boolean;
   operation?: OperationKind;
 }
 
@@ -91,8 +93,16 @@ export class TrafficService {
     const at = sample.at ?? Date.now();
     this.bumpLabel(`actor.${sample.actorType}`, at);
     if (sample.write) this.bumpLabel("writes", at);
-    if (sample.status >= 500) this.bumpLabel("errors", at);
-    if (sample.status === 429) {
+    // TASK-200.3: the queued command refusal is `503 rate_limited`, not an
+    // outage. It is backpressure with the same envelope as a 429, so count it
+    // under `rate_limit.<scope>` and never under `errors`. An allowed request
+    // can carry a budget header and later fail with `503 board_write_timeout`,
+    // so only the explicit envelope flag counts as backpressure.
+    const rateLimited =
+      sample.status === 429 ||
+      (sample.status === 503 && sample.rateLimited === true);
+    if (sample.status >= 500 && !rateLimited) this.bumpLabel("errors", at);
+    if (rateLimited) {
       this.bumpLabel("rate_limit.total", at);
       this.bumpLabel(`rate_limit.${sample.rateLimit?.scope ?? "ip"}`, at);
     }

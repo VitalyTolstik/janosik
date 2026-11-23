@@ -1,5 +1,8 @@
 import {
+  HttpException,
+  HttpStatus,
   Injectable,
+  Logger,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
@@ -9,12 +12,29 @@ import type { Observable } from "rxjs";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import {
   applyRateLimitHeaders,
+  consumeBoardRateLimit,
   consumeRateLimit,
   mirrorStandardRateLimitHeaders,
   rateLimitException,
+  rateLimitQueueException,
+  type RateLimitDecision,
   type RateLimitedRequest,
 } from "./rate-limit";
-import { agentSessionRateLimit, boardRateLimit } from "@/config/rate-limit";
+import {
+  agentCommandQueueMs,
+  agentSessionRateLimit,
+  agentTokenRateLimit,
+  boardRateLimit,
+} from "@/config/rate-limit";
+import {
+  BoardCommandQueueAbortedError,
+  BoardCommandQueueFullError,
+  boardCommandQueueFullCount,
+  enqueueBoardCommand,
+  waitForBoardRateLimit,
+  type BoardRateLimitWait,
+} from "./board-rate-limit";
+import { commandBodyBytes, commandRateLimitCost } from "./command-cost";
 
 /** The request bits this interceptor reads after the guards have run. */
 interface LimitedRequest extends Request, RateLimitedRequest {
@@ -23,6 +43,9 @@ interface LimitedRequest extends Request, RateLimitedRequest {
   rateLimitSessionId?: string;
   boardMembership?: { boardId?: string };
 }
+
+/** A queue-full storm must not write one warn line per rejected command. */
+const QUEUE_FULL_WARN_INTERVAL_MS = 10_000;
 
 /**
  * TASK-166.10: agent-facing rate limits beyond the global per-principal
@@ -40,11 +63,24 @@ interface LimitedRequest extends Request, RateLimitedRequest {
  * Browser sessions deliberately keep the legacy per-user/IP throttler only:
  * the ADR promises that existing browser traffic is unchanged. The token's
  * own explicit `rateLimitPerMinute` is consumed earlier in `JwtAuthGuard`
- * (before scope checks); this interceptor never re-counts it.
+ * (before scope checks); this interceptor never re-counts it. TASK-200.3 adds
+ * a default token bucket for keys that carry no explicit limit, so raising the
+ * global limit for a swarm does not let one key consume the whole board.
+ *
+ * The board bucket is a safety ceiling, not the per-agent budget. A command
+ * over it waits briefly in a per-board FIFO queue (the bucket refills
+ * continuously) and only then answers `503 rate_limited` with a real
+ * `Retry-After`; other requests keep the immediate `429`.
  */
 @Injectable()
 export class AgentRateLimitInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+  private readonly logger = new Logger(AgentRateLimitInterceptor.name);
+  private lastQueueFullWarnAt = 0;
+
+  async intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Promise<Observable<unknown>> {
     if (context.getType() !== "http") return next.handle();
     const http = context.switchToHttp();
     const request = http.getRequest<LimitedRequest>();
@@ -55,17 +91,29 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
     // A PAT is the only caller that gets agent buckets. Anonymous/public and
     // browser requests keep exactly the legacy global throttle.
     if (request.auth?.via !== "pat") return next.handle();
-    let applied: ReturnType<typeof consumeRateLimit> | undefined;
+    let applied: RateLimitDecision | undefined;
+    // TASK-200.3: one batch/plan request executes up to 100 commands, so the
+    // agent budgets are charged by that work, not by the HTTP round-trip.
+    const cost = commandRateLimitCost(request);
 
     const consume = (
-      scope: "session" | "board",
+      scope: "token" | "session",
       key: string,
       limit: number,
       message: string,
+      weight: number = 1,
     ): void => {
-      const decision = consumeRateLimit(scope, key, limit);
+      const decision = consumeRateLimit(
+        scope,
+        key,
+        limit,
+        undefined,
+        undefined,
+        weight,
+      );
       request.rateLimit = decision;
       if (!decision.allowed) {
+        request.rateLimited = true;
         applyRateLimitHeaders(response, decision);
         throw rateLimitException(decision, message);
       }
@@ -75,6 +123,20 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
       }
     };
 
+    // TASK-200.3: an explicit per-token budget is consumed by `JwtAuthGuard`
+    // with the same command cost, capped by the derived share. Only keys
+    // without an explicit limit get their token bucket here.
+    const tokenId = request.auth.apiTokenId;
+    const explicitTokenLimit = request.auth.tokenScope?.rateLimitPerMinute;
+    if (tokenId !== undefined && explicitTokenLimit == null) {
+      consume(
+        "token",
+        tokenId,
+        agentTokenRateLimit(),
+        "Too many requests for this API token",
+        cost,
+      );
+    }
     const sessionId = agentSessionIdOf(request);
     if (sessionId !== undefined) {
       consume(
@@ -82,16 +144,120 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
         sessionId,
         agentSessionRateLimit(),
         "Too many requests for this agent session",
+        cost,
       );
     }
     const boardId = boardIdOf(request);
     if (boardId !== undefined) {
-      consume(
-        "board",
+      const limit = boardRateLimit();
+      const decision = consumeBoardRateLimit(
         boardId,
-        boardRateLimit(),
-        "Too many requests for this board",
+        limit,
+        undefined,
+        undefined,
+        cost,
       );
+      if (decision.allowed) {
+        request.rateLimit = decision;
+        if (applied === undefined || decision.remaining < applied.remaining) {
+          applied = decision;
+        }
+      } else if (isQueueableCommand(request)) {
+        // TASK-200.3: compute the deadline on arrival so time spent waiting
+        // behind other commands counts against this request's budget. Normal
+        // commands never enter the queue; only a refused one waits for enough
+        // tokens for its whole (possibly batched) work.
+        request.rateLimit = decision;
+        const deadline = Date.now() + agentCommandQueueMs();
+        const queuedAt = Date.now();
+        const abort = new AbortController();
+        const onAbort = (): void => abort.abort();
+        request.once("aborted", onAbort);
+        const onClose = (): void => {
+          // `close` also fires after a normal finish; only a connection that
+          // went away before the response completed cancels the waiter.
+          if (!response.writableEnded) abort.abort();
+        };
+        response.once("close", onClose);
+        let outcome: BoardRateLimitWait;
+        try {
+          outcome = await enqueueBoardCommand(
+            boardId,
+            () =>
+              waitForBoardRateLimit(boardId, {
+                limit,
+                deadline,
+                cost,
+                signal: abort.signal,
+              }),
+            {
+              signal: abort.signal,
+              bytes: commandBodyBytes(request),
+            },
+          );
+        } catch (error) {
+          if (error instanceof BoardCommandQueueFullError) {
+            const message =
+              `board ${boardId}: command queue full (${error.reason}); ` +
+              `depth ${error.depth}, bytes ${error.bytes}, ` +
+              `rejections ${boardCommandQueueFullCount()}`;
+            const now = Date.now();
+            if (now - this.lastQueueFullWarnAt >= QUEUE_FULL_WARN_INTERVAL_MS) {
+              this.lastQueueFullWarnAt = now;
+              this.logger.warn(message);
+            }
+            request.rateLimited = true;
+            request.rateLimit = decision;
+            // The request never waited: the header is present on every
+            // command 503 so a client sees an explicit zero.
+            response.setHeader("X-RateLimit-Queued-Ms", 0);
+            applyRateLimitHeaders(response, decision);
+            throw rateLimitQueueException(
+              decision,
+              "The board command queue is full — retry the same command",
+            );
+          }
+          if (error instanceof BoardCommandQueueAbortedError) {
+            response.setHeader(
+              "X-RateLimit-Queued-Ms",
+              Math.max(0, Math.round(Date.now() - queuedAt)),
+            );
+            throw new HttpException(
+              "The request was aborted before its command could be applied",
+              HttpStatus.REQUEST_TIMEOUT,
+            );
+          }
+          throw error;
+        } finally {
+          request.off("aborted", onAbort);
+          response.off("close", onClose);
+        }
+        request.rateLimit = outcome.decision;
+        // TASK-200.3: report the whole queue-chain wait, not just the time
+        // this waiter spent after the earlier commands settled. A deadline or
+        // budget failure still reports the time spent, including 0.
+        const queuedMs = Math.max(0, Date.now() - queuedAt);
+        response.setHeader("X-RateLimit-Queued-Ms", Math.round(queuedMs));
+        if (!outcome.decision.allowed) {
+          request.rateLimited = true;
+          applyRateLimitHeaders(response, outcome.decision);
+          throw rateLimitQueueException(
+            outcome.decision,
+            "The board is busy with agent traffic — retry the same command",
+          );
+        }
+        if (
+          applied === undefined ||
+          outcome.decision.remaining < applied.remaining
+        ) {
+          applied = outcome.decision;
+        }
+      } else {
+        request.rateLimit = decision;
+        request.rateLimited = true;
+        applyRateLimitHeaders(response, decision);
+        throw rateLimitException(decision, "Too many requests for this board");
+      }
     }
     if (applied !== undefined) {
       applyRateLimitHeaders(response, applied, { onlyIfTighter: true });
@@ -127,6 +293,23 @@ export function boardIdOf(request: LimitedRequest): string | undefined {
   return boardId === undefined || boardId === "import" ? undefined : boardId;
 }
 
-function pathOf(request: LimitedRequest): string {
+/**
+ * TASK-200.3: the only routes allowed to queue for a board token. Command
+ * writes are idempotent by `commandId` and already serialized per board by
+ * the write service, so a short wait changes latency but not semantics.
+ * Reads and every other write keep the immediate `429`.
+ */
+export function isQueueableCommand(request: {
+  method?: string;
+  originalUrl?: string;
+  url?: string;
+}): boolean {
+  if ((request.method ?? "GET").toUpperCase() !== "POST") return false;
+  return /^\/api\/v1\/boards\/[^/]+\/commands(?:\/batch)?\/?$/.test(
+    pathOf(request),
+  );
+}
+
+function pathOf(request: { originalUrl?: string; url?: string }): string {
   return (request.originalUrl ?? request.url ?? "").split("?")[0];
 }

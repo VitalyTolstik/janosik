@@ -6,13 +6,114 @@
 
 /** A non-2xx response from the API, carrying the parsed body when present. */
 export class ApiError extends Error {
+  /**
+   * TASK-200.3: the server's `Retry-After` in seconds, parsed from the header
+   * (delta-seconds or HTTP-date) or the envelope's `retryAfter`. `undefined`
+   * means the response did not ask for a specific pause.
+   */
+  readonly retryAfterSeconds: number | undefined;
+
   constructor(
     readonly status: number,
     readonly body: unknown,
+    retryAfterSeconds?: number,
   ) {
     super(`HTTP ${status}`);
     this.name = "ApiError";
+    this.retryAfterSeconds =
+      retryAfterSeconds ?? retryAfterFromBody(body) ?? undefined;
   }
+}
+
+/**
+ * TASK-200.3: a bounded 429/`503 rate_limited` retry policy.
+ *
+ * The server refills the board budget continuously, so most refusals clear in
+ * milliseconds. `Retry-After` wins over the exponential floor, but each pause
+ * is capped: a tool call must not hang for a minute because a board is shedding
+ * load. Four attempts in total keep a retry storm bounded.
+ */
+export const RATE_LIMIT_MAX_ATTEMPTS = 4;
+export const RATE_LIMIT_BASE_DELAY_MS = 100;
+export const RATE_LIMIT_MAX_DELAY_MS = 8_000;
+/**
+ * At the cap the jitter still has to exist: a server asking for 10 s or more
+ * gets 7.4 s + 0–600 ms instead of an identical 8 000 ms for every client.
+ */
+export const RATE_LIMIT_CAP_BASE_MS = 7_400;
+export const RATE_LIMIT_CAP_JITTER_MS = 600;
+
+/**
+ * `429 rate_limited`, or the server's queued `503 rate_limited` (TASK-200.3):
+ * both rejected the request before applying it, so retrying the same body is
+ * safe even without an `Idempotency-Key` (command bodies also keep their
+ * `commandId`).
+ */
+export function isRateLimited(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.status === 429) return true;
+  return error.status === 503 && asRecord(error.body).code === "rate_limited";
+}
+
+/**
+ * Pause before the next rate-limit attempt: `Retry-After` when the server
+ * named one, otherwise exponential backoff, plus jitter in both cases. The
+ * jitter spreads a swarm of clients that were refused in the same
+ * millisecond. For `Retry-After` up to the cap we never wake earlier than the
+ * server asked and spend the jitter in the remaining headroom; above the cap
+ * we use a jittered 7.4–8 s window. `random` is injectable so tests can
+ * assert the bounds without sleeping.
+ */
+export function rateLimitDelayMs(
+  error: unknown,
+  attempt: number,
+  random: () => number = Math.random,
+): number {
+  const retryAfterMs =
+    error instanceof ApiError && error.retryAfterSeconds !== undefined
+      ? Math.max(0, error.retryAfterSeconds * 1_000)
+      : 0;
+  const r = Math.min(1, Math.max(0, random()));
+  if (retryAfterMs >= RATE_LIMIT_MAX_DELAY_MS) {
+    // The server asks for the cap or longer: use the cap window with 0–600 ms
+    // of jitter, never a fixed 8 000 ms that synchronises a swarm.
+    return RATE_LIMIT_CAP_BASE_MS + Math.floor(r * RATE_LIMIT_CAP_JITTER_MS);
+  }
+  if (retryAfterMs > 0) {
+    // Wait at least what the server asked for, then place the jitter inside
+    // the remaining headroom: 7.5 s → 7.5–8.0 s.
+    const exponential =
+      RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
+    const jitter = Math.max(
+      Math.round(exponential * (0.5 + r)),
+      Math.floor(r * RATE_LIMIT_CAP_JITTER_MS),
+    );
+    return Math.min(RATE_LIMIT_MAX_DELAY_MS, Math.round(retryAfterMs + jitter));
+  }
+  const exponential = RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
+  const jittered = exponential * (0.5 + r);
+  return Math.min(RATE_LIMIT_MAX_DELAY_MS, Math.max(0, Math.round(jittered)));
+}
+
+/** Read `retryAfter` from the error envelope, when it is a number. */
+function retryAfterFromBody(body: unknown): number | undefined {
+  const value = asRecord(body).retryAfter;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+/**
+ * Parse a `Retry-After` header (delta-seconds or HTTP-date) into seconds.
+ * Exported for the client, which has the raw `Headers`.
+ */
+export function parseRetryAfter(value: string | null): number | undefined {
+  if (value === null || value.trim() === "") return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return seconds >= 0 ? seconds : undefined;
+  const at = Date.parse(value);
+  if (Number.isNaN(at)) return undefined;
+  return Math.max(0, Math.ceil((at - Date.now()) / 1_000));
 }
 
 /** A local file could not be saved by the MCP server. */
@@ -259,6 +360,19 @@ function withErrorMeta(message: string, body: Record<string, unknown>): string {
 function describeApiErrorBody(error: ApiError): string {
   const body = asRecord(error.body);
   const code = typeof body.code === "string" ? body.code : undefined;
+  if (isRateLimited(error)) {
+    const retryAfter =
+      typeof body.retryAfter === "number"
+        ? ` The server asked for about ${body.retryAfter}s.`
+        : " Wait a moment and retry.";
+    return (
+      "Error: rate limit exceeded; the MCP server retried automatically " +
+      "and the budget is still exhausted." +
+      retryAfter +
+      " Do not spin: reduce the cadence or run fewer concurrent agents, " +
+      "then retry the same call."
+    );
+  }
   if (code === "idempotency_conflict") {
     return (
       "Error: this Idempotency-Key was already used with a different request " +
@@ -506,9 +620,11 @@ function describeApiErrorBody(error: ApiError): string {
         ? `Error: the payload is over the ${body.limit}-byte limit. Reduce it and retry; repeating the same body cannot succeed.`
         : "Error: the file is too large for the attachment limit. Reduce it and retry.";
     case 429: {
+      // Kept as a defensive fallback; `isRateLimited` above handles every
+      // 429 before this switch.
       const retryAfter =
         typeof body.retryAfter === "number"
-          ? ` Retry after about ${body.retryAfter}s.`
+          ? ` The server asked for about ${body.retryAfter}s.`
           : " Wait a moment and retry.";
       return `Error: rate limit exceeded.${retryAfter}`;
     }

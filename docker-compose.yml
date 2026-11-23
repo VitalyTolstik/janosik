@@ -58,6 +58,13 @@ services:
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
       THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
+      # TASK-200.3 swarm budgets. 0 = derive from THROTTLE_LIMIT; see
+      # backend/.env.example for the formulas. The board value is a safety
+      # ceiling, not a per-agent allowance.
+      AGENT_SESSION_RATE_LIMIT: ${AGENT_SESSION_RATE_LIMIT:-0}
+      AGENT_TOKEN_RATE_LIMIT: ${AGENT_TOKEN_RATE_LIMIT:-0}
+      BOARD_RATE_LIMIT: ${BOARD_RATE_LIMIT:-0}
+      AGENT_COMMAND_QUEUE_MS: ${AGENT_COMMAND_QUEUE_MS:-1500}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}

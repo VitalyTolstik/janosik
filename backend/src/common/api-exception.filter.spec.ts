@@ -75,4 +75,27 @@ describe("ApiExceptionFilter Retry-After", () => {
       (response.json.mock.calls[0]![0] as { retryAfter: number }).retryAfter,
     ).toBe(9);
   });
+
+  it("treats the queued 503 rate_limited as backpressure, not a 5xx bug", () => {
+    const { filter, host, response, traffic } = harness();
+    filter.catch(
+      new ServiceUnavailableException({
+        message: "The board is busy with agent traffic",
+        code: "rate_limited",
+        retryable: true,
+        retryAfter: 2,
+        scope: "board",
+      }),
+      host,
+    );
+    expect(traffic.recordThrottled).toHaveBeenCalledTimes(1);
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(response.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+    expect(response.json.mock.calls[0]![0]).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      retryAfter: 2,
+      scope: "board",
+    });
+  });
 });
