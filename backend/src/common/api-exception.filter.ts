@@ -34,6 +34,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     }
 
     const response = host.switchToHttp().getResponse<Response>();
+    const request = host.switchToHttp().getRequest<{ rateLimited?: boolean }>();
     // A stream (SSE/blob) may already be committed; rewriting it would throw
     // and hide the original failure.
     if (response.headersSent) return;
@@ -45,9 +46,16 @@ export class ApiExceptionFilter implements ExceptionFilter {
     // ThrottlerExceptions).
     // TASK-200.3: the queued command answer is `503 rate_limited`; it is the
     // same backpressure signal and must not be logged as an unexpected 5xx.
+    // TASK-200.2: `503 ready_poll_capacity` is held-poll admission pressure,
+    // not an outage; it gets the same treatment and Retry-After.
     const backpressure =
-      status === 429 || (status === 503 && body.code === "rate_limited");
-    if (backpressure) this.traffic?.recordThrottled();
+      status === 429 ||
+      (status === 503 &&
+        (body.code === "rate_limited" || body.code === "ready_poll_capacity"));
+    if (backpressure) {
+      request.rateLimited = true;
+      this.traffic?.recordThrottled();
+    }
     if (status >= 500 && !backpressure) {
       const detail =
         exception instanceof Error ? exception.stack : String(exception);

@@ -39,6 +39,8 @@ export interface RequestSample {
   };
   /** TASK-200.3: the response used the `rate_limited` envelope. */
   rateLimited?: boolean;
+  /** TASK-200.2: a held ready/work poll; do not count the hold as latency. */
+  longPoll?: boolean;
   operation?: OperationKind;
 }
 
@@ -109,7 +111,10 @@ export class TrafficService {
     if (sample.operation !== undefined) {
       this.bumpLabel(`operation.${sample.operation}`, at);
     }
-    this.recordLatency(sample.durationMs, at);
+    // A ready/work long-poll intentionally holds the connection; counting
+    // that hold as API latency would hide the real read/write p95. The
+    // structured log still records its duration.
+    if (sample.longPoll !== true) this.recordLatency(sample.durationMs, at);
   }
 
   /** Rolling snapshot for `GET /admin/traffic`. */

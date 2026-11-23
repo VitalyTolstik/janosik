@@ -14,13 +14,28 @@ import {
   CLAIM_LEASE_MIN_MS,
   DEFAULT_CARD_PRIORITY,
   LIMITS,
+  READY_WORK_CROSS_BOARD_MAX_MS,
+  READY_WORK_CROSS_BOARD_MIN_MS,
+  READY_WORK_HOLD_MAX_MS,
+  READY_WORK_HOLD_MIN_MS,
   type Board,
   type Card,
+  type ReadyCardDto,
   workflowDoneColumnIds,
   workflowInitialColumnId,
 } from "@janosik/shared";
-import type { BatchCommandItem, JanosikClient } from "../client.js";
-import { ApiError } from "../errors.js";
+import type {
+  BatchCommandItem,
+  JanosikClient,
+  ReadyWorkQuery,
+} from "../client.js";
+import {
+  ApiError,
+  RATE_LIMIT_MAX_ATTEMPTS,
+  isRateLimited,
+  isTransientNetworkError,
+  rateLimitDelayMs,
+} from "../errors.js";
 import {
   batchCommandFields,
   commandFields,
@@ -1163,7 +1178,8 @@ export function registerCardTools(
         "under a live claim and not " +
         "blocked by another card. Sorted by priority (most urgent first). " +
         "Reads one board, or every board the user can access when boardId is " +
-        "omitted.",
+        "omitted. Uses the server's summary ready endpoint; an older server " +
+        "without it falls back to a full board read.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         limit: z
@@ -1178,19 +1194,36 @@ export function registerCardTools(
       annotations: READ,
     },
     async (args) => {
-      const boards = args.boardId
-        ? [await client.getBoard(args.boardId)]
-        : await loadBoards(client);
-      const ready = readyCards(boards, Date.now()).slice(0, args.limit);
-      const results = ready.map(({ board, card, column }) => ({
-        id: card.id,
-        title: card.title,
-        boardId: board.id,
-        boardTitle: board.title,
-        column,
-        priority: card.priority ?? DEFAULT_CARD_PRIORITY,
-        descriptionChars: card.description?.length ?? 0,
-      }));
+      let results: ReadyToolResult[];
+      try {
+        if (args.boardId !== undefined) {
+          const ready = await client.getBoardReady(args.boardId, {
+            limit: args.limit,
+          });
+          results = (ready?.cards ?? []).map(readyToolResult);
+        } else {
+          const ready = await client.listReadyWork(args.limit);
+          results = ready.cards.map(readyToolResult);
+        }
+      } catch (error) {
+        if (!missingReadyEndpoint(error)) throw error;
+        // Older server: keep the pre-TASK-200.2 behaviour rather than failing
+        // the tool. This path is the only one that still reads full boards.
+        const boards = args.boardId
+          ? [await client.getBoard(args.boardId)]
+          : await loadBoards(client);
+        results = readyCards(boards, Date.now())
+          .slice(0, args.limit)
+          .map(({ board, card, column }) => ({
+            id: card.id,
+            title: card.title,
+            boardId: board.id,
+            boardTitle: board.title,
+            column,
+            priority: card.priority ?? DEFAULT_CARD_PRIORITY,
+            descriptionChars: card.description?.length ?? 0,
+          }));
+      }
       const markdown =
         results.length === 0
           ? "No cards are ready to work."
@@ -1210,9 +1243,13 @@ export function registerCardTools(
     {
       title: "Wait for a ready card",
       description:
-        "Check periodically until a candidate card appears (see " +
-        "janosik_list_ready_cards) or the timeout passes. Returns the card " +
-        "or null on timeout. The server polls the board during this call.",
+        "Wait until a candidate card appears (see janosik_list_ready_cards) or " +
+        "the timeout passes. Returns the card or null on timeout. A single " +
+        "board is held open by the server for 25–60 s per request and wakes " +
+        "only on a readiness-relevant change; without boardId the ready " +
+        "summary is re-read every 15–60 s with jitter. A current server never " +
+        "reads a full board to find work; an older server without the ready " +
+        "endpoint falls back to a full board read.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         timeoutMs: z
@@ -1228,45 +1265,320 @@ export function registerCardTools(
           .min(250)
           .max(30_000)
           .default(5_000)
-          .describe("How often to re-check, in ms."),
+          .describe(
+            "Cross-board re-check floor in ms (raised to 15–60 s with " +
+              "jitter). A single-board wait ignores it and always uses a " +
+              "25–60 s server long-poll.",
+          ),
         response_format: responseFormatSchema,
       },
       annotations: READ,
     },
     async ({ boardId, timeoutMs, pollMs, response_format }) => {
       const deadline = Date.now() + timeoutMs;
-      for (;;) {
-        const boards = boardId
-          ? [await client.getBoard(boardId)]
-          : await loadBoards(client);
-        const [first] = readyCards(boards, Date.now());
-        if (first) {
-          const result = {
-            id: first.card.id,
-            title: first.card.title,
-            boardId: first.board.id,
-            boardTitle: first.board.title,
-            column: first.column,
-            priority: first.card.priority ?? DEFAULT_CARD_PRIORITY,
-          };
-          return respond(
-            response_format,
-            { card: result },
-            `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.column} — \`${result.id}\``,
-          );
+      let since: number | undefined;
+      try {
+        if (boardId !== undefined) {
+          let first = true;
+          for (;;) {
+            // `timeoutMs: 0` still performs one initial snapshot; after that
+            // the deadline is re-checked before every request and sleep.
+            if (!first && Date.now() >= deadline) break;
+            const remaining = deadline - Date.now();
+            const ready = await readyWithRetry(
+              client,
+              boardId,
+              {
+                limit: 1,
+                waitMs: remaining > 0 ? readyHoldMs(remaining) : 0,
+                ...(since !== undefined ? { since } : {}),
+              },
+              deadline,
+            );
+            first = false;
+            if (ready !== undefined) {
+              since = ready.seq;
+              const result = ready.cards[0];
+              if (result !== undefined) {
+                return respond(
+                  response_format,
+                  { card: waitResult(result) },
+                  `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.columnTitle} — \`${result.id}\``,
+                );
+              }
+              const left = deadline - Date.now();
+              if (left <= 0) break;
+              // An archived board still ends with `null` at the caller's
+              // deadline, preserving the pre-TASK-200.2 contract.
+              await sleep(
+                Math.min(
+                  ready.archived
+                    ? crossBoardPollMs(pollMs)
+                    : readyChangePauseMs(),
+                  left,
+                ),
+              );
+              if (Date.now() >= deadline) break;
+              continue;
+            }
+            // `204`: the server consumed its hold. Loop only if the caller
+            // still has time; never issue a request after the deadline.
+            const left = deadline - Date.now();
+            if (left <= 0) break;
+            await sleep(Math.min(readyChangePauseMs(), left));
+            if (Date.now() >= deadline) break;
+          }
+        } else {
+          let first = true;
+          for (;;) {
+            if (!first && Date.now() >= deadline) break;
+            const ready = await crossBoardReadyWithRetry(client, deadline);
+            first = false;
+            const result = ready.cards[0];
+            if (result !== undefined) {
+              return respond(
+                response_format,
+                { card: waitResult(result) },
+                `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.columnTitle} — \`${result.id}\``,
+              );
+            }
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) break;
+            await sleep(Math.min(crossBoardPollMs(pollMs), remaining));
+            if (Date.now() >= deadline) break;
+          }
         }
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) {
-          return respond(
-            response_format,
-            { card: null },
-            "No card became ready before the timeout.",
-          );
-        }
-        await sleep(Math.min(pollMs, remaining));
+      } catch (error) {
+        if (!missingReadyEndpoint(error)) throw error;
+        // Older server: preserve the original full-board loop. It is the
+        // documented compatibility path, not the normal idle path.
+        return legacyWaitForWork(client, {
+          deadline,
+          pollMs,
+          response_format,
+          ...(boardId !== undefined ? { boardId } : {}),
+        });
       }
+      return respond(
+        response_format,
+        { card: null },
+        "No card became ready before the timeout.",
+      );
     },
   );
+}
+
+/** One row of `janosik_list_ready_cards`. */
+interface ReadyToolResult {
+  id: string;
+  title: string;
+  boardId: string;
+  boardTitle: string;
+  column: string;
+  priority: Card["priority"];
+  descriptionChars: number;
+}
+
+/** Map the server summary onto the tool's existing result shape. */
+function readyToolResult(card: ReadyCardDto): ReadyToolResult {
+  return {
+    id: card.id,
+    title: card.title,
+    boardId: card.boardId,
+    boardTitle: card.boardTitle,
+    column: card.columnTitle,
+    priority: card.priority,
+    descriptionChars: card.descriptionChars,
+  };
+}
+
+/** Map the server summary onto `janosik_wait_for_work`'s card shape. */
+function waitResult(card: ReadyCardDto) {
+  return {
+    id: card.id,
+    title: card.title,
+    boardId: card.boardId,
+    boardTitle: card.boardTitle,
+    column: card.columnTitle,
+    priority: card.priority,
+  };
+}
+
+/** A 404 means an older server; the caller then uses the legacy read path. */
+function missingReadyEndpoint(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
+/** Extra attempts for a transient failure inside the caller's deadline. */
+const READY_NETWORK_RETRIES = 2;
+/** A zero-deadline request still needs one bounded initial snapshot. */
+const READY_SNAPSHOT_MIN_TIMEOUT_MS = 5_000;
+/** Cap one cross-board/snapshot HTTP call even when the caller waits longer. */
+const READY_SNAPSHOT_MAX_TIMEOUT_MS = 30_000;
+/** Leave room for the server to answer before the caller deadline. */
+const READY_HOLD_WAIT_MARGIN_MS = 250;
+
+function snapshotHttpTimeout(deadline: number): number {
+  const left = deadline - Date.now();
+  if (left <= 0) return READY_SNAPSHOT_MIN_TIMEOUT_MS;
+  return Math.max(1, Math.min(left, READY_SNAPSHOT_MAX_TIMEOUT_MS));
+}
+
+/**
+ * A long-poll whose HTTP budget expired is not a transient socket failure:
+ * retrying it would exceed the tool's deadline. `isTransientNetworkError`
+ * otherwise covers fetch/ECONNRESET-style failures.
+ */
+function retryableReadyError(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return false;
+    }
+  }
+  if (error instanceof ApiError) {
+    return error.status === 502 || error.status === 504;
+  }
+  return isTransientNetworkError(error);
+}
+
+/**
+ * Bounded retries for one ready snapshot. Network failures and backpressure
+ * both spend from the caller's deadline; a pause that cannot leave time for
+ * another request fails immediately instead of sleeping past it.
+ */
+async function readyCallWithRetry<T>(
+  call: () => Promise<T>,
+  deadline: number,
+): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await call();
+    } catch (error) {
+      let delay: number;
+      if (isRateLimited(error)) {
+        if (attempt >= RATE_LIMIT_MAX_ATTEMPTS - 1) throw error;
+        delay = rateLimitDelayMs(error, attempt + 1);
+      } else if (retryableReadyError(error)) {
+        if (attempt >= READY_NETWORK_RETRIES) throw error;
+        delay = 250 * (attempt + 1) + Math.floor(Math.random() * 150);
+      } else {
+        throw error;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || delay >= remaining) throw error;
+      attempt += 1;
+      await sleep(delay);
+      if (Date.now() >= deadline) throw error;
+    }
+  }
+}
+
+/** One board snapshot with deadline-aware network/backpressure retries. */
+function readyWithRetry(
+  client: JanosikClient,
+  boardId: string,
+  initial: ReadyWorkQuery,
+  deadline: number,
+) {
+  return readyCallWithRetry(() => {
+    const left = Math.max(0, deadline - Date.now());
+    const waitCap =
+      left > READY_HOLD_WAIT_MARGIN_MS ? left - READY_HOLD_WAIT_MARGIN_MS : 0;
+    const waitMs =
+      initial.waitMs !== undefined && initial.waitMs > 0
+        ? Math.min(initial.waitMs, waitCap)
+        : 0;
+    return client.getBoardReady(boardId, {
+      ...initial,
+      waitMs,
+      timeoutMs: waitMs > 0 ? Math.max(1, left) : snapshotHttpTimeout(deadline),
+    });
+  }, deadline);
+}
+
+/** One cross-board snapshot with the same deadline-aware retry policy. */
+function crossBoardReadyWithRetry(client: JanosikClient, deadline: number) {
+  return readyCallWithRetry(
+    () =>
+      client.listReadyWork(1, {
+        retry: false,
+        rateLimitRetry: false,
+        timeoutMs: snapshotHttpTimeout(deadline),
+      }),
+    deadline,
+  );
+}
+
+/** Jitter after an empty change frame, so a busy board never hot-loops. */
+function readyChangePauseMs(): number {
+  return 250 + Math.floor(Math.random() * 500);
+}
+
+/**
+ * One server hold that never exceeds the caller's remaining deadline. It is
+ * deliberately independent of `pollMs`: a single-board wait always asks for
+ * 25–60 s and lets the server wake it.
+ */
+function readyHoldMs(remaining: number): number {
+  const span = READY_WORK_HOLD_MAX_MS - READY_WORK_HOLD_MIN_MS + 1;
+  const hold = READY_WORK_HOLD_MIN_MS + Math.floor(Math.random() * span);
+  return Math.max(1, Math.min(remaining, hold));
+}
+
+/**
+ * Jittered cross-board cadence spanning the full 15–60 s range. `pollMs`
+ * raises the floor (up to its 30 s schema cap), it does not cap the wait.
+ */
+function crossBoardPollMs(pollMs: number): number {
+  const floor = Math.min(
+    Math.max(pollMs, READY_WORK_CROSS_BOARD_MIN_MS),
+    READY_WORK_CROSS_BOARD_MAX_MS,
+  );
+  const span = READY_WORK_CROSS_BOARD_MAX_MS - floor + 1;
+  return floor + Math.floor(Math.random() * span);
+}
+
+/** Pre-TASK-200.2 compatibility path for a server without the endpoint. */
+async function legacyWaitForWork(
+  client: JanosikClient,
+  options: {
+    boardId?: string;
+    deadline: number;
+    pollMs: number;
+    response_format: "markdown" | "json";
+  },
+) {
+  for (;;) {
+    const boards = options.boardId
+      ? [await client.getBoard(options.boardId)]
+      : await loadBoards(client);
+    const [first] = readyCards(boards, Date.now());
+    if (first) {
+      const result = {
+        id: first.card.id,
+        title: first.card.title,
+        boardId: first.board.id,
+        boardTitle: first.board.title,
+        column: first.column,
+        priority: first.card.priority ?? DEFAULT_CARD_PRIORITY,
+      };
+      return respond(
+        options.response_format,
+        { card: result },
+        `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.column} — \`${result.id}\``,
+      );
+    }
+    const remaining = options.deadline - Date.now();
+    if (remaining <= 0) {
+      return respond(
+        options.response_format,
+        { card: null },
+        "No card became ready before the timeout.",
+      );
+    }
+    await sleep(Math.min(options.pollMs, remaining));
+  }
 }
 
 /** Cards ready to pick up, in priority order (TASK-157, E15). */

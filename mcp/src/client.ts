@@ -27,9 +27,11 @@ import type {
   BoardCardSearchResult,
   BoardEnvelope,
   BoardMemberDto,
+  BoardReadyDto,
   BoardRole,
   BoardShareDto,
   BoardSummary,
+  BoardsReadyDto,
   CommentDto,
   CommentKind,
   CommentPage,
@@ -53,6 +55,11 @@ import type {
   UpdateShareRequest,
 } from "@janosik/shared";
 import type { Board } from "@janosik/shared";
+import {
+  READY_WORK_LIMIT_DEFAULT,
+  READY_WORK_LIMIT_MAX,
+  READY_WORK_WAIT_MAX_MS,
+} from "@janosik/shared";
 import {
   API_PREFIX,
   COMMAND_RETRIES,
@@ -172,6 +179,15 @@ interface RequestOptions {
   form?: FormData;
   /** Return the raw response instead of parsed JSON (used by download). */
   raw?: boolean;
+  /** Override the JSON request budget (long-polls hold up to 60 s). */
+  timeoutMs?: number;
+  /** Disable the one-shot network retry (a long-poll has its own deadline). */
+  retry?: boolean;
+  /**
+   * Disable the generic 429/503 rate-limit retry so a caller with its own
+   * deadline (a ready long-poll) can bound every pause against it.
+   */
+  rateLimitRetry?: boolean;
   /** TASK-166.5: send `X-Approval-Id` with a lifecycle REST operation. */
   approvalId?: string;
   /** Extra request headers (`Idempotency-Key`, TASK-166.4). */
@@ -187,6 +203,21 @@ function buildQuery(query?: Record<string, string | number | undefined>) {
   const encoded = params.toString();
   return encoded ? `?${encoded}` : "";
 }
+
+/** Optional bounds for one ready/work long-poll request. */
+export interface ReadyWorkQuery {
+  /** Cards to return, 1–100 (default 30). */
+  limit?: number;
+  /** Server-side hold in ms, 0–60 000; 0 is a snapshot. */
+  waitMs?: number;
+  /** The board `seq` from the previous answer (long-poll cursor). */
+  since?: number;
+  /** HTTP budget for this call, when the caller has its own deadline. */
+  timeoutMs?: number;
+}
+
+/** Extra budget on top of a server-side hold before the HTTP call fails. */
+const READY_POLL_GRACE_MS = 10_000;
 
 export class JanosikClient {
   /**
@@ -224,7 +255,11 @@ export class JanosikClient {
       options.headers?.["Idempotency-Key"] !== undefined &&
       (options.method ?? "GET") !== "GET";
     const networkAttempts =
-      (options.method ?? "GET") === "GET" || keyedWrite ? 2 : 1;
+      options.retry === false
+        ? 1
+        : (options.method ?? "GET") === "GET" || keyedWrite
+          ? 2
+          : 1;
     let networkAttempt = 0;
     let rateLimitAttempt = 0;
     for (;;) {
@@ -232,6 +267,7 @@ export class JanosikClient {
         return await this.send<T>(path, options);
       } catch (error) {
         if (
+          options.rateLimitRetry !== false &&
           isRateLimited(error) &&
           rateLimitAttempt < RATE_LIMIT_MAX_ATTEMPTS - 1
         ) {
@@ -259,6 +295,7 @@ export class JanosikClient {
       query,
       form,
       raw,
+      timeoutMs,
       approvalId,
       headers: extra,
     } = options;
@@ -307,7 +344,7 @@ export class JanosikClient {
     // A hung instance must not hang the tool call (and the agent) forever.
     // Blob transfers (upload, download) get a longer budget than JSON calls.
     const signal = AbortSignal.timeout(
-      form || raw ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
+      timeoutMs ?? (form || raw ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS),
     );
     const response = await fetch(url, {
       method,
@@ -578,6 +615,75 @@ export class JanosikClient {
       );
     }
     return { board, seq };
+  }
+
+  /**
+   * TASK-200.2 ready/work summary for one board. `waitMs > 0` holds the HTTP
+   * request on the server until a relevant command or the timeout; a timeout
+   * answers `204` and resolves to `undefined`. The request budget is the hold
+   * plus a grace period, and the generic network retry is off so one tool
+   * deadline never turns into two back-to-back holds.
+   */
+  getBoardReady(
+    boardId: string,
+    options: ReadyWorkQuery = {},
+  ): Promise<BoardReadyDto | undefined> {
+    const limit = Math.min(
+      Math.max(1, Math.trunc(options.limit ?? READY_WORK_LIMIT_DEFAULT)),
+      READY_WORK_LIMIT_MAX,
+    );
+    const wait = Math.min(
+      Math.max(0, Math.trunc(options.waitMs ?? 0)),
+      READY_WORK_WAIT_MAX_MS,
+    );
+    const timeoutMs =
+      options.timeoutMs ?? (wait > 0 ? wait + READY_POLL_GRACE_MS : undefined);
+    // A caller with its own deadline (a held poll, or an explicit HTTP budget
+    // such as timeoutMs:0) owns every retry pause. A deadline-less list
+    // snapshot keeps the normal GET network/429/503 retries.
+    const callerDeadline = wait > 0 || options.timeoutMs !== undefined;
+    return this.request<BoardReadyDto | undefined>(
+      apiPath`/boards/${boardId}/ready`,
+      {
+        query: {
+          limit,
+          ...(wait > 0 ? { wait } : {}),
+          ...(options.since !== undefined ? { since: options.since } : {}),
+        },
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+        ...(callerDeadline ? { retry: false, rateLimitRetry: false } : {}),
+      },
+    );
+  }
+
+  /**
+   * TASK-200.2 cross-board ready snapshot. One request answers for every
+   * accessible board without the per-board fan-out `listBoards` + `getBoard`
+   * used before. `retry`/`rateLimitRetry`/`timeoutMs` let a caller with a
+   * deadline run its own bounded retry loop.
+   */
+  listReadyWork(
+    limit: number = READY_WORK_LIMIT_DEFAULT,
+    options: {
+      retry?: boolean;
+      rateLimitRetry?: boolean;
+      timeoutMs?: number;
+    } = {},
+  ): Promise<BoardsReadyDto> {
+    const bounded = Math.min(
+      Math.max(1, Math.trunc(limit)),
+      READY_WORK_LIMIT_MAX,
+    );
+    return this.request<BoardsReadyDto>("/boards/ready", {
+      query: { limit: bounded },
+      ...(options.retry !== undefined ? { retry: options.retry } : {}),
+      ...(options.rateLimitRetry !== undefined
+        ? { rateLimitRetry: options.rateLimitRetry }
+        : {}),
+      ...(options.timeoutMs !== undefined
+        ? { timeoutMs: options.timeoutMs }
+        : {}),
+    });
   }
 
   /**
