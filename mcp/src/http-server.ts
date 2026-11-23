@@ -436,9 +436,10 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
   }
 
   /**
-   * Reserve a body slot. The caller holds it through `handleRequest`, because
-   * the parsed body stays referenced for the whole tool call. Abort/close
-   * releases immediately; the caller's `finally` is idempotent.
+   * Reserve a body slot. The caller holds it through `handleRequest` and all
+   * tool promises, because the parsed body stays referenced for the whole
+   * call. A client close/abort does not release the slot while a detached
+   * handler is still running; the caller's `finally` is idempotent.
    */
   function acquireBodySlot(gate: TenantConcurrencyGate, key: string): BodySlot {
     const decision = gate.tryAcquire(key);

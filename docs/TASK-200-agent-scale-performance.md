@@ -525,7 +525,7 @@ workflow, create, смена workflow планом) добавляют один 
 > после активных вызовов),
 > structured logs без токенов), отдельный Docker-образ/Compose-профиль и
 > CI-сборка. stdio остаётся по умолчанию для desktop. HTTP-smoke: 100 → 500
-> сессий в одном процессе, ~630 MB RSS на dev-хосте. Контракт, env и
+> сессий в одном процессе, ~800 MB RSS на dev-хосте. Контракт, env и
 > остаточные ограничения —
 > [`TASK-200.8-mcp-streamable-http.md`](TASK-200.8-mcp-streamable-http.md).
 
