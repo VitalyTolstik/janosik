@@ -114,11 +114,11 @@ export async function loadBoardAggregate(
 }
 
 /**
- * A content-free aggregate for policy classification and limit checks that
- * provably never inspect board contents: a plan of ordinary field edits,
- * claims or destructive commands has no done-column transition and creates
- * no cards, so `classifyPlan`/`countPlanCardCreates` only need the array
- * shapes. Keeping this explicit avoids a full-board load before the lock
+ * A content-free aggregate for the narrow policy/limit paths that have been
+ * proven not to inspect board contents: no done-column target, no
+ * column/workflow change and no card create in the plan. The caller owns
+ * that proof; once any of those is possible, load the real board instead.
+ * Keeping this explicit avoids a full-board load before the lock
  * (TASK-200.4); never use it for a write or a response.
  */
 export function emptyBoardAggregate(boardId: string): BoardAggregate {

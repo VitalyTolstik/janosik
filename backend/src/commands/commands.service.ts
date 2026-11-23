@@ -267,6 +267,23 @@ const CARD_CREATING_COMMANDS = new Set<string>([
 ]);
 
 /**
+ * Commands that can change the column/workflow state a later command is
+ * classified against. A plan is a sequence: `SET_BOARD_WORKFLOW` can make a
+ * column Done and `UNARCHIVE_CARD`/`MOVE_CARD` after it must be judged on the
+ * changed workflow, even when the stored board has no done columns yet.
+ */
+const CLASSIFICATION_STRUCTURE_COMMANDS = new Set<string>([
+  "SET_BOARD_WORKFLOW",
+  "ADD_COLUMN",
+  "DELETE_COLUMN",
+  "DUPLICATE_COLUMN",
+  "MOVE_COLUMN",
+  "ARCHIVE_COLUMN_CARDS",
+  "RESTORE_COLUMN",
+  "RESTORE_COLUMN_CARDS",
+]);
+
+/**
  * Does the plan-limit card count need the current board? `ADD_CARD`/copy
  * commands can collide with existing ids, and a copied column depends on its
  * source cards, so those read the aggregate before the lock. An edit-only
@@ -279,12 +296,13 @@ function planCreatesCards(plan: ApprovalPlan): boolean {
 }
 
 /**
- * `classifyPlan` only reads the board for done-column transitions. A plan of
- * field edits/claims/deletes can be classified without loading the board;
- * `MOVE_CARD`/`UNARCHIVE_CARD` need it only when the destination is a done
- * column, and `ADD_CARD`/`DUPLICATE_CARD` when their target/source might be
- * one. `DUPLICATE_CARD` has no source column in the action, so it stays
- * conservative (TASK-200.4).
+ * `classifyPlan` only reads the board for done-column transitions, but it
+ * replays the whole plan first. A workflow/column command can therefore make
+ * a later recovery or move a Done transition even when the *stored* workflow
+ * has no done columns. Force the real snapshot for those structure-changing
+ * plans; otherwise an edit/claim/delete plan can be classified on the
+ * content-free shell. `DUPLICATE_CARD` has no source column in the action, so
+ * it stays conservative (TASK-200.4).
  */
 function planNeedsClassificationSnapshot(
   plan: ApprovalPlan,
@@ -292,6 +310,13 @@ function planNeedsClassificationSnapshot(
 ): boolean {
   const commands = plan.commands ?? [];
   if (commands.length === 0) return false;
+  if (
+    commands.some((command) =>
+      CLASSIFICATION_STRUCTURE_COMMANDS.has(String(command.action.type)),
+    )
+  ) {
+    return true;
+  }
   const done = new Set(readBoardWorkflow(workflow)?.doneColumnIds ?? []);
   if (done.size === 0) return false;
   return commands.some((command) => {
@@ -522,18 +547,23 @@ export class CommandsService {
           select: { id: true },
         });
         const hasFresh = existing.length !== prepared.length;
+        // TASK-200.4: card-creating plans always need the real board here,
+        // even when every command replays: the approval seam counts
+        // `maxCardsPerRun` against it, and a replay after the cards were
+        // soft-deleted must still see the creates. Plain edit/claim/delete
+        // replays stay snapshot-free.
         const snapshotNeeded =
           planNeedsClassificationSnapshot(plan, boardRow.workflow) ||
-          (hasFresh && planCreatesCards(plan));
+          planCreatesCards(plan);
         const aggregate = snapshotNeeded
           ? await loadBoardAggregate(this.prisma, boardId, { board: boardRow })
           : null;
         if (snapshotNeeded && aggregate === null) {
           throw new NotFoundException("Board not found");
         }
-        // The shell carries no board content; it is only a shape for the
-        // classifier/limit counted on a plan with neither done targets nor
-        // card creates.
+        // The shell is only used when classification and the approval seam
+        // have both been proven not to read board contents: no done target,
+        // no structure change, no card creates.
         const classificationBoard = aggregate ?? emptyBoardAggregate(boardId);
         requirement = classifyPlan(
           plan,

@@ -16,9 +16,11 @@ const PASSWORD = "correct horse battery";
  * TASK-200.4: a PAT command path used to load the full board aggregate up to
  * three times (pre-lock classification, in-transaction plan limits, running
  * state). This suite pins the new contract with a module spy instead of a
- * load generator: one snapshot per fresh command/batch, none for a replay,
- * and none before the lock for a plan that classification can judge without
- * board contents.
+ * load generator: one snapshot per fresh command/batch, none for a plain edit
+ * replay, and no pre-lock snapshot when classification and the approval seam
+ * provably do not read board contents. Workflow-changing and card-creating
+ * plans keep the pre-lock snapshot even on replay (their classification /
+ * `maxCardsPerRun` check still needs the real board).
  */
 describe("Command aggregate loads (e2e)", () => {
   let app: INestApplication;
@@ -92,16 +94,90 @@ describe("Command aggregate loads (e2e)", () => {
   function command(
     token: string,
     body: Record<string, unknown>,
-    extra: { commandId?: string; ifMatch?: number } = {},
+    extra: { commandId?: string; ifMatch?: number; board?: string } = {},
   ) {
+    const board = extra.board ?? boardId;
     return server()
-      .post(`/api/v1/boards/${boardId}/commands`)
+      .post(`/api/v1/boards/${board}/commands`)
       .set(auth(token))
       .send({
         commandId: extra.commandId ?? randomUUID(),
         ...(extra.ifMatch !== undefined ? { ifMatch: extra.ifMatch } : {}),
-        action: { boardId, at: tick(), ...body },
+        action: { boardId: board, at: tick(), ...body },
       });
+  }
+
+  async function createBoard(title: string): Promise<string> {
+    return server()
+      .post("/api/v1/boards")
+      .set(auth(session))
+      .send({ title })
+      .expect(201)
+      .then((res) => res.body.id as string);
+  }
+
+  async function createColumn(board: string, title = "Todo"): Promise<string> {
+    const columnId = randomUUID();
+    await command(
+      session,
+      { type: "ADD_COLUMN", newColumnId: columnId, title },
+      { board },
+    ).expect(200);
+    return columnId;
+  }
+
+  async function createCard(
+    board: string,
+    columnId: string,
+    title = "Card",
+  ): Promise<string> {
+    const cardId = randomUUID();
+    await command(
+      session,
+      { type: "ADD_CARD", newCardId: cardId, columnId, title },
+      { board },
+    ).expect(200);
+    return cardId;
+  }
+
+  async function createPat(
+    board: string,
+    name: string,
+    scopePreset: "worker" | "reviewer" | "admin" = "admin",
+  ): Promise<string> {
+    return server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(session))
+      .send({ name, boardId: board, scopePreset })
+      .expect(201)
+      .then((res) => res.body.token as string);
+  }
+
+  async function setDoneWorkflow(
+    board: string,
+    fromColumnId: string,
+    doneColumnId: string,
+  ): Promise<void> {
+    await command(
+      session,
+      {
+        type: "SET_BOARD_WORKFLOW",
+        workflow: {
+          schemaVersion: 1,
+          enabled: true,
+          doneColumnIds: [doneColumnId],
+          transitions: [
+            {
+              id: randomUUID(),
+              fromColumnId,
+              toColumnId: doneColumnId,
+              allowedRoles: ["ADMIN", "MEMBER"],
+            },
+          ],
+        },
+      },
+      { board },
+    ).expect(200);
   }
 
   it("loads the aggregate once for a fresh PAT command", async () => {
@@ -115,7 +191,7 @@ describe("Command aggregate loads (e2e)", () => {
     expect(res.body.seq).toBeGreaterThan(0);
   });
 
-  it("does not load the aggregate to replay the same command", async () => {
+  it("does not load the aggregate to replay a plain edit", async () => {
     const commandId = randomUUID();
     const first = await command(
       pat,
@@ -190,6 +266,91 @@ describe("Command aggregate loads (e2e)", () => {
     expect(
       await prisma.card.findUnique({ where: { id: cardId } }),
     ).not.toBeNull();
+  });
+
+  it("keeps a pre-lock snapshot for a done MOVE_CARD, and only that on replay", async () => {
+    const board = await createBoard("Done move loads");
+    const todo = await createColumn(board, "Todo");
+    const done = await createColumn(board, "Done");
+    const cardId = await createCard(board, todo, "Move me");
+    const adminPat = await createPat(board, "move-admin");
+    await setDoneWorkflow(board, todo, done);
+
+    load.mockClear();
+    const commandId = randomUUID();
+    const move = {
+      type: "MOVE_CARD",
+      cardId,
+      fromColumnId: todo,
+      fromIndex: 0,
+      toColumnId: done,
+      toIndex: 0,
+    };
+    const first = await command(adminPat, move, { commandId, board }).expect(
+      200,
+    );
+    // Classification must see the Done column before the lock, and the
+    // transaction loads the running state once.
+    expect(load).toHaveBeenCalledTimes(2);
+
+    load.mockClear();
+    const replay = await command(adminPat, move, { commandId, board }).expect(
+      200,
+    );
+    expect(replay.body.seq).toBe(first.body.seq);
+    // A done-transition replay still classifies against the real workflow;
+    // the transaction itself loads nothing for an all-replay request.
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a done UNARCHIVE_CARD against the real board on replay", async () => {
+    const board = await createBoard("Done unarchive loads");
+    const todo = await createColumn(board, "Todo");
+    const done = await createColumn(board, "Done");
+    const cardId = await createCard(board, todo, "Archive me");
+    const adminPat = await createPat(board, "unarchive-admin");
+    await setDoneWorkflow(board, todo, done);
+    await command(session, { type: "ARCHIVE_CARD", cardId }, { board }).expect(
+      200,
+    );
+
+    load.mockClear();
+    const commandId = randomUUID();
+    const unarchive = {
+      type: "UNARCHIVE_CARD",
+      cardId,
+      columnId: done,
+    };
+    await command(adminPat, unarchive, { commandId, board }).expect(200);
+    expect(load).toHaveBeenCalledTimes(2);
+
+    load.mockClear();
+    await command(adminPat, unarchive, { commandId, board }).expect(200);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies a DUPLICATE_CARD on a done board from a snapshot, even on replay", async () => {
+    const board = await createBoard("Done duplicate loads");
+    const todo = await createColumn(board, "Todo");
+    const done = await createColumn(board, "Done");
+    const cardId = await createCard(board, todo, "Copy me");
+    const adminPat = await createPat(board, "duplicate-admin");
+    await setDoneWorkflow(board, todo, done);
+
+    load.mockClear();
+    const commandId = randomUUID();
+    const duplicate = {
+      type: "DUPLICATE_CARD",
+      cardId,
+      newCardId: randomUUID(),
+      title: "Copy of Copy me",
+    };
+    await command(adminPat, duplicate, { commandId, board }).expect(200);
+    expect(load).toHaveBeenCalledTimes(2);
+
+    load.mockClear();
+    await command(adminPat, duplicate, { commandId, board }).expect(200);
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   it("never loads a third snapshot when the policy requires one pre-lock", async () => {
