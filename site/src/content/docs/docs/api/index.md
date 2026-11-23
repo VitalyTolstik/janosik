@@ -142,10 +142,11 @@ Every REST error uses one machine-readable body (TASK-166.4):
 
 - `code` is a stable snake_case identifier; branch on it, not on `message`.
 - `message` is an English fallback. The UI and MCP localize by `code`.
-- `retryable` is always present. `true` means the same request may be retried
-  unchanged after `retryAfter` (seconds) or a short pause — a busy board, a
-  rate limit, an idempotent request still running. Validation and permission
-  errors are never retryable.
+- `retryable` is always present. `true` means the request may be retried after
+  `retryAfter` (seconds) or a short pause — a busy board, a rate limit, an
+  idempotent request still running. For a write, reuse the same `commandId`
+  (and REST `Idempotency-Key`); a `502`/`504` can follow an unkeyed write.
+  Validation and permission errors are never retryable.
 - `requestId` is the same value as the `X-Request-Id` response header; include
   it in a bug report.
 - `currentVersion` is always present as a number or `null`. On a command
