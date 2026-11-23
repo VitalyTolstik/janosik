@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.10 per-board aggregate cache: `CommandsService`, plans, approvals
+  and the legacy `GET /boards/:id` now share one process-wide LRU of full
+  `BoardAggregate` snapshots, keyed and validated by
+  `Board.aggregateRevision`. A command records the revision it committed in
+  the same transaction and stores the final in-memory aggregate only after
+  the board write resolves, so consecutive commands on one board skip the
+  four aggregate `SELECT`s; a missed or stale revision always falls back to
+  the uncached loader. Out-of-band writers (comments, attachments,
+  claims/session end, admin restores) invalidate implicitly through the
+  TASK-200.6 revision triggers — no Redis message is required for correctness.
+  Reducer-only gaps in server attribution (`lastActorId`, claim token/session,
+  `attachmentCount`, archive stamps, `updatedAt`) are reconciled with one
+  narrow query for the cards a batch touched, keeping a hit deep-equal to a
+  fresh load. Bounds are LRU entries and approximate JSON bytes (default
+  32 / 32 MiB per process; `BOARD_AGGREGATE_CACHE_ENTRIES` /
+  `BOARD_AGGREGATE_CACHE_BYTES`, `0` disables), with unit and e2e coverage
+  for eviction, disabled mode, stale sets, clone isolation, command-path hits,
+  parity across card/label/checklist/column actions, external-writer
+  coherency and two-replica reads. Throughput is not claimed here; TASK-200.14
+  remains the measurement gate.
 - TASK-200.9 board read model v1: `GET /boards/:id/summary`,
   `GET /boards/:id/cards` and `GET /boards/:id/cards/:cardId`. The summary
   returns board metadata, labels, columns with their complete ordered

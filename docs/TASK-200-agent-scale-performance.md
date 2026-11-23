@@ -703,6 +703,59 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `backend/src/boards/*`, `backend/src/commands/*`,
 `backend/src/comments/*`, `backend/src/attachments/*`.
 
+**Статус:** реализовано в `feat/TASK-200.10-aggregate-cache`.
+
+- Кэш (`BoardAggregateCacheService` + глобальный
+  `BoardAggregateCacheModule`) хранит один `BoardAggregate` на доску и
+  проверяет его по `Board.aggregateRevision` из того же
+  транзакционного/повторяемого снимка. Ключ — `(boardId, revision)`, не
+  TTL и не `seq`: комментарий/вложение/revision-writer без новой команды
+  просто не совпадает. Redis для корректности не нужен; шина ничего не
+  инвалидирует и не может быть обязательной. Промах идёт в прежние
+  запросы (`loadBoardAggregate`/`loadBoardAggregateWithRevision` остались
+  некэшируемыми примитивами).
+- `BoardAggregateLoader` — кэширующий вход для команд, планов, approvals
+  и legacy-чтения `GET /boards/:id`. Если `Board` уже прочитан, ревизия
+  берётся из него (лишнего `SELECT` на попадании нет); узкие policy-чтения
+  передают только `aggregateRevision`. На промахе после загрузки
+  перечитывается ревизия и запись выполняется только если она не
+  сдвинулась (защита от READ COMMITTED гонки между строкой доски и четырьмя
+  aggregate-запросами).
+- В `CommandsService.applyBatch` финальная ревизия читается в той же
+  транзакции после всех записей, а итоговый in-memory aggregate кладётся в
+  кэш только после успешного `BoardWriteService.run` — до публикации
+  событий. Поэтому вторая команда подряд попадает в кэш и не делает
+  aggregate-`SELECT`; промах внутри транзакции намеренно не кэшируется.
+  Устаревшая запись (меньшая ревизия) никогда не перетирает новую.
+- Reducer не содержит серверных атрибутов карточки (`lastActorId`,
+  `claimedByTokenId`/`claimedBySessionId`, `attachmentCount`,
+  `archivedAt`/`archivedFromColumnId`, `updatedAt`). Перед кэшированием
+  они накладываются одним узким запросом по затронутым карточкам, поэтому
+  попадание побайтно равно свежей загрузке, включая duplicate/restore.
+- Границы: LRU по числу записей и приблизительному размеру
+  (`JSON.stringify` + 256 байт на запись, считается только при записи);
+  по умолчанию 32 записи / 32 МиБ на процесс, `0` в
+  `BOARD_AGGREGATE_CACHE_ENTRIES` или `BOARD_AGGREGATE_CACHE_BYTES`
+  полностью выключает кэш и возвращает путь без лишних запросов. Одна
+  доска больше бюджета не кэшируется и не вытесняет остальные.
+- Coherency: comment, attachment, claim/session-end, admin card restore и
+  board restore проверены e2e — ревизия растёт, старая запись не
+  отдаётся, следующая загрузка содержит новые данные; две независимые
+  пары loader/cache имитируют реплики (писатель R+1, читатель на R
+  промахивается и перечитывает). Ручной инвалидации нет — корректность
+  держится на триггерах 200.6.
+- Тесты: `backend/src/boards/board-aggregate-cache.spec.ts` (LRU по
+  entries/bytes, disabled=0, несовпадение ревизии, stale set, deep-clone,
+  счётчики, oversize) и
+  `backend/test/task-200-10-aggregate-cache.e2e-spec.ts` (вторая команда
+  без aggregate-`SELECT`, паритет кэша и свежей загрузки на
+  add/update/move/archive/delete card/label/checklist/column/board,
+  duplicate, coherency внешних писателей, две реплики).
+- **Ограничение:** заявленные в DoD «5–10× throughput» здесь не
+  измерялись; это остаётся замером 200.14. Кэш экономит 4 aggregate-запроса
+  на команду при попадании, но добавляет один узкий запрос атрибутов
+  затронутых карточек на запись и один `SELECT` ревизии на промахе.
+
 ---
 
 ### 200.11 — Command log: партиционирование/вынос деталей (P2)
