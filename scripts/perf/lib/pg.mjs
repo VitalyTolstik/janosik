@@ -7,7 +7,14 @@
 // errors are sanitized before they are reported.
 
 import { execFile } from "node:child_process";
-import { safeChildError, sanitizeText, stripUserInfo } from "./redact.mjs";
+import {
+  getUrlQuerySecret,
+  getUserInfoPassword,
+  safeChildError,
+  sanitizeText,
+  stripSecretQueryParams,
+  stripUserInfo,
+} from "./redact.mjs";
 
 export const PG_STAT_STATEMENTS_SQL = `
 SELECT
@@ -22,6 +29,9 @@ WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
 ORDER BY total_exec_time DESC
 LIMIT %LIMIT%
 `.trim();
+
+/** Snapshots must be wider than the 20-row report window. */
+export const PG_SNAPSHOT_LIMIT = 1_000;
 
 export const PG_ACTIVITY_SQL = `
 SELECT
@@ -112,15 +122,26 @@ export function psqlInvocation({ databaseUrl, psql = "psql", sql }) {
   let connection;
   let username;
   let password;
+  let unsupportedSslPassword = false;
+  const secretValues = [];
   try {
     const parsed = new URL(databaseUrl);
     username = decode(parsed.username) || undefined;
-    password = decode(parsed.password) || undefined;
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (!/password|passwd|pwd|secret|token|key|auth/i.test(key)) continue;
+      const value = parsed.searchParams.get(key);
+      if (value !== null && value !== "") secretValues.push(decode(value));
+      if (key === "sslpassword") unsupportedSslPassword = true;
+      parsed.searchParams.delete(key);
+    }
+    password =
+      getUrlQuerySecret(databaseUrl, ["password", "passwd", "pwd"]) ??
+      getUserInfoPassword(databaseUrl);
     parsed.username = "";
     parsed.password = "";
     connection = parsed.toString();
   } catch {
-    connection = stripUserInfo(String(databaseUrl));
+    connection = stripSecretQueryParams(stripUserInfo(String(databaseUrl)));
   }
   const args = ["-X", "-A", "-t", "-F", "\t", "--no-psqlrc"];
   if (username !== undefined) args.push("--username", username);
@@ -134,7 +155,11 @@ export function psqlInvocation({ databaseUrl, psql = "psql", sql }) {
       ...(password !== undefined ? { PGPASSWORD: password } : {}),
     },
     connection: stripUserInfo(connection),
-    secrets: password === undefined ? [] : [password],
+    secrets:
+      password === undefined
+        ? [...new Set(secretValues)]
+        : [...new Set([password, ...secretValues])],
+    unsupportedSslPassword,
   };
 }
 
@@ -260,12 +285,14 @@ export function diffPgStatements(before, after, limit = 20) {
   const previous = new Map(before.rows.map((row) => [row.queryid, row]));
   const deltas = [];
   for (const row of after.rows) {
+    if (isInternalQuery(row.query)) continue;
     const old = previous.get(row.queryid);
-    if (old === undefined) continue;
-    const calls = (row.calls ?? 0) - (old.calls ?? 0);
-    const totalMs = (row.totalMs ?? 0) - (old.totalMs ?? 0);
-    if (calls <= 0 || isInternalQuery(row.query)) continue;
-    const rows = (row.rows ?? 0) - (old.rows ?? 0);
+    // An after-only queryid (first seen during this scenario, before=0) is a
+    // real delta and must not disappear from the report.
+    const calls = (row.calls ?? 0) - (old?.calls ?? 0);
+    const totalMs = (row.totalMs ?? 0) - (old?.totalMs ?? 0);
+    if (calls <= 0) continue;
+    const rows = (row.rows ?? 0) - (old?.rows ?? 0);
     deltas.push({
       queryid: row.queryid,
       calls,

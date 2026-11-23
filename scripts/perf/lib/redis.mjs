@@ -5,7 +5,7 @@
 // reported.
 
 import { execFile } from "node:child_process";
-import { safeChildError, sanitizeText, stripUserInfo } from "./redact.mjs";
+import { redactUrl, safeChildError, sanitizeText } from "./redact.mjs";
 
 /** Parse `redis-cli INFO` into the fields the report needs. */
 export function parseRedisInfo(text) {
@@ -71,6 +71,15 @@ function numberOrNull(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function decode(value) {
+  if (typeof value !== "string" || value === "") return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function redisInvocation({ redisUrl, redisCli = "redis-cli" }) {
   let host = "127.0.0.1";
   let port = "6379";
@@ -81,8 +90,8 @@ export function redisInvocation({ redisUrl, redisCli = "redis-cli" }) {
     const parsed = new URL(redisUrl);
     host = parsed.hostname || host;
     port = parsed.port || port;
-    username = parsed.username === "" ? undefined : parsed.username;
-    password = parsed.password === "" ? undefined : parsed.password;
+    username = decode(parsed.username) || undefined;
+    password = decode(parsed.password) || undefined;
     tls = parsed.protocol === "rediss:";
   } catch {
     // Keep defaults; the disabled/unavailable reason names the CLI, not the URL.
@@ -97,7 +106,7 @@ export function redisInvocation({ redisUrl, redisCli = "redis-cli" }) {
       ...process.env,
       ...(password !== undefined ? { REDISCLI_AUTH: password } : {}),
     },
-    url: stripUserInfo(redisUrl),
+    url: redactUrl(redisUrl),
     secrets: password === undefined ? [] : [password],
   };
 }

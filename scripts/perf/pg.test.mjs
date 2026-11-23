@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  PG_SNAPSHOT_LIMIT,
   PgActivitySampler,
   collectPgActivity,
   collectPgStatements,
@@ -56,17 +57,31 @@ test("pgStatementsSql scopes to the current database and clamps the limit", () =
   assert.match(pgStatementsSql(-5), /LIMIT 1/);
   assert.match(pgStatementsSql(99_999), /LIMIT 1000/);
   assert.doesNotMatch(sql, /%LIMIT%/);
+  assert.equal(PG_SNAPSHOT_LIMIT > 20, true);
 });
 
-test("psqlInvocation keeps the password out of argv", () => {
+test("psqlInvocation keeps the password and query secrets out of argv", () => {
   const invocation = psqlInvocation({
-    databaseUrl: "postgresql://perf:s3cret@db.perf:5432/janosik",
+    databaseUrl:
+      "postgresql://perf:s3cret@db.perf:5432/janosik?sslmode=require&sslpassword=sslsecret&client_secret=clientsecret",
     psql: "psql",
     sql: "SELECT 1",
   });
   assert.equal(
     invocation.args.some((arg) => arg.includes("s3cret")),
     false,
+  );
+  assert.equal(
+    invocation.args.some((arg) => arg.includes("sslsecret")),
+    false,
+  );
+  assert.equal(
+    invocation.args.some((arg) => arg.includes("clientsecret")),
+    false,
+  );
+  assert.equal(
+    invocation.args.some((arg) => arg.includes("sslmode=require")),
+    true,
   );
   assert.equal(
     invocation.args.some((arg) => arg.includes("@db.perf")),
@@ -76,6 +91,25 @@ test("psqlInvocation keeps the password out of argv", () => {
   assert.equal(invocation.env.PGPASSWORD, "s3cret");
   assert.equal(invocation.connection.includes("s3cret"), false);
   assert.equal(invocation.connection.includes("perf@"), false);
+  assert.equal(invocation.unsupportedSslPassword, true);
+  assert.equal(invocation.secrets.includes("sslsecret"), true);
+  assert.equal(invocation.secrets.includes("clientsecret"), true);
+});
+
+test("a query password is moved to PGPASSWORD and removed from argv", () => {
+  const invocation = psqlInvocation({
+    databaseUrl:
+      "postgresql://perf@db.perf:5432/janosik?password=querysecret&sslmode=require",
+    psql: "psql",
+    sql: "SELECT 1",
+  });
+  assert.equal(invocation.env.PGPASSWORD, "querysecret");
+  assert.equal(
+    invocation.args.some((arg) => arg.includes("querysecret")),
+    false,
+  );
+  assert.equal(invocation.connection.includes("querysecret"), false);
+  assert.equal(invocation.connection.includes("sslmode=require"), true);
 });
 
 test("collectPgStatements is disabled without a URL", async () => {
@@ -147,6 +181,13 @@ test("diffPgStatements returns Top-20 by calls and by total time", () => {
       { queryid: "1", calls: 15, totalMs: 160, rows: 9, query: "SELECT a" },
       { queryid: "2", calls: 7, totalMs: 80, rows: 3, query: "SELECT b" },
       {
+        queryid: "4",
+        calls: 2,
+        totalMs: 30,
+        rows: 4,
+        query: "SELECT new_after_only",
+      },
+      {
         queryid: "3",
         calls: 2,
         totalMs: 2,
@@ -162,6 +203,7 @@ test("diffPgStatements returns Top-20 by calls and by total time", () => {
     [
       ["1", 5],
       ["2", 2],
+      ["4", 2],
     ],
   );
   assert.deepEqual(
@@ -169,7 +211,12 @@ test("diffPgStatements returns Top-20 by calls and by total time", () => {
     [
       ["1", 60],
       ["2", 30],
+      ["4", 30],
     ],
+  );
+  assert.equal(
+    delta.topByCalls.some((row) => row.queryid === "4"),
+    true,
   );
 });
 

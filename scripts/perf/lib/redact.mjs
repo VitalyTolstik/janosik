@@ -2,12 +2,30 @@
 //
 // The harness handles three secret sources: PATs, PostgreSQL connection
 // strings and Redis URLs. Tokens are never rendered at all; URLs are stripped
-// of their userinfo before they reach console output, JSON or Markdown. The
-// same helpers scrub child-process error text, because `execFile` puts its
-// argv into `error.message` and a DSN there would leak the password.
+// of their userinfo and secret query parameters before they reach console
+// output, JSON or Markdown. The same helpers scrub child-process error text,
+// because `execFile` puts its argv into `error.message` and a DSN there would
+// leak the password.
 
-const SECRET_QUERY =
-  /^(password|passwd|pwd|token|access_token|refresh_token|api_key|apikey|auth|secret|key)$/i;
+/**
+ * Any query key containing one of these words is treated as a secret.
+ * Deliberately substring-based: `sslpassword`, `client_secret`, `x-api-key`
+ * and future provider spellings must not slip through a fixed allow-list.
+ */
+const SECRET_QUERY = /(password|passwd|pwd|secret|token|key|auth)/i;
+
+export function isSecretQueryKey(key) {
+  return SECRET_QUERY.test(String(key ?? ""));
+}
+
+function decode(value) {
+  if (typeof value !== "string" || value === "") return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 /** Remove `user:password@` from an HTTP/PostgreSQL/Redis URL. */
 export function stripUserInfo(value) {
@@ -22,6 +40,52 @@ export function stripUserInfo(value) {
   }
 }
 
+/** Delete secret query parameters entirely (for child-process argv). */
+export function stripSecretQueryParams(value) {
+  if (typeof value !== "string" || value === "") return value;
+  try {
+    const url = new URL(value);
+    for (const key of [...url.searchParams.keys()]) {
+      if (isSecretQueryKey(key)) url.searchParams.delete(key);
+    }
+    return url.toString();
+  } catch {
+    return String(value)
+      .replace(
+        /([?&])[^=&#]*(?:password|passwd|pwd|secret|token|key|auth)[^=&#]*=[^&#]*/gi,
+        "$1",
+      )
+      .replace(/\?&/g, "?")
+      .replace(/&&+/g, "&")
+      .replace(/[?&](?=#|$)/, "");
+  }
+}
+
+/** Read a named query parameter (decoded), or `undefined`. */
+export function getUrlQuerySecret(value, names) {
+  if (typeof value !== "string" || value === "") return undefined;
+  try {
+    const url = new URL(value);
+    for (const name of names) {
+      const raw = url.searchParams.get(name);
+      if (raw !== null && raw !== "") return decode(raw);
+    }
+  } catch {
+    // Not a URL; fall through.
+  }
+  return undefined;
+}
+
+/** Read the userinfo password (decoded), or `undefined`. */
+export function getUserInfoPassword(value) {
+  try {
+    const password = new URL(value).password;
+    return password === "" ? undefined : decode(password);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Redact the userinfo and sensitive query parameters of a URL. */
 export function redactUrl(value) {
   if (typeof value !== "string" || value === "") return value;
@@ -29,12 +93,12 @@ export function redactUrl(value) {
   try {
     url = new URL(value);
   } catch {
-    return stripUserInfo(value);
+    return stripSecretQueryParams(stripUserInfo(value));
   }
   url.username = "";
   url.password = "";
   for (const key of [...url.searchParams.keys()]) {
-    if (SECRET_QUERY.test(key)) url.searchParams.set(key, "[redacted]");
+    if (isSecretQueryKey(key)) url.searchParams.set(key, "[redacted]");
   }
   return url.toString();
 }
@@ -72,11 +136,7 @@ export function sanitizeText(text, secrets = []) {
     "[redacted]",
   );
   output = output.replace(
-    /\b(PGPASSWORD|REDISCLI_AUTH|PGPASSFILE)\s*=\s*[^\s,;]+/gi,
-    "$1=[redacted]",
-  );
-  output = output.replace(
-    /\b(password|passwd|pwd|token|api_key|apikey|secret)=([^\s&,;]+)/gi,
+    /\b([A-Za-z0-9_-]*(?:password|passwd|pwd|secret|token|key|auth)[A-Za-z0-9_-]*)\s*=\s*([^\s&,;]+)/gi,
     "$1=[redacted]",
   );
   return output;
