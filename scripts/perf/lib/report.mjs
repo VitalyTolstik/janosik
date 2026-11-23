@@ -239,6 +239,12 @@ export function renderMarkdown(report) {
         `Per-agent action interval: median ${formatMs(cadence.medianMs)} (min ${formatMs(cadence.minMs)}, max ${formatMs(cadence.maxMs)}) across ${formatInteger(cadence.agentsMeasured)} agent(s), ${formatDecimal(cadence.actionsPerAgentPerMinute)} actions/agent/min.`,
       );
     }
+    const idleCadence = scenario.summary.idleCadence;
+    if (idleCadence !== undefined && idleCadence.agentsMeasured > 0) {
+      lines.push(
+        `Per-agent idle poll interval: median ${formatMs(idleCadence.medianMs)} (min ${formatMs(idleCadence.minMs)}, max ${formatMs(idleCadence.maxMs)}) across ${formatInteger(idleCadence.agentsMeasured)} agent(s).`,
+      );
+    }
     const tools = Object.entries(scenario.summary.tools ?? {});
     if (tools.length > 0) {
       lines.push("");

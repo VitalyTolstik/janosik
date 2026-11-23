@@ -365,6 +365,12 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
   report.scenarios[0].timedOut = true;
   report.scenarios[0].summary.cleanupAborted = 2;
   report.scenarios[0].summary.cleanupFailed = 3;
+  report.scenarios[0].summary.idleCadence = {
+    agentsMeasured: 2,
+    medianMs: 1_000,
+    minMs: 900,
+    maxMs: 1_100,
+  };
   report.config.requireOk = true;
   report.scenarios[0].api.errors = [
     { source: "api-preload", message: "probe file disappeared" },
@@ -378,6 +384,7 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
   assert.match(markdown, /scenario timer cut the run/);
   assert.match(markdown, /Harness-aborted claim cleanup: 2/);
   assert.match(markdown, /Failed claim cleanup: 3/);
+  assert.match(markdown, /Per-agent idle poll interval: median 1\.00 s/);
   assert.match(markdown, /--require-ok.*exits 1/);
   assert.match(markdown, /Probe errors: api-preload: probe file disappeared/);
 });

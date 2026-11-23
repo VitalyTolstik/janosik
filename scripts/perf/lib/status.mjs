@@ -109,11 +109,17 @@ export function evaluateScenarioStatus({
     (scenario.agents ?? 0) > 0 &&
     (summary.cycles ?? 0) === 0
   ) {
-    const why =
-      (summary.exhausted ?? 0) > 0
-        ? "board was exhausted before one cycle completed"
-        : "zero work cycles completed";
-    return { status: "failed", reason: why };
+    // A live S3 hold cut by the deadline is a truncated measurement, not a
+    // zero-work failure; the timedOut reason below makes it partial.
+    const truncatedLiveHold =
+      timedOut && id === "S3" && (summary.sse?.liveAtHoldStart ?? 0) > 0;
+    if (!truncatedLiveHold) {
+      const why =
+        (summary.exhausted ?? 0) > 0
+          ? "board was exhausted before one cycle completed"
+          : "zero work cycles completed";
+      return { status: "failed", reason: why };
+    }
   }
 
   const reasons = [];

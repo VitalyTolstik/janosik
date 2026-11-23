@@ -128,6 +128,7 @@ export class RunMetrics {
     this.statuses = new Map();
     this.activity = { reads: 0, writes: 0, comments: 0 };
     this.agentActions = new Map();
+    this.agentPolls = new Map();
     this.toolCalls = 0;
     this.tools = new Map();
     this.sse = {
@@ -208,6 +209,19 @@ export class RunMetrics {
     entry.count += 1;
     entry.lastAt = at;
     this.agentActions.set(key, entry);
+  }
+
+  recordAgentPoll(agentIndex, at = Date.now()) {
+    const key = Number.isInteger(agentIndex) ? agentIndex : 0;
+    const entry = this.agentPolls.get(key) ?? {
+      count: 0,
+      lastAt: null,
+      intervals: [],
+    };
+    if (entry.lastAt !== null) entry.intervals.push(at - entry.lastAt);
+    entry.count += 1;
+    entry.lastAt = at;
+    this.agentPolls.set(key, entry);
   }
 
   recordCycle() {
@@ -357,6 +371,21 @@ export class RunMetrics {
           ? round(this.actions / agents / (durationMs / 60_000), 3)
           : null,
     };
+    const pollIntervals = [];
+    let pollAgents = 0;
+    for (const entry of this.agentPolls.values()) {
+      if (entry.intervals.length > 0) {
+        pollAgents += 1;
+        pollIntervals.push(...entry.intervals);
+      }
+    }
+    const pollSummary = summarizeNumbers(pollIntervals);
+    const idleCadence = {
+      agentsMeasured: pollAgents,
+      minMs: pollSummary.min,
+      medianMs: pollSummary.p50,
+      maxMs: pollSummary.max,
+    };
     return {
       id: this.id,
       durationMs,
@@ -376,6 +405,7 @@ export class RunMetrics {
       toolCalls: this.toolCalls,
       tools,
       agentCadence,
+      idleCadence,
       actionsPerSecond: actionsPerSecond(this.actions, durationMs),
       requestsPerAgentPerMinute: requestsPerAgentPerMinute(
         this.requests,

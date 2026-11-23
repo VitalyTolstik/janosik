@@ -174,6 +174,59 @@ test("MCP cleanup with no response is cleanupFailed, not orphan", async () => {
   );
 });
 
+test("MCP 400/409 release is a tolerated no-holder case", async () => {
+  const errors = [];
+  const worker = {
+    sampleRss() {},
+    async call(name) {
+      if (name === "janosik_list_ready_cards") {
+        return { results: [{ id: "c1" }] };
+      }
+      if (name === "janosik_get_workflow") {
+        return { doneColumnIds: ["done"], seq: 1 };
+      }
+      if (name === "janosik_claim_card") {
+        throw new McpToolError({
+          name,
+          message: "request timed out",
+          status: 0,
+          code: "ETIMEDOUT",
+        });
+      }
+      if (name === "janosik_release_card") {
+        throw new McpToolError({
+          name,
+          message: "no live claim",
+          status: 409,
+        });
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+  };
+  await runMcpAgentLoop({
+    worker,
+    boardId: "board-1",
+    agentIndex: 0,
+    mode: "work",
+    config: { id: "S2", cadenceMs: 1, jitter: 0, leaseMs: 60_000 },
+    deadline: Date.now() + 25,
+    signal: new AbortController().signal,
+    metrics: new RunMetrics("mcp-no-holder"),
+    random: () => 0.5,
+    onError: (entry) => errors.push(entry),
+  });
+  assert.equal(errors.length > 0, true);
+  assert.equal(
+    errors.every(
+      (entry) =>
+        entry.orphan === false &&
+        entry.cleanupFailed === false &&
+        entry.cleanupAborted === false,
+    ),
+    true,
+  );
+});
+
 test("MCP orphan is counted once by the scenario onError site", async () => {
   const errors = [];
   const metrics = new RunMetrics("mcp-orphan-count");
@@ -231,7 +284,7 @@ test("MCP uses wait_for_work when idle and evidence comments when working", asyn
     sampleRss() {},
     async call(name) {
       idleCalls.push(name);
-      return {};
+      return name === "janosik_wait_for_work" ? { card: null } : {};
     },
   };
   await runMcpAgentLoop({
@@ -245,6 +298,9 @@ test("MCP uses wait_for_work when idle and evidence comments when working", asyn
     random: () => 0.5,
   });
   assert.equal(idleCalls.includes("janosik_wait_for_work"), true);
+  const idleSnapshot = metrics.snapshot({ durationMs: 15, agents: 1 });
+  assert.equal(idleSnapshot.idleCadence.agentsMeasured, 1);
+  assert.equal(idleSnapshot.idleCadence.medianMs !== null, true);
 
   const idleTimes = [];
   const pacedWorker = {

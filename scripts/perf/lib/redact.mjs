@@ -48,10 +48,10 @@ export function hasUrlCredentials(value) {
   if (typeof value !== "string" || value === "") return false;
   try {
     const url = new URL(value);
-    if (url.password !== "") return true;
+    if (url.username !== "" || url.password !== "") return true;
     return [...url.searchParams.keys()].some((key) => isSecretQueryKey(key));
   } catch {
-    return /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]*@/i.test(value);
+    return /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*@/i.test(value);
   }
 }
 

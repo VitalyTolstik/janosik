@@ -686,6 +686,9 @@ async function attachCpuProfileToReport(cliValues) {
   }
   report.cpuProfile = cpuProfile;
   report.cpuProfileAttachedAt = new Date().toISOString();
+  report.instrumentationFailed = false;
+  report.instrumentationError = null;
+  report.status = statusFromScenarios(report);
   const jsonPath = cliValues.output
     ? path.resolve(cliValues.output)
     : reportPath;
@@ -694,6 +697,15 @@ async function attachCpuProfileToReport(cliValues) {
   await writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   await writeFile(markdownPath, `${renderMarkdown(report)}\n`, "utf8");
   console.log(`profile attached: ${jsonPath} · ${markdownPath}`);
+}
+
+function statusFromScenarios(report) {
+  if (report.interrupted === true) return "interrupted";
+  const statuses = report.scenarios.map((scenario) => scenario.status ?? "ok");
+  if (statuses.includes("failed")) return "failed";
+  if (statuses.includes("interrupted")) return "interrupted";
+  if (statuses.includes("partial")) return "partial";
+  return report.scenarios.length === 0 ? "failed" : "ok";
 }
 
 async function writeReport(config, report) {

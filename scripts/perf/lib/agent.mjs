@@ -211,7 +211,27 @@ export async function releaseClaim(options) {
   return (await tryReleaseClaim(options)).released;
 }
 
-function failureResult({ error, actions, conflicts, orphan }) {
+function releaseOutcome(release) {
+  const tolerated = release.status === 400 || release.status === 409;
+  const cleanupAborted = release.status === -1;
+  const cleanupFailed = release.status === 0;
+  return {
+    noHolder: release.released || tolerated,
+    cleanupAborted,
+    cleanupFailed,
+    orphan:
+      !release.released && !tolerated && !cleanupAborted && !cleanupFailed,
+  };
+}
+
+function failureResult({
+  error,
+  actions,
+  conflicts,
+  orphan,
+  cleanupAborted = false,
+  cleanupFailed = false,
+}) {
   return {
     idle: false,
     cycle: false,
@@ -219,6 +239,8 @@ function failureResult({ error, actions, conflicts, orphan }) {
     actions,
     failure: error,
     orphan,
+    cleanupAborted,
+    cleanupFailed,
     cardId: null,
   };
 }
@@ -294,22 +316,16 @@ export async function performAgentCycle({
           boardId,
           cardId: work.cardId,
         });
-        const tolerated = cleanup.status === 400 || cleanup.status === 409;
         // Only a cleanup cancelled by the harness deadline (-1) is exempt:
         // the scenario is over and the process is stopping. A status 0 means
         // the cleanup got no response at all; the lease may still be live, so
         // it is an unresolved cleanup failure, not a deadline cancellation.
-        const cleanupAborted = cleanup.status === -1;
-        const cleanupFailed = cleanup.status === 0;
+        const outcome = releaseOutcome(cleanup);
         const wrapped =
           error instanceof Error ? error : new Error(String(error));
-        wrapped.cleanupAborted = cleanupAborted;
-        wrapped.cleanupFailed = cleanupFailed && !tolerated;
-        wrapped.orphan =
-          !cleanup.released &&
-          !tolerated &&
-          !cleanupAborted &&
-          !wrapped.cleanupFailed;
+        wrapped.cleanupAborted = outcome.cleanupAborted;
+        wrapped.cleanupFailed = outcome.cleanupFailed;
+        wrapped.orphan = outcome.orphan;
         throw wrapped;
       }
       throw error;
@@ -330,16 +346,20 @@ export async function performAgentCycle({
           { idempotencyKey: commandId },
         );
       } catch (error) {
-        const released = await releaseClaim({
-          client: cleanupClient ?? client,
-          boardId,
-          cardId: work.cardId,
-        });
+        const outcome = releaseOutcome(
+          await tryReleaseClaim({
+            client: cleanupClient ?? client,
+            boardId,
+            cardId: work.cardId,
+          }),
+        );
         return failureResult({
           error,
           actions,
           conflicts,
-          orphan: !released,
+          orphan: outcome.orphan,
+          cleanupAborted: outcome.cleanupAborted,
+          cleanupFailed: outcome.cleanupFailed,
         });
       }
       record("comment");
@@ -353,30 +373,36 @@ export async function performAgentCycle({
         ifMatch: claimSeq,
       });
     } catch (error) {
-      const released = await releaseClaim({
-        client: cleanupClient ?? client,
-        boardId,
-        cardId: work.cardId,
-      });
+      const outcome = releaseOutcome(
+        await tryReleaseClaim({
+          client: cleanupClient ?? client,
+          boardId,
+          cardId: work.cardId,
+        }),
+      );
       if (statusOf(error) === 409) {
         conflicts += 1;
-        if (released) continue;
+        if (outcome.noHolder) continue;
       }
       return failureResult({
         error,
         actions,
         conflicts,
-        orphan: !released,
+        orphan: outcome.orphan,
+        cleanupAborted: outcome.cleanupAborted,
+        cleanupFailed: outcome.cleanupFailed,
       });
     }
     if (move.status === 409) {
       conflicts += 1;
-      const released = await releaseClaim({
-        client: cleanupClient ?? client,
-        boardId,
-        cardId: work.cardId,
-      });
-      if (released) continue;
+      const outcome = releaseOutcome(
+        await tryReleaseClaim({
+          client: cleanupClient ?? client,
+          boardId,
+          cardId: work.cardId,
+        }),
+      );
+      if (outcome.noHolder) continue;
       return failureResult({
         error: new HttpError({
           operation: "command.move",
@@ -386,7 +412,9 @@ export async function performAgentCycle({
         }),
         actions,
         conflicts,
-        orphan: true,
+        orphan: outcome.orphan,
+        cleanupAborted: outcome.cleanupAborted,
+        cleanupFailed: outcome.cleanupFailed,
       });
     }
     record("write");
@@ -532,6 +560,7 @@ export async function runAgentLoop({
         const endpoint =
           readyFallback || config.idleEndpoint !== "ready" ? "board" : "ready";
         const supported = await idleOnce(client, boardId, endpoint);
+        metrics?.recordAgentPoll(agentIndex);
         if (!supported && !readyFallback) {
           readyFallback = true;
           await client.readBoard(boardId);

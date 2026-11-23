@@ -186,6 +186,20 @@ test("per-agent cadence is measured from observed action timestamps", () => {
   assert.equal(snapshot.agentCadence.maxMs, 2_000);
 });
 
+test("idle poll cadence uses observed poll intervals", () => {
+  const metrics = new RunMetrics("S1");
+  metrics.recordAgentPoll(0, 1_000);
+  metrics.recordAgentPoll(0, 2_000);
+  metrics.recordAgentPoll(0, 3_000);
+  metrics.recordAgentPoll(1, 1_500);
+  metrics.recordAgentPoll(1, 3_500);
+  const snapshot = metrics.snapshot({ durationMs: 60_000, agents: 2 });
+  assert.equal(snapshot.idleCadence.agentsMeasured, 2);
+  assert.equal(snapshot.idleCadence.medianMs, 1_000);
+  assert.equal(snapshot.idleCadence.minMs, 1_000);
+  assert.equal(snapshot.idleCadence.maxMs, 2_000);
+});
+
 test("tool calls are measured separately from HTTP requests", () => {
   const metrics = new RunMetrics("S2");
   metrics.recordTool("janosik_claim_card", 5);

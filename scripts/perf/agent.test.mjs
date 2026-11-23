@@ -602,7 +602,7 @@ test("releaseClaim treats an allowed 409 as a failed release", async () => {
   );
 });
 
-test("a comment failure with a 409 release is surfaced as an orphan", async () => {
+test("a comment failure with a 409 release is a tolerated no-holder case", async () => {
   const client = {
     async readBoard() {
       return { board: board(), seq: 10 };
@@ -628,7 +628,67 @@ test("a comment failure with a 409 release is surfaced as an orphan", async () =
     commentText: "probe",
   });
   assert.equal(result.actions, 1);
-  assert.equal(result.orphan, true);
+  assert.equal(result.orphan, false);
+  assert.equal(result.cleanupAborted, false);
+  assert.equal(result.cleanupFailed, false);
+});
+
+test("a comment cleanup with no response is cleanupFailed", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) return { status: 0 };
+      return { status: 200, json: { seq: 11 } };
+    },
+    async comment() {
+      const error = new Error("comment.create -> 429");
+      error.status = 429;
+      throw error;
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  const result = await performAgentCycle({
+    client,
+    boardId: "b1",
+    userId: "u1",
+    leaseMs: 60_000,
+    commentText: "probe",
+  });
+  assert.equal(result.orphan, false);
+  assert.equal(result.cleanupFailed, true);
+});
+
+test("a move cleanup cancelled by the deadline is cleanupAborted", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) return { status: -1 };
+      return { status: 200, json: { seq: 11 } };
+    },
+    async comment() {
+      throw new Error("must not comment");
+    },
+    async move() {
+      const error = new Error("move aborted");
+      error.status = -1;
+      throw error;
+    },
+  };
+  const result = await performAgentCycle({
+    client,
+    boardId: "b1",
+    userId: "u1",
+    leaseMs: 60_000,
+    withComment: false,
+  });
+  assert.equal(result.orphan, false);
+  assert.equal(result.cleanupAborted, true);
 });
 
 test("recycleDoneCards tolerates a 400/409 release as a no-holder case", async () => {

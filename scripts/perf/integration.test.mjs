@@ -564,6 +564,30 @@ test("a failed --api-inspect start still writes a failed report", async () => {
     assert.equal(report.instrumentationFailed, true);
     assert.match(report.instrumentationError, /api-inspect failed/);
     assert.equal(report.cpuProfile.available, false);
+
+    await writeFile(
+      profile,
+      JSON.stringify({
+        startTime: 0,
+        endTime: 1_000_000,
+        samples: [1],
+        nodes: [{ id: 1, callFrame: { functionName: "recovered" } }],
+      }),
+      "utf8",
+    );
+    const attach = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(attach.code, 0, attach.stderr);
+    const recovered = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(recovered.instrumentationFailed, false);
+    assert.equal(recovered.instrumentationError, null);
+    assert.equal(recovered.status, recovered.scenarios[0].status);
+    assert.equal(recovered.cpuProfile.available, true);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -627,11 +651,26 @@ test("--report-only attaches a static profile without rerunning the load", async
       output,
       "--cpu-profile",
       profile,
-      "--pg-url",
-      "postgresql://perf:secret@db.test/perf",
+      "--base-url",
+      "https://jnk_username_only@api.test/api/v1",
     ]);
     assert.equal(urlGuard.code, 2, urlGuard.stderr);
-    assert.match(urlGuard.stderr, /--pg-url must not contain credentials/);
+    assert.match(urlGuard.stderr, /--base-url must not contain credentials/);
+
+    const inspectGuard = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      profile,
+      "--api-inspect",
+      "ws://jnk_username_only@127.0.0.1:9229/uuid",
+    ]);
+    assert.equal(inspectGuard.code, 2, inspectGuard.stderr);
+    assert.match(
+      inspectGuard.stderr,
+      /--api-inspect must not contain credentials/,
+    );
 
     const attach = await run(process.execPath, [
       cli,
@@ -646,8 +685,63 @@ test("--report-only attaches a static profile without rerunning the load", async
     assert.equal(after.generatedAt, before.generatedAt);
     assert.equal(after.cpuProfile.available, true);
     assert.equal(after.cpuProfile.top[0].function, "staticHot");
+    assert.equal(after.instrumentationFailed, false);
+    assert.equal(after.instrumentationError, null);
+    assert.equal(after.status, "ok");
     const markdown = await readFile(output.replace(/\.json$/, ".md"), "utf8");
     assert.match(markdown, /staticHot/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("--report-only rejects missing, unreadable and malformed reports", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "janosik-report-only-bad-"),
+  );
+  try {
+    const profile = path.join(directory, "static.cpuprofile");
+    await writeFile(
+      profile,
+      JSON.stringify({
+        startTime: 0,
+        endTime: 1_000_000,
+        samples: [1],
+        nodes: [{ id: 1, callFrame: { functionName: "x" } }],
+      }),
+      "utf8",
+    );
+    const missing = await run(process.execPath, [
+      cli,
+      "--report-only",
+      path.join(directory, "missing.json"),
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(missing.code, 1, missing.stderr);
+    assert.match(missing.stderr, /ENOENT|no such file/i);
+
+    const unreadable = await run(process.execPath, [
+      cli,
+      "--report-only",
+      directory,
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(unreadable.code, 1, unreadable.stderr);
+    assert.match(unreadable.stderr, /EISDIR|directory|illegal operation/i);
+
+    const malformedPath = path.join(directory, "malformed.json");
+    await writeFile(malformedPath, "{not json", "utf8");
+    const malformed = await run(process.execPath, [
+      cli,
+      "--report-only",
+      malformedPath,
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(malformed.code, 1, malformed.stderr);
+    assert.match(malformed.stderr, /JSON|Unexpected|position/i);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -220,6 +220,10 @@ const ARGV_URL_OPTIONS = [
     envName: "JANOSIK_PERF_REDIS_URL",
     fileOption: "--redis-url-file",
   },
+  {
+    option: "--api-inspect",
+    hint: "pass a credential-free ws:// inspector URL",
+  },
 ];
 
 /**
@@ -238,11 +242,12 @@ export function assertArgvSafe(cliValues = {}) {
       "--recycle-token is no longer accepted in argv; use JANOSIK_PERF_RECYCLE_TOKEN or --recycle-token-file",
     );
   }
-  for (const { option, envName, fileOption } of ARGV_URL_OPTIONS) {
+  for (const { option, envName, fileOption, hint } of ARGV_URL_OPTIONS) {
     const value = cliValues[option.slice(2)];
     if (value !== undefined && hasUrlCredentials(value)) {
+      const remedy = hint ?? `set ${envName} or use ${fileOption}`;
       throw new Error(
-        `${option} must not contain credentials in argv (visible through /proc/<pid>/cmdline); set ${envName} or use ${fileOption}`,
+        `${option} must not contain credentials in argv (visible through /proc/<pid>/cmdline); ${remedy}`,
       );
     }
   }

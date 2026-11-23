@@ -471,6 +471,24 @@ test("evaluateScenarioStatus distinguishes ok/partial/failed/interrupted", () =>
     }).status,
     "partial",
   );
+  assert.equal(
+    evaluate({
+      id: "S3",
+      scenario: { agents: 2, sse: 2, mix: { writes: 0.3 } },
+      summary: {
+        timedOut: true,
+        cycles: 0,
+        sse: {
+          opened: 2,
+          failed: 0,
+          liveAtHoldStart: 2,
+          liveAtHoldEnd: 0,
+          maxConcurrent: 2,
+        },
+      },
+    }).status,
+    "partial",
+  );
   assert.equal(evaluate({ summary: { orphans: 1 } }).status, "partial");
   assert.equal(evaluate({ summary: { cleanupFailed: 1 } }).status, "partial");
   assert.equal(

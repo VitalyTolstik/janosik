@@ -53,7 +53,7 @@ npm run perf:agents -- \
 `--shared-identity` is only for a transport/harness run where one identity is
 acceptable; a real agent baseline should pass 100 PATs instead. The API URL
 itself must be credential-free (or supplied through a PAT, not basic auth):
-Node fetch ignores URL userinfo.
+Node fetch rejects URL userinfo.
 
 Required token/board profile:
 
@@ -67,12 +67,12 @@ Required token/board profile:
   board index and id. Without `--board`, the first `--boards <n>` accessible,
   non-archived boards of token 1 are selected, and every other token must also
   be an ADMIN/MEMBER of each.
-- Basic-auth URLs are not supported: Node `fetch`/undici does not send URL
-  userinfo, so a credential-bearing `JANOSIK_PERF_BASE_URL`/`--base-url-file`
-  value will fail preflight even though it is accepted (and redacted) for
-  safety. Use a PAT `Authorization` header. PostgreSQL/Redis URLs may carry
-  credentials because the harness uses those values for `PGPASSWORD`/
-  `REDISCLI_AUTH` rather than Node fetch.
+- Basic-auth URLs are not supported: Node `fetch`/undici **rejects** URLs that
+  contain userinfo, so a credential-bearing `JANOSIK_PERF_BASE_URL`/
+  `--base-url-file` value will fail preflight even though it is accepted (and
+  redacted) for safety. Use a PAT `Authorization` header. PostgreSQL/Redis
+  URLs may carry credentials because the harness uses those values for
+  `PGPASSWORD`/`REDISCLI_AUTH` rather than Node fetch.
 - Seed enough non-Done cards. S2/S3/S4 move one card per completed cycle; a
   small board drains in seconds. The harness now reports that as `partial` (or
   `failed` when zero cycles completed) instead of a green run. Either seed
@@ -218,7 +218,8 @@ Markdown; the report has an overall status and counts.
   (`server5xxRate > 1%` or ≥5; `unexpected4xxRate > 0.1%` or ≥5), or the S4
   work window was under half the request.
 - `failed` — zero successful 2xx responses, zero requests, zero required work
-  cycles, no SSE stream, or fatal auth/preflight.
+  cycles (except a timed-out S3 run with a live SSE hold, which is `partial`),
+  no SSE stream, or fatal auth/preflight.
 - `interrupted` — SIGINT/SIGTERM.
 
 `Err %` / `Unexp %` excludes expected `409`, `429` and claim-lease `400`
@@ -386,17 +387,19 @@ with a different comment contract.
 ## Secrets and redaction
 
 - PATs are never written to stdout, JSON or Markdown; only `tokenCount`.
-- Credential-bearing `--base-url`, `--pg-url` and `--redis-url` values are
-  rejected before load; use `JANOSIK_PERF_BASE_URL`, `JANOSIK_PERF_PG_URL`,
-  `JANOSIK_PERF_REDIS_URL` or `--base-url-file`, `--pg-url-file`,
-  `--redis-url-file`. Credential-free CLI URLs are still accepted.
+- Credential-bearing `--base-url`, `--pg-url`, `--redis-url` and
+  `--api-inspect` values are rejected before load, including username-only
+  userinfo without a password. Use `JANOSIK_PERF_BASE_URL`,
+  `JANOSIK_PERF_PG_URL`, `JANOSIK_PERF_REDIS_URL` or `--base-url-file`,
+  `--pg-url-file`, `--redis-url-file`. Credential-free CLI URLs are still
+  accepted.
 - Any URL that reaches logs or reports is stripped of userinfo and of query
   keys containing `password`, `passwd`, `pwd`, `secret`, `token`, `key` or
   `auth` (including `sslpassword`, `client_secret`, `x-api-key`).
 - PostgreSQL/Redis child processes receive passwords via environment variables
   (`PGPASSWORD`, `REDISCLI_AUTH`), never argv; query secrets are removed from
-  the psql connection string. Basic-auth URLs are not supported by Node
-  `fetch`/undici; use PAT headers.
+  the psql connection string. Node `fetch`/undici rejects URLs with userinfo;
+  use PAT headers.
 - Child-process stderr and fetch errors are sanitized (`safeChildError`,
   `sanitizeText`); `execFile`'s argv-bearing `error.message` is not reported.
 - Leak tests assert that stdout, JSON and Markdown contain neither tokens nor
@@ -454,8 +457,10 @@ scripts/perf/
   and for MCP uses the actual spawned process count (`--mcp-processes`), not
   the requested `--agents` label. The report also records the resolved board
   ids and the median/min/max of **all observed per-agent action intervals**
-  (not a median of per-agent averages). `actualWorkStartedAt` is reported for
-  S4 only; other scenarios report the planned/measured window.
+  (not a median of per-agent averages). S1 also reports the per-agent idle
+  poll interval, so idle cadence is visible even without write actions.
+  `actualWorkStartedAt` is reported for S4 only; other scenarios report the
+  planned/measured window.
 - For S5, `sse.maxConcurrent` is the peak open streams; opened/failed and the
   observed ramp/hold durations are reported separately.
 - `/proc` `VmHWM` (the `--api-pid` `API peak RSS*`) is the process **lifetime**

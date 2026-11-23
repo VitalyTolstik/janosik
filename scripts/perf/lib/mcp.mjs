@@ -294,11 +294,15 @@ async function releaseViaMcp(worker, boardId, cardId) {
 }
 
 function releaseOutcome(release) {
-  const cleanupFailed = !release.released && release.status === 0;
+  const tolerated = release.status === 400 || release.status === 409;
+  const cleanupAborted =
+    !release.released && !tolerated && release.status === -1;
+  const cleanupFailed = !release.released && !tolerated && release.status === 0;
   return {
-    orphan: !release.released && !cleanupFailed,
+    orphan:
+      !release.released && !tolerated && !cleanupAborted && !cleanupFailed,
     cleanupFailed,
-    cleanupAborted: false,
+    cleanupAborted,
   };
 }
 
@@ -356,6 +360,7 @@ export async function runMcpAgentLoop({
         // add another full sleep. A card returned early still sleeps the
         // remainder so the cadence is not shortened.
         waitConsumedCadence = waited?.card === null;
+        metrics?.recordAgentPoll(agentIndex);
       } else {
         const ready = await worker.call(
           "janosik_list_ready_cards",

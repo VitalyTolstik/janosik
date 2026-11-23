@@ -228,6 +228,22 @@ test("credential-bearing URL argv is rejected in favour of env/files", async () 
     /--redis-url must not contain credentials in argv/,
   );
 
+  for (const [option, value] of [
+    ["--base-url", "https://jnk_username_only@api.test/api/v1"],
+    ["--pg-url", "postgresql://jnk_username_only@db.test/perf"],
+    ["--redis-url", "redis://jnk_username_only@redis.test:6379/0"],
+    ["--api-inspect", "ws://jnk_username_only@127.0.0.1:9229/uuid"],
+  ]) {
+    assert.throws(
+      () =>
+        resolveConfig(parseCli(["--scenario", "S1", option, value]), {
+          JANOSIK_PERF_TOKEN: "jnk_x",
+        }),
+      /must not contain credentials in argv/,
+      `${option} username-only userinfo should be rejected`,
+    );
+  }
+
   const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-urls-"));
   try {
     const baseFile = path.join(directory, "base.url");
