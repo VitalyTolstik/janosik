@@ -40,6 +40,21 @@ export function stripUserInfo(value) {
   }
 }
 
+/**
+ * True when a URL contains userinfo or a secret query parameter. Used to
+ * reject credential-bearing CLI values before they become visible in `ps`.
+ */
+export function hasUrlCredentials(value) {
+  if (typeof value !== "string" || value === "") return false;
+  try {
+    const url = new URL(value);
+    if (url.password !== "") return true;
+    return [...url.searchParams.keys()].some((key) => isSecretQueryKey(key));
+  } catch {
+    return /^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]*@/i.test(value);
+  }
+}
+
 /** Delete secret query parameters entirely (for child-process argv). */
 export function stripSecretQueryParams(value) {
   if (typeof value !== "string" || value === "") return value;

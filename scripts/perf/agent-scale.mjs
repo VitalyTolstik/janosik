@@ -7,7 +7,7 @@
 // MCP stdio processes, and writes a JSON + Markdown report containing the
 // commit, effective config, per-scenario status and the measurement windows.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   parseCli,
@@ -61,8 +61,30 @@ async function main() {
   let config;
   const keepAlive = setInterval(() => {}, 1_000);
   try {
+    let cliValues;
     try {
-      config = resolveConfig(parseCli(process.argv.slice(2)), process.env);
+      cliValues = parseCli(process.argv.slice(2));
+    } catch (error) {
+      console.error(
+        `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,
+      );
+      console.error("perf: run with --help for the CLI surface");
+      process.exitCode = 2;
+      return;
+    }
+    if (cliValues["report-only"] !== undefined) {
+      try {
+        await attachCpuProfileToReport(cliValues);
+      } catch (error) {
+        console.error(
+          `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,
+        );
+        process.exitCode = 1;
+      }
+      return;
+    }
+    try {
+      config = resolveConfig(cliValues, process.env);
     } catch (error) {
       console.error(
         `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,
@@ -621,8 +643,10 @@ async function runOne({ id, config, users, boards, signal }) {
       workStartedAt: result.workStartedAt ?? result.startedAt,
       plannedWorkStartedAt:
         result.plannedWorkStartedAt ?? result.workStartedAt ?? result.startedAt,
-      actualWorkStartedAt:
-        result.actualWorkStartedAt ?? result.workStartedAt ?? result.startedAt,
+      ...(result.actualWorkStartedAt !== null &&
+      result.actualWorkStartedAt !== undefined
+        ? { actualWorkStartedAt: result.actualWorkStartedAt }
+        : {}),
       workEndedAt: measuredEnd,
       workDurationMs:
         result.workDurationMs ?? Math.max(0, measuredEnd - result.startedAt),
@@ -632,6 +656,33 @@ async function runOne({ id, config, users, boards, signal }) {
     errors: result.errors ?? [],
     fatalAuth: result.fatalAuth === true,
   };
+}
+
+async function attachCpuProfileToReport(cliValues) {
+  const reportPath = path.resolve(cliValues["report-only"]);
+  if (cliValues["cpu-profile"] === undefined) {
+    throw new Error("--report-only needs --cpu-profile <file|dir>");
+  }
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  if (!Array.isArray(report.scenarios) || report.config === undefined) {
+    throw new Error(`not a harness report: ${reportPath}`);
+  }
+  const cpuProfile = await collectCpuProfile(cliValues["cpu-profile"]);
+  if (cpuProfile.available !== true) {
+    throw new Error(
+      `cpu profile unavailable: ${cpuProfile.reason ?? "no readable profile"}`,
+    );
+  }
+  report.cpuProfile = cpuProfile;
+  report.cpuProfileAttachedAt = new Date().toISOString();
+  const jsonPath = cliValues.output
+    ? path.resolve(cliValues.output)
+    : reportPath;
+  const markdownPath = jsonPath.replace(/\.json$/i, "") + ".md";
+  await mkdir(path.dirname(jsonPath), { recursive: true });
+  await writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFile(markdownPath, `${renderMarkdown(report)}\n`, "utf8");
+  console.log(`profile attached: ${jsonPath} · ${markdownPath}`);
 }
 
 async function writeReport(config, report) {

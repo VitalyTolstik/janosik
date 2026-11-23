@@ -80,7 +80,10 @@ Required token/board profile:
 
 Token precedence is `--token-file` > `JANOSIK_PERF_TOKEN` > `PERF_TOKEN`; the
 pool is deduplicated and only `tokenCount` reaches the report. `--token` is
-rejected because argv is visible through `/proc/<pid>/cmdline`.
+rejected because argv is visible through `/proc/<pid>/cmdline`. The same rule
+applies to URLs: a credential-bearing `--base-url`, `--pg-url` or `--redis-url`
+is rejected; use `JANOSIK_PERF_BASE_URL`/`JANOSIK_PERF_PG_URL`/
+`JANOSIK_PERF_REDIS_URL` or the matching `--*-file` option instead.
 
 Default output: `scripts/perf/results/<YYYY-MM-DD>-<sha>/<mode>-<scenarios>-<driver>-<HHMMSS>.json`
 and `.md` beside it. New result directories are gitignored. Use `--output` to
@@ -175,11 +178,11 @@ npm run perf:agents -- --scenario S3 --board "$BOARD" \
 npm run perf:agents -- --scenario S4 --board "$BOARD" \
   --agents 1000 --ramp 30s --duration 30s --api-pid "$API_PID"
 
-# E — SSE ramp, no agents (hold starts after the real ramp)
-# One PAT opening 5,000 streams hits the default per-user cap: set
-# SSE_MAX_PER_USER=0 (and SSE_MAX_CONNECTIONS>=5000) on the API host.
-SSE_MAX_PER_USER=0 SSE_MAX_CONNECTIONS=5000 \
-  npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid "$API_PID"
+# E — SSE ramp, no agents (hold starts after the real ramp).
+# One PAT opening 5,000 streams hits the default per-user cap. Set these on
+# the API host (the API process environment), not on the harness command:
+#   SSE_MAX_PER_USER=0 SSE_MAX_CONNECTIONS=5000 node backend/dist/main.js
+npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid "$API_PID"
 
 # F — read burst
 npm run perf:agents -- --scenario S6 --board "$BOARD" --concurrency 500 --api-pid "$API_PID"
@@ -266,13 +269,20 @@ profile afterwards. A failed inspector start still runs the load and writes a
 report marked `failed`; a missing, stale or failed live profile does the same
 and names the reason. The inspector socket is closed on every failure path.
 
-**Two-step static profile:** `node --cpu-prof` writes only when the API exits:
+**Two-step static profile:** `node --cpu-prof` writes only when the API exits,
+so run the load with a normal report first, stop the API, then attach the
+profile without re-running the load:
 
 ```bash
 node --cpu-prof --cpu-prof-dir /tmp/janosik-cpu backend/dist/main.js
-# run the load, stop the API, then read the profile:
-npm run perf:agents -- --scenario S2 … --cpu-profile /tmp/janosik-cpu
+npm run perf:agents -- --scenario S2 … --output /tmp/run/S2.json
+# stop the API; this writes /tmp/janosik-cpu/*.cpuprofile
+npm run perf:agents -- --report-only /tmp/run/S2.json \
+  --cpu-profile /tmp/janosik-cpu
 ```
+
+`--report-only` re-renders the existing JSON/Markdown in place (or at
+`--output`) and performs no API calls. A missing/unreadable profile exits `1`.
 
 A directory is scanned for `.cpuprofile` files; files within 60 s of the
 newest mtime are treated as one run, **all their nodes are aggregated**, and
@@ -290,6 +300,10 @@ npm run perf:agents -- --scenario S2 … \
   --pg-url postgresql://perf@db.perf.internal:5432/janosik \
   --pg-activity --pg-activity-interval 2s
 ```
+
+`--pg-url` must be credential-free. Put a password-bearing DSN in
+`JANOSIK_PERF_PG_URL` or a `--pg-url-file`; argv credentials are rejected
+before the load starts.
 
 Setup on the database host:
 
@@ -330,6 +344,10 @@ npm run perf:agents -- --scenario S2 … \
   --redis-cli redis-cli
 ```
 
+Use `JANOSIK_PERF_REDIS_URL` or `--redis-url-file` when the URL contains a
+password or a secret query parameter; the credential-bearing CLI form is
+rejected.
+
 Takes start/end `INFO` samples and reports memory (used/peak/max), connected
 and blocked clients, instantaneous ops/s, rejected connections, keyspace
 hits/misses and hit rate. The percent-encoded URL password is decoded into
@@ -350,19 +368,26 @@ statuses and report are used. S1 uses `janosik_wait_for_work`; work cycles use
 `evidence` comments so DoD-contract boards can move. **S3, S5 and S6 are
 rejected with `--driver
 mcp`** (the mixed loop and SSE/read probes are HTTP-only; use `--driver http`).
-S1/S2/S4 use MCP workers for the agents. Smoke mode caps the process
-count at 2; a large MCP swarm is a dedicated-host capacity experiment. The
-connect/handshake timeout is 15 s and is also cancelled by the scenario signal;
-a failed or hung handshake closes the transport and kills the child. Normal
-`worker.close()` is bounded too (2 s) and falls back to SIGTERM/SIGKILL.
+S1/S2/S4 use MCP workers for the agents. For idle S1 the wait tool already
+consumes the cadence; the harness does not add a second full sleep when the
+wait times out. Smoke mode caps the process count at 2; a large MCP swarm is a
+dedicated-host capacity experiment. The connect/handshake timeout is 15 s and
+is also cancelled by the scenario signal; a failed or hung handshake closes
+the transport and kills the child. Normal `worker.close()` is bounded too (2 s)
+and falls back to SIGTERM/SIGKILL. MCP writes use `evidence` comments; seed a
+board whose DoD checklist accepts evidence, or use `--driver http` for a board
+with a different comment contract.
 
 ## Secrets and redaction
 
 - PATs are never written to stdout, JSON or Markdown; only `tokenCount`.
-- `--base-url`, `--pg-url` and `--redis-url` are stripped of userinfo and of
-  any query key containing `password`, `passwd`, `pwd`, `secret`, `token`,
-  `key` or `auth` (including `sslpassword`, `client_secret`, `x-api-key`)
-  before they reach logs or reports.
+- Credential-bearing `--base-url`, `--pg-url` and `--redis-url` values are
+  rejected before load; use `JANOSIK_PERF_BASE_URL`, `JANOSIK_PERF_PG_URL`,
+  `JANOSIK_PERF_REDIS_URL` or `--base-url-file`, `--pg-url-file`,
+  `--redis-url-file`. Credential-free CLI URLs are still accepted.
+- Any URL that reaches logs or reports is stripped of userinfo and of query
+  keys containing `password`, `passwd`, `pwd`, `secret`, `token`, `key` or
+  `auth` (including `sslpassword`, `client_secret`, `x-api-key`).
 - PostgreSQL/Redis child processes receive passwords via environment variables
   (`PGPASSWORD`, `REDISCLI_AUTH`), never argv; query secrets are removed from
   the psql connection string. Basic-auth URLs are not supported by Node
@@ -415,13 +440,17 @@ scripts/perf/
   cycle), not cycles. `cycles` counts completed write sequences. `no work`
   counts cycles that found no unleased card. An orphaned release is partial.
   A lost claim response (timeout/reset) triggers a release attempt through a
-  separate short-timeout cleanup client before the next cycle; a real server
-  failure is surfaced as an orphan, while a deadline-aborted cleanup is counted
+  separate short-timeout cleanup client before the next cycle. A non-2xx
+  release is an orphan; a cleanup with no response (`0`) is `cleanupFailed`
+  and degrades the run to `partial` because the lease may still be live. A
+  cleanup actually cancelled by the harness deadline (`-1`) is counted
   separately as `cleanupAborted` and is not a false orphan.
 - `requests/agent/min` uses the measured window, independent of worker drain,
   and for MCP uses the actual spawned process count (`--mcp-processes`), not
   the requested `--agents` label. The report also records the resolved board
-  ids and observed per-agent action-cadence median/min/max.
+  ids and the median/min/max of **all observed per-agent action intervals**
+  (not a median of per-agent averages). `actualWorkStartedAt` is reported for
+  S4 only; other scenarios report the planned/measured window.
 - For S5, `sse.maxConcurrent` is the peak open streams; opened/failed and the
   observed ramp/hold durations are reported separately.
 - `/proc` `VmHWM` (the `--api-pid` `API peak RSS*`) is the process **lifetime**

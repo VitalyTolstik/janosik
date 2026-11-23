@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { parseCli, resolveConfig, scenarioConfig } from "./lib/config.mjs";
 import { RunMetrics } from "./lib/metrics.mjs";
@@ -252,50 +255,73 @@ test("renderMarkdown renders CPU, Redis and per-scenario PG sections", () => {
   assert.match(markdown, /Per-scenario deltas/);
 });
 
-test("report output never contains URL userinfo or a password", () => {
-  const config = resolveConfig(
-    parseCli([
-      "--mock",
-      "--base-url",
-      "http://alice:hunter2@example.test/api/v1?client_secret=basedsecret",
-      "--pg-url",
-      "postgresql://perf:pgsecret@db.test:5432/janosik?sslpassword=sslsecret&client_secret=pgclientsecret",
-      "--redis-url",
-      "redis://:redispass@redis.test:6379/0?auth_token=redissecretquery",
-    ]),
-    {},
-  );
-  const report = buildReport({
-    ...fixture(),
-    config,
-    pg: {
-      enabled: true,
-      available: true,
-      url: "postgresql://db.test:5432/janosik",
-      topByCalls: [],
-      topByTotalTime: [],
-    },
-  });
-  const json = JSON.stringify(report);
-  const markdown = renderMarkdown(report);
-  for (const secret of [
-    "hunter2",
-    "pgsecret",
-    "redispass",
-    "alice:",
-    "sslsecret",
-    "pgclientsecret",
-    "basedsecret",
-    "redissecretquery",
-  ]) {
-    assert.equal(json.includes(secret), false, `JSON leaked ${secret}`);
-    assert.equal(markdown.includes(secret), false, `Markdown leaked ${secret}`);
+test("report output never contains URL userinfo or a password", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-redact-"));
+  let report;
+  try {
+    const pgFile = path.join(directory, "pg.url");
+    const redisFile = path.join(directory, "redis.url");
+    await writeFile(
+      pgFile,
+      "postgresql://perf:pgsecret@db.test:5432/janosik?sslpassword=sslsecret&client_secret=pgclientsecret\n",
+      "utf8",
+    );
+    await writeFile(
+      redisFile,
+      "redis://:redispass@redis.test:6379/0?auth_token=redissecretquery\n",
+      "utf8",
+    );
+    const config = resolveConfig(
+      parseCli([
+        "--mock",
+        "--pg-url-file",
+        pgFile,
+        "--redis-url-file",
+        redisFile,
+      ]),
+      {
+        JANOSIK_PERF_BASE_URL:
+          "http://alice:hunter2@example.test/api/v1?client_secret=basedsecret",
+      },
+    );
+    report = buildReport({
+      ...fixture(),
+      config,
+      pg: {
+        enabled: true,
+        available: true,
+        url: "postgresql://db.test:5432/janosik",
+        topByCalls: [],
+        topByTotalTime: [],
+      },
+    });
+    const json = JSON.stringify(report);
+    const markdown = renderMarkdown(report);
+    for (const secret of [
+      "hunter2",
+      "pgsecret",
+      "redispass",
+      "alice:",
+      "sslsecret",
+      "pgclientsecret",
+      "basedsecret",
+      "redissecretquery",
+    ]) {
+      assert.equal(json.includes(secret), false, `JSON leaked ${secret}`);
+      assert.equal(
+        markdown.includes(secret),
+        false,
+        `Markdown leaked ${secret}`,
+      );
+    }
+    assert.match(
+      json,
+      /"baseUrl":"http:\/\/example\.test\/api\/v1\?client_secret=%5Bredacted%5D"/,
+    );
+    assert.equal(json.includes("perf@db.test"), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
-  assert.match(
-    json,
-    /"baseUrl":"http:\/\/example\.test\/api\/v1\?client_secret=%5Bredacted%5D"/,
-  );
-  assert.equal(json.includes("perf@db.test"), false);
 });
 
 test("API peak RSS uses VmHWM for api-proc and scenario max for preload", () => {
@@ -338,6 +364,7 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
   };
   report.scenarios[0].timedOut = true;
   report.scenarios[0].summary.cleanupAborted = 2;
+  report.scenarios[0].summary.cleanupFailed = 3;
   report.config.requireOk = true;
   report.scenarios[0].api.errors = [
     { source: "api-preload", message: "probe file disappeared" },
@@ -350,6 +377,7 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
   assert.match(markdown, /live at hold start\/end 1\/0/);
   assert.match(markdown, /scenario timer cut the run/);
   assert.match(markdown, /Harness-aborted claim cleanup: 2/);
+  assert.match(markdown, /Failed claim cleanup: 3/);
   assert.match(markdown, /--require-ok.*exits 1/);
   assert.match(markdown, /Probe errors: api-preload: probe file disappeared/);
 });

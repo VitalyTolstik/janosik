@@ -5,7 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { redactUrl } from "./redact.mjs";
+import { hasUrlCredentials, redactUrl } from "./redact.mjs";
 
 export const TASK = "TASK-200.1";
 export const DEFAULT_BASE_URL = "http://localhost:3000/api/v1";
@@ -125,6 +125,7 @@ const SCENARIO_LIST = /^[A-Za-z0-9]+$/;
 export const CLI_OPTIONS = {
   scenario: { type: "string", multiple: true, short: "s" },
   "base-url": { type: "string" },
+  "base-url-file": { type: "string" },
   token: { type: "string", multiple: true },
   "token-file": { type: "string", multiple: true },
   board: { type: "string", multiple: true },
@@ -159,11 +160,14 @@ export const CLI_OPTIONS = {
   "api-probe": { type: "string" },
   "api-inspect": { type: "string" },
   "cpu-profile": { type: "string" },
+  "report-only": { type: "string" },
   "pg-url": { type: "string" },
+  "pg-url-file": { type: "string" },
   psql: { type: "string" },
   "pg-activity": { type: "boolean" },
   "pg-activity-interval": { type: "string" },
   "redis-url": { type: "string" },
+  "redis-url-file": { type: "string" },
   "redis-cli": { type: "string" },
   mock: { type: "boolean" },
   "mock-port": { type: "string" },
@@ -184,6 +188,50 @@ export function splitList(value) {
 
 function takeList(value) {
   return splitList(value);
+}
+
+function readValueFile(file, option) {
+  if (file === undefined || file === "") return undefined;
+  try {
+    const text = readFileSync(file, "utf8").trim();
+    if (text === "") throw new Error("file is empty");
+    return text;
+  } catch (error) {
+    throw new Error(
+      `cannot read ${option} ${file}: ${error instanceof Error ? error.message : error}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * Resolve a URL option without putting credentials in argv. A credential-free
+ * `--url` is allowed for convenience; a credential-bearing one is rejected
+ * because `/proc/<pid>/cmdline` (and `ps`) exposes it to other users.
+ */
+function resolveUrlValue({
+  cliValue,
+  fileValue,
+  envValue,
+  option,
+  fileOption,
+  envName,
+  fallback,
+}) {
+  if (cliValue !== undefined) {
+    if (hasUrlCredentials(cliValue)) {
+      throw new Error(
+        `${option} must not contain credentials in argv (visible through /proc/<pid>/cmdline); set ${envName} or use ${fileOption}`,
+      );
+    }
+    return String(cliValue);
+  }
+  const fromFile = readValueFile(fileValue, fileOption);
+  if (fromFile !== undefined) return fromFile;
+  if (typeof envValue === "string" && envValue.trim() !== "") {
+    return envValue.trim();
+  }
+  return fallback;
 }
 
 function readTokenFiles(value) {
@@ -449,10 +497,17 @@ export function resolveConfig(cliValues = {}, env = {}) {
     }
   }
 
-  const baseUrl = String(cliValues["base-url"] ?? DEFAULT_BASE_URL).replace(
-    /\/+$/,
-    "",
-  );
+  const baseUrl = String(
+    resolveUrlValue({
+      cliValue: cliValues["base-url"],
+      fileValue: cliValues["base-url-file"],
+      envValue: env.JANOSIK_PERF_BASE_URL,
+      option: "--base-url",
+      fileOption: "--base-url-file",
+      envName: "JANOSIK_PERF_BASE_URL",
+      fallback: DEFAULT_BASE_URL,
+    }),
+  ).replace(/\/+$/, "");
   if (!/^https?:\/\//.test(baseUrl)) {
     throw new Error("--base-url must start with http:// or https://");
   }
@@ -514,12 +569,27 @@ export function resolveConfig(cliValues = {}, env = {}) {
     apiProbe: cliValues["api-probe"],
     apiInspect,
     cpuProfile: cliValues["cpu-profile"],
-    pgUrl: cliValues["pg-url"] ?? (mock ? undefined : env.JANOSIK_PERF_PG_URL),
+    pgUrl: resolveUrlValue({
+      cliValue: cliValues["pg-url"],
+      fileValue: cliValues["pg-url-file"],
+      envValue: mock ? undefined : env.JANOSIK_PERF_PG_URL,
+      option: "--pg-url",
+      fileOption: "--pg-url-file",
+      envName: "JANOSIK_PERF_PG_URL",
+      fallback: undefined,
+    }),
     pgActivity: cliValues["pg-activity"] === true,
     pgActivityIntervalMs: activityInterval ?? 2_000,
     psql: cliValues.psql ?? "psql",
-    redisUrl:
-      cliValues["redis-url"] ?? (mock ? undefined : env.JANOSIK_PERF_REDIS_URL),
+    redisUrl: resolveUrlValue({
+      cliValue: cliValues["redis-url"],
+      fileValue: cliValues["redis-url-file"],
+      envValue: mock ? undefined : env.JANOSIK_PERF_REDIS_URL,
+      option: "--redis-url",
+      fileOption: "--redis-url-file",
+      envName: "JANOSIK_PERF_REDIS_URL",
+      fallback: undefined,
+    }),
     redisCli: cliValues["redis-cli"] ?? "redis-cli",
     mock,
     mockPort: overrides.mockPort ?? 0,
@@ -653,6 +723,7 @@ export function usage() {
     "  npm run perf:smoke",
     "",
     "Secrets: set JANOSIK_PERF_TOKEN (pool) or pass --token-file; argv token flags are rejected.",
+    "URLs with credentials: use JANOSIK_PERF_BASE_URL/PG_URL/REDIS_URL or --*-file; credential-bearing argv is rejected.",
     "",
     "Scenarios (docs/PERF-AGENT-SCALE.md §7.1):",
     ...ALL_SCENARIOS.map((id) => `  ${id}  ${SCENARIO_DEFS[id].title}`),
@@ -661,7 +732,8 @@ export function usage() {
     "",
     "Common options:",
     "  -s, --scenario <id[,id]>  scenario list (required; use smoke --mock)",
-    "      --base-url <url>      default http://localhost:3000/api/v1",
+    "      --base-url <url>      default http://localhost:3000/api/v1 (no credentials)",
+    "      --base-url-file <p>   read the API URL from a file",
     "      --token-file <path>   PAT pool file (newline/comma-separated; preferred over env only by precedence)",
     "      --board <id>          explicit board id; repeat or comma-separate",
     "      --boards <n>          pick the first N accessible boards (default 1)",
@@ -682,7 +754,7 @@ export function usage() {
     "      --seed <n>            deterministic jitter/mix seed (default 200001)",
     "      --lease-ms <ms>       CLAIM_CARD lease (default 300000)",
     "      --idle-endpoint <e>   board | ready (default board; ready is 200.2)",
-    "      --driver <http|mcp>   HTTP PAT loop (default) or real MCP stdio (not S3)",
+    "      --driver <http|mcp>   HTTP PAT loop (default) or real MCP stdio (S1/S2/S4 only; not S3/S5/S6)",
     "      --mcp-processes <n>   MCP process count (default: agents)",
     "      --shared-identity     allow more agents than PATs (same identity)",
     "      --require-ok          exit 1 unless every scenario is ok (not partial)",
@@ -696,11 +768,14 @@ export function usage() {
     "      --api-probe <jsonl>   sample file written by api-preload.mjs",
     "      --api-inspect <ws://…> live inspector URL; start/stop V8 Profiler",
     "      --cpu-profile <path>  API .cpuprofile file or directory (Top-10)",
-    "      --pg-url <url>        PostgreSQL URL (userinfo stripped in reports)",
+    "      --report-only <json>  attach --cpu-profile to an existing report; no load",
+    "      --pg-url <url>        PostgreSQL URL (no credentials in argv; use env/file)",
     "      --pg-activity         sample pg_stat_activity states/waits",
     "      --pg-activity-interval <dur>  sample interval (default 2s)",
+    "      --pg-url-file <p>     read the PostgreSQL URL from a file",
     "      --psql <path>         psql binary (default psql)",
-    "      --redis-url <url>     Redis URL for INFO sampling (redacted)",
+    "      --redis-url <url>     Redis URL for INFO sampling (no credentials in argv)",
+    "      --redis-url-file <p>  read the Redis URL from a file",
     "      --redis-cli <path>    redis-cli binary (default redis-cli)",
     "",
     "Mock:",

@@ -187,6 +187,84 @@ test("resolveConfig rejects missing PAT, bad numbers and bad URLs", () => {
   );
 });
 
+test("credential-bearing URL argv is rejected in favour of env/files", async () => {
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli([
+          "--scenario",
+          "S1",
+          "--base-url",
+          "https://user:pass@api.test/api/v1",
+        ]),
+        { JANOSIK_PERF_TOKEN: "jnk_x" },
+      ),
+    /--base-url must not contain credentials in argv.*JANOSIK_PERF_BASE_URL/,
+  );
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli([
+          "--scenario",
+          "S1",
+          "--pg-url",
+          "postgresql://perf:pgsecret@db.test/perf",
+        ]),
+        { JANOSIK_PERF_TOKEN: "jnk_x" },
+      ),
+    /--pg-url must not contain credentials in argv.*JANOSIK_PERF_PG_URL/,
+  );
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli([
+          "--scenario",
+          "S1",
+          "--redis-url",
+          "redis://redis.test/0?auth_token=secret",
+        ]),
+        { JANOSIK_PERF_TOKEN: "jnk_x" },
+      ),
+    /--redis-url must not contain credentials in argv/,
+  );
+
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-urls-"));
+  try {
+    const baseFile = path.join(directory, "base.url");
+    const pgFile = path.join(directory, "pg.url");
+    await writeFile(baseFile, "https://file.test/api/v1\n", "utf8");
+    await writeFile(pgFile, "postgresql://file@db.test/perf\n", "utf8");
+    const config = resolveConfig(
+      parseCli([
+        "--scenario",
+        "S1",
+        "--base-url-file",
+        baseFile,
+        "--pg-url-file",
+        pgFile,
+      ]),
+      {
+        JANOSIK_PERF_TOKEN: "jnk_x",
+        JANOSIK_PERF_BASE_URL: "https://env.test/api/v1",
+        JANOSIK_PERF_PG_URL: "postgresql://env@db.test/perf",
+        JANOSIK_PERF_REDIS_URL: "redis://redis.test:6379/0",
+      },
+    );
+    assert.equal(config.baseUrl, "https://file.test/api/v1");
+    assert.equal(config.pgUrl, "postgresql://file@db.test/perf");
+    assert.equal(config.redisUrl, "redis://redis.test:6379/0");
+    assert.equal(
+      resolveConfig(parseCli(["--scenario", "S1"]), {
+        JANOSIK_PERF_TOKEN: "jnk_x",
+        JANOSIK_PERF_BASE_URL: "https://env.test/api/v1",
+      }).baseUrl,
+      "https://env.test/api/v1",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("scenarioConfig applies documented defaults and smoke overrides", () => {
   const real = resolveConfig(
     parseCli(["--scenario", "S2", "--base-url", "http://example.test"]),
@@ -262,27 +340,42 @@ test("validateScenarioConfig rejects zero loops and bad S4/S5 windows", () => {
   assert.throws(() => validateScenarioConfig(s5, "S5"), /hold must be greater/);
 });
 
-test("publicConfig redacts URL userinfo and contains no token material", () => {
-  const config = resolveConfig(
-    parseCli([
-      "--mock",
-      "--base-url",
-      "http://user:pass@example.test/api/v1",
-      "--pg-url",
-      "postgresql://perf:s3cret@db.test:5432/janosik",
-      "--redis-url",
-      "redis://:redispass@redis.test:6379/0",
-    ]),
-    {},
-  );
-  const sanitized = JSON.stringify(publicConfig(config));
-  assert.equal(sanitized.includes("perf-smoke-token"), false);
-  assert.equal(sanitized.includes("s3cret"), false);
-  assert.equal(sanitized.includes("redispass"), false);
-  assert.equal(sanitized.includes("user:pass@"), false);
-  assert.match(sanitized, /"tokenCount":2/);
-  assert.equal(sanitized.includes("jnk_"), false);
-  assert.equal(publicConfig(config).requireOk, false);
+test("publicConfig redacts URL userinfo and contains no token material", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-public-"));
+  try {
+    const pgFile = path.join(directory, "pg.url");
+    const redisFile = path.join(directory, "redis.url");
+    await writeFile(
+      pgFile,
+      "postgresql://perf:s3cret@db.test:5432/janosik\n",
+      "utf8",
+    );
+    await writeFile(
+      redisFile,
+      "redis://:redispass@redis.test:6379/0\n",
+      "utf8",
+    );
+    const config = resolveConfig(
+      parseCli([
+        "--mock",
+        "--pg-url-file",
+        pgFile,
+        "--redis-url-file",
+        redisFile,
+      ]),
+      { JANOSIK_PERF_BASE_URL: "http://user:pass@example.test/api/v1" },
+    );
+    const sanitized = JSON.stringify(publicConfig(config));
+    assert.equal(sanitized.includes("perf-smoke-token"), false);
+    assert.equal(sanitized.includes("s3cret"), false);
+    assert.equal(sanitized.includes("redispass"), false);
+    assert.equal(sanitized.includes("user:pass@"), false);
+    assert.match(sanitized, /"tokenCount":2/);
+    assert.equal(sanitized.includes("jnk_"), false);
+    assert.equal(publicConfig(config).requireOk, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("mock recycle falls back to an ADMIN token and records requireOk", () => {
@@ -411,6 +504,9 @@ test("usage documents scenarios, probes, drivers and exit semantics", () => {
   assert.match(text, /perf:smoke/);
   assert.match(text, /--api-probe/);
   assert.match(text, /--cpu-profile/);
+  assert.match(text, /--report-only/);
+  assert.match(text, /--base-url-file/);
+  assert.match(text, /--pg-url-file/);
   assert.match(text, /--pg-activity/);
   assert.match(text, /--redis-url/);
   assert.match(text, /--driver/);

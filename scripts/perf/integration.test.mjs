@@ -101,6 +101,18 @@ test("real mode writes JSON and Markdown with no 400s (out-of-process mock)", as
       }),
       "utf8",
     );
+    const pgFile = path.join(directory, "pg.url");
+    const redisFile = path.join(directory, "redis.url");
+    await writeFile(
+      pgFile,
+      "postgresql://perf:pgsecret@127.0.0.1:1/perf?sslpassword=sslsecret&client_secret=pgclientsecret\n",
+      "utf8",
+    );
+    await writeFile(
+      redisFile,
+      "redis://:redissecret@127.0.0.1:1/0?auth_token=redisquerysecret\n",
+      "utf8",
+    );
     const result = await run(
       process.execPath,
       [
@@ -117,15 +129,15 @@ test("real mode writes JSON and Markdown with no 400s (out-of-process mock)", as
         "150ms",
         "--duration",
         "1200ms",
-        "--pg-url",
-        "postgresql://perf:pgsecret@127.0.0.1:1/perf?sslpassword=sslsecret&client_secret=pgclientsecret",
+        "--pg-url-file",
+        pgFile,
         "--psql",
         "/definitely/not-psql",
         "--pg-activity",
         "--cpu-profile",
         cpuPath,
-        "--redis-url",
-        "redis://:redissecret@127.0.0.1:1/0?auth_token=redisquerysecret",
+        "--redis-url-file",
+        redisFile,
         "--redis-cli",
         "/definitely/not-redis-cli",
         "--output",
@@ -327,6 +339,37 @@ test("first Ctrl-C writes a partial report and exits 130", async () => {
   }
 });
 
+test("credential-bearing URL argv is rejected before load", async () => {
+  for (const [option, value, envName] of [
+    [
+      "--base-url",
+      "https://user:secret@api.test/api/v1",
+      "JANOSIK_PERF_BASE_URL",
+    ],
+    [
+      "--pg-url",
+      "postgresql://perf:secret@db.test/perf",
+      "JANOSIK_PERF_PG_URL",
+    ],
+    [
+      "--redis-url",
+      "redis://:secret@redis.test:6379/0",
+      "JANOSIK_PERF_REDIS_URL",
+    ],
+  ]) {
+    const result = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--mock",
+      option,
+      value,
+    ]);
+    assert.equal(result.code, 2, result.stderr);
+    assert.match(result.stderr, new RegExp(`set ${envName}`));
+  }
+});
+
 test("standalone mock applies the same board/card limits", async () => {
   const mock = await startMockProcess({
     MOCK_BOARDS: "17",
@@ -340,12 +383,26 @@ test("standalone mock applies the same board/card limits", async () => {
   }
 });
 
-test("harness argv contains no PAT even though it authenticates", async () => {
+test("harness argv contains no PAT or URL credentials", async () => {
   const mock = await startMockProcess();
   const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-argv-"));
   try {
     const output = path.join(directory, "argv.json");
     const token = "jnk_argv_secret_must_not_leak";
+    const pgSecret = "pgsecret_must_not_leak";
+    const redisSecret = "redissecret_must_not_leak";
+    const pgFile = path.join(directory, "pg.url");
+    const redisFile = path.join(directory, "redis.url");
+    await writeFile(
+      pgFile,
+      `postgresql://perf:${pgSecret}@127.0.0.1:1/perf\n`,
+      "utf8",
+    );
+    await writeFile(
+      redisFile,
+      `redis://:${redisSecret}@127.0.0.1:1/0\n`,
+      "utf8",
+    );
     const child = spawn(
       process.execPath,
       [
@@ -360,6 +417,14 @@ test("harness argv contains no PAT even though it authenticates", async () => {
         "1",
         "--duration",
         "2s",
+        "--pg-url-file",
+        pgFile,
+        "--psql",
+        "/definitely/not-psql",
+        "--redis-url-file",
+        redisFile,
+        "--redis-cli",
+        "/definitely/not-redis-cli",
         "--output",
         output,
       ],
@@ -385,6 +450,10 @@ test("harness argv contains no PAT even though it authenticates", async () => {
     assert.match(cmdline, /agent-scale\.mjs/);
     assert.equal(cmdline.includes(token), false);
     assert.equal(cmdline.includes("--token"), false);
+    assert.equal(cmdline.includes(pgSecret), false);
+    assert.equal(cmdline.includes(redisSecret), false);
+    assert.equal(cmdline.includes("--pg-url "), false);
+    assert.equal(cmdline.includes("--redis-url "), false);
     child.kill("SIGTERM");
     await closed;
   } finally {
@@ -495,6 +564,66 @@ test("a failed --api-inspect start still writes a failed report", async () => {
     assert.equal(report.instrumentationFailed, true);
     assert.match(report.instrumentationError, /api-inspect failed/);
     assert.equal(report.cpuProfile.available, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("--report-only attaches a static profile without rerunning the load", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "janosik-report-only-"),
+  );
+  try {
+    const output = path.join(directory, "run.json");
+    const profile = path.join(directory, "static.cpuprofile");
+    const first = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--mock",
+      "--agents",
+      "1",
+      "--duration",
+      "300ms",
+      "--output",
+      output,
+    ]);
+    assert.equal(first.code, 0, first.stderr);
+    const before = JSON.parse(await readFile(output, "utf8"));
+    await writeFile(
+      profile,
+      JSON.stringify({
+        startTime: 0,
+        endTime: 1_000_000,
+        samples: [1, 1],
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: "staticHot",
+              url: "file:///app/old.js",
+              lineNumber: 2,
+            },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const attach = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(attach.code, 0, attach.stderr);
+    const after = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(after.scenarios.length, before.scenarios.length);
+    assert.equal(after.generatedAt, before.generatedAt);
+    assert.equal(after.cpuProfile.available, true);
+    assert.equal(after.cpuProfile.top[0].function, "staticHot");
+    const markdown = await readFile(output.replace(/\.json$/, ".md"), "utf8");
+    assert.match(markdown, /staticHot/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
