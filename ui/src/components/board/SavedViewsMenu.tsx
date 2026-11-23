@@ -103,6 +103,17 @@ const WRITE_ERROR_LABEL: Record<SavedViewsWriteError, MessageKey> = {
 /** Keyed so a clean apply can clear the previous view's drift notice. */
 const DRIFT_TOAST_KEY = "saved-views-drift";
 
+/**
+ * Filled actions need their own tokens: `--primary`/`--danger` are accent and
+ * text tones, and white 12 px text on them measures 3.68:1 / 3.76:1 in dark.
+ * `--action-*` is the AA-checked fill pair (5.17:1 / 6.47:1 with white).
+ * The override is scoped here so the shared Button fill stays unchanged.
+ */
+const PRIMARY_ACTION_CLASS =
+  "!bg-[var(--action-primary)] hover:!bg-[color-mix(in_oklab,var(--action-primary)_92%,#000)]";
+const DANGER_ACTION_CLASS =
+  "!bg-[var(--action-danger)] hover:!bg-[color-mix(in_oklab,var(--action-danger)_92%,#000)]";
+
 type PanelError = SavedViewError | SavedViewsWriteError;
 type Mode =
   { kind: "list" } | { kind: "create" } | { kind: "rename"; name: string };
@@ -191,7 +202,7 @@ export function SavedViewsMenu({
                 {count > 0 && (
                   <span
                     aria-hidden
-                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-action-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
                     data-testid="saved-views-count-badge"
                   >
                     {count}
@@ -565,7 +576,7 @@ function SavedViewsPanel({
           <p
             role="alert"
             data-testid="saved-views-error"
-            className="rounded-md border border-danger/40 bg-danger/10 px-2 py-1.5 text-xs text-danger"
+            className="rounded-md border border-danger/40 bg-danger/10 px-2 py-1.5 text-xs text-(--chip-red)"
           >
             {errorText(error)}
           </p>
@@ -608,7 +619,7 @@ function SavedViewsPanel({
               <p
                 id="saved-view-name-error"
                 role="alert"
-                className="text-xs text-danger"
+                className="text-xs text-(--chip-red)"
                 data-testid="saved-views-duplicate"
               >
                 {t("savedViews.duplicate")}
@@ -619,7 +630,7 @@ function SavedViewsPanel({
                 type="submit"
                 size="sm"
                 disabled={!canCreate}
-                className="max-lg:h-11"
+                className={`max-lg:h-11 ${PRIMARY_ACTION_CLASS}`}
                 data-testid="saved-views-confirm-save"
               >
                 {t("savedViews.save")}
@@ -710,7 +721,7 @@ function SavedViewsPanel({
                         <p
                           id="saved-view-rename-error"
                           role="alert"
-                          className="text-xs text-danger"
+                          className="text-xs text-(--chip-red)"
                         >
                           {t("savedViews.duplicate")}
                         </p>
@@ -720,7 +731,7 @@ function SavedViewsPanel({
                           type="submit"
                           size="sm"
                           disabled={!canRename}
-                          className="max-lg:h-11"
+                          className={`max-lg:h-11 ${PRIMARY_ACTION_CLASS}`}
                           data-testid="saved-views-confirm-rename"
                         >
                           {t("savedViews.renameSave")}
@@ -758,7 +769,7 @@ function SavedViewsPanel({
                             name: saved.name,
                           })}
                           onClick={() => deleteView(saved.name)}
-                          className="h-11 lg:h-8"
+                          className={`h-11 lg:h-8 ${DANGER_ACTION_CLASS}`}
                           data-testid="saved-views-confirm-delete"
                         >
                           {t("savedViews.delete")}
@@ -780,14 +791,16 @@ function SavedViewsPanel({
                         ref={setApplyRef(saved.name)}
                         type="button"
                         onClick={() => applyView(saved)}
-                        aria-label={t("savedViews.applyAria", {
-                          name: saved.name,
-                          view: projectionLabel(saved),
-                        })}
                         title={saved.name}
                         data-saved-view-apply
                         className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
+                        {/* WCAG 2.5.3: keep the visible name/projection inside
+                          the accessible name, in order, and add the verb as
+                          visually hidden content instead of an aria-label. */}
+                        <span className="sr-only">
+                          {t("savedViews.applyLabel")}
+                        </span>{" "}
                         <Bookmark
                           className="h-4 w-4 shrink-0 text-muted-foreground"
                           aria-hidden
@@ -795,7 +808,7 @@ function SavedViewsPanel({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">
                             {saved.name}
-                          </span>
+                          </span>{" "}
                           <span className="block text-[11px] text-muted-foreground">
                             {projectionLabel(saved)}
                           </span>

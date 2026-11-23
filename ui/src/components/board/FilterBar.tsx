@@ -850,7 +850,9 @@ export function FilterBar({
                   aria-hidden
                 />
               )}
-              {member ? userLabel(member.displayName, member.email) : userId}
+              {member
+                ? userLabel(member.displayName, member.email)
+                : t("filter.assignee.unknown")}
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}

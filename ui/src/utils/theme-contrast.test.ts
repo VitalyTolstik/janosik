@@ -207,6 +207,23 @@ describe.each(themes)("$name theme contrast pairs", ({ name, css, ui }) => {
     }
   });
 
+  it("filled action buttons clear AA with white text", () => {
+    // Filled primary/destructive actions use dedicated fill tokens: the raw
+    // `--primary`/`--danger` accents only reach 3.68:1/3.76:1 with white
+    // labels in dark. Saved views is the first consumer (TASK-177.20).
+    for (const [fill, name] of [
+      ["--action-primary", "primary"],
+      ["--action-danger", "danger"],
+    ] as const) {
+      const value = ui[fill];
+      expect(value, `${fill} is defined`).toBeTruthy();
+      expect(
+        contrast(css["--primary-foreground"], value),
+        `white on ${name} action fill`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it("status chips clear AA on their 10% and 15% fills", () => {
     const pairs = [
       ["--danger", "--chip-red"],

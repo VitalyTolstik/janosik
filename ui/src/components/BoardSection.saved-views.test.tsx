@@ -273,6 +273,13 @@ describe("BoardSection saved views integration", () => {
         "f.assignee=u-1",
       ),
     );
+    // The roster failed/never loaded: the preserved chip keeps the filter
+    // value but names it for a human instead of showing the raw uuid.
+    const assigneeChip = document.querySelector(
+      '[data-testid="filter-chip"][data-facet="assignee"]',
+    );
+    expect(assigneeChip).toHaveTextContent("Unknown user");
+    expect(assigneeChip).not.toHaveTextContent("u-1");
     await screen.findByRole("table", {}, { timeout: 15_000 });
     expect(loadSavedViews("local", BOARD_A).views[0].filter.assignees).toEqual([
       "u-1",

@@ -128,7 +128,7 @@ describe("SavedViewsMenu", () => {
     expect(onApply).not.toHaveBeenCalled();
     expect(
       screen.getByRole("button", {
-        name: /Apply view.*Overdue work.*Table/,
+        name: "Apply view Overdue work Table",
       }),
     ).toBeInTheDocument();
     await waitFor(() =>
@@ -147,9 +147,13 @@ describe("SavedViewsMenu", () => {
     const { onApply } = renderMenu();
     await openMenu();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Apply view.*Clean.*Calendar/ }),
-    );
+    const apply = screen.getByRole("button", {
+      name: "Apply view Clean Calendar",
+    });
+    expect(apply).not.toHaveAttribute("aria-label");
+    // The visible name and projection stay inside the accessible name, in
+    // order (WCAG 2.5.3) — the verb is the hidden prefix.
+    await userEvent.click(apply);
 
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ query: "bug" }),

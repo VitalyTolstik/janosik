@@ -227,7 +227,10 @@ describe("FilterBar", () => {
     // Every active facet is visible, not just the due/label/created trio.
     expect(screen.getAllByTestId("filter-chip")).toHaveLength(4);
     expect(screen.getByText("High")).toBeInTheDocument();
-    expect(screen.getByText("u-1")).toBeInTheDocument();
+    // With no roster (request failed/not loaded) a preserved assignee keeps
+    // its filter value but shows a friendly fallback, never the raw uuid.
+    expect(screen.getByText("Unknown user")).toBeInTheDocument();
+    expect(screen.queryByText("u-1")).not.toBeInTheDocument();
     expect(screen.getByText("Blocked")).toBeInTheDocument();
     expect(screen.getByText("Has links")).toBeInTheDocument();
 
