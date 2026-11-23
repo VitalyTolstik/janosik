@@ -27,6 +27,8 @@ export interface GatewaySession {
   createdAt: number;
   lastSeenAt: number;
   activeRequests: number;
+  /** True while `server.connect` is still running. */
+  initializing: boolean;
   closed: boolean;
 }
 
@@ -142,7 +144,6 @@ export class SessionManager {
     const transport = new StreamableHTTPServerTransport({
       ...this.transportOptions,
       sessionIdGenerator: () => id,
-      enableJsonResponse: true,
       onsessioninitialized: (sessionId) => {
         if (session === null) return;
         if (session.closed) {
@@ -167,6 +168,7 @@ export class SessionManager {
       createdAt: this.now(),
       lastSeenAt: this.now(),
       activeRequests: 0,
+      initializing: true,
       closed: false,
     };
     this.pending.add(session);
@@ -183,9 +185,16 @@ export class SessionManager {
 
     try {
       await server.connect(transport);
+      session.initializing = false;
+      // A shutdown may have closed the pending session while connect awaited.
+      if (this.closed || session.closed) {
+        await this.close(session, "closed_during_open");
+        return { ok: false, reason: "closed" };
+      }
     } catch (error) {
       this.pending.delete(session);
       session.closed = true;
+      session.initializing = false;
       await transport.close().catch(() => undefined);
       this.logger.error("session_open_failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -254,6 +263,7 @@ export class SessionManager {
     const targets = [...expired].filter(
       (session) =>
         !session.closed &&
+        !session.initializing &&
         session.activeRequests === 0 &&
         now - session.lastSeenAt >= this.idleMs,
     );
@@ -277,7 +287,12 @@ export class SessionManager {
   async closeIdle(reason = "shutdown"): Promise<void> {
     const targets = [
       ...new Set<GatewaySession>([...this.sessions.values(), ...this.pending]),
-    ].filter((session) => !session.closed && session.activeRequests === 0);
+    ].filter(
+      (session) =>
+        !session.closed &&
+        !session.initializing &&
+        session.activeRequests === 0,
+    );
     await Promise.allSettled(
       targets.map((session) => this.close(session, reason)),
     );

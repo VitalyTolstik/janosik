@@ -7,6 +7,10 @@
  * The stdio entry point (`dist/index.js`) is unchanged for desktop clients.
  */
 
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { ConfigError } from "./config.js";
 import { HTTP_USAGE, loadGatewayConfig } from "./http-config.js";
 import { createLogger, type Logger } from "./http-log.js";
@@ -81,9 +85,27 @@ export async function main(
   return gateway;
 }
 
-main().catch((error: unknown) => {
-  if (!(error instanceof ConfigError)) {
-    startupError(error instanceof Error ? error.message : String(error));
+/**
+ * True when this module is the process entry point. Symlinks (npm bin/npx)
+ * are resolved on both sides, and importing the module stays side-effect free.
+ */
+export function isEntryPoint(entry: string | undefined): boolean {
+  if (entry === undefined || entry === "") return false;
+  try {
+    return (
+      realpathSync(path.resolve(entry)) ===
+      realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
   }
-  process.exit(1);
-});
+}
+
+if (isEntryPoint(process.argv[1])) {
+  main().catch((error: unknown) => {
+    if (!(error instanceof ConfigError)) {
+      startupError(error instanceof Error ? error.message : String(error));
+    }
+    process.exit(1);
+  });
+}

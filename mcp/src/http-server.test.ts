@@ -6,12 +6,19 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_TOOLSETS } from "./config.js";
 import type { GatewayConfig } from "./http-config.js";
 import { createBufferLogger } from "./http-log.js";
-import { createHttpGateway, type HttpGateway } from "./http-server.js";
+import {
+  createHttpGateway,
+  type HttpGateway,
+  type HttpGatewayOptions,
+} from "./http-server.js";
 
 const ALPHA = "jnk_alpha_secret";
 const BETA = "jnk_beta_secret";
@@ -36,6 +43,8 @@ interface Upstream {
   url: string;
   calls: UpstreamCall[];
   ready: boolean;
+  readyCalls: number;
+  readyDelayMs: number;
   close(): Promise<void>;
 }
 
@@ -71,6 +80,8 @@ async function startUpstream(): Promise<Upstream> {
     url: "",
     calls: [],
     ready: true,
+    readyCalls: 0,
+    readyDelayMs: 0,
     close: async () => closeServer(server),
   };
   const server = createHttpServer((req: IncomingMessage, res) => {
@@ -78,9 +89,41 @@ async function startUpstream(): Promise<Upstream> {
     const authorization = req.headers.authorization;
     state.calls.push({ method: req.method ?? "GET", path, authorization });
     if (path === "/api/v1/health/ready") {
-      json(res, state.ready ? 200 : 503, {
-        status: state.ready ? "ready" : "not_ready",
-      });
+      state.readyCalls += 1;
+      const respond = () =>
+        json(res, state.ready ? 200 : 503, {
+          status: state.ready ? "ready" : "not_ready",
+        });
+      if (state.readyDelayMs > 0) {
+        setTimeout(respond, state.readyDelayMs);
+      } else {
+        respond();
+      }
+      return;
+    }
+    if (path === "/api/v1/auth/me" && req.method === "GET") {
+      if (authorization === "Bearer jnk_limited_secret") {
+        res.setHeader("Retry-After", "7");
+        json(res, 429, { code: "rate_limited" });
+        return;
+      }
+      if (authorization === "Bearer jnk_auth_down_secret") {
+        json(res, 503, { code: "unavailable" });
+        return;
+      }
+      const valid =
+        authorization === `Bearer ${ALPHA}` ||
+        authorization === `Bearer ${BETA}` ||
+        authorization === "Bearer jnk_third_secret" ||
+        /^Bearer jnk_load_\d+_secret$/.test(authorization ?? "");
+      if (valid) {
+        json(res, 200, { user: { id: "u1" }, token: { id: "t1" } });
+      } else {
+        json(res, 401, {
+          message: "invalid token",
+          code: "unauthorized",
+        });
+      }
       return;
     }
     if (path === "/api/v1/boards" && req.method === "GET") {
@@ -133,6 +176,9 @@ function gatewayConfig(
     readinessUrl: `${upstream.url}/api/v1/health/ready`,
     readinessCacheMs: 0,
     readinessTimeoutMs: 1_000,
+    authValidateUrl: `${upstream.url}/api/v1/auth/me`,
+    authValidateTimeoutMs: 1_000,
+    sseKeepAliveMs: 60_000,
     trustProxy: false,
     logLevel: "debug",
     shutdownGraceMs: 1_000,
@@ -145,12 +191,14 @@ function gatewayConfig(
 async function startGateway(
   upstream: Upstream,
   overrides: Partial<GatewayConfig> = {},
+  extra: Pick<HttpGatewayOptions, "createMcpServer"> = {},
 ): Promise<RunningGateway> {
   const { logger, lines } = createBufferLogger({ level: "debug" });
   const gateway = createHttpGateway({
     config: gatewayConfig(upstream, overrides),
     logger,
     version: "test",
+    ...extra,
   });
   const address = await gateway.listen();
   const running = {
@@ -167,6 +215,26 @@ interface RpcResult {
   headers: Headers;
   text: string;
   json: Record<string, unknown> | null;
+  events: Record<string, unknown>[];
+}
+
+/** Parse complete `event: message` blocks from a POST SSE response. */
+function parseSse(text: string): Record<string, unknown>[] {
+  const events: Record<string, unknown>[] = [];
+  for (const block of text.split(/\r?\n\r?\n/)) {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (data === "") continue;
+    try {
+      events.push(JSON.parse(data) as Record<string, unknown>);
+    } catch {
+      // A keep-alive or a partial frame is not a JSON-RPC message.
+    }
+  }
+  return events;
 }
 
 async function rpc(
@@ -192,25 +260,34 @@ async function rpc(
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
   const text = await response.text();
-  let json: Record<string, unknown> | null;
-  try {
-    json = JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    json = null;
+  const contentType = response.headers.get("content-type") ?? "";
+  let json: Record<string, unknown> | null = null;
+  let events: Record<string, unknown>[] = [];
+  if (contentType.includes("text/event-stream")) {
+    events = parseSse(text);
+    if (events.length === 1) json = events[0]!;
+  } else {
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+      events = json === null ? [] : [json];
+    } catch {
+      json = null;
+    }
   }
   return {
     status: response.status,
     headers: response.headers,
     text,
     json,
+    events,
   };
 }
 
-async function initialize(
+async function initializeRaw(
   running: RunningGateway,
   token: string,
   extraHeaders: Record<string, string> = {},
-): Promise<string> {
+): Promise<{ sessionId: string; response: RpcResult }> {
   const response = await rpc(
     running,
     token,
@@ -233,7 +310,15 @@ async function initialize(
   if (initialized.status !== 202) {
     throw new Error(`initialized notification: ${initialized.status}`);
   }
-  return sessionId;
+  return { sessionId, response };
+}
+
+async function initialize(
+  running: RunningGateway,
+  token: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<string> {
+  return (await initializeRaw(running, token, extraHeaders)).sessionId;
 }
 
 async function deleteSession(
@@ -303,6 +388,90 @@ async function waitFor(
   throw new Error("condition was not met before the timeout");
 }
 
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+interface TransportMapSizes {
+  streams: number;
+  requests: number;
+  responses: number;
+}
+
+/** SDK internals used only to prove a completed POST stream is released. */
+function streamMaps(
+  running: RunningGateway,
+  sessionId: string,
+): TransportMapSizes {
+  const session = running.gateway.manager.get(sessionId);
+  if (session === undefined) {
+    return { streams: -1, requests: -1, responses: -1 };
+  }
+  const transport = session.transport as unknown as {
+    _webStandardTransport?: {
+      _streamMapping?: Map<string, unknown>;
+      _requestToStreamMapping?: Map<unknown, unknown>;
+      _requestResponseMap?: Map<unknown, unknown>;
+    };
+  };
+  const web = transport._webStandardTransport;
+  return {
+    streams: web?._streamMapping?.size ?? -1,
+    requests: web?._requestToStreamMapping?.size ?? -1,
+    responses: web?._requestResponseMap?.size ?? -1,
+  };
+}
+
+function expectStreamMapsEmpty(running: RunningGateway, sessionId: string) {
+  expect(streamMaps(running, sessionId)).toEqual({
+    streams: 0,
+    requests: 0,
+    responses: 0,
+  });
+}
+
+async function readUntil(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  needle: string,
+  timeoutMs: number,
+): Promise<string> {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const deadline = Date.now() + timeoutMs;
+  while (!buffer.includes(needle)) {
+    if (Date.now() > deadline) {
+      throw new Error(`SSE did not contain ${JSON.stringify(needle)}`);
+    }
+    const next = await Promise.race([
+      reader.read(),
+      sleep(Math.max(1, deadline - Date.now())).then(() => null),
+    ]);
+    if (next === null) continue;
+    if (next.done) break;
+    buffer += decoder.decode(next.value, { stream: true });
+  }
+  return buffer;
+}
+
+async function waitForStreamEnd(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  try {
+    while (Date.now() < deadline) {
+      const next = await Promise.race([
+        reader.read(),
+        sleep(Math.max(1, deadline - Date.now())).then(() => null),
+      ]);
+      if (next === null) continue;
+      if (next.done) return true;
+    }
+  } catch {
+    return true;
+  }
+  return false;
+}
+
 afterEach(async () => {
   await Promise.all(cleanup.splice(0).map((close) => close()));
 });
@@ -312,7 +481,14 @@ describe("MCP Streamable HTTP gateway", () => {
     const upstream = await startUpstream();
     cleanup.push(() => upstream.close());
     const running = await startGateway(upstream);
-    const sessionId = await initialize(running, ALPHA);
+    const { sessionId, response: init } = await initializeRaw(running, ALPHA);
+    expect(init.headers.get("content-type")).toContain("text/event-stream");
+    expect(init.events).toHaveLength(1);
+    const instructions =
+      (init.json as { result?: { instructions?: string } } | null)?.result
+        ?.instructions ?? "";
+    expect(instructions).toContain("Authorization: Bearer");
+    expect(instructions).not.toContain("JANOSIK_TOKEN");
 
     const tools = await rpc(
       running,
@@ -346,6 +522,137 @@ describe("MCP Streamable HTTP gateway", () => {
       status: "not_ready",
       upstream: "unavailable",
     });
+  });
+
+  it("works with the official Streamable HTTP client", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream);
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`${running.url}/mcp`),
+      {
+        requestInit: {
+          headers: { Authorization: `Bearer ${ALPHA}` },
+        },
+      },
+    );
+    const client = new Client({
+      name: "streamable-http-test",
+      version: "0.0.0",
+    });
+    try {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).toContain("janosik_list_boards");
+      const result = await client.callTool({
+        name: "janosik_list_boards",
+        arguments: { response_format: "json" },
+      });
+      const payload = result.structuredContent as {
+        boards?: Array<{ title?: string }>;
+      };
+      expect(payload.boards?.map((board) => board.title)).toEqual([
+        "Alpha board",
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("streams large results without retaining completed POST streams", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const createBigServer = () => {
+      const server = new McpServer({ name: "big-result", version: "0.0.0" });
+      server.registerTool(
+        "big_result",
+        {
+          title: "Big result",
+          description: "Returns a one-megabyte text block for the stream test.",
+          inputSchema: {},
+        },
+        async () => ({
+          content: [{ type: "text", text: "x".repeat(1024 * 1024) }],
+        }),
+      );
+      return server;
+    };
+    const running = await startGateway(
+      upstream,
+      {},
+      { createMcpServer: createBigServer },
+    );
+    const sessionId = await initialize(running, ALPHA);
+    const callBig = async (id: number) => {
+      const result = await rpc(
+        running,
+        ALPHA,
+        {
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: { name: "big_result", arguments: {} },
+        },
+        sessionId,
+      );
+      const payload = toolResult(result) as {
+        content?: Array<{ text?: string }>;
+      };
+      expect(payload.content?.[0]?.text?.length).toBe(1024 * 1024);
+      expectStreamMapsEmpty(running, sessionId);
+    };
+
+    await callBig(100);
+    const before = process.memoryUsage().heapUsed;
+    for (let index = 1; index <= 20; index += 1) await callBig(100 + index);
+    const after = process.memoryUsage().heapUsed;
+    const deltaMb = (after - before) / (1024 * 1024);
+    console.info(
+      `[stream-smoke] 20 MiB of SSE results: heap +${deltaMb.toFixed(1)} MB`,
+    );
+    expectStreamMapsEmpty(running, sessionId);
+    expect(deltaMb).toBeLessThan(32);
+  });
+
+  it("keeps GET SSE alive, stops an idle sweep and closes on DELETE", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      sessionIdleMs: 75,
+      sessionSweepMs: 10,
+      sseKeepAliveMs: 30,
+    });
+    const sessionId = await initialize(running, ALPHA);
+    const headers = {
+      authorization: `Bearer ${ALPHA}`,
+      "mcp-session-id": sessionId,
+      "mcp-protocol-version": "2025-06-18",
+      accept: "text/event-stream",
+    };
+    const response = await fetch(`${running.url}/mcp`, { headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const reader = response.body!.getReader();
+    await readUntil(reader, ": keepalive", 2_000);
+
+    // An open stream is an active request and must outlive the idle window.
+    await sleep(200);
+    expect(running.gateway.manager.stats().sessions).toBe(1);
+    expect(running.gateway.manager.activeRequestCount()).toBe(1);
+
+    expect(await deleteSession(running, ALPHA, sessionId)).toBe(200);
+    expect(await waitForStreamEnd(reader, 2_000)).toBe(true);
+    await waitFor(() => running.gateway.manager.stats().sessions === 0);
+
+    // A client that just disappears is cleaned up by the idle sweeper.
+    const second = await initialize(running, ALPHA);
+    const secondResponse = await fetch(`${running.url}/mcp`, {
+      headers: { ...headers, "mcp-session-id": second },
+    });
+    const secondReader = secondResponse.body!.getReader();
+    await readUntil(secondReader, ": keepalive", 2_000);
+    await secondReader.cancel();
+    await waitFor(() => running.gateway.manager.stats().sessions === 0);
   });
 
   it("passes each session's token through and isolates A from B", async () => {
@@ -428,6 +735,59 @@ describe("MCP Streamable HTTP gateway", () => {
     const logs = running.logs.join("");
     expect(logs).not.toContain("jnk_never_log_this");
     expect(logs).toContain("auth_failed");
+  });
+
+  it("validates a key with the API before registering a session", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream);
+
+    const fabricated = await rpc(running, "jnk_fabricated_secret", INITIALIZE);
+    expect(fabricated.status).toBe(401);
+    expect(fabricated.json).toMatchObject({ error: "unauthorized" });
+    expect(running.gateway.manager.stats()).toMatchObject({
+      sessions: 0,
+      pending: 0,
+    });
+    expect(running.logs.join("")).toContain("auth_validation_failed");
+    expect(running.logs.join("")).not.toContain("jnk_fabricated_secret");
+
+    const limited = await rpc(running, "jnk_limited_secret", INITIALIZE);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("7");
+    expect(limited.json).toMatchObject({ error: "rate_limited" });
+    expect(running.gateway.manager.stats()).toMatchObject({
+      sessions: 0,
+      pending: 0,
+    });
+
+    const down = await rpc(running, "jnk_auth_down_secret", INITIALIZE);
+    expect(down.status).toBe(503);
+    expect(down.json).toMatchObject({ error: "auth_unavailable" });
+    expect(running.gateway.manager.stats()).toMatchObject({
+      sessions: 0,
+      pending: 0,
+    });
+
+    const valid = await initialize(running, ALPHA);
+    expect(valid).toBeTruthy();
+  });
+
+  it("single-flights concurrent readiness probes", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream);
+    upstream.readyCalls = 0;
+    upstream.readyDelayMs = 100;
+    const [a, b] = await Promise.all([
+      fetch(`${running.url}/ready`),
+      fetch(`${running.url}/ready`),
+    ]);
+    await a.body?.cancel();
+    await b.body?.cancel();
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(upstream.readyCalls).toBe(1);
   });
 
   it("enforces session limits, deletes explicitly and drains cleanly", async () => {
@@ -528,15 +888,20 @@ describe("MCP Streamable HTTP gateway", () => {
       sessionSweepMs: 0,
     });
     const before = process.memoryUsage();
+    const sessions: Array<{ token: string; id: string }> = [];
+    let tokenIndex = 0;
 
     async function addSessions(total: number): Promise<void> {
       for (let offset = 0; offset < total; offset += 20) {
         const batch = Math.min(20, total - offset);
-        await Promise.all(
-          Array.from({ length: batch }, (_, index) =>
-            initialize(running, `jnk_load_${offset + index}_secret`),
-          ),
+        const opened = await Promise.all(
+          Array.from({ length: batch }, () => {
+            const token = `jnk_load_${tokenIndex}_secret`;
+            tokenIndex += 1;
+            return initialize(running, token).then((id) => ({ token, id }));
+          }),
         );
+        sessions.push(...opened);
       }
     }
 
@@ -545,16 +910,24 @@ describe("MCP Streamable HTTP gateway", () => {
     await addSessions(400);
     expect(running.gateway.manager.stats().sessions).toBe(500);
 
+    // A tool call at the cap still uses that session's own key.
+    const last = sessions[499]!;
+    expect(await listBoards(running, last.token, last.id)).toEqual([
+      "Unknown board",
+    ]);
+
     const after = process.memoryUsage();
     const heapDeltaMb = (after.heapUsed - before.heapUsed) / (1024 * 1024);
     const rssMb = after.rss / (1024 * 1024);
     // Evidence for the DoD: 500 sessions share one process and a bounded
-    // heap, instead of 500 × 100 MB stdio processes.
+    // heap, instead of 500 × 100 MB stdio processes. The number includes the
+    // Vitest worker and the mock upstream, so treat it as an upper bound.
     console.info(
       `[http-sessions] 500 sessions: heap +${heapDeltaMb.toFixed(1)} MB, ` +
         `RSS ${rssMb.toFixed(1)} MB`,
     );
     expect(heapDeltaMb).toBeLessThan(750);
+    expect(rssMb).toBeLessThan(1_536);
 
     await running.gateway.close("test");
     expect(running.gateway.manager.stats()).toMatchObject({

@@ -96,6 +96,38 @@ describe("SessionManager", () => {
     expect(manager.stats()).toMatchObject({ sessions: 0, pending: 0 });
   });
 
+  it("never sweeps a session while its connect is still pending", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let now = 1_000;
+    const manager = makeManager({
+      idleMs: 10,
+      now: () => now,
+      createMcpServer: () => {
+        const server = new McpServer({
+          name: "session-test",
+          version: "0.0.0",
+        });
+        const connect = server.connect.bind(server);
+        server.connect = async (transport) => {
+          await gate;
+          return connect(transport);
+        };
+        return server;
+      },
+    });
+    const opening = manager.open("jnk_pending_secret");
+    now += 1_000;
+    expect(await manager.sweep()).toBe(0);
+    release();
+    expect((await opening).ok).toBe(true);
+    expect(manager.stats().pending).toBe(1);
+    now += 1_000;
+    expect(await manager.sweep()).toBe(1);
+  });
+
   it("drains active requests before closing their sessions", async () => {
     const manager = makeManager();
     const active = opened(await manager.open("jnk_active_secret"));

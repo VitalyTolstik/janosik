@@ -31,10 +31,13 @@ describe("loadGatewayConfig", () => {
       readinessUrl: "https://boards.example.com/api/v1/health/ready",
       readinessCacheMs: 5_000,
       readinessTimeoutMs: 3_000,
+      authValidateUrl: "https://boards.example.com/api/v1/auth/me",
+      authValidateTimeoutMs: 3_000,
+      sseKeepAliveMs: 15_000,
       trustProxy: false,
       logLevel: "info",
       shutdownGraceMs: 10_000,
-      requestTimeoutMs: 360_000,
+      requestTimeoutMs: 60_000,
       headersTimeoutMs: 60_000,
     });
     expect(loaded.config.allowedOrigins.size).toBe(0);
@@ -59,6 +62,9 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_READY_URL: "https://api.example.com/health/ready",
       JANOSIK_MCP_HTTP_READY_CACHE_MS: "0",
       JANOSIK_MCP_HTTP_READY_TIMEOUT_MS: "500",
+      JANOSIK_MCP_HTTP_AUTH_URL: "https://api.example.com/auth/me",
+      JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS: "400",
+      JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS: "0",
       JANOSIK_MCP_HTTP_TRUST_PROXY: "true",
       JANOSIK_MCP_HTTP_LOG_LEVEL: "debug",
       JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS: "2500",
@@ -81,6 +87,9 @@ describe("loadGatewayConfig", () => {
       readinessUrl: "https://api.example.com/health/ready",
       readinessCacheMs: 0,
       readinessTimeoutMs: 500,
+      authValidateUrl: "https://api.example.com/auth/me",
+      authValidateTimeoutMs: 400,
+      sseKeepAliveMs: 0,
       trustProxy: true,
       logLevel: "debug",
       shutdownGraceMs: 2500,
@@ -122,6 +131,9 @@ describe("loadGatewayConfig", () => {
     bad({ JANOSIK_MCP_HTTP_PATH: "/health" });
     bad({ JANOSIK_MCP_HTTP_ALLOWED_ORIGINS: "https://a.example/path" });
     bad({ JANOSIK_MCP_HTTP_READY_URL: "ftp://a.example/ready" });
+    bad({ JANOSIK_MCP_HTTP_AUTH_URL: "file:///etc/passwd" });
+    bad({ JANOSIK_MCP_HTTP_SESSION_IDLE_MS: "2147483648" });
+    bad({ JANOSIK_MCP_HTTP_READY_TIMEOUT_MS: "2147483648" });
     bad({ JANOSIK_MCP_HTTP_LOG_LEVEL: "verbose" });
     bad({ JANOSIK_MCP_HTTP_HOST: "has space" });
   });

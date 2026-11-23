@@ -20,7 +20,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import type { Config } from "./config.js";
-import { createServer as createMcpServer } from "./server.js";
+import { parseRetryAfter } from "./errors.js";
+import {
+  createServer as createMcpServer,
+  type CreateServerOptions,
+} from "./server.js";
 import type { GatewayConfig } from "./http-config.js";
 import type { Logger } from "./http-log.js";
 import {
@@ -48,7 +52,10 @@ export interface HttpGatewayOptions {
   config: GatewayConfig;
   logger: Logger;
   /** Injection points for tests; production uses the stdio server factory. */
-  createMcpServer?: (config: Config) => McpServer;
+  createMcpServer?: (
+    config: Config,
+    options?: CreateServerOptions,
+  ) => McpServer;
   fetchImpl?: typeof fetch;
   version?: string;
 }
@@ -190,7 +197,8 @@ function unauthorized(res: ServerResponse): void {
     401,
     {
       error: "unauthorized",
-      message: "A personal API key is required in Authorization: Bearer ….",
+      message:
+        "A valid personal API key is required in Authorization: Bearer ….",
     },
     { "WWW-Authenticate": 'Bearer realm="janosik-mcp"' },
   );
@@ -243,13 +251,16 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     maxSessionsPerToken: config.maxSessionsPerToken,
     idleMs: config.sessionIdleMs,
     sweepMs: config.sessionSweepMs,
-    createMcpServer: (token) => factory({ ...config.base, token }),
+    createMcpServer: (token) =>
+      factory({ ...config.base, token }, { transport: "http" }),
     logger,
+    transportOptions: { keepAliveMs: config.sseKeepAliveMs },
   });
 
   let closing = false;
   let closePromise: Promise<void> | null = null;
   let readinessCache: { at: number; ok: boolean } | null = null;
+  let readinessInFlight: Promise<boolean> | null = null;
 
   function originAllowed(origin: string | undefined): boolean {
     if (origin === undefined || origin === "") return true;
@@ -269,16 +280,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     };
   }
 
-  async function probeReadiness(force = false): Promise<boolean> {
-    if (closing) return false;
-    const now = Date.now();
-    if (
-      !force &&
-      readinessCache !== null &&
-      now - readinessCache.at < config.readinessCacheMs
-    ) {
-      return readinessCache.ok;
-    }
+  async function runReadinessProbe(): Promise<boolean> {
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(),
@@ -290,6 +292,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       const response = await fetchImpl(config.readinessUrl, {
         method: "GET",
         headers: { Accept: "application/json" },
+        redirect: "manual",
         signal: controller.signal,
       });
       ok = response.ok;
@@ -301,6 +304,74 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       readinessCache = { at: Date.now(), ok };
     }
     return ok;
+  }
+
+  /** One upstream probe at a time, shared by concurrent `/ready` callers. */
+  async function probeReadiness(force = false): Promise<boolean> {
+    if (closing) return false;
+    const now = Date.now();
+    if (
+      !force &&
+      readinessCache !== null &&
+      now - readinessCache.at < config.readinessCacheMs
+    ) {
+      return readinessCache.ok;
+    }
+    if (readinessInFlight !== null) return readinessInFlight;
+    const probe = runReadinessProbe();
+    readinessInFlight = probe;
+    try {
+      return await probe;
+    } finally {
+      if (readinessInFlight === probe) readinessInFlight = null;
+    }
+  }
+
+  type TokenValidation =
+    | { ok: true }
+    | {
+        ok: false;
+        reason: "invalid" | "rate_limited" | "unavailable";
+        retryAfter?: number;
+      };
+
+  /**
+   * Prove that a personal key exists before a session is registered. This is
+   * a cheap read (`/auth/me`) and prevents fabricated keys from consuming the
+   * global session pool. The token itself is never logged.
+   */
+  async function validateToken(token: string): Promise<TokenValidation> {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      config.authValidateTimeoutMs,
+    );
+    timer.unref?.();
+    try {
+      const response = await fetchImpl(config.authValidateUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+        redirect: "manual",
+        signal: controller.signal,
+      });
+      const retryAfter = parseRetryAfter(response.headers.get("retry-after"));
+      await response.body?.cancel().catch(() => undefined);
+      if (response.ok) return { ok: true };
+      if (response.status === 401 || response.status === 403) {
+        return { ok: false, reason: "invalid" };
+      }
+      if (response.status === 429) {
+        return { ok: false, reason: "rate_limited", retryAfter };
+      }
+      return { ok: false, reason: "unavailable" };
+    } catch {
+      return { ok: false, reason: "unavailable" };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
@@ -440,6 +511,40 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
             "An Mcp-Session-Id header is required after initialize.",
           );
         }
+        const validation = await validateToken(token);
+        if (!validation.ok) {
+          logLevel = "warn";
+          logger.warn("auth_validation_failed", {
+            requestId,
+            reason: validation.reason,
+          });
+          if (validation.reason === "invalid") {
+            unauthorized(res);
+            return;
+          }
+          if (validation.reason === "rate_limited") {
+            sendJson(
+              res,
+              429,
+              {
+                error: "rate_limited",
+                message: "The API rate-limited key validation; retry shortly.",
+              },
+              {
+                "Retry-After": String(
+                  Math.max(1, Math.ceil(validation.retryAfter ?? 5)),
+                ),
+              },
+            );
+            return;
+          }
+          throw new GatewayHttpError(
+            503,
+            "auth_unavailable",
+            "The API could not validate this key; retry shortly.",
+            { "Retry-After": "5" },
+          );
+        }
         const body = await readJsonBody(req, config.maxBodyBytes);
         if (!containsInitialize(body)) {
           throw new GatewayHttpError(
@@ -462,6 +567,14 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           return;
         }
         session = opened.session;
+        if (session.closed) {
+          await manager.close(session, "closed_after_open");
+          throw new GatewayHttpError(
+            503,
+            "shutting_down",
+            "The gateway is shutting down.",
+          );
+        }
         logSessionId = session.id;
         manager.begin(session);
         try {

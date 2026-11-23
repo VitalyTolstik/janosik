@@ -13,6 +13,9 @@ import { LOG_LEVELS, isLogLevel, type LogLevel } from "./http-log.js";
 export const DEFAULT_HTTP_PORT = 8080;
 export const DEFAULT_PATH = "/mcp";
 
+/** Node clamps timers above this and warns; reject the value instead. */
+const MAX_TIMER_MS = 2_147_483_647;
+
 export interface GatewayConfig {
   /** Shared server settings; `token` is always empty in gateway mode. */
   base: Config;
@@ -35,11 +38,20 @@ export interface GatewayConfig {
   readinessUrl: string;
   readinessCacheMs: number;
   readinessTimeoutMs: number;
+  /** Cheap authenticated API call that validates a key at initialize. */
+  authValidateUrl: string;
+  authValidateTimeoutMs: number;
+  /** SSE keep-alive interval; 0 disables it. */
+  sseKeepAliveMs: number;
   /** Trust the first `X-Forwarded-For` hop for logs. */
   trustProxy: boolean;
   logLevel: LogLevel;
   shutdownGraceMs: number;
-  /** Node's request timeout; 0 disables it (long `wait_for_work` calls). */
+  /**
+   * Node's request timeout (receiving the request, not running a tool); 0
+   * disables it. Long `wait_for_work` responses are kept alive by SSE and are
+   * not bounded by this value.
+   */
   requestTimeoutMs: number;
   headersTimeoutMs: number;
 }
@@ -145,20 +157,18 @@ function normalizeOrigins(raw: string | undefined): ReadonlySet<string> {
   return out;
 }
 
-function normalizeReadinessUrl(raw: string): string {
+function normalizeProbeUrl(raw: string, name: string): string {
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    throw new ConfigError("JANOSIK_MCP_HTTP_READY_URL must be an HTTP(S) URL.");
+    throw new ConfigError(`${name} must be an HTTP(S) URL.`);
   }
   if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new ConfigError("JANOSIK_MCP_HTTP_READY_URL must be an HTTP(S) URL.");
+    throw new ConfigError(`${name} must be an HTTP(S) URL.`);
   }
   if (parsed.username || parsed.password || parsed.hash) {
-    throw new ConfigError(
-      "JANOSIK_MCP_HTTP_READY_URL cannot contain credentials or a fragment.",
-    );
+    throw new ConfigError(`${name} cannot contain credentials or a fragment.`);
   }
   return parsed.toString();
 }
@@ -221,50 +231,72 @@ export function loadGatewayConfig(
     env,
     "JANOSIK_MCP_HTTP_SESSION_IDLE_MS",
     5 * 60_000,
+    { max: MAX_TIMER_MS },
   );
   const sessionSweepMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_SESSION_SWEEP_MS",
     30_000,
+    { max: MAX_TIMER_MS },
   );
   const maxBodyBytes = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_MAX_BODY_BYTES",
     16 * 1024 * 1024,
   );
-  const readinessUrl = normalizeReadinessUrl(
+  const readinessUrl = normalizeProbeUrl(
     envString(
       env,
       "JANOSIK_MCP_HTTP_READY_URL",
       `${base.url}/api/v1/health/ready`,
     ),
+    "JANOSIK_MCP_HTTP_READY_URL",
   );
   const readinessCacheMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_READY_CACHE_MS",
     5_000,
-    { allowZero: true },
+    { allowZero: true, max: MAX_TIMER_MS },
   );
   const readinessTimeoutMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_READY_TIMEOUT_MS",
     3_000,
+    { max: MAX_TIMER_MS },
+  );
+  const authValidateUrl = normalizeProbeUrl(
+    envString(env, "JANOSIK_MCP_HTTP_AUTH_URL", `${base.url}/api/v1/auth/me`),
+    "JANOSIK_MCP_HTTP_AUTH_URL",
+  );
+  const authValidateTimeoutMs = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS",
+    3_000,
+    { max: MAX_TIMER_MS },
+  );
+  const sseKeepAliveMs = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS",
+    15_000,
+    { allowZero: true, max: MAX_TIMER_MS },
   );
   const shutdownGraceMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS",
     10_000,
+    { max: MAX_TIMER_MS },
   );
   const requestTimeoutMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS",
-    360_000,
-    { allowZero: true },
+    60_000,
+    { allowZero: true, max: MAX_TIMER_MS },
   );
   const headersTimeoutMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS",
     60_000,
+    { max: MAX_TIMER_MS },
   );
 
   return {
@@ -285,6 +317,9 @@ export function loadGatewayConfig(
       readinessUrl,
       readinessCacheMs,
       readinessTimeoutMs,
+      authValidateUrl,
+      authValidateTimeoutMs,
+      sseKeepAliveMs,
       trustProxy: boolean(env, "JANOSIK_MCP_HTTP_TRUST_PROXY"),
       logLevel: logLevel(env),
       shutdownGraceMs,
@@ -313,10 +348,13 @@ Environment:
   JANOSIK_MCP_HTTP_READY_URL          Upstream readiness probe
   JANOSIK_MCP_HTTP_READY_CACHE_MS     Probe cache (default 5000)
   JANOSIK_MCP_HTTP_READY_TIMEOUT_MS   Probe timeout (default 3000)
+  JANOSIK_MCP_HTTP_AUTH_URL           Key-validation endpoint (default /auth/me)
+  JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS    Key-validation timeout (default 3000)
+  JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS   SSE keep-alive (default 15000; 0 = off)
   JANOSIK_MCP_HTTP_TRUST_PROXY        Trust X-Forwarded-For (default off)
   JANOSIK_MCP_HTTP_LOG_LEVEL          debug|info|warn|error (default info)
   JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS  Drain grace (default 10000)
-  JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS Node request timeout (0 = off)
+  JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS Receive-request timeout (default 60000)
   JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS Node headers timeout (default 60000)
 
 Tool settings (JANOSIK_MCP_TOOLSETS, JANOSIK_MCP_READONLY,
@@ -324,4 +362,6 @@ JANOSIK_MCP_ALLOW_FS, JANOSIK_MCP_FS_ROOT, JANOSIK_APP_BASE) are shared with
 the stdio server. JANOSIK_TOKEN is ignored: send
 "Authorization: Bearer jnk_…" on every MCP request instead.
 
-Endpoints: ${DEFAULT_PATH} (MCP), /health (liveness), /ready (readiness)`;
+Endpoints: JANOSIK_MCP_HTTP_PATH (default ${DEFAULT_PATH}), /health (liveness),
+/ready (readiness). Every POST response is an SSE stream; configure proxies
+with buffering off and a read timeout above long tool calls.`;
