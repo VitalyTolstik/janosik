@@ -8,6 +8,7 @@ import {
 import { createHash } from "node:crypto";
 import Redis from "ioredis";
 import { env } from "@/config/env";
+import { quitRedis } from "@/common/redis-shutdown";
 
 /** Failures tolerated before the account starts backing off (the 5th locks). */
 export const LOGIN_FREE_ATTEMPTS = 5;
@@ -51,7 +52,7 @@ export class LoginBackoffService implements OnModuleDestroy {
       : null;
 
   async onModuleDestroy(): Promise<void> {
-    await this.redis?.quit().catch(() => undefined);
+    await quitRedis(this.redis);
   }
 
   /** Throws 429 while the address is locked. */

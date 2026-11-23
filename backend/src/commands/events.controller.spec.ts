@@ -66,6 +66,29 @@ describe("EventsController shutdown (TASK-200.5)", () => {
     expect(scheduler.isStopped).toBe(true);
   });
 
+  it("completes every open stream on module destroy (TASK-200.12)", () => {
+    const controller = new EventsController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const first = jest.fn();
+    const second = jest.fn();
+    const privateController = controller as unknown as {
+      streamClosers: Set<() => void>;
+    };
+    privateController.streamClosers.add(first);
+    privateController.streamClosers.add(second);
+
+    controller.onModuleDestroy();
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(privateController.streamClosers.size).toBe(0);
+  });
+
   it("aggregates overlap skips into one log line per minute", () => {
     jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));
     const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation();

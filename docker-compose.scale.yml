@@ -1,0 +1,161 @@
+# Janosik — horizontal API overlay (TASK-200.12).
+#
+# This file is an OVERLAY on the normal self-host stack; it is not a complete
+# stack on its own. Compose merges it after `docker-compose.yml`:
+#
+#   # 3 replicas behind the bundled nginx proxy (default):
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --wait
+#
+#   # Caddy instead of nginx (same volume mounts; pick the image):
+#   JANOSIK_PROXY_IMAGE=caddy:2-alpine \
+#     docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --wait
+#
+#   # one replica behind the proxy (cheap rollback, keeps the topology):
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d \
+#     --scale app=1
+#
+#   # full rollback to the single-container install:
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml down
+#   docker compose up -d
+#
+# Requires Docker Compose v2.24+ for the `!reset` tag (to drop the base app's
+# published port) and `deploy.replicas`. The proxy becomes the only host-facing
+# service; API replicas stay on the internal network and are reached by the
+# `app` service alias, so no sticky sessions are needed.
+#
+# Sizing defaults target a 4 vCPU / 8 GB host: three replicas with a 1.5 GB /
+# 1 CPU ceiling each, a 768 MB V8 heap and 10 Postgres connections each. On a
+# 16 vCPU / 32 GB host raise API_CPUS/API_MEMORY_LIMIT/NODE_OPTIONS and
+# PROXY_CPUS/PROXY_MEMORY_LIMIT (see the self-hosting guide). Total API
+# connections must stay below POSTGRES_MAX_CONNECTIONS with headroom for
+# migrations and the admin CLI.
+#
+# The proxy holds both the client and upstream SSE connection; its sizing and
+# nofile limit are part of the host budget (512 MB / 0.5 CPU by default,
+# 1 GB / 1 CPU on the larger profile).
+#
+# `docker compose config` renders this file with the defaults below; the
+# scale test renders API_REPLICAS=1/3/4 to ensure those shapes are valid.
+
+services:
+  # One-shot migration job: Prisma's advisory lock makes concurrent
+  # `migrate deploy` safe, but rolling API replicas must not each race a
+  # schema change on boot. API replicas wait for this job, then start with
+  # MIGRATE_ON_BOOT=false. Re-run it explicitly on a deployment that changes
+  # migrations (`docker compose ... run --rm migrate`).
+  migrate:
+    image: ${JANOSIK_IMAGE:-ghcr.io/vitalytolstik/janosik}:${JANOSIK_TAG:-latest}
+    # For a local image build, uncomment this together with the base `app`
+    # build switch so the migration job runs the same code as the replicas.
+    # build: .
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      MIGRATE_ONLY: "true"
+    # The job exits after `prisma migrate deploy`; it needs no uploads volume,
+    # no Redis and no API port.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  app:
+    # Drop the base service's host port: the proxy is the only public entry.
+    ports: !reset []
+    depends_on:
+      # Base depends_on (postgres/redis healthy) is merged with this entry.
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      # The one-shot `migrate` service above already applied the schema.
+      MIGRATE_ON_BOOT: "false"
+      # One proxy hop in front of every replica (nginx or Caddy). If a second
+      # external proxy terminates TLS in front of Compose, set TRUST_PROXY=2.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      # Per-replica pool cap. `replicas × DB_CONNECTION_LIMIT` (plus a small
+      # reserve) must stay under POSTGRES_MAX_CONNECTIONS.
+      DB_CONNECTION_LIMIT: ${DB_CONNECTION_LIMIT:-10}
+      # Bound the heap inside the container limit below. Leave roughly
+      # 300-500 MB for Node, Prisma, ffmpeg metadata and native buffers.
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=768}
+      # Per-instance stream admission. The cluster ceiling is
+      # replicas × SSE_MAX_CONNECTIONS; the proxy does not pin a client, so
+      # every stream may land on any replica.
+      SSE_MAX_CONNECTIONS: ${SSE_MAX_CONNECTIONS:-2000}
+      # Shared counters and fan-out: the base stack already sets
+      # REDIS_URL=redis://redis:6379. Keep it set for multiple replicas;
+      # without it global throttling, cache invalidation and cross-replica SSE
+      # fan-out degrade to per-process behaviour.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    deploy:
+      # `--scale app=N` overrides this value for a one-off rollout/rollback.
+      replicas: ${API_REPLICAS:-3}
+      resources:
+        limits:
+          # 4 vCPU / 8 GB defaults: 3 × 1 CPU oversubscribes slightly, which
+          # is fine for an I/O-bound API. Raise on the larger profile.
+          cpus: "${API_CPUS:-1.0}"
+          memory: ${API_MEMORY_LIMIT:-1536M}
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    # Long-lived SSE streams get a chance to drain. Node handles SIGTERM,
+    # completes open streams and closes listeners; clients reconnect with
+    # `?since=` through the proxy. Keep this above the keep-alive interval but
+    # below the orchestrator's patience (45 s is ample).
+    stop_grace_period: 45s
+    ulimits:
+      nofile:
+        soft: ${API_NOFILE:-65536}
+        hard: ${API_NOFILE:-65536}
+    healthcheck:
+      # The base check is inherited; give a cold replica more time to start
+      # the Prisma engine and acquire its pool connections.
+      start_period: 90s
+
+  # One proxy for all replicas. The image is selected by env (the official
+  # nginx image is the default); the nginx main+server files and the Caddyfile
+  # are mounted, and each image reads its own. The proxy listens on 8080
+  # internally so the public host port stays PORT (3000 by default, matching
+  # the single-container install and PUBLIC_ORIGIN).
+  proxy:
+    image: ${JANOSIK_PROXY_IMAGE:-nginx:1.27-alpine}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:8080"
+    volumes:
+      - ./deploy/scale/nginx-main.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/scale/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/scale/Caddyfile:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null || exit 1",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    stop_grace_period: 20s
+    ulimits:
+      nofile:
+        soft: ${PROXY_NOFILE:-131072}
+        hard: ${PROXY_NOFILE:-131072}
+    deploy:
+      resources:
+        limits:
+          # The proxy holds both client and upstream connections. 512 MB /
+          # 0.5 CPU is the 4 vCPU/8 GB starting point; raise on the larger
+          # profile (see the self-hosting sizing table).
+          cpus: "${PROXY_CPUS:-0.5}"
+          memory: ${PROXY_MEMORY_LIMIT:-512M}

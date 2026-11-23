@@ -8,6 +8,76 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.12 review hardening. The scaled nginx proxy now mounts a full
+  `deploy/scale/nginx-main.conf` with `worker_connections 65536` and
+  `worker_rlimit_nofile 131072` (the stock 1024 would cap the documented
+  6k/20k streams), a shared upstream zone, `proxy_next_upstream_tries 0` across
+  3–4 replicas, and proxy `PROXY_CPUS`/`PROXY_MEMORY_LIMIT`/`PROXY_NOFILE`
+  sizing. SSE (`boards/:id/events`, `share/:token/events`) has a separate
+  3600 s no-buffer location with a 3600 s downstream `send_timeout` (nginx's
+  default 60 s would cut PAT streams during their 0–6 s keep-alive jitter);
+  ordinary API requests use 90 s (covering the 60 s ready long-poll), uploads
+  and attachment/avatar reads keep the long timeout with
+  `client_body_timeout 3600s` (a slow 25 MB body would otherwise get 408), and
+  the upload regex now
+  matches `users/*/avatar`, `boards/import` and attachment content/thumbnail/
+  poster. Caddy gained `lb_try_duration`/`fail_duration`/`max_fails`, an SSE
+  handle block, and proxies `/healthz` to the readiness probe. `.env.example`
+  leaves `TRUST_PROXY` unset so the overlay default of 1 is not defeated.
+  `deploy/scale/rollout.sh` no longer forces `--scale`, reads/validates the
+  configured `API_REPLICAS` (2–4, 1 for rollback), re-creates the proxy when
+  its image/resources changed, and states honestly that plain Compose
+  re-creates the service as a unit. Redis shutdown uses one
+  bounded quit helper for the throttler, realtime, health and login-backoff
+  clients. Docs now scope every limiter (cluster-wide global throttler and
+  live limit edits; Redis-shared login backoff; per-replica panel/token/agent/
+  share/SSE/presence state), note the 2–4 range and proxy budget, and record
+  that no live horizontal S2/S3 run was performed; TASK-200.14 remains the
+  gate. Tests: hermetic `.env.example` Compose renders for 1/3/4 replicas,
+  an invalid `API_REPLICAS` case, pinned `nginx:1.27-alpine` full-config syntax,
+  Caddy validate, entrypoint `MIGRATE_ONLY`/`MIGRATE_ON_BOOT`, rollout
+  no-`--scale`/range, and SSE `?since=` preservation.
+
+- TASK-200.12 horizontal API scaling. `docker-compose.scale.yml` is an optional
+  overlay on the self-host stack that runs 2–4 API replicas behind one nginx
+  (default) or Caddy proxy, with a one-shot `migrate` service so replicas boot
+  with `MIGRATE_ON_BOOT=false` instead of racing `prisma migrate deploy`. The
+  proxy is the only published service; replicas use the internal `app` alias
+  with round-robin and no sticky sessions. `deploy/scale/nginx.conf` and
+  `deploy/scale/Caddyfile` add gzip for identity responses while passing the
+  API's own board-read gzip/Brotli through, disable SSE buffering
+  (`proxy_buffering off` / `flush_interval -1`), use 3600 s read/send timeouts
+  above the 60 s PAT keep-alive, raise `client_max_body_size` to 30 MB, stream
+  upload routes without request buffering, preserve static `Cache-Control`/
+  `ETag`, and expose `/healthz`. The overlay sets per-replica
+  `ulimits.nofile` (65 536), memory/CPU ceilings, `DB_CONNECTION_LIMIT`,
+  `NODE_OPTIONS`, `SSE_MAX_CONNECTIONS`, `TRUST_PROXY=1`, and a 45 s
+  `stop_grace_period`; the entrypoint gains `MIGRATE_ONLY`/`MIGRATE_ON_BOOT`
+  and the image declares `STOPSIGNAL SIGTERM`; open SSE streams are completed
+  on shutdown so a replica stops promptly and clients resume with `?since=`.
+  The global Redis-backed
+  throttler's connection is closed on shutdown, and a master-panel
+  `THROTTLE_LIMIT` edit now travels on the existing realtime control channel
+  so every replica applies it without a restart (Redis unavailable: local
+  apply, peers on restart). Without `REDIS_URL` a single replica keeps the
+  in-process limiter and local fan-out; production logs a warning. nginx also
+  caches content-hashed `/_astro/` and `/app/assets/` output for seven days.
+  `deploy/scale/rollout.sh` wraps pull → optional one-shot migration →
+  health-gated replica re-creation → proxy reload; `deploy/scale/smoke-sse.mjs`
+  is an optional on-host cross-replica SSE check. Sizing for
+  4 vCPU/8 GB (3 replicas, 1.5 GB/1 CPU each, heap 768 MB, 10 connections
+  each) and 16 vCPU/32 GB (4 replicas, 5 GB/3 CPU each, heap 3.5 GB, 15
+  connections each), rollout/reload, rollback to one replica behind the proxy
+  and back to the single-container install, and known limits (per-replica
+  presence, agent budgets/queue, SSE caps; uploads need a shared filesystem on
+  multiple hosts; Compose is not zero-downtime) are documented in EN/RU.
+  Validation: `scripts/deploy/scale.test.mjs` renders the base and 1/3-replica
+  Compose shapes, checks ports/names/replicas/limits/health, and runs
+  `nginx -t` plus `caddy validate` in throwaway containers; unit tests cover
+  the shared throttler counters and shutdown, cross-replica SSE fan-out and
+  control frames, and the throttle-limit propagation. The overlay config is
+  not a capacity claim; the TASK-200.14 runs remain the gate.
+
 - TASK-200.13 pre-serialized SSE frames and bounded slow subscribers. The
   member event stream no longer goes through Nest's `@Sse` writer: each
   published event is serialized once into one complete `id:`/`data:` frame

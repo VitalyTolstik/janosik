@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import Redis from "ioredis";
 import { env } from "@/config/env";
+import { quitRedis } from "@/common/redis-shutdown";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
 export interface HealthReport {
@@ -146,7 +147,7 @@ export class HealthService implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.client) {
-      await this.client.quit().catch(() => undefined);
+      await quitRedis(this.client);
       this.client = null;
     }
   }

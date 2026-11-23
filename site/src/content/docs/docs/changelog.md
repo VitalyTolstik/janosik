@@ -15,6 +15,18 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- Self-hosting can scale the API horizontally: the optional
+  `docker-compose.scale.yml` overlay runs 2–4 replicas behind nginx or Caddy,
+  with a shared uploads volume, one-shot migrations, health-gated rollout and a
+  documented rollback to one replica or back to the single-container stack.
+  The proxy adds gzip, keeps SSE unbuffered (`?since=` reconnect, no sticky
+  sessions), passes uploads through, and the shared Redis contour keeps
+  throttler counters and master-panel limit edits consistent across replicas.
+  nginx ships a full main config sized for the documented streams. Plain
+  Compose is not zero-downtime, and per-replica presence, token/agent budgets,
+  public-share limits and SSE caps remain local; see
+  [Self-hosting](/docs/self-hosting/).
+
 - A shared MCP Streamable HTTP gateway (`janosik-mcp-http`, separate
   `ghcr.io/vitalytolstik/janosik-mcp` image) serves many agent sessions from
   one process. Each session validates and binds its own `Authorization:
