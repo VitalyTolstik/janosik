@@ -119,6 +119,28 @@ describe("card context menu (right-click)", () => {
     expect(screen.getByTestId("ctx-archive")).toBeInTheDocument();
   });
 
+  it("opens the menu on a summary card without a Base UI group crash", async () => {
+    const summaryBoard = structuredClone(BOARD);
+    summaryBoard.cards["c-1"] = {
+      ...summaryBoard.cards["c-1"],
+      readModel: {
+        descriptionChars: 0,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 0,
+        blocked: false,
+        detailLoaded: false,
+      },
+    };
+    localStorage.setItem("janosik-boards", JSON.stringify([summaryBoard]));
+
+    render(tree(<DndBoard onCardClick={() => {}} />));
+    rightClick(screen.getAllByTestId("card-title")[0]!);
+    const menu = await screen.findByTestId("card-context-menu");
+    expect(menu).toBeInTheDocument();
+    expect(screen.getByTestId("ctx-detail-loading")).toBeInTheDocument();
+  });
+
   it("toggles labels and creates a new one", async () => {
     await openMenuOnBoard();
     await openSub("ctx-labels-trigger", "ctx-labels-content");

@@ -314,9 +314,13 @@ function CardContextMenuBody({
             onPick={(userId) => setCardAssign(cardId, userId)}
           />
           {!detailReady ? (
-            <ContextMenuLabel data-testid="ctx-detail-loading">
-              {t("card.loading")}
-            </ContextMenuLabel>
+            // Base UI requires GroupLabel inside a Group; a bare label
+            // crashes the whole board when a summary card is right-clicked.
+            <ContextMenuGroup>
+              <ContextMenuLabel data-testid="ctx-detail-loading">
+                {t("card.loading")}
+              </ContextMenuLabel>
+            </ContextMenuGroup>
           ) : null}
           <ContextMenuSub disabled={!detailReady}>
             <ContextMenuSubTrigger data-testid="ctx-link-trigger">
