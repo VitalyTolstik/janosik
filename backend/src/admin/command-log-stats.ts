@@ -51,6 +51,27 @@ export async function readCommandLogStats(
       (SELECT count(*) FROM "CommandDetail_default")::bigint AS "detail",
       (SELECT count(*) FROM "CommandPreimage_default")::bigint AS "preimage"
   `);
+  const registry = await prisma.$queryRaw<
+    Array<{
+      rows: bigint;
+      sizeBytes: bigint;
+      deadRows: bigint;
+      lastVacuumAt: Date | null;
+      lastAutovacuumAt: Date | null;
+    }>
+  >(Prisma.sql`
+    SELECT GREATEST(c.reltuples, 0)::bigint AS "rows",
+           pg_total_relation_size(c.oid)::bigint AS "sizeBytes",
+           COALESCE(stats.n_dead_tup, 0)::bigint AS "deadRows",
+           stats.last_vacuum AS "lastVacuumAt",
+           stats.last_autovacuum AS "lastAutovacuumAt"
+      FROM pg_class c
+      JOIN pg_namespace ns ON ns.oid = c.relnamespace
+      LEFT JOIN pg_stat_user_tables stats ON stats.relid = c.oid
+     WHERE ns.nspname = current_schema()
+       AND c.relname = 'CommandKey'
+     LIMIT 1
+  `);
   return {
     available: true,
     retentionDays,
@@ -68,5 +89,16 @@ export async function readCommandLogStats(
         (defaults[0]?.detail ?? 0n) +
         (defaults[0]?.preimage ?? 0n),
     ),
+    ...(registry[0] === undefined
+      ? {}
+      : {
+          registry: {
+            rows: Number(registry[0].rows),
+            sizeBytes: Number(registry[0].sizeBytes),
+            deadRows: Number(registry[0].deadRows),
+            lastVacuumAt: registry[0].lastVacuumAt?.getTime() ?? null,
+            lastAutovacuumAt: registry[0].lastAutovacuumAt?.getTime() ?? null,
+          },
+        }),
   };
 }

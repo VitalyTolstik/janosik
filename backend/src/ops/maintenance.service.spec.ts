@@ -510,11 +510,16 @@ describe("MaintenanceService", () => {
     expect(preimageCall.where.createdAt.lt).toBeInstanceOf(Date);
   });
 
-  it("sweeps orphan command keys left without a command (TASK-200.11)", async () => {
+  it("sweeps only keys without a live command, in a bounded query (TASK-200.11)", async () => {
     const prisma = makePrisma();
-    (prisma.commandKey.findMany as jest.Mock).mockResolvedValue([
-      { id: "orphan-key" },
-    ]);
+    (prisma.$queryRaw as jest.Mock).mockImplementation(
+      async (sql: { strings: string[] }) => {
+        const text = sql.strings.join("?");
+        if (text.includes("CommandKey")) return [{ id: "orphan-key" }];
+        return [];
+      },
+    );
+    (prisma.commandKey.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.commandKey.deleteMany as jest.Mock).mockResolvedValue({
       count: 1,
     });
@@ -527,9 +532,21 @@ describe("MaintenanceService", () => {
       approvalsMock,
     );
     expect(await service.sweepCommands()).toBe(1);
-    expect(prisma.commandKey.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["orphan-key"] } },
-    });
+    const keyDelete = (prisma.$executeRaw as jest.Mock).mock.calls
+      .map((call) => call[0] as { strings: string[] })
+      .find((sql) =>
+        sql.strings.join("?").includes('DELETE FROM "CommandKey"'),
+      );
+    expect(keyDelete?.strings.join("?")).toContain("NOT EXISTS");
+    expect(keyDelete?.strings.join("?")).toContain('c."boardId"');
+    expect(prisma.commandKey.deleteMany).not.toHaveBeenCalled();
+    const keyQuery = (prisma.$queryRaw as jest.Mock).mock.calls
+      .map((call) => call[0] as { strings: string[] })
+      .find((sql) => sql.strings.join("?").includes("CommandKey"));
+    expect(keyQuery?.strings.join("?")).toContain("NOT EXISTS");
+    expect(keyQuery?.strings.join("?")).toContain('c."boardId"');
+    expect(keyQuery?.strings.join("?")).toContain("LIMIT");
+    expect(prisma.commandKey.findMany).not.toHaveBeenCalled();
   });
 
   it("creates the current and future command-log partitions (TASK-200.11)", async () => {
@@ -666,8 +683,9 @@ describe("MaintenanceService", () => {
         approvalsMock,
       );
       expect(await service.sweepCommands()).toBe(123);
-      // One catalog read and one drop; the current month stays.
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      // One catalog read, one drop, one orphan-key probe; the current month
+      // stays.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
       const dropSql = (prisma.$queryRaw as jest.Mock).mock.calls[1]![0] as {
         strings: string[];
       };

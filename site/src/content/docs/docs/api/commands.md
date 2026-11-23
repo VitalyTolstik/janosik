@@ -70,11 +70,13 @@ before the command is applied, so timestamps more than five minutes away from se
 
 ### Idempotency
 
-`commandId` is the primary key of the `Command` row. A retry that reuses the
-same `commandId` with the same action returns the stored `result` without
+`commandId` is a globally unique idempotency key, claimed in the
+unpartitioned `CommandKey` registry for the `Command` row. A retry that reuses
+the same `commandId` with the same action returns the stored `result` without
 applying the action a second time and without consuming a second `seq`. The
 comparison ignores `at`, so a retry sent later with a fresh clock still
-matches.
+matches. A `commandId` already used by another board answers `409
+id_conflict`.
 
 Reusing a `commandId` with a different action answers `409`:
 

@@ -388,7 +388,10 @@ window longer. Check the `commandLog` field of
 not render it yet) for partition size, dead tuples and vacuum times.
 `defaultRows` is an exact count and should stay at zero — a growing default
 partition means a month was skipped or a restored row fell outside the
-pre-created range.
+pre-created range. The `registry` block reports the unpartitioned `CommandKey`
+table (rows, bytes, dead tuples, vacuum); it is drained in bounded orphan
+sweeps rather than month DDL, so its dead tuples after a sweep are expected
+and autovacuum must keep up.
 
 The upgrade that introduced this layout copies the existing log into the new
 tables and verifies counts before dropping the old ones. It needs roughly twice

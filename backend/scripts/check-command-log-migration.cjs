@@ -27,6 +27,7 @@ const MIGRATION_DIRS = [
   "20261123131000_task_200_11_command_details_side_table",
   "20261123132000_task_200_11_command_key_registry",
   "20261123133000_task_200_11_safe_partition_drop",
+  "20261123134000_task_200_11_command_key_move",
 ];
 
 const baseUrl =
@@ -114,6 +115,9 @@ async function seedExisting(prisma) {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "Board" ("id", "title", "updatedAt") VALUES ('mig-board', 'Migration board', now())`,
   );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "Board" ("id", "title", "updatedAt") VALUES ('mig-board-2', 'Migration board 2', now())`,
+  );
 
   const months = ["2026-09-15", "2026-10-15", "2026-11-15"];
   for (let index = 0; index < 60; index += 1) {
@@ -191,8 +195,8 @@ async function checkEmpty(prisma) {
      VALUES ('empty-cmd', 'empty-board', 'empty-user', 'ADD_COLUMN', '{}'::jsonb, '{}'::jsonb, '2027-06-15')`,
   );
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "CommandDetail" ("commandId", "createdAt", "data")
-     VALUES ('empty-cmd', '2027-06-15', '{"changes":[]}'::jsonb)`,
+    `INSERT INTO "CommandDetail" ("commandId", "boardId", "createdAt", "data")
+     VALUES ('empty-cmd', 'empty-board', '2027-06-15', '{"changes":[]}'::jsonb)`,
   );
   const routed = await scalars(
     prisma,
@@ -229,7 +233,16 @@ async function checkEmpty(prisma) {
     prisma,
     `SELECT count(*)::int AS n FROM "CommandKey" WHERE "id" = 'empty-cmd'`,
   );
-  assert(goneKey[0].n === 0, "drop releases the month's global keys");
+  assert(
+    goneKey[0].n === 1,
+    "drop leaves the registry key for the bounded orphan sweep",
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "CommandKey" k
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "Command" c WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+      ) AND k."id" = 'empty-cmd'`,
+  );
 
   // A row with no monthly partition lands in the default. `ensure` must skip
   // that month instead of failing 23514 and aborting the scheduler.
@@ -287,7 +300,7 @@ async function checkExisting(prisma, before) {
   try {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Command" ("id", "boardId", "actorId", "type", "payload", "result", "createdAt")
-       VALUES ('mig-cmd-1', 'mig-board', 'mig-user', 'RENAME_BOARD', '{}'::jsonb, '{}'::jsonb, '2026-10-20')`,
+       VALUES ('mig-cmd-1', 'mig-board-2', 'mig-user', 'RENAME_BOARD', '{}'::jsonb, '{}'::jsonb, '2026-10-20')`,
     );
   } catch {
     duplicateRejected = true;
@@ -301,13 +314,24 @@ async function checkExisting(prisma, before) {
       WHERE conname = 'CommandDetail_commandId_fkey'
         AND conrelid = '"CommandDetail"'::regclass`,
   );
-  assert(fk[0].n === 1, "CommandDetail references the global key registry");
+  assert(fk[0].n === 0, "CommandDetail no longer references the key registry");
 
   const detailIndex = await scalars(
     prisma,
     `SELECT count(*)::int AS n FROM pg_class WHERE relname = 'CommandDetail_createdAt_idx'`,
   );
   assert(detailIndex[0].n === 0, "the unused detail createdAt index is gone");
+  const boardIndex = await scalars(
+    prisma,
+    `SELECT count(*)::int AS n FROM pg_class WHERE relname = 'CommandDetail_boardId_commandId_idx'`,
+  );
+  assert(boardIndex[0].n === 1, "detail rows have a board-scoped index");
+  const boardColumn = await scalars(
+    prisma,
+    `SELECT is_nullable FROM information_schema.columns
+      WHERE table_name = 'CommandDetail' AND column_name = 'boardId'`,
+  );
+  assert(boardColumn[0]?.is_nullable === "NO", "detail boardId is required");
 
   const legacy = await scalars(
     prisma,
@@ -404,9 +428,12 @@ async function checkExisting(prisma, before) {
   );
   assert(
     detailLeft[0].detail === 0,
-    "deleting a command cascades its detail row",
+    "deleting a command removes its detail row",
   );
-  assert(detailLeft[0].key === 0, "deleting a command releases its global key");
+  assert(
+    detailLeft[0].key === 1,
+    "the registry key waits for the bounded orphan sweep",
+  );
 
   // Whole-month retention: detail first, then command, then pre-images.
   const removed = await scalars(
@@ -415,7 +442,7 @@ async function checkExisting(prisma, before) {
   );
   assert(
     Number(removed[0].removed) >= 0,
-    "the drop helper returns an exact key count or estimate",
+    "the drop helper returns a partition estimate",
   );
   const september = await scalars(
     prisma,
@@ -430,7 +457,21 @@ async function checkExisting(prisma, before) {
        (SELECT count(*)::int FROM "CommandKey" WHERE "createdAt" < '2026-10-01') AS keys`,
   );
   assert(remaining[0].commands === 0, "no September command rows remain");
-  assert(remaining[0].keys === 0, "no September key rows remain");
+  assert(
+    remaining[0].keys > 0,
+    "month DDL leaves registry keys for the bounded orphan sweep",
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "CommandKey" k
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "Command" c WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+      ) AND k."createdAt" < '2026-10-01'`,
+  );
+  const sweptKeys = await scalars(
+    prisma,
+    `SELECT count(*)::int AS n FROM "CommandKey" WHERE "createdAt" < '2026-10-01'`,
+  );
+  assert(sweptKeys[0].n === 0, "the orphan sweep clears September keys");
 }
 
 async function main() {

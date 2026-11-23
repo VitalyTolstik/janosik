@@ -29,7 +29,16 @@ describe("command log stats", () => {
           lastAutovacuumAt: null,
         },
       ])
-      .mockResolvedValueOnce([{ command: 3n, detail: 1n, preimage: 0n }]);
+      .mockResolvedValueOnce([{ command: 3n, detail: 1n, preimage: 0n }])
+      .mockResolvedValueOnce([
+        {
+          rows: 10n,
+          sizeBytes: 65_536n,
+          deadRows: 2n,
+          lastVacuumAt: new Date("2026-11-21T00:00:00Z"),
+          lastAutovacuumAt: null,
+        },
+      ]);
     const stats = await readCommandLogStats(
       { $queryRaw: queryRaw } as never,
       30,
@@ -44,6 +53,12 @@ describe("command log stats", () => {
     });
     // Exact count, not the reltuples estimate on the default partition.
     expect(stats.defaultRows).toBe(4);
-    expect(queryRaw).toHaveBeenCalledTimes(2);
+    expect(stats.registry).toMatchObject({
+      rows: 10,
+      sizeBytes: 65_536,
+      deadRows: 2,
+      lastVacuumAt: new Date("2026-11-21T00:00:00Z").getTime(),
+    });
+    expect(queryRaw).toHaveBeenCalledTimes(3);
   });
 });

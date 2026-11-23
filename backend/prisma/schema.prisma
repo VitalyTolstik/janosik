@@ -400,8 +400,10 @@ model ApiToken {
 // TASK-200.11: the command log is range-partitioned by `createdAt` (one
 // parent + monthly partitions + a default partition, see the migrations
 // `20261123130000_task_200_11_command_log_partitioning`,
-// `20261123131000_task_200_11_command_details_side_table` and
-// `20261123132000_task_200_11_command_key_registry`). PostgreSQL requires
+// `20261123131000_task_200_11_command_details_side_table`,
+// `20261123132000_task_200_11_command_key_registry`,
+// `20261123133000_task_200_11_safe_partition_drop` and
+// `20261123134000_task_200_11_command_key_move`). PostgreSQL requires
 // every unique constraint on a partitioned table to contain the partition
 // key, so the table primary key is `(id, createdAt)` rather than `id`.
 // Global commandId uniqueness — the old `Command_pkey` guarantee — is restored
@@ -450,16 +452,18 @@ model Command {
  * TASK-200.11 — global commandId registry. Unpartitioned on purpose: a unique
  * index on a partitioned table must contain the partition key, which is exactly
  * what allowed the same client id on two boards after the swap. The registry
- * has the old `id` primary key and is populated in the same transaction by a
- * BEFORE INSERT trigger on `Command` (and removed by the delete trigger /
- * retention helper). `boardId` lets detail reads and purge paths be scoped even
- * if an old caller only has the id; `createdAt` lets retention delete a month.
+ * has the old `id` primary key and is populated by a BEFORE INSERT trigger on
+ * `Command`; the deferred Command delete trigger does not release it. Orphan
+ * keys are deleted by the maintenance sweep in bounded `NOT EXISTS Command`
+ * batches (the registry is large and unpartitioned, so retention must not do
+ * an unbounded month delete here). `boardId` lets detail reads and purge paths
+ * be scoped even if an old caller only has the id; `createdAt` drives the
+ * orphan sweep.
  */
 model CommandKey {
-  id        String          @id
+  id        String   @id
   boardId   String
-  createdAt DateTime        @default(now())
-  details   CommandDetail[]
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
 }
@@ -468,21 +472,20 @@ model CommandKey {
  * TASK-200.11 — heavy command display snapshots (the "from → to" diff frozen
  * at apply time by `commandDetails`). One row per command that has a diff;
  * partition key = command `createdAt`, so retention drops the pair together.
- * There is deliberately no FK to `Command`: a partitioned child FK to a
- * partitioned parent creates per-partition constraints that make
- * `DROP TABLE Command_YYYYMM` fail. The FK goes to the unpartitioned
- * `CommandKey` instead, which cascades the side row when a key is deleted and
- * lets reads filter by `commandKey.boardId`. The writer inserts the command
- * (which claims the key) and the detail in one transaction; retention drops
- * the detail partition first.
+ * There is deliberately no FK to `Command` or `CommandKey`: a partitioned FK
+ * to `Command` blocks monthly `DROP TABLE`, and a cascade to the registry
+ * destroys the snapshot during a cross-partition `createdAt` move. `boardId`
+ * scopes every read; the deferred Command delete trigger removes the row on a
+ * real delete, and the move trigger rewrites `createdAt` with the command.
  */
 model CommandDetail {
-  commandId  String
-  createdAt  DateTime   @default(now())
-  data       Json
-  commandKey CommandKey @relation(fields: [commandId], references: [id], onDelete: Cascade)
+  commandId String
+  boardId   String
+  createdAt DateTime @default(now())
+  data      Json
 
   @@id([commandId, createdAt])
+  @@index([boardId, commandId])
 }
 
 // TASK-200.11: pre-images are partitioned by the command's `createdAt` (the

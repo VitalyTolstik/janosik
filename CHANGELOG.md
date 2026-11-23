@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.11 schema recheck: cross-partition `Command.createdAt` moves now
+  keep the global key and display detail. Migration
+  `20261123134000_task_200_11_command_key_move` upserts the key for the same
+  board (a different board still raises 23505), moves both
+  `CommandKey.createdAt` and `CommandDetail.createdAt` on an update, and
+  replaces the immediate key delete trigger with a deferred detail cleanup;
+  `CommandDetail` loses the registry FK in favour of a required `boardId`
+  column and a `(boardId, commandId)` index. The unpartitioned registry is no
+  longer deleted inline by a month DDL: `sweep-commands` drains only keys with
+  `NOT EXISTS (Command id+board)` in bounded chunks, and
+  `readCommandLogStats` exposes its rows, size, dead tuples and vacuum times
+  (`registry`) while `defaultRows` stays an exact count. The admin
+  throttle/demo suite now covers moving a command's month and preserving its
+  key/detail; the task doc adds the exact default-partition
+  detach/move/reattach runbook, an intermediate duplicate-id cleanup runbook,
+  and registry/WAL sizing. A command delete leaves the key for the orphan
+  sweep, so the e2e wipe must include `CommandKey` (already added) and no
+  delete path assumes an immediate key release.
+
 - TASK-200.11 ops review follow-up: restore global commandId uniqueness,
   make month retention lock-safe, and bound the sweep honestly. An
   unpartitioned `CommandKey` registry (id PK, boardId, createdAt) is claimed by

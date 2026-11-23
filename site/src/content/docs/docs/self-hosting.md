@@ -508,7 +508,9 @@ if the scheduler is paused, the effective window grows. A busy agent swarm can
 write tens of commands per second; read the `commandLog` field of
 `GET /api/v1/admin/observability` (not rendered on the current admin page) for
 partition size, dead tuples and vacuum times. `defaultRows` is an exact count
-and should stay at zero. The partitioning upgrade needs about twice the current
+and should stay at zero. The `registry` block covers the unpartitioned
+`CommandKey` table; it is drained in bounded orphan sweeps, so watch its dead
+tuples and autovacuum. The partitioning upgrade needs about twice the current
 log size in free disk space and a full quiet window — the whole migration
 transaction holds the old table names while it copies and builds indexes, so
 stop old replicas before migrating; rollback is a database backup restore.

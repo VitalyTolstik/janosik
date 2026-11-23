@@ -1039,7 +1039,10 @@ export class MaintenanceService {
    *   first and leaves the default partition alone.
    * - Rows from the partially expired current month and anything parked in
    *   the default partition are deleted in bounded chunks. The pre-images go
-   *   first; the side row goes with its command through the delete trigger.
+   *   first; a real command delete removes the side row through the deferred
+   *   detail trigger. A separate bounded `NOT EXISTS Command` pass drains
+   *   `CommandKey`, because the registry is unpartitioned and a month DDL
+   *   cannot cheaply delete it inline.
    *
    * Window = `OpsSettings.retentionDays` (same knob as the soft-delete purge),
    * default 30 days. Agent and human commands share the window: a shorter
@@ -1092,22 +1095,33 @@ export class MaintenanceService {
       COMMAND_PURGE_CHUNK,
       COMMAND_PURGE_MAX_CHUNKS,
     );
-    // Whole-month DDL releases keys itself; a partial month's row trigger does
-    // the same. This pass only catches orphans left by an interrupted drop or
-    // a pre-registry row. Key deletion cascades any detail row still present.
+    // The registry is large and unpartitioned. A month DDL must not delete it
+    // inline; this pass removes only keys that have no Command at all (a live
+    // key can be older than its moved command), in bounded chunks. `boardId`
+    // is part of the NOT EXISTS probe so a same-id row on another board can
+    // never mask or delete a live key.
     removed += await this.purgeChunks(
       (take) =>
-        this.prisma.commandKey.findMany({
-          where: stale,
-          select: { id: true },
-          take,
-        }),
+        this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT k."id"
+            FROM "CommandKey" k
+           WHERE k."createdAt" < ${cutoff}
+             AND NOT EXISTS (
+               SELECT 1 FROM "Command" c
+                WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+             )
+           ORDER BY k."createdAt", k."id"
+           LIMIT ${take}
+        `),
       async (rows) =>
-        (
-          await this.prisma.commandKey.deleteMany({
-            where: { id: { in: rows.map((row) => row.id) } },
-          })
-        ).count,
+        this.prisma.$executeRaw(Prisma.sql`
+          DELETE FROM "CommandKey" k
+           WHERE k."id" IN (${Prisma.join(rows.map((row) => row.id))})
+             AND NOT EXISTS (
+               SELECT 1 FROM "Command" c
+                WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+             )
+        `),
       COMMAND_PURGE_CHUNK,
       COMMAND_PURGE_MAX_CHUNKS,
     );

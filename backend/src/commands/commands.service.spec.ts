@@ -90,7 +90,7 @@ describe("CommandsService.deltaSince", () => {
     expect(detailFindMany).toHaveBeenCalledWith({
       where: {
         commandId: { in: ["cmd-7"] },
-        commandKey: { boardId: "board-1" },
+        boardId: "board-1",
       },
       select: { commandId: true, data: true },
     });

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
@@ -731,5 +732,75 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(201);
     await server().get(`/api/v1/share/${token}`).expect(404);
+  });
+
+  it("moves a command createdAt without losing its key or detail (TASK-200.11)", async () => {
+    const actor = await prisma.user.findFirstOrThrow({
+      where: { email: USER_EMAIL },
+      select: { id: true },
+    });
+    const board = await prisma.board.create({
+      data: { title: "Moved command" },
+      select: { id: true },
+    });
+    const id = `moved-${randomUUID()}`;
+    const from = new Date();
+    const to = new Date(
+      Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 15, 12),
+    );
+    await prisma.command.create({
+      data: {
+        id,
+        boardId: board.id,
+        actorId: actor.id,
+        type: "RENAME_BOARD",
+        payload: { type: "RENAME_BOARD", title: "Moved", at: Date.now() },
+        result: {},
+        createdAt: from,
+      },
+    });
+    await prisma.commandDetail.create({
+      data: {
+        commandId: id,
+        boardId: board.id,
+        createdAt: from,
+        data: { changes: [] },
+      },
+    });
+    await prisma.command.update({
+      where: { id_createdAt: { id, createdAt: from } },
+      data: { createdAt: to },
+    });
+
+    const moved = await prisma.$queryRawUnsafe<
+      Array<{ command_part: string; detail_part: string; key_created: Date }>
+    >(
+      `SELECT c.tableoid::regclass::text AS command_part,
+              d.tableoid::regclass::text AS detail_part,
+              k."createdAt" AS key_created
+         FROM "Command" c
+         JOIN "CommandDetail" d ON d."commandId" = c."id" AND d."boardId" = c."boardId"
+         JOIN "CommandKey" k ON k."id" = c."id" AND k."boardId" = c."boardId"
+        WHERE c."id" = $1`,
+      id,
+    );
+    expect(moved[0]!.command_part).toContain(
+      `Command_${to.getUTCFullYear()}${String(to.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
+    expect(moved[0]!.detail_part).toContain(
+      `CommandDetail_${to.getUTCFullYear()}${String(to.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
+    expect(new Date(moved[0]!.key_created).toISOString()).toBe(
+      to.toISOString(),
+    );
+
+    await prisma.command.deleteMany({ where: { id } });
+    expect(await prisma.commandDetail.count({ where: { commandId: id } })).toBe(
+      0,
+    );
+    // The key waits for the orphan sweep, not the delete trigger.
+    expect(await prisma.commandKey.count({ where: { id } })).toBe(1);
+    await prisma.commandKey.deleteMany({ where: { id } });
+    await prisma.board.deleteMany({ where: { id: board.id } });
   });
 });

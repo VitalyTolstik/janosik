@@ -23,23 +23,24 @@ soft-deleted rows. A monthly `RANGE (createdAt)` scheme gives:
   of partitions, make cross-board admin queries fan out, and still could not
   drop a retention window without row deletes.
 
-`Command`, its new detail side table `CommandDetail`, `CommandPreimage` and
-the unpartitioned `CommandKey` registry share the retention window. A
-whole-month drop locks in reader order (Command → CommandDetail → pre-images),
-drops the command and detail partitions, releases the month's keys, and then
-drops the pre-images. The default partitions are the only rows left for
-chunked deletes.
+`Command`, its detail side table `CommandDetail`, `CommandPreimage` and the
+unpartitioned `CommandKey` registry share the retention window. A whole-month
+drop locks in reader order (Command → CommandDetail → pre-images), drops the
+command, detail and pre-image partitions, and leaves the registry keys for the
+bounded orphan sweep (the unpartitioned registry is too large for an inline
+month delete). The default partitions are the only rows left for chunked
+deletes.
 
 ## 2. Schema and constraints
 
 | Table | Key | Partition key | Notes |
 | --- | --- | --- | --- |
 | `Command` | `(id, createdAt)` | monthly `createdAt` | The old `id` PK is impossible on a partitioned table: PostgreSQL requires every unique constraint to contain the partition key. |
-| `CommandKey` | `id` | none (global) | Unpartitioned registry that restores the old `Command_pkey` guarantee across boards and months; `boardId` scopes id-only reads/purges and `createdAt` drives month cleanup. |
-| `CommandDetail` | `(commandId, createdAt)` | monthly `createdAt` | Heavy display snapshot; FK to `CommandKey`, not to `Command`. |
+| `CommandKey` | `id` | none (global) | Unpartitioned registry that restores the old `Command_pkey` guarantee across boards and months; `boardId` scopes id-only reads/purges and `createdAt` drives the bounded orphan sweep. |
+| `CommandDetail` | `(commandId, createdAt)` | monthly `createdAt` | Heavy display snapshot; boardId column, no FK (moved with its command). |
 | `CommandPreimage` | `(commandId, createdAt)` | monthly `createdAt` | Run undo snapshots; same shape as before, now partitionable by time. |
 
-### Why the detail table references the registry, not `Command`
+### Detail lifecycle and key moves
 
 A partitioned→partitioned foreign key is expanded into per-partition
 constraints. PostgreSQL then refuses `DROP TABLE Command_YYYYMM` with
@@ -50,16 +51,19 @@ table. That is incompatible with monthly retention.
 Instead:
 
 - `CommandKey` is unpartitioned with `id` as its primary key; a BEFORE INSERT
-  trigger on `Command` claims the id in the same transaction. The old global
-  idempotency guarantee therefore survives the composite `Command` key, and a
-  concurrent cross-board collision answers `409 id_conflict` instead of
-  writing a duplicate.
-- `CommandDetail` has a real FK to `CommandKey` with `ON DELETE CASCADE`, so
-  a row delete releases the detail; the detail read also filters
-  `commandKey.boardId`, so it can never return another board's diff even when
-  it only has ids.
-- a delete trigger on `Command` releases the key; whole-month DDL bypasses
-  row triggers, so the drop helper also deletes keys by month.
+  trigger on `Command` claims the id. The trigger upserts for the same board
+  (so a row move is not a duplicate) and raises 23505 for a cross-board id;
+  the old global idempotency guarantee therefore survives the composite
+  `Command` key and a concurrent collision answers `409 id_conflict`.
+- `CommandDetail` has **no FK** to `Command`/`CommandKey`. It stores `boardId`
+  for scoping, and a deferred `Command` delete trigger removes the detail only
+  when no replacement row exists. The move trigger rewrites both
+  `CommandKey.createdAt` and `CommandDetail.createdAt`, so a backdated demo
+  command keeps its key and display snapshot in the new month.
+- the deferred delete trigger never deletes `CommandKey`; the maintenance
+  sweep removes only keys with `NOT EXISTS (Command id+board)` in bounded
+  chunks. That keeps the large unpartitioned registry out of the DDL path and
+  cannot delete a live key whose command moved to a newer `createdAt`.
 - every id-only purge/sweep page is additionally paired with `boardId` (or
   accepts that the key is global).
 
@@ -76,8 +80,9 @@ Every parent index is inherited by each partition:
   `(type, createdAt)`, `(apiTokenId, createdAt)`,
   `(agentSessionId, createdAt)`, `(runId)`, GIN `(touches)`.
 - `CommandKey`: PK `(id)`, `(createdAt)`.
-- `CommandDetail`: PK `(commandId, createdAt)`, FK `commandId → CommandKey`.
-  No `(createdAt)` index: months are dropped by name and reads batch by id.
+- `CommandDetail`: PK `(commandId, createdAt)`, `(boardId, commandId)`.
+  No `(createdAt)` index: months are dropped by name and reads batch by
+  board + commandId.
 - `CommandPreimage`: PK `(commandId, createdAt)`, `(boardId, runId)`,
   `(createdAt)`.
 
@@ -113,6 +118,14 @@ The storage levers, in order of impact:
    Legacy pre-migration detail rows are copied as-is (they may exceed the new
    cap); the application cap applies to every snapshot written after the
    upgrade.
+6. **Registry cost.** `CommandKey` is one unpartitioned row per retained
+   command (id + board + createdAt + index, roughly 70–120 B before bloat) and
+   is drained in bounded `NOT EXISTS Command` batches, not by month DDL.
+   Include it in disk and WAL planning: at 50 commands/s × 30 days that is
+   another ~130M rows (order 10–15 GB plus index and vacuum/WAL overhead), and
+   deleting it creates dead tuples that autovacuum must reclaim. Partition
+   drop is cheap for Command/Detail/Preimage; the registry is the one
+   retention cost that is proportional to row count.
 
 Planning numbers (order-of-magnitude, not a benchmark claim):
 
@@ -120,6 +133,11 @@ Planning numbers (order-of-magnitude, not a benchmark claim):
 | --- | --- | --- | --- |
 | 25 cmds/s | ~65M | ~30–65 GB | ~130 GB |
 | 50 cmds/s | ~130M | ~65–130 GB | ~260 GB |
+
+Add the unpartitioned registry on top: ~130M rows at 50/s × 30 days, roughly
+10–15 GB of heap+index plus dead tuples/WAL from the orphan sweep. WAL is not
+in these figures; a large backfill or delete series needs free WAL space and
+autovacuum headroom.
 
 The target is **not** “always under 100 GB”; it is that growth is a function
 of the chosen window, not of history, and that the operator can see the
@@ -151,11 +169,12 @@ Two maintenance jobs (both idempotent, part of the existing scheduler and
   failing with 23514. A `run("all")` isolates each job: a failed sweep is
   reported in the result and later jobs still run.
 - `sweep-commands` — drops whole expired months via
-  `janosik_drop_command_partition(date)` (Command → detail → pre-images, with
-  the key rows released by month), then chunk-deletes the partial
-  current/default months (pre-images first). Whole-month DDL retries a 2 s
-  reader lock up to three times, then leaves the month for the next hourly
-  run. Agent runs are swept afterwards by the existing `sweep-runs`.
+  `janosik_drop_command_partition(date)` (Command → detail → pre-images), then
+  chunk-deletes the partial current/default months (pre-images first) and
+  drains `CommandKey` with a bounded `NOT EXISTS (Command id+board)` query.
+  Whole-month DDL retries a 2 s reader lock up to three times, then leaves the
+  month for the next hourly run. Agent runs are swept afterwards by the
+  existing `sweep-runs`.
 
 `GET /api/v1/admin/observability` includes `commandLog` (the current admin
 Observability page does not render this block yet; it is an API/CLI metric):
@@ -175,12 +194,22 @@ Observability page does not render this block yet; it is an API/CLI metric):
       "lastAutovacuumAt": null
     }
   ],
-  "defaultRows": 0
+  "defaultRows": 0,
+  "registry": {
+    "rows": 1234,
+    "sizeBytes": 160000,
+    "deadRows": 12,
+    "lastVacuumAt": 1732233600000,
+    "lastAutovacuumAt": 1732233600000
+  }
 }
 ```
 
 `partitions[].rows` comes from `pg_class.reltuples` (planner estimate) so
 opening the panel does not run `count(*)` over a hundred million rows.
+`registry` is the same estimate/size/dead-tuple view for the unpartitioned
+`CommandKey` table (including its indexes); it is the retention cost that does
+not shrink with `DROP TABLE`, so watch its dead tuples after sweeps.
 `defaultRows` is the opposite: an exact count over the three default
 partitions. It should stay at zero; a growing default partition means an
 `ensure` run was skipped or a restored row fell outside the pre-created
@@ -188,7 +217,7 @@ months, and the next `ensure` will report `skipped:` until it is moved.
 
 ## 6. Migration
 
-Four migrations:
+Five migrations:
 
 1. `20261123130000_task_200_11_command_log_partitioning` — partition swap.
 2. `20261123131000_task_200_11_command_details_side_table` — details backfill
@@ -197,6 +226,8 @@ Four migrations:
    triggers, detail FK.
 4. `20261123133000_task_200_11_safe_partition_drop` — default-partition skip
    and lock-ordered/retrying drop helper.
+5. `20261123134000_task_200_11_command_key_move` — board-scoped detail column,
+   no detail cascade, upsert/deferred move lifecycle, keys swept separately.
 
 **Pre-checks**
 
@@ -254,20 +285,103 @@ Migration 4 (`...safe_partition_drop`, one transaction):
 1. Recreate `janosik_ensure_command_partition` with the default-partition skip
    (`skipped:<table>=<rows>`) and expired-month guard.
 2. Recreate `janosik_drop_command_partition` with the reader lock order, 2 s
-   lock timeout, key-range release and `-1` retry signal.
+   lock timeout and `-1` retry signal.
+
+Migration 5 (`...command_key_move`, one transaction):
+
+1. Add `CommandDetail.boardId` (backfilled from `CommandKey`), drop the detail
+   FK/index to the registry and add `(boardId, commandId)`.
+2. Upsert the key on insert with a same-board guard; move key and detail on
+   `Command.createdAt` changes; deferred detail cleanup on delete.
+3. Stop the drop helper from deleting registry keys inline; the maintenance
+   sweep drains `NOT EXISTS Command` keys in bounded chunks.
 
 **Empty DB:** the same steps create empty parents/partitions and drop empty
 legacy tables. **Existing DB:** the automated check
 (`npm run test:migration:command-log -w backend`) builds both cases on
 throwaway databases: it stops before the TASK-200.11 migrations, seeds three
-months of commands/details/pre-images, then applies all four and asserts
-counts, routing, sequence, key uniqueness, FK cascade, the skipped default
-month, pruning and retention.
+months of commands/details/pre-images, then applies all five and asserts
+counts, routing, sequence, key uniqueness, detail move/no cascade, the skipped
+default month, pruning and retention.
 
 **Rollout note:** after the swap, the first `ensure-command-partitions` run
 is a no-op for the pre-created months; the scheduler extends the window.
 Monitoring should show `defaultRows` near zero and the oldest partition
 inside the retention window.
+
+### Runbook: repairing a wedged default month
+
+`ensure` reports `skipped:Command_default=…;CommandDetail_default=…;…` and
+creates nothing for that month. Repair it in a quiet window (stop writes and
+the scheduler), with the month's `YYYY-MM` fixed:
+
+```sql
+BEGIN;
+-- 1. Copy the default rows out, one parent at a time.
+CREATE TEMP TABLE cmd_default AS
+  SELECT * FROM "Command_default" WHERE "createdAt" >= 'YYYY-MM-01'
+    AND "createdAt" < ('YYYY-MM-01'::date + interval '1 month');
+CREATE TEMP TABLE det_default AS
+  SELECT * FROM "CommandDetail_default" WHERE "createdAt" >= 'YYYY-MM-01'
+    AND "createdAt" < ('YYYY-MM-01'::date + interval '1 month');
+CREATE TEMP TABLE pre_default AS
+  SELECT * FROM "CommandPreimage_default" WHERE "createdAt" >= 'YYYY-MM-01'
+    AND "createdAt" < ('YYYY-MM-01'::date + interval '1 month');
+
+-- 2. Detach the three default partitions.
+ALTER TABLE "Command" DETACH PARTITION "Command_default";
+ALTER TABLE "CommandDetail" DETACH PARTITION "CommandDetail_default";
+ALTER TABLE "CommandPreimage" DETACH PARTITION "CommandPreimage_default";
+
+-- 3. Remove the originals from the detached tables (temp copies hold them).
+DELETE FROM "Command_default" WHERE "createdAt" >= 'YYYY-MM-01'
+  AND "createdAt" < ('YYYY-MM-01'::date + interval '1 month');
+DELETE FROM "CommandDetail_default" WHERE "createdAt" >= 'YYYY-MM-01'
+  AND "createdAt" < ('YYYY-MM-01'::date + interval '1 month');
+DELETE FROM "CommandPreimage_default" WHERE "createdAt" >= 'YYYY-MM-01'
+  AND "createdAt" < ('YYYY-MM-01'::date + interval '1 month');
+
+-- 4. Create the month, then reattach the (now empty) defaults.
+SELECT janosik_ensure_command_partition('YYYY-MM-01');
+ALTER TABLE "Command" ATTACH PARTITION "Command_default" DEFAULT;
+ALTER TABLE "CommandDetail" ATTACH PARTITION "CommandDetail_default" DEFAULT;
+ALTER TABLE "CommandPreimage" ATTACH PARTITION "CommandPreimage_default" DEFAULT;
+
+-- 5. Reinsert through the parent so routing, triggers and keys behave.
+INSERT INTO "Command" SELECT * FROM cmd_default;
+INSERT INTO "CommandDetail" SELECT * FROM det_default;
+INSERT INTO "CommandPreimage" SELECT * FROM pre_default;
+COMMIT;
+ANALYZE "Command"; ANALYZE "CommandDetail"; ANALYZE "CommandPreimage";
+```
+
+The detail/preimage defaults have no keys of their own; the Command insert
+upserts the existing registry row. Verify `defaultRows = 0` and that
+`ensure-command-partitions` no longer reports a skip. If a `Command` row with
+the same id already exists outside the default (manual repair), delete the
+default copy instead of reinserting it — the registry is global.
+
+### Runbook: intermediate duplicate ids
+
+`CommandKey` has a primary key on `id`. If an environment ran the earlier
+partitioned schema long enough to create the same client id on two boards, the
+key migration stops with a duplicate-id exception. Inspect and resolve before
+re-running `prisma migrate deploy`:
+
+```sql
+SELECT k.id, array_agg(k."boardId") AS boards, array_agg(k."createdAt") AS times
+  FROM "CommandKey" k
+ GROUP BY k.id HAVING count(*) > 1;
+-- and, if CommandKey does not exist yet:
+SELECT id, array_agg("boardId") AS boards FROM "Command"
+ GROUP BY id HAVING count(*) > 1;
+```
+
+Pick the canonical board/row (usually the first committed seq), export the
+losing commands/details for audit, then delete them through the parent
+(partitioned `Command` delete) and delete the losing `CommandKey`. Re-run the
+migration. The migration deliberately refuses to guess: a silent merge could
+drop another board's history.
 
 ## 7. Compatibility with the other TASK-200 work
 
@@ -281,7 +395,7 @@ inside the retention window.
   same DTOs; the timeline batches side-table details by commandId, scoped to
   the card's board.
 - **200.4 (aggregate load):** no new aggregate load on the command path; the
-  detail insert and key claim are rows in the same transaction.
+  detail insert and key upsert are rows in the same transaction.
 - **200.6 (revision triggers):** none of the board-table triggers reference
   `Command`/`CommandKey`; the command write still updates `Board` as before.
 - **200.7 (targeted intents):** intent planning reads the same command rows;
@@ -294,17 +408,20 @@ inside the retention window.
   middle reorder, byte ceiling), `command-log-partitions.spec.ts` (UTC
   boundaries, month names, expiry, no expired-month recreation),
   `maintenance.service.spec.ts` (ensure/skip/failure isolation, lock retry,
-  sweep), `command-log-stats` / observability and the existing command
-  service specs (duplicate batch ids, batched detail read).
+  bounded `NOT EXISTS` key sweep), `command-log-stats` / observability and the
+  existing command service specs (duplicate batch ids, batched detail read).
 - E2E: `command-log-partitioning.e2e-spec.ts` (routing, pruning, all 10
-  indexes/FKs, board-scoped detail, trigger/cascade, whole-month drop under a
-  concurrent reader, default-partition skip, exact `defaultRows`, wipe);
-  `command-log-global-ids.e2e-spec.ts` (concurrent cross-board collision,
-  no duplicate/detail leak, duplicate batch); existing `events`, `runs`,
-  `admin`, `commands-*` suites run on the partitioned schema.
+  indexes/FKs, board-scoped detail/no registry cascade, whole-month drop under
+  a concurrent reader, default-partition skip, exact `defaultRows`/registry
+  stats, move-forward key+detail retention, stale-live-key preservation,
+  wipe); `command-log-global-ids.e2e-spec.ts` (concurrent cross-board
+  collision, no duplicate/detail leak, duplicate batch); `admin-throttle-demo`
+  covers the real demo move; existing `events`, `runs`, `admin`, `commands-*`
+  suites run on the partitioned schema.
 - Migration: `backend/scripts/check-command-log-migration.cjs` (empty +
-  existing data, row/detail/key counts, global-id rejection, FK, plan,
-  skipped default month, retention); wired into CI.
+  existing data, row/detail/key counts, global-id rejection, no detail FK,
+  board column/index, plan, move support, skipped default month, retention);
+  wired into CI.
 
 No Docker, Playwright or heavy load is required; the checks use the existing
 PostgreSQL test server.
@@ -319,7 +436,11 @@ PostgreSQL test server.
   plus mirror triggers, which is not worth the complexity for self-hosted
   installs.
 - A month whose rows sit in the default partition is skipped and reported;
-  moving those rows is still an operator step (no automatic detach/move in
-  this task).
+  moving those rows is an operator step (the exact detach/move/reattach SQL is
+  in the runbook above).
+- The registry is unpartitioned and drained by `NOT EXISTS Command` batches,
+  not by month DDL; its rows/index/WAL are part of the size plan and must be
+  visible in observability. A very long `retentionDays` makes this table the
+  dominant cost, not the partitions.
 - Per-board lock/queue and SSE fan-out are unchanged (200.6/200.13 own
   those paths).

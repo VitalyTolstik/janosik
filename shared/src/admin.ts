@@ -1847,6 +1847,19 @@ export interface AdminCommandLogObservabilityDto {
     lastAutovacuumAt: number | null;
   }>;
   defaultRows: number;
+  /**
+   * The unpartitioned global-id registry. It is not a monthly partition and
+   * grows with the number of retained commands; `rows` is a planner estimate,
+   * `deadRows`/vacuum come from `pg_stat_user_tables`, and `sizeBytes` includes
+   * its indexes. Optional for older/fake servers.
+   */
+  registry?: {
+    rows: number;
+    sizeBytes: number;
+    deadRows: number;
+    lastVacuumAt: number | null;
+    lastAutovacuumAt: number | null;
+  };
 }
 
 // --- TASK-65: security -----------------------------------------------------

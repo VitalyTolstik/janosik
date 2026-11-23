@@ -10,6 +10,7 @@ import {
   utcMonthStart,
 } from "@/commands/command-log-partitions";
 import { commandDetailMap } from "@/commands/command-detail-store";
+import { MaintenanceService } from "@/ops/maintenance.service";
 import { wipeAll } from "./support/wipe";
 
 /**
@@ -57,8 +58,9 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
   afterAll(async () => {
     await prisma.command.deleteMany({ where: { boardId } });
     await prisma.commandDetail.deleteMany({
-      where: { commandId: { startsWith: `cmdlog-${suffix}` } },
+      where: { boardId },
     });
+    await prisma.commandKey.deleteMany({ where: { boardId } });
     await prisma.commandPreimage.deleteMany({ where: { boardId } });
     await prisma.board.deleteMany({ where: { id: boardId } });
     await prisma.user.deleteMany({ where: { id: userId } });
@@ -91,6 +93,7 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
       await prisma.commandDetail.create({
         data: {
           commandId: `cmdlog-${suffix}-${key}`,
+          boardId,
           createdAt,
           data: {
             changes: [{ field: "description", from: "before", to: "after" }],
@@ -241,23 +244,40 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     ]);
   });
 
-  it("scopes detail reads through the global key and cascades on key delete", async () => {
-    const fks = await prisma.$queryRawUnsafe<
-      Array<{ conname: string; target: string }>
-    >(
-      `SELECT con.conname,
-              target.relname::text AS target
-         FROM pg_constraint con
-         JOIN pg_class target ON target.oid = con.confrelid
-        WHERE con.conrelid = '"CommandDetail"'::regclass AND con.contype = 'f'`,
+  it("scopes detail reads by board and does not cascade on a key delete", async () => {
+    const fks = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT count(*)::int AS n
+         FROM pg_constraint
+        WHERE conrelid = '"CommandDetail"'::regclass AND contype = 'f'`,
     );
-    expect(fks).toEqual([
-      { conname: "CommandDetail_commandId_fkey", target: "CommandKey" },
-    ]);
+    expect(fks[0]!.n).toBe(0);
+    const index = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT count(*)::int AS n FROM pg_class
+        WHERE relname = 'CommandDetail_boardId_commandId_idx'`,
+    );
+    expect(index[0]!.n).toBe(1);
     const leaked = await commandDetailMap(prisma, `other-board-${suffix}`, [
       `cmdlog-${suffix}-current`,
     ]);
     expect(leaked.size).toBe(0);
+
+    await createCommand("nocascade", current, true);
+    await prisma.commandKey.deleteMany({
+      where: { id: `cmdlog-${suffix}-nocascade` },
+    });
+    expect(
+      await prisma.commandDetail.count({
+        where: { commandId: `cmdlog-${suffix}-nocascade` },
+      }),
+    ).toBe(1);
+    await prisma.command.deleteMany({
+      where: { id: `cmdlog-${suffix}-nocascade` },
+    });
+    expect(
+      await prisma.commandDetail.count({
+        where: { commandId: `cmdlog-${suffix}-nocascade` },
+      }),
+    ).toBe(0);
   });
 
   it("continues the shared seq sequence across partitions", async () => {
@@ -288,6 +308,8 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     const stats = await readCommandLogStats(prisma, 30);
     expect(stats.available).toBe(true);
     expect(stats.defaultRows).toBeGreaterThanOrEqual(1);
+    expect(stats.registry).toBeDefined();
+    expect(stats.registry?.sizeBytes).toBeGreaterThan(0);
     expect(
       stats.partitions.some((part) => part.name === "Command_201908"),
     ).toBe(false);
@@ -336,10 +358,88 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
         await prisma.commandKey.count({
           where: { id: `cmdlog-${suffix}-locked` },
         }),
-      ).toBe(0);
+      ).toBe(1);
+      await prisma.commandKey.deleteMany({
+        where: { id: `cmdlog-${suffix}-locked` },
+      });
     } finally {
       await reader.$disconnect();
     }
+  });
+
+  it("moves a command's key and detail when createdAt crosses a month", async () => {
+    for (const date of ["2019-04-01", "2019-05-01"]) {
+      await prisma.$queryRawUnsafe(
+        `SELECT janosik_ensure_command_partition($1::date)`,
+        date,
+      );
+    }
+    const id = `cmdlog-${suffix}-moved`;
+    const from = new Date(Date.UTC(2019, 3, 15, 12, 0, 0));
+    const to = new Date(Date.UTC(2019, 4, 15, 12, 0, 0));
+    await createCommand("moved", from, true);
+    await prisma.command.updateMany({
+      where: { id, createdAt: from },
+      data: { createdAt: to },
+    });
+    const routed = await prisma.$queryRawUnsafe<
+      Array<{ command_part: string; detail_part: string; key_created: Date }>
+    >(
+      `SELECT c.tableoid::regclass::text AS command_part,
+              d.tableoid::regclass::text AS detail_part,
+              k."createdAt" AS key_created
+         FROM "Command" c
+         JOIN "CommandDetail" d ON d."commandId" = c."id" AND d."boardId" = c."boardId"
+         JOIN "CommandKey" k ON k."id" = c."id" AND k."boardId" = c."boardId"
+        WHERE c."id" = $1`,
+      id,
+    );
+    expect(routed[0]!.command_part).toContain("Command_201905");
+    expect(routed[0]!.detail_part).toContain("CommandDetail_201905");
+    expect(new Date(routed[0]!.key_created).toISOString()).toBe(
+      to.toISOString(),
+    );
+
+    await prisma.$queryRawUnsafe(
+      `SELECT janosik_drop_command_partition($1::date)`,
+      "2019-04-01",
+    );
+    expect(await prisma.commandDetail.count({ where: { commandId: id } })).toBe(
+      1,
+    );
+    expect(await prisma.commandKey.count({ where: { id } })).toBe(1);
+    await prisma.$queryRawUnsafe(
+      `SELECT janosik_drop_command_partition($1::date)`,
+      "2019-05-01",
+    );
+    // Keys are swept separately now; clean the moved command's key.
+    await prisma.commandKey.deleteMany({ where: { id } });
+  });
+
+  it("sweeps orphan keys but preserves a stale key that still has a command", async () => {
+    const id = `cmdlog-${suffix}-live-key`;
+    const orphan = `cmdlog-${suffix}-orphan-key`;
+    const old = new Date("2020-01-01T00:00:00Z");
+    await createCommand("live-key", current, true);
+    await prisma.commandKey.update({
+      where: { id },
+      data: { createdAt: old },
+    });
+    await prisma.commandKey.create({
+      data: { id: orphan, boardId, createdAt: old },
+    });
+    const service = new MaintenanceService(
+      prisma as never,
+      {} as never,
+      { retentionDays: async () => 30 } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await service.sweepCommands();
+    expect(await prisma.commandKey.count({ where: { id } })).toBe(1);
+    expect(await prisma.commandKey.count({ where: { id: orphan } })).toBe(0);
+    await prisma.commandKey.deleteMany({ where: { id } });
   });
 
   it("leaves no command, detail or key rows after the e2e wipe", async () => {

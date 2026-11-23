@@ -3,11 +3,12 @@ import type { Prisma } from "@prisma/client";
 /**
  * TASK-200.11 — batched reads of the heavy command display snapshots.
  *
- * `CommandDetail` is partitioned by `createdAt` and has no FK to `Command`
- * (a partitioned→partitioned FK would make a monthly `DROP TABLE` impossible).
- * Global id uniqueness lives in `CommandKey`, and the detail relation points
- * there, so a read is scoped by `boardId` as well as the ids: even a stale or
- * duplicated id list cannot return another board's diff.
+ * `CommandDetail` is partitioned by `createdAt` and has no FK to `Command` or
+ * `CommandKey`: a partitioned FK to `Command` blocks monthly `DROP TABLE`, and
+ * a registry cascade would lose the snapshot during a cross-partition
+ * `createdAt` move. `boardId` is stored on the row for scoping, the writer
+ * inserts it in the same transaction, and the maintenance move trigger keeps
+ * it aligned with the command.
  */
 export async function commandDetailMap(
   client: Pick<Prisma.TransactionClient, "commandDetail">,
@@ -19,7 +20,7 @@ export async function commandDetailMap(
   const rows = await client.commandDetail.findMany({
     where: {
       commandId: { in: ids },
-      commandKey: { boardId },
+      boardId,
     },
     select: { commandId: true, data: true },
   });

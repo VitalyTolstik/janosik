@@ -123,10 +123,12 @@ describe("Command log global ids (e2e)", () => {
     expect(retry.status).toBe(200);
     expect(retry.body.seq).toBe(Number(stored[0]!.seq));
 
-    // Deleting the winner releases the key and only its own detail.
+    // Deleting the winner removes only its detail now; the registry key is
+    // released by the bounded orphan sweep, not by the command trigger.
     await prisma.command.deleteMany({ where: { id: commandId } });
-    expect(await prisma.commandKey.count({ where: { id: commandId } })).toBe(0);
     expect(await prisma.commandDetail.count({ where: { commandId } })).toBe(0);
+    expect(await prisma.commandKey.count({ where: { id: commandId } })).toBe(1);
+    await prisma.commandKey.deleteMany({ where: { id: commandId } });
     expect(winnerStatus.status).toBe(200);
   });
 
@@ -158,7 +160,7 @@ describe("Command log global ids (e2e)", () => {
     commandId: string,
   ): Promise<number> {
     return prisma.commandDetail.count({
-      where: { commandId, commandKey: { boardId } },
+      where: { commandId, boardId },
     });
   }
 });

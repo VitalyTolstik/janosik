@@ -1467,6 +1467,7 @@ export class CommandsService {
       await tx.commandDetail.create({
         data: {
           commandId: created.id,
+          boardId,
           createdAt,
           data: jsonSafe(details) as Prisma.InputJsonValue,
         },
