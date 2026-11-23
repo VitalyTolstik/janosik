@@ -59,7 +59,11 @@
     "openapi:check": "node scripts/validate-openapi.mjs",
     "openapi:test": "node --test scripts/validate-openapi.test.mjs",
     "prepare": "husky",
-    "perf:admin-filters": "node scripts/perf/admin-filter-bench.mjs"
+    "perf:admin-filters": "node scripts/perf/admin-filter-bench.mjs",
+    "perf:agents": "node scripts/perf/agent-scale.mjs",
+    "perf:smoke": "node scripts/perf/agent-scale.mjs --scenario smoke --mock",
+    "perf:test": "node --test scripts/perf/*.test.mjs",
+    "perf:lint": "eslint scripts/perf eslint.config.mjs"
   },
   "devDependencies": {
     "@seriousme/openapi-schema-validator": "^2.11.0",
