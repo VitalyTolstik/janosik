@@ -263,8 +263,8 @@ export const env = cleanEnv(process.env, {
   // slot. `BOARD_READ_WAIT_MS` bounds the queue wait and
   // `BOARD_READ_TIMEOUT_MS` bounds the whole build/serialize/compress step;
   // both surface as `503` with `Retry-After`, never as an unhandled timeout.
-  BOARD_READ_MAX_CONCURRENT: positiveInt({
-    desc: "Full board aggregates built concurrently per process (TASK-200.6)",
+  BOARD_READ_CAP: positiveInt({
+    desc: "Full board aggregates built concurrently per process (TASK-200.6; this is a per-process cap, not cluster-wide)",
     default: 16,
     example: "16",
   }),

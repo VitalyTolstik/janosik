@@ -4,7 +4,8 @@
  * Ordering (the security order is fixed by `MembershipGuard`, which runs
  * before this service is reached):
  *   1. auth → board existence → membership → role/pause checks (guard);
- *   2. cheap read stamp (`seq` + `Board.updatedAt`) and `If-None-Match`;
+ *   2. cheap read stamp (`Board.aggregateRevision` + `MAX(seq)`) and
+ *      `If-None-Match`;
  *   3. a matching validator answers `304` before any aggregate load;
  *   4. otherwise one single-flight build per board + role + projection +
  *      content coding, admitted through a bounded semaphore;
@@ -12,8 +13,19 @@
  *      burst shares the buffers as well as the query work.
  *
  * The single-flight entry disappears when its task settles. Nothing is cached
- * between requests, so a successful CAS write (or a retry after a conflict)
- * always sees the database, never a pre-write snapshot.
+ * between requests. Its linearization point is the leader's database snapshot
+ * (the transaction start), not each joiner's arrival time: a caller that
+ * arrives after a write may still join a build that started before it, and
+ * must not treat coalescing as read-your-writes. Command responses already
+ * carry the versions and new seq of the write; a client that needs a fresh
+ * snapshot can issue one more read after the coalesced one completes. Only
+ * in-flight work is shared, so a later read never reuses a settled snapshot.
+ *
+ * `BOARD_READ_TIMEOUT_MS` bounds the HTTP response, not the database work:
+ * Prisma has no request cancellation token, so an abandoned build finishes
+ * and releases its slot through the normal transaction timeout. The semaphore
+ * wait, build and encode are all inside the group; a timed-out caller never
+ * blocks a later one.
  */
 import {
   Inject,
@@ -73,14 +85,17 @@ export const DEFAULT_BOARD_READ_LIMITS: BoardReadLimits = Object.freeze({
 });
 
 export interface BoardReadStamp {
+  /** `Board.aggregateRevision`, the monotonic content revision. */
+  revision: bigint;
+  /** Current `MAX(Command.seq)` for the SSE `X-Board-Seq` baseline. */
   seq: number;
-  /** `Board.updatedAt` in Unix ms. */
-  updatedAt: number;
 }
 
 export interface BoardReadSnapshot {
   board: BoardAggregate;
   seq: number;
+  /** Revision read in the same snapshot as `board`. */
+  revision: bigint;
 }
 
 export interface BoardReadRequest {
@@ -154,6 +169,11 @@ export class BoardReadService implements OnModuleDestroy {
   constructor(
     @Inject(BOARD_READ_LIMITS) private readonly limits: BoardReadLimits,
   ) {
+    if (limits.timeoutMs <= limits.waitMs) {
+      throw new Error(
+        "BOARD_READ_TIMEOUT_MS must be greater than BOARD_READ_WAIT_MS",
+      );
+    }
     this.semaphore = new ReadSemaphore({
       limit: limits.maxConcurrent,
       maxQueue: limits.queueMax,
@@ -195,14 +215,15 @@ export class BoardReadService implements OnModuleDestroy {
       if (stamp === null) throw new NotFoundException("Board not found");
       const current = boardReadEtag({
         boardId: request.boardId,
-        seq: stamp.seq,
-        updatedAt: stamp.updatedAt,
+        revision: stamp.revision,
         route: request.route,
         role: request.role,
         projection: request.projection,
       });
       if (ifNoneMatchMatches(request.ifNoneMatch, current)) {
         this.notModified += 1;
+        // A 304 still needs the current SSE baseline; it is a separate value
+        // from the validator but comes from the same single-statement stamp.
         return {
           status: 304,
           body: Buffer.alloc(0),
@@ -287,8 +308,7 @@ export class BoardReadService implements OnModuleDestroy {
         encoding: encoded.encoding,
         etag: boardReadEtag({
           boardId: request.boardId,
-          seq: snapshot.seq,
-          updatedAt: snapshot.board.updatedAt,
+          revision: snapshot.revision,
           route: request.route,
           role: request.role,
           projection: request.projection,

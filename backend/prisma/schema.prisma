@@ -219,6 +219,11 @@ model Board {
   archivedAt         DateTime?
   deletedAt          DateTime? // soft-delete (§7.0)
   version            Int           @default(0) // ifMatch → 409 (title editable)
+  // TASK-200.6: monotonic content revision for the full board aggregate.
+  // Commands advance it through the Board row; direct Card/Comment/Attachment/
+  // claim writes advance it through database triggers. Unlike `seq` it never
+  // moves backwards when old commands are swept.
+  aggregateRevision  BigInt        @default(0)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   members            BoardMember[]

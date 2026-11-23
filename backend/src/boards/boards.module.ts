@@ -35,7 +35,7 @@ import { DeletedItemsService } from "./deleted-items.service";
     {
       provide: BOARD_READ_LIMITS,
       useFactory: (): BoardReadLimits => ({
-        maxConcurrent: env.BOARD_READ_MAX_CONCURRENT,
+        maxConcurrent: env.BOARD_READ_CAP,
         queueMax: env.BOARD_READ_QUEUE_MAX,
         waitMs: env.BOARD_READ_WAIT_MS,
         timeoutMs: env.BOARD_READ_TIMEOUT_MS,

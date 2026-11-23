@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
+import { rm } from "node:fs/promises";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -16,6 +19,7 @@ import {
 } from "@/common/board-read.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
+import { MaintenanceService } from "@/ops/maintenance.service";
 
 const OWNER_EMAIL = "board-read-owner@example.com";
 const MEMBER_EMAIL = "board-read-member@example.com";
@@ -60,12 +64,16 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let boards: BoardsService;
+  let maintenance: MaintenanceService;
   let baseUrl: string;
   let ownerToken: string;
   let memberToken: string;
   let viewerToken: string;
   let outsiderToken: string;
+  let ownerId: string;
+  let memberId: string;
   let boardId: string;
+  let cardId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -81,12 +89,15 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     baseUrl = `http://127.0.0.1:${address.port}/api/v1`;
     prisma = app.get(PrismaService);
     boards = app.get(BoardsService);
+    maintenance = app.get(MaintenanceService);
     await wipe(prisma);
 
     ownerToken = await register(OWNER_EMAIL, "Owner");
     memberToken = await register(MEMBER_EMAIL, "Member");
     viewerToken = await register(VIEWER_EMAIL, "Viewer");
     outsiderToken = await register(OUTSIDER_EMAIL, "Outsider");
+    ownerId = await userIdOf(OWNER_EMAIL);
+    memberId = await userIdOf(MEMBER_EMAIL);
 
     const created = await server()
       .post("/api/v1/boards")
@@ -94,6 +105,21 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
       .send({ title: "Board reads", template: "starter" })
       .expect(201);
     boardId = created.body.id as string;
+    const starter = created.body as BoardAggregate;
+    cardId =
+      Object.values(starter.cards).find((card) => card.archivedAt === undefined)
+        ?.id ?? "";
+    if (cardId === "") {
+      const columnId = starter.columns[0]?.id;
+      if (columnId === undefined) throw new Error("Starter has no column");
+      cardId = "read-card";
+      await command({
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Read card",
+      });
+    }
 
     await invite(boardId, MEMBER_EMAIL, "MEMBER");
     await accept(await invitationId(memberToken), memberToken);
@@ -103,6 +129,11 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
 
   afterAll(async () => {
     await wipe(prisma);
+    // Attachment blobs bypass the DB wipe; this suite uploads one file.
+    await rm(path.join(process.cwd(), "data"), {
+      recursive: true,
+      force: true,
+    });
     await app.close();
   });
 
@@ -146,6 +177,47 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
       .post(`/api/v1/invitations/${id}/accept`)
       .set(auth(token))
       .expect(200);
+  }
+
+  async function userIdOf(email: string): Promise<string> {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email },
+      select: { id: true },
+    });
+    return user.id;
+  }
+
+  async function command(
+    action: Record<string, unknown>,
+    token = ownerToken,
+  ): Promise<void> {
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(token))
+      .send({
+        commandId: randomUUID(),
+        action: { boardId, at: Date.now(), ...action },
+      })
+      .expect(200);
+  }
+
+  function identity(ifNoneMatch?: string): Promise<RawResponse> {
+    return rawGet(`/boards/${boardId}`, ownerToken, {
+      "Accept-Encoding": "identity",
+      ...(ifNoneMatch === undefined ? {} : { "If-None-Match": ifNoneMatch }),
+    });
+  }
+
+  function bodyOf(response: RawResponse): BoardAggregate {
+    return JSON.parse(response.body.toString("utf8")) as BoardAggregate;
+  }
+
+  async function revision(): Promise<bigint> {
+    const board = await prisma.board.findUniqueOrThrow({
+      where: { id: boardId },
+      select: { aggregateRevision: true },
+    });
+    return board.aggregateRevision;
   }
 
   /** One raw GET so compressed bytes and hop-by-hop headers stay observable. */
@@ -198,6 +270,7 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     expect(gzip.status).toBe(200);
     expect(gzip.headers["content-encoding"]).toBe("gzip");
     expect(gzip.headers.etag).toBe(plain.headers.etag);
+    expect(Number(gzip.headers["content-length"])).toBe(gzip.body.byteLength);
     expect(gunzipSync(gzip.body).equals(plain.body)).toBe(true);
 
     const brotli = await rawGet(`/boards/${boardId}`, ownerToken, {
@@ -272,6 +345,7 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     expect(unchanged.headers.etag).toBe(etag);
     expect(unchanged.headers["x-board-seq"]).toBe(first.headers["x-board-seq"]);
     expect(unchanged.headers.vary).toMatch(/Accept-Encoding/i);
+    expect(unchanged.headers["cache-control"]).toBe("private, no-store");
     expect(unchanged.headers["content-encoding"]).toBeUndefined();
   });
 
@@ -301,6 +375,23 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     // exist is the board read's seq or any board content.
     expect(outsider.headers["x-board-seq"]).toBeUndefined();
     expect(outsider.body.toString("utf8")).not.toContain("Board reads");
+
+    // A role change must invalidate the old role-scoped validator even though
+    // the board bytes are the same.
+    const before = await rawGet(`/boards/${boardId}`, memberToken, {
+      "Accept-Encoding": "identity",
+    });
+    await server()
+      .patch(`/api/v1/boards/${boardId}/members/${memberId}`)
+      .set(auth(ownerToken))
+      .send({ role: "VIEWER" })
+      .expect(200);
+    const after = await rawGet(`/boards/${boardId}`, memberToken, {
+      "Accept-Encoding": "identity",
+      "If-None-Match": String(before.headers.etag),
+    });
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
   });
 
   it("rejects a stale ETag after a command (no stale CAS read)", async () => {
@@ -363,6 +454,145 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     expect(after.status).toBe(200);
     expect(after.headers.etag).not.toBe(before.headers.etag);
     expect(after.headers["x-board-seq"]).toBe(before.headers["x-board-seq"]);
+  });
+
+  it("maintains one monotonic revision per Card statement and Board update", async () => {
+    const cards = await prisma.card.findMany({
+      where: { column: { boardId }, deletedAt: null },
+      take: 2,
+      select: { id: true, columnId: true },
+    });
+    expect(cards.length).toBeGreaterThan(0);
+    const before = await revision();
+
+    await prisma.card.updateMany({
+      where: { id: { in: cards.map((card) => card.id) } },
+      data: { title: "Trigger probe" },
+    });
+    expect(await revision()).toBe(before + 1n);
+
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { title: "Board reads" },
+    });
+    expect(await revision()).toBe(before + 2n);
+
+    const tempId = `trigger-temp-${randomUUID()}`;
+    await prisma.card.create({
+      data: {
+        id: tempId,
+        columnId: cards[0]!.columnId,
+        title: "Temporary trigger card",
+        position: 99_999,
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+      },
+    });
+    expect(await revision()).toBe(before + 3n);
+
+    await prisma.card.delete({ where: { id: tempId } });
+    expect(await revision()).toBe(before + 4n);
+  });
+
+  it("invalidates the ETag on attachment add and delete", async () => {
+    const png = readFileSync(
+      path.join(__dirname, "fixtures", "sample-image.png"),
+    );
+    const before = await identity();
+    const beforeCount = bodyOf(before).cards[cardId]?.attachmentCount ?? 0;
+
+    const uploaded = await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(ownerToken))
+      .attach("file", png, { filename: "read.png", contentType: "image/png" })
+      .expect(201);
+
+    const added = await identity(String(before.headers.etag));
+    expect(added.status).toBe(200);
+    expect(added.headers.etag).not.toBe(before.headers.etag);
+    expect(bodyOf(added).cards[cardId]?.attachmentCount).toBe(beforeCount + 1);
+    expect((await identity(String(added.headers.etag))).status).toBe(304);
+
+    await server()
+      .delete(`/api/v1/attachments/${uploaded.body.id as string}`)
+      .set(auth(ownerToken))
+      .expect(200);
+
+    const removed = await identity(String(added.headers.etag));
+    expect(removed.status).toBe(200);
+    expect(removed.headers.etag).not.toBe(added.headers.etag);
+    expect(bodyOf(removed).cards[cardId]?.attachmentCount ?? 0).toBe(
+      beforeCount,
+    );
+  });
+
+  it("invalidates the ETag on a comment (lastActorId changes without seq)", async () => {
+    const before = await identity();
+    await server()
+      .post(`/api/v1/cards/${cardId}/comments`)
+      .set(auth(ownerToken))
+      .send({ text: "A comment changes the card face" })
+      .expect(201);
+
+    const after = await identity(String(before.headers.etag));
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    expect(bodyOf(after).cards[cardId]?.lastActorId).toBe(ownerId);
+    expect((await identity(String(after.headers.etag))).status).toBe(304);
+  });
+
+  it("invalidates the ETag when a lapsed claim is swept", async () => {
+    await command({
+      type: "CLAIM_CARD",
+      cardId,
+      claimedBy: ownerId,
+      leaseUntil: Date.now() - 1_000,
+    });
+    const before = await identity();
+    expect(bodyOf(before).cards[cardId]?.claimedBy).toBe(ownerId);
+
+    expect(await maintenance.sweepClaims()).toBeGreaterThan(0);
+
+    const after = await identity(String(before.headers.etag));
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    expect(bodyOf(after).cards[cardId]?.claimedBy).toBeUndefined();
+    expect(bodyOf(after).cards[cardId]?.leaseUntil).toBeUndefined();
+    expect((await identity(String(after.headers.etag))).status).toBe(304);
+  });
+
+  it("invalidates the ETag on a direct admin-style card edit", async () => {
+    const before = await identity();
+    await prisma.card.update({
+      where: { id: cardId },
+      data: { title: "Admin edited card" },
+    });
+    const after = await identity(String(before.headers.etag));
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    expect(bodyOf(after).cards[cardId]?.title).toBe("Admin edited card");
+    expect((await identity(String(after.headers.etag))).status).toBe(304);
+  });
+
+  it("never matches an old ETag after a command-log sweep", async () => {
+    const before = await identity();
+    await command({ type: "RENAME_BOARD", title: "After sweep rename" });
+    const changed = await identity(String(before.headers.etag));
+    expect(changed.status).toBe(200);
+
+    await prisma.command.deleteMany({ where: { boardId } });
+
+    // The content changed since `before`, so deleting commands must not make
+    // the old validator match again.
+    const afterSweep = await identity(String(before.headers.etag));
+    expect(afterSweep.status).toBe(200);
+    expect(afterSweep.headers.etag).toBe(changed.headers.etag);
+    expect(afterSweep.headers["x-board-seq"]).toBe("0");
+    expect(bodyOf(afterSweep).title).toBe("After sweep rename");
+
+    // The current revision still revalidates after the seq moved backwards.
+    const unchanged = await identity(String(changed.headers.etag));
+    expect(unchanged.status).toBe(304);
   });
 
   it("coalesces identical concurrent reads into one aggregate transaction", async () => {

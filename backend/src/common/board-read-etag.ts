@@ -1,12 +1,15 @@
 /**
  * TASK-200.6: weak validators for the full board read.
  *
- * ETag material is `seq + route + role + projection` plus the board row's
- * `updatedAt`, which covers the few board metadata writes that do not advance
- * the command seq (`agentPolicy`/pause updates, admin restore). Board id is
- * included so two boards can never share a validator. The material is hashed
- * into an opaque tag: board ids and roles are not written to the header, and
- * no token, user id, email or share token can ever become a cache key.
+ * ETag material is `aggregateRevision + route + role + projection` plus the
+ * board id. `aggregateRevision` is a monotonic content revision maintained by
+ * database triggers; it covers comments, attachments, claims, admin edits and
+ * command sweeps, all of which the old `seq + updatedAt` pair missed or could
+ * move backwards on. `X-Board-Seq` stays a separate SSE-resume value and is
+ * not part of this validator. Board id is included so two boards can never
+ * share a validator. The material is hashed into an opaque tag: board ids and
+ * roles are not written to the header, and no token, user id, email or share
+ * token can ever become a cache key.
  *
  * The validator is weak (`W/...`) because gzip and Brotli are different byte
  * representations of the same JSON. Weak comparison is exactly what
@@ -14,14 +17,13 @@
  */
 import { createHash } from "node:crypto";
 
-/** Bump when the aggregate's shape changes without a seq/updatedAt change. */
-export const BOARD_READ_ETAG_VERSION = "v1";
+/** Bump when the aggregate's shape changes without a revision bump. */
+export const BOARD_READ_ETAG_VERSION = "v2";
 
 export interface BoardReadValidatorInput {
   boardId: string;
-  seq: number;
-  /** `Board.updatedAt` of the snapshot the body was built from. */
-  updatedAt: number;
+  /** `Board.aggregateRevision` of the snapshot the body was built from. */
+  revision: bigint;
   /** Logical route; one ETag namespace per route. */
   route: string;
   /** Board role (projection scope); a future role-shaped read must not reuse. */
@@ -36,8 +38,7 @@ export function boardReadEtag(input: BoardReadValidatorInput): string {
     BOARD_READ_ETAG_VERSION,
     input.route,
     input.boardId,
-    String(input.seq),
-    String(input.updatedAt),
+    String(input.revision),
     input.role,
     input.projection,
   ].join("\n");

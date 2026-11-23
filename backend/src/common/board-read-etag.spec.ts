@@ -6,8 +6,7 @@ import {
 
 const INPUT: BoardReadValidatorInput = {
   boardId: "board-1",
-  seq: 7,
-  updatedAt: 1_700_000_000_000,
+  revision: 7n,
   route: "GET /boards/:id",
   role: "MEMBER",
   projection: "board-full:v1",
@@ -23,10 +22,7 @@ describe("boardReadEtag", () => {
   it("changes for every projection input", () => {
     const base = boardReadEtag(INPUT);
     expect(boardReadEtag({ ...INPUT, boardId: "board-2" })).not.toBe(base);
-    expect(boardReadEtag({ ...INPUT, seq: 8 })).not.toBe(base);
-    expect(
-      boardReadEtag({ ...INPUT, updatedAt: INPUT.updatedAt + 1 }),
-    ).not.toBe(base);
+    expect(boardReadEtag({ ...INPUT, revision: 8n })).not.toBe(base);
     expect(
       boardReadEtag({ ...INPUT, route: "GET /boards/:id/summary" }),
     ).not.toBe(base);
