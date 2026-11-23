@@ -94,6 +94,17 @@ jobs:
           npm run openapi:check
           npm run openapi:test
 
+      # TASK-200.8: the optional gateway is a separate compose profile. Validate
+      # the interpolation and the token-free service before the Docker job
+      # builds the image.
+      - name: Validate compose config (MCP gateway profile)
+        env:
+          JWT_SECRET: 00000000000000000000000000000000000000000000000000000000000000ff
+          POSTGRES_USER: janosik
+          POSTGRES_PASSWORD: janosik
+          POSTGRES_DB: janosik
+        run: docker compose --profile mcp config > /dev/null
+
       # The MCP server: type-check, unit tests and a bundle, so a broken
       # tool schema fails the build before it reaches `npx @janosik/mcp`.
       - name: MCP server typecheck
@@ -382,6 +393,65 @@ jobs:
           tags: janosik-selfhost-local:codex
           cache-from: type=gha,scope=janosik-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=janosik-${{ matrix.arch }}
+      - name: Build MCP gateway image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: mcp/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          load: true
+          tags: janosik-mcp-local:test
+          cache-from: type=gha,scope=janosik-mcp-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=janosik-mcp-${{ matrix.arch }}
+      - name: Smoke test MCP gateway container
+        run: |
+          set -euo pipefail
+          cat >/tmp/mock-api.mjs <<'NODE'
+          import { createServer } from "node:http";
+          const server = createServer((req, res) => {
+            if (req.url === "/api/v1/auth/me" || req.url === "/api/v1/health/ready") {
+              res.writeHead(200, { "content-type": "application/json" });
+              res.end(req.url.endsWith("auth/me")
+                ? '{"user":{"id":"ci"}}'
+                : '{"status":"ready"}');
+              return;
+            }
+            res.writeHead(404);
+            res.end();
+          });
+          server.listen(19090, "127.0.0.1");
+          NODE
+          mock_pid=""
+          cleanup() {
+            docker rm -f janosik-mcp-smoke >/dev/null 2>&1 || true
+            [ -n "$mock_pid" ] && kill "$mock_pid" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          node /tmp/mock-api.mjs &
+          mock_pid=$!
+          sleep 0.5
+          docker run -d --name janosik-mcp-smoke \
+            --network host --memory 2048m --cpus 2 \
+            -e JANOSIK_URL=http://127.0.0.1:19090 \
+            -e JANOSIK_MCP_HTTP_PORT=18090 \
+            janosik-mcp-local:test
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18090/health >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              docker logs janosik-mcp-smoke
+              exit 1
+            fi
+            sleep 1
+          done
+          MCP_URL=http://127.0.0.1:18090/mcp \
+            MCP_TOKEN=jnk_ci_smoke node mcp/scripts/http-smoke.mjs
+          docker stop -t 20 janosik-mcp-smoke >/dev/null
+          size=$(docker image inspect janosik-mcp-local:test --format '{{.Size}}')
+          echo "gateway image size: $((size / 1024 / 1024)) MiB"
+          test "$size" -lt $((400 * 1024 * 1024))
       - name: Smoke test self-host installation
         run: bash scripts/self-host-smoke.sh
 
@@ -433,6 +503,23 @@ jobs:
           cache-from: type=gha,scope=janosik-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=janosik-${{ matrix.arch }}
 
+      - name: Build and push MCP gateway image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: mcp/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            APP_VERSION=${{ steps.product.outputs.version }}
+          push: true
+          tags: ghcr.io/vitalytolstik/janosik-mcp:${{ github.ref_name }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/VitalyTolstik/janosik
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.product.outputs.version }}
+          cache-from: type=gha,scope=janosik-mcp-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=janosik-mcp-${{ matrix.arch }}
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [publish-images]
@@ -470,6 +557,18 @@ jobs:
           docker buildx imagetools create "${args[@]}" \
             "ghcr.io/vitalytolstik/janosik:${GITHUB_REF_NAME}-amd64" \
             "ghcr.io/vitalytolstik/janosik:${GITHUB_REF_NAME}-arm64"
+
+      - name: Publish MCP gateway manifest
+        env:
+          MCP_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] && args+=(--tag "${tag/janosik:/janosik-mcp:}")
+          done <<< "$MCP_IMAGE_TAGS"
+          docker buildx imagetools create "${args[@]}" \
+            "ghcr.io/vitalytolstik/janosik-mcp:${GITHUB_REF_NAME}-amd64" \
+            "ghcr.io/vitalytolstik/janosik-mcp:${GITHUB_REF_NAME}-arm64"
 
   # Publish the MCP server to npm and to the MCP Registry on a `mcp-v*` tag
   # (TASK-136). The registry only hosts metadata; the npm package is the

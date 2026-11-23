@@ -62,7 +62,10 @@ describe("MCP registry metadata", () => {
   });
 
   it("ships a runnable bin and only the built files", () => {
-    expect(pkg.bin).toEqual({ "janosik-mcp": "dist/index.js" });
+    expect(pkg.bin).toEqual({
+      "janosik-mcp": "dist/index.js",
+      "janosik-mcp-http": "dist/http.js",
+    });
     expect(pkg.files).toContain("dist");
   });
 });

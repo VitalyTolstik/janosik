@@ -7,7 +7,11 @@ import {
   Optional,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import type { ApprovalRequest, Prisma } from "@prisma/client";
+import type {
+  ApprovalRequest,
+  Board as BoardRow,
+  Prisma,
+} from "@prisma/client";
 import type {
   ActorType,
   Board,
@@ -17,6 +21,7 @@ import type {
   CommandDeltaEntry,
   CommandResponse,
   ConflictError,
+  EntityVersions,
 } from "@janosik/shared";
 import {
   atWipLimit,
@@ -52,6 +57,11 @@ import {
   emptyBoardAggregate,
   loadBoardAggregate,
 } from "@/boards/board-aggregate";
+import {
+  loadTargetedBoardAggregate,
+  targetedCardIds,
+  targetedIndexColumnIds,
+} from "./targeted-board";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
@@ -407,6 +417,27 @@ export interface ApplyOptions {
     runId: string,
     results: CommandResponse[],
   ) => Promise<void>;
+  /**
+   * TASK-200.7: the caller is a card intent (claim/move/field patch), so the
+   * board snapshot may be the targeted one — the shell plus the named card(s)
+   * and, for a move, the active card order. Never set this for a normal
+   * command whose reducer may read an unrelated card.
+   */
+  targeted?: boolean;
+  /**
+   * TASK-200.7: stable hash of the original card intent (not the
+   * server-derived action). Stored on the command row so a retry with the same
+   * `commandId` can prove it is the same request even when the action carries
+   * a fresh lease or recomputed move coordinates.
+   */
+  intentFingerprint?: string;
+  /**
+   * TASK-200.7: canonicalize the stored/hashed approval plan (not the action
+   * actually applied). Targeted moves replace resolved indexes with a
+   * client-intent marker so an unrelated positional change between approval
+   * and retry does not change the plan hash.
+   */
+  planForApproval?: (plan: ApprovalPlan) => ApprovalPlan;
 }
 
 @Injectable()
@@ -456,6 +487,29 @@ export class CommandsService {
       response: applied.results[0]!,
       applied: applied.freshCommandIds.includes(dto.commandId),
     };
+  }
+
+  /**
+   * TASK-200.7: choose the snapshot width for one command batch. A targeted
+   * card intent loads the shell and its card(s); a normal command keeps the
+   * full aggregate because its reducer may read an unrelated card.
+   */
+  private async loadCommandBoard(
+    client: Prisma.TransactionClient,
+    boardId: string,
+    board: BoardRow,
+    actions: BoardAction[],
+    targeted: boolean,
+  ): Promise<BoardAggregate | null> {
+    if (!targeted) {
+      return loadBoardAggregate(client, boardId, { board });
+    }
+    const loaded = await loadTargetedBoardAggregate(client, boardId, {
+      board,
+      cardIds: targetedCardIds(actions),
+      indexColumnIds: targetedIndexColumnIds(actions),
+    });
+    return loaded?.board ?? null;
   }
 
   /**
@@ -529,6 +583,9 @@ export class CommandsService {
     const approvalId =
       options.principal?.via === "pat" ? options.approvalId : undefined;
     const plan = planFromPreparedCommands(boardId, prepared);
+    // TASK-200.7: the approval is about the client intent, not the source/
+    // destination indexes the server resolved for this attempt.
+    const approvalPlan = options.planForApproval?.(plan) ?? plan;
     let requirement: PlanRequirement | null = null;
     if (options.principal?.via === "pat") {
       try {
@@ -559,8 +616,18 @@ export class CommandsService {
         const snapshotNeeded =
           planNeedsClassificationSnapshot(plan, boardRow.workflow) ||
           planCreatesCards(plan);
+        // TASK-200.7: a card intent never needs every card. The shell,
+        // columns, workflow and its one card are enough for classification —
+        // even a move into a done column, where the source card is part of
+        // the decision.
         const aggregate = snapshotNeeded
-          ? await loadBoardAggregate(this.prisma, boardId, { board: boardRow })
+          ? await this.loadCommandBoard(
+              this.prisma,
+              boardId,
+              boardRow,
+              prepared.map((entry) => entry.action),
+              options.targeted === true,
+            )
           : null;
         if (snapshotNeeded && aggregate === null) {
           throw new NotFoundException("Board not found");
@@ -593,7 +660,7 @@ export class CommandsService {
             role: actorRole,
             principal: options.principal,
             agentSessionId: attribution.agentSessionId,
-            plan,
+            plan: approvalPlan,
             requirement,
             policy,
             prepared,
@@ -659,8 +726,8 @@ export class CommandsService {
           const authorized = await this.approvals.authorizeCommandApply(tx, {
             boardId,
             approvalId,
-            plan,
-            planHash: approvalPlanHash(plan),
+            plan: approvalPlan,
+            planHash: approvalPlanHash(approvalPlan),
             requirement,
             principal: options.principal,
             agentSessionId: attribution.agentSessionId,
@@ -727,7 +794,13 @@ export class CommandsService {
         // is applied to; an all-replay request loads nothing.
         let running: BoardAggregate | null = null;
         if (fresh.length > 0) {
-          const aggregate = await loadBoardAggregate(tx, boardId, { board });
+          const aggregate = await this.loadCommandBoard(
+            tx,
+            boardId,
+            board,
+            fresh.map((entry) => entry.action),
+            options.targeted === true,
+          );
           if (aggregate === null) {
             throw new NotFoundException("Board not found");
           }
@@ -817,7 +890,7 @@ export class CommandsService {
               clientRunId,
               planHash:
                 options.run?.planHash ??
-                (approval !== null ? approvalPlanHash(plan) : null),
+                (approval !== null ? approvalPlanHash(approvalPlan) : null),
               approvalId: approval !== null ? approval.id : null,
               commandCount: prepared.length,
               revertsRunId: options.run?.revertsRunId ?? null,
@@ -907,6 +980,9 @@ export class CommandsService {
             board: running,
             exemptRestoreLimits: options.exemptRestoreLimits === true,
             exemptClaimGuard: options.exemptClaimGuard === true,
+            ...(options.intentFingerprint !== undefined
+              ? { intentFingerprint: options.intentFingerprint }
+              : {}),
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -1312,6 +1388,8 @@ export class CommandsService {
       board: Board;
       exemptRestoreLimits?: boolean;
       exemptClaimGuard?: boolean;
+      /** TASK-200.7 stable intent hash stored beside the display details. */
+      intentFingerprint?: string;
     },
   ): Promise<{
     response: CommandResponse;
@@ -1399,6 +1477,15 @@ export class CommandsService {
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;
+    const storedDetails =
+      details !== null || params.intentFingerprint !== undefined
+        ? {
+            ...(details ?? {}),
+            ...(params.intentFingerprint !== undefined
+              ? { intentFingerprint: params.intentFingerprint }
+              : {}),
+          }
+        : null;
 
     const created = await tx.command.create({
       data: {
@@ -1413,8 +1500,8 @@ export class CommandsService {
         type: action.type,
         payload: jsonSafe(action),
         result: {},
-        ...(details !== null
-          ? { details: jsonSafe(details) as Prisma.InputJsonValue }
+        ...(storedDetails !== null
+          ? { details: jsonSafe(storedDetails) as Prisma.InputJsonValue }
           : {}),
         touches: [],
       },
@@ -2428,6 +2515,19 @@ export class CommandsService {
       ids.set(match[2], expected);
     }
     const versions = await entityVersions(tx, boardId, wanted);
+    // TASK-200.7: answer with the versions this command pinned (and the board
+    // seq above), so a client can retry only the entity it touched instead of
+    // re-reading the whole board. A missing entity is left out: there is no
+    // version to retry with, and the normal reducer/no-change path explains
+    // the stale id.
+    const actualVersions: EntityVersions = {};
+    for (const [entity, expectations] of wanted) {
+      const actual = versions.get(entity);
+      for (const id of expectations.keys()) {
+        const value = actual?.get(id);
+        if (value !== undefined) actualVersions[`${entity}:${id}`] = value;
+      }
+    }
     for (const [entity, expectations] of wanted) {
       const actual = versions.get(entity);
       for (const [id, expected] of expectations) {
@@ -2436,6 +2536,9 @@ export class CommandsService {
           throw new ConflictException({
             conflict: "version",
             currentVersion,
+            ...(Object.keys(actualVersions).length > 0
+              ? { versions: actualVersions }
+              : {}),
           } satisfies ConflictError);
         }
       }
