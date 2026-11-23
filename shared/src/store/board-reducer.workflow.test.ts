@@ -159,6 +159,46 @@ describe("board reducer workflow guard", () => {
     expect(cleared).not.toBe(set);
   });
 
+  it("clears workflowInvalid when a workflow is set, replaced, equal or cleared", () => {
+    const config = workflow([
+      { id: "a", fromColumnId: "backlog", toColumnId: "doing" },
+    ]);
+    const invalid = {
+      ...board(config),
+      workflowInvalid: true as const,
+    };
+    const repairedWithEqual = reduce(invalid, {
+      type: "SET_BOARD_WORKFLOW",
+      boardId: "b1",
+      workflow: config,
+      at: AT,
+    });
+    expect(repairedWithEqual.workflow).toEqual(config);
+    expect(repairedWithEqual.workflowInvalid).toBeUndefined();
+    expect(repairedWithEqual).not.toBe(invalid);
+
+    const cleared = reduce(repairedWithEqual, {
+      type: "SET_BOARD_WORKFLOW",
+      boardId: "b1",
+      at: AT + 1,
+    });
+    expect(cleared.workflow).toBeUndefined();
+    expect(cleared.workflowInvalid).toBeUndefined();
+
+    const invalidWithoutWorkflow = {
+      ...board(),
+      workflowInvalid: true as const,
+    };
+    const clearedInvalid = reduce(invalidWithoutWorkflow, {
+      type: "SET_BOARD_WORKFLOW",
+      boardId: "b1",
+      at: AT + 2,
+    });
+    expect(clearedInvalid.workflow).toBeUndefined();
+    expect(clearedInvalid.workflowInvalid).toBeUndefined();
+    expect(clearedInvalid).not.toBe(invalidWithoutWorkflow);
+  });
+
   it("ignores an invalid workflow action", () => {
     const before = board();
     const after = reduce(before, {
