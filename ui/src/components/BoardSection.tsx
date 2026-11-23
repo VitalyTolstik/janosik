@@ -19,13 +19,16 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
 import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
+import { SavedViewsMenu } from "@/components/board/SavedViewsMenu";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/auth/AuthContext";
 import { useBoard } from "@/store/BoardContext";
+import { useBoardMembersList } from "@/store/board-live";
 import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
@@ -58,6 +61,16 @@ const SERVER_FILTER_DEBOUNCE_MS = 250;
  */
 export function BoardSection() {
   const { board, roleOf, setBoardColumnStyle } = useBoard();
+  const { user } = useAuth();
+  // Undefined until the roster loads — never `[]` as "loaded": the saved-view
+  // drift pass would otherwise treat every assignee as deleted.
+  const members = useBoardMembersList(board?.id);
+  const savedViewAssigneeIds = useMemo(
+    () =>
+      members.length > 0 ? members.map((member) => member.userId) : undefined,
+    [members],
+  );
+  const savedViewsUserId = user?.id ?? "local";
   const { t } = useI18n();
   const { background } = useBoardBackground();
   // The filter lives in the URL (TASK-162 review, F-02): a reload, a shared
@@ -337,14 +350,31 @@ export function BoardSection() {
         {/* The watch view reads the whole board feed; a card filter would only
           contradict it, so the toolbar is hidden there. */}
         {view !== "watch" ? (
-          <div className="mb-3">
-            <FilterBar
-              filter={filter}
-              labels={board.labels}
+          <div
+            data-testid="board-toolbar"
+            className="mb-3 flex items-start gap-2"
+          >
+            <div className="min-w-0 flex-1">
+              <FilterBar
+                filter={filter}
+                labels={board.labels}
+                boardId={board.id}
+                matchCount={matchCount}
+                matchPending={serverPending}
+                onChange={setFilter}
+              />
+            </div>
+            <SavedViewsMenu
+              userId={savedViewsUserId}
               boardId={board.id}
-              matchCount={matchCount}
-              matchPending={serverPending}
-              onChange={setFilter}
+              filter={filter}
+              view={view}
+              labels={board.labels}
+              assigneeIds={savedViewAssigneeIds}
+              onApply={(nextFilter, nextView) => {
+                setFilter(nextFilter);
+                if (nextView) setView(nextView);
+              }}
             />
           </div>
         ) : null}

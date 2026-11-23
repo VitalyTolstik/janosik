@@ -47,12 +47,12 @@ import type { BoardView } from "./ViewSwitcher";
 /**
  * Saved views menu (TASK-177.20.2) — local-only named filters.
  *
- * The component is preparatory and is intentionally **not mounted yet**;
- * 177.19 is still touching BoardSection/FilterBar. Integration note:
+ * Mounted in `BoardSection` beside `FilterBar`. The wiring is deliberately
+ * small and mirrors the calls below:
  *
  *   const members = useBoardMembersList(board.id);
  *   <SavedViewsMenu
- *     userId={user.id}
+ *     userId={user?.id ?? "local"}
  *     boardId={board.id}
  *     filter={filter}
  *     view={view}
