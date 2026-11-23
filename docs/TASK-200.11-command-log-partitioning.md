@@ -255,7 +255,8 @@ Six migrations:
 5. `20261123134000_task_200_11_command_key_move` — board-scoped detail column,
    no detail cascade, upsert/deferred move lifecycle, keys swept separately.
 6. `20261123135000_task_200_11_command_key_board_index` — `CommandKey(boardId)`
-   for purge scans; inline only below 1M rows, otherwise deferred to
+   for purge scans; inline only for a registry under 1M rows **and** 64 MiB,
+   otherwise deferred to
    `ensure-command-key-index` (`CREATE INDEX CONCURRENTLY`).
 
 **Pre-checks**
@@ -330,7 +331,8 @@ Migration 5 (`...command_key_move`, one transaction):
 Migration 6 (`...command_key_board_index`):
 
 1. `SET LOCAL lock_timeout = '5s'` and inspect `CommandKey` reltuples.
-2. Below 1M rows, build `CommandKey_boardId_idx` inline (CI/fresh install).
+2. Below 1M rows and under 64 MiB (physical size or `relpages`), build
+   `CommandKey_boardId_idx` inline (CI/fresh install).
    At 1M+ rows, skip the blocking build and log a notice.
 3. Operators run `POST /admin/maintenance/run {"job":"ensure-command-key-index"}`
    in a quiet window; it builds `CREATE INDEX CONCURRENTLY` (out of

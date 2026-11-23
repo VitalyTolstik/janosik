@@ -926,6 +926,7 @@ describe("MaintenanceService", () => {
 
   it("purges a stale board's feed and command log in bounded pages under the board lock (TASK-156)", async () => {
     const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ valid: false }]);
     const ids = (n: number, prefix: string) =>
       Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
     (prisma.board.findMany as jest.Mock).mockResolvedValue([{ id: "b1" }]);
@@ -1007,6 +1008,9 @@ describe("MaintenanceService", () => {
         boardId: "b1",
       },
     });
+    // An invalid leftover index is not planner-usable: skip the board-scoped
+    // orphan pass rather than seq-scanning the registry.
+    expect(prisma.commandKey.findMany).not.toHaveBeenCalled();
     // Each page is read with a take bound and a boardId filter.
     expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);
     expect((prisma.activity.findMany as jest.Mock).mock.calls[0][0]).toEqual({

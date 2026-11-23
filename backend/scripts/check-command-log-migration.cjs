@@ -42,6 +42,7 @@ const names = {
   empty: `janosik_task20011_empty_${suffix}`,
   existing: `janosik_task20011_existing_${suffix}`,
   deferred: `janosik_task20011_deferred_${suffix}`,
+  deferredSize: `janosik_task20011_deferred_size_${suffix}`,
 };
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "janosik-task20011-"));
 
@@ -494,40 +495,36 @@ async function checkExisting(prisma, before) {
   assert(sweptKeys[0].n === 0, "the orphan sweep clears September keys");
 }
 
-async function checkDeferredIndex(prisma) {
-  // Simulate a huge registry with stale/zero reltuples driven by physical
-  // size; migration 6 must not take the blocking inline branch.
+async function prepareDeferredIndex(prisma, rows, pages) {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "CommandKey" ("id", "boardId", "createdAt")
      VALUES ('deferred-key', 'deferred-board', now())`,
   );
   await prisma.$executeRawUnsafe(
     `UPDATE pg_class
-        SET reltuples = 2000000
+        SET reltuples = ${rows}, relpages = ${pages}
       WHERE relname = 'CommandKey'
         AND relnamespace = current_schema()::regnamespace`,
   );
-  const index = await scalars(
-    prisma,
-    `SELECT count(*)::int AS n FROM pg_class
-      WHERE relname = 'CommandKey_boardId_idx'`,
-  );
-  assert(index[0].n === 0, "deferred branch leaves the index for the job");
 }
 
-async function checkDeferredIndexAfterMigration(prisma) {
+async function assertDeferredIndexAbsent(prisma, label) {
   const index = await scalars(
     prisma,
     `SELECT count(*)::int AS n FROM pg_class
       WHERE relname = 'CommandKey_boardId_idx'`,
   );
-  assert(index[0].n === 0, "deferred registry did not build the index inline");
+  assert(
+    index[0].n === 0,
+    `${label} deferred branch did not build the index inline`,
+  );
 }
 
 async function main() {
   await admin(`CREATE DATABASE "${names.empty}"`);
   await admin(`CREATE DATABASE "${names.existing}"`);
   await admin(`CREATE DATABASE "${names.deferred}"`);
+  await admin(`CREATE DATABASE "${names.deferredSize}"`);
 
   try {
     migrate(names.empty, { withTask: true });
@@ -555,17 +552,29 @@ async function main() {
       await existing.$disconnect().catch(() => undefined);
     }
 
-    // Deferred index branch: apply through 134, fake a huge stale reltuples,
-    // then run migration 135.
+    // Deferred index: apply through 134, then run migration 135 with a fake
+    // huge registry. The first case drives reltuples, the second relpages
+    // (physical-size branch) with stale rows=0.
     migrate(names.deferred, { withTask: true, deferIndex: true });
     const deferred = client(names.deferred);
     try {
-      await checkDeferredIndex(deferred);
+      await prepareDeferredIndex(deferred, 2000000, 0);
       await deferred.$disconnect();
       migrate(names.deferred, { withTask: true });
-      await checkDeferredIndexAfterMigration(deferred);
+      await assertDeferredIndexAbsent(deferred, "row-count");
     } finally {
       await deferred.$disconnect().catch(() => undefined);
+    }
+
+    migrate(names.deferredSize, { withTask: true, deferIndex: true });
+    const deferredSize = client(names.deferredSize);
+    try {
+      await prepareDeferredIndex(deferredSize, 0, 200000);
+      await deferredSize.$disconnect();
+      migrate(names.deferredSize, { withTask: true });
+      await assertDeferredIndexAbsent(deferredSize, "physical-size");
+    } finally {
+      await deferredSize.$disconnect().catch(() => undefined);
     }
   } finally {
     await admin(`DROP DATABASE IF EXISTS "${names.empty}" WITH (FORCE)`).catch(
@@ -576,6 +585,9 @@ async function main() {
     ).catch(() => undefined);
     await admin(
       `DROP DATABASE IF EXISTS "${names.deferred}" WITH (FORCE)`,
+    ).catch(() => undefined);
+    await admin(
+      `DROP DATABASE IF EXISTS "${names.deferredSize}" WITH (FORCE)`,
     ).catch(() => undefined);
     fs.rmSync(scratch, { recursive: true, force: true });
   }

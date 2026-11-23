@@ -28,6 +28,7 @@ import {
   parseCommandPartitionMonth,
   partitionMonthsToEnsure,
 } from "@/commands/command-log-partitions";
+import { commandKeyBoardIndexState } from "@/commands/command-key-index";
 /**
  * TASK-68 — regular housekeeping. Everything that used to accumulate
  * forever is swept by a named job: soft-deleted rows past the retention
@@ -666,12 +667,8 @@ export class MaintenanceService {
           });
           if (page.length < PURGE_CHUNK) break;
         }
-        const keyBoardIndex = await tx.$queryRaw<
-          Array<{ present: boolean }>
-        >(Prisma.sql`
-          SELECT to_regclass('"CommandKey_boardId_idx"') IS NOT NULL AS "present"
-        `);
-        if (keyBoardIndex[0]?.present === true) {
+        const keyIndexState = await commandKeyBoardIndexState(tx);
+        if (keyIndexState === "valid") {
           for (;;) {
             const page = await tx.commandKey.findMany({
               where: { boardId },
@@ -686,7 +683,7 @@ export class MaintenanceService {
           }
         } else {
           this.logger.warn(
-            "purge-board: CommandKey_boardId_idx is absent; skipping the defensive board key orphan pass",
+            `purge-board: CommandKey_boardId_idx is ${keyIndexState}; skipping the defensive board key orphan pass`,
           );
         }
         await tx.checklistItem.deleteMany({
@@ -1082,28 +1079,21 @@ export class MaintenanceService {
 
   /**
    * Build the `CommandKey(boardId)` index outside a transaction when migration
-   * 6 skipped it (registry >= 1M rows). `CREATE INDEX CONCURRENTLY` does not
-   * block normal writes; it still consumes I/O and needs free disk/WAL, so an
-   * operator should run it in a quiet window. An invalid leftover index from a
-   * failed click is rebuilt rather than treated as done.
+   * 6 skipped it (registry at least 1M rows or 64 MiB). `CREATE INDEX
+   * CONCURRENTLY` does not block normal writes; it still consumes I/O and
+   * needs free disk/WAL, so an operator should run it in a quiet window. An
+   * invalid leftover index from a failed build is rebuilt rather than treated
+   * as done.
    */
   async ensureCommandKeyIndex(): Promise<{
     removed: number;
     detail: string;
   }> {
-    const rows = await this.prisma.$queryRaw<
-      Array<{ valid: boolean | null }>
-    >(Prisma.sql`
-      SELECT i.indisvalid AS "valid"
-        FROM pg_class c
-        LEFT JOIN pg_index i ON i.indexrelid = c.oid
-       WHERE c.relname = 'CommandKey_boardId_idx'
-         AND c.relnamespace = current_schema()::regnamespace
-    `);
-    if (rows[0]?.valid === true) {
+    const state = await commandKeyBoardIndexState(this.prisma);
+    if (state === "valid") {
       return { removed: 0, detail: "CommandKey_boardId_idx already present" };
     }
-    if (rows.length > 0) {
+    if (state === "invalid") {
       // A concurrent build interrupted earlier leaves an invalid index.
       await this.prisma.$executeRawUnsafe(
         'DROP INDEX CONCURRENTLY IF EXISTS "CommandKey_boardId_idx"',

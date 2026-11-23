@@ -17,6 +17,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { withBoardWriteContext } from "@/common/request-context";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
+import { commandKeyBoardIndexState } from "@/commands/command-key-index";
 import { CommentsService } from "@/comments/comments.service";
 import { deleteCommentActivitySnapshots } from "@/comments/comment-history";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
@@ -947,12 +948,8 @@ export class DemoService implements OnModuleDestroy {
         `;
         if (removed === 0) break;
       }
-      const keyBoardIndex = await tx.$queryRaw<
-        Array<{ present: boolean }>
-      >(Prisma.sql`
-        SELECT to_regclass('"CommandKey_boardId_idx"') IS NOT NULL AS "present"
-      `);
-      if (keyBoardIndex[0]?.present === true) {
+      const keyIndexState = await commandKeyBoardIndexState(tx);
+      if (keyIndexState === "valid") {
         for (;;) {
           const removed = await tx.$executeRaw`
             WITH victims AS (
@@ -973,7 +970,7 @@ export class DemoService implements OnModuleDestroy {
         }
       } else {
         this.logger.warn(
-          "demo purge: CommandKey_boardId_idx is absent; skipping the board key orphan pass",
+          `demo purge: CommandKey_boardId_idx is ${keyIndexState}; skipping the board key orphan pass`,
         );
       }
       // Keep recorded parents when other users have added dependent rows.
