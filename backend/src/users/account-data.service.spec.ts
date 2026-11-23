@@ -23,6 +23,44 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
 });
 
 describe("AccountDataService deletion races", () => {
+  it("invalidates PATs after the self-service deletion transaction commits", async () => {
+    const user = makeUser({
+      passwordHash: await argonHash("old password", { type: argon2id }),
+    });
+    const deleteAfter = new Date("2026-12-01T00:00:00Z");
+    const scheduleInTransaction = jest.fn().mockResolvedValue({ deleteAfter });
+    const invalidatePatCache = jest.fn();
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(prisma),
+      ),
+    } as unknown as PrismaService;
+    const service = new AccountDataService(
+      prisma,
+      {} as never,
+      { scheduleInTransaction, invalidatePatCache } as never,
+      { record: jest.fn() } as never,
+      {} as never,
+      { enqueue: jest.fn() } as never,
+    );
+
+    await expect(
+      service.deleteAccount(
+        "user-1",
+        { confirmEmail: "user@example.com", password: "old password" },
+        securityStamp(user),
+      ),
+    ).resolves.toMatchObject({ status: "scheduled" });
+    expect(scheduleInTransaction).toHaveBeenCalled();
+    expect(invalidatePatCache).toHaveBeenCalledTimes(1);
+    // Post-commit hook, not an in-transaction call.
+    expect(invalidatePatCache.mock.invocationCallOrder[0]).toBeGreaterThan(
+      scheduleInTransaction.mock.invocationCallOrder[0],
+    );
+  });
+
   it("rejects an in-flight deletion after a reset changed the stamp", async () => {
     const before = makeUser({
       passwordHash: await argonHash("old password", { type: argon2id }),

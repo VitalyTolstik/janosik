@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { Role, type BoardMember } from "@prisma/client";
+import { HotPathCacheService } from "./hot-path-cache.service";
 import {
   isReadOnlyControlOperation,
   MembershipGuard,
@@ -67,11 +68,29 @@ describe("MembershipGuard", () => {
     canActivateSpy.mockRestore();
   });
 
-  function build(required: Role[] | undefined, prisma: PrismaMock) {
+  function build(
+    required: Role[] | undefined,
+    prisma: PrismaMock,
+    cache: unknown = {
+      getMembership: jest.fn().mockReturnValue(undefined),
+      rememberMembership: jest.fn(),
+      dropMembership: jest.fn(),
+      epochs: { membership: 0 },
+      singleFlight: jest.fn(
+        async (_key: string, _epoch: number, loader: () => Promise<unknown>) =>
+          loader(),
+      ),
+    },
+  ) {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue(required),
     } as unknown as Reflector;
-    return new MembershipGuard(reflector, prisma as never, {} as never);
+    return new MembershipGuard(
+      reflector,
+      prisma as never,
+      {} as never,
+      cache as never,
+    );
   }
 
   function prismaWith(board: unknown, member: unknown): PrismaMock {
@@ -283,5 +302,147 @@ describe("MembershipGuard", () => {
         ),
       ),
     ).resolves.toBe(true);
+  });
+
+  describe("TASK-200.5 membership cache", () => {
+    function cache(ttlMs = 30_000): HotPathCacheService {
+      const bus = {
+        publishInvalidation: jest.fn(),
+        onInvalidation: jest.fn(() => () => undefined),
+      };
+      return new HotPathCacheService(bus as never, {
+        patTtlMs: 0,
+        membershipTtlMs: ttlMs,
+        streamMembershipTtlMs: ttlMs,
+        flagsTtlMs: 0,
+        patMaxEntries: 10,
+        membershipMaxEntries: 10,
+        streamMembershipMaxEntries: 10,
+        flagsMaxEntries: 10,
+      });
+    }
+
+    it("serves repeated reads from one membership lookup", async () => {
+      const prisma = prismaWith({ id: "board-1" }, membership());
+      const hotPathCache = cache();
+      const guard = build(undefined, prisma, hotPathCache);
+
+      await guard.canActivate(context({ id: "board-1" }));
+      await guard.canActivate(context({ id: "board-1" }));
+
+      expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.board.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not slide the TTL on cache hits", async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));
+      try {
+        const prisma = prismaWith({ id: "board-1" }, membership());
+        const hotPathCache = cache(30_000);
+        const guard = build(undefined, prisma, hotPathCache);
+
+        await guard.canActivate(context({ id: "board-1" }));
+        expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+
+        jest.advanceTimersByTime(20_000);
+        await guard.canActivate(context({ id: "board-1" }));
+        expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+
+        // 30 s after the database read, not after the last cache hit.
+        jest.advanceTimersByTime(10_000);
+        await guard.canActivate(context({ id: "board-1" }));
+        expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("single-flights concurrent cold reads of one membership", async () => {
+      const prisma = prismaWith({ id: "board-1" }, membership());
+      prisma.boardMember.findUnique.mockImplementation(async () => {
+        await Promise.resolve();
+        return membership();
+      });
+      const hotPathCache = cache();
+      const guard = build(undefined, prisma, hotPathCache);
+
+      await Promise.all(
+        Array.from({ length: 100 }, () =>
+          guard.canActivate(context({ id: "board-1" })),
+        ),
+      );
+      expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("bypasses the cache on a write and on an SSE connect", async () => {
+      const prisma = prismaWith(
+        { id: "board-1", agentPolicy: null, agentsPausedAt: null },
+        membership(),
+      );
+      const hotPathCache = cache();
+      const guard = build(undefined, prisma, hotPathCache);
+      const write = {
+        method: "POST",
+        originalUrl: "/api/v1/boards/board-1/commands",
+      };
+      const sse = {
+        method: "GET",
+        originalUrl: "/api/v1/boards/board-1/events",
+      };
+
+      await guard.canActivate(context({ id: "board-1" }, write));
+      await guard.canActivate(context({ id: "board-1" }, write));
+      expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(2);
+
+      await guard.canActivate(context({ id: "board-1" }, sse));
+      await guard.canActivate(context({ id: "board-1" }, sse));
+      expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(4);
+    });
+
+    it("never serves a cached membership whose VIEWER window lapsed", async () => {
+      const expired = membership({
+        role: Role.VIEWER,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      const prisma = prismaWith({ id: "board-1" }, expired);
+      const hotPathCache = cache();
+      hotPathCache.rememberMembership("board-1", "user-1", expired);
+
+      await expect(
+        build(undefined, prisma, hotPathCache).canActivate(
+          context({ id: "board-1" }),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      // The lapsed entry was dropped and the row re-read before the lazy
+      // deletion decision.
+      expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+      expect(hotPathCache.getMembership("board-1", "user-1")).toBeUndefined();
+    });
+
+    it("uses a role changed in the fresh row on a write", async () => {
+      const prisma = prismaWith(
+        { id: "board-1", agentPolicy: null, agentsPausedAt: null },
+        membership({ role: Role.MEMBER }),
+      );
+      const hotPathCache = cache();
+      hotPathCache.rememberMembership(
+        "board-1",
+        "user-1",
+        membership({ role: Role.ADMIN }),
+      );
+
+      await expect(
+        build([Role.ADMIN], prisma, hotPathCache).canActivate(
+          context(
+            { id: "board-1" },
+            {
+              method: "POST",
+              originalUrl: "/api/v1/boards/board-1/commands",
+            },
+          ),
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 });

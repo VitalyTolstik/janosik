@@ -210,6 +210,9 @@ export class AccountDataService {
         actorType: "human",
       });
     });
+    // The outer transaction owns the credential check; invalidate only after
+    // the disable/token revocation rows are committed.
+    this.accountDeletion.invalidatePatCache();
     return { status: "scheduled", deleteAfter: deleteAfter.getTime() };
   }
 

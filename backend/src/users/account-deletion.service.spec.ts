@@ -55,6 +55,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma as unknown as PrismaService,
       {} as never,
       {} as never,
+      { invalidatePat: jest.fn() } as never,
     );
     await expect(
       service.deleteAccount("user-1", {}, new Date()),
@@ -73,6 +74,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
     await expect(
       service.cleanupOrphanBoards("user-1", ["board-1"]),
@@ -88,6 +90,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
 
     await expect(
@@ -113,6 +116,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
 
     await expect(
@@ -129,6 +133,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
 
     await expect(
@@ -148,5 +153,69 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
         data: expect.objectContaining({ action: "board.cleanup_recovered" }),
       }),
     );
+  });
+
+  function scheduleTx() {
+    return {
+      $queryRaw: jest.fn(),
+      user: { update: jest.fn().mockResolvedValue({}) },
+      apiToken: {
+        findMany: jest.fn().mockResolvedValue([{ id: "token-1" }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      agentSession: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      card: { findMany: jest.fn().mockResolvedValue([]) },
+      securityAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+  }
+
+  it("does not invalidate inside a caller-owned deletion transaction", async () => {
+    const invalidatePat = jest.fn();
+    const tx = scheduleTx();
+    const service = new AccountDeletionService(
+      {} as never,
+      {} as never,
+      {} as never,
+      { invalidatePat } as never,
+    );
+
+    await service.scheduleInTransaction(tx as never, "user-1", "user-1", {});
+
+    expect(tx.apiToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    // Clearing before commit would let a concurrent read refill the old key.
+    expect(invalidatePat).not.toHaveBeenCalled();
+  });
+
+  it("invalidates only after the schedule transaction commits", async () => {
+    const tx = scheduleTx();
+    let committed = false;
+    let invalidatedBeforeCommit = false;
+    const invalidatePat = jest.fn(() => {
+      if (!committed) invalidatedBeforeCommit = true;
+    });
+    const prisma = {
+      $transaction: jest.fn(
+        async (fn: (client: unknown) => Promise<unknown>) => {
+          const result = await fn(tx);
+          committed = true;
+          return result;
+        },
+      ),
+    };
+    const service = new AccountDeletionService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      { invalidatePat } as never,
+    );
+
+    await service.schedule("user-1", "user-1", {});
+
+    expect(invalidatedBeforeCommit).toBe(false);
+    expect(invalidatePat).toHaveBeenCalledTimes(1);
   });
 });

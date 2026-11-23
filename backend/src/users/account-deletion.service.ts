@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { ActorType } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
@@ -55,6 +56,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly boards: BoardsService,
+    private readonly hotPathCache: HotPathCacheService,
   ) {}
 
   /** Disable the account now and record the seven-day hard-delete date. */
@@ -67,9 +69,23 @@ export class AccountDeletionService {
       agentSessionId?: string | null;
     } = {},
   ): Promise<{ deleteAfter: Date }> {
-    return this.prisma.$transaction((tx) =>
+    const result = await this.prisma.$transaction((tx) =>
       this.scheduleInTransaction(tx, userId, actorId, attribution),
     );
+    // Post-commit only: the token rows and `disabledAt` are visible now, so a
+    // concurrent read cannot refill the cache with the pre-deletion snapshot.
+    this.hotPathCache.invalidatePat();
+    return result;
+  }
+
+  /**
+   * Post-commit invalidator for callers that own the transaction (self-service
+   * deletion runs `scheduleInTransaction` inside its own credential check).
+   * Calling it from inside that transaction would let a concurrent read refill
+   * the cache before the disable/revoke rows commit.
+   */
+  invalidatePatCache(): void {
+    this.hotPathCache.invalidatePat();
   }
 
   /**
@@ -673,6 +689,9 @@ export class AccountDeletionService {
       }
     }
 
+    // The account row and every token are gone; drop cached resolutions now
+    // so no replica serves the erased user for the rest of the window.
+    this.hotPathCache.invalidatePat();
     try {
       await this.prisma.securityAuditLog.create({
         data: {
