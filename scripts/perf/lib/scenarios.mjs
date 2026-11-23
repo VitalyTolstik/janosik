@@ -294,13 +294,17 @@ export async function runScenario({
       id === "S4"
         ? startedAt + (scenario.rampMs ?? 0) + scenario.durationMs
         : startedAt + scenario.durationMs;
+    // S3's SSE hold ends at workEnd. Give the hold a moment to record the
+    // still-open stream count and close cleanly before the scenario timer
+    // aborts every client at the same instant.
+    const sseCloseGraceMs = id === "S3" && (scenario.sse ?? 0) > 0 ? 250 : 0;
     timer = setTimeout(
       () => {
         timedOut = true;
         captureMeasurement();
         controller.abort();
       },
-      Math.max(1, workEnd - Date.now()),
+      Math.max(1, workEnd + sseCloseGraceMs - Date.now()),
     );
 
     const tasks = [];
@@ -583,8 +587,16 @@ async function holdSseStreams({
     log,
   });
   metrics.recordSseHoldStart();
-  await delayUntil(deadline, signal);
-  metrics.recordSseHoldEnd();
+  try {
+    await delayUntil(deadline, signal);
+  } catch (error) {
+    // S3's hold deadline coincides with the scenario timer. An abort at that
+    // boundary is expected, but the live count at the end of the hold still
+    // has to be measured before the streams close.
+    if (!signal.aborted) throw error;
+  } finally {
+    metrics.recordSseHoldEnd();
+  }
   return closeSseHandles(handles, metrics, rampEndedAt);
 }
 

@@ -73,7 +73,7 @@ test("S4 synchronises a burst after the ramp and reports the work window", async
   });
   assert.equal(result.scenario.burst, true);
   assert.equal(result.workStartedAt >= started + 250, true);
-  assert.equal(result.plannedWorkStartedAt, started + 250);
+  assert.equal(result.plannedWorkStartedAt, result.startedAt + 250);
   assert.equal(result.actualWorkStartedAt >= result.plannedWorkStartedAt, true);
   assert.equal(result.workDurationMs >= 300, true);
   assert.equal(result.workDurationMs <= 1_500, true);
@@ -259,6 +259,46 @@ test("S5 with no live stream is failed, not an empty success", async (t) => {
   assert.equal(metrics.sse.opened, 0);
   assert.equal(metrics.sse.failed, 2);
   assert.equal(status.status, "failed");
+});
+
+test("S3 measures live streams at the end of its hold", async (t) => {
+  const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 4 });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S3",
+      "--agents",
+      "1",
+      "--humans",
+      "0",
+      "--sse",
+      "2",
+      "--mix",
+      "100/0/0",
+      "--duration",
+      "300ms",
+      "--cadence",
+      "50ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S3");
+  const result = await runScenario({
+    id: "S3",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+  });
+  const status = statusOf(result, config, metrics);
+  assert.equal(metrics.sse.opened, 2);
+  assert.equal(metrics.sse.liveAtHoldStart, 2);
+  assert.equal(metrics.sse.liveAtHoldEnd, 2);
+  assert.equal(status.status, "ok");
 });
 
 test("read-only S3 --mix 100/0/0 is not failed for zero cycles", async (t) => {
