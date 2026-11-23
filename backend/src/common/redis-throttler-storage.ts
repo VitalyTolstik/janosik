@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common";
 import type { ThrottlerStorage } from "@nestjs/throttler";
 import type Redis from "ioredis";
+import { quitRedis } from "./redis-shutdown";
 
 /**
  * The handful of Redis methods this adapter needs. Keeping them explicit
@@ -117,28 +118,6 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
    */
   async close(): Promise<void> {
     (this.fallback as ShutdownableThrottlerStorage).onApplicationShutdown?.();
-    const client = this.redis;
-    // A lazy, never-used connection has nothing to wait for; do not open one
-    // just to close it.
-    if (client.status === "wait" || client.status === "end") {
-      client.disconnect?.();
-      return;
-    }
-    if (typeof client.quit === "function") {
-      const quit = client.quit.bind(client);
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1_000);
-        timer.unref?.();
-        void quit()
-          .catch(() => undefined)
-          .finally(() => {
-            clearTimeout(timer);
-            resolve();
-          });
-      });
-    }
-    // If Redis did not answer within the grace window, close the socket so a
-    // rolling restart is never held hostage by a dead dependency.
-    client.disconnect?.();
+    await quitRedis(this.redis);
   }
 }

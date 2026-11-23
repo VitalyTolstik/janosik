@@ -10,6 +10,7 @@ import { Observable, Subject } from "rxjs";
 import Redis from "ioredis";
 import type { BoardSseEvent, CommandSseEvent } from "@janosik/shared";
 import { env } from "@/config/env";
+import { quitRedis } from "@/common/redis-shutdown";
 
 /**
  * A command frame as it travels on the internal bus (B-4): the wire event
@@ -58,6 +59,8 @@ export interface RealtimeRedisClient {
     listener: (channel: string, payload: string) => void,
   ): unknown;
   quit(): Promise<unknown>;
+  disconnect?(): void;
+  status?: string;
 }
 
 export type RealtimeRedisFactory = (url: string) => RealtimeRedisClient;
@@ -191,8 +194,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
       clearInterval(this.monitor);
       this.monitor = null;
     }
-    await this.publisher?.quit().catch(() => undefined);
-    await this.subscriber?.quit().catch(() => undefined);
+    await quitRedis(this.publisher);
+    await quitRedis(this.subscriber);
   }
 
   /**
