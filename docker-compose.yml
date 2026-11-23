@@ -79,9 +79,9 @@ services:
       SSE_MAX_CONNECTIONS: ${SSE_MAX_CONNECTIONS:-5000}
       SSE_MAX_PER_USER: ${SSE_MAX_PER_USER:-32}
       SSE_MAX_PER_BOARD: ${SSE_MAX_PER_BOARD:-0}
-      # TASK-200.13: per-subscriber slow-reader bound. A burst may use up to
-      # 4x this for 500 ms while `drain` is pending; one already-written frame
-      # is not counted. 0 drops on the first queued frame.
+      # TASK-200.13: per-subscriber slow-reader bound. A batch burst may use
+      # up to the 16 MiB hard guard for 5 s while `drain` is pending; one
+      # already-written frame is not counted. 0 drops the first queued frame.
       SSE_MAX_BUFFER_BYTES: ${SSE_MAX_BUFFER_BYTES:-131072}
       SSE_SLOW_CLOSE_MS: ${SSE_SLOW_CLOSE_MS:-60000}
       UPLOAD_RATE_LIMIT: ${UPLOAD_RATE_LIMIT:-60}

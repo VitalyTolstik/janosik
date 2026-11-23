@@ -245,7 +245,7 @@ export class EventsController implements OnModuleDestroy {
       });
     } catch (error) {
       subscribing = false;
-      if (connection.responseStarted) {
+      if (connection.responseStarted || res.headersSent) {
         this.logger.warn(
           `Stream setup for board ${boardId} failed after headers: ${
             error instanceof Error ? error.message : String(error)
@@ -261,6 +261,13 @@ export class EventsController implements OnModuleDestroy {
     }
     subscribing = false;
     if (hasSyncError) {
+      // A response already on the wire cannot turn into a JSON error; close
+      // it instead of letting the exception filter write into a sent stream.
+      if (res.headersSent) {
+        connection.end();
+        releaseTracking();
+        return;
+      }
       connection.dispose();
       releaseTracking();
       throw syncError;
@@ -319,46 +326,64 @@ export class EventsController implements OnModuleDestroy {
         }
       }
 
-      const live = this.realtime.watch(boardId).subscribe((event) => {
-        if (event.type === "presence") {
-          if (presenceEnabled) send(event as unknown as object);
-          return;
+      const liveRef: { subscription?: Subscription } = {};
+      try {
+        liveRef.subscription = this.realtime
+          .watch(boardId)
+          .subscribe((event) => {
+            if (event.type === "presence") {
+              if (presenceEnabled) send(event as unknown as object);
+              return;
+            }
+            // A membership change (TASK-36): every subscriber refreshes its
+            // member directory; the removed user gets the frame as the last
+            // one on their stream and the server then closes it. Other
+            // members' streams keep following the board.
+            if (event.type === "membership") {
+              send(event as unknown as object);
+              if (
+                (event.change === "removed" || event.change === "left") &&
+                user !== undefined &&
+                event.userId === user.id
+              ) {
+                subscriber.complete();
+              }
+              return;
+            }
+            // An activity frame (TASK-37: a new or deleted comment) is not a
+            // command: no seq, no log — pass it straight through like
+            // presence.
+            if (event.type === "activity") {
+              send(event as unknown as object);
+              return;
+            }
+            // TASK-166: agent-session lifecycle frames are control-plane only.
+            if (event.type === "agent") {
+              send(event as unknown as object);
+              return;
+            }
+            // TASK-166.5/166.7: approval and run lifecycle frames are control
+            // plane, not commands — no seq, no log; pass them straight
+            // through.
+            if (event.type === "approval" || event.type === "run") {
+              send(event as unknown as object);
+              return;
+            }
+            if (event.type !== "command") return;
+            sequencer.offer(event as InternalCommandEvent);
+          });
+      } catch (error) {
+        // `watch()` holds a ref-counted channel; a throw after the presence
+        // join must release both, or the roster leaks a ghost user.
+        releaseTracking();
+        if (presenceToken !== null) {
+          this.presence.leave(boardId, clientId, presenceToken.token);
         }
-        // A membership change (TASK-36): every subscriber refreshes its
-        // member directory; the removed user gets the frame as the last one
-        // on their stream and the server then closes it. Other members'
-        // streams keep following the board.
-        if (event.type === "membership") {
-          send(event as unknown as object);
-          if (
-            (event.change === "removed" || event.change === "left") &&
-            user !== undefined &&
-            event.userId === user.id
-          ) {
-            subscriber.complete();
-          }
-          return;
-        }
-        // An activity frame (TASK-37: a new or deleted comment) is not a
-        // command: no seq, no log — pass it straight through like presence.
-        if (event.type === "activity") {
-          send(event as unknown as object);
-          return;
-        }
-        // TASK-166: agent-session lifecycle frames are control-plane only.
-        if (event.type === "agent") {
-          send(event as unknown as object);
-          return;
-        }
-        // TASK-166.5/166.7: approval and run lifecycle frames are control
-        // plane, not commands — no seq, no log; pass them straight through.
-        if (event.type === "approval" || event.type === "run") {
-          send(event as unknown as object);
-          return;
-        }
-        if (event.type !== "command") return;
-        sequencer.offer(event as InternalCommandEvent);
-      });
+        subscriber.error(error);
+        return;
+      }
+      const live = liveRef.subscription;
+      if (live === undefined) return;
 
       // Everything that can reject synchronously (presence join, watch) has
       // succeeded: commit the 200 now, just before the first possible frame.

@@ -397,8 +397,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     this.lastSlowLogAt = now;
     this.logger.warn(
       `SSE slow subscriber dropped (${info.reason}, ${info.queuedFrames} frame(s), ` +
-        `${info.queuedBytes} byte(s) buffered) on board ${boardId}; ` +
-        `total drops: ${this.slowDrops}`,
+        `${info.queuedBytes} referenced byte(s); shared buffers are not copied) ` +
+        `on board ${boardId}; total drops: ${this.slowDrops}`,
     );
   }
 

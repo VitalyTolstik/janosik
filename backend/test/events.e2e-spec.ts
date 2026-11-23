@@ -361,6 +361,19 @@ describe("Board events SSE (e2e)", () => {
     }
   }
 
+  async function waitFor(
+    predicate: () => boolean,
+    timeoutMs = 5_000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() > deadline) {
+        throw new Error("Timed out waiting for a condition");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   function readWithTimeout(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     ms: number,
@@ -459,7 +472,8 @@ describe("Board events SSE (e2e)", () => {
     );
     const baseline = await boardSeq(ownerToken);
     const frames = app.get(SseFrameStore);
-    const buildsBefore = frames.builtCount;
+    const realtime = app.get(RealtimeService);
+    const subscribersBefore = realtime.subscriberCount;
 
     const [ownerStream, memberStream] = await Promise.all([
       openQuietStream(ownerToken, baseline),
@@ -467,9 +481,20 @@ describe("Board events SSE (e2e)", () => {
     ]);
     expect(ownerStream.status).toBe(200);
     expect(memberStream.status).toBe(200);
-    const ownerReader = openRawReader(ownerStream);
-    const memberReader = openRawReader(memberStream);
+    // `fetch` resolves once the headers are out, but wait for both admissions
+    // so a setup frame cannot move `builtCount` inside the measurement.
+    await waitFor(
+      () => realtime.subscriberCount === subscribersBefore + 2,
+      5_000,
+    );
+    const buildsBefore = frames.builtCount;
+    let ownerReader: ReturnType<typeof openRawReader> | undefined;
+    let memberReader: ReturnType<typeof openRawReader> | undefined;
     try {
+      ownerReader = openRawReader(ownerStream);
+      memberReader = openRawReader(memberStream);
+      const owner = ownerReader;
+      const member = memberReader;
       const firstSeq = await command(
         ownerToken,
         {
@@ -501,8 +526,8 @@ describe("Board events SSE (e2e)", () => {
         await reader.next(isCommand),
       ];
       const [ownerBlocks, memberBlocks] = await Promise.all([
-        readTwo(ownerReader),
-        readTwo(memberReader),
+        readTwo(owner),
+        readTwo(member),
       ]);
 
       // Same bytes, same ids, same order: one Buffer was written to both.
@@ -521,10 +546,82 @@ describe("Board events SSE (e2e)", () => {
       // Two published commands, two frames built — not one per subscriber.
       expect(frames.builtCount - buildsBefore).toBe(2);
     } finally {
-      await ownerReader.close();
-      await memberReader.close();
+      await ownerReader?.close();
+      await memberReader?.close();
     }
   }, 20_000);
+
+  it.each([10, 100])(
+    "survives a healthy live %i-command burst of 64 KiB descriptions",
+    async (count) => {
+      const columnId = `col-burst-${count}`;
+      const cardId = `card-burst-${count}`;
+      await command(
+        ownerToken,
+        {
+          type: "ADD_COLUMN",
+          newColumnId: columnId,
+          title: `Burst ${count}`,
+          at: Date.now(),
+        },
+        `evt-burst-col-${count}`,
+      );
+      await command(
+        ownerToken,
+        {
+          type: "ADD_CARD",
+          newCardId: cardId,
+          columnId,
+          title: "Burst card",
+          at: Date.now(),
+        },
+        `evt-burst-card-${count}`,
+      );
+      const baseline = await boardSeq(ownerToken);
+      const stream = openReader(await openQuietStream(memberToken, baseline));
+      let reading: Promise<SseFrame[]> | undefined;
+      try {
+        // A healthy reader is already draining while the batch publishes; the
+        // server may queue the burst but must not drop this subscriber.
+        reading = stream.next(
+          count,
+          "command",
+          count === 100 ? 60_000 : 30_000,
+        );
+        const response = await server()
+          .post(`/api/v1/boards/${boardId}/commands/batch`)
+          .set(auth(ownerToken))
+          .send({
+            commands: Array.from({ length: count }, (_, index) => {
+              const prefix = `burst-${count}-${index}-`;
+              return {
+                commandId: `evt-burst-${count}-${index}`,
+                action: {
+                  type: "UPDATE_CARD",
+                  cardId,
+                  // LIMITS.description is exactly 64 000 characters.
+                  description: prefix + "x".repeat(64_000 - prefix.length),
+                  at: Date.now() + index,
+                },
+              };
+            }),
+          })
+          .expect(200);
+        const frames = await reading;
+        const expected = (
+          response.body as { results: Array<{ seq: number }> }
+        ).results.map((result) => result.seq);
+        expect(frames.map((frame) => frame.seq)).toEqual(expected);
+        expect(frames).toHaveLength(count);
+      } finally {
+        // Close before awaiting a failed read: otherwise the pending reader
+        // rejects after the test has already moved on.
+        await reading?.catch(() => undefined);
+        await stream.close();
+      }
+    },
+    90_000,
+  );
 
   it("resumes a dropped quiet stream from its last applied seq", async () => {
     await command(

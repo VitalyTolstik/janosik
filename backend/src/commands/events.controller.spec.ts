@@ -8,7 +8,7 @@ import {
   presenceEnabledFor,
 } from "./events.controller";
 import { KeepAliveScheduler } from "@/realtime/keep-alive";
-import { SseFrameStore } from "@/realtime/sse-frames";
+import { SSE_BURST_GRACE_MS, SseFrameStore } from "@/realtime/sse-frames";
 
 describe("SSE presence default (TASK-200.5)", () => {
   it("keeps presence on for a browser JWT and off for an agent PAT", () => {
@@ -137,65 +137,130 @@ describe("EventsController setup errors (TASK-200.13)", () => {
   });
 });
 
-describe("EventsController slow subscribers (TASK-200.13)", () => {
-  it("drops a blocked stream and records the realtime metric", () => {
-    const response = new SlowResponse();
-    // The leading header newline is accepted; the first command frame fills
-    // the socket, and the second one (200 KB) would exceed the buffer bound.
-    response.accept(true, false);
-    const noteSlowSubscriber = jest.fn();
-    const store = new SseFrameStore();
+describe("EventsController stream setup cleanup (TASK-200.13)", () => {
+  it("leaves presence when watch() throws after a successful join", () => {
+    const release = jest.fn();
+    const leave = jest.fn();
     const controller = new EventsController(
       {} as never,
-      { noteSlowSubscriber } as never,
+      {
+        watch: () => {
+          throw new Error("watch down");
+        },
+      } as never,
+      {
+        join: () => ({ roster: [], token: "presence-token" }),
+        leave,
+      } as never,
       {} as never,
       {} as never,
-      {} as never,
-      store,
+      new SseFrameStore(),
     );
-    const big = {
-      type: "command",
-      seq: 1,
-      action: { type: "UPDATE_CARD", description: "x".repeat(200_000) },
-    };
-    const teardown = jest.fn();
-    (
-      controller as unknown as { stream: () => Observable<MessageEvent> }
-    ).stream = () =>
-      new Observable<MessageEvent>((subscriber) => {
-        // Four 200 KB frames: the first is accepted by the socket, the next
-        // three queue past the 4x emergency cap.
-        for (let seq = 1; seq <= 4; seq += 1) {
-          subscriber.next({ data: { ...big, seq } } as MessageEvent);
-        }
-        // Deliberately no complete(): the slow close happens while subscribe
-        // is still running, before `serve` owns a Subscription.
-        return teardown;
-      });
-
+    const errors: unknown[] = [];
     (
       controller as unknown as {
-        serve: (
+        stream: (
           boardId: string,
           since: number,
           clientId: string,
           presence: boolean,
           release: () => void,
-          res: Response,
-        ) => void;
+          user: unknown,
+          principal: unknown,
+        ) => Observable<MessageEvent>;
       }
-    ).serve("board-1", 0, "client-1", false, jest.fn(), response.asResponse());
+    )
+      .stream(
+        "board-1",
+        0,
+        "client-1",
+        true,
+        release,
+        { id: "user-1" },
+        { via: "jwt" },
+      )
+      .subscribe({ error: (error: unknown) => errors.push(error) });
 
-    expect(noteSlowSubscriber).toHaveBeenCalledWith(
-      "board-1",
-      expect.objectContaining({ reason: "buffer" }),
-    );
-    expect(response.destroyed).toBe(true);
-    // The stream teardown (which releases the admission slot and stops the
-    // keep-alive) ran even though the close happened during subscribe.
-    expect(teardown).toHaveBeenCalledTimes(1);
-    // Nothing after the disconnect is written.
-    expect(response.writes.length).toBeLessThanOrEqual(2);
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0])).toContain("watch down");
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(leave).toHaveBeenCalledWith("board-1", "client-1", "presence-token");
+  });
+});
+
+describe("EventsController slow subscribers (TASK-200.13)", () => {
+  it("drops a blocked stream and records the realtime metric", () => {
+    jest.useFakeTimers();
+    try {
+      const response = new SlowResponse();
+      // The leading header newline is accepted; the first command frame fills
+      // the socket, and the next three (200 KB each) queue above the soft
+      // bound while still under the 16 MiB hard guard.
+      response.accept(true, false);
+      const noteSlowSubscriber = jest.fn();
+      const store = new SseFrameStore();
+      const controller = new EventsController(
+        {} as never,
+        { noteSlowSubscriber } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        store,
+      );
+      const big = {
+        type: "command",
+        seq: 1,
+        action: { type: "UPDATE_CARD", description: "x".repeat(200_000) },
+      };
+      const teardown = jest.fn();
+      (
+        controller as unknown as { stream: () => Observable<MessageEvent> }
+      ).stream = () =>
+        new Observable<MessageEvent>((subscriber) => {
+          for (let seq = 1; seq <= 4; seq += 1) {
+            subscriber.next({ data: { ...big, seq } } as MessageEvent);
+          }
+          // Deliberately no complete(): the slow close happens while subscribe
+          // is still running, before `serve` owns a Subscription.
+          return teardown;
+        });
+
+      (
+        controller as unknown as {
+          serve: (
+            boardId: string,
+            since: number,
+            clientId: string,
+            presence: boolean,
+            release: () => void,
+            res: Response,
+          ) => void;
+        }
+      ).serve(
+        "board-1",
+        0,
+        "client-1",
+        false,
+        jest.fn(),
+        response.asResponse(),
+      );
+
+      // A queued burst gets a grace window; this reader never drains.
+      expect(noteSlowSubscriber).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(SSE_BURST_GRACE_MS);
+      expect(noteSlowSubscriber).toHaveBeenCalledWith(
+        "board-1",
+        expect.objectContaining({ reason: "buffer" }),
+      );
+      expect(response.destroyed).toBe(true);
+      // The stream teardown (which releases the admission slot and stops the
+      // keep-alive) ran even though the close happened during subscribe.
+      expect(teardown).toHaveBeenCalledTimes(1);
+      // Nothing after the disconnect is written.
+      expect(response.writes.length).toBeLessThanOrEqual(2);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

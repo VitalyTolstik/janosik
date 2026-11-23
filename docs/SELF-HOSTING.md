@@ -383,10 +383,12 @@ comfortably. Two knobs matter when you grow, and both have safe defaults:
   event and written to every stream as the same buffer; a reader that stops
   draining is disconnected after the soft `SSE_MAX_BUFFER_BYTES` (default
   `128 KiB`; the already-accepted in-flight frame is extra, and `0` means no
-  queue), `SSE_SLOW_CLOSE_MS` (default `60 s`) or the 500 ms / 4× burst guard
-  for a batch burst, then resumes from `?since=`. This pre-serialized path is
-  for authenticated member streams; public share SSE still uses Nest's
-  per-subscriber writer. Both limits are forwarded by the compose file.
+  queue), `SSE_SLOW_CLOSE_MS` (default `60 s`) or the 5 s / 16 MiB burst
+  guard for a batch burst, then resumes from `?since=`. Frames are shared
+  buffers, so the guard bounds references, not per-subscriber copies. This
+  pre-serialized path is for authenticated member streams; public share SSE
+  still uses Nest's per-subscriber writer. Both limits are forwarded by the
+  compose file.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC rather than the container OOM-killer, which would
   drop every open connection at once.

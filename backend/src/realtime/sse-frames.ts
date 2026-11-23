@@ -31,14 +31,18 @@ export interface SseFrame {
  * exceed the soft queue bound for this long before the subscriber is treated
  * as slow; a real reader drains well inside the window.
  */
-export const SSE_BURST_GRACE_MS = 500;
+export const SSE_BURST_GRACE_MS = 5_000;
 
 /**
- * Hard heap guard while the grace window is open: the queue may grow to
- * this multiple of the soft bound, no further. A burst still larger is
- * dropped immediately.
+ * Hard referenced-byte cap while a burst is queued. A legitimate command
+ * batch carries at most 10 MiB of JSON; 100 × 64 KiB frames are ~6.4 MiB, so
+ * 16 MiB leaves room for framing and multiple shared events. This is a bound
+ * on Buffer **references** per subscriber, not on unique heap: the frames
+ * themselves are shared by every subscriber (see `SlowSseConsumer`).
+ * A configured soft cap larger than half of this raises the hard cap to
+ * 2 × the soft cap, so the hard guard can never sit below the soft one.
  */
-export const SSE_BURST_EMERGENCY_FACTOR = 4;
+export const SSE_BURST_HARD_BYTES = 16 * 1024 * 1024;
 
 export class SseFrameStore {
   private readonly cache = new WeakMap<object, SseFrame>();
@@ -87,7 +91,12 @@ export class SseFrameStore {
 
 export type SlowSseCloseReason = "buffer" | "timeout";
 
-/** Why a subscriber was dropped — fed to the metric/log in RealtimeService. */
+/**
+ * Why a subscriber was dropped — fed to the metric/log in RealtimeService.
+ * `queuedBytes` counts referenced frame sizes, not allocated copies: one
+ * Buffer is shared by every subscriber, so N slow subscribers do not make N
+ * copies of a 64 KiB description.
+ */
 export interface SlowSseConsumer {
   reason: SlowSseCloseReason;
   queuedBytes: number;
@@ -100,9 +109,10 @@ export interface SseConnectionOptions {
    * Soft byte bound on queued frames. The frame whose `write()` returned
    * `false` was already accepted by Node and is not counted here, so the
    * effective worst case is this bound plus that one in-flight frame. A
-   * synchronous burst may exceed the soft bound for `SSE_BURST_GRACE_MS`
-   * (up to `SSE_BURST_EMERGENCY_FACTOR` ×) while `drain` is pending. 0 means
-   * "no queued frames": the first frame after backpressure is dropped.
+   * synchronous burst may exceed the soft bound for `SSE_BURST_GRACE_MS`,
+   * up to `SSE_BURST_HARD_BYTES` (or 2 × this bound, if larger), while
+   * `drain` is pending. 0 means "no queued frames": the first frame after
+   * backpressure is dropped.
    */
   maxBufferBytes: number;
   /**
@@ -120,11 +130,13 @@ export interface SseConnectionOptions {
  *
  * Node reports a full socket buffer by returning `false` from `write()`;
  * `drain` means it can take more. Frames emitted in between are queued (with
- * their shared Buffers, no copies) until the bound is hit, at which point the
- * connection is destroyed instead of growing the heap without limit. No
- * healthy subscriber loses a frame: only a subscriber that already exceeded
- * the bound is dropped, and its client reconnects with its last applied
- * `?since=` — the normal replay/resync path.
+ * their shared Buffers, no copies) until the bound is hit. Unique memory is
+ * the number of distinct Buffers a published event creates — one per event,
+ * shared by every subscriber; a per-subscriber queue only adds references to
+ * those Buffers. A synchronous batch burst gets a grace window plus a 16 MiB
+ * referenced-byte guard, so a legitimate 10–100-frame command batch drains;
+ * only a subscriber that stays blocked loses its connection, and its client
+ * reconnects with its last applied `?since=` — the normal replay/resync path.
  */
 export class SseConnection {
   private headersCommitted = false;
@@ -178,6 +190,13 @@ export class SseConnection {
     if (this.closed || this.headersCommitted) return;
     if (this.res.writableEnded || this.res.destroyed) {
       this.peerClosed();
+      return;
+    }
+    if (this.res.headersSent) {
+      // Another layer already committed the response (or a retried open);
+      // never call `setHeader` after that. Keep the SSE body writable.
+      this.headersCommitted = true;
+      if (!this.res.write("\n")) this.block();
       return;
     }
     this.headersCommitted = true;
@@ -294,7 +313,7 @@ export class SseConnection {
 
   /**
    * The soft bound was crossed while blocked. A synchronous burst gets a
-   * short grace window to reach `drain`; past the emergency multiple, or
+   * short grace window to reach `drain`; past the 16 MiB hard guard, or
    * after the window without drain, the subscriber is slow and dropped.
    */
   private noteOverflow(): void {
@@ -307,7 +326,8 @@ export class SseConnection {
       return;
     }
     if (this.queuedBytes <= max) return;
-    if (this.queuedBytes > max * SSE_BURST_EMERGENCY_FACTOR) {
+    const hardBytes = Math.max(SSE_BURST_HARD_BYTES, max * 2);
+    if (this.queuedBytes > hardBytes) {
       this.closeSlow("buffer", this.queuedBytes, this.queue.length);
       return;
     }

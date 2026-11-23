@@ -276,7 +276,7 @@ describe("SseConnection backpressure (TASK-200.13)", () => {
     response.accept(false);
     writer.write(event); // blocked; already accepted by Node
     // One batch turn: three frames cross the soft bound (2 frames) but stay
-    // well inside the emergency multiple, and `drain` cannot fire until this
+    // well inside the 16 MiB hard guard, and `drain` cannot fire until this
     // synchronous burst ends.
     writer.write(event);
     writer.write(event);
@@ -297,39 +297,107 @@ describe("SseConnection backpressure (TASK-200.13)", () => {
     expect(slow).not.toHaveBeenCalled();
   });
 
-  it("drops a burst past the emergency multiple instead of buffering forever", () => {
+  it.each([10, 100])(
+    "drains a healthy %i x 64 KiB batch burst without dropping it",
+    (count) => {
+      const store = new SseFrameStore();
+      const response = new FakeResponse();
+      const slow = jest.fn();
+      const writer = connection(response, {
+        frames: store,
+        maxBufferBytes: 128 * 1024,
+        onSlowConsumer: slow,
+      });
+      writer.open();
+      response.accept(false);
+      const events = Array.from({ length: count }, (_, index) => ({
+        seq: index + 1,
+        description: "x".repeat(64 * 1024),
+      }));
+      for (const event of events) writer.write(event);
+
+      // Far above the 128 KiB soft bound, far below the 16 MiB hard guard.
+      expect(writer.isClosed).toBe(false);
+      expect(writer.bufferedFrames).toBe(count - 1);
+      expect(slow).not.toHaveBeenCalled();
+
+      response.emit("drain");
+      expect(writer.isClosed).toBe(false);
+      expect(writer.bufferedFrames).toBe(0);
+      expect(response.writes).toHaveLength(count + 1); // newline + frames
+      expect(slow).not.toHaveBeenCalled();
+    },
+  );
+
+  it("closes a slow reader after a 100 x 64 KiB burst when the grace expires", () => {
+    jest.useFakeTimers();
+    try {
+      const store = new SseFrameStore();
+      const response = new FakeResponse();
+      const slow = jest.fn();
+      const writer = connection(response, {
+        frames: store,
+        maxBufferBytes: 128 * 1024,
+        onSlowConsumer: slow,
+      });
+      writer.open();
+      response.accept(false);
+      for (let index = 0; index < 100; index += 1) {
+        writer.write({
+          seq: index + 1,
+          description: "x".repeat(64 * 1024),
+        });
+      }
+      expect(writer.isClosed).toBe(false);
+
+      jest.advanceTimersByTime(SSE_BURST_GRACE_MS);
+      expect(writer.isClosed).toBe(true);
+      expect(response.destroyed).toBe(true);
+      expect(slow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: "buffer",
+          queuedFrames: 99,
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("closes a burst past the 16 MiB hard referenced-byte guard", () => {
     const store = new SseFrameStore();
     const response = new FakeResponse();
     const slow = jest.fn();
     const closed = jest.fn();
-    const event = { seq: 1 };
-    const frame = store.frame(event);
-    const max = frame.bytes.length * 2;
     const writer = connection(response, {
       frames: store,
-      maxBufferBytes: max,
+      maxBufferBytes: 128 * 1024,
       onSlowConsumer: slow,
       onClose: closed,
     });
     writer.open();
     response.accept(false);
-    writer.write(event); // blocked, nothing queued
-    // The emergency guard is 4 x max: nine frames pass the hard limit.
-    for (let index = 0; index < 9; index += 1) writer.write(event);
+    // 17 × 1 MiB is past the hard guard, so the heap safety valve fires
+    // immediately even though the burst would otherwise get the grace.
+    let last: { seq: number; text: string } | undefined;
+    for (let index = 0; index < 17; index += 1) {
+      last = { seq: index + 1, text: "x".repeat(1024 * 1024) };
+      writer.write(last);
+    }
     expect(writer.isClosed).toBe(true);
     expect(writer.bufferedFrames).toBe(0);
-    expect(slow).toHaveBeenCalledWith({
-      reason: "buffer",
-      queuedBytes: frame.bytes.length * 9,
-      queuedFrames: 9,
-    });
+    expect(slow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "buffer",
+        queuedFrames: 16,
+      }),
+    );
     expect(closed).toHaveBeenCalledTimes(1);
     expect(response.destroyed).toBe(true);
-    // Only the leading newline and the first (accepted) frame were written.
     expect(response.writes).toHaveLength(2);
 
     // Late emissions after a slow disconnect are ignored, not queued.
-    writer.write({ seq: 5 });
+    writer.write(last ?? { seq: 99 });
     expect(response.writes).toHaveLength(2);
   });
 

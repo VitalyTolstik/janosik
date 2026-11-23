@@ -19,10 +19,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SSE_MAX_BUFFER_BYTES` (128 KiB) bound; the frame already accepted by the
   socket is not counted, so the real worst case is the bound plus that frame
   (and `0` means “no queue”). A synchronous batch burst may exceed the soft
-  bound for `SSE_BURST_GRACE_MS` (500 ms) up to 4× while `drain` is pending,
-  so a healthy burst is not dropped; a real slow reader is disconnected by
-  the grace, the emergency cap or `SSE_SLOW_CLOSE_MS` (60 s) and resumes from
-  its last applied `?since=`. `RealtimeService.slowSubscriberDrops` is exposed
+  bound for `SSE_BURST_GRACE_MS` (5 s) up to a 16 MiB referenced-byte hard
+  guard while `drain` is pending, so a legitimate 10–100 × 64 KiB batch
+  (~6.4 MiB) survives and drains; frames are shared Buffers, so the queue
+  holds references, not per-subscriber copies. A real slow reader is
+  disconnected by the grace, the hard guard or `SSE_SLOW_CLOSE_MS` (60 s) and
+  resumes from its last applied `?since=`. `RealtimeService.slowSubscriberDrops` is exposed
   in `/admin/observability` (`jobs.realtime.slowDrops`) and its warning is
   aggregated to one line per minute. The 200 response is committed only after
   synchronous stream setup, so a `client_id_taken` race still answers `409`
