@@ -753,6 +753,37 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "503": { $ref: "#/components/responses/BoardReadUnavailable" }
+  /boards/{boardId}/labels/{labelId}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - name: labelId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Boards]
+      operationId: listLabelAssignments
+      summary: Read a label's complete card assignment preimage
+      description: |
+        TASK-200.9. Every live card on the board that carries the label, with
+        its position in that card's `labelIds` and the card's `updatedAt`.
+        Used before DELETE_LABEL so undo can restore assignments on cards
+        whose summary/page is not loaded. Carries no card content and is not
+        an aggregate read. A label from another board answers `404`.
+      responses:
+        "200":
+          description: Assignment rows (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardLabelAssignment"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/cards/{cardId}:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -4662,6 +4693,23 @@ components:
         seq: { type: integer }
         atSeq: { type: integer }
         aggregateRevision: { type: integer }
+    BoardLabelAssignment:
+      type: object
+      required: [cardId, index, updatedAt]
+      properties:
+        cardId: { type: string }
+        index: { type: integer }
+        updatedAt: { type: integer }
+    BoardIncomingCardLink:
+      type: object
+      required: [id, type, fromCardId, fromArchived]
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [blocks, relates_to, duplicates]
+        fromCardId: { type: string }
+        fromArchived: { type: boolean }
     BoardCardDetail:
       type: object
       required:
@@ -4672,6 +4720,7 @@ components:
           version,
           linkCount,
           blocked,
+          incomingLinks,
           seq,
           atSeq,
           aggregateRevision,
@@ -4684,6 +4733,11 @@ components:
         version: { type: integer }
         linkCount: { type: integer }
         blocked: { type: boolean }
+        incomingLinks:
+          type: array
+          description: Reverse link rows loaded with the detail for summary-only boards.
+          items:
+            $ref: "#/components/schemas/BoardIncomingCardLink"
         seq: { type: integer }
         atSeq: { type: integer }
         aggregateRevision: { type: integer }

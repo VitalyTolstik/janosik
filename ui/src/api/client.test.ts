@@ -413,6 +413,7 @@ describe("ApiClient", () => {
     });
     await client.getBoardCardDetail("board-1", "card-1");
     await client.getBoardCardDetails("board-1", ["card-1", "card-2"]);
+    await client.getLabelAssignments("board-1", "label-1");
     await client.getBoardSnapshot("board-1");
 
     expect(seen[0]).toEqual({
@@ -426,7 +427,10 @@ describe("ApiClient", () => {
     expect(seen[3].url).toBe(
       "/api/v1/boards/board-1/cards?ids=card-1%2Ccard-2&detail=full",
     );
-    expect(seen[4]).toEqual({
+    expect(seen[4].url).toBe(
+      "/api/v1/boards/board-1/labels/label-1/assignments",
+    );
+    expect(seen[5]).toEqual({
       url: "/api/v1/boards/board-1?projection=full",
       readModel: "full",
     });

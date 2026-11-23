@@ -89,7 +89,13 @@ const SAVED_VIEWS_FALLBACK = (
  * duplicated here.
  */
 export function BoardSection() {
-  const { board, roleOf, setBoardColumnStyle, loadCardDetail } = useBoard();
+  const {
+    board,
+    roleOf,
+    setBoardColumnStyle,
+    loadCardDetail,
+    readModelPartial,
+  } = useBoard();
   const { user } = useAuth();
   // Undefined until the roster loads — never `[]` as "loaded": the saved-view
   // drift pass would otherwise treat every assignee as deleted.
@@ -500,6 +506,16 @@ export function BoardSection() {
             className="mb-3 text-xs text-muted-foreground"
           >
             {t("filter.searchingServer")}
+          </p>
+        ) : null}
+        {readModelPartial ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="read-model-partial"
+            className="mb-3 text-xs text-muted-foreground"
+          >
+            {t("board.partialRead")}
           </p>
         ) : null}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

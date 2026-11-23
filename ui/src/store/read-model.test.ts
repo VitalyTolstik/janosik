@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type {
-  BoardCardDetailDto,
-  BoardCardSummaryDto,
-  BoardReadSummaryDto,
-  Card,
+import {
+  boardReducer,
+  type Board,
+  type BoardAction,
+  type BoardCardDetailDto,
+  type BoardCardSummaryDto,
+  type BoardReadSummaryDto,
+  type Card,
 } from "@janosik/shared";
 import { cardLinkIndex } from "@/utils/links";
 import {
@@ -122,6 +125,7 @@ describe("read-model adapters (TASK-200.9)", () => {
       version: 1,
       linkCount: 1,
       blocked: false,
+      incomingLinks: [],
       seq: 7,
       atSeq: 7,
       aggregateRevision: 9,
@@ -207,6 +211,48 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(JSON.stringify(payload)).not.toContain('"description":');
   });
 
+  it("merges detail incoming rows for the blocked-by side", () => {
+    const card = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "b",
+        title: "b",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      version: 1,
+      linkCount: 1,
+      blocked: true,
+      incomingLinks: [
+        {
+          id: "l",
+          type: "blocks",
+          fromCardId: "a",
+          fromArchived: false,
+        },
+      ],
+      seq: 1,
+      atSeq: 1,
+      aggregateRevision: 1,
+    });
+    const a: Card = {
+      id: "a",
+      title: "a",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const facts = cardLinkIndex({ a, b: card }).factsOf("b");
+    expect(facts.incoming).toEqual([
+      { fromCardId: "a", link: { id: "l", type: "blocks", targetCardId: "b" } },
+    ]);
+    expect(facts.degree).toBe(1);
+    expect(facts.blocked).toBe(true);
+    expect(card.links).toBeUndefined();
+  });
+
   it("does not double-count a loaded detail card's link degree", () => {
     const detail = cardFromDetail({
       boardId: "b-1",
@@ -222,6 +268,7 @@ describe("read-model adapters (TASK-200.9)", () => {
       version: 1,
       linkCount: 1,
       blocked: false,
+      incomingLinks: [],
       seq: 1,
       atSeq: 1,
       aggregateRevision: 1,
@@ -253,12 +300,143 @@ describe("read-model adapters (TASK-200.9)", () => {
       version: 1,
       linkCount: 0,
       blocked: false,
+      incomingLinks: [],
       seq: 1,
       atSeq: 1,
       aggregateRevision: 1,
     });
     expect(cardHasDescription(card)).toBe(false);
     expect(cardChecklistProgress(card)).toEqual({ done: 0, total: 0 });
+  });
+
+  it("hydrates only ids still in the summary scope and keeps newer cards", () => {
+    const newer: Card = {
+      id: "a",
+      title: "local",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 30,
+      readModel: {
+        descriptionChars: 1,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 0,
+        blocked: false,
+        detailLoaded: true,
+      },
+    };
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["a"], createdAt: 1 }],
+      cards: { a: newer },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const stale: Card = {
+      ...newer,
+      title: "late detail",
+      updatedAt: 10,
+      readModel: { ...newer.readModel!, detailLoaded: true },
+    };
+    const unplaced: Card = {
+      ...newer,
+      id: "not-in-column",
+      title: "tombstone",
+    };
+    const after = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [stale, unplaced],
+    } as BoardAction)[0];
+    expect(after.cards.a.title).toBe("local");
+    expect(after.cards["not-in-column"]).toBeUndefined();
+  });
+
+  it("maintains archivedCardIds through archive and unarchive", () => {
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["a"], createdAt: 1 }],
+      cards: {
+        a: cardFromSummary(summaryCard("a")),
+      },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const archived = boardReducer([board], {
+      type: "ARCHIVE_CARD",
+      boardId: "b-1",
+      cardId: "a",
+      at: 30,
+    } as BoardAction)[0];
+    expect(archived.archivedCardIds).toEqual(["a"]);
+    const restored = boardReducer([archived], {
+      type: "UNARCHIVE_CARD",
+      boardId: "b-1",
+      cardId: "a",
+      columnId: "col-1",
+      at: 40,
+    } as BoardAction)[0];
+    expect(restored.archivedCardIds).toEqual([]);
+  });
+
+  it("keeps link counters current on add/remove and resets a duplicate", () => {
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [
+        { id: "col-1", title: "Todo", cardIds: ["a", "b"], createdAt: 1 },
+      ],
+      cards: {
+        a: cardFromSummary(summaryCard("a", { linkCount: 0, blocked: false })),
+        b: cardFromSummary(summaryCard("b", { linkCount: 0, blocked: false })),
+      },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const added = boardReducer([board], {
+      type: "ADD_CARD_LINK",
+      boardId: "b-1",
+      cardId: "a",
+      linkId: "l",
+      targetCardId: "b",
+      linkType: "blocks",
+      at: 30,
+    } as BoardAction)[0];
+    expect(added.cards.a.readModel?.linkCount).toBe(1);
+    expect(added.cards.b.readModel).toMatchObject({
+      linkCount: 1,
+      blocked: true,
+    });
+    const removed = boardReducer([added], {
+      type: "REMOVE_CARD_LINK",
+      boardId: "b-1",
+      cardId: "a",
+      linkId: "l",
+      targetCardId: "b",
+      linkType: "blocks",
+      at: 40,
+    } as BoardAction)[0];
+    expect(removed.cards.a.readModel?.linkCount).toBe(0);
+    expect(removed.cards.b.readModel?.linkCount).toBe(0);
+    const duplicated = boardReducer([added], {
+      type: "DUPLICATE_CARD",
+      boardId: "b-1",
+      cardId: "a",
+      newCardId: "copy",
+      at: 50,
+    } as BoardAction)[0];
+    expect(duplicated.cards.copy.readModel).toMatchObject({
+      linkCount: 0,
+      blocked: false,
+    });
   });
 
   it("uses summary link facts for DnD badges/filters without double-counting", () => {

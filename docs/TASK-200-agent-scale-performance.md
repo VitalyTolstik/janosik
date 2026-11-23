@@ -579,6 +579,24 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   `ui/src/store/BoardContext.read-model.test.tsx` (summary+все страницы,
   detail on demand, preimage+undo), deep-link тест в
   `CardDialog.test.tsx`; OpenAPI и CHANGELOG обновлены.
+- **Review hardening:** инверсия `UPDATE_CARD` теперь меняет только поля,
+  которые команда реально трогала (title-only rename на summary-карточке
+  больше не пишет пустое описание). Перед `DELETE_LABEL` UI забирает
+  `GET /boards/:id/labels/:labelId/assignments` — полный preimage вложений
+  (1000-карточная доска, загружена первая страница) — и инверсия
+  `RESTORE_LABEL` восстанавливает все карточки. Detail отдаёт и входящие
+  строки связей (`incomingLinks`), а reducer обновляет
+  `readModel.linkCount/blocked` на add/remove/archive, сбрасывает факты у
+  duplicate и грузит preimage для duplicate column. Гидратация страниц
+  сверяет `atSeq`/`aggregateRevision` с summary и мержит только id, ещё
+  входящие в колонку/архив; `HYDRATE_CARDS` не воскрешает tombstone и не
+  перетирает более новую карточку. Ошибки страниц ретраятся, показывают
+  partial-маркер/тост; завершённая доска не перекачивает все страницы на
+  каждый focus. `If-None-Match: *` выполняет precheck существования
+  карточки/колонки до `304`. Запросы: summary — одна страница на колонку +
+  константа, batch preimage — одна карточная выборка на 50 id
+  (`board-read-model.spec.ts`). Popover связанных карточек догружает detail
+  summary-карточки.
 - **Ограничение:** DoD «initial <2 МБ / <300 мс» и RSS для 10×1 000
   карточек не измерялись — нужен прогон 200.1/200.15. Таблица/карточки без
   detail показывают счётчики вместо текста описания/чек-листа (detail

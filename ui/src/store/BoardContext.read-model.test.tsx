@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import type { Board } from "@janosik/shared";
@@ -12,11 +18,8 @@ import { FakeServer } from "@/test/fake-server";
 
 const CARD_COUNT = 120;
 
-function largeBoard(): Board {
-  const cardIds = Array.from(
-    { length: CARD_COUNT },
-    (_, index) => `card-${index}`,
-  );
+function largeBoard(count = CARD_COUNT): Board {
+  const cardIds = Array.from({ length: count }, (_, index) => `card-${index}`);
   const cards = Object.fromEntries(
     cardIds.map((id, index) => [
       id,
@@ -31,7 +34,7 @@ function largeBoard(): Board {
             items: [{ id: `item-${index}`, text: "do", done: index % 2 === 0 }],
           },
         ],
-        labelIds: [],
+        labelIds: index === 99 ? ["label-1"] : [],
         createdAt: index,
         updatedAt: index,
       },
@@ -42,15 +45,23 @@ function largeBoard(): Board {
     title: "Large board",
     columns: [{ id: "col-1", title: "Todo", cardIds, createdAt: 1 }],
     cards,
-    labels: [],
+    labels: [{ id: "label-1", name: "Deep label", color: "red" }],
     createdAt: 1,
     updatedAt: 1,
   };
 }
 
 function Probe() {
-  const { board, syncStatus, canUndo, dispatch, loadCardDetail, undo } =
-    useBoard();
+  const {
+    board,
+    syncStatus,
+    canUndo,
+    dispatch,
+    loadCardDetail,
+    undo,
+    readModelPartial,
+    updateCard,
+  } = useBoard();
   const card = board?.cards["card-99"];
   return (
     <div>
@@ -63,6 +74,7 @@ function Probe() {
         {String(card?.readModel?.detailLoaded ?? false)}
       </div>
       <div data-testid="can-undo">{String(canUndo)}</div>
+      <div data-testid="readModelPartial">{String(readModelPartial)}</div>
       <button
         type="button"
         data-testid="load-detail"
@@ -81,6 +93,45 @@ function Probe() {
             at: Date.now(),
           });
         }}
+      />
+      <div data-testid="labels">{board?.labels.length ?? 0}</div>
+      <div data-testid="copy-column-count">
+        {board?.columns[1]?.cardIds.length ?? 0}
+      </div>
+      <button
+        type="button"
+        data-testid="duplicate-column"
+        onClick={() => {
+          void dispatch({
+            type: "DUPLICATE_COLUMN",
+            columnId: "col-1",
+            newColumnId: "col-copy",
+            newCardIds: (board?.columns[0]?.cardIds ?? []).map(
+              (_, index) => `copy-${index}`,
+            ),
+            activityIds: (board?.columns[0]?.cardIds ?? []).map(
+              (_, index) => `activity-${index}`,
+            ),
+            at: Date.now(),
+          });
+        }}
+      />
+      <button
+        type="button"
+        data-testid="delete-label"
+        onClick={() => {
+          void dispatch({
+            type: "DELETE_LABEL",
+            labelId: "label-1",
+            boardId: "b-1",
+            at: Date.now(),
+          });
+        }}
+      />
+      <button
+        type="button"
+        data-testid="rename-first"
+        onClick={() => updateCard("card-0", { title: "Renamed" })}
       />
       <button type="button" data-testid="undo" onClick={() => undo()} />
     </div>
@@ -150,6 +201,54 @@ describe("BoardProvider read model (TASK-200.9)", () => {
           entry.method === "GET" && entry.path === "/api/v1/boards/b-1",
       ),
     ).toBe(false);
+
+    // A completed board refreshes the summary on focus, not every page.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const beforeFocus = server.requests.length;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() =>
+      expect(
+        server.requests
+          .slice(beforeFocus)
+          .some((entry) => entry.path.endsWith("/summary")),
+      ).toBe(true),
+    );
+    expect(
+      server.requests
+        .slice(beforeFocus)
+        .some(
+          (entry) =>
+            entry.path === "/api/v1/boards/b-1/cards" && entry.method === "GET",
+        ),
+    ).toBe(false);
+  });
+
+  it("falls back to the legacy aggregate when /summary is missing", async () => {
+    const server = new FakeServer([largeBoard()]);
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (url.pathname === "/api/v1/boards/b-1/summary") {
+          return new Response(null, { status: 404 });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("count").textContent).toBe(String(CARD_COUNT)),
+    );
+    expect(screen.getByTestId("description").textContent).toBe("body-99");
+    expect(
+      server.requests.some(
+        (entry) =>
+          entry.method === "GET" && entry.path === "/api/v1/boards/b-1",
+      ),
+    ).toBe(true);
   });
 
   it("loads one detail on demand", async () => {
@@ -166,6 +265,98 @@ describe("BoardProvider read model (TASK-200.9)", () => {
       expect(screen.getByTestId("description").textContent).toBe("body-99"),
     );
     expect(screen.getByTestId("detail-loaded").textContent).toBe("true");
+  });
+
+  it("loads every label assignment before deleting a label on a summary board", async () => {
+    const server = new FakeServer([largeBoard(1000)]);
+    // Simulate a failed page stream: card-99 never reaches the client, but
+    // the server still deletes the label from it. The assignment preimage
+    // endpoint is the only way its undo can be complete.
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards/b-1/cards" &&
+          url.searchParams.has("columnId")
+        ) {
+          return new Response(null, { status: 500 });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("readModelPartial").textContent).toBe("true"),
+    );
+    expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([
+      "label-1",
+    ]);
+
+    fireEvent.click(screen.getByTestId("delete-label"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([]),
+    );
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([
+        "label-1",
+      ]),
+    );
+  });
+
+  it("undoes a summary-card rename without erasing its description", async () => {
+    const server = new FakeServer([largeBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Card 99"),
+    );
+
+    fireEvent.click(screen.getByTestId("rename-first"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-0"]?.title).toBe("Renamed"),
+    );
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-0"]?.title).toBe("Card 0"),
+    );
+    expect(server.boards.get("b-1")?.cards["card-0"]?.description).toBe(
+      "body-0",
+    );
+  });
+
+  it("loads a duplicate column's unloaded cards before copying", async () => {
+    const server = new FakeServer([largeBoard()]);
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards/b-1/cards" &&
+          url.searchParams.has("columnId")
+        ) {
+          return new Response(null, { status: 500 });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("count").textContent).not.toBe(
+        String(CARD_COUNT),
+      ),
+    );
+
+    fireEvent.click(screen.getByTestId("duplicate-column"));
+    await waitFor(() =>
+      expect(screen.getByTestId("copy-column-count").textContent).toBe(
+        String(CARD_COUNT),
+      ),
+    );
   });
 
   it("loads destructive preimages before recording undo and keeps content on undo", async () => {
