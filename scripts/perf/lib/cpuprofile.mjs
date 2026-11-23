@@ -144,12 +144,22 @@ export function parseCpuProfile(profile, { file = null } = {}) {
 }
 
 /** Parse the newest set of profiles, aggregating every node before Top-10. */
-export async function collectCpuProfile(target) {
+export async function collectCpuProfile(target, { freshSince = null } = {}) {
   if (target === undefined || target === null || target === "") {
     return { enabled: false };
   }
   try {
     const files = await selectProfileSet(target);
+    if (
+      Number.isFinite(freshSince) &&
+      files.every((file) => file.mtimeMs < freshSince - 1_000)
+    ) {
+      return {
+        enabled: true,
+        available: false,
+        reason: `cpu profile is stale (older than this run): ${target}`,
+      };
+    }
     const aggregate = new Map();
     let totalMs = 0;
     let totalSamples = 0;
@@ -196,7 +206,12 @@ export async function collectCpuProfile(target) {
     return {
       enabled: true,
       available: false,
-      reason: error instanceof Error ? error.message : String(error),
+      reason:
+        error?.code === "ENOENT"
+          ? `cpu profile path does not exist: ${target}`
+          : error instanceof Error
+            ? error.message
+            : String(error),
     };
   }
 }
