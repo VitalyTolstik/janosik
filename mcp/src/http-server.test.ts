@@ -210,6 +210,8 @@ function gatewayConfig(
     sessionlessMaxBodyBytes: 4 * 1024,
     maxConcurrentBodyReads: 16,
     maxConcurrentBodyReadsPerToken: 4,
+    maxConcurrentInitBodyReads: 32,
+    maxConcurrentInitBodyReadsPerIp: 4,
     bodyReadTimeoutMs: 8_000,
     allowedOrigins: new Set(),
     readinessUrl: `${upstream.url}/api/v1/health/ready`,
@@ -419,6 +421,7 @@ function startStalledPost(
   running: RunningGateway,
   token: string,
   sessionId?: string,
+  extraHeaders: Record<string, string> = {},
 ): ClientRequest {
   const url = new URL(`${running.url}/mcp`);
   const request = httpRequest(
@@ -437,6 +440,7 @@ function startStalledPost(
               "mcp-session-id": sessionId,
               "mcp-protocol-version": "2025-06-18",
             }),
+        ...extraHeaders,
       },
     },
     (response) => response.resume(),
@@ -448,9 +452,16 @@ function startStalledPost(
 }
 
 interface BodyReadStats {
-  active: number;
-  globalMax: number;
-  perTokenMax: number;
+  session: {
+    active: number;
+    globalMax: number;
+    perTokenMax: number;
+  };
+  initialize: {
+    active: number;
+    globalMax: number;
+    perIpMax: number;
+  };
   timeoutMs: number;
 }
 
@@ -805,6 +816,54 @@ describe("MCP Streamable HTTP gateway", () => {
     await waitFor(() => running.gateway.manager.stats().sessions === 0);
   });
 
+  it("reserves the session body gate from a cross-IP initialize flood", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      trustProxyHops: 1,
+      maxConcurrentBodyReads: 2,
+      maxConcurrentBodyReadsPerToken: 1,
+      maxConcurrentInitBodyReads: 2,
+      maxConcurrentInitBodyReadsPerIp: 1,
+      bodyReadTimeoutMs: 300,
+    });
+    const sessionId = await initialize(running, ALPHA);
+    const stalledA = startStalledPost(running, ALPHA, undefined, {
+      "x-forwarded-for": "1.2.3.4",
+    });
+    const stalledB = startStalledPost(running, ALPHA, undefined, {
+      "x-forwarded-for": "5.6.7.8",
+    });
+    await waitForBodyReads(running, (stats) => stats.initialize.active === 2);
+
+    const busy = await rpc(running, ALPHA, INITIALIZE, undefined, {
+      "x-forwarded-for": "9.9.9.9",
+    });
+    expect(busy.status).toBe(503);
+    expect(busy.json).toMatchObject({ error: "body_busy" });
+
+    // The separate session gate still serves authenticated tool calls.
+    const tool = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 39, method: "tools/list" },
+      sessionId,
+    );
+    expect(tool.status).toBe(200);
+
+    await waitForBodyReads(
+      running,
+      (stats) => stats.initialize.active === 0,
+      2_000,
+    );
+    const recovered = await rpc(running, ALPHA, INITIALIZE, undefined, {
+      "x-forwarded-for": "9.9.9.9",
+    });
+    expect(recovered.status).toBe(200);
+    stalledA.destroy();
+    stalledB.destroy();
+  });
+
   it("isolates stalled session bodies per key and releases timed-out slots", async () => {
     const upstream = await startUpstream();
     cleanup.push(() => upstream.close());
@@ -816,8 +875,8 @@ describe("MCP Streamable HTTP gateway", () => {
     const alphaSession = await initialize(running, ALPHA);
     const betaSession = await initialize(running, BETA);
     const stalled = startStalledPost(running, ALPHA, alphaSession);
-    await waitForBodyReads(running, (stats) => stats.active >= 1);
-    expect((await bodyReadStats(running)).perTokenMax).toBe(1);
+    await waitForBodyReads(running, (stats) => stats.session.active >= 1);
+    expect((await bodyReadStats(running)).session.perTokenMax).toBe(1);
 
     const busy = await rpc(
       running,
@@ -840,7 +899,13 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(initializeWhileStalled.status).toBe(200);
 
     // The stalled read hits the explicit deadline and frees the per-key slot.
-    await waitForBodyReads(running, (stats) => stats.active === 0, 2_000);
+    await waitForBodyReads(
+      running,
+      (stats) => stats.session.active === 0,
+      2_000,
+    );
+    expect(running.logs.join("")).toContain("body_read_timeout");
+    expect(running.logs.join("")).not.toContain('"status":408');
     const recovered = await rpc(
       running,
       ALPHA,
@@ -856,18 +921,24 @@ describe("MCP Streamable HTTP gateway", () => {
     cleanup.push(() => upstream.close());
     const running = await startGateway(upstream, {
       maxConcurrentBodyReadsPerToken: 1,
+      maxConcurrentInitBodyReads: 1,
+      maxConcurrentInitBodyReadsPerIp: 1,
       initRateLimitPerMinute: 2,
       bodyReadTimeoutMs: 250,
     });
     const stalled = startStalledPost(running, ALPHA);
-    await waitForBodyReads(running, (stats) => stats.active >= 1);
+    await waitForBodyReads(running, (stats) => stats.initialize.active >= 1);
 
     const busy = await rpc(running, ALPHA, INITIALIZE);
     expect(busy.status).toBe(503);
     expect(busy.json).toMatchObject({ error: "body_busy" });
 
     // The body_busy retry did not spend the remaining init budget.
-    await waitForBodyReads(running, (stats) => stats.active === 0, 2_000);
+    await waitForBodyReads(
+      running,
+      (stats) => stats.initialize.active === 0,
+      2_000,
+    );
     const recovered = await rpc(running, ALPHA, INITIALIZE);
     expect(recovered.status).toBe(200);
     stalled.destroy();
@@ -882,9 +953,9 @@ describe("MCP Streamable HTTP gateway", () => {
     });
     const sessionId = await initialize(running, ALPHA);
     const stalled = startStalledPost(running, ALPHA, sessionId);
-    await waitForBodyReads(running, (stats) => stats.active >= 1);
+    await waitForBodyReads(running, (stats) => stats.session.active >= 1);
     stalled.destroy();
-    await waitForBodyReads(running, (stats) => stats.active === 0);
+    await waitForBodyReads(running, (stats) => stats.session.active === 0);
     expect(running.logs.join("")).toContain("body_read_aborted");
     expect(running.logs.join("")).not.toContain("request_failed");
     const recovered = await rpc(

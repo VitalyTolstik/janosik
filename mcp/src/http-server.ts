@@ -67,6 +67,13 @@ class ClientBodyAbortError extends Error {
   }
 }
 
+class BodyReadTimeoutError extends Error {
+  constructor() {
+    super("The request body read timed out.");
+    this.name = "BodyReadTimeoutError";
+  }
+}
+
 interface BodySlot {
   release(): void;
 }
@@ -345,6 +352,10 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     config.maxConcurrentBodyReadsPerToken,
     config.maxConcurrentBodyReads,
   );
+  const initBodyReads = new TenantConcurrencyGate(
+    config.maxConcurrentInitBodyReadsPerIp,
+    config.maxConcurrentInitBodyReads,
+  );
 
   let closing = false;
   let closePromise: Promise<void> | null = null;
@@ -416,14 +427,14 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     }
   }
 
-  function acquireBodySlot(key: string): BodySlot {
-    const decision = bodyReads.tryAcquire(key);
+  function acquireBodySlot(gate: TenantConcurrencyGate, key: string): BodySlot {
+    const decision = gate.tryAcquire(key);
     if (!decision.ok) {
       logger.warn("body_read_busy", { scope: decision.scope });
       throw new GatewayHttpError(
         503,
         "body_busy",
-        decision.scope === "token"
+        decision.scope === "key"
           ? "This client has too many request bodies in flight."
           : "The gateway has too many request bodies in flight.",
         { "Retry-After": "1" },
@@ -434,7 +445,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       release() {
         if (released) return;
         released = true;
-        bodyReads.release(key);
+        gate.release(key);
       },
     };
   }
@@ -475,14 +486,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     try {
       return await readJsonBody(req, limit);
     } catch (error) {
-      if (timedOut) {
-        throw new GatewayHttpError(
-          408,
-          "body_timeout",
-          "Reading the request body timed out.",
-          { Connection: "close" },
-        );
-      }
+      if (timedOut) throw new BodyReadTimeoutError();
       // A size/JSON error is the gateway's answer, even if the request stream
       // is marked destroyed after the failed read.
       if (error instanceof GatewayHttpError) throw error;
@@ -607,9 +611,16 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
             version,
             ...manager.stats(),
             bodyReads: {
-              active: bodyReads.inUse,
-              globalMax: config.maxConcurrentBodyReads,
-              perTokenMax: config.maxConcurrentBodyReadsPerToken,
+              session: {
+                active: bodyReads.inUse,
+                globalMax: config.maxConcurrentBodyReads,
+                perTokenMax: config.maxConcurrentBodyReadsPerToken,
+              },
+              initialize: {
+                active: initBodyReads.inUse,
+                globalMax: config.maxConcurrentInitBodyReads,
+                perIpMax: config.maxConcurrentInitBodyReadsPerIp,
+              },
               timeoutMs: config.bodyReadTimeoutMs,
             },
           },
@@ -754,7 +765,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         // Take the per-IP body slot before charging initialize budgets, so a
         // `body_busy` retry cannot spend the caller's init allowance.
         const ipAddress = clientAddress(req, config.trustProxyHops);
-        const bodySlot = acquireBodySlot(`ip:${ipAddress}`);
+        const bodySlot = acquireBodySlot(initBodyReads, `ip:${ipAddress}`);
         const ipDecision = ipInitLimiter?.take(ipAddress);
         if (ipDecision !== undefined && !ipDecision.ok) {
           bodySlot.release();
@@ -921,7 +932,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
             ? await readBodyWithDeadline(
                 req,
                 config.maxBodyBytes,
-                acquireBodySlot(`token:${session.tokenHash}`),
+                acquireBodySlot(bodyReads, `token:${session.tokenHash}`),
                 "session",
               )
             : undefined;
@@ -938,9 +949,14 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         await manager.close(session, "client_delete");
       }
     } catch (error) {
-      if (error instanceof ClientBodyAbortError) {
+      if (
+        error instanceof ClientBodyAbortError ||
+        error instanceof BodyReadTimeoutError
+      ) {
         logLevel = "debug";
-        logger.debug("body_read_aborted", { requestId });
+        if (error instanceof ClientBodyAbortError) {
+          logger.debug("body_read_aborted", { requestId });
+        }
         if (!res.headersSent) res.destroy();
         return;
       }

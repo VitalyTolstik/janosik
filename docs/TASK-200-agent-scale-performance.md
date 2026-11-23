@@ -410,8 +410,10 @@ workflow, create, смена workflow планом) добавляют один 
 > **TASK-200.8 update (implemented).** Отдельный `janosik-mcp-http`
 > (Streamable HTTP, один процесс на много сессий, токен из `Authorization`
 > на сессию, локальный admission per-IP/per-token с negative cache,
-> single-flight проверкой ключа, body gate на токен/IP с глобальным
-> `MAX_CONCURRENT_BODY_READS` и дедлайном чтения (`503 body_busy`), idle/limit/
+> single-flight проверкой ключа, раздельными body gate для initialize
+> (IP/`MAX_CONCURRENT_INIT_BODY_READS`) и инструментов
+> (токен/`MAX_CONCURRENT_BODY_READS`) с дедлайном чтения (`503 body_busy`) и
+> `503 auth_busy` при переполнении валидаций, idle/limit/
 > health и graceful drain (новые запросы получают 503, listener закрывается
 > после активных вызовов),
 > structured logs без токенов), отдельный Docker-образ/Compose-профиль и

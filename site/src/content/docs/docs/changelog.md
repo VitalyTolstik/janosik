@@ -23,8 +23,9 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   sessions and idle time, drains gracefully and logs no keys. Initialize
   admission is local before the API: per-key cap (default
   `min(50, MAX_SESSIONS)`), per-IP/token buckets, negative cache and
-  single-flight validation with bounded retries. Stalled bodies are bounded
-  per token/IP with a global `MAX_CONCURRENT_BODY_READS` backstop and a read
+  single-flight validation with bounded retries. Sessionless and session-bound
+  body reads have separate per-IP/per-token budgets with global backstops
+  (`MAX_CONCURRENT_INIT_BODY_READS` / `MAX_CONCURRENT_BODY_READS`) and a read
   deadline (`503 body_busy`); validation pressure answers `503 auth_busy`.
   Sessions are in-memory: a restart drops them and replicas need session
   affinity.

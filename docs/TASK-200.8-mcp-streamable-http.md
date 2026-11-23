@@ -67,9 +67,9 @@ Error contract (all `503`s carry `Retry-After`):
   includes `Retry-After`.
 - `503 auth_busy` — too many distinct validations are in flight; includes
   `Retry-After`.
-- `503 body_busy` — too many session-bound request bodies are being read for
-  this key or globally; includes `Retry-After`. Sessionless initialize does
-  not use this gate.
+- `503 body_busy` — the caller's own body-read class is full: session-bound
+  per-token/global, or sessionless per-IP/global. Includes `Retry-After`;
+  initialize and tool gates are separate budgets.
 - `503 session_limit` — global/per-key cap; includes `Retry-After`.
 - `503 shutting_down` — SIGTERM drain window; includes `Retry-After`.
 - `403 token_mismatch` — a valid key that is not the key bound to the
@@ -89,18 +89,23 @@ before reading the body**: global capacity, the per-token session cap (default
 `min(50, MAX_SESSIONS)`), a per-IP initialize bucket (default 600/min), a
 per-token-fingerprint bucket (default 10/min), and a bounded negative cache of
 invalid fingerprints. The sessionless body is capped strictly (default
-`min(256 KiB, MAX_BODY_BYTES)`) before buffering and does not share the
-session-bound gate. Session-bound reads use a per-token (or initialize-IP) cap
-(default 4) with a global backstop (default 16; 16 × 16 MiB = 256 MiB worst
-case), and an explicit read deadline (default 8 s)
-destroys a stalled body and releases its slot independently of Node's request
-checker. A full gate answers `503 body_busy` + `Retry-After`; one key cannot
-deny other keys or sessionless initialize. Every new session
-that passes the buckets and is not in the negative cache performs one
-authenticated API read (`/api/v1/auth/me` by default); only a cached invalid
-fingerprint skips it. The body-gate memory product is
-`MAX_CONCURRENT_BODY_READS × MAX_BODY_BYTES` (16 × 16 MiB = 256 MiB); keep the
-Compose `mem_limit` above the 1 GiB V8 heap plus that product. Concurrent
+`min(256 KiB, MAX_BODY_BYTES)`) and has its **own** per-IP/global budget
+(default 4/32, ~8 MiB) separate from session-bound reads (per-token 4, global
+16, ~256 MiB). An initialize flood across many IPs therefore cannot deny
+authenticated tool calls; each class answers `503 body_busy` +
+`Retry-After` only when its own gate is full. Both use one explicit read
+deadline (default 8 s) that resets a stalled body and releases its slot
+independently of Node's request checker (the connection is reset, not a
+deliverable `408`); 8 s is tight for a slow 16 MiB upload, so raise
+`BODY_READ_TIMEOUT_MS` and the memory budget together for such clients.
+`/health` exposes `bodyReads.session` and
+`bodyReads.initialize` active/max counters and `timeoutMs`.
+
+Every new session that passes the buckets and is not in the negative cache
+performs one authenticated API read (`/api/v1/auth/me` by default); only a
+cached invalid fingerprint skips it. Keep the Compose `mem_limit` above the
+1 GiB V8 heap plus the body and init gate products
+(16 × 16 MiB + 32 × 256 KiB ≈ 264 MiB). Concurrent
 initializes for one fingerprint share one validation call; a `429`/`503` from
 the API is retried a bounded number of
 times, honoring a small `Retry-After` (a longer API delay is returned to the
@@ -181,7 +186,8 @@ Docker or heavy load):
   spoofed leftmost entry; `TRUST_PROXY=17` is rejected;
 - stalled session bodies fill only their per-token gate: another key and a
   sessionless initialize still work, a full gate returns `503 body_busy`, and
-  the explicit read timeout/client abort releases the slot;
+  the explicit read timeout/client abort releases the slot; an init flood
+  across IPs fills only the init budget while a valid session still works;
 - global limit (503), explicit DELETE, replacement session;
 - active slow tool call is drained before close; a request during drain gets
   `503 shutting_down` + `Retry-After`; open GET SSE closes during drain; idle

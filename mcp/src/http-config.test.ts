@@ -38,6 +38,8 @@ describe("loadGatewayConfig", () => {
       sessionlessMaxBodyBytes: 256 * 1024,
       maxConcurrentBodyReads: 16,
       maxConcurrentBodyReadsPerToken: 4,
+      maxConcurrentInitBodyReads: 32,
+      maxConcurrentInitBodyReadsPerIp: 4,
       bodyReadTimeoutMs: 8_000,
       readinessUrl: "https://boards.example.com/api/v1/health/ready",
       readinessCacheMs: 5_000,
@@ -78,6 +80,8 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES: "512",
       JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "16",
       JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN: "4",
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS: "8",
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP: "2",
       JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS: "2000",
       JANOSIK_MCP_HTTP_ALLOWED_ORIGINS:
         "https://app.example.com, http://localhost:5173/",
@@ -116,6 +120,8 @@ describe("loadGatewayConfig", () => {
       sessionlessMaxBodyBytes: 512,
       maxConcurrentBodyReads: 16,
       maxConcurrentBodyReadsPerToken: 4,
+      maxConcurrentInitBodyReads: 8,
+      maxConcurrentInitBodyReadsPerIp: 2,
       bodyReadTimeoutMs: 2_000,
       readinessUrl: "https://api.example.com/health/ready",
       readinessCacheMs: 0,
@@ -182,6 +188,15 @@ describe("loadGatewayConfig", () => {
     bad({ JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "0" });
     bad({ JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "2000" });
     bad({ JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN: "0" });
+    bad({
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "2",
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN: "3",
+    });
+    bad({ JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS: "0" });
+    bad({
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS: "2",
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP: "3",
+    });
     bad({ JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS: "0" });
     bad({ JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "0" });
     bad({

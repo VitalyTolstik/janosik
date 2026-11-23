@@ -143,7 +143,7 @@ export class NegativeTokenCache {
 }
 
 export type TenantGateDecision =
-  { ok: true } | { ok: false; scope: "token" | "global" };
+  { ok: true } | { ok: false; scope: "key" | "global" };
 
 /** Per-key concurrency with a global backstop (try-acquire, no queue). */
 export class TenantConcurrencyGate {
@@ -159,7 +159,7 @@ export class TenantConcurrencyGate {
 
   tryAcquire(key: string): TenantGateDecision {
     const current = this.counts.get(key) ?? 0;
-    if (current >= this.maxPerKey) return { ok: false, scope: "token" };
+    if (current >= this.maxPerKey) return { ok: false, scope: "key" };
     if (this.total >= this.maxGlobal) return { ok: false, scope: "global" };
     this.counts.set(key, current + 1);
     this.total += 1;

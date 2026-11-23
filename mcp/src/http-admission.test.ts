@@ -13,7 +13,7 @@ describe("gateway admission", () => {
     const gate = new TenantConcurrencyGate(2, 3);
     expect(gate.tryAcquire("a").ok).toBe(true);
     expect(gate.tryAcquire("a").ok).toBe(true);
-    expect(gate.tryAcquire("a")).toEqual({ ok: false, scope: "token" });
+    expect(gate.tryAcquire("a")).toEqual({ ok: false, scope: "key" });
     expect(gate.tryAcquire("b").ok).toBe(true);
     expect(gate.tryAcquire("c")).toEqual({ ok: false, scope: "global" });
     gate.release("a");

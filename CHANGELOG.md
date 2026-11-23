@@ -23,10 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   included. Initialize admission is local before `/api/v1/auth/me`: per-IP and
   per-fingerprint token buckets, a bounded negative cache, a strict
   sessionless body cap before buffering, and single-flight validation with
-  bounded `429`/`503` retries. The body gate is per-token/IP with a global
-  backstop (`MAX_CONCURRENT_BODY_READS`) and a short read deadline; it answers
-  `503 body_busy`, while validation pressure answers `503 auth_busy`, and
-  `413` covers both INIT and MAX body caps. When `MAX_SESSIONS` exceeds 50 one valid key
+  bounded `429`/`503` retries. Sessionless and session-bound body reads have
+  separate budgets: initialize is per-IP/global
+  (`MAX_CONCURRENT_INIT_BODY_READS`), tool bodies are per-token/global
+  (`MAX_CONCURRENT_BODY_READS`), so an init flood cannot starve tools. Both
+  use a short read deadline (reset on stall), answer `503 body_busy`, while
+  validation pressure answers `503 auth_busy`, and `413` covers both INIT and
+  MAX body caps. When `MAX_SESSIONS` exceeds 50 one valid key
   cannot take every session (a smaller cap clamps the per-key default). The
   gateway trusts a configured number of right-edge X-Forwarded-For hops, not a
   spoofable leftmost entry. Sessions are in-memory: a restart drops them, and multiple
