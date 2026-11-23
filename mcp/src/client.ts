@@ -32,6 +32,11 @@ import type {
   BoardShareDto,
   BoardSummary,
   BoardsReadyDto,
+  CardClaimIntentResponse,
+  CardContextDto,
+  CardIntentResponse,
+  CardMoveIntentResponse,
+  ClaimCardIntentRequest,
   CommentDto,
   CommentKind,
   CommentPage,
@@ -44,6 +49,8 @@ import type {
   CreateShareRequest,
   EndAgentSessionRequest,
   InviteMemberRequest,
+  MoveCardIntentRequest,
+  PatchCardIntentRequest,
   PlanApplyRequest,
   PlanApplyResponse,
   PlanPreviewDto,
@@ -445,17 +452,80 @@ export class JanosikClient {
     );
   }
 
+  // --- Targeted card intents (TASK-200.7) -------------------------------
+
   /**
-   * POST a command body with the shared retry policy. The body is built once
-   * by the caller, so a network failure or timeout is retried with the *same*
-   * `commandId`s — if the first attempt did commit, the server answers the
-   * retry with the stored results instead of applying it twice.
+   * One card's small context: the card, its column/index, column names, done
+   * columns, workflow and current versions. Never a board aggregate, so a
+   * move can run its Definition-of-Done check and an update can compare the
+   * description without downloading every card.
+   */
+  getCardContext(boardId: string, cardId: string): Promise<CardContextDto> {
+    return this.request(apiPath`/boards/${boardId}/cards/${cardId}/context`);
+  }
+
+  /** Claim or release a card without reading the board. */
+  async claimCard(
+    boardId: string,
+    cardId: string,
+    body: ClaimCardIntentRequest = {},
+    approvalId?: string,
+  ): Promise<CardClaimIntentResponse> {
+    const response = await this.sendCommand<CardClaimIntentResponse>(
+      apiPath`/boards/${boardId}/cards/${cardId}/claim`,
+      body,
+      approvalId,
+    );
+    assertIntentChanged(response, "CLAIM_CARD");
+    return response;
+  }
+
+  /** Move a card; the server resolves the source column and both indexes. */
+  async moveCard(
+    boardId: string,
+    cardId: string,
+    body: MoveCardIntentRequest = {},
+    approvalId?: string,
+  ): Promise<CardMoveIntentResponse> {
+    const response = await this.sendCommand<CardMoveIntentResponse>(
+      apiPath`/boards/${boardId}/cards/${cardId}/move`,
+      body,
+      approvalId,
+    );
+    assertIntentChanged(response, "MOVE_CARD");
+    return response;
+  }
+
+  /** Patch the card's title/description with `UPDATE_CARD` semantics. */
+  async patchCard(
+    boardId: string,
+    cardId: string,
+    body: PatchCardIntentRequest,
+    approvalId?: string,
+  ): Promise<CardIntentResponse> {
+    const response = await this.sendCommand<CardIntentResponse>(
+      apiPath`/boards/${boardId}/cards/${cardId}`,
+      body,
+      approvalId,
+      undefined,
+      "PATCH",
+    );
+    assertIntentChanged(response, "UPDATE_CARD");
+    return response;
+  }
+
+  /**
+   * POST/PATCH a command body with the shared retry policy. The body is built
+   * once by the caller, so a network failure or timeout is retried with the
+   * *same* `commandId`s — if the first attempt did commit, the server answers
+   * the retry with the stored results instead of applying it twice.
    */
   private async sendCommand<T>(
     path: string,
     body: unknown,
     approvalId?: string,
     idempotencyKey?: string,
+    method: "POST" | "PATCH" = "POST",
   ): Promise<T> {
     const headers = idempotencyHeaders(idempotencyKey);
     let networkAttempt = 0;
@@ -463,7 +533,7 @@ export class JanosikClient {
     for (;;) {
       try {
         return await this.send<T>(path, {
-          method: "POST",
+          method,
           body,
           ...(approvalId !== undefined ? { approvalId } : {}),
           ...(headers !== undefined ? { headers } : {}),
@@ -1089,6 +1159,20 @@ function boardIdOfPath(path: string): string | null {
     return decodeURIComponent(match[1]);
   } catch {
     return match[1];
+  }
+}
+
+/**
+ * TASK-200.7: a targeted intent that applied no change (same position, same
+ * description, a lapsed claim already clear) is an error, exactly like the
+ * command-log path. A stored replay carries its original `versions`.
+ */
+function assertIntentChanged(
+  response: { versions: Record<string, number> },
+  actionType: string,
+): void {
+  if (Object.keys(response.versions).length === 0) {
+    throw new NoChangeError(actionType);
   }
 }
 

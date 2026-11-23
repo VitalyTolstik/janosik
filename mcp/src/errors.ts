@@ -154,6 +154,39 @@ export function isTransientNetworkError(error: unknown): boolean {
   );
 }
 
+/**
+ * TASK-200.7: a stale per-entity precondition (`409 version`). Targeted tools
+ * refresh only the card they touched and retry; unrelated commands do not
+ * produce this error.
+ */
+export function isVersionConflict(error: unknown): error is ApiError {
+  if (!(error instanceof ApiError) || error.status !== 409) return false;
+  const body = asRecord(error.body);
+  return (
+    body.conflict === "version" ||
+    body.code === "version_conflict" ||
+    body.code === "move_stale"
+  );
+}
+
+/** Current entity versions carried by a `409` conflict, when present. */
+export function conflictVersions(
+  error: unknown,
+): Record<string, number> | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const raw = asRecord(error.body).versions;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return undefined;
+  }
+  const versions: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      versions[key] = value;
+    }
+  }
+  return Object.keys(versions).length > 0 ? versions : undefined;
+}
+
 /** `503 {code: "board_write_timeout"}`: the board is too busy right now. */
 function isBoardBusy(error: ApiError): boolean {
   return (
@@ -166,6 +199,8 @@ interface ConflictBody {
   code?: string;
   conflict?: "version" | "wip" | "id" | "workflow";
   currentVersion?: number;
+  /** TASK-200.7 actual entity versions behind a version conflict. */
+  versions?: Record<string, number>;
   allowedToColumnIds?: string[];
   workflow?: {
     code?: string;
@@ -588,12 +623,20 @@ function describeApiErrorBody(error: ApiError): string {
         );
       }
       if (conflict === "version") {
+        const versions = conflictVersions(error);
         return (
-          `Error: the board changed since you read it` +
+          `Error: the target changed since you read it` +
           (currentVersion !== undefined
-            ? ` (now at version ${currentVersion})`
+            ? ` (board seq ${currentVersion})`
             : "") +
-          ". Re-read the board and retry."
+          (versions !== undefined
+            ? `; current versions: ${Object.entries(versions)
+                .map(([key, value]) => `${key}=${value}`)
+                .join(", ")}`
+            : "") +
+          ". Retry the same targeted call; it re-reads only the card it " +
+          "touches. Re-read the board only if you intentionally chose the " +
+          "full-board mode."
         );
       }
       if (conflict === "id") {

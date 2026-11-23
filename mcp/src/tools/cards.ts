@@ -20,6 +20,7 @@ import {
   READY_WORK_HOLD_MIN_MS,
   type Board,
   type Card,
+  type CardContextDto,
   type ReadyCardDto,
   workflowDoneColumnIds,
   workflowInitialColumnId,
@@ -34,6 +35,7 @@ import {
   RATE_LIMIT_MAX_ATTEMPTS,
   isRateLimited,
   isTransientNetworkError,
+  isVersionConflict,
   rateLimitDelayMs,
 } from "../errors.js";
 import {
@@ -43,7 +45,7 @@ import {
   respond,
   textOnly,
 } from "../format.js";
-import { newId, stableCommandId, stableId } from "../ids.js";
+import { newCommandId, newId, stableCommandId, stableId } from "../ids.js";
 import { findCardLocation } from "../locate.js";
 import { blockedIds } from "../project.js";
 import { renderCard } from "../render.js";
@@ -396,39 +398,85 @@ export function registerCardTools(
         ...(title !== undefined ? { title } : {}),
         ...(description !== undefined ? { description } : {}),
       };
-      if (expectedDescription === undefined) {
-        const response = await client.command(boardId, patch, {
-          ifMatch: expectedVersion,
-        });
-        return textOnly(`Updated card ${cardId}.`, commandFields(response));
-      }
-      // `ifMatch` pins the write to the board state the comparison ran on.
-      const outcome = await client.commandOnFreshBoard(
-        boardId,
-        (board) => {
-          const card = Object.hasOwn(board.cards, cardId)
-            ? board.cards[cardId]
-            : undefined;
-          if (!card) return null;
-          if ((card.description ?? "") !== expectedDescription) {
-            return { result: "stale" };
-          }
-          return { action: patch, result: "ok" };
-        },
-        3,
-        expectedVersion,
-      );
-      if (outcome === null) return cardNotFound(cardId, boardId);
-      if (outcome.result === "stale") {
-        return errorResult(
-          `Error: card ${cardId}'s description changed since you read it. ` +
-            "Re-read it with janosik_get_card, merge, and retry.",
+      // Explicit `expectedVersion` is the full-board mode: the caller read
+      // the board and wants the write pinned to that seq.
+      if (expectedVersion !== undefined) {
+        if (expectedDescription === undefined) {
+          const response = await client.command(boardId, patch, {
+            ifMatch: expectedVersion,
+          });
+          return textOnly(`Updated card ${cardId}.`, commandFields(response));
+        }
+        const outcome = await client.commandOnFreshBoard(
+          boardId,
+          (board) => {
+            const card = Object.hasOwn(board.cards, cardId)
+              ? board.cards[cardId]
+              : undefined;
+            if (!card) return null;
+            if ((card.description ?? "") !== expectedDescription) {
+              return { result: "stale" };
+            }
+            return { action: patch, result: "ok" };
+          },
+          3,
+          expectedVersion,
+        );
+        if (outcome === null) return cardNotFound(cardId, boardId);
+        if (outcome.result === "stale") {
+          return errorResult(
+            `Error: card ${cardId}'s description changed since you read it. ` +
+              "Re-read it with janosik_get_card, merge, and retry.",
+          );
+        }
+        return textOnly(
+          `Updated card ${cardId}.`,
+          commandFields(outcome.response),
         );
       }
-      return textOnly(
-        `Updated card ${cardId}.`,
-        commandFields(outcome.response),
-      );
+
+      // TASK-200.7: read one card, not the board, and pin only that card's
+      // version. A concurrent edit of another card cannot conflict; a
+      // concurrent edit of this card is retried after re-reading this card.
+      const effectiveCommandId = newCommandId();
+      for (let attempt = 1; ; attempt += 1) {
+        let context: CardContextDto;
+        try {
+          context = await client.getCardContext(boardId, cardId);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404) {
+            return cardNotFound(cardId, boardId);
+          }
+          throw error;
+        }
+        if (!context.card) return cardNotFound(cardId, boardId);
+        if (
+          expectedDescription !== undefined &&
+          (context.card.description ?? "") !== expectedDescription
+        ) {
+          return errorResult(
+            `Error: card ${cardId}'s description changed since you read it. ` +
+              "Re-read it with janosik_get_card, merge, and retry.",
+          );
+        }
+        const version = context.versions[`card:${cardId}`];
+        try {
+          const response = await client.patchCard(boardId, cardId, {
+            commandId: effectiveCommandId,
+            ...(title !== undefined ? { title } : {}),
+            ...(description !== undefined ? { description } : {}),
+            ...(expectedDescription !== undefined
+              ? { expectedDescription }
+              : {}),
+            ...(version !== undefined
+              ? { ifMatchVersions: { [`card:${cardId}`]: version } }
+              : {}),
+          });
+          return textOnly(`Updated card ${cardId}.`, commandFields(response));
+        } catch (error) {
+          if (!isVersionConflict(error) || attempt >= 3) throw error;
+        }
+      }
     },
   );
 
@@ -477,72 +525,130 @@ export function registerCardTools(
       // Done` checklist is fully ticked and it has an evidence comment. This
       // is checked here before this tool moves it. Other clients can still
       // move it because the command API does not enforce this convention.
-      //
-      // The read below serves both the gate and the move: the snapshot is
-      // handed to `commandOnFreshBoard`, so a move costs one `GET` (not two,
-      // TASK-154) and only re-reads on a version conflict.
-      const { board: before, seq } = await client.getBoardWithSeq(boardId);
-      // The source column/index come from the read, and `ifMatch` refuses
-      // the move if another writer changed the board in between (the read
-      // is then retried), so a concurrent move can never act on stale
-      // coordinates.
-      let missingColumn: string | null = null;
-      const moved = await client.commandOnFreshBoard(
-        boardId,
-        async (board) => {
-          const location = findCardLocation(board, cardId);
-          if (!location) return null;
-          const destinationId = toColumnId ?? location.column.id;
-          const destination = board.columns.find(
-            (column) => column.id === destinationId,
+
+      // Explicit `expectedVersion` keeps the full-board mode: the caller
+      // read the board and wants the move pinned to that seq.
+      if (expectedVersion !== undefined) {
+        const { board: before, seq } = await client.getBoardWithSeq(boardId);
+        let missingColumn: string | null = null;
+        const moved = await client.commandOnFreshBoard(
+          boardId,
+          async (board) => {
+            const location = findCardLocation(board, cardId);
+            if (!location) return null;
+            const destinationId = toColumnId ?? location.column.id;
+            const destination = board.columns.find(
+              (column) => column.id === destinationId,
+            );
+            if (!destination) {
+              missingColumn = destinationId;
+              return null;
+            }
+            if (
+              workflowDoneColumnIds(board).includes(destination.id) &&
+              destination.id !== location.column.id
+            ) {
+              const block = await dodBlock(client, board.cards[cardId]!);
+              if (block !== null) throw new Error(block);
+            }
+            // Within one column the card's own slot does not count.
+            const slots =
+              destination.id === location.column.id
+                ? destination.cardIds.length - 1
+                : destination.cardIds.length;
+            const toIndex =
+              position !== undefined ? Math.min(position, slots) : slots;
+            return {
+              action: {
+                type: "MOVE_CARD",
+                cardId,
+                fromColumnId: location.column.id,
+                fromIndex: location.index,
+                toColumnId: destinationId,
+                toIndex,
+              },
+              result: { title: destination.title, toIndex },
+              ...(commandId !== undefined ? { commandId } : {}),
+              ...(approvalId !== undefined ? { approvalId } : {}),
+            };
+          },
+          3,
+          expectedVersion,
+          { board: before, seq },
+        );
+        if (missingColumn !== null) {
+          return errorResult(
+            `Error: column ${missingColumn} is not on board ${boardId}. ` +
+              "Re-read the board with janosik_get_board for current ids.",
           );
-          if (!destination) {
-            missingColumn = destinationId;
-            return null;
-          }
-          if (
-            workflowDoneColumnIds(board).includes(destination.id) &&
-            destination.id !== location.column.id
-          ) {
-            const block = await dodBlock(client, board.cards[cardId]!);
-            if (block !== null) throw new Error(block);
-          }
-          // Within one column the card's own slot does not count.
-          const slots =
-            destination.id === location.column.id
-              ? destination.cardIds.length - 1
-              : destination.cardIds.length;
-          const toIndex =
-            position !== undefined ? Math.min(position, slots) : slots;
-          return {
-            action: {
-              type: "MOVE_CARD",
-              cardId,
-              fromColumnId: location.column.id,
-              fromIndex: location.index,
-              toColumnId: destinationId,
-              toIndex,
-            },
-            result: { title: destination.title, toIndex },
-            ...(commandId !== undefined ? { commandId } : {}),
-            ...(approvalId !== undefined ? { approvalId } : {}),
-          };
-        },
-        3,
-        expectedVersion,
-        { board: before, seq },
-      );
-      if (missingColumn !== null) {
-        return errorResult(
-          `Error: column ${missingColumn} is not on board ${boardId}. ` +
-            "Re-read the board with janosik_get_board for current ids.",
+        }
+        if (moved === null) return cardNotFound(cardId, boardId);
+        return textOnly(
+          `Moved card ${cardId} to ${moved.result.title} at position ${moved.result.toIndex}.`,
+          commandFields(moved.response),
         );
       }
-      if (moved === null) return cardNotFound(cardId, boardId);
-      return textOnly(
-        `Moved card ${cardId} to ${moved.result.title} at position ${moved.result.toIndex}.`,
-        commandFields(moved.response),
-      );
+
+      // TASK-200.7: targeted mode reads only the card, its column and the
+      // board's column/workflow shell. The server resolves the source index
+      // again under the board lock; the card version pins this exact card, so
+      // a concurrent move of another card is never a conflict.
+      const effectiveCommandId = commandId ?? newCommandId();
+      for (let attempt = 1; ; attempt += 1) {
+        let context: CardContextDto;
+        try {
+          context = await client.getCardContext(boardId, cardId);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404) {
+            return cardNotFound(cardId, boardId);
+          }
+          throw error;
+        }
+        const destinationId = toColumnId ?? context.columnId;
+        if (destinationId === null) {
+          return errorResult(
+            `Error: card ${cardId} is archived and cannot be moved.`,
+          );
+        }
+        const destination = context.columns.find(
+          (column) => column.id === destinationId,
+        );
+        if (!destination) {
+          return errorResult(
+            `Error: column ${destinationId} is not on board ${boardId}. ` +
+              "Re-read the board with janosik_get_board for current ids.",
+          );
+        }
+        if (
+          context.doneColumnIds.includes(destinationId) &&
+          destinationId !== context.columnId
+        ) {
+          const block = await dodBlock(client, context.card);
+          if (block !== null) throw new Error(block);
+        }
+        const version = context.versions[`card:${cardId}`];
+        try {
+          const response = await client.moveCard(
+            boardId,
+            cardId,
+            {
+              commandId: effectiveCommandId,
+              ...(toColumnId !== undefined ? { toColumnId } : {}),
+              ...(position !== undefined ? { position } : {}),
+              ...(version !== undefined
+                ? { ifMatchVersions: { [`card:${cardId}`]: version } }
+                : {}),
+            },
+            approvalId,
+          );
+          return textOnly(
+            `Moved card ${cardId} to ${response.columnTitle} at position ${response.toIndex}.`,
+            commandFields(response),
+          );
+        } catch (error) {
+          if (!isVersionConflict(error) || attempt >= 3) throw error;
+        }
+      }
     },
   );
 
@@ -716,26 +822,62 @@ export function registerCardTools(
       annotations: WRITE,
     },
     async ({ boardId, cardId, leaseMs, expectedVersion }) => {
-      const user = await client.whoami();
       const duration = Math.min(
         Math.max(leaseMs ?? CLAIM_LEASE_DEFAULT_MS, CLAIM_LEASE_MIN_MS),
         CLAIM_LEASE_MAX_MS,
       );
-      const leaseUntil = Date.now() + duration;
-      const response = await client.command(
-        boardId,
-        {
-          type: "CLAIM_CARD",
-          cardId,
-          claimedBy: user.id,
-          leaseUntil,
-        },
-        { ifMatch: expectedVersion },
-      );
-      return textOnly(
-        `Claimed card ${cardId} until ${new Date(leaseUntil).toISOString()}.`,
-        commandFields(response),
-      );
+      // Explicit `expectedVersion` is the full-board mode, unchanged.
+      if (expectedVersion !== undefined) {
+        const user = await client.whoami();
+        const leaseUntil = Date.now() + duration;
+        const response = await client.command(
+          boardId,
+          {
+            type: "CLAIM_CARD",
+            cardId,
+            claimedBy: user.id,
+            leaseUntil,
+          },
+          { ifMatch: expectedVersion },
+        );
+        return textOnly(
+          `Claimed card ${cardId} until ${new Date(leaseUntil).toISOString()}.`,
+          commandFields(response),
+        );
+      }
+
+      // Targeted: the server sets the holder from the authenticated actor;
+      // only this card's version is a precondition, so another agent's work
+      // on another card cannot invalidate the claim.
+      const effectiveCommandId = newCommandId();
+      for (let attempt = 1; ; attempt += 1) {
+        let context: CardContextDto;
+        try {
+          context = await client.getCardContext(boardId, cardId);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404) {
+            return cardNotFound(cardId, boardId);
+          }
+          throw error;
+        }
+        const version = context.versions[`card:${cardId}`];
+        try {
+          const response = await client.claimCard(boardId, cardId, {
+            commandId: effectiveCommandId,
+            leaseMs: duration,
+            ...(version !== undefined
+              ? { ifMatchVersions: { [`card:${cardId}`]: version } }
+              : {}),
+          });
+          const until = response.leaseUntil ?? Date.now() + duration;
+          return textOnly(
+            `Claimed card ${cardId} until ${new Date(until).toISOString()}.`,
+            commandFields(response),
+          );
+        } catch (error) {
+          if (!isVersionConflict(error) || attempt >= 3) throw error;
+        }
+      }
     },
   );
 
@@ -756,45 +898,93 @@ export function registerCardTools(
       annotations: WRITE,
     },
     async ({ boardId, cardId, expectedVersion }) => {
-      const user = await client.whoami();
-      const outcome = await client.commandOnFreshBoard(
-        boardId,
-        (board) => {
-          const card = Object.hasOwn(board.cards, cardId)
-            ? board.cards[cardId]
-            : undefined;
-          if (!card) return null;
-          if (
-            card.claimedBy &&
-            card.claimedBy !== user.id &&
-            (card.leaseUntil ?? 0) > Date.now()
-          ) {
-            return { result: "held" as const };
-          }
-          return {
-            action: {
-              type: "CLAIM_CARD",
-              cardId,
-              claimedBy: null,
-              leaseUntil: null,
-            },
-            result: "released" as const,
-          };
-        },
-        3,
-        expectedVersion,
-      );
-      if (outcome === null) return cardNotFound(cardId, boardId);
-      if (outcome.result === "held") {
-        return errorResult(
-          `Error: card ${cardId} has a live claim held by another user. ` +
-            "Read the card and wait for its lease to expire.",
+      // Explicit full-board mode keeps the pre-check and board-seq CAS.
+      if (expectedVersion !== undefined) {
+        const user = await client.whoami();
+        const outcome = await client.commandOnFreshBoard(
+          boardId,
+          (board) => {
+            const card = Object.hasOwn(board.cards, cardId)
+              ? board.cards[cardId]
+              : undefined;
+            if (!card) return null;
+            if (
+              card.claimedBy &&
+              card.claimedBy !== user.id &&
+              (card.leaseUntil ?? 0) > Date.now()
+            ) {
+              return { result: "held" as const };
+            }
+            return {
+              action: {
+                type: "CLAIM_CARD",
+                cardId,
+                claimedBy: null,
+                leaseUntil: null,
+              },
+              result: "released" as const,
+            };
+          },
+          3,
+          expectedVersion,
+        );
+        if (outcome === null) return cardNotFound(cardId, boardId);
+        if (outcome.result === "held") {
+          return errorResult(
+            `Error: card ${cardId} has a live claim held by another user. ` +
+              "Read the card and wait for its lease to expire.",
+          );
+        }
+        return textOnly(
+          `Released card ${cardId}.`,
+          commandFields(outcome.response),
         );
       }
-      return textOnly(
-        `Released card ${cardId}.`,
-        commandFields(outcome.response),
-      );
+
+      // Targeted release: one card context, then the server's atomic claim
+      // guard. Only this card's version is pinned.
+      const user = await client.whoami();
+      const effectiveCommandId = newCommandId();
+      for (let attempt = 1; ; attempt += 1) {
+        let context: CardContextDto;
+        try {
+          context = await client.getCardContext(boardId, cardId);
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 404) {
+            return cardNotFound(cardId, boardId);
+          }
+          throw error;
+        }
+        const card = context.card;
+        if (
+          card.claimedBy !== undefined &&
+          card.claimedBy !== user.id &&
+          (card.leaseUntil ?? 0) > Date.now()
+        ) {
+          return errorResult(
+            `Error: card ${cardId} has a live claim held by another user. ` +
+              "Read the card and wait for its lease to expire.",
+          );
+        }
+        const version = context.versions[`card:${cardId}`];
+        try {
+          const response = await client.claimCard(
+            boardId,
+            cardId,
+            {
+              commandId: effectiveCommandId,
+              release: true,
+              ...(version !== undefined
+                ? { ifMatchVersions: { [`card:${cardId}`]: version } }
+                : {}),
+            },
+            undefined,
+          );
+          return textOnly(`Released card ${cardId}.`, commandFields(response));
+        } catch (error) {
+          if (!isVersionConflict(error) || attempt >= 3) throw error;
+        }
+      }
     },
   );
 

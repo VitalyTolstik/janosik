@@ -8,6 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.7 targeted card intents and per-entity CAS. New routes
+  `GET /boards/:id/cards/:cardId/context`, `POST .../claim`,
+  `POST .../move` and `PATCH /boards/:id/cards/:cardId` load only the named
+  card, its column/column order and the board workflow shell — never the full
+  aggregate. They build the same `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD`
+  actions and apply them through `CommandsService`, so idempotency
+  (`commandId`), approvals, agent policy, WIP/workflow limits, run
+  pre-images and the SSE command log are unchanged. `ifMatchVersions` pins
+  the touched card; the server also pins the card version it read when the
+  caller omits it, so concurrent moves/updates of different cards never
+  conflict, while a change to the same card still answers `409`. Version
+  conflicts now carry the actual `card:`/`column:`/`board:` versions in
+  `versions`, which is exported in `ConflictError`/`ApiErrorEnvelope`. MCP
+  `claim_card`, `release_card`, `move_card` and `update_card` use the targeted
+  context/intents: no board read, one-card Definition-of-Done and description
+  checks, and a targeted retry after a conflict. `expectedVersion` remains the
+  explicit full-board `ifMatch = seq` mode; comments already use the targeted
+  card route. `janosik_add_comment` is unchanged and never reads a board.
+  OpenAPI, EN/RU REST and command docs, the MCP README, this changelog, the
+  TASK-200 status note, backend unit/e2e coverage and MCP client/tool tests
+  are included. No heavy load or 500-agent benchmark was run for this task.
+
 - TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
   bounded summary of the cards ready to pick up on one board — the initial/work
   column, unassigned, without a live claim and not blocked — with
