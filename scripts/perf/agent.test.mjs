@@ -320,6 +320,67 @@ test("a claim validation 400 is an error, not a lease conflict", async () => {
   );
 });
 
+test("an unknown claim outcome attempts a release before the next cycle", async () => {
+  let releases = 0;
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) {
+        releases += 1;
+        return { status: 200, json: { seq: 12 } };
+      }
+      throw new Error("fetch failed after the server may have committed");
+    },
+    async comment() {
+      throw new Error("must not comment");
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
+    (error) => error.orphan === false,
+  );
+  assert.equal(releases, 1);
+});
+
+test("an unknown claim outcome whose release fails is an orphan", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) return { status: 409 };
+      throw new Error("network timeout");
+    },
+    async comment() {
+      throw new Error("must not comment");
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
+    (error) => error.orphan === true,
+  );
+});
+
 test("a network failure during the move releases the claim", async () => {
   let released = false;
   const client = {

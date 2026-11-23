@@ -281,6 +281,20 @@ export async function performAgentCycle({
         conflicts += 1;
         continue;
       }
+      if (statusOf(error) === 0) {
+        // The server may have committed the lease even though the response
+        // was lost (timeout/reset). Release it before the next cycle so a
+        // later retry cannot be blocked by an orphan claim.
+        const released = await releaseClaim({
+          client,
+          boardId,
+          cardId: work.cardId,
+        });
+        const wrapped =
+          error instanceof Error ? error : new Error(String(error));
+        wrapped.orphan = !released;
+        throw wrapped;
+      }
       throw error;
     }
     if (claim.status === 409) {
@@ -532,7 +546,13 @@ export async function runAgentLoop({
       }
     } catch (error) {
       const fatal = isAuthError(error);
-      onError?.({ agentIndex, boardId, error, fatal });
+      onError?.({
+        agentIndex,
+        boardId,
+        error,
+        fatal,
+        orphan: error?.orphan === true,
+      });
       if (fatal) return;
     }
     await afterCycle({ deadline, config, random, cycleStarted, signal });
@@ -620,7 +640,13 @@ export async function runMixedAgentLoop({
       }
     } catch (error) {
       const fatal = isAuthError(error);
-      onError?.({ agentIndex, boardId, error, fatal });
+      onError?.({
+        agentIndex,
+        boardId,
+        error,
+        fatal,
+        orphan: error?.orphan === true,
+      });
       if (fatal) return;
     }
     beatIndex += 1;

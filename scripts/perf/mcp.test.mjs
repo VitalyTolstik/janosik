@@ -50,6 +50,22 @@ test("scenario abort cancels an MCP handshake", async () => {
   await assert.rejects(pending, /aborted by scenario signal/);
 });
 
+test("MCP worker close is bounded", async () => {
+  const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 2 });
+  const worker = await createMcpWorker({
+    baseUrl: mock.baseUrl,
+    token: "perf-close",
+    boardId: "board-1",
+    cwd: repoRoot,
+    metrics: new RunMetrics("mcp-close"),
+    closeTimeoutMs: 50,
+  });
+  const started = Date.now();
+  await worker.close();
+  await mock.close();
+  assert.equal(Date.now() - started < 3_000, true);
+});
+
 test("MCP tool errors are counted as requests with their real status", async () => {
   for (const status of [409, 429, 500]) {
     const mock = await startMockServer({

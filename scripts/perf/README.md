@@ -32,7 +32,8 @@ a product baseline. In smoke mode the harness ignores `JANOSIK_PERF_BOARDS`,
 (`MOCK_LIMITS`) and agent/human/SSE/concurrency/duration overrides
 (`SMOKE_CAPS` in `lib/config.mjs`) so `--mock --agents 1000 --duration 1h`
 cannot become a heavy run by accident. Each smoke scenario starts from a fresh
-mock board, so S2 cannot drain the S3 run. The mock accepts
+mock board, so S2 cannot drain the S3 run. The standalone
+`mock-server-main.mjs` applies the same `MOCK_LIMITS`. The mock accepts
 `MOCK_COMMAND_STATUS`, `MOCK_COMMENT_STATUS` and `MOCK_SSE_STATUS` for
 failure-injection tests.
 
@@ -203,8 +204,9 @@ conflicts; the report shows their separate counts and rates. Exit codes: `0`
 ok/partial, `1` failed or
 zero-work, `2` config/preflight (including 401/403 and a board that is
 missing/archived), `130` interrupted. The first Ctrl-C cancels in-flight HTTP
-and psql, writes a partial report and exits `130`; a second Ctrl-C exits `130`
-immediately without waiting.
+and psql, writes a partial report (including a minimal preflight report if the
+load has not started) and exits `130`; a second Ctrl-C exits `130` immediately
+without waiting.
 
 ## API instrumentation
 
@@ -226,6 +228,9 @@ the next poll, and the warm-up sample no longer injects a fake zero lag.
 Without either option the report shows `api.source = "none"`. Generator
 RSS/event-loop lag is always sampled and labelled `generator`, never `api`;
 probe-file read errors and S5 opened/failed counts are surfaced in Markdown.
+The preload JSONL `ts` uses the **API host clock**; window filtering assumes
+reasonably synchronized clocks. On separate hosts use NTP or prefer
+`--api-pid` sampling if the clocks cannot be trusted.
 
 ### CPU profile (Top-10 self time)
 
@@ -307,7 +312,8 @@ http`. S1/S2/S4 use MCP workers for the agents; S5/S6 remain HTTP-only because
 they measure connections and raw board reads. Smoke mode caps the process
 count at 2; a large MCP swarm is a dedicated-host capacity experiment. The
 connect/handshake timeout is 15 s and is also cancelled by the scenario signal;
-a failed or hung handshake closes the transport and kills the child.
+a failed or hung handshake closes the transport and kills the child. Normal
+`worker.close()` is bounded too (2 s) and falls back to SIGTERM/SIGKILL.
 
 ## Secrets and redaction
 
@@ -357,15 +363,21 @@ scripts/perf/
   window**; the operation table breaks them down.
 - `409` is a measured CAS conflict and `429` the board/global rate limit; the
   report shows their counts and separate rates. `Unexp %` excludes both and
-  counts unexpected 4xx, 5xx and network failures. A successful
-  claim/comment/move is counted immediately, so a later 429 cannot erase it.
+  counts unexpected 4xx, 5xx and network failures. `400 lease`/`400 other`
+  separate expected claim-lease contention from unexpected validation errors.
+  A successful claim/comment/move is counted immediately, so a later 429
+  cannot erase it.
 - Unexpected 4xx/5xx degrade a measured run to `partial` above the documented
   thresholds (`server5xxRate > 1%` or ≥5; `unexpected4xxRate > 0.1%` or ≥5).
   Zero successful 2xx is `failed`.
 - `actions/s` counts successful writes (claim + comment + move = 3 per S2/S4
   cycle), not cycles. `cycles` counts completed write sequences. `no work`
   counts cycles that found no unleased card. An orphaned release is partial.
-- `requests/agent/min` uses the measured window, independent of worker drain.
+  A lost claim response (timeout/reset) triggers a release attempt before the
+  next cycle; a failed release is surfaced as an orphan.
+- `requests/agent/min` uses the measured window, independent of worker drain,
+  and for MCP uses the actual spawned process count (`--mcp-processes`), not
+  the requested `--agents` label.
 - For S5, `sse.maxConcurrent` is the peak open streams; opened/failed and the
   observed ramp/hold durations are reported separately.
 - `/proc` `VmHWM` (the `--api-pid` `API peak RSS*`) is the process **lifetime**

@@ -147,6 +147,8 @@ test("expected claim-lease 400s are excluded from unexpected rates", () => {
   metrics.recordRequest("command.claim", 2, 400, 0, { expected: true });
   const snapshot = metrics.snapshot({ durationMs: 1_000, agents: 1 });
   assert.equal(snapshot.errors.badRequest400, 1);
+  assert.equal(snapshot.errors.leaseConflict400, 1);
+  assert.equal(snapshot.errors.unexpected400, 0);
   assert.equal(snapshot.errors.expected, 1);
   assert.equal(snapshot.errors.unexpected, 0);
   assert.equal(snapshot.errors.unexpected4xx, 0);

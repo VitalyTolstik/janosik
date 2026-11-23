@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ALL_SCENARIOS,
   SMOKE_SCENARIOS,
+  clampMockSizes,
   parseCli,
   parseDurationMs,
   parseMix,
@@ -321,6 +322,10 @@ test("burst can be disabled and mock board/card overrides are capped", () => {
   );
   assert.equal(mock.mockBoards, 16);
   assert.equal(mock.mockCards, 2_000);
+  assert.deepEqual(clampMockSizes({ boards: 100, cards: 100_000 }), {
+    boards: 16,
+    cards: 2_000,
+  });
 });
 
 test("--driver mcp rejects the unimplemented S3 mixed loop", () => {

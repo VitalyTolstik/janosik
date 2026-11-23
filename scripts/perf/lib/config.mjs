@@ -112,6 +112,13 @@ export const SMOKE_CAPS = {
 /** Mock profiles are correctness checks; they cannot request a heavy board. */
 export const MOCK_LIMITS = { boards: 16, cards: 2_000 };
 
+export function clampMockSizes({ boards, cards }) {
+  return {
+    boards: Math.min(Math.max(1, boards), MOCK_LIMITS.boards),
+    cards: Math.min(Math.max(1, cards), MOCK_LIMITS.cards),
+  };
+}
+
 const SCENARIO_LIST = /^[A-Za-z0-9]+$/;
 
 export const CLI_OPTIONS = {
@@ -427,6 +434,11 @@ export function resolveConfig(cliValues = {}, env = {}) {
     );
   }
 
+  const mockSize = clampMockSizes({
+    boards: overrides.mockBoards ?? 1,
+    cards: overrides.mockCards ?? 120,
+  });
+
   return {
     help: false,
     task: TASK,
@@ -461,8 +473,8 @@ export function resolveConfig(cliValues = {}, env = {}) {
     redisCli: cliValues["redis-cli"] ?? "redis-cli",
     mock,
     mockPort: overrides.mockPort ?? 0,
-    mockBoards: Math.min(overrides.mockBoards ?? 1, MOCK_LIMITS.boards),
-    mockCards: Math.min(overrides.mockCards ?? 120, MOCK_LIMITS.cards),
+    mockBoards: mockSize.boards,
+    mockCards: mockSize.cards,
   };
 }
 

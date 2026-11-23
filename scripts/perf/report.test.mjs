@@ -109,7 +109,7 @@ test("renderMarkdown includes status, commit, configuration and error columns", 
   assert.match(markdown, /S2 Claim → comment → move/);
   assert.match(
     markdown,
-    /\| 409 \| 409 % \| 429 \| 429 % \| 5xx \| Net \| Unexp % \|/,
+    /\| 400 lease \| 400 other \| 409 \| 409 % \| 429 \| 429 % \| 5xx \| Net \| Unexp % \|/,
   );
   assert.match(markdown, /command\.claim/);
   assert.match(markdown, /150\.0 MiB/);
@@ -289,6 +289,28 @@ test("report output never contains URL userinfo or a password", () => {
     /"baseUrl":"http:\/\/example\.test\/api\/v1\?client_secret=%5Bredacted%5D"/,
   );
   assert.equal(json.includes("perf@db.test"), false);
+});
+
+test("API peak RSS uses VmHWM for api-proc and scenario max for preload", () => {
+  const procReport = buildReport(fixture());
+  procReport.scenarios[0].api.source = "api-proc";
+  procReport.scenarios[0].api.api.rss = {
+    p50: 100 * 1024 * 1024,
+    p95: 120 * 1024 * 1024,
+    max: 130 * 1024 * 1024,
+  };
+  procReport.scenarios[0].api.api.peakRss = {
+    max: 175 * 1024 * 1024,
+  };
+  const procMarkdown = renderMarkdown(procReport);
+  assert.match(procMarkdown, /175\.0 MiB/);
+  assert.match(procMarkdown, /lifetime/);
+
+  const preloadReport = buildReport(fixture());
+  preloadReport.scenarios[0].api.source = "api-preload";
+  preloadReport.scenarios[0].api.api.peakRss = { max: 999 * 1024 * 1024 };
+  const preloadMarkdown = renderMarkdown(preloadReport);
+  assert.match(preloadMarkdown, /160\.0 MiB/);
 });
 
 test("renderMarkdown surfaces S5 failures and probe errors", () => {

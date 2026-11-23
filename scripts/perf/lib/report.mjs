@@ -23,6 +23,7 @@ export function buildReport({
   startedAt,
   endedAt,
   interrupted = false,
+  preflightError = null,
 }) {
   const statuses = scenarios.map((scenario) => scenario.status ?? "ok");
   const overall = interrupted
@@ -61,6 +62,7 @@ export function buildReport({
         statuses.filter((status) => status === "interrupted").length ||
         (interrupted ? 1 : 0),
     },
+    preflightError,
     cpuProfile,
     pg,
     pgActivity,
@@ -90,6 +92,10 @@ export function renderMarkdown(report) {
   lines.push(
     `ok ${report.summary?.ok ?? 0} · partial ${report.summary?.partial ?? 0} · failed ${report.summary?.failed ?? 0} · interrupted ${report.summary?.interrupted ?? 0}`,
   );
+  if (report.preflightError !== null && report.preflightError !== undefined) {
+    lines.push("");
+    lines.push(`Preflight: ${escapeText(report.preflightError)}`);
+  }
   for (const scenario of report.scenarios) {
     lines.push(
       `- **${scenario.id}** \`${scenario.status ?? "ok"}\`${scenario.statusReason ? ` — ${escapeText(scenario.statusReason)}` : ""}`,
@@ -99,15 +105,15 @@ export function renderMarkdown(report) {
   lines.push("## Throughput and errors");
   lines.push("");
   lines.push(
-    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | 409 | 409 % | 429 | 429 % | 5xx | Net | Unexp % |",
+    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | 400 lease | 400 other | 409 | 409 % | 429 | 429 % | 5xx | Net | Unexp % |",
   );
   lines.push(
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     lines.push(
-      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${s.errors.conflict409} | ${formatPercent(s.errors.rates?.conflict409)} | ${s.errors.rateLimited429} | ${formatPercent(s.errors.rates?.rateLimited429)} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rates?.unexpected)} |`,
+      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${formatInteger(s.errors.leaseConflict400)} | ${formatInteger(s.errors.unexpected400)} | ${s.errors.conflict409} | ${formatPercent(s.errors.rates?.conflict409)} | ${s.errors.rateLimited429} | ${formatPercent(s.errors.rates?.rateLimited429)} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rates?.unexpected)} |`,
     );
   }
   lines.push("");
@@ -123,8 +129,12 @@ export function renderMarkdown(report) {
     const s = scenario.summary;
     const api = scenario.api?.api ?? {};
     const generator = scenario.api?.generator ?? {};
+    const apiPeakRss =
+      scenario.api?.source === "api-proc"
+        ? (api.peakRss?.max ?? api.rss?.max)
+        : api.rss?.max;
     lines.push(
-      `| ${scenario.id} | ${scenario.api?.source ?? "none"} | ${formatBytes(api.rss?.p50)} | ${formatBytes(api.rss?.p95)} | ${formatBytes(api.rss?.max)} | ${formatBytes(api.heapUsed?.p95)} | ${formatMs(api.eventLoopLag?.p95)} | ${formatBytes(generator.rss?.max)} | ${formatMs(generator.eventLoopLag?.p95)} | ${s.sse.maxConcurrent} | ${formatDuration(s.sse.rampObservedMs)} | ${formatDuration(s.sse.holdObservedMs)} | ${formatBytes(s.sse.bytes)} |`,
+      `| ${scenario.id} | ${scenario.api?.source ?? "none"} | ${formatBytes(api.rss?.p50)} | ${formatBytes(api.rss?.p95)} | ${formatBytes(apiPeakRss)} | ${formatBytes(api.heapUsed?.p95)} | ${formatMs(api.eventLoopLag?.p95)} | ${formatBytes(generator.rss?.max)} | ${formatMs(generator.eventLoopLag?.p95)} | ${s.sse.maxConcurrent} | ${formatDuration(s.sse.rampObservedMs)} | ${formatDuration(s.sse.holdObservedMs)} | ${formatBytes(s.sse.bytes)} |`,
     );
   }
   lines.push("");
@@ -267,6 +277,9 @@ export function renderMarkdown(report) {
   );
   lines.push(
     "- API RSS comes from `--api-probe` (heap + event-loop lag) or `--api-pid` (/proc VmRSS); generator RSS/lag is sampled in-process and is not an API measurement. `API peak RSS*` for `api-proc` is `/proc` VmHWM, the process **lifetime** peak; for `api-preload` it is the scenario-window peak.",
+  );
+  lines.push(
+    "- `--api-preload` timestamps come from the API host clock; window filtering assumes NTP-synced clocks, so use `--api-pid` if clocks differ.",
   );
   lines.push(
     "- Mock (`--mock`) results only prove the harness works; they are never a product baseline.",

@@ -81,6 +81,7 @@ export async function createMcpWorker({
   args = [path.join(cwd, "mcp", "src", "index.ts")],
   requestTimeoutMs = 60_000,
   connectTimeoutMs = 15_000,
+  closeTimeoutMs = 2_000,
   signal,
   metrics,
   log = () => {},
@@ -249,11 +250,24 @@ export async function createMcpWorker({
       return { pid, peakRssBytes, peakVmHwmBytes };
     },
     async close() {
-      try {
-        await client.close();
-      } catch {
-        // The process may already be gone after a hard abort.
-      }
+      const pid = transport.pid;
+      let timer;
+      const timeout = new Promise((resolve) => {
+        timer = setTimeout(resolve, closeTimeoutMs);
+      });
+      await Promise.race([
+        Promise.allSettled([
+          Promise.resolve()
+            .then(() => client.close())
+            .catch(() => {}),
+          Promise.resolve()
+            .then(() => transport.close())
+            .catch(() => {}),
+        ]),
+        timeout,
+      ]);
+      clearTimeout(timer);
+      killChild(pid);
     },
   };
   worker.sampleRss();
@@ -353,6 +367,18 @@ export async function runMcpAgentLoop({
             );
           } catch (error) {
             if (mcpLeaseConflict(error) || toolStatusError(error) === 409) {
+              continue;
+            }
+            if (toolStatusError(error) === 0) {
+              const released = await releaseViaMcp(worker, boardId, cardId);
+              metrics?.recordOrphan(released ? 0 : 1);
+              onError?.({
+                agentIndex,
+                boardId,
+                error,
+                fatal: false,
+                orphan: !released,
+              });
               continue;
             }
             throw error;

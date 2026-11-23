@@ -306,6 +306,110 @@ test("first Ctrl-C writes a partial report and exits 130", async () => {
   }
 });
 
+test("standalone mock applies the same board/card limits", async () => {
+  const mock = await startMockProcess({
+    MOCK_BOARDS: "17",
+    MOCK_CARDS: "2001",
+  });
+  try {
+    assert.equal(mock.boards, 16);
+    assert.equal(mock.cards, 2_000);
+  } finally {
+    mock.child.kill("SIGTERM");
+  }
+});
+
+test("Ctrl-C during preflight writes a minimal partial report", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "janosik-pre-sigint-"),
+  );
+  try {
+    const output = path.join(directory, "preflight.json");
+    const child = spawn(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        "http://127.0.0.1:1/api/v1",
+        "--token",
+        "jnk_preflight",
+        "--agents",
+        "1",
+        "--output",
+        output,
+      ],
+      { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const closed = new Promise((resolve) => child.on("close", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    child.kill("SIGINT");
+    const code = await Promise.race([
+      closed,
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 20_000)),
+    ]);
+    assert.equal(code, 130, stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    await readFile(output.replace(/\.json$/, ".md"), "utf8");
+    assert.equal(report.status, "interrupted");
+    assert.equal(report.scenarios.length, 0);
+    assert.match(report.preflightError, /interrupted|health/i);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("MCP report uses actual processes, not the requested agents", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-mcp-count-"));
+  try {
+    const output = path.join(directory, "mcp-count.json");
+    const result = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--driver",
+        "mcp",
+        "--mock",
+        "--agents",
+        "2",
+        "--mcp-processes",
+        "1",
+        "--cadence",
+        "250ms",
+        "--duration",
+        "1500ms",
+        "--output",
+        output,
+      ],
+      { timeout: 120_000 },
+    );
+    assert.equal(result.code, 0, result.stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    const scenario = report.scenarios[0];
+    assert.equal(scenario.mcp.processes, 1);
+    assert.equal(scenario.summary.agents, 1);
+    assert.equal(scenario.config.agents, 1);
+    const expected =
+      Math.round(
+        (scenario.summary.requests /
+          1 /
+          (scenario.summary.durationMs / 60_000)) *
+          1_000,
+      ) / 1_000;
+    assert.equal(scenario.summary.requestsPerAgentPerMinute, expected);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("MCP mock smoke spawns a real stdio process and counts tools", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-mcp-"));
   try {

@@ -335,6 +335,8 @@ export class RunMetrics {
         aborted: counts.aborted,
         auth401403: counts.auth401403,
         badRequest400: counts.badRequest400,
+        leaseConflict400: this.expectedExtra,
+        unexpected400: Math.max(0, counts.badRequest400 - this.expectedExtra),
         conflict409,
         rateLimited429,
         other4xx,

@@ -463,19 +463,21 @@ async function runOne({ id, config, users, boards, signal }) {
   }
   sampler.poll();
   const measuredEnd = result.measurementEndedAt ?? Date.now();
+  const actualAgents = result.mcp?.processes ?? effective.agents ?? 0;
+  const statusScenario = { ...effective, agents: actualAgents };
   const metricDuration = Math.max(
     1,
     result.workDurationMs ?? result.durationMs,
   );
   const snapshot = metrics.snapshot({
     durationMs: metricDuration,
-    agents: effective.agents ?? 0,
+    agents: actualAgents,
   });
   const usesMcp =
     config.driver === "mcp" && ["S1", "S2", "S3", "S4"].includes(id);
   const { status, reason } = evaluateScenarioStatus({
     id,
-    scenario: effective,
+    scenario: statusScenario,
     summary: snapshot,
     errors: result.errors ?? [],
     fatal: result.fatalAuth === true || failure !== null,
@@ -488,7 +490,7 @@ async function runOne({ id, config, users, boards, signal }) {
     measuredEnd,
   );
   log(
-    `${status === "ok" ? "✓" : status === "partial" ? "◐" : status === "interrupted" ? "■" : "✗"} ${id} [${status}]: ${snapshot.requests} req · ${snapshot.cycles} cycles · ${snapshot.actionsPerSecond ?? "—"} actions/s · p95 ${snapshot.latency.p95 ?? "—"} ms · 400 ${snapshot.errors.badRequest400} · 409 ${snapshot.errors.conflict409} · 429 ${snapshot.errors.rateLimited429} · 5xx ${snapshot.errors.server5xx} · net ${snapshot.errors.network} · unexp ${((snapshot.errors.rates?.unexpected ?? 0) * 100).toFixed(2)}%`,
+    `${status === "ok" ? "✓" : status === "partial" ? "◐" : status === "interrupted" ? "■" : "✗"} ${id} [${status}]: ${snapshot.requests} req · ${snapshot.agents} agents · ${snapshot.cycles} cycles · ${snapshot.actionsPerSecond ?? "—"} actions/s · p95 ${snapshot.latency.p95 ?? "—"} ms · 400 ${snapshot.errors.badRequest400} · 409 ${snapshot.errors.conflict409} · 429 ${snapshot.errors.rateLimited429} · 5xx ${snapshot.errors.server5xx} · net ${snapshot.errors.network} · unexp ${((snapshot.errors.rates?.unexpected ?? 0) * 100).toFixed(2)}%`,
   );
   if (reason !== null) log(`  ${reason}`);
   return {
@@ -496,7 +498,7 @@ async function runOne({ id, config, users, boards, signal }) {
     title: effective.title,
     status,
     statusReason: reason,
-    config: { ...effective },
+    config: { ...effective, agents: actualAgents },
     summary: snapshot,
     api: resources,
     workWindow: {
@@ -557,6 +559,38 @@ void main().catch(async (error) => {
     activeConfig?.tokens ?? [],
   );
   console.error(`perf: ${message}`);
+  if (interrupted && activeConfig !== null && activeConfig.help !== true) {
+    try {
+      const report = buildReport({
+        config: activeConfig,
+        scenarios: [],
+        git: gitInfo(),
+        environment: environmentInfo(),
+        pg: { enabled: false },
+        pgActivity: null,
+        cpuProfile: { enabled: false },
+        redis: { enabled: false },
+        startedAt,
+        endedAt: Date.now(),
+        interrupted: true,
+        preflightError: message,
+      });
+      const { jsonPath, markdownPath } = await writeReport(
+        activeConfig,
+        report,
+      );
+      console.error(
+        `perf: partial preflight report: ${jsonPath} · ${markdownPath}`,
+      );
+    } catch (reportError) {
+      console.error(
+        `perf: could not write the partial preflight report: ${sanitizeText(
+          reportError instanceof Error ? reportError.message : reportError,
+          activeConfig.tokens,
+        )}`,
+      );
+    }
+  }
   process.exitCode = interrupted
     ? 130
     : error instanceof PreflightError
