@@ -955,12 +955,16 @@ rather than relying on the absence of a route.
 
 | Method | Path                   | Auth / role | Request                 | Response     |
 | ------ | ---------------------- | ----------- | ----------------------- | ------------ |
-| `GET`  | `/boards/:id/events`   | member      | query `since`, `client` | SSE stream   |
+| `GET`  | `/boards/:id/events`   | member      | query `since`, `client`, `presence` | SSE stream   |
 | `POST` | `/boards/:id/presence` | member      | `PresencePingDto`       | `204`, empty |
 
 `GET /boards/:id/events` is the server-sent event stream. Auth is the Bearer
 token (an access token or a personal API token); any role, `VIEWER` included,
-may connect. The stream delivers the board's command log exactly once and in
+may connect. A browser access token defaults to presence on; a personal API
+token (an agent) defaults to `?presence=0`. Send `?presence=1` to opt an agent
+stream into the roster, or `?presence=0` to silence a browser stream. A stream
+opened with presence off neither joins the roster nor receives `presence`
+frames. The stream delivers the board's command log exactly once and in
 order, or tells the client to resync; it never leaves a silent hole:
 
 - **Catch-up.** The connection replays the command-log delta from `?since=`
@@ -975,16 +979,21 @@ order, or tells the client to resync; it never leaves a silent hole:
   on the way (for example between nodes), the stream re-reads the missing
   commands from the log rather than deliver out of order.
 
-A keep-alive comment `ping` is sent every 25 seconds. On the same tick the
-server re-checks the caller and closes the stream when access is gone: the
-membership was removed or no longer accepted, a `VIEWER`'s access expired,
-the account was disabled, the board was deleted, or the stream was opened
-with a personal API token that has since been revoked or has expired.
+A keep-alive frame is sent every 25 seconds for a browser stream and every
+60 seconds for a PAT (agent) stream; up to 2.5 s / 6 s of jitter spreads
+thousands of connections so their checks do not fire in one wave. If a tick's
+database work is still running at the next beat, that beat is skipped rather
+than stacked. On the same tick the server re-checks the caller and closes the
+stream when access is gone: the membership was removed or no longer accepted,
+a `VIEWER`'s access expired, the account was disabled, the board was deleted,
+or the stream was opened with a personal API token that has since been revoked
+or has expired. Credential fields for a browser stream are read fresh on every
+tick, so a password change also closes the stream on the next beat.
 
 `?client=` is an optional tab-scoped id matching `^[A-Za-z0-9_-]{8,64}$`.
 When omitted or malformed, the server generates one.
 
-The stream carries six event types:
+The stream carries seven event types:
 
 | `type`       | Payload                                                        | Notes                                          |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
@@ -993,6 +1002,7 @@ The stream carries six event types:
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated`, `removed` (admin) or `left` (voluntary) |
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | non-reducer activity, e.g. a new comment |
 | `agent`      | `op` (`started`, `paused`, `resumed`, `heartbeat`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition; `heartbeat` is a throttled session liveness refresh |
+| `keepalive`  | `presenceEpoch?`                                                | periodic liveness tick; no `seq` and no log    |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
 `commandId` is the idempotency key sent with the command. A client uses it to

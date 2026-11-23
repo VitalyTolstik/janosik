@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import type { BoardMember } from "@prisma/client";
 import { Role } from "@prisma/client";
 import type { ScopePreset } from "@janosik/shared";
 import {
@@ -29,6 +30,7 @@ import {
   TOKEN_SCOPE_KEY,
 } from "@/auth/token-scope.decorator";
 import { resolveAgentSessionHeader } from "@/agent-sessions/agent-session-context";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BOARD_ROLES_KEY } from "./board-roles.decorator";
 import { setBoardWriteContext } from "./request-context";
@@ -76,6 +78,7 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
     protected readonly reflector: Reflector,
     protected readonly prisma: PrismaService,
     apiTokens: ApiTokenService,
+    protected readonly hotPathCache: HotPathCacheService,
   ) {
     super(apiTokens);
   }
@@ -125,9 +128,43 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
       throw new NotFoundException("Board not found");
     }
 
-    let membership = await this.prisma.boardMember.findUnique({
-      where: { boardId_userId: { boardId, userId: user.id } },
-    });
+    const write = isWriteMethod(method);
+    const isSse = method === "GET" && SSE_PATH.test(path);
+    // TASK-200.5: reads may use the 30 s membership snapshot; a write or an
+    // SSE connect reads fresh, because a write must enforce the current role
+    // and a new stream must see a pause immediately. The board row is always
+    // read fresh for the same reason (`agentsPausedAt` is a kill switch).
+    const cacheable = isCacheable(write, isSse);
+    let usedCached = false;
+    let membership: BoardMember | null | undefined = cacheable
+      ? this.hotPathCache.getMembership(boardId, user.id)
+      : undefined;
+    if (cacheable && membership !== undefined) {
+      if (isCurrentMembership(membership)) {
+        usedCached = true;
+      } else {
+        this.hotPathCache.dropMembership(boardId, user.id);
+        membership = undefined;
+      }
+    }
+    const rememberEpoch = this.hotPathCache.epochs.membership;
+    if (membership === undefined) {
+      membership = cacheable
+        ? await this.hotPathCache.singleFlight(
+            `membership:${boardId}\u0000${user.id}`,
+            rememberEpoch,
+            async () => {
+              const again = this.hotPathCache.getMembership(boardId, user.id);
+              if (again !== undefined) return again;
+              return this.prisma.boardMember.findUnique({
+                where: { boardId_userId: { boardId, userId: user.id } },
+              });
+            },
+          )
+        : await this.prisma.boardMember.findUnique({
+            where: { boardId_userId: { boardId, userId: user.id } },
+          });
+    }
     for (;;) {
       if (!membership || membership.acceptedAt === null) {
         throw new ForbiddenException("No access to this board");
@@ -147,9 +184,13 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
         where: { boardId_userId: { boardId, userId: user.id } },
       });
     }
+    // Only a row fetched from the database may renew the window: a cache hit
+    // must not turn the 30 s TTL into a sliding one. An invalidation during
+    // the read also wins over this fill.
+    if (!usedCached && this.hotPathCache.epochs.membership === rememberEpoch) {
+      this.hotPathCache.rememberMembership(boardId, user.id, membership);
+    }
 
-    const write = isWriteMethod(method);
-    const isSse = method === "GET" && SSE_PATH.test(path);
     request.boardMembership = membership;
 
     // TASK-166.3 pause precedence (ADR §5.2): token → board → session comes
@@ -318,6 +359,23 @@ export function isReadOnlyControlOperation(
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+/** Read-only HTTP requests may reuse the membership snapshot. */
+function isCacheable(write: boolean, isSse: boolean): boolean {
+  return !write && !isSse;
+}
+
+/** A cached row is usable only while accepted and not past its VIEWER TTL. */
+function isCurrentMembership(membership: {
+  acceptedAt: Date | null;
+  expiresAt: Date | null;
+}): boolean {
+  return (
+    membership.acceptedAt !== null &&
+    (membership.expiresAt === null ||
+      membership.expiresAt.getTime() > Date.now())
+  );
 }
 
 function queryParam(url: string | undefined, name: string): string | undefined {

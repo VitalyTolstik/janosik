@@ -112,6 +112,8 @@ const flagsMock = {
   isEnabled: jest.fn(async () => true),
 } as unknown as FeatureFlagsService;
 
+const hotPathCacheMock = { invalidatePat: jest.fn() };
+
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: "user-1",
   email: "user@example.com",
@@ -164,6 +166,7 @@ describe("AuthService", () => {
       flagsMock,
       new LoginBackoffService(),
       { record: jest.fn() } as never,
+      hotPathCacheMock as never,
     );
     jwtMock.signAsync.mockResolvedValue("access-token");
     Object.defineProperty(mailerMock, "enabled", {
@@ -756,6 +759,8 @@ describe("AuthService", () => {
           endReason: "cancelled",
         },
       });
+      // TASK-200.5: the cached PAT resolutions are dropped before returning.
+      expect(hotPathCacheMock.invalidatePat).toHaveBeenCalled();
     });
 
     it("rejects a wrong current password without writing", async () => {

@@ -12,6 +12,7 @@ import { principalTracker } from "@/common/throttle-tracker";
 import { PrismaModule } from "@/common/prisma/prisma.module";
 import { SecurityAuditModule } from "@/common/security-audit/security-audit.module";
 import { BoardWriteModule } from "@/common/board-write.module";
+import { HotPathCacheModule } from "@/common/hot-path-cache.module";
 import { IdempotencyModule } from "@/common/idempotency.module";
 import { TrafficModule } from "@/common/traffic.module";
 import { HealthModule } from "@/health/health.module";
@@ -70,6 +71,7 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
         : {}),
     }),
     PrismaModule,
+    HotPathCacheModule,
     SecurityAuditModule,
     BoardWriteModule,
     IdempotencyModule,

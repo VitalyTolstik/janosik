@@ -23,6 +23,7 @@ import {
 } from "@janosik/shared";
 import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
@@ -48,6 +49,13 @@ export const API_TOKEN_DEFAULT_TTL_DAYS = 90;
  * request into a row write. Stamped at most once per this window.
  */
 export const API_TOKEN_LAST_USED_RESOLUTION_MS = 60_000;
+
+/**
+ * Do not cache a token that expires sooner than this plus the cache window:
+ * otherwise a valid cache entry could outlive the credential it represents
+ * (revocation is invalidated explicitly; expiry is not an event).
+ */
+const TOKEN_EXPIRY_CACHE_MARGIN_MS = 5_000;
 
 /**
  * The restrictions a PAT carries (TASK-157). `boardId: null` = every board
@@ -84,6 +92,7 @@ export class ApiTokenService {
     private readonly securityAudit: SecurityAuditService,
     private readonly attention: AttentionService,
     private readonly realtime: RealtimeService,
+    private readonly hotPathCache: HotPathCacheService,
   ) {}
 
   /** Only the sha256 hash is persisted; also reused by the password change. */
@@ -96,9 +105,48 @@ export class ApiTokenService {
     return API_TOKEN_PREFIX + randomBytes(32).toString("base64url");
   }
 
-  /** Resolve a raw PAT to its owner; unknown/stale tokens answer 401. */
-  async authenticate(raw: string): Promise<AuthenticatedToken> {
+  /**
+   * Resolve a raw PAT to its owner; unknown/stale tokens answer 401.
+   *
+   * TASK-200.5: a successful lookup is cached by hash for `AUTH_CACHE_TTL_MS`.
+   * `fresh` bypasses the cache on writes and SSE connects, where a pause or a
+   * scope change must be visible immediately; regular reads tolerate the
+   * bounded window. Revoke/resume/pause invalidates the entry through the
+   * realtime bus, so the window is only a backstop, not the consistency
+   * mechanism.
+   */
+  async authenticate(
+    raw: string,
+    options: { fresh?: boolean } = {},
+  ): Promise<AuthenticatedToken> {
     const tokenHash = this.hashToken(raw);
+    if (options.fresh) return this.loadAuthenticated(tokenHash);
+    const cached = this.hotPathCache.getPat(tokenHash);
+    if (cached !== undefined) return cached;
+    const epoch = this.hotPathCache.epochs.pat;
+    // 500 agents presenting the same cold key issue one lookup, not 500.
+    // An invalidation during the load changes the epoch, so the loader does
+    // not write the older answer back into the cache.
+    return this.hotPathCache.singleFlight(
+      `pat:${tokenHash}`,
+      epoch,
+      async () => {
+        const again = this.hotPathCache.getPat(tokenHash);
+        if (again !== undefined) return again;
+        return this.loadAuthenticated(tokenHash, epoch);
+      },
+    );
+  }
+
+  /**
+   * The database half of `authenticate`. `cacheEpoch` is set only for a
+   * cacheable read: the result is remembered when no invalidation happened
+   * while the query was in flight.
+   */
+  private async loadAuthenticated(
+    tokenHash: string,
+    cacheEpoch?: number,
+  ): Promise<AuthenticatedToken> {
     const stored = await this.prisma.apiToken.findUnique({
       where: { tokenHash },
       include: { user: { select: AUTH_USER_SELECT } },
@@ -127,7 +175,7 @@ export class ApiTokenService {
         data: { lastUsedAt: new Date(now) },
       });
     }
-    return {
+    const resolved: AuthenticatedToken = {
       user: toAuthUser(stored.user),
       tokenId: stored.id,
       tokenName: stored.name,
@@ -138,6 +186,20 @@ export class ApiTokenService {
         rateLimitPerMinute: stored.rateLimitPerMinute,
       },
     };
+    // A token that expires inside this entry's lifetime is not cached: there
+    // is no expiry event on the bus, and a cached credential must never
+    // outlive its `expiresAt`.
+    if (
+      cacheEpoch !== undefined &&
+      this.hotPathCache.epochs.pat === cacheEpoch &&
+      this.hotPathCache.patTtlMs > 0 &&
+      (stored.expiresAt === null ||
+        stored.expiresAt.getTime() >
+          now + this.hotPathCache.patTtlMs + TOKEN_EXPIRY_CACHE_MARGIN_MS)
+    ) {
+      this.hotPathCache.rememberPat(tokenHash, resolved);
+    }
+    return resolved;
   }
 
   /**
@@ -181,6 +243,9 @@ export class ApiTokenService {
     const result = await this.prisma.$transaction((tx) =>
       revokeApiTokens(tx, { userId, revokedAt: null }),
     );
+    // Invalidate even when the transaction found no live rows: another
+    // replica may still hold a positive entry from before its own frame.
+    this.hotPathCache.invalidatePat();
     if (result.revokedCount > 0) {
       for (const token of candidates) {
         await this.attention.notifyTokenRevoked({
@@ -359,6 +424,9 @@ export class ApiTokenService {
       });
       return { token, updated };
     });
+    // Scope/preset/board/rate-limit edits change what the key may do; drop
+    // the cached resolution before the next agent request can use it.
+    this.hotPathCache.invalidatePat(tokenId);
     await this.securityAudit.record({
       userId,
       actorId: userId,
@@ -469,6 +537,9 @@ export class ApiTokenService {
     const result = await this.prisma.$transaction((tx) =>
       revokeApiTokens(tx, { id: tokenId, userId }),
     );
+    // Invalidate even when the row was already revoked: another replica may
+    // still hold a positive entry from before its own invalidation.
+    this.hotPathCache.invalidatePat(tokenId);
     if (result.revokedCount > 0) {
       await this.securityAudit.record({
         userId,
@@ -516,6 +587,9 @@ export class ApiTokenService {
         individualPausedReason: clean(reason),
       },
     });
+    // Pause/resume invalidates even on an idempotent no-op: a replica may
+    // still hold an older identity from before the first transition.
+    this.hotPathCache.invalidatePat(tokenId);
     if (result.count > 0) {
       await this.securityAudit.record({
         userId,
@@ -554,6 +628,7 @@ export class ApiTokenService {
         individualPausedReason: null,
       },
     });
+    this.hotPathCache.invalidatePat(tokenId);
     if (result.count > 0) {
       await this.securityAudit.record({
         userId,
@@ -594,6 +669,9 @@ export class ApiTokenService {
       orderBy: { stopAllPausedAt: "desc" },
       select: { stopAllPausedAt: true, stopAllPausedBy: true },
     });
+    // The bulk switch may be an idempotent no-op on this node while another
+    // replica still serves a cached token identity.
+    this.hotPathCache.invalidatePat();
     if (result.count > 0) {
       await this.securityAudit.record({
         userId,
@@ -621,6 +699,7 @@ export class ApiTokenService {
       where: { userId, revokedAt: null, stopAllPausedAt: { not: null } },
       data: { stopAllPausedAt: null, stopAllPausedBy: null },
     });
+    this.hotPathCache.invalidatePat();
     if (result.count > 0) {
       await this.securityAudit.record({
         userId,
