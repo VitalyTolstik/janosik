@@ -28,7 +28,10 @@ RUN npm ci --workspace @janosik/mcp --include-workspace-root \
 
 COPY shared ./shared
 COPY mcp ./mcp
-RUN npm run build -w mcp
+# The image needs only one self-contained file: bundling the SDK and Zod
+# avoids shipping the workspace dependency tree (the unpruned runtime was
+# ~571 MB; this keeps the image a Node base plus ~1.5 MB).
+RUN npm run build:http-bundle -w mcp
 
 # -------------------------------------------------------------- runtime ----
 FROM node:24-bookworm-slim AS runtime
@@ -36,22 +39,15 @@ ENV NODE_ENV=production
 # Bound V8's old space; the gateway holds many sessions in one process.
 # Raise it or use several replicas for very large swarms.
 ENV NODE_OPTIONS=--max-old-space-size=1024
+# Outbound HTTPS to the Janosik API needs the system CA bundle.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-COPY shared/package.json shared/package.json
-COPY brand/package.json brand/package.json
-COPY ui/package.json ui/package.json
-COPY site/package.json site/package.json
-COPY backend/package.json backend/package.json
-COPY e2e/package.json e2e/package.json
-COPY video/package.json video/package.json
-COPY mcp/package.json mcp/package.json
-RUN npm ci --omit=dev --workspace @janosik/mcp --include-workspace-root \
-      --ignore-scripts --no-audit --no-fund \
-  && npm cache clean --force
-
-COPY --from=build /app/mcp/dist ./mcp/dist
+# `readVersion()` reads ../package.json relative to dist-http/http.js.
+COPY mcp/package.json ./mcp/package.json
+COPY --from=build /app/mcp/dist-http/http.js ./mcp/dist-http/http.js
 
 USER node
 ENV JANOSIK_MCP_HTTP_HOST=0.0.0.0
@@ -69,4 +65,4 @@ LABEL org.opencontainers.image.title="Janosik MCP gateway" \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.JANOSIK_MCP_HTTP_PORT||8080)+'/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "/app/mcp/dist/http.js"]
+CMD ["node", "/app/mcp/dist-http/http.js"]

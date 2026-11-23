@@ -126,9 +126,16 @@ services:
     #   dockerfile: mcp/Dockerfile
     profiles: ["mcp"]
     restart: unless-stopped
+    # Above JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS + 1 s so Docker does not
+    # SIGKILL the drain window. Raise both together if you increase the grace.
+    stop_grace_period: 20s
     depends_on:
       app:
         condition: service_healthy
+    # Keep one gateway from starving the API host. The V8 heap default is
+    # 1024 MB; 1536m leaves room for 500+ sessions and the Node baseline.
+    mem_limit: ${JANOSIK_MCP_MEM_LIMIT:-1536m}
+    cpus: ${JANOSIK_MCP_CPUS:-2.0}
     environment:
       JANOSIK_URL: http://app:3000
       JANOSIK_APP_BASE: /app
@@ -139,6 +146,9 @@ services:
       JANOSIK_MCP_HTTP_SESSION_IDLE_MS: ${JANOSIK_MCP_HTTP_SESSION_IDLE_MS:-300000}
       JANOSIK_MCP_HTTP_SESSION_SWEEP_MS: ${JANOSIK_MCP_HTTP_SESSION_SWEEP_MS:-30000}
       JANOSIK_MCP_HTTP_ALLOWED_ORIGINS: ${JANOSIK_MCP_HTTP_ALLOWED_ORIGINS:-}
+      JANOSIK_MCP_HTTP_AUTH_URL: ${JANOSIK_MCP_HTTP_AUTH_URL:-http://app:3000/api/v1/auth/me}
+      JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS: ${JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS:-3000}
+      JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS: ${JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS:-15000}
       JANOSIK_MCP_HTTP_TRUST_PROXY: ${JANOSIK_MCP_HTTP_TRUST_PROXY:-0}
       JANOSIK_MCP_HTTP_LOG_LEVEL: ${JANOSIK_MCP_HTTP_LOG_LEVEL:-info}
       JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS: ${JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS:-10000}

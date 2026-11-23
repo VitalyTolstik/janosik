@@ -39,6 +39,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:http-bundle": "tsup --config tsup.http.config.ts",
     "dev": "tsx src/index.ts",
     "dev:http": "tsx src/http.ts",
     "start": "node dist/index.js",

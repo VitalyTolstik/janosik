@@ -14,11 +14,13 @@ const read = (relative: string) =>
 describe("MCP gateway container wiring", () => {
   it("ships a separate Dockerfile and entry point", () => {
     const dockerfile = read("mcp/Dockerfile");
-    expect(dockerfile).toContain("npm run build -w mcp");
-    expect(dockerfile).toContain("COPY --from=build /app/mcp/dist ./mcp/dist");
+    expect(dockerfile).toContain("npm run build:http-bundle -w mcp");
+    expect(dockerfile).toContain(
+      "COPY --from=build /app/mcp/dist-http/http.js ./mcp/dist-http/http.js",
+    );
     expect(dockerfile).toContain("EXPOSE 8080");
     expect(dockerfile).toContain("HEALTHCHECK");
-    expect(dockerfile).toContain('CMD ["node", "/app/mcp/dist/http.js"]');
+    expect(dockerfile).toContain('CMD ["node", "/app/mcp/dist-http/http.js"]');
     expect(dockerfile).not.toMatch(/dist\/index\.js/);
   });
 
@@ -35,6 +37,11 @@ describe("MCP gateway container wiring", () => {
     expect(block).toContain('JANOSIK_MCP_HTTP_PORT: "8080"');
     expect(block).toContain("JANOSIK_MCP_HTTP_MAX_SESSIONS");
     expect(block).toContain("JANOSIK_MCP_HTTP_SESSION_IDLE_MS");
+    expect(block).toContain("JANOSIK_MCP_HTTP_AUTH_URL");
+    expect(block).toContain("JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS");
+    expect(block).toContain("stop_grace_period: 20s");
+    expect(block).toContain("mem_limit:");
+    expect(block).toContain("cpus:");
     expect(block).toContain("/ready");
     expect(block).not.toMatch(/JANOSIK_TOKEN\s*:/);
   });
@@ -44,6 +51,8 @@ describe("MCP gateway container wiring", () => {
     expect(workflow).toContain("file: mcp/Dockerfile");
     expect(workflow).toContain("janosik-mcp");
     expect(workflow).toContain("Build MCP gateway image (no push)");
+    expect(workflow).toContain("Smoke test MCP gateway container");
+    expect(workflow).toContain("gateway image size");
     expect(workflow).toContain("Build and push MCP gateway image");
     expect(workflow).toContain("Publish MCP gateway manifest");
   });
@@ -58,5 +67,8 @@ describe("MCP gateway container wiring", () => {
       "janosik-mcp-http": "dist/http.js",
     });
     expect(pkg.scripts["start:http"]).toBe("node dist/http.js");
+    expect(pkg.scripts["build:http-bundle"]).toBe(
+      "tsup --config tsup.http.config.ts",
+    );
   });
 });

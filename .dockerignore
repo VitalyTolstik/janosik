@@ -1,6 +1,7 @@
 # Never ship build output, dependencies or local state into the image.
 **/node_modules
 **/dist
+**/dist-http
 **/coverage
 **/.turbo
 

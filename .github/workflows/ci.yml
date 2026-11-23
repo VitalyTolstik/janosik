@@ -404,6 +404,29 @@ jobs:
           tags: janosik-mcp-local:test
           cache-from: type=gha,scope=janosik-mcp-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=janosik-mcp-${{ matrix.arch }}
+      - name: Smoke test MCP gateway container
+        run: |
+          set -euo pipefail
+          docker run -d --name janosik-mcp-smoke \
+            --memory 1536m --cpus 2 \
+            -p 18080:8080 \
+            -e JANOSIK_URL=http://127.0.0.1:1 \
+            janosik-mcp-local:test
+          trap 'docker rm -f janosik-mcp-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/health >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              docker logs janosik-mcp-smoke
+              exit 1
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18080/health
+          size=$(docker image inspect janosik-mcp-local:test --format '{{.Size}}')
+          echo "gateway image size: $((size / 1024 / 1024)) MiB"
+          test "$size" -lt $((400 * 1024 * 1024))
       - name: Smoke test self-host installation
         run: bash scripts/self-host-smoke.sh
 
