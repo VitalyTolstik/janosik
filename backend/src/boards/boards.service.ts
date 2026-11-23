@@ -516,20 +516,38 @@ export class BoardsService {
    */
   async getReadStamp(
     boardId: string,
+    budget?: { maxWaitMs?: number; timeoutMs?: number },
   ): Promise<{ revision: bigint; seq: number } | null> {
     // One statement, one MVCC snapshot: the revision and the SSE baseline
     // must describe the same moment. Two independent reads could match a
     // cached revision and still report a newer seq, letting the client skip a
     // command that is not in its cached body.
-    const rows = await this.prisma.$queryRaw<
-      Array<{ aggregateRevision: bigint; seq: bigint | null }>
-    >(Prisma.sql`
+    const sql = Prisma.sql`
       SELECT b."aggregateRevision" AS "aggregateRevision",
              (SELECT MAX(c."seq") FROM "Command" c WHERE c."boardId" = b."id") AS "seq"
       FROM "Board" b
       WHERE b."id" = ${boardId} AND b."deletedAt" IS NULL
       LIMIT 1
-    `);
+    `;
+    type Row = { aggregateRevision: bigint; seq: bigint | null };
+    const rows =
+      budget?.timeoutMs === undefined
+        ? await this.prisma.$queryRaw<Row[]>(sql)
+        : await this.prisma.$transaction(
+            async (tx) => {
+              // Bound the SQL itself, not just the caller's promise. Without
+              // this a cancelled conditional request could leave the raw query
+              // running on the database after the HTTP response is gone.
+              await tx.$queryRaw`SELECT set_config('statement_timeout', ${`${Math.max(1, budget.timeoutMs as number)}ms`}, true)`;
+              return tx.$queryRaw<Row[]>(sql);
+            },
+            {
+              ...(budget.maxWaitMs === undefined
+                ? {}
+                : { maxWait: Math.max(0, budget.maxWaitMs) }),
+              timeout: Math.max(1, budget.timeoutMs),
+            },
+          );
     const row = rows[0];
     if (row === undefined) return null;
     return {

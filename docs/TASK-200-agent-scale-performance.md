@@ -313,9 +313,12 @@ workflow, create, смена workflow планом) добавляют один 
   `read()` считается **один** deadline; remainder передаётся условному stamp,
   semaphore/singleflight wait, Prisma `maxWait`/`timeout` и кодированию, поэтому
   conditional miss не складывает `WAIT_MS + TIMEOUT_MS`. Stamp по-прежнему идёт
-  мимо semaphore (это один дешёвый indexed-запрос), но coalesce'ится per board:
-  burst из 500 conditional reads даёт один stamp-запрос на доску и затем общий
-  304. Если stamp исчерпал deadline, build уже не стартует. Cap может быть выше
+  мимо semaphore (это один дешёвый indexed-запрос) и **намеренно не
+  coalesce'ится**: зависший общий stamp отравил бы все последующие
+  conditional-чтения, а joiner мог бы получить pre-write `304`. Каждый stamp
+  ограничен своим transaction/`statement_timeout`; зависший promise
+  бросается, следующий запрос начинает новый. Если stamp исчерпал deadline,
+  build уже не стартует. Cap может быть выше
   `DB_CONNECTION_LIMIT=10`: лишние сборки ждут в Prisma pool не дольше
   `BOARD_READ_WAIT_MS` и получают `503 board_read_busy`; для нулевого pool-wait
   задайте cap ≤ pool. При `WAIT_MS=0` semaphore не держит очередь, но stamp
@@ -342,8 +345,8 @@ workflow, create, смена workflow планом) добавляют один 
   как 5xx, через маркер ответа из exception filter; в `throttledLastMinute`
   (429 ring) они не попадают, поэтому двойного счёта нет.
 - Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation с
-  identity/q=0 и fallback, ETag, сервис, общий stamp+build deadline, stamp burst
-  coalescing, WAIT_MS=0, P2028/P2024→503, timeout/backpressure) и
+  identity/q=0 и fallback, ETag, сервис, общий stamp+build deadline,
+  hanging-stamp recovery, WAIT_MS=0, P2028/P2024→503, timeout/backpressure) и
   `backend/test/board-read.e2e-spec.ts` (gzip/br +
   Content-Length + Vary, tiny/304 + Cache-Control, role/tenant/role-change,
   CAS rename, non-seq policy, attachment add/delete, comment, claim

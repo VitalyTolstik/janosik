@@ -3556,9 +3556,13 @@ components:
           encoding, or the read transaction expired (P2028). The stamp, queue,
           transaction and encoder each get only the remaining budget, so a
           conditional miss cannot take WAIT+TIMEOUT. The transaction receives
-          `maxWait=min(WAIT_MS,budget)` and `timeout=remaining−encode margin`;
+          `maxWait=min(WAIT_MS,budget)` when `BOARD_READ_WAIT_MS > 0` (with
+          `WAIT_MS=0`, `maxWait` is the remaining budget) and
+          `timeout=remaining−encode margin`;
           a query already sent is not cancelled but expires by that budget.
-          Conditional stamps coalesce per board.
+          Conditional stamps are not coalesced; each is bounded by its own
+          transaction and `statement_timeout`, and a hung stamp is abandoned so
+          the next conditional read starts a fresh one.
 
         Both set `Retry-After` and `retryable: true`; no board data is included.
       headers:

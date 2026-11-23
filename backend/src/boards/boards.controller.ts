@@ -297,7 +297,7 @@ export class BoardsController {
         ifNoneMatch,
       },
       {
-        stamp: () => this.boards.getReadStamp(id),
+        stamp: (budget) => this.boards.getReadStamp(id, budget),
         build: (budget) =>
           this.boards.getAggregateWithSeq(id, undefined, budget),
       },

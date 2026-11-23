@@ -33,8 +33,8 @@ const PASSWORD = "correct horse battery";
 const TEST_LIMITS: BoardReadLimits = {
   maxConcurrent: 1,
   queueMax: 1,
-  waitMs: 50,
-  timeoutMs: 5_000,
+  waitMs: 200,
+  timeoutMs: 1_500,
   retryAfterSeconds: 1,
   compressMinBytes: 1024,
 };
@@ -953,6 +953,34 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
       gate.resolve();
       const completed = await first;
       expect(completed.status).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("recovers after a hanging conditional stamp", async () => {
+    const real = boards.getReadStamp.bind(boards);
+    let first = true;
+    const spy = jest
+      .spyOn(boards, "getReadStamp")
+      .mockImplementation((id, budget) => {
+        if (first) {
+          first = false;
+          return new Promise<never>(() => undefined);
+        }
+        return real(id, budget);
+      });
+    try {
+      const stuck = await identity('W/"stale"');
+      expect(stuck.status).toBe(503);
+      expect(
+        (JSON.parse(stuck.body.toString("utf8")) as { code: string }).code,
+      ).toBe("board_read_timeout");
+
+      // The hung promise is abandoned; this request must start a fresh stamp.
+      const recovered = await identity('W/"stale"');
+      expect(recovered.status).toBe(200);
+      expect(bodyOf(recovered).id).toBe(boardId);
     } finally {
       spy.mockRestore();
     }

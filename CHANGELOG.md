@@ -38,7 +38,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default 20 s, must exceed the wait and be at least 300 ms). The conditional
   stamp, semaphore/single-flight wait, read transaction and encoding each get
   only the remaining budget; a conditional miss cannot take WAIT_MS +
-  TIMEOUT_MS. Conditional stamps coalesce per board. The read transaction gets
+  TIMEOUT_MS. Conditional stamps are deliberately not coalesced (a hung
+  shared stamp would poison later reads and a joiner could see a pre-write 304);
+  each is one indexed statement bounded by its own transaction and
+  `statement_timeout`. The read transaction gets
   `timeout` = remaining minus a scaled encode margin and `maxWait` =
   min(`BOARD_READ_WAIT_MS`, budget); with `WAIT_MS=0` the pool uses the
   remaining shared budget instead of a 1 ms floor. P2024/P2028 pool waits and

@@ -132,9 +132,12 @@ export interface BoardReadBuildBudget {
 export interface BoardReadDeps {
   /**
    * Cheap metadata read, used only for a conditional request. Never the full
-   * aggregate: an unconditional 200 does not pay for it at all.
+   * aggregate: an unconditional 200 does not pay for it at all. It receives
+   * the remaining shared budget; the implementation must also bound its SQL
+   * (transaction/statement timeout) so a hung query cannot outlive the
+   * response.
    */
-  stamp: () => Promise<BoardReadStamp | null>;
+  stamp: (budget: BoardReadBuildBudget) => Promise<BoardReadStamp | null>;
   /** Full aggregate build; called at most once per coalesced group. */
   build: (budget: BoardReadBuildBudget) => Promise<BoardReadSnapshot>;
 }
@@ -179,8 +182,6 @@ export function boardReadKey(input: {
 @Injectable()
 export class BoardReadService implements OnModuleDestroy {
   private readonly singleFlight = new SingleFlight<BoardReadResponse>();
-  /** Cheap board stamps coalesce separately from full aggregate builds. */
-  private readonly stampFlight = new SingleFlight<BoardReadStamp | null>();
   private readonly semaphore: ReadSemaphore;
   private fullReads = 0;
   private coalesced = 0;
@@ -245,16 +246,19 @@ export class BoardReadService implements OnModuleDestroy {
       // unconditional read goes straight to the build, so the common path
       // keeps exactly the queries it had before TASK-200.6. It still gets the
       // shared deadline: a saturated pool must not hang the response before
-      // the semaphore is even involved. Identical conditional bursts share
-      // one cheap stamp per board.
+      // the semaphore is even involved. Deliberately NOT coalesced: a shared
+      // stamp task that never settles would poison every later conditional
+      // read, and a joiner could otherwise receive a pre-write 304.
       if (request.ifNoneMatch !== undefined) {
         const stampBudget = this.remainingMs(deadline);
         if (stampBudget <= 0) {
           throw new SingleFlightTimeoutError(this.limits.timeoutMs);
         }
-        const stamp = await this.stampFlight.run(request.boardId, deps.stamp, {
-          timeoutMs: stampBudget,
-        });
+        const stamp = await this.stampWithDeadline(
+          deps.stamp,
+          this.budgets(stampBudget),
+          stampBudget,
+        );
         if (stamp === null) throw new NotFoundException("Board not found");
         const current = boardReadEtag({
           boardId: request.boardId,
@@ -305,6 +309,52 @@ export class BoardReadService implements OnModuleDestroy {
 
   private remainingMs(deadline: number): number {
     return Math.max(0, deadline - Date.now());
+  }
+
+  /**
+   * Split one remaining budget into the Prisma transaction timeout and pool
+   * wait. WAIT_MS=0 means "no semaphore queue"; the pool then gets the shared
+   * remaining budget instead of a pathological 1 ms wait.
+   */
+  private budgets(remaining: number): BoardReadBuildBudget {
+    const margin = Math.min(250, Math.max(1, Math.floor(remaining / 2)));
+    const timeoutMs = Math.max(1, remaining - margin);
+    return {
+      maxWaitMs:
+        this.limits.waitMs > 0
+          ? Math.min(this.limits.waitMs, timeoutMs)
+          : timeoutMs,
+      timeoutMs,
+    };
+  }
+
+  /**
+   * Per-call stamp deadline. No shared task: an unresolved promise is
+   * abandoned, so the next conditional read starts a fresh query. The SQL
+   * itself is separately bounded by the BoardsService transaction/statement
+   * timeout.
+   */
+  private stampWithDeadline(
+    stamp: (budget: BoardReadBuildBudget) => Promise<BoardReadStamp | null>,
+    budget: BoardReadBuildBudget,
+    deadlineMs: number,
+  ): Promise<BoardReadStamp | null> {
+    return new Promise<BoardReadStamp | null>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new SingleFlightTimeoutError(deadlineMs));
+      }, deadlineMs);
+      timer.unref?.();
+      stamp(budget).then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   /** Translate backpressure/P2028/P2024 into the public 503 contract. */
@@ -376,22 +426,7 @@ export class BoardReadService implements OnModuleDestroy {
       if (remaining <= 1) {
         throw new SingleFlightTimeoutError(this.limits.timeoutMs);
       }
-      // Leave an encode/compression margin before the outer response deadline;
-      // Prisma gets to raise P2028 first and map it to 503. The margin scales
-      // down for small configured timeouts instead of going negative.
-      const margin = Math.min(250, Math.max(1, Math.floor(remaining / 2)));
-      const dbTimeoutMs = Math.max(1, remaining - margin);
-      // WAIT_MS caps the pool wait when set. With WAIT_MS=0 (no semaphore
-      // queue) the pool still gets the shared remaining budget instead of a
-      // pathological 1 ms floor.
-      const dbMaxWaitMs =
-        this.limits.waitMs > 0
-          ? Math.min(this.limits.waitMs, dbTimeoutMs)
-          : dbTimeoutMs;
-      const snapshot = await deps.build({
-        maxWaitMs: dbMaxWaitMs,
-        timeoutMs: dbTimeoutMs,
-      });
+      const snapshot = await deps.build(this.budgets(remaining));
       const json = Buffer.from(JSON.stringify(snapshot.board), "utf8");
       const encoded = await compressBody(json, encoding, {
         minBytes: this.limits.compressMinBytes,

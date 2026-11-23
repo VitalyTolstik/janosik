@@ -185,21 +185,39 @@ describe("BoardReadService", () => {
     expect(result).toMatchObject({ status: 304, seq: 0 });
   });
 
-  it("coalesces a conditional-stamp burst into one query", async () => {
-    const read = service();
-    const gate = deferred<{ revision: bigint; seq: number }>();
-    const stamp = jest.fn(() => gate.promise);
-    const build = jest.fn();
-    const etag = boardReadEtag({ ...request(), revision: 3n });
-    const requests = Array.from({ length: 20 }, () =>
-      read.read(request({ ifNoneMatch: etag }), { stamp, build }),
-    );
-    await delay(5);
+  it("recovers after a hanging conditional stamp", async () => {
+    const read = service({ waitMs: 50, timeoutMs: 300 });
+    let first = true;
+    const stamp = jest.fn(() => {
+      if (first) {
+        first = false;
+        return new Promise<never>(() => undefined);
+      }
+      return Promise.resolve({ revision: 3n, seq: 3 });
+    });
+    let refusal: unknown;
+    try {
+      await read.read(request({ ifNoneMatch: 'W/"old"' }), {
+        stamp,
+        build: jest.fn(),
+      });
+    } catch (caught) {
+      refusal = caught;
+    }
+    expect(
+      (refusal as ServiceUnavailableException).getResponse(),
+    ).toMatchObject({ code: "board_read_timeout" });
     expect(stamp).toHaveBeenCalledTimes(1);
-    gate.resolve({ revision: 3n, seq: 3 });
-    const results = await Promise.all(requests);
-    expect(results.every((result) => result.status === 304)).toBe(true);
-    expect(build).not.toHaveBeenCalled();
+
+    // A hung stamp is abandoned per request; the next read starts a fresh one.
+    const etag = boardReadEtag({ ...request(), revision: 3n });
+    await expect(
+      read.read(request({ ifNoneMatch: etag }), {
+        stamp,
+        build: jest.fn(),
+      }),
+    ).resolves.toMatchObject({ status: 304 });
+    expect(stamp).toHaveBeenCalledTimes(2);
   });
 
   it("maps P2028/P2024 transaction and pool failures to 503", async () => {
