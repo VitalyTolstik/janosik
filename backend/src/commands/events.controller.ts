@@ -81,6 +81,15 @@ export class EventsController implements OnModuleDestroy {
   private readonly logger = new Logger(EventsController.name);
   /** One live scheduler per open stream; drained on app shutdown. */
   private readonly keepAlives = new Set<KeepAliveScheduler>();
+  /**
+   * TASK-200.12: complete every open stream on shutdown. A long-lived SSE
+   * response otherwise keeps Node's HTTP server from closing until Docker's
+   * stop grace period expires and SIGKILL arrives. Completing the subscriber
+   * runs the normal teardown (presence leave, slot release, timers) and lets a
+   * rolling replica stop promptly; clients reconnect with `?since=` through
+   * the proxy.
+   */
+  private readonly streamClosers = new Set<() => void>();
   /** Aggregated overlap counter (one warn per minute, not per stream). */
   private skippedKeepAlives = 0;
   private lastSkipLogAt = Number.NEGATIVE_INFINITY;
@@ -100,10 +109,12 @@ export class EventsController implements OnModuleDestroy {
     private readonly frames: SseFrameStore = new SseFrameStore(),
   ) {}
 
-  /** TASK-200.5: stop every stream timer before Nest closes the sockets. */
+  /** TASK-200.5/TASK-200.12: stop every stream and timer before Nest closes. */
   onModuleDestroy(): void {
     for (const keepAlive of this.keepAlives) keepAlive.stop();
     this.keepAlives.clear();
+    for (const close of [...this.streamClosers]) close();
+    this.streamClosers.clear();
   }
 
   /**
@@ -289,6 +300,8 @@ export class EventsController implements OnModuleDestroy {
     onOpen?: () => void,
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
+      const closeStream = (): void => subscriber.complete();
+      this.streamClosers.add(closeStream);
       const send = (data: object | string): void => {
         if (!subscriber.closed) {
           subscriber.next({ data } as MessageEvent);
@@ -320,6 +333,7 @@ export class EventsController implements OnModuleDestroy {
           // Lost a race for `clientId` after the pre-check in `events()`:
           // release the tracking we took and end with the real error instead
           // of leaking it (A9).
+          this.streamClosers.delete(closeStream);
           releaseTracking();
           subscriber.error(error);
           return;
@@ -469,6 +483,7 @@ export class EventsController implements OnModuleDestroy {
       keepAlive.start();
 
       return () => {
+        this.streamClosers.delete(closeStream);
         keepAlive.stop();
         this.keepAlives.delete(keepAlive);
         sequencer.close();

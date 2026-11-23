@@ -155,6 +155,23 @@ jobs:
       - name: Bundle budget (size-limit)
         run: npm run size -w ui
 
+  # TASK-200.12: deployment config is code too. This lane is cheap — it
+  # renders the single-node and 1/3-replica Compose shapes and runs nginx -t
+  # and caddy validate in throwaway containers; nothing is started.
+  deploy-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Validate Compose and proxy configs
+        run: |
+          docker pull nginx:1.27-alpine
+          docker pull caddy:2-alpine
+          node --test scripts/deploy/scale.test.mjs
+
   demo-task176-integration:
     name: demo:task176:integration
     if: github.event_name == 'workflow_dispatch' && inputs.demo_task176_integration

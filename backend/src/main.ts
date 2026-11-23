@@ -13,6 +13,17 @@ import { appBasePrefix } from "@/common/ui-base";
 async function bootstrap(): Promise<void> {
   // TASK-38a: refuse a production boot that would silently break cookies.
   assertBootSecurity((message) => Logger.warn(message, "Bootstrap"));
+  // TASK-200.12: one Node process is a complete install. Replicas need the
+  // shared Redis contour; say so at boot instead of surprising an operator
+  // with N× rate limits and per-node SSE fan-out later.
+  if (env.NODE_ENV === "production" && env.REDIS_URL.trim() === "") {
+    Logger.warn(
+      "REDIS_URL is not set — running as a single API process. Multiple " +
+        "replicas require Redis for shared rate limits, cross-replica SSE " +
+        "fan-out and prompt cache invalidation.",
+      "Bootstrap",
+    );
+  }
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const siteDir = prepareRuntimeSite(env.SITE_DIR, env.PUBLIC_ORIGIN);
   setupApp(app, { siteDir });

@@ -29,6 +29,10 @@ See [Connect MCP](#connect-mcp).
 the optional gateway publishes only `127.0.0.1:8080`. On boot the `app`
 container applies database migrations, then starts the API.
 
+This is the whole install for one host. To run 2–4 API replicas behind the
+bundled nginx/Caddy proxy, see *Scale horizontally* below; the
+single-container quick start is unchanged.
+
 The container starts as root only to hand the uploads volume to the
 unprivileged `node` user (volumes created by older images belong to root),
 then runs migrations, the API and ffmpeg as `node`. Before that it checks two
@@ -220,6 +224,191 @@ http:
 Only the proxy ports (`80`, `443`) should be open. The app port `3000` and the
 database and Redis ports stay internal.
 
+## Scale horizontally (2–4 API replicas)
+
+The default stack runs one `app` container. `docker-compose.scale.yml` is an
+optional overlay that runs 2–4 API replicas behind nginx (default) or Caddy,
+with a one-shot migration job. The single-container quick start is unchanged.
+The overlay and `deploy/scale/` files ship with the source at the release tag;
+copy them next to an installer-created `docker-compose.yml` if needed. If an
+older `.env` explicitly sets `TRUST_PROXY=0`, change it to `1` (or remove it)
+before starting replicas; an explicit 0 overrides the overlay default and
+breaks client-IP rate limits.
+
+```bash
+# Stop the single app first; named volumes survive.
+docker compose down
+docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --wait
+```
+
+The topology is:
+
+```text
+clients → proxy :3000 → app-1 / app-2 / app-N
+                              ├── PostgreSQL (pool per replica)
+                              └── Redis (queues, SSE fan-out, limits)
+                         shared uploads volume
+```
+
+The proxy is the only published service. The replicas share the internal
+`app` alias, the UI/site is baked into every image, and attachments live on the
+shared uploads volume. No sticky sessions are needed: access tokens are
+stateless and an SSE client reconnects with `?since=<lastSeq>`, so it may land
+on another replica and still replay the command log. The overlay sets
+`TRUST_PROXY=1` for this one hop; if an external TLS proxy also sits in front,
+set `TRUST_PROXY=2` so rate limits and the audit log see the real client IP.
+The nginx config preserves the outer proxy's `X-Forwarded-Proto`; for Caddy,
+either terminate TLS in Caddy or add only the outer proxy's exact CIDR to
+`servers { trusted_proxies static … }`.
+
+Use Caddy instead of nginx by changing the image (both configs are mounted):
+
+```bash
+JANOSIK_PROXY_IMAGE=caddy:2-alpine \
+  docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --wait
+```
+
+Caddy is plain HTTP on `PORT` by default. To terminate TLS in Caddy, replace
+`:8080` in `deploy/scale/Caddyfile` with your domain, remove `auto_https off`,
+change the proxy port mapping to `80:80` and `443:443`, and keep
+`PUBLIC_ORIGIN=https://…`.
+
+Override the overlay's default of three replicas for one run:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d \
+  --scale app=4 --wait
+```
+
+### Sizing
+
+These are starting points; verify them with the TASK-200.14 capacity runs.
+
+| Host | Replicas | Per replica (CPU / memory) | V8 heap | `DB_CONNECTION_LIMIT` | `SSE_MAX_CONNECTIONS` |
+| --- | --- | --- | --- | --- | --- |
+| 4 vCPU / 8 GB | 3 | 1.0 / 1536 MB | 768 MB | 10 (30 total) | 2000 (6000 total) |
+| 16 vCPU / 32 GB | 4 | 3.0 / 5 GB | 3.5 GB | 15 (60 total) | 5000 (20000 total) |
+
+The proxy is part of the host budget: `PROXY_CPUS=0.5` / `PROXY_MEMORY_LIMIT=512M`
+on 4 vCPU/8 GB and `1.0` / `1G` on 16 vCPU/32 GB, with `PROXY_NOFILE=131072`.
+`deploy/scale/nginx-main.conf` raises nginx to `worker_connections 65536` and
+`worker_rlimit_nofile 131072`; the stock 1024-connection limit is too small for
+the documented 6k/20k streams. `PROXY_NOFILE` is the container nofile limit; keep
+it at least the nginx `worker_rlimit_nofile` (lower both on a host with a smaller
+hard limit). Production uses 2–4 replicas; one is rollback-only.
+Compose does not range-check `API_REPLICAS` (a direct `up` with 5 starts five;
+`rollout.sh` rejects it), and the precedence is shell env → `.env` → default 3.
+These are starting points: no live horizontal S2/S3 run was performed for this
+change; TASK-200.14 remains the capacity gate.
+
+Keep `replicas × DB_CONNECTION_LIMIT + ~10 < POSTGRES_MAX_CONNECTIONS` with
+headroom for migrations and the admin CLI. Raise `POSTGRES_SHARED_BUFFERS`,
+`POSTGRES_WORK_MEM` and `POSTGRES_MAX_CONNECTIONS` on the larger host; beyond
+about eight replicas, add PgBouncer rather than raising `max_connections`.
+
+Set the values in `.env`; the overlay reads them:
+
+```dotenv
+API_REPLICAS=3
+API_CPUS=1.0
+API_MEMORY_LIMIT=1536M
+API_NOFILE=65536
+NODE_OPTIONS=--max-old-space-size=768
+DB_CONNECTION_LIMIT=10
+SSE_MAX_CONNECTIONS=2000
+PROXY_CPUS=0.5
+PROXY_MEMORY_LIMIT=512M
+PROXY_NOFILE=131072
+JANOSIK_PROXY_IMAGE=nginx:1.27-alpine
+```
+
+`ulimits.nofile` is raised to 65 536 per replica. The V8 heap must stay below
+the container memory limit (leave 300–500 MB for Node, Prisma and native
+buffers).
+
+### Shared Redis and limits
+
+The Compose stack already sets `REDIS_URL`. With it, the global throttler
+counters, the master-panel rate-limit value, board SSE fan-out, cache
+invalidation and BullMQ jobs are shared by every replica. A single-replica
+install without Redis still works with in-process limits and local fan-out; a
+multi-replica install must keep Redis healthy. If configured Redis is
+unreachable, readiness returns `503`, the limiter falls back to per-replica
+counters, and cross-replica SSE stops until it recovers.
+
+Redis does **not** make every guard cluster-wide. Cluster-wide: the global
+per-principal throttler counters and live `THROTTLE_LIMIT` edits. Redis-shared
+while healthy with a per-replica memory fallback: login backoff. Per replica
+(N× effective ceiling): `BOARD_READ_CAP`, the panel per-user limit, explicit and
+default API-token limits, TASK-200.3 agent session/board budgets and the board
+command queue, public-share token/OG limits, the SSE instance/user/board caps
+(anonymous share streams are capped per instance and board), presence, and the
+TTL caches (cross-replica invalidation, TTL fallback). Keep per-replica values
+conservative and treat the shared per-principal `THROTTLE_LIMIT` as the primary
+fairness guard.
+
+### Proxy, rollout and rollback
+
+The bundled configs are `deploy/scale/nginx-main.conf`,
+`deploy/scale/nginx.conf` and `deploy/scale/Caddyfile`. The nginx main config
+raises `worker_connections` to 65 536 and `worker_rlimit_nofile` to 131 072
+(the stock image's 1024 is too small for the documented streams); both proxies
+use retry/passive-failure handling. SSE routes use 3600 s read/send timeouts, a
+3600 s downstream `send_timeout` (the default 60 s would cut PAT streams during
+their 0–6 s keep-alive jitter) and no buffering; ordinary API requests use 90 s
+(covering the 60 s ready long-poll); uploads/downloads use the long timeout,
+with a 3600 s `client_body_timeout` for slow bodies.
+nginx caches content-hashed `/_astro/` and `/app/assets/` output for 7 days;
+Caddy forwards static assets without an extra cache. `/healthz` proxies
+the API readiness probe on both. Validate with `npm run deploy:test` (it starts
+no stack/app containers; only throwaway nginx/Caddy syntax containers). For a
+live cross-replica SSE check on a Linux Docker host, run
+`JANOSIK_TOKEN=… JANOSIK_BOARD_ID=… node deploy/scale/smoke-sse.mjs`; the unit
+smoke is part of the backend suite.
+
+```bash
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.scale.yml"
+
+# The sequence below is also wrapped in deploy/scale/rollout.sh.
+$COMPOSE pull
+$COMPOSE run --rm migrate                 # only if the release changes the schema
+$COMPOSE up -d --no-deps app --wait       # replica count from API_REPLICAS/.env
+$COMPOSE up -d --no-deps proxy --wait     # if proxy image/resources changed
+$COMPOSE exec -T proxy nginx -s reload    # Caddy: caddy reload
+curl -fsS http://localhost:3000/api/v1/health/ready
+```
+
+Plain Compose replaces the API service as a unit, so there can be a short window
+with no API replica ready. The proxy retries another upstream and SSE reconnects
+with `?since=`; this is not a zero-downtime rollout. Re-creating the proxy itself
+(when its image/resources change) also has a brief public gap. Use Swarm or
+Kubernetes if zero dropped requests is a hard requirement. `deploy/scale/rollout.sh` follows
+the same sequence and never forces `--scale` down from a stale shell value.
+
+Roll back to **one replica behind the same proxy**:
+
+```bash
+$COMPOSE up -d --scale app=1 --wait
+$COMPOSE exec -T proxy nginx -s reload
+```
+
+Roll back to the **single-container install** (volumes survive):
+
+```bash
+$COMPOSE down
+docker compose up -d --wait
+```
+
+For a bad image, set `JANOSIK_TAG` to the previous version and repeat
+`pull` + `up -d --wait`. Migrations are forward-only; restore the matching
+backup if you need to roll the schema back.
+
+**Multi-host limit.** The replicas share the local `janosik-uploads` Docker
+volume. Replicas on different hosts need a shared POSIX filesystem for uploads
+and a shared Redis/Postgres; object storage is not built in. Compose
+healthchecks are not active load-balancer checks, so a replica that turns
+unhealthy keeps receiving traffic until it is removed or the proxy is reloaded.
+
 ## First run
 
 1. **Create a master account.** The CLI creates a separate account for the
@@ -319,7 +508,7 @@ compose stack fills the ones it needs from `.env`.
 | `BOARD_READ_WAIT_MS` / `BOARD_READ_TIMEOUT_MS` | `10000` / `20000` | Maximum semaphore/pool wait / **one shared response deadline** (stamp + wait + build + encode) before `503 board_read_busy`/`board_read_timeout`. The timeout must exceed the wait and be at least `300` ms. Each stage gets only the remaining budget, so a conditional miss cannot take WAIT+TIMEOUT. `WAIT_MS=0` disables semaphore queueing and pool wait, while the conditional stamp and transaction still use the shared deadline. The read transaction gets `timeout` = remaining minus an encode margin and `maxWait=min(WAIT_MS,budget)` when `WAIT_MS>0` (`WAIT_MS=0` => 0), with a transaction slice reserved so `maxWait+timeout` stays within the deadline; P2010/57014, P2024/P2028 become 503, not 500. A query already sent is not cancelled but expires by that budget. |
 | `BOARD_READ_RETRY_AFTER_SECONDS` | `2` | `Retry-After` advertised when a full board read is refused. |
 | `BOARD_READ_COMPRESS_MIN_BYTES` | `1024` | Bodies below this stay uncompressed on `GET /boards/:id`; larger ones negotiate gzip/Brotli and always send `Vary: Accept-Encoding`. |
-| `TRUST_PROXY` | `0` | Trusted reverse-proxy hops. Set `1` behind one proxy. |
+| `TRUST_PROXY` | `0` (unset in `.env.example`) | Trusted reverse-proxy hops. Set `1` behind one proxy; the scale overlay defaults to `1` when unset. Set `2` for an external TLS proxy in front of the Compose proxy. |
 | `UPLOAD_DIR` | empty | Blob root for attachments and avatars. Empty means `backend/data/uploads`; a relative value anchors to the backend package, never the process working directory. |
 | `STATIC_DIR` | empty | Built UI directory. Empty means API only. The image sets `/app/public`. Inline scripts here are allowed by CSP hashes computed at startup, so restart the API after rebuilding the UI. |
 | `SITE_DIR` | empty | Built marketing site directory served at `/`. Empty means not served. The image sets `/app/site`. |
@@ -351,7 +540,7 @@ compose stack fills the ones it needs from `.env`.
 | `SMTP_USER` | empty | SMTP user. |
 | `SMTP_PASS` | empty | SMTP password. |
 | `SMTP_FROM` | `Janosik <no-reply@janosik.local>` | From header for outgoing mail. |
-| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out and auth/membership/flag cache invalidation across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue, per-process counters, and per-replica TTL-only cache invalidation. |
+| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out and auth/membership/flag cache invalidation across nodes, the shared rate-limit and login-backoff counters, and live throttle-limit updates. Unset means the in-process queue, per-process counters, and per-replica TTL-only cache invalidation. Compose sets it; a multi-replica install must keep it set. |
 | `QUEUES_DASHBOARD` | `false` | Mount the Bull Board queue dashboard at `/api/v1/admin/queues`. Owner only. |
 | `SETTINGS_SECRET` | empty | Encrypts credentials saved from the master panel. Derived from `JWT_SECRET` when unset. |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | Public base URL of the UI. Builds OAuth callback URLs. Compose defaults it to `http://localhost:3000`. |
@@ -364,6 +553,13 @@ The compose file also reads variables that the API does not validate:
 | `POSTGRES_PASSWORD` | `change-me` in `.env.example` (required) | Database password. Pick a strong one: the container refuses to start while it is `change-me`. |
 | `POSTGRES_DB` | `janosik` in `.env.example` | Database name. |
 | `JANOSIK_TAG` | `latest` | Image tag to run, for example `v0.2.0`. |
+| `API_REPLICAS` | `3` | Replica count for the `docker-compose.scale.yml` overlay; `--scale app=N` overrides it for one run. |
+| `API_CPUS` / `API_MEMORY_LIMIT` | `1.0` / `1536M` | Per-replica CPU and memory ceilings in the scale overlay. Keep the V8 heap below the memory limit. |
+| `API_NOFILE` | `65536` | Per-replica `ulimits.nofile`. |
+| `PROXY_CPUS` / `PROXY_MEMORY_LIMIT` | `0.5` / `512M` | Proxy CPU/memory ceilings; use `1.0` / `1G` on 16 vCPU/32 GB. |
+| `PROXY_NOFILE` | `131072` | Proxy `ulimits.nofile` for client + upstream SSE connections. |
+| `JANOSIK_PROXY_IMAGE` | `nginx:1.27-alpine` | Proxy image for the scale overlay; set `caddy:2-alpine` to use the bundled Caddyfile. |
+| `MIGRATE_ON_BOOT` | `true` | Entrypoint applies `prisma migrate deploy` before the API. The scale overlay sets it to `false` and runs the one-shot `migrate` service instead. |
 
 OAuth login (Google and Yandex) is configured in the master panel, not in
 `.env`.

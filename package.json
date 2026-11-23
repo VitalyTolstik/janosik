@@ -58,6 +58,7 @@
     "demo:100": "node scripts/demo-board-100.mjs",
     "openapi:check": "node scripts/validate-openapi.mjs",
     "openapi:test": "node --test scripts/validate-openapi.test.mjs",
+    "deploy:test": "node --test scripts/deploy/scale.test.mjs",
     "prepare": "husky",
     "perf:admin-filters": "node scripts/perf/admin-filter-bench.mjs",
     "perf:agents": "node scripts/perf/agent-scale.mjs",
