@@ -55,6 +55,68 @@ filesystem. Write failures return `filesystem_error`. Confinement requires
 Linux x64/arm64, `python3`, `/proc` and a kernel with `openat2`. Confined
 writes also require `O_TMPFILE` support on the target filesystem.
 
+### Shared HTTP gateway for many agents
+
+One stdio process per agent costs roughly 100 MB of memory. For a swarm, run
+the separate gateway container instead; it serves many MCP sessions from one
+Node process:
+
+```bash
+docker compose --profile mcp up -d
+# MCP endpoint: http://127.0.0.1:8080/mcp
+
+# plain Docker: the stop timeout must exceed the 10 s drain window.
+# `host.docker.internal` works on Docker Desktop; on Linux use the host IP.
+docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
+  -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
+```
+
+Compose sets `stop_grace_period: 20s`; on SIGTERM the gateway stops admitting,
+lets an active tool call finish (up to 10 s), then closes sessions/streams.
+
+Each client connects to `https://your-gateway/mcp` with **its own** key in
+`Authorization: Bearer jnk_…`; the gateway never receives a shared
+`JANOSIK_TOKEN` (absent is normal; present is ignored with a warning). Local
+admission comes first: a global cap, a per-key cap (default
+`min(50, MAX_SESSIONS)` sessions),
+per-IP and per-token initialize buckets, and a short negative cache. Only then
+does the gateway validate the key against `/api/v1/auth/me` (invalid keys
+`401`, API rate limits `429`, outage `503`), sharing one call between
+concurrent initializes and retrying a one-shot API `429`/`503` within a small
+`Retry-After` bound. It binds the key to that session and rejects a different
+key with `403`.
+
+Successful MCP POSTs are SSE streams; gateway errors are JSON. A reverse proxy
+needs buffering off and a read timeout above the longest tool call. SSE uses
+`no-cache, no-transform`; errors and health use `no-store`. `GET /health` is
+liveness and reports `bodyReads.session` / `bodyReads.initialize`; `GET /ready`
+checks API reachability (not a key) and returns `503` + `Retry-After` when not
+ready. Sessionless and tool bodies have separate per-IP/per-token budgets with
+global backstops; a full gate answers `503 body_busy` + `Retry-After`, and
+JSON-RPC batches are rejected. During drain, unknown paths still `404` and
+disallowed origins `403`, while other MCP
+requests get `503 shutting_down`.
+
+**Sessions are in-memory.** Restarting the gateway drops every session;
+clients reconnect and initialize again. Multiple replicas need a
+session-affine proxy (or clients must accept reconnects) because there is no
+shared session store. Limits come from `JANOSIK_MCP_HTTP_MAX_SESSIONS`
+(default 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default
+`min(50, MAX_SESSIONS)`; `0` = unlimited),
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and the idle expiry
+(default 5 minutes); an in-flight call or open stream is never swept. A key's
+default 10 initialize attempts/min is below its 50-session cap; raise
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must reach its per-key
+session cap immediately. The Compose service also sets a 2 GB memory limit and 2 CPUs. The API
+still enforces the key's board scope, role, preset and rate limit.
+
+For a large first-time swarm, 500 new keys in one minute exceed the API's
+default `THROTTLE_LIMIT=300`: raise it, the gateway initialize limit, the
+4/IP–32 global init body gates, the 64 validation in-flight cap and proxy
+limits together, and set `JANOSIK_MCP_HTTP_TRUST_PROXY=1` behind a trusted
+proxy. Before exposing the gateway check TLS, the `127.0.0.1` bind, the origin
+allowlist, the absence of a shared token and the per-token cap.
+
 ## Tools
 
 Tools come in groups. By default the server registers the groups that work

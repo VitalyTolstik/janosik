@@ -15,6 +15,22 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- A shared MCP Streamable HTTP gateway (`janosik-mcp-http`, separate
+  `ghcr.io/vitalytolstik/janosik-mcp` image) serves many agent sessions from
+  one process. Each session validates and binds its own `Authorization:
+  Bearer jnk_…` key; there is no shared `JANOSIK_TOKEN`. POST responses use
+  SSE with keepalives, the gateway exposes `/health` and `/ready`, caps
+  sessions and idle time, drains gracefully and logs no keys. Initialize
+  admission is local before the API: per-key cap (default
+  `min(50, MAX_SESSIONS)`), per-IP/token buckets, negative cache and
+  single-flight validation with bounded retries. Sessionless and session-bound
+  body reads have separate per-IP/per-token budgets with global backstops
+  (`MAX_CONCURRENT_INIT_BODY_READS` / `MAX_CONCURRENT_BODY_READS`); a slot is
+  held until every tool promise from the POST settles, and `/health` exposes
+  both counters. JSON-RPC batches are rejected; a read deadline resets
+  stalled bodies (`503 body_busy`) and Compose uses a 2 GiB memory limit.
+  Sessions are in-memory: a restart drops them and replicas need session
+  affinity.
 - Admins can open the same read-only edit history from a card, a user's
   comments or the comments table; deleted rows hide the link and return no
   revision count. A comment keeps its newest 50 revisions, and a comment

@@ -29,7 +29,21 @@ import { registerShareTools } from "./tools/shares.js";
 import { registerWorkflowTools } from "./tools/workflow.js";
 import { readVersion } from "./version.js";
 
-const INSTRUCTIONS = `Janosik is a Kanban board. Drive it the way a person would:
+export interface CreateServerOptions {
+  /** Where the personal key comes from; only the instruction text differs. */
+  transport?: "stdio" | "http";
+}
+
+function instructions(options: CreateServerOptions): string {
+  const auth =
+    options.transport === "http"
+      ? "This shared HTTP gateway authenticates each MCP session with the " +
+        "personal API key sent in Authorization: Bearer; the key is bound to " +
+        "that session and cannot be changed. MCP cannot create or rotate keys."
+      : "The API key is created in Account → API keys in the app and supplied " +
+        "as JANOSIK_TOKEN when this server starts; MCP cannot create or rotate " +
+        "API keys.";
+  return `Janosik is a Kanban board. Drive it the way a person would:
 1. Call janosik_list_boards to find a board id.
 2. Call janosik_get_board to read its columns, cards, labels and version
    (pass columnId on a large board).
@@ -44,8 +58,7 @@ const INSTRUCTIONS = `Janosik is a Kanban board. Drive it the way a person would
 Board-content edits use the app's command log and stream live to viewers.
 MCP edits do not enter the UI's local undo stack; use unarchive or an explicit
 compensating edit to correct them. MCP does not expose general undo/redo.
-The API key is created in Account → API keys in the app and supplied as
-JANOSIK_TOKEN when this server starts; MCP cannot create or rotate API keys.
+${auth}
 Comments, attachments, membership, shares and account changes use separate
 API routes and are not command-log edits. A command that changes nothing is
 reported as an error; re-read the board rather than assume it worked. The
@@ -67,6 +80,7 @@ For
 routine cleanup, archive a card or board so it can be restored. Clear a column
 by archiving its cards; use delete tools only when removal is specifically
 wanted.`;
+}
 
 /** Tool groups and their registration functions. */
 const GROUPS: Record<
@@ -102,11 +116,14 @@ function fsOptions(config: Config) {
 }
 
 /** Construct the server for one instance + token. */
-export function createServer(config: Config): McpServer {
+export function createServer(
+  config: Config,
+  options: CreateServerOptions = {},
+): McpServer {
   const client = new JanosikClient(config.url, config.token);
   const server = new McpServer(
     { name: SERVER_NAME, version: readVersion() },
-    { instructions: INSTRUCTIONS },
+    { instructions: instructions(options) },
   );
   if (config.readOnly) restrictToReadOnly(server);
 

@@ -8,6 +8,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.8 shared MCP Streamable HTTP gateway. `@janosik/mcp` now ships a
+  separate `janosik-mcp-http` binary and `ghcr.io/vitalytolstik/janosik-mcp`
+  image that serve many MCP sessions from one Node process instead of one
+  ~100 MB stdio process per agent. Each session supplies its own
+  `Authorization: Bearer jnk_…`; the gateway validates it against the API
+  before creating a session, binds its SHA-256 fingerprint, rejects a
+  different key, and never accepts a shared `JANOSIK_TOKEN`. POST responses
+  use SSE (with keepalives for long `wait_for_work` calls) after the SDK's
+  JSON-response mode was found to retain completed stream mappings. Global
+  and per-key session caps (per-key default `min(50, MAX_SESSIONS)`), idle
+  expiry, graceful drain,
+  `/health`, `/ready`, token-free structured logs and CORS/Origin checks are
+  included. Initialize admission is local before `/api/v1/auth/me`: per-IP and
+  per-fingerprint token buckets, a bounded negative cache, a strict
+  sessionless body cap before buffering, and single-flight validation with
+  bounded `429`/`503` retries. Sessionless and session-bound body reads have
+  separate budgets: initialize is per-IP/global
+  (`MAX_CONCURRENT_INIT_BODY_READS`), tool bodies are per-token/global
+  (`MAX_CONCURRENT_BODY_READS`), so an init flood cannot starve tools. A slot
+  is held until `handleRequest` and every tool promise started by the POST
+  settle (client disconnect does not release it while a detached handler
+  retains args); `/health` exposes both counters. JSON-RPC batches are
+  rejected, both gates use a short read deadline (stall resets the
+  connection), the Compose memory limit is 2 GiB, and `413` covers both INIT
+  and MAX body caps; validation pressure answers `503 auth_busy`. When `MAX_SESSIONS` exceeds 50 one valid key
+  cannot take every session (a smaller cap clamps the per-key default). The
+  gateway trusts a configured number of right-edge X-Forwarded-For hops, not a
+  spoofable leftmost entry. Sessions are in-memory: a restart drops them, and multiple
+  replicas need session affinity. The container bundles its dependencies into one file; a
+  mock-upstream test creates 100 then 500 HTTP sessions in one process, makes
+  a tool call at the cap, asserts SSE stream maps are empty after 20 MiB of
+  results, and checks heap/RSS bounds. stdio remains the desktop transport.
+
 - TASK-200.7 targeted card intents and per-entity CAS. New routes
   `GET /boards/:id/cards/:cardId/context`, `POST .../claim`,
   `POST .../move` and `PATCH /boards/:id/cards/:cardId` load only the named

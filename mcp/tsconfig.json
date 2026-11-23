@@ -20,5 +20,10 @@
       "@janosik/shared": ["../shared/src/index.ts"]
     }
   },
-  "include": ["src", "tsup.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "tsup.config.ts",
+    "tsup.http.config.ts",
+    "vitest.config.ts"
+  ]
 }

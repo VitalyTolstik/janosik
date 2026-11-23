@@ -549,6 +549,23 @@ workflow, create, смена workflow планом) добавляют один 
 
 **Файлы:** `mcp/src/index.ts`, новый `mcp/src/http*`, Docker/CI.
 
+> **TASK-200.8 update (implemented).** Отдельный `janosik-mcp-http`
+> (Streamable HTTP, один процесс на много сессий, токен из `Authorization`
+> на сессию, локальный admission per-IP/per-token с negative cache,
+> single-flight проверкой ключа, раздельными body gate для initialize
+> (IP/`MAX_CONCURRENT_INIT_BODY_READS`) и инструментов
+> (токен/`MAX_CONCURRENT_BODY_READS`); слот удерживается до завершения всех
+> tool-промисов POST, JSON-RPC batch отклоняется, `/health` показывает оба
+> счётчика, дедлайн сбрасывает зависшее тело (`503 body_busy`), `503 auth_busy`
+> — при переполнении валидаций, idle/limit/
+> health и graceful drain (новые запросы получают 503, listener закрывается
+> после активных вызовов),
+> structured logs без токенов), отдельный Docker-образ/Compose-профиль и
+> CI-сборка. stdio остаётся по умолчанию для desktop. HTTP-smoke: 100 → 500
+> сессий в одном процессе, ~800 MB RSS на dev-хосте. Контракт, env и
+> остаточные ограничения —
+> [`TASK-200.8-mcp-streamable-http.md`](TASK-200.8-mcp-streamable-http.md).
+
 ---
 
 ### 200.9 — Read model v1: summary + pages + detail (P1)
