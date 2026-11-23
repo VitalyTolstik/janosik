@@ -71,6 +71,11 @@ if (process.env.NODE_ENV === "test") {
   process.env.AUTH_CACHE_TTL_MS = "0";
   process.env.MEMBERSHIP_CACHE_TTL_MS = "0";
   process.env.FEATURE_FLAG_CACHE_MS = "0";
+  // TASK-200.10 aggregate cache: off by default so a suite that counts
+  // aggregate loads sees the uncached query path. The focused cache e2e
+  // overrides BOARD_AGGREGATE_CACHE_CONFIG with positive bounds.
+  process.env.BOARD_AGGREGATE_CACHE_ENTRIES = "0";
+  process.env.BOARD_AGGREGATE_CACHE_BYTES = "0";
 }
 
 // Tests are hermetic: a developer machine's SMTP_* (backend/.env) must not
@@ -475,6 +480,20 @@ export const env = cleanEnv(process.env, {
     desc: "Bound on the feature-flag cache (LRU entries; 0 = unbounded)",
     default: 64,
     example: "64",
+  }),
+  // TASK-200.10: in-process full-board aggregate cache, keyed by
+  // (boardId, Board.aggregateRevision). Correctness is the revision compare,
+  // not Redis; a stale entry simply never matches. 0 on either knob disables
+  // storage, which keeps the uncached path byte-identical.
+  BOARD_AGGREGATE_CACHE_ENTRIES: nonNegativeInt({
+    desc: "Per-board aggregate cache entries per process (LRU; 0 = disabled)",
+    default: 32,
+    example: "32",
+  }),
+  BOARD_AGGREGATE_CACHE_BYTES: nonNegativeInt({
+    desc: "Approximate per-board aggregate cache bytes per process (0 = disabled)",
+    default: 32 * 1024 * 1024,
+    example: "33554432",
   }),
   // Live-stream admission caps (TASK-146): a ceiling on concurrent SSE
   // connections per instance, per user and per board. One VIEWER opening
