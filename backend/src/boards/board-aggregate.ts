@@ -55,10 +55,21 @@ export type MemberWithUser = BoardMemberRow & { user: UserRow };
 export async function loadBoardAggregate(
   db: Prisma.TransactionClient,
   boardId: string,
+  options: {
+    /**
+     * A board row already read in the same transaction. The command path
+     * needs the policy before it knows whether a snapshot is required, so it
+     * passes that row here instead of issuing the same `Board` SELECT twice
+     * (TASK-200.4). The caller owns the `deletedAt: null` filter.
+     */
+    board?: BoardRow;
+  } = {},
 ): Promise<BoardAggregate | null> {
-  const board = await db.board.findFirst({
-    where: { id: boardId, deletedAt: null },
-  });
+  const board =
+    options.board ??
+    (await db.board.findFirst({
+      where: { id: boardId, deletedAt: null },
+    }));
   if (!board) return null;
 
   const [columns, labels, cards, links] = await Promise.all([
@@ -100,6 +111,26 @@ export async function loadBoardAggregate(
   ]);
 
   return toBoardAggregate(board, columns, cards, labels, links);
+}
+
+/**
+ * A content-free aggregate for policy classification and limit checks that
+ * provably never inspect board contents: a plan of ordinary field edits,
+ * claims or destructive commands has no done-column transition and creates
+ * no cards, so `classifyPlan`/`countPlanCardCreates` only need the array
+ * shapes. Keeping this explicit avoids a full-board load before the lock
+ * (TASK-200.4); never use it for a write or a response.
+ */
+export function emptyBoardAggregate(boardId: string): BoardAggregate {
+  return {
+    id: boardId,
+    title: "",
+    columns: [],
+    cards: {},
+    labels: [],
+    createdAt: 0,
+    updatedAt: 0,
+  };
 }
 
 /**

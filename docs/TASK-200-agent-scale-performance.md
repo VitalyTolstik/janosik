@@ -172,6 +172,30 @@
 **Файлы:** `backend/src/commands/commands.service.ts`,
 `backend/src/auth/api-token.service.ts`, `backend/src/boards/board-aggregate.ts`.
 
+**Реализовано (TASK-200.4):**
+- Pre-lock снимок грузится только когда он реально нужен: `classifyPlan`
+  читает доску лишь для done-переходов/созданий, а card-create лимит —
+  только для `ADD_CARD`/`DUPLICATE_*`. Обычный `UPDATE_CARD`/claim/delete
+  классифицируется на `emptyBoardAggregate`, без запросов к
+  `Column`/`Label`/`Card`/`CardLink`.
+- `loadBoardAggregate` принимает уже прочитанную строку `Board`: в
+  транзакции она одна и служит и для plan-limits, и для running state
+  (replay не грузит aggregate вовсе). Между pre-lock и tx больше нет
+  второй/третьей полной загрузки.
+- `ApprovalsService.ensureCommandApproval` принимает этот же снимок, чтобы
+  approval-seam не делал ещё одну загрузку ради `maxCardsPerRun`.
+- PAT `authenticate` выбирает 12 полей пользователя вместо `include: user`
+  целиком; `disabledAt`/`expiresAt`/`revokedAt` читаются как раньше.
+- Тесты: `test/commands-aggregate-load.e2e-spec.ts` (spy на
+  `loadBoardAggregate`: 1 загрузка на fresh-команду и батч, 0 на replay,
+  0 pre-lock для destructive-классификации), `board-aggregate.spec.ts`
+  (переиспользование строки `Board`).
+
+Статический счёт запросов на одну PAT `UPDATE_CARD` (без run, доска без
+workflow): было ≈31, стало ≈20 (−35%); replay — ≈14 → 4; батч из 5 команд
+— один aggregate вместо трёх. Это mock/статическая оценка; `pg_stat_statements`
+на живом стенде остаётся для приёмки 200.15.
+
 ---
 
 ### 200.5 — TTL-кэши auth/membership/flags + SSE `presence=0` (P1)
