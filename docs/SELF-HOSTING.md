@@ -259,15 +259,23 @@ MCP sessions from one Node process:
 ```bash
 docker compose --profile mcp up -d
 # MCP endpoint: http://127.0.0.1:8080/mcp (only bound to the host by default)
+
+# plain Docker alternative (20 s stop timeout matches the drain window)
+docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
+  -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 ```
 
 Each client connects to that URL with its **own** personal key in an
 `Authorization: Bearer jnk_…` header; the gateway never receives a shared
-`JANOSIK_TOKEN`. On initialize it validates the key with the API's
-`/auth/me` (invalid keys get `401`, API rate limits `429`, an API outage
-`503`) before creating the session. The key is then bound to the MCP session,
-and a different key on the same session gets `403`. Configure the MCP
-client's remote/URL transport with the header, for example:
+`JANOSIK_TOKEN` (it may be absent; if present it is ignored with a warning).
+Admission is local before the API: a global cap, a per-key cap (default 50
+sessions), per-IP and per-token initialize buckets, and a short negative cache
+for invalid fingerprints. Only then does the gateway call the API
+`/api/v1/auth/me` (invalid keys `401`, API rate limits `429`, outage `503`);
+concurrent initializes for one key share one call and a one-shot API
+`429`/`503` is retried within a small `Retry-After` bound. The key is then
+bound to the MCP session, and a different key on the same session gets `403`.
+Configure the MCP client's remote/URL transport with the header, for example:
 
 ```json
 {
@@ -284,14 +292,23 @@ For production, terminate TLS in front of port 8080 and set
 `JANOSIK_MCP_BIND_ADDRESS=127.0.0.1`. The proxy runs on the host and forwards
 to `127.0.0.1:8080`; clients use the public `https://…/mcp` URL, never the
 Compose service name or the internal port. Turn proxy buffering off and set a
-read timeout above the longest tool call: every POST is an SSE stream and
-long `janosik_wait_for_work` calls send keepalives, not a JSON body. If a
-browser-based MCP client must call it, list its origin in
-`JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects all browser origins.
+read timeout above the longest tool call: a successful MCP POST is an SSE
+stream and long `janosik_wait_for_work` calls send keepalives, not a JSON
+body; gateway errors are JSON. SSE uses `no-cache, no-transform`, while errors
+and health use `no-store`. If a browser-based MCP client must call it, list
+its origin in `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects all
+browser origins.
 Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
-`JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) and
-`JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default unlimited) in `.env`.
-`GET /ready` proves the API is reachable too; `GET /health` is liveness.
+`JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default 50; `0` = unlimited),
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and
+`JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) in `.env`.
+`GET /ready` proves the API is reachable; it does not validate a key.
+`GET /health` is liveness. All `503`s carry `Retry-After`.
+
+For a large first-time swarm, 500 keys inside one minute exceed the API's
+default `THROTTLE_LIMIT=300`; raise `THROTTLE_LIMIT`, the gateway's
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` and any proxy/IP limits together, and use
+`JANOSIK_MCP_HTTP_TRUST_PROXY=1` behind a trusted proxy.
 
 **Sessions are in-memory.** Restarting the gateway container drops every MCP
 session; clients reconnect and initialize again. Multiple replicas need a
@@ -303,7 +320,10 @@ override with `JANOSIK_MCP_MEM_LIMIT` / `JANOSIK_MCP_CPUS`.
 Sessions are independent: each has its own `JanosikClient` and token
 fingerprint, and an idle sweeper closes abandoned ones without ever sweeping
 an in-flight call or an open SSE stream. The API still enforces the key's
-board scope, role, preset and rate limit. See
+board scope, role, preset and rate limit. Before exposing the gateway, check:
+TLS front, `127.0.0.1` bind, explicit origin allowlist, no shared
+`JANOSIK_TOKEN`, per-token cap, API `THROTTLE_LIMIT`, proxy body/read limits,
+and monitoring for `429`/`initialize_rate_limited`. See
 [the MCP guide](../mcp/README.md#shared-streamable-http-gateway) for the full
 environment table.
 

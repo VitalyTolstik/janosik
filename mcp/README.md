@@ -91,22 +91,37 @@ Content-Type: application/json
 Accept: application/json, text/event-stream
 ```
 
-Every POST response is an SSE stream (`text/event-stream`), including ordinary
-tool calls; the gateway sends `: keepalive` comments while a tool such as
-`janosik_wait_for_work` is still running. Configure a reverse proxy with
-buffering off and a read timeout above the longest tool call. GET opens the
-optional server-to-client SSE stream; DELETE terminates the session.
+Successful MCP POSTs return an SSE stream (`text/event-stream`), including
+ordinary tool calls; the gateway sends `: keepalive` comments while a tool
+such as `janosik_wait_for_work` is still running. Gateway-level errors
+(authentication, admission, limits, shutdown) are ordinary JSON bodies.
+Configure a reverse proxy with buffering off and a read timeout above the
+longest tool call. GET opens the optional server-to-client SSE stream; DELETE
+terminates the session. SSE responses use the MCP SDK's
+`Cache-Control: no-cache, no-transform` plus `X-Accel-Buffering: no`; gateway
+JSON errors and `/health`/`/ready` use `no-store`.
 
-The gateway reads `JANOSIK_URL` and the normal tool settings, but it **never**
-reads `JANOSIK_TOKEN`. On `initialize` it first validates the key with a cheap
-authenticated API read (`/api/v1/auth/me` by default), so a fabricated
-bearer string cannot consume the global session cap; invalid keys get `401`,
-API rate limits get `429` with `Retry-After`, and an API outage gets `503`.
-The key is then bound to that session's SHA-256 fingerprint and required (and
-checked in constant time) on every later request. A different key on the same
-`Mcp-Session-Id` gets `403 token_mismatch`; a request with no key at all gets
-`401`. Sessions are independent: one session's `JanosikClient` and board
-observations never cross into another.
+`JANOSIK_TOKEN` may be **absent**; the gateway never uses a shared key. If it
+is **present and non-empty**, it is ignored and the gateway logs a warning
+(without the value). On `initialize` the gateway validates the presented key
+with a cheap authenticated API read (`/api/v1/auth/me` by default), so a
+fabricated bearer string cannot consume the global session cap; invalid keys
+get `401`, API rate limits get `429` with `Retry-After`, and an API outage gets
+`503`. The key is then bound to that session's SHA-256 fingerprint and
+required (and checked in constant time) on every later request. A different
+key on the same `Mcp-Session-Id` gets `403 token_mismatch`; a request with no
+key at all gets `401`. Sessions are independent: one session's
+`JanosikClient` and board observations never cross into another.
+
+Admission is checked locally before `/api/v1/auth/me`: a global cap, a per-key cap
+(default 50 sessions), per-IP and per-token-fingerprint initialize buckets, and
+a bounded negative cache of invalid fingerprints. Concurrent initializes for
+one key share one validation call. A `429` from the gateway for initialize is
+`initialize_rate_limited`; `503 session_limit` and other 503s carry
+`Retry-After`. The API's own IP throttle still applies to first-time keys:
+raise `THROTTLE_LIMIT` (and the gateway's `INIT_RATE_LIMIT`) for a large
+simultaneous first-time swarm, and put the gateway behind a trusted proxy so
+`TRUST_PROXY`/`JANOSIK_MCP_HTTP_TRUST_PROXY` see real client addresses.
 
 **Sessions are in-memory.** A gateway restart drops every session; clients
 must initialize again. If you run more than one replica, use a session-affine
@@ -116,12 +131,16 @@ flight or an open SSE stream is never swept, and `MAX_SESSIONS` /
 `MAX_SESSIONS_PER_TOKEN` bound the process.
 
 ```bash
-# from a checkout
+# from a checkout: `dist/http.js` is the npm-style external-dependency build
 npm run build -w mcp
 JANOSIK_URL=http://localhost:3000 \
 JANOSIK_MCP_HTTP_HOST=0.0.0.0 \
 JANOSIK_MCP_HTTP_PORT=8080 \
 node mcp/dist/http.js
+
+# Docker image: one self-contained `dist-http/http.js` bundle
+docker run --rm -p 8080:8080 --stop-timeout 20 \
+  -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 
 # or the Docker Compose profile (separate container from the API)
 docker compose --profile mcp up -d
@@ -143,8 +162,10 @@ A remote MCP client configuration uses a URL and headers instead of a command
 ```
 
 The gateway exposes `GET /health` (liveness, no auth) and `GET /ready`
-(readiness: the API's `/api/v1/health/ready` must also answer). MCP requests
-use `POST`/`GET`/`DELETE` on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
+(readiness: the API's `/api/v1/health/ready` must answer). `/ready` does
+**not** validate an MCP key; it only reports API reachability (cached). Both
+endpoints return `Retry-After` on `503`. MCP requests use `POST`/`GET`/`DELETE`
+on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -152,7 +173,13 @@ use `POST`/`GET`/`DELETE` on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_PORT` | `8080` | Bind port. |
 | `JANOSIK_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path; `/health` and `/ready` are reserved. |
 | `JANOSIK_MCP_HTTP_MAX_SESSIONS` | `500` | Global live-session cap; excess initializes get `503` + `Retry-After`. |
-| `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` | `0` | Optional per-key cap (`0` = global only). |
+| `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` | `50` | Per-key session cap; `0` explicitly disables the second limit. |
+| `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` | `600` | Initialize attempts per client IP per minute; `0` disables. |
+| `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` | `10` | Initialize attempts per token fingerprint per minute; `0` disables. |
+| `JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS` | `60000` | Bounded cache of invalid fingerprints; `0` disables. |
+| `JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES` | `1000` | Negative-cache entry bound. |
+| `JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS` | `2` | Total key-validation attempts, including the first. |
+| `JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS` | `1000` | Do not retry in-request when the API asks for a longer `Retry-After`. |
 | `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` | `300000` | Close a session with no request for this long. |
 | `JANOSIK_MCP_HTTP_SESSION_SWEEP_MS` | `30000` | Idle sweeper interval. |
 | `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` | empty | Browser origins allowed to call the gateway; empty rejects every browser `Origin`. |
@@ -174,20 +201,26 @@ filesystem settings are shared with the stdio server. The gateway container
 has no host filesystem mount by default, so attachment upload/download should
 stay off unless you deliberately add a volume.
 
-**Security.** Put the gateway behind TLS (a reverse proxy or private network)
-and never expose it unauthenticated. It refuses browser `Origin`s unless
-listed, does not log authorization headers or request bodies, and sends
-no-store responses. The per-session idle expiry and global cap are resource
+**Security checklist.** Put the gateway behind TLS (a reverse proxy or
+private network) and never expose it unauthenticated. Keep the Compose
+`JANOSIK_MCP_BIND_ADDRESS` on `127.0.0.1` unless a trusted proxy fronts it.
+Set `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` only for a trusted
+browser client. It does not log authorization headers or request bodies.
+MCP SSE responses use the SDK's `no-cache, no-transform` (plus
+`X-Accel-Buffering: no`); JSON errors and health/readiness use `no-store`.
+The per-session idle expiry, caps, buckets and negative cache are resource
 guards, not an authorization boundary: the Janosik API still enforces each
 key's scopes, roles and rate limits. In Compose the published port is bound to
 `127.0.0.1`; a host proxy forwards to `127.0.0.1:8080`, while clients use the
 public `https://…/mcp` URL. Do not use the container name or internal port in
-client configuration.
+client configuration. Raise API `THROTTLE_LIMIT`, proxy body/time limits and
+the gateway's `INIT_RATE_LIMIT` before a large first-time swarm; 500 new keys
+inside one minute exceed a `THROTTLE_LIMIT` of 300.
 
 The `mcp` package test suite includes a mock-upstream smoke that creates 100
 then 500 real HTTP sessions in one process, calls a tool at the cap, and
 checks that 20 MiB of SSE tool results leaves no SDK stream mappings behind.
-On the development host 500 sessions used about 600 MB RSS (one process, not
+On the development host 500 sessions used about 630 MB RSS (one process, not
 500 × 100 MB). The gateway container bundles the SDK and Zod into one file, so
 its image is ~350 MB rather than a ~571 MB dependency tree. See
 `mcp/src/http-server.test.ts`.

@@ -33,7 +33,9 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
   keepalives for long `wait_for_work` calls.
 - stdio remains `dist/index.js`; the existing desktop configuration is
   unchanged.
-- No database, no cache, no shared token.
+- No database and no shared token; only bounded in-memory sessions and
+  admission state (rate buckets, a short negative cache, validation
+  single-flight).
 
 ## Transport contract
 
@@ -43,19 +45,27 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
 | same | `GET` | bearer; `Mcp-Session-Id` | optional server-to-client SSE stream |
 | same | `DELETE` | bearer; `Mcp-Session-Id` | terminate a session |
 | `/health` | `GET` | none | liveness, version, session counts |
-| `/ready` | `GET` | none | readiness; probes the API's `/api/v1/health/ready` (cached) |
+| `/ready` | `GET` | none | readiness; probes the API's `/api/v1/health/ready` (cached; no key validation) |
 
 Initialize response carries `Mcp-Session-Id`; every later request must present
-it and the same bearer key. Every POST response is an SSE stream; reverse
-proxies need buffering off and a read timeout above the longest tool call.
-Error contract:
+it and the same bearer key. Successful MCP POSTs are SSE; gateway admission and
+transport errors are JSON. Reverse proxies need buffering off and a read
+timeout above the longest tool call. SSE responses carry the SDK's
+`Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`; JSON
+errors and `/health`/`/ready` use `no-store`.
+Error contract (all `503`s carry `Retry-After`):
 
-- `401 unauthorized` — no/malformed `Authorization`, or the API rejects the
-  key during the validation call; includes
+- `401 unauthorized` — no/malformed `Authorization`, a cached invalid key, or
+  the API rejects the key during validation; includes
   `WWW-Authenticate: Bearer realm="janosik-mcp"`.
+- `429 initialize_rate_limited` — the per-IP or per-fingerprint initialize
+  bucket is empty; includes `Retry-After`.
 - `429 rate_limited` — the API rate-limited the initialize-time key check;
   includes `Retry-After`.
-- `503 auth_unavailable` — the key-validation call failed or timed out.
+- `503 auth_unavailable` — the key-validation call failed or timed out;
+  includes `Retry-After`.
+- `503 session_limit` — global/per-key cap; includes `Retry-After`.
+- `503 shutting_down` — SIGTERM drain window; includes `Retry-After`.
 - `403 token_mismatch` — a valid key that is not the key bound to the
   session.
 - `403 origin_not_allowed` — browser `Origin` not in the allowlist (default:
@@ -63,30 +73,41 @@ Error contract:
   response headers, so a browser MCP host is usable when deliberately enabled.
 - `404 session_not_found` — unknown or expired `Mcp-Session-Id`.
 - `413 payload_too_large` — body over `JANOSIK_MCP_HTTP_MAX_BODY_BYTES`.
-- `503 session_limit` — global/per-key cap; includes `Retry-After`.
-- `503 shutting_down` — SIGTERM drain window.
 
 ## Token validation and isolation
 
-On `initialize`, the gateway first makes one cheap authenticated read against
-the API (`/api/v1/auth/me` by default) so a fabricated bearer cannot create a
-session or exhaust the global cap. Only a successful check proceeds; `401`
-means the key is invalid, `429` carries the API's `Retry-After`, and `503`
-means validation itself is unavailable. The token is then hashed:
-`SHA-256(token)` is stored as the session fingerprint. The raw key lives in
-that session's
-`JanosikClient` and is never put in module state, logs, health output, or a
-second session. Every later request re-hashes the presented key and compares
-with `timingSafeEqual`. A different key on session A is rejected before the
-request reaches the MCP transport, so it cannot read A's board or consume A's
-upstream credentials. A missing `JANOSIK_TOKEN` in the gateway environment is
-ignored with a warning; a stray `--token` flag is ignored the same way.
+On `initialize`, the gateway checks local admission before any API call:
+global capacity, the per-token session cap (default 50), a per-IP initialize
+bucket (default 600/min), a per-token-fingerprint bucket (default 10/min), and
+a bounded negative cache of invalid fingerprints. Only a genuinely unknown key
+reaches the cheap authenticated API read (`/api/v1/auth/me` by default).
+Concurrent initializes for one fingerprint share one validation call; a
+`429`/`503` from the API is retried a bounded number of times, honoring a small
+`Retry-After` (a longer API delay is returned to the caller instead of sleeping
+in-request). Only a successful check proceeds; `401` means the key is invalid,
+`429` carries `Retry-After`, and `503` means validation itself is unavailable.
+
+The token is then hashed: `SHA-256(token)` is stored as the session
+fingerprint. The raw key lives in that session's `JanosikClient` and is never
+put in module state, logs, health output, or a second session. Every later
+request re-hashes the presented key and compares with `timingSafeEqual`. A
+different key on session A is rejected before the request reaches the MCP
+transport, so it cannot read A's board or consume A's upstream credentials.
+
+`JANOSIK_TOKEN` may be absent: that is the normal gateway configuration. If it
+is present and non-empty, it is ignored and a warning without the value is
+logged; a stray `--token` flag is ignored the same way. The API's `/auth/me`
+is IP-throttled: raise `THROTTLE_LIMIT` and the gateway's
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` before a large first-time swarm, and use
+`JANOSIK_MCP_HTTP_TRUST_PROXY` behind a trusted proxy so per-IP buckets see
+real clients.
 
 ## Lifecycle and limits
 
 - One `McpServer` + `JanosikClient` per session, created on initialize.
 - `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500) caps live+initializing
-  sessions; `MAX_SESSIONS_PER_TOKEN` optionally caps one noisy key.
+  sessions; `MAX_SESSIONS_PER_TOKEN` defaults to 50 and bounds one noisy key
+  (`0` explicitly disables it).
 - Sessions idle for `SESSION_IDLE_MS` (default 5 min) are closed by a sweeper.
   A session with an in-flight request, an open SSE stream, or an `open()` still
   connecting is never swept. Timer env values are bounded to Node's maximum.
@@ -103,14 +124,19 @@ ignored with a warning; a stray `--token` flag is ignored the same way.
 Docker or heavy load):
 
 - initialize + initialized + `tools/list` over real HTTP SSE, including the
-  official `StreamableHTTPClientTransport`;`
+  official `StreamableHTTPClientTransport`;
 - per-session `Authorization` pass-through and A/B isolation: A's board vs
   B's board, B-on-A and A-on-B rejected with 403, mismatched DELETE rejected,
   A still usable afterwards;
-- key validation: fabricated key (401), API rate limit (429), API outage
-  (503), valid key, and no key in any log line;
-- global limit (503), explicit DELETE, replacement session, shutdown drain;
-- idle expiry -> 404 + session count 0; pending `open()` is not swept;
+- key validation: fabricated key (401), negative-cache hit (no second API
+  call), API rate limit (429), API outage (503), bounded retry after a one-shot
+  API 429, valid key, and no key in any log line;
+- initialize flood stops at the per-IP bucket before the API; per-token
+  bucket; concurrent validation single-flight; per-token HTTP cap
+  (503 + Retry-After) and a second key still admitted;
+- global limit (503), explicit DELETE, replacement session;
+- active slow tool call is drained before close; open GET SSE closes during
+  drain; idle expiry -> 404 + session count 0; pending `open()` is not swept;
 - GET SSE keepalive, no sweep while the stream is open, DELETE closes it,
   disconnect is eventually swept;
 - 20 × 1 MiB tool results over SSE with empty `_streamMapping`,
@@ -122,7 +148,7 @@ Docker or heavy load):
 - spawn the stdio entry over `StdioClientTransport` and list tools (regression).
 
 Local evidence (WSL, Node 24, `vitest run`): 500 sessions in one process used
-about **+300 MB heap / 600 MB RSS** (including the Vitest worker and mock
+about **+340 MB heap / 630 MB RSS** (including the Vitest worker and mock
 upstream), versus the ~54 GB extrapolated for 500 stdio processes. The test
 asserts a 750 MB heap and 1.5 GB RSS bound to catch a regression, not to be a
 benchmark. The gateway image is a bundled single file, so the runtime image is
@@ -134,6 +160,9 @@ dependency tree; CI checks it stays under 400 MB.
 - The gateway is a stateful process: sessions live in memory. Restarting it
   drops sessions; clients re-initialize. Use multiple replicas only behind a
   session-affine proxy, or accept reconnects.
+- `GET /ready` follows the API readiness endpoint, not a caller's key; it is
+  an orchestration signal and returns `503` + `Retry-After` when the API is
+  not reachable. `GET /health` is liveness only.
 - It is not an auth boundary of its own: it forwards keys to the API, which
   still enforces scope/role/preset/rate limits. TLS and network isolation are
   required.

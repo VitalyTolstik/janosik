@@ -20,8 +20,11 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   one process. Each session validates and binds its own `Authorization:
   Bearer jnk_…` key; there is no shared `JANOSIK_TOKEN`. POST responses use
   SSE with keepalives, the gateway exposes `/health` and `/ready`, caps
-  sessions and idle time, drains gracefully and logs no keys. Sessions are
-  in-memory: a restart drops them and replicas need session affinity.
+  sessions and idle time, drains gracefully and logs no keys. Initialize
+  admission is local before the API: per-key cap (default 50), per-IP/token
+  buckets, negative cache and single-flight validation with bounded retries.
+  Sessions are in-memory: a restart drops them and replicas need session
+  affinity.
 - Admins can open the same read-only edit history from a card, a user's
   comments or the comments table; deleted rows hide the link and return no
   revision count. A comment keeps its newest 50 revisions, and a comment

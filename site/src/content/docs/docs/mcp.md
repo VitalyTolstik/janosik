@@ -68,21 +68,36 @@ docker compose --profile mcp up -d
 
 Each client connects to `https://your-gateway/mcp` with **its own** key in
 `Authorization: Bearer jnk_…`; the gateway never receives a shared
-`JANOSIK_TOKEN`. It validates the key against the API on initialize (invalid
-keys get `401`, API rate limits `429`, an API outage `503`), binds it to that
-session, and rejects a different key with `403`. Every POST response is an
-SSE stream; a reverse proxy needs buffering off and a read timeout above the
-longest tool call. `GET /health` is liveness; `GET /ready` also proves the API
-is reachable.
+`JANOSIK_TOKEN` (absent is normal; present is ignored with a warning). Local
+admission comes first: a global cap, a per-key cap (default 50 sessions),
+per-IP and per-token initialize buckets, and a short negative cache. Only then
+does the gateway validate the key against `/api/v1/auth/me` (invalid keys
+`401`, API rate limits `429`, outage `503`), sharing one call between
+concurrent initializes and retrying a one-shot API `429`/`503` within a small
+`Retry-After` bound. It binds the key to that session and rejects a different
+key with `403`.
+
+Successful MCP POSTs are SSE streams; gateway errors are JSON. A reverse proxy
+needs buffering off and a read timeout above the longest tool call. SSE uses
+`no-cache, no-transform`; errors and health use `no-store`. `GET /health` is
+liveness; `GET /ready` checks API reachability (not a key) and returns `503` +
+`Retry-After` when not ready.
 
 **Sessions are in-memory.** Restarting the gateway drops every session;
 clients reconnect and initialize again. Multiple replicas need a
 session-affine proxy (or clients must accept reconnects) because there is no
 shared session store. Limits come from `JANOSIK_MCP_HTTP_MAX_SESSIONS`
-(default 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default unlimited)
-and the idle expiry (default 5 minutes); an in-flight call or open stream is
-never swept. The Compose service also sets a 1.5 GB memory limit and 2 CPUs.
-The API still enforces the key's board scope, role, preset and rate limit.
+(default 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default 50; `0` =
+unlimited), `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and the
+idle expiry (default 5 minutes); an in-flight call or open stream is never
+swept. The Compose service also sets a 1.5 GB memory limit and 2 CPUs. The API
+still enforces the key's board scope, role, preset and rate limit.
+
+For a large first-time swarm, 500 new keys in one minute exceed the API's
+default `THROTTLE_LIMIT=300`: raise it, the gateway initialize limit and proxy
+limits together, and set `JANOSIK_MCP_HTTP_TRUST_PROXY=1` behind a trusted
+proxy. Before exposing the gateway check TLS, the `127.0.0.1` bind, the origin
+allowlist, the absence of a shared token and the per-token cap.
 
 ## Tools
 

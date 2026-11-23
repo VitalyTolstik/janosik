@@ -17,10 +17,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   different key, and never accepts a shared `JANOSIK_TOKEN`. POST responses
   use SSE (with keepalives for long `wait_for_work` calls) after the SDK's
   JSON-response mode was found to retain completed stream mappings. Global
-  and per-key session caps, idle expiry, graceful drain, `/health`, `/ready`,
-  token-free structured logs and CORS/Origin checks are included. Sessions are
-  in-memory: a restart drops them, and multiple replicas need session
-  affinity. The container bundles its dependencies into one file; a
+  and per-key session caps (per-key default 50), idle expiry, graceful drain,
+  `/health`, `/ready`, token-free structured logs and CORS/Origin checks are
+  included. Initialize admission is local before `/api/v1/auth/me`: per-IP and
+  per-fingerprint token buckets, a bounded negative cache, and single-flight
+  validation with bounded `429`/`503` retries; one valid key cannot take every
+  session. Sessions are in-memory: a restart drops them, and multiple
+  replicas need session affinity. The container bundles its dependencies into one file; a
   mock-upstream test creates 100 then 500 HTTP sessions in one process, makes
   a tool call at the cap, asserts SSE stream maps are empty after 20 MiB of
   results, and checks heap/RSS bounds. stdio remains the desktop transport.

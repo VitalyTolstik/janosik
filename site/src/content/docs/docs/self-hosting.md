@@ -274,12 +274,16 @@ a container, use a reachable HTTPS origin instead of `localhost`.
 For many agents, start the shared gateway instead of one stdio process per
 agent: `docker compose --profile mcp up -d`, then point clients at
 `https://your-gateway/mcp` with their own `Authorization: Bearer jnk_…` header.
-The gateway validates the key before creating a session and keeps sessions
-**in memory**: restarting it drops them, and multiple replicas need a
-session-affine proxy (or clients must reconnect). Every POST response is an
-SSE stream, so disable proxy buffering and set a read timeout above the
-longest tool call. Defaults are a 500-session cap, a 1.5 GB memory limit and
-2 CPUs; see [the MCP guide](/docs/mcp/#shared-http-gateway-for-many-agents).
+The gateway checks local admission (global and per-key caps — 50 by default —
+plus per-IP/token initialize buckets and a negative cache) before validating
+the key with the API. It keeps sessions **in memory**: restarting it drops
+them, and multiple replicas need a session-affine proxy (or clients must
+reconnect). Successful MCP POSTs are SSE streams and gateway errors are JSON,
+so disable proxy buffering and set a read timeout above the longest tool call.
+Defaults are a 500-session cap, a 1.5 GB memory limit and 2 CPUs. A large
+first-time swarm must also raise API `THROTTLE_LIMIT` and
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`; see
+[the MCP guide](/docs/mcp/#shared-http-gateway-for-many-agents).
 
 ## Email (optional)
 
