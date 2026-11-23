@@ -116,8 +116,30 @@ export function cardFromDetail(dto: BoardCardDetailDto): Card {
       linkCount: dto.linkCount,
       blocked: dto.blocked,
       detailLoaded: true,
+      factsAtSeq: dto.atSeq,
     },
   };
+}
+
+/**
+ * TASK-200.9: mark cached detail's reverse rows stale, keeping the body and
+ * `detailLoaded`. Used when a newer summary/page cannot prove the incoming
+ * set is unchanged (same count/blocked but a possible reverse-set swap).
+ */
+function markReverseLinksStale(existing: Card): Card {
+  if (
+    existing.readModel === undefined ||
+    existing.readModel.detailLoaded !== true ||
+    existing.readModel.reverseLinksStale === true
+  ) {
+    return existing;
+  }
+  const merged: Card = {
+    ...existing,
+    readModel: { ...existing.readModel, reverseLinksStale: true },
+  };
+  delete merged.incomingLinks;
+  return merged;
 }
 
 /**
@@ -130,6 +152,7 @@ export function cardFromDetail(dto: BoardCardDetailDto): Card {
 function mergeFreshLinkFacts(
   existing: Card,
   incoming: BoardCardSummaryDto,
+  atSeq: number,
 ): Card {
   const merged: Card = {
     ...existing,
@@ -138,6 +161,7 @@ function mergeFreshLinkFacts(
       linkCount: incoming.linkCount,
       blocked: incoming.blocked,
       reverseLinksStale: true,
+      factsAtSeq: atSeq,
     },
   };
   delete merged.incomingLinks;
@@ -185,16 +209,39 @@ export function boardFromSummary(
     if (
       existing !== undefined &&
       hasCardDetail(existing) &&
-      existing.readModel !== undefined
+      existing.updatedAt >= incoming.updatedAt
     ) {
-      if (factsChanged && existing.updatedAt >= incoming.updatedAt) {
-        cards[id] = mergeFreshLinkFacts(existing, incoming);
-        continue;
-      }
-      if (existing.updatedAt >= incoming.updatedAt) {
+      // Full-aggregate cards (create/import/legacy) have no readModel but a
+      // complete body; keep it rather than returning to a loading skeleton.
+      if (existing.readModel === undefined) {
         cards[id] = existing;
         continue;
       }
+      // A page/summary from an older board revision must not overwrite a
+      // detail read that already saw newer facts for the same card stamp.
+      if (
+        existing.readModel.factsAtSeq !== undefined &&
+        summary.atSeq < existing.readModel.factsAtSeq
+      ) {
+        cards[id] = existing;
+        continue;
+      }
+      if (factsChanged) {
+        cards[id] = mergeFreshLinkFacts(existing, incoming, summary.atSeq);
+        continue;
+      }
+      // Same facts at a newer revision: the summary cannot reveal a
+      // same-count reverse-set swap, so refresh the rows lazily.
+      if (
+        existing.readModel.factsAtSeq !== undefined &&
+        summary.atSeq > existing.readModel.factsAtSeq &&
+        (incoming.linkCount > 0 || incoming.blocked)
+      ) {
+        cards[id] = markReverseLinksStale(existing);
+        continue;
+      }
+      cards[id] = existing;
+      continue;
     }
     cards[id] = cardFromSummary(incoming);
   }

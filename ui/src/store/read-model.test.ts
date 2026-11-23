@@ -513,6 +513,289 @@ describe("read-model adapters (TASK-200.9)", () => {
     ]);
   });
 
+  it("keeps a full-aggregate card body on a summary refresh", () => {
+    const full: Card = {
+      id: "c-1",
+      title: "Full body",
+      description: "full aggregate text",
+      labelIds: [],
+      createdAt: 10,
+      updatedAt: 20,
+    };
+    const previous: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": full },
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const dto = summary({
+      columns: [
+        {
+          id: "col-1",
+          title: "Todo",
+          count: 1,
+          archivedCount: 0,
+          wipLimit: null,
+          createdAt: 1,
+          cardIds: ["c-1"],
+          cards: [
+            summaryCard("c-1", {
+              title: "Summary body",
+              updatedAt: 20,
+              linkCount: 1,
+            }),
+          ],
+          nextCursor: null,
+          hasMore: false,
+        },
+      ],
+      archivedCardIds: [],
+      archivedCards: [],
+      archivedNextCursor: null,
+    });
+
+    const next = boardFromSummary(dto, previous);
+    // No readModel on a full aggregate card, but it is complete detail: the
+    // dialog must keep its body instead of falling back to a skeleton.
+    expect(next.cards["c-1"]).toBe(full);
+    expect(next.cards["c-1"].description).toBe("full aggregate text");
+    expect(next.cards["c-1"].readModel).toBeUndefined();
+  });
+
+  it("ignores an older page's facts for the same-stamp detail", () => {
+    const fresh = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "c-1",
+        title: "Cached detail",
+        description: "body",
+        labelIds: [],
+        createdAt: 10,
+        updatedAt: 20,
+        links: [{ id: "l-old", type: "blocks", targetCardId: "target" }],
+      },
+      version: 1,
+      linkCount: 1,
+      blocked: true,
+      incomingLinks: [
+        {
+          id: "l-old",
+          type: "blocks",
+          fromCardId: "source",
+          fromArchived: false,
+        },
+      ],
+      seq: 11,
+      atSeq: 10,
+      aggregateRevision: 10,
+    });
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": fresh },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const stalePage = cardFromSummary(
+      summaryCard("c-1", { updatedAt: 20, linkCount: 2, blocked: false }),
+    );
+    const older = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [stalePage],
+      atSeq: 9,
+    } as BoardAction)[0];
+    expect(older.cards["c-1"]).toBe(fresh);
+    expect(older.cards["c-1"].readModel).toMatchObject({
+      linkCount: 1,
+      blocked: true,
+    });
+
+    const newer = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [stalePage],
+      atSeq: 12,
+    } as BoardAction)[0];
+    expect(newer.cards["c-1"].readModel).toMatchObject({
+      linkCount: 2,
+      blocked: false,
+      reverseLinksStale: true,
+      factsAtSeq: 12,
+    });
+  });
+
+  it("marks the reverse rows stale on a same-count summary swap", () => {
+    const previous: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: {
+        "c-1": cardFromDetail({
+          boardId: "b-1",
+          columnId: "col-1",
+          card: {
+            id: "c-1",
+            title: "Cached detail",
+            description: "body",
+            labelIds: [],
+            createdAt: 10,
+            updatedAt: 20,
+          },
+          version: 1,
+          linkCount: 1,
+          blocked: true,
+          incomingLinks: [
+            {
+              id: "l-old",
+              type: "blocks",
+              fromCardId: "source-old",
+              fromArchived: false,
+            },
+          ],
+          seq: 11,
+          atSeq: 10,
+          aggregateRevision: 10,
+        }),
+      },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const dto = summary({
+      atSeq: 12,
+      columns: [
+        {
+          id: "col-1",
+          title: "Todo",
+          count: 1,
+          archivedCount: 0,
+          wipLimit: null,
+          createdAt: 1,
+          cardIds: ["c-1"],
+          cards: [
+            summaryCard("c-1", { updatedAt: 20, linkCount: 1, blocked: true }),
+          ],
+          nextCursor: null,
+          hasMore: false,
+        },
+      ],
+      archivedCardIds: [],
+      archivedCards: [],
+      archivedNextCursor: null,
+    });
+
+    const next = boardFromSummary(dto, previous);
+    // The summary cannot reveal which source remains; refresh rows lazily.
+    expect(next.cards["c-1"].readModel).toMatchObject({
+      linkCount: 1,
+      blocked: true,
+      detailLoaded: true,
+      reverseLinksStale: true,
+    });
+    expect(next.cards["c-1"].incomingLinks).toBeUndefined();
+    expect(next.cards["c-1"].description).toBe("body");
+  });
+
+  it("clears stale reverse rows when a detail read has none", () => {
+    const stale: Card = {
+      id: "c-1",
+      title: "Cached detail",
+      description: "body",
+      labelIds: [],
+      createdAt: 10,
+      updatedAt: 20,
+      readModel: {
+        descriptionChars: 4,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 1,
+        blocked: true,
+        detailLoaded: true,
+        reverseLinksStale: true,
+        factsAtSeq: 10,
+      },
+    };
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": stale },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const fresh = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "c-1",
+        title: "Cached detail",
+        description: "body",
+        labelIds: [],
+        createdAt: 10,
+        updatedAt: 20,
+      },
+      version: 1,
+      linkCount: 0,
+      blocked: false,
+      incomingLinks: [],
+      seq: 11,
+      atSeq: 11,
+      aggregateRevision: 11,
+    });
+    const after = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [fresh],
+    } as BoardAction)[0];
+    expect(after.cards["c-1"].readModel).toMatchObject({
+      linkCount: 0,
+      blocked: false,
+      detailLoaded: true,
+      factsAtSeq: 11,
+    });
+    expect(after.cards["c-1"].readModel?.reverseLinksStale).toBeUndefined();
+    expect(after.cards["c-1"].incomingLinks).toBeUndefined();
+  });
+
+  it("keeps a full-aggregate card on same-stamp hydration", () => {
+    const full: Card = {
+      id: "c-1",
+      title: "Full body",
+      description: "full aggregate text",
+      labelIds: [],
+      createdAt: 10,
+      updatedAt: 20,
+    };
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": full },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const after = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [cardFromSummary(summaryCard("c-1", { updatedAt: 20 }))],
+      atSeq: 20,
+    } as BoardAction)[0];
+    expect(after.cards["c-1"]).toBe(full);
+  });
+
   it("hydrates only ids still in the summary scope and keeps newer cards", () => {
     const newer: Card = {
       id: "a",

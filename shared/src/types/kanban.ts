@@ -186,6 +186,12 @@ export interface CardReadModelMeta {
    * detail read refetches the rows and clears this flag.
    */
   reverseLinksStale?: boolean;
+  /**
+   * Board `atSeq` of the read that produced this detail card. A page or
+   * summary from an older (or equal) revision must not overwrite its link
+   * facts; pages do not carry a per-card revision, so this is the guard.
+   */
+  factsAtSeq?: number;
 }
 
 export interface Card {

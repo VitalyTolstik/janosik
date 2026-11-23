@@ -51,10 +51,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (same `updatedAt`) merges the fresh count/blocked into cached detail,
   keeps `detailLoaded` so an open dialog never falls back to its loading
   skeleton, drops the reverse rows and marks them stale; the dialog and
-  linked-cards popover then refetch the detail. Older pages never replace
-  newer local detail, and a same-stamp detail read is still applied when the
-  reverse-row identity changed. Foreign checklist edits on summary cards
-  schedule the same refresh.
+  linked-cards popover then refetch the detail. Full-aggregate cards
+  (create/import/legacy, no `readModel`) keep their body on a same-or-older
+  summary instead of being downgraded. Every detail read stores the board
+  `atSeq` it observed (`factsAtSeq`); an older page or summary can no longer
+  overwrite those facts at the same card stamp, and a same-count swap seen
+  only at a newer revision marks the reverse rows stale for a lazy refetch.
+  A same-stamp detail read is still applied when the reverse-row identity
+  changed, and it clears the stale flag even when it has no incoming rows.
+  Foreign checklist edits on summary cards schedule the same refresh.
   Reducers also reset duplicated-card facts, update description/checklist
   counters on edits and preimage duplicate columns; page hydration rejects
   pages older than the summary, only hydrates ids still in column/archive

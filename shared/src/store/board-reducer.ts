@@ -789,6 +789,13 @@ export interface HydrateCardsAction {
   type: "HYDRATE_CARDS";
   boardId?: string;
   cards: Card[];
+  /**
+   * TASK-200.9: `atSeq` of the page/summary that produced these cards. A
+   * page from an older revision must not overwrite facts a detail read
+   * already saw for the same card stamp. Detail cards carry their own
+   * `readModel.factsAtSeq`; this only guards summary hydration.
+   */
+  atSeq?: number;
 }
 
 /** Archive a board (data kept, hidden from the normal switcher list). */
@@ -3150,7 +3157,11 @@ function commit(
  * fresh count/blocked into cached detail, keep `detailLoaded`, drop the
  * reverse rows that may now name the wrong sources, and mark them stale.
  */
-function mergeFreshLinkFacts(existing: Card, incoming: Card): Card {
+function mergeFreshLinkFacts(
+  existing: Card,
+  incoming: Card,
+  atSeq?: number,
+): Card {
   const merged: Card = {
     ...existing,
     readModel: {
@@ -3158,7 +3169,25 @@ function mergeFreshLinkFacts(existing: Card, incoming: Card): Card {
       linkCount: incoming.readModel?.linkCount ?? existing.readModel!.linkCount,
       blocked: incoming.readModel?.blocked ?? existing.readModel!.blocked,
       reverseLinksStale: true,
+      ...(atSeq !== undefined ? { factsAtSeq: atSeq } : {}),
     },
+  };
+  delete merged.incomingLinks;
+  return merged;
+}
+
+/** Mark cached detail's reverse rows stale without dropping the body. */
+function markReverseLinksStale(existing: Card): Card {
+  if (
+    existing.readModel === undefined ||
+    existing.readModel.detailLoaded !== true ||
+    existing.readModel.reverseLinksStale === true
+  ) {
+    return existing;
+  }
+  const merged: Card = {
+    ...existing,
+    readModel: { ...existing.readModel, reverseLinksStale: true },
   };
   delete merged.incomingLinks;
   return merged;
@@ -3183,7 +3212,11 @@ function sameIncomingLinks(left: Card, right: Card): boolean {
  * re-render. Full detail always wins over a summary; an older summary never
  * replaces a newer local card.
  */
-function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
+function hydrateCards(
+  board: Board,
+  incoming: readonly Card[],
+  atSeq?: number,
+): Board["cards"] {
   const current = board.cards;
   const inScope = (id: string) =>
     board.columns.some((column) => column.cardIds.includes(id)) ||
@@ -3211,6 +3244,7 @@ function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
           ? { ...card, activity: existing.activity }
           : card;
       if (
+        existing.readModel?.reverseLinksStale !== true &&
         chosen.title === existing.title &&
         chosen.updatedAt === existing.updatedAt &&
         chosen.readModel?.detailLoaded === true &&
@@ -3228,13 +3262,38 @@ function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
       // body and marks the reverse rows stale; a newer summary replaces the
       // card (the dialog refetches on the stamp change).
       if (card.updatedAt < existing.updatedAt) continue;
+      const factsSeq = existing.readModel?.factsAtSeq;
+      if (atSeq !== undefined && factsSeq !== undefined && atSeq < factsSeq) {
+        continue;
+      }
       const factsChanged =
         existing.readModel !== undefined &&
         (existing.readModel.linkCount !== card.readModel?.linkCount ||
           existing.readModel.blocked !== card.readModel?.blocked);
       if (card.updatedAt === existing.updatedAt) {
-        if (!factsChanged) continue;
-        chosen = mergeFreshLinkFacts(existing, card);
+        if (factsChanged) {
+          // At the same or an older board revision the detail is still the
+          // fresher fact source; a same-stamp page cannot prove otherwise.
+          if (
+            factsSeq !== undefined &&
+            (atSeq === undefined || atSeq <= factsSeq)
+          ) {
+            continue;
+          }
+          chosen = mergeFreshLinkFacts(existing, card, atSeq ?? factsSeq);
+        } else if (
+          existing.readModel !== undefined &&
+          factsSeq !== undefined &&
+          atSeq !== undefined &&
+          atSeq > factsSeq &&
+          (existing.readModel.linkCount > 0 || existing.readModel.blocked)
+        ) {
+          // Same count/blocked at a newer revision may still be a reverse-set
+          // swap the summary cannot show: refresh rows lazily.
+          chosen = markReverseLinksStale(existing);
+        } else {
+          continue;
+        }
       } else {
         chosen = card;
       }
@@ -3298,7 +3357,7 @@ export function boardReducer(
   if (!board) return state;
 
   if (action.type === "HYDRATE_CARDS") {
-    const cards = hydrateCards(board, action.cards);
+    const cards = hydrateCards(board, action.cards, action.atSeq);
     return cards === board.cards
       ? state
       : state.map((b, i) => (i === index ? { ...b, cards } : b));

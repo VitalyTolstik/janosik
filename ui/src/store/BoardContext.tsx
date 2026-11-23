@@ -894,7 +894,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
               )
               .map(cardFromSummary);
             if (scoped.length > 0) {
-              apply({ type: "HYDRATE_CARDS", boardId, cards: scoped });
+              apply({
+                type: "HYDRATE_CARDS",
+                boardId,
+                cards: scoped,
+                atSeq: page.atSeq,
+              });
             }
           }
           next = page.nextCursor;

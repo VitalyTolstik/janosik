@@ -599,9 +599,14 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   Fact-only изменение summary (тот же `updatedAt`) вливает свежие
   count/blocked в закешированный detail, сохраняет `detailLoaded` (открытый
   диалог не падает в loading-skeleton), убирает входящие строки и помечает
-  их stale; диалог и popover затем перечитывают detail. Старая страница
-  никогда не заменяет более новый локальный detail, а detail с тем же
-  stamp применяется, если изменился состав входящих строк. Иностранные
+  их stale; диалог и popover затем перечитывают detail. Full-aggregate
+  карточки (create/import/legacy, без `readModel`) сохраняют тело при
+  same/older summary и не откатываются в skeleton. Каждый detail-read
+  запоминает board `atSeq` (`factsAtSeq`): старая страница/summary больше
+  не перетирает эти факты при том же stamp, а same-count swap, видимый
+  только на новом revision, помечает входящие строки stale для ленивого
+  перечитывания. Detail с тем же stamp применяется, если изменился состав
+  входящих строк, и снимает stale-флаг даже при пустых входящих. Иностранные
   checklist-команды по summary-карточке планируют тот же refresh. Reducer
   также обновляет счётчики описания/чек-листа, сбрасывает факты у duplicate
   и грузит preimage для duplicate column. Гидратация
