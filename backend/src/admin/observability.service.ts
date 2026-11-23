@@ -3,6 +3,7 @@ import type { AdminObservabilityDto } from "@janosik/shared";
 import { Prisma } from "@prisma/client";
 import { createRequire } from "node:module";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { env } from "@/config/env";
 import {
   COMMENT_ACTIVITY_BUDGET_BYTES,
   COMMENT_REVISION_BUDGET_BYTES,
@@ -21,6 +22,8 @@ import { DemoService } from "./demo.service";
 import type { QueueStats } from "@/ops/queue-core";
 import { DemoQueueService } from "./demo-queue.service";
 import { ExportsService } from "./exports.service";
+
+type CommandLogStats = NonNullable<AdminObservabilityDto["commandLog"]>;
 
 const BACKEND_VERSION: string = (() => {
   try {
@@ -59,6 +62,15 @@ function unavailableHistoryCounters(): AdminObservabilityDto["commentHistory"] {
       writer_gap: 0,
     },
     overBudget: { revisions: 0, activity: 0 },
+  };
+}
+
+function unavailableCommandLog(): CommandLogStats {
+  return {
+    available: false,
+    retentionDays: env.PURGE_AFTER_DAYS,
+    partitions: [],
+    defaultRows: 0,
   };
 }
 
@@ -106,16 +118,25 @@ export class ObservabilityService {
   ) {}
 
   async snapshot(): Promise<AdminObservabilityDto> {
-    const [size, tables, transcode, demo, health, queues, commentHistory] =
-      await Promise.all([
-        this.databaseSize(),
-        this.tableStats(),
-        this.transcodeCounts(),
-        this.demo.status(),
-        this.healthChecks(),
-        this.queueCounters(),
-        this.commentHistoryCounters().catch(() => unavailableHistoryCounters()),
-      ]);
+    const [
+      size,
+      tables,
+      transcode,
+      demo,
+      health,
+      queues,
+      commentHistory,
+      commandLog,
+    ] = await Promise.all([
+      this.databaseSize(),
+      this.tableStats(),
+      this.transcodeCounts(),
+      this.demo.status(),
+      this.healthChecks(),
+      this.queueCounters(),
+      this.commentHistoryCounters().catch(() => unavailableHistoryCounters()),
+      this.commandLogStats().catch(() => unavailableCommandLog()),
+    ]);
 
     return {
       version: BACKEND_VERSION,
@@ -141,7 +162,62 @@ export class ObservabilityService {
         queues,
       },
       commentHistory,
+      commandLog,
       health,
+    };
+  }
+
+  /**
+   * TASK-200.11: monthly partitions, their estimated row count and size, dead
+   * tuples and the last vacuum/autovacuum. One catalog query; `reltuples` is
+   * an estimate on purpose (see the DTO comment). A missing function/table or
+   * a permissions problem degrades to `available: false`, never a 500.
+   */
+  private async commandLogStats(): Promise<CommandLogStats> {
+    const retentionDays =
+      (await this.ops.retentionDays()) ?? env.PURGE_AFTER_DAYS;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        parent: "Command" | "CommandDetail" | "CommandPreimage";
+        name: string;
+        rows: bigint;
+        sizeBytes: bigint;
+        deadRows: bigint;
+        lastVacuumAt: Date | null;
+        lastAutovacuumAt: Date | null;
+      }>
+    >(Prisma.sql`
+      SELECT parent.relname::text AS "parent",
+             child.relname::text AS "name",
+             GREATEST(child.reltuples, 0)::bigint AS "rows",
+             pg_total_relation_size(child.oid)::bigint AS "sizeBytes",
+             COALESCE(stats.n_dead_tup, 0)::bigint AS "deadRows",
+             stats.last_vacuum AS "lastVacuumAt",
+             stats.last_autovacuum AS "lastAutovacuumAt"
+        FROM pg_inherits
+        JOIN pg_class parent ON parent.oid = pg_inherits.inhparent
+        JOIN pg_class child ON child.oid = pg_inherits.inhrelid
+        JOIN pg_namespace ns ON ns.oid = parent.relnamespace
+        LEFT JOIN pg_stat_user_tables stats ON stats.relid = child.oid
+       WHERE ns.nspname = current_schema()
+         AND parent.relname IN ('Command', 'CommandDetail', 'CommandPreimage')
+       ORDER BY parent.relname, child.relname
+    `);
+    return {
+      available: true,
+      retentionDays,
+      partitions: rows.map((row) => ({
+        parent: row.parent,
+        name: row.name,
+        rows: Number(row.rows),
+        sizeBytes: Number(row.sizeBytes),
+        deadRows: Number(row.deadRows),
+        lastVacuumAt: row.lastVacuumAt?.getTime() ?? null,
+        lastAutovacuumAt: row.lastAutovacuumAt?.getTime() ?? null,
+      })),
+      defaultRows: rows
+        .filter((row) => row.name.endsWith("_default"))
+        .reduce((sum, row) => sum + Number(row.rows), 0),
     };
   }
 

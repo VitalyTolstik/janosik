@@ -399,7 +399,8 @@ model ApiToken {
 
 // TASK-200.11: the command log is range-partitioned by `createdAt` (one
 // parent + monthly partitions + a default partition, see
-// `20261123130000_task_200_11_command_log_partitioning`). PostgreSQL requires
+// `20261123130000_task_200_11_command_log_partitioning` and
+// `20261123131000_task_200_11_command_details_side_table`). PostgreSQL requires
 // every unique constraint on a partitioned table to contain the partition
 // key, so the primary key is `(id, createdAt)` rather than `id`. `id` is still
 // the client commandId and remains unique per board: every apply resolves the
@@ -423,9 +424,6 @@ model Command {
   type           String // BoardAction type
   payload        Json // whole action (deterministic — TASK-21.7a)
   result         Json // first apply result {seq, versions}
-  // Display snapshot captured when the command applied (TASK-37). The next
-  // migration (TASK-200.11 2/2) moves this column to CommandDetail.
-  details        Json?
   touches        String[] // ["card:c1","column:col-2"] — touched entities
   createdAt      DateTime @default(now())
 
@@ -444,6 +442,27 @@ model Command {
   @@index([apiTokenId, createdAt])
   @@index([agentSessionId, createdAt])
   @@index([runId])
+}
+
+/**
+ * TASK-200.11 — heavy command display snapshots (the "from → to" diff frozen
+ * at apply time by `commandDetails`). One row per command that has a diff;
+ * partition key = command `createdAt`, so retention drops the pair together.
+ * Deliberately no Prisma relation/FK to `Command`: a partitioned child FK to a
+ * partitioned parent creates per-partition constraints that make
+ * `DROP TABLE Command_YYYYMM` fail (PostgreSQL asks for the parent FK to be
+ * dropped and revalidated over the whole table). The writer inserts both rows
+ * in one transaction; a database trigger removes the side row on a row delete,
+ * and the retention helper drops the detail partition before the command
+ * partition. Reads batch by `commandId` (the PK prefix).
+ */
+model CommandDetail {
+  commandId String
+  createdAt DateTime @default(now())
+  data      Json
+
+  @@id([commandId, createdAt])
+  @@index([createdAt])
 }
 
 // TASK-200.11: pre-images are partitioned by their own `createdAt` (written a

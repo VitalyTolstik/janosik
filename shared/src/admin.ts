@@ -1818,7 +1818,33 @@ export interface AdminObservabilityDto {
     /** Comments over the 4,000,000 / 6,000,000-byte text budgets. */
     overBudget: { revisions: number; activity: number };
   };
+  /**
+   * TASK-200.11: command-log partition and vacuum health. Rows are PostgreSQL
+   * planner estimates (`pg_class.reltuples`), not exact counts — an exact
+   * `count(*)` over a hundred million commands would make the panel itself a
+   * load source. `deadRows` and the vacuum timestamps come from
+   * `pg_stat_user_tables`; `defaultRows` should stay near zero.
+   *
+   * Optional for older/fake admin servers; the real API always sends it.
+   */
+  commandLog?: AdminCommandLogObservabilityDto;
   health: Array<{ name: string; ok: boolean; detail: string }>;
+}
+
+/** TASK-200.11: one parent's monthly partitions, as seen by the admin panel. */
+export interface AdminCommandLogObservabilityDto {
+  available: boolean;
+  retentionDays: number;
+  partitions: Array<{
+    parent: "Command" | "CommandDetail" | "CommandPreimage";
+    name: string;
+    rows: number;
+    sizeBytes: number;
+    deadRows: number;
+    lastVacuumAt: number | null;
+    lastAutovacuumAt: number | null;
+  }>;
+  defaultRows: number;
 }
 
 // --- TASK-65: security -----------------------------------------------------

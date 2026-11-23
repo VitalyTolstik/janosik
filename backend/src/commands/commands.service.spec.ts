@@ -17,9 +17,14 @@ const row = (seq: number) => ({
   touches: [],
 });
 
-function service(findMany: jest.Mock, findFirst = jest.fn()) {
+function service(
+  findMany: jest.Mock,
+  findFirst = jest.fn(),
+  detailFindMany = jest.fn().mockResolvedValue([]),
+) {
   const prisma = {
     command: { findMany, findFirst },
+    commandDetail: { findMany: detailFindMany },
   } as unknown as PrismaService;
   return new CommandsService(
     prisma,
@@ -64,20 +69,28 @@ describe("CommandsService.deltaSince", () => {
   });
 
   it("carries the frozen display detail but not pre-images", async () => {
-    const findMany = jest.fn().mockResolvedValue([
+    const findMany = jest.fn().mockResolvedValue([row(7)]);
+    const detailFindMany = jest.fn().mockResolvedValue([
       {
-        ...row(7),
-        details: {
+        commandId: "cmd-7",
+        data: {
           detail: "Old onboarding draft",
           changes: [{ field: "title", from: "Old", to: null }],
         },
       },
     ]);
-    const delta = await service(findMany).deltaSince("board-1", 0);
+    const delta = await service(findMany, jest.fn(), detailFindMany).deltaSince(
+      "board-1",
+      0,
+    );
     expect(delta.entries[0]).toEqual(
       expect.objectContaining({ detail: "Old onboarding draft" }),
     );
     expect(delta.entries[0]).not.toHaveProperty("preimages");
+    expect(detailFindMany).toHaveBeenCalledWith({
+      where: { commandId: { in: ["cmd-7"] } },
+      select: { commandId: true, data: true },
+    });
   });
 
   it("flags resync and drops the partial page when the cap is hit", async () => {

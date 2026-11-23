@@ -84,6 +84,7 @@ import {
   parentageConflict,
 } from "./entity-parentage";
 import { commandDetails } from "./command-details";
+import { commandDetailMap } from "./command-detail-store";
 import {
   actionFingerprint,
   actionFingerprintWithoutRestoreAssignee,
@@ -1395,9 +1396,9 @@ export class CommandsService {
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;
-    // TASK-200.11: pin the partition key before the insert so the post-insert
-    // update can address the composite key, and a side row can share the
-    // exact same `createdAt` (details migration).
+    // TASK-200.11: one clock for the command and its detail row. Both use the
+    // command's `createdAt` as partition key, so an insert near midnight can
+    // never split the pair across two monthly partitions.
     const createdAt = new Date();
 
     const created = await tx.command.create({
@@ -1414,12 +1415,18 @@ export class CommandsService {
         payload: jsonSafe(action),
         result: {},
         touches: [],
-        ...(details !== null
-          ? { details: jsonSafe(details) as Prisma.InputJsonValue }
-          : {}),
         createdAt,
       },
     });
+    if (details !== null) {
+      await tx.commandDetail.create({
+        data: {
+          commandId: created.id,
+          createdAt,
+          data: jsonSafe(details) as Prisma.InputJsonValue,
+        },
+      });
+    }
     const seq = Number(created.seq);
 
     let touches: string[] = [];
@@ -1526,13 +1533,16 @@ export class CommandsService {
         agentName: true,
         payload: true,
         touches: true,
-        details: true,
       },
     });
+    const details = await commandDetailMap(
+      client,
+      rows.map((row) => row.id),
+    );
     const truncated = rows.length > max;
     return {
       entries: (truncated ? rows.slice(0, max) : rows).map((row) => {
-        const detail = commandDetail(row.details);
+        const detail = commandDetail(details.get(row.id) ?? null);
         return {
           seq: Number(row.seq),
           // Rows written before ingress stamping may lack `boardId`; replay

@@ -8,6 +8,7 @@ import type {
 } from "@janosik/shared";
 import { attributionFields } from "@/auth/request-attribution";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { commandDetailMap } from "@/commands/command-detail-store";
 import {
   commentActivityLiveSql,
   isCommentActivity,
@@ -141,7 +142,6 @@ export class ActivityService {
           agentSessionId: true,
           runId: true,
           agentName: true,
-          details: true,
           actor: { select: { displayName: true, email: true } },
         },
       }),
@@ -157,8 +157,17 @@ export class ActivityService {
       this.prisma,
       activities,
     );
+    const details = await commandDetailMap(
+      this.prisma,
+      commands.map((row) => row.id),
+    );
     const merged = [
-      ...commands.map(toCommandEntry),
+      ...commands.map((row) =>
+        toCommandEntry({
+          ...row,
+          details: details.get(row.id) ?? null,
+        }),
+      ),
       ...activities.map((row) => toActivityEntry(row, commentContext)),
     ].sort(compareNewerFirst);
 
