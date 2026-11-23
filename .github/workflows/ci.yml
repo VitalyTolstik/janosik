@@ -145,7 +145,7 @@ jobs:
           node-version: 24
       - name: Validate Compose and proxy configs
         run: |
-          docker pull nginx:alpine
+          docker pull nginx:1.27-alpine
           docker pull caddy:2-alpine
           node --test scripts/deploy/scale.test.mjs
 
