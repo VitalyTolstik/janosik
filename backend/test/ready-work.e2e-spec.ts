@@ -355,6 +355,37 @@ describe("Ready/work endpoint (e2e)", () => {
       description: "x",
     });
     expect((await readyCard("card-length")).descriptionChars).toBe(1);
+
+    // PostgreSQL char_length counts a single emoji as one code point, unlike
+    // JavaScript's UTF-16 `.length` (2). The stored contract follows the DB.
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId: "card-length",
+      description: "🙂",
+    });
+    expect((await readyCard("card-length")).descriptionChars).toBe(1);
+
+    // Empty string clears the description to NULL; the trigger stores 0.
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId: "card-length",
+      description: "",
+    });
+    expect((await readyCard("card-length")).descriptionChars).toBe(0);
+    expect(
+      await prisma.card.findUnique({
+        where: { id: "card-length" },
+        select: { description: true, descriptionLength: true },
+      }),
+    ).toEqual({ description: null, descriptionLength: 0 });
+
+    // Backfill/trigger integrity: no row lags its stored text.
+    const [mismatch] = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT count(*)::int AS "count"
+      FROM "Card"
+      WHERE "descriptionLength" <> COALESCE(char_length("description"), 0)
+    `;
+    expect(mismatch?.count).toBe(0);
   });
 
   it("lets a VIEWER read the summary and refuses an outsider", async () => {
@@ -511,7 +542,9 @@ describe("Ready/work endpoint (e2e)", () => {
 
     const res = await pending;
     expect(res.status).toBe(200);
+    expect(res.headers["x-ready-held"]).toBe("1");
     const body = res.body as BoardReadyDto;
+    expect(res.headers["x-board-seq"]).toBe(String(body.seq));
     expect(body.cards.map((card) => card.id)).toContain("card-woken");
   });
 

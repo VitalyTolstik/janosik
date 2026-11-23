@@ -129,7 +129,8 @@ archived/deleted, not under a live claim (a null or lapsed lease is free) and no
 the target of a live `blocks` link. The list is ordered by priority, most urgent
 first, and capped at 100. Each card carries `id`, `title`, board and column
 ids/titles, `priority`, `claimedBy`, `leaseUntil`, `version` and
-`descriptionChars` (the stored description length). The text itself is never
+`descriptionChars` (the stored description length, counted in Unicode code
+points). The text itself is never
 selected or returned, so a large description is not detoasted. The response
 also carries the board's command `seq`, mirrored in `X-Board-Seq`.
 

@@ -212,6 +212,8 @@ export interface ReadyWorkQuery {
   waitMs?: number;
   /** The board `seq` from the previous answer (long-poll cursor). */
   since?: number;
+  /** HTTP budget for this call, when the caller has its own deadline. */
+  timeoutMs?: number;
 }
 
 /** Extra budget on top of a server-side hold before the HTTP call fails. */
@@ -634,6 +636,8 @@ export class JanosikClient {
       Math.max(0, Math.trunc(options.waitMs ?? 0)),
       READY_WORK_WAIT_MAX_MS,
     );
+    const timeoutMs =
+      options.timeoutMs ?? (wait > 0 ? wait + READY_POLL_GRACE_MS : undefined);
     return this.request<BoardReadyDto | undefined>(
       apiPath`/boards/${boardId}/ready`,
       {
@@ -642,9 +646,10 @@ export class JanosikClient {
           ...(wait > 0 ? { wait } : {}),
           ...(options.since !== undefined ? { since: options.since } : {}),
         },
-        ...(wait > 0 ? { timeoutMs: wait + READY_POLL_GRACE_MS } : {}),
-        retry: false,
-        rateLimitRetry: false,
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+        // A wait=0 list snapshot keeps the normal GET retries; only a held
+        // poll disables them so the tool can enforce its own deadline.
+        ...(wait > 0 ? { retry: false, rateLimitRetry: false } : {}),
       },
     );
   }
@@ -652,12 +657,16 @@ export class JanosikClient {
   /**
    * TASK-200.2 cross-board ready snapshot. One request answers for every
    * accessible board without the per-board fan-out `listBoards` + `getBoard`
-   * used before. `retry`/`rateLimitRetry` let a caller with a deadline run
-   * its own bounded retry loop.
+   * used before. `retry`/`rateLimitRetry`/`timeoutMs` let a caller with a
+   * deadline run its own bounded retry loop.
    */
   listReadyWork(
     limit: number = READY_WORK_LIMIT_DEFAULT,
-    options: { retry?: boolean; rateLimitRetry?: boolean } = {},
+    options: {
+      retry?: boolean;
+      rateLimitRetry?: boolean;
+      timeoutMs?: number;
+    } = {},
   ): Promise<BoardsReadyDto> {
     const bounded = Math.min(
       Math.max(1, Math.trunc(limit)),
@@ -668,6 +677,9 @@ export class JanosikClient {
       ...(options.retry !== undefined ? { retry: options.retry } : {}),
       ...(options.rateLimitRetry !== undefined
         ? { rateLimitRetry: options.rateLimitRetry }
+        : {}),
+      ...(options.timeoutMs !== undefined
+        ? { timeoutMs: options.timeoutMs }
         : {}),
     });
   }

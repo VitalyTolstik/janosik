@@ -336,7 +336,9 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   `pollMs` is ignored for that hold. A cross-board wait re-reads the snapshot
   every 15–60 s across the full jittered range, with `pollMs` as the floor. A
   relevant wake that leaves no work keeps holding, and `timeoutMs: 0` still
-  performs one initial snapshot. Transient network and capacity
+  performs one initial snapshot (5 s HTTP budget); other snapshot calls are
+  bounded by the remaining deadline. `janosik_list_ready_cards` keeps the
+  normal GET network/429 retries. Transient network and capacity
   (`503 ready_poll_capacity` + `Retry-After`) failures retry only inside the
   caller's deadline. The tool keeps `timeoutMs`, `pollMs`, `boardId` and its
   `{ card: … }` / `{ card: null }` result. On a server without the endpoint

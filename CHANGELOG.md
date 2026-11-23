@@ -13,7 +13,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   column, unassigned, without a live claim and not blocked — with
   `id/title`, board and column ids/titles, `priority`, claim state/lease,
   card `version` and `descriptionChars` (the stored `Card.descriptionLength`
-  kept in sync by a database trigger). The description text is never selected,
+  kept in sync by a database trigger; Unicode code points, one per emoji). The
+  description text is never selected,
   so large text is not detoasted, and the endpoint never loads a board
   aggregate. `?wait=` holds the request
   for 0–60 s and wakes only on readiness-relevant actions (card presence,

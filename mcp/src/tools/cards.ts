@@ -1411,6 +1411,18 @@ function missingReadyEndpoint(error: unknown): boolean {
 
 /** Extra attempts for a transient failure inside the caller's deadline. */
 const READY_NETWORK_RETRIES = 2;
+/** A zero-deadline request still needs one bounded initial snapshot. */
+const READY_SNAPSHOT_MIN_TIMEOUT_MS = 5_000;
+/** Cap one cross-board/snapshot HTTP call even when the caller waits longer. */
+const READY_SNAPSHOT_MAX_TIMEOUT_MS = 30_000;
+/** Leave room for the server to answer before the caller deadline. */
+const READY_HOLD_WAIT_MARGIN_MS = 250;
+
+function snapshotHttpTimeout(deadline: number): number {
+  const left = deadline - Date.now();
+  if (left <= 0) return READY_SNAPSHOT_MIN_TIMEOUT_MS;
+  return Math.max(1, Math.min(left, READY_SNAPSHOT_MAX_TIMEOUT_MS));
+}
 
 /**
  * A long-poll whose HTTP budget expired is not a transient socket failure:
@@ -1471,18 +1483,29 @@ function readyWithRetry(
 ) {
   return readyCallWithRetry(() => {
     const left = Math.max(0, deadline - Date.now());
+    const waitCap =
+      left > READY_HOLD_WAIT_MARGIN_MS ? left - READY_HOLD_WAIT_MARGIN_MS : 0;
     const waitMs =
       initial.waitMs !== undefined && initial.waitMs > 0
-        ? Math.min(initial.waitMs, left)
+        ? Math.min(initial.waitMs, waitCap)
         : 0;
-    return client.getBoardReady(boardId, { ...initial, waitMs });
+    return client.getBoardReady(boardId, {
+      ...initial,
+      waitMs,
+      timeoutMs: waitMs > 0 ? Math.max(1, left) : snapshotHttpTimeout(deadline),
+    });
   }, deadline);
 }
 
 /** One cross-board snapshot with the same deadline-aware retry policy. */
 function crossBoardReadyWithRetry(client: JanosikClient, deadline: number) {
   return readyCallWithRetry(
-    () => client.listReadyWork(1, { retry: false, rateLimitRetry: false }),
+    () =>
+      client.listReadyWork(1, {
+        retry: false,
+        rateLimitRetry: false,
+        timeoutMs: snapshotHttpTimeout(deadline),
+      }),
     deadline,
   );
 }

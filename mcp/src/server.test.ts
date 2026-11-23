@@ -50,6 +50,8 @@ let readyEndpointMissing: boolean;
 let readyNetworkFailures: number;
 /** 503 ready_poll_capacity answers before the next ready request succeeds. */
 let readyCapacityFailures: number;
+/** 429 rate_limited answers before the next list snapshot succeeds. */
+let readyRateLimitFailures: number;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -283,6 +285,19 @@ async function fakeApi(
         { "Retry-After": "0" },
       );
     }
+    if (readyRateLimitFailures > 0) {
+      readyRateLimitFailures -= 1;
+      return respond(
+        {
+          message: "Too many requests",
+          code: "rate_limited",
+          retryable: true,
+          retryAfter: 0,
+        },
+        429,
+        { "Retry-After": "0" },
+      );
+    }
     const boardId = readyMatch[1]!;
     if (boardId !== "b1" && boardId !== "b3") {
       return respond({ message: "not found" }, 404);
@@ -313,6 +328,19 @@ async function fakeApi(
           retryAfter: 0,
         },
         503,
+        { "Retry-After": "0" },
+      );
+    }
+    if (readyRateLimitFailures > 0) {
+      readyRateLimitFailures -= 1;
+      return respond(
+        {
+          message: "Too many requests",
+          code: "rate_limited",
+          retryable: true,
+          retryAfter: 0,
+        },
+        429,
         { "Retry-After": "0" },
       );
     }
@@ -818,6 +846,7 @@ beforeEach(() => {
   readyEndpointMissing = false;
   readyNetworkFailures = 0;
   readyCapacityFailures = 0;
+  readyRateLimitFailures = 0;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -2054,6 +2083,24 @@ describe("janosik MCP server", () => {
     expect(
       calls.some((call) => call.path === "/boards/b1" && call.method === "GET"),
     ).toBe(false);
+    await client.close();
+  });
+
+  it("retries list_ready_cards network and 429 failures for a board", async () => {
+    readyNetworkFailures = 1;
+    readyRateLimitFailures = 1;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_list_ready_cards",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    const results = (
+      result.structuredContent as { results: Array<{ id: string }> }
+    ).results;
+    expect(results.map((entry) => entry.id)).toContain("k1");
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/ready").length,
+    ).toBeGreaterThanOrEqual(3);
     await client.close();
   });
 

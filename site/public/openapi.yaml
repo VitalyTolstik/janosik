@@ -4016,7 +4016,9 @@ components:
           type: integer
           description: |
             Stored description length (0 when unset), maintained by the
-            database trigger. The text itself is never selected or returned.
+            database trigger. Counts Unicode code points (PostgreSQL
+            `char_length`); the legacy full-board fallback may report UTF-16
+            length instead. The text itself is never selected or returned.
     ReadyBoardSummary:
       type: object
       required: [id, title, archived, seq]

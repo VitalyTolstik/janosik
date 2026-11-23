@@ -370,7 +370,10 @@ Three tools let a swarm share one board without stepping on itself:
   that hold. Without `boardId` it re-reads the cross-board snapshot every
   15–60 s (the full range, jittered; `pollMs` raises the floor). A relevant
   wake that leaves no work keeps holding instead of returning an empty
-  snapshot. `timeoutMs: 0` still performs one initial snapshot. Transient
+  snapshot. `timeoutMs: 0` still performs one initial snapshot (bounded by a
+  5 s HTTP budget); other snapshot calls are bounded by the remaining
+  deadline. `janosik_list_ready_cards` keeps the normal GET network/429 retry
+  policy. Transient
   network and `503 ready_poll_capacity`/`Retry-After` failures retry only
   within the caller's deadline. The tool keeps `timeoutMs` (up to 5 min) and
   `boardId` and still returns `{ card }` or `{ card: null }` on timeout. A

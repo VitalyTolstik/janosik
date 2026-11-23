@@ -665,8 +665,10 @@ export const READY_WORK_CROSS_BOARD_MAX_MS = 60_000;
  * This is a *summary*, not a board read: it carries no description body,
  * checklists, links, labels or comments. `descriptionChars` is the stored
  * description length (`Card.descriptionLength`), so the text itself is never
- * detoasted or returned. `claimedBy` can be non-null only when the lease has
- * lapsed — a live claim is not ready.
+ * detoasted or returned. The stored length counts Unicode code points
+ * (PostgreSQL `char_length`), one per emoji; the legacy full-board fallback
+ * may report JavaScript UTF-16 length instead. `claimedBy` can be non-null
+ * only when the lease has lapsed — a live claim is not ready.
  */
 export interface ReadyCardDto {
   id: string;
