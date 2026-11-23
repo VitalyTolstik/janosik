@@ -107,9 +107,14 @@ export interface BoardReadStamp {
 }
 
 export interface BoardReadSnapshot {
-  board: BoardAggregate;
+  /**
+   * Legacy body name for the full aggregate. New projections (TASK-200.9)
+   * put their JSON body in `body`; exactly one of the two is serialized.
+   */
+  board?: BoardAggregate;
+  body?: unknown;
   seq: number;
-  /** Revision read in the same snapshot as `board`. */
+  /** Revision read in the same snapshot as the body. */
   revision: bigint;
 }
 
@@ -120,6 +125,16 @@ export interface BoardReadRequest {
   route: string;
   acceptEncoding: string | undefined;
   ifNoneMatch: string | undefined;
+  /**
+   * Optional subresource existence check for conditional requests. A
+   * wildcard `If-None-Match: *` is a validator like any other; the cheap
+   * board stamp alone must not answer 304 for a missing/foreign card or
+   * column (TASK-200.9 review). The check is one indexed primary-key
+   * lookup, deliberately outside the aggregate build budget/semaphore: it
+   * only proves existence and returns no user data, while the budgeted body
+   * build still runs under the normal read limits when the validator misses.
+   */
+  precheck?: () => Promise<void>;
 }
 
 /** Prisma budget handed to the full-read transaction (TASK-200.6). */
@@ -251,6 +266,10 @@ export class BoardReadService implements OnModuleDestroy {
       // stamp task that never settles would poison every later conditional
       // read, and a joiner could otherwise receive a pre-write 304.
       if (request.ifNoneMatch !== undefined) {
+        // Resolve the exact subresource before comparing validators. The
+        // board-level stamp cannot prove a card/column exists or belongs to
+        // this board, so `If-None-Match: *` must not bypass its 404.
+        await request.precheck?.();
         const stampBudget = this.remainingMs(deadline);
         if (stampBudget <= 0) {
           throw new SingleFlightTimeoutError(this.limits.timeoutMs);
@@ -438,7 +457,8 @@ export class BoardReadService implements OnModuleDestroy {
         throw new SingleFlightTimeoutError(this.limits.timeoutMs);
       }
       const snapshot = await deps.build(this.budgets(remaining));
-      const json = Buffer.from(JSON.stringify(snapshot.board), "utf8");
+      const body = snapshot.body ?? snapshot.board;
+      const json = Buffer.from(JSON.stringify(body), "utf8");
       const encoded = await compressBody(json, encoding, {
         minBytes: this.limits.compressMinBytes,
         contentType: "application/json; charset=utf-8",

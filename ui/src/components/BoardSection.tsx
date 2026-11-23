@@ -89,7 +89,14 @@ const SAVED_VIEWS_FALLBACK = (
  * duplicated here.
  */
 export function BoardSection() {
-  const { board, roleOf, setBoardColumnStyle } = useBoard();
+  const {
+    board,
+    roleOf,
+    setBoardColumnStyle,
+    loadCardDetail,
+    readModelPartial,
+    retryReadModel,
+  } = useBoard();
   const { user } = useAuth();
   // Undefined until the roster loads — never `[]` as "loaded": the saved-view
   // drift pass would otherwise treat every assignee as deleted.
@@ -146,6 +153,8 @@ export function BoardSection() {
     boardId: string;
     query: string;
     cardIds: ReadonlySet<string>;
+    /** TASK-200.9: cards the server matched in their description body. */
+    descriptionIds: ReadonlySet<string>;
   } | null>(null);
 
   const boardId = board?.id;
@@ -154,15 +163,20 @@ export function BoardSection() {
     let alive = true;
     const timer = setTimeout(() => {
       api
-        .searchBoardCards(boardId, query, { includeMatches: false })
+        .searchBoardCards(boardId, query, { includeMatches: true })
         .then((result) => {
           if (!alive) return;
           setServerMatch({
             boardId,
             query,
-            // The filter needs ids only; `matches` is empty unless a caller
-            // explicitly asks for the bounded explanatory list.
             cardIds: new Set(result.cardIds),
+            // Summary cards have no body: only the server can say that the
+            // text hit is in the description rather than a checklist item.
+            descriptionIds: new Set(
+              result.matches
+                .filter((match) => match.matchIn === "description")
+                .map((match) => match.cardId),
+            ),
           });
         })
         .catch(() => {
@@ -171,7 +185,12 @@ export function BoardSection() {
           // Resolve the query with no extra ids so the UI leaves its pending
           // state and can show the truthful local-only result.
           if (alive) {
-            setServerMatch({ boardId, query, cardIds: new Set<string>() });
+            setServerMatch({
+              boardId,
+              query,
+              cardIds: new Set<string>(),
+              descriptionIds: new Set<string>(),
+            });
           }
         });
     }, SERVER_FILTER_DEBOUNCE_MS);
@@ -194,6 +213,13 @@ export function BoardSection() {
     serverMatch.query === query &&
     query !== ""
       ? serverMatch.cardIds
+      : undefined;
+  const serverDescriptionIds =
+    serverMatch !== null &&
+    serverMatch.boardId === board?.id &&
+    serverMatch.query === query &&
+    query !== ""
+      ? serverMatch.descriptionIds
       : undefined;
 
   const filteredIds = useMemo(() => {
@@ -270,6 +296,9 @@ export function BoardSection() {
   // The dead card id already reported, so StrictMode's double effect never
   // toasts the same miss twice.
   const missingCardRef = useRef<string | null>(null);
+  // A card that belongs to the board (e.g. an archived card listed by the
+  // summary) but whose summary/detail has not loaded yet.
+  const resolvingCardRef = useRef<string | null>(null);
   useEffect(() => {
     const cardParam = searchParams.get("card");
     const cardExists = board !== undefined && hasCard(board, cardParam);
@@ -283,16 +312,76 @@ export function BoardSection() {
       // one render before the param cleanup settles. Only a card that was
       // not just closed with the dialog still reports.
       const justClosed = closedCardRef.current === cardParam;
+      const strip = () => {
+        const next = copySearchParamsWithoutLanguageHandoff(searchParams);
+        // The row params only ever accompany a live card deep link.
+        next.delete("card");
+        next.delete("comment");
+        next.delete("attachment");
+        setSearchParams(next, { replace: true });
+      };
+      // TASK-200.9: the read model loads only the first page per column, so
+      // a deep link can name a card whose summary has not arrived yet. Ask
+      // for that one card's detail before declaring it missing; the detail
+      // read also proves it belongs to this board.
+      if (serverMode && !justClosed && missingCardRef.current !== cardParam) {
+        missingCardRef.current = cardParam;
+        void loadCardDetail(board.id, cardParam)
+          .then((card) => {
+            if (card !== null) {
+              setOpenCardId(cardParam);
+              return;
+            }
+            if (missingCardRef.current === cardParam) {
+              toast.error(t("card.notFound"));
+            }
+            strip();
+          })
+          .catch(() => {
+            // A transient failure keeps the deep link in the address bar so
+            // a later load can still resolve it (and retry the detail read).
+            missingCardRef.current = null;
+          });
+        return;
+      }
       if (!justClosed && missingCardRef.current !== cardParam) {
         missingCardRef.current = cardParam;
         toast.error(t("card.notFound"));
       }
-      const next = copySearchParamsWithoutLanguageHandoff(searchParams);
-      // The row params only ever accompany a live card deep link.
-      next.delete("card");
-      next.delete("comment");
-      next.delete("attachment");
-      setSearchParams(next, { replace: true });
+      strip();
+      return;
+    }
+    if (
+      cardParam &&
+      board &&
+      cardExists &&
+      board.cards[cardParam] === undefined
+    ) {
+      // The id is proven to belong to the board (archived ids are complete in
+      // the summary) but its detail has not streamed in. Open only after the
+      // detail read lands; the dialog never mounts with a half card.
+      if (resolvingCardRef.current !== cardParam) {
+        resolvingCardRef.current = cardParam;
+        void loadCardDetail(board.id, cardParam)
+          .then((card) => {
+            if (card !== null) {
+              setOpenCardId(cardParam);
+              return;
+            }
+            if (missingCardRef.current !== cardParam) {
+              missingCardRef.current = cardParam;
+              toast.error(t("card.notFound"));
+            }
+            const next = copySearchParamsWithoutLanguageHandoff(searchParams);
+            next.delete("card");
+            next.delete("comment");
+            next.delete("attachment");
+            setSearchParams(next, { replace: true });
+          })
+          .catch(() => {
+            resolvingCardRef.current = null;
+          });
+      }
       return;
     }
     if (cardParam && cardExists) {
@@ -315,9 +404,18 @@ export function BoardSection() {
     if (!cardParam) {
       closedCardRef.current = null;
       missingCardRef.current = null;
+      resolvingCardRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to URL changes only; including openCardId would reopen the dialog right after the user closes it (the close handler clears the param asynchronously)
-  }, [searchParams, board]);
+  }, [
+    searchParams,
+    board,
+    serverMode,
+    loadCardDetail,
+    setSearchParams,
+    t,
+    toast,
+  ]);
   const handleCardClick = useCallback(
     (cardId: string) => {
       setOpenCardId(cardId);
@@ -430,6 +528,24 @@ export function BoardSection() {
             {t("filter.searchingServer")}
           </p>
         ) : null}
+        {readModelPartial ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="read-model-partial"
+            className="mb-3 text-xs text-muted-foreground"
+          >
+            {t("board.partialRead")}{" "}
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              data-testid="read-model-retry"
+              onClick={retryReadModel}
+            >
+              {t("board.retryRead")}
+            </button>
+          </p>
+        ) : null}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <ViewSwitcher value={view} onChange={setView} />
           <div className="flex flex-wrap items-center gap-2">
@@ -452,6 +568,7 @@ export function BoardSection() {
             isFiltering={active}
             filterPending={serverPending}
             highlight={filter.query}
+            descriptionMatchIds={serverDescriptionIds}
             onCardClick={handleCardClick}
             density={density}
             readOnly={readOnly}

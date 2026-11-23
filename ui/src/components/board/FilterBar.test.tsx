@@ -90,6 +90,13 @@ describe("FilterBar", () => {
     expect(screen.getByTestId("filter-bar")).toHaveClass("flex-wrap");
   });
 
+  it("gives the filters trigger a 44px touch target on mobile", () => {
+    renderBar();
+    expect(screen.getByTestId("filter-facets-trigger")).toHaveClass(
+      "max-lg:h-11",
+    );
+  });
+
   it("keeps the search input inline and the facets behind the popover", async () => {
     renderBar();
     expect(

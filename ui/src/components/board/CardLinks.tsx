@@ -23,6 +23,7 @@ import { cardHref, shouldLeaveToBrowser } from "@/utils/card-nav";
 import { useBoardActions } from "@/store/BoardContext";
 import { splitHighlight } from "@/utils/filter";
 import {
+  boardCardIds,
   cardLinkIndex,
   LINK_TYPE_OPTIONS,
   linkRowGroups,
@@ -179,8 +180,12 @@ export function CardLinks({
   // card's row cap, so the only way to free a capped card is to show them
   // here with their remove button — TASK-46 follow-up).
   const groups = useMemo(
-    () => linkRowGroups(board.cards, facts, t("card.links.deletedCard")),
-    [board.cards, facts, t],
+    () =>
+      linkRowGroups(board.cards, facts, t("card.links.deletedCard"), {
+        knownCardIds: boardCardIds(board),
+        notLoadedTitle: t("card.links.notLoaded"),
+      }),
+    [board, facts, t],
   );
 
   // Keep the highlighted row inside the list as the query filters it —

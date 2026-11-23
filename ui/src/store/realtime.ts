@@ -396,6 +396,11 @@ export interface RealtimeHost {
   /** Advance it; never moves backwards. */
   setBaseline: (boardId: string, seq: number) => void;
   apply: (action: BoardAction) => void;
+  /**
+   * A foreign command was applied. Used to invalidate summary facts the
+   * reducer cannot recompute without the source card's rows (TASK-200.9).
+   */
+  onForeignAction?: (boardId: string, action: BoardAction) => void;
   markForeign: (boardId: string, ids: readonly string[]) => void;
   /** Apply a presence delta/sync to the active board's roster (TASK-36). */
   applyPresence: (boardId: string, event: PresenceSseEvent) => void;
@@ -556,6 +561,7 @@ export function createRealtimeBridge(host: RealtimeHost): RealtimeBridge {
       return false;
     }
     applyForeign(boardId, event);
+    host.onForeignAction?.(boardId, event.action as BoardAction);
     host.setBaseline(boardId, event.seq);
     return true;
   };

@@ -24,15 +24,24 @@ import { type BoardMember, Role } from "@prisma/client";
 import type {
   BoardAgentPolicyStateDto,
   BoardAggregate,
+  BoardCardDetailDto,
+  BoardCardDetailsDto,
+  BoardCardPageDto,
   BoardCardSearchResult,
   BoardImportPreviewDto,
   BoardMemberDto,
   BoardSummary,
   BoardsReadyDto,
   DeletedBoardItemsDto,
+  LabelAssignment,
   WorkspaceSearchResult,
 } from "@janosik/shared";
 import {
+  BOARD_CARD_DETAIL_BATCH_MAX,
+  BOARD_CARD_PAGE_LIMIT_DEFAULT,
+  BOARD_CARD_PAGE_LIMIT_MAX,
+  BOARD_READ_MODEL_HEADER,
+  BOARD_READ_MODEL_VERSION,
   READY_WORK_LIMIT_DEFAULT,
   READY_WORK_LIMIT_MAX,
   READY_WORK_WAIT_MAX_MS,
@@ -55,6 +64,9 @@ import {
   BOARD_FULL_PROJECTION,
   BOARD_READ_ROUTE,
   BoardReadService,
+  type BoardReadDeps,
+  type BoardReadRequest,
+  type BoardReadResponse,
 } from "@/common/board-read.service";
 import { CurrentMembership } from "@/common/current-membership.decorator";
 import {
@@ -72,6 +84,17 @@ import { boardStarterCommands } from "./board-starter";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
 import { ReadyService } from "./ready.service";
+import {
+  BOARD_CARD_DETAIL_ROUTE,
+  BOARD_CARDS_ROUTE,
+  BOARD_SUMMARY_ROUTE,
+  BoardReadModelService,
+  boardCardDetailProjection,
+  boardCardDetailsProjection,
+  boardPageProjection,
+  boardSummaryProjection,
+  decodeBoardPageCursor,
+} from "./board-read-model";
 import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
@@ -128,6 +151,43 @@ function intQuery(
   return parsed;
 }
 
+/** Single, non-empty string query parameter (repeated arrays are rejected). */
+function stringQuery(name: string, value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new BadRequestException(`${name} must be a non-empty string`);
+  }
+  return value;
+}
+
+/** Strict `1/0/true/false` flag; anything else is a `400`. */
+function parseBoolean(name: string, value: unknown): boolean {
+  if (value === undefined) return false;
+  if (value === "1" || value === "true") return true;
+  if (value === "0" || value === "false") return false;
+  throw new BadRequestException(`${name} must be 0, 1, false or true`);
+}
+
+/** Comma-separated card ids for the bounded preimage batch. */
+function parseIds(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new BadRequestException("ids must be a comma-separated card id list");
+  }
+  const ids = value.split(",");
+  if (ids.length > BOARD_CARD_DETAIL_BATCH_MAX) {
+    throw new BadRequestException(
+      `ids accepts at most ${BOARD_CARD_DETAIL_BATCH_MAX} card ids`,
+    );
+  }
+  for (const id of ids) {
+    if (id.length === 0 || id.length > 200) {
+      throw new BadRequestException("ids contains a malformed card id");
+    }
+  }
+  return ids;
+}
+
 /**
  * Boards + membership REST surface (§7.4).
  *
@@ -144,6 +204,7 @@ export class BoardsController {
     private readonly idempotency: IdempotencyService,
     private readonly commands: CommandsService,
     private readonly boardRead: BoardReadService,
+    private readonly readModel: BoardReadModelService,
     private readonly ready: ReadyService,
   ) {}
 
@@ -406,8 +467,249 @@ export class BoardsController {
   }
 
   /**
+   * TASK-200.9: the initial read-model view. Columns with complete id order
+   * and counts, labels, archived ids and a bounded first page per column.
+   * The body never carries a description, checklist or link row.
+   */
+  @UseGuards(MembershipGuard)
+  @Get(":id/summary")
+  async summary(
+    @Param("id") id: string,
+    @CurrentMembership() membership: BoardMember,
+    @Query("limit") limitRaw: unknown,
+    @Headers("accept-encoding") acceptEncoding: string | undefined,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const limit = intQuery("limit", limitRaw, {
+      min: 1,
+      max: BOARD_CARD_PAGE_LIMIT_MAX,
+      fallback: BOARD_CARD_PAGE_LIMIT_DEFAULT,
+    });
+    await this.sendRead(res, {
+      request: {
+        boardId: id,
+        role: membership.role,
+        projection: boardSummaryProjection(limit),
+        route: BOARD_SUMMARY_ROUTE,
+        acceptEncoding,
+        ifNoneMatch,
+      },
+      deps: {
+        stamp: (budget) => this.boards.getReadStamp(id, budget),
+        build: async (budget) => {
+          const body = await this.readModel.summary(
+            id,
+            membership.role,
+            limit,
+            budget,
+          );
+          return {
+            body,
+            seq: body.seq,
+            revision: BigInt(body.aggregateRevision),
+          };
+        },
+      },
+      projection: BOARD_READ_MODEL_VERSION,
+    });
+  }
+
+  /**
+   * TASK-200.9: bounded summary pages. `columnId` pages one column in keyset
+   * order; `archived=1` pages the board-wide archive. A batch `ids=` read is
+   * the only list route that can return full cards (`detail=full`, ≤50) — it
+   * exists for undo preimages, not for normal rendering.
+   */
+  @UseGuards(MembershipGuard)
+  @Get(":id/cards")
+  async cards(
+    @Param("id") id: string,
+    @CurrentMembership() membership: BoardMember,
+    @Query("columnId") columnIdRaw: unknown,
+    @Query("archived") archivedRaw: unknown,
+    @Query("cursor") cursorRaw: unknown,
+    @Query("limit") limitRaw: unknown,
+    @Query("ids") idsRaw: unknown,
+    @Query("detail") detailRaw: unknown,
+    @Headers("accept-encoding") acceptEncoding: string | undefined,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const archived = parseBoolean("archived", archivedRaw);
+    const cursor = stringQuery("cursor", cursorRaw);
+    const limit = intQuery("limit", limitRaw, {
+      min: 1,
+      max: BOARD_CARD_PAGE_LIMIT_MAX,
+      fallback: BOARD_CARD_PAGE_LIMIT_DEFAULT,
+    });
+    const ids = parseIds(idsRaw);
+    const detail = stringQuery("detail", detailRaw) ?? "summary";
+    if (detail !== "summary" && detail !== "full") {
+      throw new BadRequestException("detail must be summary or full");
+    }
+    if (ids !== undefined) {
+      if (columnIdRaw !== undefined || archivedRaw !== undefined) {
+        throw new BadRequestException(
+          "ids cannot be combined with columnId or archived",
+        );
+      }
+      if (detail !== "full") {
+        throw new BadRequestException("ids requires detail=full");
+      }
+      await this.sendRead(res, {
+        request: {
+          boardId: id,
+          role: membership.role,
+          projection: boardCardDetailsProjection(ids),
+          route: BOARD_CARDS_ROUTE,
+          acceptEncoding,
+          ifNoneMatch,
+          precheck: () => this.readModel.assertCardsInBoard(id, ids),
+        },
+        deps: {
+          stamp: (budget) => this.boards.getReadStamp(id, budget),
+          build: async (budget) => {
+            const body: BoardCardDetailsDto = await this.readModel.detailsByIds(
+              id,
+              ids,
+              budget,
+            );
+            return {
+              body,
+              seq: body.seq,
+              revision: BigInt(body.aggregateRevision),
+            };
+          },
+        },
+        projection: BOARD_READ_MODEL_VERSION,
+      });
+      return;
+    }
+    if (detail !== "summary") {
+      throw new BadRequestException("detail=full requires ids");
+    }
+    const columnId = stringQuery("columnId", columnIdRaw);
+    if (archived && columnId !== undefined) {
+      throw new BadRequestException(
+        "columnId and archived are mutually exclusive",
+      );
+    }
+    if (!archived && columnId === undefined) {
+      throw new BadRequestException("columnId or archived=1 is required");
+    }
+    // Validate the cursor before the conditional read: `If-None-Match` can
+    // answer 304 from the board stamp without ever building the page, and a
+    // malformed cursor must still be a 400 (TASK-200.9 recheck).
+    if (cursor !== undefined) {
+      decodeBoardPageCursor(cursor, {
+        boardId: id,
+        kind: archived ? "archived" : "column",
+        ...(columnId !== undefined ? { columnId } : {}),
+      });
+    }
+    await this.sendRead(res, {
+      request: {
+        boardId: id,
+        role: membership.role,
+        projection: boardPageProjection({
+          columnId: columnId ?? null,
+          archived,
+          cursor,
+          limit,
+        }),
+        route: BOARD_CARDS_ROUTE,
+        acceptEncoding,
+        ifNoneMatch,
+        ...(columnId !== undefined
+          ? {
+              precheck: () => this.readModel.assertColumnInBoard(id, columnId),
+            }
+          : {}),
+      },
+      deps: {
+        stamp: (budget) => this.boards.getReadStamp(id, budget),
+        build: async (budget) => {
+          const body: BoardCardPageDto = await this.readModel.page(
+            id,
+            { columnId: columnId ?? null, archived, cursor, limit },
+            budget,
+          );
+          return {
+            body,
+            seq: body.seq,
+            revision: BigInt(body.aggregateRevision),
+          };
+        },
+      },
+      projection: BOARD_READ_MODEL_VERSION,
+    });
+  }
+
+  /**
+   * Deprecated TASK-200.9 compatibility: the previous UI read the label
+   * preimage here. New servers return it in the DELETE_LABEL response; this
+   * read stays for one release so an older UI keeps full undo during a
+   * rolling deploy.
+   */
+  @UseGuards(MembershipGuard)
+  @Get(":id/labels/:labelId/assignments")
+  @Header("Cache-Control", "no-store")
+  labelAssignments(
+    @Param("id") id: string,
+    @Param("labelId") labelId: string,
+  ): Promise<LabelAssignment[]> {
+    return this.readModel.labelAssignments(id, labelId);
+  }
+
+  /** TASK-200.9: one full card (description, checklists, links). */
+  @UseGuards(MembershipGuard)
+  @Get(":id/cards/:cardId")
+  async cardDetail(
+    @Param("id") id: string,
+    @Param("cardId") cardId: string,
+    @CurrentMembership() membership: BoardMember,
+    @Headers("accept-encoding") acceptEncoding: string | undefined,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.sendRead(res, {
+      request: {
+        boardId: id,
+        role: membership.role,
+        projection: boardCardDetailProjection(cardId),
+        route: BOARD_CARD_DETAIL_ROUTE,
+        acceptEncoding,
+        ifNoneMatch,
+        precheck: () => this.readModel.assertCardInBoard(id, cardId),
+      },
+      deps: {
+        stamp: (budget) => this.boards.getReadStamp(id, budget),
+        build: async (budget) => {
+          const body: BoardCardDetailDto = await this.readModel.detail(
+            id,
+            cardId,
+            budget,
+          );
+          return {
+            body,
+            seq: body.seq,
+            revision: BigInt(body.aggregateRevision),
+          };
+        },
+      },
+      projection: BOARD_READ_MODEL_VERSION,
+    });
+  }
+
+  /**
    * Full board aggregate with the TASK-200.6 read path: conditional `304`,
    * single-flight, a bounded semaphore and negotiated gzip/Brotli.
+   *
+   * TASK-200.9 capability gate: a client that announces the read model
+   * (`X-Janosik-Read-Model: v1`) is refused here unless it explicitly asks
+   * for `?projection=full`. Old clients send no header and keep the exact
+   * legacy behaviour; admin/export/internal callers ask explicitly.
    *
    * Ordering is deliberate: `MembershipGuard` has already answered 401/404/403
    * and resolved the role before any validator is compared, so a foreign
@@ -423,8 +725,31 @@ export class BoardsController {
     @CurrentMembership() membership: BoardMember,
     @Headers("accept-encoding") acceptEncoding: string | undefined,
     @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Headers("x-janosik-read-model") readModelHeader: string | undefined,
+    @Query("projection") projectionRaw: unknown,
     @Res() res: Response,
   ): Promise<void> {
+    const projection = stringQuery("projection", projectionRaw);
+    if (
+      readModelHeader !== undefined &&
+      readModelHeader !== BOARD_READ_MODEL_VERSION &&
+      readModelHeader !== "full"
+    ) {
+      throw new BadRequestException({
+        message: "Unknown read-model capability",
+        code: "invalid_read_model",
+      });
+    }
+    if (readModelHeader === BOARD_READ_MODEL_VERSION && projection !== "full") {
+      throw new BadRequestException({
+        message:
+          "This client uses the board read model; request ?projection=full explicitly for the legacy aggregate",
+        code: "read_model_required",
+      });
+    }
+    if (projection !== undefined && projection !== "full") {
+      throw new BadRequestException("projection must be full");
+    }
     const result = await this.boardRead.read(
       {
         boardId: id,
@@ -447,6 +772,41 @@ export class BoardsController {
     res.setHeader("Vary", "Accept-Encoding");
     res.setHeader("ETag", result.etag);
     res.setHeader("X-Board-Seq", String(result.seq));
+    res.setHeader(BOARD_READ_MODEL_HEADER, "full");
+    if (result.status === 304) {
+      res.status(304).end();
+      return;
+    }
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    if (result.encoding !== "identity") {
+      res.setHeader("Content-Encoding", result.encoding);
+    }
+    res.setHeader("Content-Length", String(result.body.byteLength));
+    res.status(200).end(result.body);
+  }
+
+  /**
+   * Shared response writer for the TASK-200.9 projections: same headers as
+   * the full read, plus the capability marker. `304` keeps `X-Board-Seq` and
+   * never builds the body.
+   */
+  private async sendRead(
+    res: Response,
+    input: {
+      request: BoardReadRequest;
+      deps: BoardReadDeps;
+      projection: string;
+    },
+  ): Promise<void> {
+    const result: BoardReadResponse = await this.boardRead.read(
+      input.request,
+      input.deps,
+    );
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Accept-Encoding");
+    res.setHeader("ETag", result.etag);
+    res.setHeader("X-Board-Seq", String(result.seq));
+    res.setHeader(BOARD_READ_MODEL_HEADER, input.projection);
     if (result.status === 304) {
       res.status(304).end();
       return;

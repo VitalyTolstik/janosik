@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Card } from "@janosik/shared";
+import { cardChecklistProgress } from "@/store/read-model";
 import { priorityRank } from "@/utils/priority";
 
 /**
@@ -9,8 +10,7 @@ import { priorityRank } from "@/utils/priority";
  */
 
 export function checklistProgress(card: Card): { done: number; total: number } {
-  const items = (card.checklists ?? []).flatMap((c) => c.items);
-  return { done: items.filter((i) => i.done).length, total: items.length };
+  return cardChecklistProgress(card);
 }
 
 /** Sortable headers (TASK-14.1 item 7). */

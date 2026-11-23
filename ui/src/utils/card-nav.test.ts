@@ -24,4 +24,15 @@ describe("card-nav under a deploy base", () => {
       `${window.location.origin}/app/board/b-1?card=c-1`,
     );
   });
+
+  it("recognises a read-model archived id without a loaded card", async () => {
+    const { hasCard } = await import("./card-nav");
+    const board = {
+      cards: {},
+      archivedCardIds: ["archived-1"],
+    };
+    expect(hasCard(board, "archived-1")).toBe(true);
+    expect(hasCard(board, "constructor")).toBe(false);
+    expect(hasCard(board, "missing")).toBe(false);
+  });
 });

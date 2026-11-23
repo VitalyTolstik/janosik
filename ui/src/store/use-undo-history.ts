@@ -2,7 +2,7 @@ import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Board, BoardAction } from "@janosik/shared";
+import type { Board, BoardAction, LabelAssignment } from "@janosik/shared";
 import { invert, isColumnFull } from "@janosik/shared";
 import { BoardHistory, type RollbackOutcome } from "@/store/history";
 import type { SendFailure, SendOutcome } from "@/store/server-sync";
@@ -32,6 +32,15 @@ export interface UndoHistory {
     before: Board,
     action: BoardAction,
     options?: { foreign?: boolean },
+  ) => void;
+  /**
+   * TASK-200.9: replace a recorded DELETE_LABEL inverse's assignment list
+   * with the server's lock-consistent snapshot once the response arrives.
+   */
+  amendLabelPreimage: (
+    boardId: string,
+    commandId: string,
+    assignments: readonly LabelAssignment[],
   ) => void;
   undo: () => void;
   redo: () => void;
@@ -91,6 +100,12 @@ interface Options {
   onUncertain?: (boardId: string, commandId: string) => void;
   /** Called when undo skipped steps a foreign change had overtaken. */
   onForeignSkipped?: () => void;
+  /**
+   * TASK-200.9: an undo/redo press must wait until an in-flight
+   * `DELETE_LABEL` response has amended its inverse with the complete
+   * server snapshot. `undefined` when nothing is pending.
+   */
+  waitForPreimage?: (boardId: string) => Promise<boolean> | undefined;
 }
 
 export function useUndoHistory({
@@ -102,6 +117,7 @@ export function useUndoHistory({
   onSendFailed,
   onUncertain,
   onForeignSkipped,
+  waitForPreimage,
 }: Options): UndoHistory {
   // One undo/redo stack per board; created lazily, dropped on remove/import.
   const historiesRef = useRef(new Map<string, BoardHistory>());
@@ -169,6 +185,14 @@ export function useUndoHistory({
     async (direction: "undo" | "redo"): Promise<void> => {
       const boardId = getActiveBoardId();
       if (!boardId) return;
+      // A label delete records its step optimistically but its inverse is
+      // only complete when the command response arrives. Waiting here makes
+      // a fast Ctrl+Z safe instead of restoring the loaded subset. A failed
+      // delete resolves the gate false: the rollback already undid it, so
+      // this press must not pop an unrelated older step. Local mode has no
+      // gate and stays synchronous.
+      const gate = waitForPreimage?.(boardId);
+      if (gate !== undefined && !(await gate)) return;
       const stack = historiesRef.current.get(boardId);
       if (!stack) return;
       for (;;) {
@@ -191,6 +215,9 @@ export function useUndoHistory({
           ...(direction === "undo" ? { at: Date.now() } : {}),
           commandId: createId(),
         } as BoardAction;
+        // The stored step still carries the original idempotency key; it is
+        // the stable handle for amending the redo inverse later.
+        const stepCommandId = (action as { commandId?: string }).commandId;
         // M16: wait for the server for the two inverse kinds that can be
         // refused by WIP. No optimistic apply = no rollback flicker, and the
         // stack entry is explicitly restored on every refusal.
@@ -244,6 +271,26 @@ export function useUndoHistory({
               sync();
               return;
             }
+            // A redo of DELETE_LABEL gets a fresh command id, so its inverse
+            // is matched by position and refreshed with the snapshot the
+            // redo actually removed.
+            if (
+              direction === "redo" &&
+              applied.type === "DELETE_LABEL" &&
+              outcome.preimage !== undefined
+            ) {
+              const amended =
+                stepCommandId !== undefined &&
+                stack.amendLabelAssignments(
+                  stepCommandId,
+                  outcome.preimage.labelAssignments,
+                );
+              if (!amended) {
+                stack.amendLastLabelAssignments(
+                  outcome.preimage.labelAssignments,
+                );
+              }
+            }
           }
           break;
         }
@@ -264,6 +311,7 @@ export function useUndoHistory({
       onSendFailed,
       onUncertain,
       onForeignSkipped,
+      waitForPreimage,
     ],
   );
 
@@ -308,6 +356,19 @@ export function useUndoHistory({
       sync();
     },
     [sync],
+  );
+
+  const amendLabelPreimage = useCallback(
+    (
+      boardId: string,
+      commandId: string,
+      assignments: readonly LabelAssignment[],
+    ) => {
+      historiesRef.current
+        .get(boardId)
+        ?.amendLabelAssignments(commandId, assignments);
+    },
+    [],
   );
 
   const drop = useCallback(
@@ -365,5 +426,6 @@ export function useUndoHistory({
     sync,
     rollback,
     markForeign,
+    amendLabelPreimage,
   };
 }

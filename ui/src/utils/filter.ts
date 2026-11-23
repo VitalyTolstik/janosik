@@ -460,8 +460,9 @@ export interface CardSearchHit {
   card: Card;
   /**
    * Where the query matched, drives the UI (snippet vs title highlight).
-   * `comment` and `attachment` hits come from the server search
-   * (TASK-177.13); the rest are matched against the loaded board.
+   * `description` and `checklist` hits also come from the server when the
+   * board is read-model hydrated (TASK-200.9); `comment`/`attachment` hits
+   * do so since TASK-177.13. The rest are matched against the loaded board.
    */
   matchIn:
     "title" | "description" | "label" | "checklist" | "comment" | "attachment";
@@ -664,12 +665,14 @@ function cardSearchRank(boards: Board[]): Map<string, number> {
 }
 
 /**
- * Append server-only comment/attachment matches to the local palette hits
- * (TASK-177.13). Boards and cards must already be loaded — the palette
- * searches the loaded workspace, and a card matched in a board that is still
+ * Append server-only content matches to the local palette hits (TASK-177.13,
+ * TASK-200.9). Boards and cards must already be loaded — the palette searches
+ * the loaded workspace for titles and labels, while descriptions, checklist
+ * items, comment text and attachment names come from the server because the
+ * read model does not ship them. A card matched in a board that is still
  * hydrating is picked up when that board arrives. One row per card: a local
- * title/description/label/checklist hit wins over a server hit, and the first
- * server hit (newest comment before newest attachment) wins over later ones.
+ * title/label hit wins over a server hit, and the first server hit wins over
+ * later ones.
  */
 export function mergeWorkspaceSearchHits(
   hits: SearchHit[],

@@ -495,8 +495,9 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                       text={
                         hit.matchIn === "checklist" ||
                         hit.matchIn === "comment" ||
-                        hit.matchIn === "attachment"
-                          ? (hit.matchText ?? "")
+                        hit.matchIn === "attachment" ||
+                        hit.matchIn === "description"
+                          ? (hit.matchText ?? hit.card.description ?? "")
                           : (hit.card.description ?? "")
                       }
                       label={

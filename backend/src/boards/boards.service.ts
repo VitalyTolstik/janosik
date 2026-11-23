@@ -815,6 +815,75 @@ export class BoardsService {
       card: cardWhere,
     } satisfies Prisma.AttachmentWhereInput;
 
+    // TASK-200.9: descriptions and checklist items are no longer part of the
+    // list-facing read model, so the palette cannot match them locally any
+    // more. The detail lists stay bounded; the two cheap aggregate reads keep
+    // `total` honest when more than 200 rows match.
+    const [descriptionCards, checklistItems, descriptionTotal, checklistCards] =
+      await Promise.all([
+        this.prisma.card.findMany({
+          where: { ...cardWhere, description: contains },
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            updatedAt: true,
+            column: {
+              select: {
+                boardId: true,
+                board: { select: { title: true } },
+              },
+            },
+          },
+          orderBy: { updatedAt: "desc" },
+          take: WORKSPACE_SEARCH_LIMIT,
+        }),
+        this.prisma.checklistItem.findMany({
+          where: {
+            text: contains,
+            deletedAt: null,
+            checklist: { deletedAt: null, card: cardWhere },
+          },
+          select: {
+            text: true,
+            checklist: {
+              select: {
+                cardId: true,
+                card: {
+                  select: {
+                    title: true,
+                    updatedAt: true,
+                    column: {
+                      select: {
+                        boardId: true,
+                        board: { select: { title: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          orderBy: { checklist: { card: { updatedAt: "desc" } } },
+          take: WORKSPACE_SEARCH_LIMIT,
+        }),
+        this.prisma.card.count({
+          where: { ...cardWhere, description: contains },
+        }),
+        this.prisma.card.findMany({
+          where: {
+            ...cardWhere,
+            checklists: {
+              some: {
+                deletedAt: null,
+                items: { some: { text: contains, deletedAt: null } },
+              },
+            },
+          },
+          select: { id: true },
+        }),
+      ]);
+
     // One row per card+kind before the cap: 200 comments on one card become
     // one comment match, not 200 rows that starve every other card.
     const [commentGroups, attachmentGroups] = await Promise.all([
@@ -829,7 +898,11 @@ export class BoardsService {
         _max: { createdAt: true },
       }),
     ]);
-    const total = commentGroups.length + attachmentGroups.length;
+    const total =
+      commentGroups.length +
+      attachmentGroups.length +
+      descriptionTotal +
+      checklistCards.length;
 
     const picks = [
       ...commentGroups.map((group) => ({
@@ -919,6 +992,28 @@ export class BoardsService {
     ]);
 
     const rows = [
+      ...descriptionCards.map((card) => ({
+        at: card.updatedAt.getTime(),
+        boardId: card.column.boardId,
+        boardTitle: card.column.board.title,
+        cardId: card.id,
+        cardTitle: card.title,
+        match: {
+          matchIn: "description" as const,
+          text: searchSnippet(card.description ?? "", query),
+        },
+      })),
+      ...checklistItems.map((item) => ({
+        at: item.checklist.card.updatedAt.getTime(),
+        boardId: item.checklist.card.column.boardId,
+        boardTitle: item.checklist.card.column.board.title,
+        cardId: item.checklist.cardId,
+        cardTitle: item.checklist.card.title,
+        match: {
+          matchIn: "checklist" as const,
+          text: searchSnippet(item.text, query),
+        },
+      })),
       ...comments.map((comment) => ({
         at: comment.createdAt.getTime(),
         boardId: comment.card.column.boardId,

@@ -1117,6 +1117,63 @@ describe("Activity & comments API (e2e)", () => {
         truncated: false,
       });
 
+      // TASK-200.9: the read model hides description/checklist text, so the
+      // palette's single cross-board request also matches those fields.
+      const content = await boardWithCard("Palette content", "content");
+      await apply(
+        content.boardId,
+        scoped(content.boardId, {
+          type: "UPDATE_CARD",
+          cardId: content.cardId,
+          description: "The hero mockups are ready",
+        }),
+      );
+      await apply(
+        content.boardId,
+        scoped(content.boardId, {
+          type: "ADD_CHECKLIST",
+          cardId: content.cardId,
+          newChecklistId: "cl-content",
+          title: "DoD",
+        }),
+      );
+      await apply(
+        content.boardId,
+        scoped(content.boardId, {
+          type: "ADD_CHECKLIST_ITEM",
+          cardId: content.cardId,
+          checklistId: "cl-content",
+          newItemId: "item-content",
+          text: "run the widget migration",
+        }),
+      );
+      const byDescription = await server()
+        .get("/api/v1/boards/search?q=mockups")
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byDescription.body.matches).toContainEqual(
+        expect.objectContaining({
+          boardId: content.boardId,
+          cardId: content.cardId,
+          matchIn: "description",
+          text: expect.stringContaining("mockups"),
+        }),
+      );
+      expect(byDescription.body.total).toBeGreaterThanOrEqual(1);
+      const byChecklistText = await server()
+        .get("/api/v1/boards/search?q=widget%20migration")
+        .set(auth(memberToken))
+        .expect(200);
+      expect(byChecklistText.body.matches).toContainEqual(
+        expect.objectContaining({
+          boardId: content.boardId,
+          cardId: content.cardId,
+          matchIn: "checklist",
+          text: expect.stringContaining("widget migration"),
+        }),
+      );
+      expect(byChecklistText.body.total).toBeGreaterThanOrEqual(1);
+
       // Repeated query parameters are ambiguous, not a single string.
       await server()
         .get(`/api/v1/boards/${boardId}/search?q=a&q=b`)

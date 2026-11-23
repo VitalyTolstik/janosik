@@ -283,7 +283,7 @@ function columnAccent(column: ColumnRow): CardCover | undefined {
   return undefined;
 }
 
-function toCard(
+export function toCard(
   card: CardWithRelations,
   boardLabelIds: Set<string>,
   links?: CardLink[],

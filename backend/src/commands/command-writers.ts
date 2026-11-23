@@ -7,6 +7,7 @@ import type {
   Card,
   Checklist,
   ChecklistItem,
+  LabelAssignment,
 } from "@janosik/shared";
 import { cardOf } from "@janosik/shared";
 
@@ -1226,11 +1227,17 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       // soft-deleted cards are invisible in the aggregate anyway (the
       // label itself is soft-deleted below).
       const links = await tx.cardLabel.findMany({
-        where: { labelId: action.labelId, card: { deletedAt: null } },
+        where: {
+          labelId: action.labelId,
+          card: { deletedAt: null, column: { boardId } },
+        },
         select: { cardId: true },
       });
       await tx.cardLabel.deleteMany({
-        where: { labelId: action.labelId, card: { deletedAt: null } },
+        where: {
+          labelId: action.labelId,
+          card: { deletedAt: null, column: { boardId } },
+        },
       });
       // TASK-183.3: the delete changes card content on every affected card.
       // The reducer stamped each one; persist that exact stamp (and the
@@ -1474,7 +1481,11 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         BoardAction,
         {
           type:
-            "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD";
+            | "RESTORE_BOARD"
+            | "IMPORT_BOARDS"
+            | "ADD_BOARD"
+            | "REMOVE_BOARD"
+            | "HYDRATE_CARDS";
         }
       > = action;
       void aggregateOnly;
@@ -1695,6 +1706,37 @@ async function ensureOrphanColumn(
     update: { deletedAt },
   });
   return id;
+}
+
+/**
+ * TASK-200.9: the complete assignment snapshot a `DELETE_LABEL` is about to
+ * remove. It must be read inside the board-write transaction (the advisory
+ * lock is already held) and before the writer runs: a separate client-side
+ * preimage read races a concurrent add/remove and would restore a stale set.
+ * The predicate mirrors `DELETE_LABEL`'s delete exactly — live cards only.
+ */
+export async function readLabelAssignments(
+  tx: Tx,
+  boardId: string,
+  labelId: string,
+): Promise<LabelAssignment[]> {
+  const rows = await tx.cardLabel.findMany({
+    where: {
+      labelId,
+      card: { deletedAt: null, column: { boardId } },
+    },
+    orderBy: [{ position: "asc" }, { cardId: "asc" }],
+    select: {
+      cardId: true,
+      position: true,
+      card: { select: { updatedAt: true } },
+    },
+  });
+  return rows.map((row) => ({
+    cardId: row.cardId,
+    index: row.position,
+    updatedAt: row.card.updatedAt.getTime(),
+  }));
 }
 
 /** Persist a command's result, bumping the board once. */

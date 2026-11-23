@@ -1,5 +1,5 @@
 import { Ban, Link2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { PriorityBadge } from "@/components/board/PriorityBadge";
@@ -16,15 +16,22 @@ import {
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { useBoardState } from "@/store/BoardContext";
+import { useBoardActions, useBoardState } from "@/store/BoardContext";
 import { useBoardMember } from "@/store/board-live";
 import { cardHref, shouldLeaveToBrowser } from "@/utils/card-nav";
-import { linkRowGroups, type CardLinkFacts, type LinkRow } from "@/utils/links";
+import {
+  boardCardIds,
+  linkRowGroups,
+  type CardLinkFacts,
+  type LinkRow,
+} from "@/utils/links";
 import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 
 interface LinkedCardsPopoverProps {
   /** Resolves the assignee's avatar through the member directory. */
   boardId?: string;
+  /** The host card; its detail loads the missing row set on open. */
+  cardId: string;
   /** Full facts from the WeakMap-cached link index (stable identity). */
   facts: CardLinkFacts;
 }
@@ -43,6 +50,7 @@ interface LinkedCardsPopoverProps {
  */
 export function LinkedCardsPopover({
   boardId,
+  cardId,
   facts,
 }: LinkedCardsPopoverProps) {
   const [open, setOpen] = useState(false);
@@ -54,6 +62,8 @@ export function LinkedCardsPopover({
       {facts.degree > 0 ? <CountBadgeTrigger degree={facts.degree} /> : null}
       <LinkedCardsContent
         boardId={boardId}
+        cardId={cardId}
+        open={open}
         facts={facts}
         close={() => setOpen(false)}
       />
@@ -126,16 +136,30 @@ function CountBadgeTrigger({ degree }: { degree: number }) {
  */
 function LinkedCardsContent({
   boardId,
+  cardId,
+  open,
   facts,
   close,
 }: {
   boardId?: string;
+  cardId: string;
+  open: boolean;
   facts: CardLinkFacts;
   close: () => void;
 }) {
   const { t } = useI18n();
   const { board } = useBoardState();
+  const { loadCardDetail } = useBoardActions();
   const [searchParams, setSearchParams] = useSearchParams();
+  const reverseStale =
+    board?.cards[cardId]?.readModel?.reverseLinksStale === true;
+  // A summary card only carries its link counter. Open the popover with the
+  // card detail so both directions have real rows; a stale reverse set is
+  // refetched here too (facts changed without a card stamp).
+  useEffect(() => {
+    if (!open || boardId === undefined) return;
+    void loadCardDetail(boardId, cardId).catch(() => undefined);
+  }, [open, boardId, cardId, reverseStale, loadCardDetail]);
   if (!board) return null;
 
   // A linked card's "status" (Jira shows the status in the same spot) is
@@ -144,7 +168,15 @@ function LinkedCardsContent({
   for (const column of board.columns) {
     for (const id of column.cardIds) columnTitles.set(id, column.title);
   }
-  const groups = linkRowGroups(board.cards, facts, t("card.links.deletedCard"));
+  const groups = linkRowGroups(
+    board.cards,
+    facts,
+    t("card.links.deletedCard"),
+    {
+      knownCardIds: boardCardIds(board),
+      notLoadedTitle: t("card.links.notLoaded"),
+    },
+  );
 
   const openCard = (targetCardId: string) => {
     const next = copySearchParamsWithoutLanguageHandoff(searchParams);
@@ -169,6 +201,14 @@ function LinkedCardsContent({
         {t("card.links.title")}
       </p>
       <div className="max-h-64 space-y-1.5 overflow-y-auto">
+        {groups.length === 0 && facts.degree > 0 ? (
+          <p
+            className="px-1 py-1.5 text-xs text-muted-foreground"
+            data-testid="card-links-popover-loading"
+          >
+            {t("card.loading")}
+          </p>
+        ) : null}
         {groups.map((group) => (
           <div key={group.key}>
             <p className="px-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">

@@ -1,4 +1,4 @@
-import type { Board, BoardAction } from "@janosik/shared";
+import type { Board, BoardAction, LabelAssignment } from "@janosik/shared";
 import { invert } from "@janosik/shared";
 
 /**
@@ -151,6 +151,16 @@ export class BoardHistory {
         action.type === "TOUCH_CARD"
           ? ({ ...previous.do, at: action.at } as BoardAction)
           : ({ ...previous.do, ...action } as BoardAction);
+      // The inverse of the coalesced run must cover every field either
+      // command touched. Since TASK-200.9 an UPDATE_CARD inverse only
+      // carries the fields its own command changed, so keep the oldest
+      // inverse's fields and fill the gaps from the newer one.
+      if (action.type !== "TOUCH_CARD") {
+        previous.undo = {
+          ...undoAction,
+          ...previous.undo,
+        } as BoardAction;
+      }
     } else if (action.type === "TOUCH_CARD") {
       // A touch with nothing to coalesce into is not a step: it would cost
       // an undo press that only moves a timestamp, and the debounced stamp
@@ -166,6 +176,43 @@ export class BoardHistory {
     // The user's own new step invalidates the redo stack.
     this.future = [];
     this.lastAction = action;
+    return true;
+  }
+
+  /**
+   * TASK-200.9: replace a recorded DELETE_LABEL step's inverse assignment
+   * list with the server's lock-consistent snapshot. The optimistic inverse
+   * only knows the loaded cards; the command response knows every row the
+   * delete removed. Amending the stored inverse keeps the stack order intact
+   * when the response arrives after later commands were already recorded.
+   */
+  amendLabelAssignments(
+    commandId: string,
+    assignments: readonly LabelAssignment[],
+  ): boolean {
+    const entry = [...this.past, ...this.future].find(
+      (candidate) =>
+        (candidate.do as { commandId?: unknown }).commandId === commandId,
+    );
+    if (entry === undefined || entry.undo.type !== "RESTORE_LABEL") {
+      return false;
+    }
+    entry.undo = { ...entry.undo, assignments: [...assignments] };
+    return true;
+  }
+
+  /**
+   * TASK-200.9: a redo re-sends DELETE_LABEL with a fresh command id, so the
+   * response snapshot is matched by position instead: the step was just
+   * moved back onto the past stack and its inverse must restore the rows the
+   * redo actually removed.
+   */
+  amendLastLabelAssignments(assignments: readonly LabelAssignment[]): boolean {
+    const entry = this.past[this.past.length - 1];
+    if (entry === undefined || entry.undo.type !== "RESTORE_LABEL") {
+      return false;
+    }
+    entry.undo = { ...entry.undo, assignments: [...assignments] };
     return true;
   }
 

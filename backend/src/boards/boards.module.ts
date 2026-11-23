@@ -12,6 +12,7 @@ import {
 import { MembershipGuard } from "@/common/membership.guard";
 import { env } from "@/config/env";
 import { RealtimeModule } from "@/realtime/realtime.module";
+import { BoardReadModelService } from "./board-read-model";
 import { BoardsController } from "./boards.controller";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
@@ -30,6 +31,7 @@ import { ReadyPollAdmission, ReadyService } from "./ready.service";
   controllers: [BoardsController],
   providers: [
     BoardsService,
+    BoardReadModelService,
     DeletedItemsService,
     ReadyService,
     {
