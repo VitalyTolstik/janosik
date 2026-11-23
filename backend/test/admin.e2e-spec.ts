@@ -759,7 +759,7 @@ describe("Admin API (e2e)", () => {
       expect(typeof update.body.seq).toBe("number");
 
       // Board-facing attribution is still the owner; the master is in audit.
-      const stored = await prisma.command.findUniqueOrThrow({
+      const stored = await prisma.command.findFirstOrThrow({
         where: { id: commandId },
       });
       expect(stored.actorId).toBe(fixture.ownerId);
@@ -1050,7 +1050,7 @@ describe("Admin API (e2e)", () => {
         .set("Authorization", `Bearer ${fixture.ownerToken}`)
         .send({ commandId, action })
         .expect(200);
-      const before = await prisma.command.findUniqueOrThrow({
+      const before = await prisma.command.findFirstOrThrow({
         where: { id: commandId },
       });
       expect(before.actorId).toBe(fixture.ownerId);
@@ -1063,7 +1063,7 @@ describe("Admin API (e2e)", () => {
         .send({ commandId, action })
         .expect(201);
       expect(replay.body.seq).toBe(user.body.seq);
-      const after = await prisma.command.findUniqueOrThrow({
+      const after = await prisma.command.findFirstOrThrow({
         where: { id: commandId },
       });
       expect(after.seq).toBe(before.seq);
@@ -1423,7 +1423,7 @@ describe("Admin API (e2e)", () => {
           actorEmail: fixture.ownerEmail,
           type: item.type,
         });
-        const command = await prisma.command.findUniqueOrThrow({
+        const command = await prisma.command.findFirstOrThrow({
           where: { id: item.id },
         });
         // Board-facing attribution stays the owner; the master is in audit.
@@ -1962,7 +1962,7 @@ describe("Admin API (e2e)", () => {
           actorEmail: fixture.ownerEmail,
           type: entry.type,
         });
-        const command = await prisma.command.findUniqueOrThrow({
+        const command = await prisma.command.findFirstOrThrow({
           where: { id: entry.id },
         });
         expect(command.actorId).toBe(fixture.ownerId);
@@ -1981,7 +1981,7 @@ describe("Admin API (e2e)", () => {
         .set("Authorization", `Bearer ${adminToken}`)
         .send({ commandId: replay.id, action: replay.action })
         .expect(201);
-      const storedReplay = await prisma.command.findUniqueOrThrow({
+      const storedReplay = await prisma.command.findFirstOrThrow({
         where: { id: replay.id },
       });
       expect(replayResult.body.seq).toBe(Number(storedReplay.seq));

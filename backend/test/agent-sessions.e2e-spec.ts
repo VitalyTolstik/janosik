@@ -880,7 +880,7 @@ describe("Agent sessions and attribution (e2e)", () => {
         action: { boardId, at: Date.now(), type: "TOUCH_CARD", cardId },
       })
       .expect(200);
-    const row = await prisma.command.findUnique({ where: { id: commandId } });
+    const row = await prisma.command.findFirst({ where: { id: commandId } });
     expect(row).toMatchObject({
       apiTokenId: tokenAId,
       agentSessionId: null,

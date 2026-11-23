@@ -475,12 +475,12 @@ describe("Board events SSE (e2e)", () => {
 
     // Simulate a row written before ingress stamping: the action was stored
     // exactly as sent, without `boardId`.
-    const stored = await prisma.command.findUniqueOrThrow({
+    const stored = await prisma.command.findFirstOrThrow({
       where: { id: commandId },
     });
     const payload = { ...(stored.payload as Record<string, unknown>) };
     delete payload.boardId;
-    await prisma.command.update({
+    await prisma.command.updateMany({
       where: { id: commandId },
       data: { payload: payload as Prisma.InputJsonValue },
     });

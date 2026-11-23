@@ -1395,6 +1395,10 @@ export class CommandsService {
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;
+    // TASK-200.11: pin the partition key before the insert so the post-insert
+    // update can address the composite key, and a side row can share the
+    // exact same `createdAt` (details migration).
+    const createdAt = new Date();
 
     const created = await tx.command.create({
       data: {
@@ -1409,10 +1413,11 @@ export class CommandsService {
         type: action.type,
         payload: jsonSafe(action),
         result: {},
+        touches: [],
         ...(details !== null
           ? { details: jsonSafe(details) as Prisma.InputJsonValue }
           : {}),
-        touches: [],
+        createdAt,
       },
     });
     const seq = Number(created.seq);
@@ -1437,8 +1442,8 @@ export class CommandsService {
       ...(attribution.runId !== null ? { runId: attribution.runId } : {}),
     };
 
-    await tx.command.update({
-      where: { id: created.id },
+    await tx.command.updateMany({
+      where: { id: created.id, createdAt },
       data: {
         payload: jsonSafe(action),
         result: jsonSafe(response),

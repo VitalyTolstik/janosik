@@ -21,6 +21,12 @@ import {
   markHistoryIncomplete,
   verifyCommentHistory,
 } from "@/comments/comment-history";
+import {
+  COMMAND_LOG_TABLES,
+  isWholeMonthExpired,
+  parseCommandPartitionMonth,
+  partitionMonthsToEnsure,
+} from "@/commands/command-log-partitions";
 
 /**
  * TASK-68 — regular housekeeping. Everything that used to accumulate
@@ -43,6 +49,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-claims",
   "sweep-exports",
   "sweep-commands",
+  "ensure-command-partitions",
   "sweep-runs",
   "sweep-agent-sessions",
   "sweep-approvals",
@@ -85,6 +92,11 @@ const PURGE_MAX_CHUNKS = 200;
  */
 export const PURGE_BOARD_TX_TIMEOUT_MS = 5 * 60_000;
 export const PURGE_BOARD_TX_MAX_WAIT_MS = 10_000;
+
+/** `YYYY-MM-01` for a UTC month boundary; safe to cast to `date`. */
+function monthSql(month: Date): string {
+  return `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
 
 @Injectable()
 export class MaintenanceService {
@@ -135,6 +147,8 @@ export class MaintenanceService {
         return this.sweepClaims();
       case "sweep-exports":
         return this.sweepExports();
+      case "ensure-command-partitions":
+        return this.ensureCommandPartitions();
       case "sweep-commands":
         return this.sweepCommands();
       case "sweep-runs":
@@ -924,20 +938,66 @@ export class MaintenanceService {
   }
 
   /**
-   * Trims the command log to the retention window (TASK-84, ADR §6.14). The
-   * `Command` table is the board's replay log and grows forever otherwise; a
-   * client whose `seq` baseline falls outside the window simply re-reads the
-   * board envelope on its next connection. Pre-images go first: they have no
-   * value once their command is gone, and deleting them in the same pass
-   * keeps the ordering preimages → commands. Window =
-   * `OpsSettings.retentionDays` (same knob as the soft-delete purge), default
-   * 30 days.
+   * TASK-200.11: keep the previous, current and next three months' partitions
+   * present before a write arrives. The SQL helper creates the matching
+   * partition of `Command`, `CommandDetail` and `CommandPreimage`; creating a
+   * partition also creates every parent index on it. Idempotent, so a repeated
+   * or overlapping scheduler run costs catalog lookups only.
+   *
+   * A month whose rows already sit in the default partition cannot be added
+   * without moving those rows first; the helper raises and this job reports
+   * the failure instead of silently leaving the default to grow.
+   */
+  async ensureCommandPartitions(): Promise<{
+    removed: number;
+    detail: string;
+  }> {
+    const created: string[] = [];
+    for (const month of partitionMonthsToEnsure(new Date())) {
+      const rows = await this.prisma.$queryRaw<
+        Array<{ created: string | null }>
+      >(
+        Prisma.sql`SELECT janosik_ensure_command_partition(${monthSql(month)}::date) AS created`,
+      );
+      const value = rows[0]?.created;
+      if (typeof value === "string" && value !== "") created.push(value);
+    }
+    return {
+      removed: created.length,
+      detail:
+        created.length === 0
+          ? "partitions up to date"
+          : `created ${created.join(", ")}`,
+    };
+  }
+
+  /**
+   * Trims the command log to the retention window (TASK-84, ADR §6.14;
+   * TASK-200.11 partitions).
+   *
+   * Two complementary mechanisms:
+   * - Whole monthly partitions strictly older than the cutoff are dropped.
+   *   That is metadata work, not a row-by-row delete, so the 30-day window
+   *   does not leave a bloated heap that autovacuum must chase forever. The
+   *   database helper drops the side table and pre-images of the same month
+   *   first and leaves the default partition alone.
+   * - Rows from the partially expired current month and anything parked in
+   *   the default partition are deleted in bounded chunks. The pre-images go
+   *   first; the side row goes with its command through the delete trigger.
+   *
+   * Window = `OpsSettings.retentionDays` (same knob as the soft-delete purge),
+   * default 30 days. Agent and human commands share the window: a shorter
+   * agent window would strand `AgentRun` rollback after its pre-images were
+   * dropped. Operators who accept that trade-off lower the global knob.
    */
   async sweepCommands(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
+    let removed = await this.dropExpiredCommandPartitions(cutoff);
+
+    // Rows left in the active month and in the default partition.
     const stale = { createdAt: { lt: cutoff } };
-    let removed = await this.purgeChunks(
+    removed += await this.purgeChunks(
       (take) =>
         this.prisma.commandPreimage.findMany({
           where: stale,
@@ -965,6 +1025,45 @@ export class MaintenanceService {
           })
         ).count,
     );
+    return removed;
+  }
+
+  /**
+   * Drop every monthly command-log partition whose whole range is older than
+   * `cutoff`. The caller has already resolved the retention window; this
+   * helper is separate so a test (and an operator) can exercise the partition
+   * path without running the row chunks.
+   */
+  async dropExpiredCommandPartitions(cutoff: Date): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ name: string }>>(
+      Prisma.sql`
+        SELECT child.relname AS name
+          FROM pg_inherits
+          JOIN pg_class parent ON parent.oid = pg_inherits.inhparent
+          JOIN pg_class child ON child.oid = pg_inherits.inhrelid
+          JOIN pg_namespace ns ON ns.oid = parent.relnamespace
+         WHERE ns.nspname = current_schema()
+           AND parent.relname IN (${Prisma.join([...COMMAND_LOG_TABLES])})
+         ORDER BY child.relname
+      `,
+    );
+    const months = new Map<string, Date>();
+    for (const row of rows) {
+      for (const table of COMMAND_LOG_TABLES) {
+        const month = parseCommandPartitionMonth(table, row.name);
+        if (month === null) continue;
+        months.set(month.toISOString(), month);
+        break;
+      }
+    }
+    let removed = 0;
+    for (const month of months.values()) {
+      if (!isWholeMonthExpired(month, cutoff)) continue;
+      const dropped = await this.prisma.$queryRaw<Array<{ removed: bigint }>>(
+        Prisma.sql`SELECT janosik_drop_command_partition(${monthSql(month)}::date) AS removed`,
+      );
+      removed += Number(dropped[0]?.removed ?? 0n);
+    }
     return removed;
   }
 
