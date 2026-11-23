@@ -266,42 +266,60 @@ workflow, create, смена workflow планом) добавляют один 
 
 **Реализовано (TASK-200.6):**
 - `GET /boards/:id` отвечает через `BoardReadService`
-  (`backend/src/common/board-read.service.ts`): сначала дешёвая метка
-  `seq + Board.updatedAt` (`BoardsService.getReadStamp`), затем
+  (`backend/src/common/board-read.service.ts`): одна дешёвая SQL-метка
+  `aggregateRevision + MAX(Command.seq)` (`BoardsService.getReadStamp`), затем
   `If-None-Match` → `304` **до** загрузки aggregate. Слабый `ETag` строится из
-  board id + `seq` + `updatedAt` + route + role + projection; `updatedAt`
-  закрывает изменения метаданных доски без движения `seq` (agent policy,
-  pause, admin restore). `304` сохраняет `X-Board-Seq`, чтобы клиент сдвинул
-  базу SSE. `Cache-Control: private, no-store`; `Vary: Accept-Encoding`
-  ставится и на 200, и на 304. Это валидатор **именно полного aggregate**:
-  комментарии/вложения в него не входят, а все не-командные изменения строки
-  `Board` двигают `updatedAt`. Будущая summary-проекция с комментариями или
-  счётчиками потребует отдельного `aggregateRevision` (200.10); `seq` сам по
-  себе не станет её content revision.
+  board id + `Board.aggregateRevision` + route + role + projection.
+  `aggregateRevision` — новая BIGINT-колонка (миграция
+  `20261123100000_task_200_6_board_aggregate_revision`, backfill из текущего
+  `MAX(seq)`), монотонная: `Board` BEFORE UPDATE trigger поднимает её на любую
+  правку доски, statement-level `Card` INSERT/UPDATE/DELETE триггеры — на
+  комментарии, вложения, claim-expiry, admin/account-deletion правки. Стоимость
+  — один UPDATE строки `Board` на затронутую statement-группу, не на карточку;
+  bulk-перестановка 5 000 карточек остаётся одним bump. `X-Board-Seq` остаётся
+  отдельным SSE-значением и может уменьшиться после sweep команд, не меняя
+  ETag. `304` берёт seq из той же одно-запросной метки, чтобы клиент не
+  перепрыгнул команду, отсутствующую в кешированном теле.
+- `Cache-Control: private, no-store`; `Vary: Accept-Encoding` ставится и на
+  200, и на 304. UI/MCP пока не шлют `If-None-Match`, поэтому ETag — для явных
+  условных клиентов; `no-store` сознательно запрещает браузерную ревалидацию
+  (иначе ответ мог бы переехать между пользователями одного профиля).
 - Сжатие — только этот буферизованный JSON: gzip/Brotli через async `zlib`
-  (Brotli q4 предпочтителен при равном q; q=0/`identity` соблюдаются), порог
-  1 КБ, откат в identity, если сжатие не уменьшило тело. SSE, multipart,
-  media и `no-transform` helper не трогает; глобального compression
-  middleware нет, поэтому uploads/ошибки/потоки остаются как были.
+  (Brotli q4 предпочтителен при равном q; явный `identity;q` выше кодировок
+  выбирает identity, `q=0` исключает кодировку), порог 1 КБ, откат в identity,
+  если сжатие не уменьшило тело. SSE, multipart, media и `no-transform`
+  helper не трогает; глобального compression middleware нет, поэтому
+  uploads/ошибки/потоки остаются как были.
 - Singleflight (`backend/src/common/single-flight.ts`) объединяет одинаковые
   конкурентные чтения в одну сборку **вместе с сериализацией и сжатием**
   (ключ: board + role + projection + coding; ничего пользовательского), так
-  что всплеск делит и буферы. Запись живёт только до settle: ошибка/таймаут
-  не отравляют ключ, следующий запрос снова читает БД — CAS-retry не получает
-  pre-write snapshot.
+  что всплеск делит и буферы. Точка линеаризации — снимок БД лидера, а не
+  момент присоединения: joiner после записи может получить pre-write snapshot;
+  это не read-your-writes, и клиенту с таким требованием нужен ещё один
+  проход. Запись живёт только до settle: ошибка/таймаут не отравляют ключ,
+  следующий запрос снова читает БД — CAS-retry не получает вечный snapshot.
 - Семафор (`backend/src/common/read-semaphore.ts`) ограничивает полные
-  сборки: `BOARD_READ_MAX_CONCURRENT=16`, `BOARD_READ_QUEUE_MAX=256`,
-  `BOARD_READ_WAIT_MS=10000`, `BOARD_READ_TIMEOUT_MS=20000`. Переполнение
-  очереди/ожидания и общий таймаут отвечают `503 board_read_busy`/
-  `board_read_timeout` + `Retry-After`; `onModuleDestroy` отклоняет очередь и
-  ждёт активные чтения (bounded). Порядок «auth → membership → role/pause →
-  ETag» задаёт `MembershipGuard`; чужой не получает 304.
+  сборки **на процесс**: `BOARD_READ_CAP=16`, `BOARD_READ_QUEUE_MAX=256`,
+  `BOARD_READ_WAIT_MS=10000`, `BOARD_READ_TIMEOUT_MS=20000` (обязан быть больше
+  wait), `BOARD_READ_RETRY_AFTER_SECONDS=2`. Переполнение очереди/ожидания и
+  общий таймаут отвечают `503 board_read_busy`/`board_read_timeout` +
+  `Retry-After`; коды добавлены в `API_ERROR_CODES`, OpenAPI enum и
+  `RETRYABLE_CODES`. Таймаут ограничивает **ответ**, а не транзакцию Prisma:
+  отменяемого запроса нет, брошенная сборка завершится по своему transaction
+  timeout и освободит слот. `onModuleDestroy` отклоняет очередь и ждёт активные
+  чтения (bounded). Порядок «auth → membership → role/pause → ETag» задаёт
+  `MembershipGuard`; чужой не получает 304.
 - Метрики процесса — `BoardReadService.metrics` (fullReads, coalesced,
   notModified, compressed, identity, rejected, timeouts, inFlight,
-  active/waiting). Отдельного Prometheus-экспорта в проекте нет.
-- Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation,
-  ETag, сервис) и `backend/test/board-read.e2e-spec.ts` (gzip/br + Vary,
-  tiny/304, role/tenant, CAS rename, non-seq policy, 12→1 через spy на
+  active/waiting); Prometheus-экспорта в проекте нет. Request-log/traffic
+  классифицируют `board_read_*` 503 как backpressure (`rateLimited.read`), не
+  как 5xx, через маркер ответа из exception filter.
+- Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation с
+  identity/q=0 и fallback, ETag, сервис, timeout/503, backpressure) и
+  `backend/test/board-read.e2e-spec.ts` (gzip/br + Content-Length + Vary,
+  tiny/304 + Cache-Control, role/tenant/role-change, CAS rename, non-seq
+  policy, attachment add/delete, comment, sweep claim-expiry, direct admin
+  edit, command-log sweep, trigger bump-семантика, 12→1 через spy на
   `$transaction`, 503+Retry-After). `openapi:check`/`openapi:test` зелёные.
 - **Честно про DoD:** механизм и тесты поставлены, но −70…80% байт и
   RSS <2 ГБ на 500×1 000 карточек **не измерялись** в этой задаче — для них

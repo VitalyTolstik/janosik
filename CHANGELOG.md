@@ -11,26 +11,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TASK-200.6 compressed, conditionally revalidated and bounded board reads.
   `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least
   1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the
-  threshold), always sends `Vary: Accept-Encoding`, skips streaming/SSE and
-  never re-encodes a `no-transform` response. A weak `ETag` is derived from
-  board id + `seq` + `updatedAt` + route + role + projection; a matching
-  `If-None-Match` answers `304` with no body before any aggregate load while
-  still carrying `X-Board-Seq`. `Cache-Control: private, no-store` keeps board
-  JSON out of browser/shared caches. Identical concurrent full reads coalesce
-  into one build (per board/role/projection/coding), and a counting semaphore
-  caps concurrent builds (`BOARD_READ_MAX_CONCURRENT`, default 16) with a
-  bounded waiting room (`BOARD_READ_QUEUE_MAX`, default 256,
-  `BOARD_READ_WAIT_MS`, default 10 s) and a total bound
-  (`BOARD_READ_TIMEOUT_MS`, default 20 s). Excess or timed-out readers receive
-  `503 board_read_busy`/`board_read_timeout` with `Retry-After`; queued reads
-  are rejected on shutdown. Single-flight entries are never retained after
-  settlement, so CAS writes and retries always see the database. No auth,
-  membership, flag, SSE or TTL-cache behaviour changed. The gzip/Brotli byte
-  reduction (target 70–80%) and the 500-read/1 000-card RSS target (<2 GB) are
-  to be measured on a dedicated host; this change ships the mechanism and
-  focused tests, not a claim that those numbers were observed. OpenAPI,
-  self-hosting env docs (EN/RU), the TASK-200 design doc, `.env.example` and
-  the nginx note are updated.
+  threshold, explicit `identity;q` honoured), always sends `Vary:
+  Accept-Encoding`, skips streaming/SSE and never re-encodes a `no-transform`
+  response. A migration adds `Board.aggregateRevision` (bigint, backfilled from
+  the current command max) with a `Board` BEFORE UPDATE trigger and
+  statement-level `Card` INSERT/UPDATE/DELETE triggers: every command already
+  updates Board, while comments, attachments, claim expiry, admin edits and
+  account deletion update Card directly, and command sweeps can move `seq`
+  backwards. The weak `ETag` is derived from board id + `aggregateRevision` +
+  route + role + projection; a matching `If-None-Match` answers `304` with no
+  body before any aggregate load while still carrying the separate
+  `X-Board-Seq`. Trigger cost is one extra Board row update per affected
+  statement, not per card. `Cache-Control: private, no-store` keeps board JSON
+  out of browser/shared caches; the ETag is for explicit conditional clients
+  (the UI does not send it yet). Identical concurrent full reads coalesce into
+  one build (per board/role/projection/coding) whose linearization point is the
+  leader's database snapshot, so coalescing is not read-your-writes. A
+  per-process counting semaphore caps builds (`BOARD_READ_CAP`, default 16)
+  with a bounded waiting room (`BOARD_READ_QUEUE_MAX`, default 256,
+  `BOARD_READ_WAIT_MS`, default 10 s) and a total response bound
+  (`BOARD_READ_TIMEOUT_MS`, default 20 s, must exceed the wait; it does not
+  cancel the underlying Prisma query). Excess or timed-out readers receive
+  `503 board_read_busy`/`board_read_timeout` with `Retry-After`; the codes are
+  in the shared catalog and are contract-retryable. Queued reads are rejected
+  on shutdown. Single-flight entries are never retained after settlement, so
+  CAS writes and retries always see the database. Board-read 503s are
+  classified as read backpressure in the request log/traffic (`rateLimited.read`)
+  and are not counted as server errors. No auth, membership, flag, SSE or
+  TTL-cache behaviour changed. The gzip/Brotli byte reduction (target 70–80%)
+  and the 500-read/1 000-card RSS target (<2 GB) are to be measured on a
+  dedicated host; this change ships the mechanism and focused tests, not a
+  claim that those numbers were observed. OpenAPI, self-hosting env docs
+  (EN/RU), the TASK-200 design doc, root/backend `.env.example`,
+  `docker-compose.yml` and the nginx note are updated.
 
 - TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
   bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
