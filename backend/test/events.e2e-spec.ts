@@ -579,13 +579,14 @@ describe("Board events SSE (e2e)", () => {
 
   it("keeps an idle quiet stream alive through the shared writer", async () => {
     const previous = sseTiming.keepAliveMs;
-    sseTiming.keepAliveMs = 100;
-    const response = await openQuietStream(
-      ownerToken,
-      await boardSeq(ownerToken),
-    );
-    const reader = openRawReader(response);
+    let reader: ReturnType<typeof openRawReader> | undefined;
     try {
+      sseTiming.keepAliveMs = 100;
+      const response = await openQuietStream(
+        ownerToken,
+        await boardSeq(ownerToken),
+      );
+      reader = openRawReader(response);
       const block = await reader.next((frame) =>
         frame.includes('"type":"keepalive"'),
       );
@@ -593,7 +594,7 @@ describe("Board events SSE (e2e)", () => {
       expect(block).toContain('"type":"keepalive"');
     } finally {
       sseTiming.keepAliveMs = previous;
-      await reader.close();
+      await reader?.close();
     }
   }, 20_000);
 

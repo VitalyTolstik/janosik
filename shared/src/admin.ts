@@ -1784,7 +1784,12 @@ export interface AdminObservabilityDto {
   jobs: {
     transcode: { pending: number; done: number; failed: number };
     demo: { running: boolean; boardId: string | null };
-    realtime: { boards: number; clients: number };
+    realtime: {
+      boards: number;
+      clients: number;
+      /** TASK-200.13: slow SSE readers dropped instead of buffered. */
+      slowDrops: number;
+    };
     /** TASK-66…73: per-queue BullMQ counters (backend = redis | memory). */
     queues: Array<{
       name: string;

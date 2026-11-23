@@ -1,4 +1,4 @@
-import { Logger, type MessageEvent } from "@nestjs/common";
+import { ConflictException, Logger, type MessageEvent } from "@nestjs/common";
 import { EventEmitter } from "node:events";
 import type { Response } from "express";
 import { Observable } from "rxjs";
@@ -94,6 +94,49 @@ describe("EventsController shutdown (TASK-200.5)", () => {
   });
 });
 
+describe("EventsController setup errors (TASK-200.13)", () => {
+  it("throws a synchronous setup error before any SSE headers are sent", () => {
+    const response = new SlowResponse();
+    const release = jest.fn();
+    const controller = new EventsController(
+      {} as never,
+      { noteSlowSubscriber: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new SseFrameStore(),
+    );
+    (
+      controller as unknown as { stream: () => Observable<MessageEvent> }
+    ).stream = () =>
+      new Observable<MessageEvent>((subscriber) => {
+        // e.g. the client id was claimed between the pre-check and `join`.
+        subscriber.error(new ConflictException("client_id_taken"));
+      });
+
+    expect(() =>
+      (
+        controller as unknown as {
+          serve: (
+            boardId: string,
+            since: number,
+            clientId: string,
+            presence: boolean,
+            release: () => void,
+            res: Response,
+          ) => void;
+        }
+      ).serve("board-1", 0, "client-1", true, release, response.asResponse()),
+    ).toThrow(ConflictException);
+
+    // The UI can still act on the 409: no 200 stream started.
+    expect(response.flushHeaders).not.toHaveBeenCalled();
+    expect(response.writes).toHaveLength(0);
+    expect(response.destroyed).toBe(false);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("EventsController slow subscribers (TASK-200.13)", () => {
   it("drops a blocked stream and records the realtime metric", () => {
     const response = new SlowResponse();
@@ -120,8 +163,11 @@ describe("EventsController slow subscribers (TASK-200.13)", () => {
       controller as unknown as { stream: () => Observable<MessageEvent> }
     ).stream = () =>
       new Observable<MessageEvent>((subscriber) => {
-        subscriber.next({ data: big } as MessageEvent);
-        subscriber.next({ data: { ...big, seq: 2 } } as MessageEvent);
+        // Four 200 KB frames: the first is accepted by the socket, the next
+        // three queue past the 4x emergency cap.
+        for (let seq = 1; seq <= 4; seq += 1) {
+          subscriber.next({ data: { ...big, seq } } as MessageEvent);
+        }
         // Deliberately no complete(): the slow close happens while subscribe
         // is still running, before `serve` owns a Subscription.
         return teardown;
@@ -179,7 +225,7 @@ class SlowResponse extends EventEmitter {
     return this;
   }
 
-  flushHeaders(): void {}
+  readonly flushHeaders = jest.fn();
 
   end(): void {
     this.writableEnded = true;

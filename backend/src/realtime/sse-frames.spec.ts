@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { Response } from "express";
-import { SseConnection, SseFrameStore } from "./sse-frames";
+import { SSE_BURST_GRACE_MS, SseConnection, SseFrameStore } from "./sse-frames";
 
 /** Minimal Express response the writer can drive without a socket. */
 class FakeResponse extends EventEmitter {
@@ -261,35 +261,67 @@ describe("SseConnection backpressure (TASK-200.13)", () => {
     expect(response.writes.slice(1)).toEqual(bytes);
   });
 
-  it("drops a subscriber past the byte bound instead of buffering forever", () => {
+  it("lets a synchronous burst exceed the soft bound and drain without a drop", () => {
+    const store = new SseFrameStore();
+    const response = new FakeResponse();
+    const slow = jest.fn();
+    const event = { seq: 1 };
+    const frame = store.frame(event);
+    const writer = connection(response, {
+      frames: store,
+      maxBufferBytes: frame.bytes.length * 2,
+      onSlowConsumer: slow,
+    });
+    writer.open();
+    response.accept(false);
+    writer.write(event); // blocked; already accepted by Node
+    // One batch turn: three frames cross the soft bound (2 frames) but stay
+    // well inside the emergency multiple, and `drain` cannot fire until this
+    // synchronous burst ends.
+    writer.write(event);
+    writer.write(event);
+    writer.write(event);
+    expect(writer.bufferedFrames).toBe(3);
+    expect(writer.isClosed).toBe(false);
+    expect(slow).not.toHaveBeenCalled();
+
+    response.emit("drain");
+    expect(writer.isClosed).toBe(false);
+    expect(writer.bufferedFrames).toBe(0);
+    expect(response.writes.slice(1)).toEqual([
+      frame.bytes,
+      frame.bytes,
+      frame.bytes,
+      frame.bytes,
+    ]);
+    expect(slow).not.toHaveBeenCalled();
+  });
+
+  it("drops a burst past the emergency multiple instead of buffering forever", () => {
     const store = new SseFrameStore();
     const response = new FakeResponse();
     const slow = jest.fn();
     const closed = jest.fn();
     const event = { seq: 1 };
     const frame = store.frame(event);
-    // Two queued frames fit; the third crosses the bound.
+    const max = frame.bytes.length * 2;
     const writer = connection(response, {
       frames: store,
-      maxBufferBytes: frame.bytes.length * 2 + 1,
+      maxBufferBytes: max,
       onSlowConsumer: slow,
       onClose: closed,
     });
     writer.open();
     response.accept(false);
     writer.write(event); // blocked, nothing queued
-    writer.write(event);
-    writer.write(event);
-    expect(writer.bufferedFrames).toBe(2);
-    expect(slow).not.toHaveBeenCalled();
-
-    writer.write(event);
+    // The emergency guard is 4 x max: nine frames pass the hard limit.
+    for (let index = 0; index < 9; index += 1) writer.write(event);
     expect(writer.isClosed).toBe(true);
     expect(writer.bufferedFrames).toBe(0);
     expect(slow).toHaveBeenCalledWith({
       reason: "buffer",
-      queuedBytes: frame.bytes.length * 3,
-      queuedFrames: 3,
+      queuedBytes: frame.bytes.length * 9,
+      queuedFrames: 9,
     });
     expect(closed).toHaveBeenCalledTimes(1);
     expect(response.destroyed).toBe(true);
@@ -299,6 +331,63 @@ describe("SseConnection backpressure (TASK-200.13)", () => {
     // Late emissions after a slow disconnect are ignored, not queued.
     writer.write({ seq: 5 });
     expect(response.writes).toHaveLength(2);
+  });
+
+  it("drops an over-bound queue when the burst grace expires without drain", () => {
+    jest.useFakeTimers();
+    try {
+      const store = new SseFrameStore();
+      const response = new FakeResponse();
+      const slow = jest.fn();
+      const event = { seq: 1 };
+      const frame = store.frame(event);
+      const writer = connection(response, {
+        frames: store,
+        maxBufferBytes: frame.bytes.length * 2,
+        onSlowConsumer: slow,
+      });
+      writer.open();
+      response.accept(false);
+      writer.write(event); // blocked frame
+      writer.write(event);
+      writer.write(event);
+      writer.write(event); // 3 queued frames > the soft bound of 2
+      expect(writer.isClosed).toBe(false);
+
+      jest.advanceTimersByTime(SSE_BURST_GRACE_MS - 1);
+      expect(writer.isClosed).toBe(false);
+      jest.advanceTimersByTime(1);
+      expect(writer.isClosed).toBe(true);
+      expect(slow).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "buffer", queuedFrames: 3 }),
+      );
+      expect(response.destroyed).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("treats SSE_MAX_BUFFER_BYTES=0 as no queue after backpressure", () => {
+    const store = new SseFrameStore();
+    const response = new FakeResponse();
+    const slow = jest.fn();
+    const event = { seq: 1 };
+    const writer = connection(response, {
+      frames: store,
+      maxBufferBytes: 0,
+      onSlowConsumer: slow,
+    });
+    writer.open();
+    response.accept(false);
+    writer.write(event); // the accepted in-flight frame
+    expect(writer.isClosed).toBe(false);
+    writer.write(event); // first frame that has to be queued
+    expect(writer.isClosed).toBe(true);
+    expect(slow).toHaveBeenCalledWith({
+      reason: "buffer",
+      queuedBytes: store.frame(event).bytes.length,
+      queuedFrames: 1,
+    });
   });
 
   it("closes a socket that stays blocked past the timeout even under the bound", () => {

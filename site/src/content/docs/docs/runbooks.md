@@ -213,7 +213,7 @@ a single read-only snapshot:
 | `database.tables` | the twelve largest tables with row counts and sizes |
 | `jobs.transcode` | pending, done and failed transcodes |
 | `jobs.demo` | demo board running state and board id |
-| `jobs.realtime` | active board channels and connected clients |
+| `jobs.realtime` | active board channels, connected clients and slow SSE drops |
 | `jobs.queues` | per-queue pending, processed and failed counters, with the backend (`redis` or `memory`) |
 | `health` | database, realtime and maintenance checks |
 
@@ -237,9 +237,12 @@ safe defaults:
   logs the active connection count once a minute. Tune with `SSE_MAX_CONNECTIONS` (per instance,
   default `5000`), `SSE_MAX_PER_USER` (default `32`) and `SSE_MAX_PER_BOARD`
   (default `0` = unlimited). `0` means unlimited for each. Board events are
-  serialized once and fanned out as one buffer; a stream that stops draining is
-  closed after `SSE_MAX_BUFFER_BYTES` (default `128 KiB`) or
-  `SSE_SLOW_CLOSE_MS` (default `60 s`) and resumes from `?since=`.
+  serialized once and fanned out as one buffer for authenticated member
+  streams (public share SSE still uses Nest's per-subscriber writer); a stream
+  that stops draining is closed after the soft `SSE_MAX_BUFFER_BYTES` (default
+  `128 KiB`; the already-accepted frame is extra and `0` means no queue),
+  `SSE_SLOW_CLOSE_MS` (default `60 s`) or the 500 ms / 4× batch-burst guard,
+  then resumes from `?since=`. The compose file forwards both limits.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC instead of the container OOM-killer.
 

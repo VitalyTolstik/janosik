@@ -208,19 +208,13 @@ export class EventsController implements OnModuleDestroy {
       onSlowConsumer: (info) => this.realtime.noteSlowSubscriber(boardId, info),
       onClose: () => owner.subscription?.unsubscribe(),
     });
-    // Match `@Sse`'s early header commit: the client's `fetch` resolves and
-    // reconnects see a live stream even before the delta catch-up lands.
-    try {
-      connection.open();
-    } catch (error) {
-      connection.dispose();
-      releaseTracking();
-      throw error;
-    }
-    if (connection.isClosed) {
-      releaseTracking();
-      return;
-    }
+    // `stream()` calls `onOpen` only after its synchronous setup (presence
+    // join, live watch) succeeded. A setup error therefore still becomes the
+    // proper HTTP status (a 409 client-id race included), never an empty 200
+    // SSE response. The writer opens lazily on the first frame too.
+    let subscribing = true;
+    let hasSyncError = false;
+    let syncError: unknown;
     try {
       owner.subscription = this.stream(
         boardId,
@@ -231,9 +225,15 @@ export class EventsController implements OnModuleDestroy {
         user,
         principal,
         sessionId,
+        () => connection.open(),
       ).subscribe({
         next: (message) => connection.write(message.data),
         error: (error: unknown) => {
+          if (subscribing && !connection.responseStarted) {
+            hasSyncError = true;
+            syncError = error;
+            return;
+          }
           this.logger.warn(
             `Stream for board ${boardId} failed: ${
               error instanceof Error ? error.message : String(error)
@@ -244,14 +244,26 @@ export class EventsController implements OnModuleDestroy {
         complete: () => connection.end(),
       });
     } catch (error) {
-      this.logger.warn(
-        `Stream setup for board ${boardId} failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      connection.end();
+      subscribing = false;
+      if (connection.responseStarted) {
+        this.logger.warn(
+          `Stream setup for board ${boardId} failed after headers: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        connection.end();
+        releaseTracking();
+        return;
+      }
+      connection.dispose();
       releaseTracking();
-      return;
+      throw error;
+    }
+    subscribing = false;
+    if (hasSyncError) {
+      connection.dispose();
+      releaseTracking();
+      throw syncError;
     }
     // A synchronous source can hit the bound before `subscribe` returns, when
     // `onClose` had no subscription to cancel yet.
@@ -267,6 +279,7 @@ export class EventsController implements OnModuleDestroy {
     user?: AuthUser,
     principal?: AuthPrincipal,
     sessionId?: string,
+    onOpen?: () => void,
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       const send = (data: object | string): void => {
@@ -346,6 +359,22 @@ export class EventsController implements OnModuleDestroy {
         if (event.type !== "command") return;
         sequencer.offer(event as InternalCommandEvent);
       });
+
+      // Everything that can reject synchronously (presence join, watch) has
+      // succeeded: commit the 200 now, just before the first possible frame.
+      if (onOpen !== undefined) {
+        try {
+          onOpen();
+        } catch (error) {
+          live.unsubscribe();
+          releaseTracking();
+          if (presenceToken !== null) {
+            this.presence.leave(boardId, clientId, presenceToken.token);
+          }
+          subscriber.error(error);
+          return;
+        }
+      }
 
       // This stream's one-time full roster: "you are here, with N others".
       // Reuse the roster `join` just built instead of scanning again (A5).

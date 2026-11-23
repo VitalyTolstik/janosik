@@ -15,16 +15,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to every subscriber. Live command wire objects are memoized by the bus event,
   so N listeners share one `JSON.stringify`; catch-up, `?since=`, event order,
   `resync`, presence and keep-alive frames keep their existing contract. A
-  subscriber whose socket stops draining queues shared buffers only up to
-  `SSE_MAX_BUFFER_BYTES` (128 KiB) or `SSE_SLOW_CLOSE_MS` (60 s), then the
-  connection is destroyed and the client resumes from its last applied seq
-  instead of growing the heap; `RealtimeService.slowSubscriberDrops` exposes
-  the count and the warning is aggregated to one line per minute. The 200.5
-  keep-alive jitter/overlap guard is unchanged. Focused unit/e2e coverage
-  includes one build across 64 subscribers, byte-identical fan-out, the queue
-  bound, reconnect catch-up and keep-alive timing. The 3 000-connection
-  CPU/p95 targets were **not** measured in this task, and the public share
-  stream still uses Nest `@Sse` (separate projection surface).
+  subscriber whose socket stops draining queues shared buffers against a soft
+  `SSE_MAX_BUFFER_BYTES` (128 KiB) bound; the frame already accepted by the
+  socket is not counted, so the real worst case is the bound plus that frame
+  (and `0` means “no queue”). A synchronous batch burst may exceed the soft
+  bound for `SSE_BURST_GRACE_MS` (500 ms) up to 4× while `drain` is pending,
+  so a healthy burst is not dropped; a real slow reader is disconnected by
+  the grace, the emergency cap or `SSE_SLOW_CLOSE_MS` (60 s) and resumes from
+  its last applied `?since=`. `RealtimeService.slowSubscriberDrops` is exposed
+  in `/admin/observability` (`jobs.realtime.slowDrops`) and its warning is
+  aggregated to one line per minute. The 200 response is committed only after
+  synchronous stream setup, so a `client_id_taken` race still answers `409`
+  rather than an empty 200 SSE stream. SSE `id:` values are process frame ids,
+  not per-connection cursors (`?since=` is the resume point). The 200.5
+  keep-alive jitter/overlap guard is unchanged. `SSE_MAX_BUFFER_BYTES` and
+  `SSE_SLOW_CLOSE_MS` are forwarded by `docker-compose.yml`. Focused unit/e2e
+  coverage includes one build across 64 subscribers, byte-identical fan-out,
+  a batch burst inside the grace, the emergency/grace bounds, reconnect
+  catch-up and keep-alive timing. The 3 000-connection CPU/p95 targets were
+  **not** measured in this task, and the public share stream still uses Nest
+  `@Sse` (separate projection surface, documented in the runbooks).
 
 - TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
   bounded summary of the cards ready to pick up on one board — the initial/work

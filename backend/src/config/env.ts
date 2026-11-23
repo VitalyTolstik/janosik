@@ -450,10 +450,13 @@ export const env = cleanEnv(process.env, {
   }),
   // TASK-200.13: a subscriber that stops reading must not grow the heap.
   // Frames are pre-serialized and queued as shared Buffers while the socket
-  // is blocked; past this bound the connection is dropped and the client
-  // resumes from ?since=. 0 = disconnect on the first blocked frame.
+  // is blocked. One frame already accepted by the socket is not counted, so
+  // the effective worst case is this soft bound plus that frame; a
+  // synchronous burst may use up to 4x for 500 ms while `drain` is pending.
+  // Past that the connection is dropped and the client resumes from ?since=.
+  // 0 = no queue: the frame after the first backpressure is dropped.
   SSE_MAX_BUFFER_BYTES: nonNegativeInt({
-    desc: "Max bytes queued for one slow SSE subscriber before disconnecting it (0 = on first backpressure)",
+    desc: "Soft byte bound on queued frames per slow SSE subscriber (0 = drop the first frame after backpressure)",
     default: 131_072,
     example: "131072",
   }),
