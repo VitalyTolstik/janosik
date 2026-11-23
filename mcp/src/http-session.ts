@@ -204,6 +204,16 @@ export class SessionManager {
     return { ok: true, session };
   }
 
+  /** True when a new session can be reserved (live + initializing). */
+  hasCapacity(): boolean {
+    return this.count() < this.maxSessions;
+  }
+
+  /** Sessions (live or initializing) owned by one token fingerprint. */
+  countForToken(tokenHash: string): number {
+    return this.countToken(tokenHash);
+  }
+
   /** Look up an initialized session by its exact id. */
   get(id: string): GatewaySession | undefined {
     const session = this.sessions.get(id);

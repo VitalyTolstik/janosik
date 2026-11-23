@@ -24,8 +24,19 @@ export interface GatewayConfig {
   path: string;
   /** Global number of live sessions. */
   maxSessions: number;
-  /** Per-token session cap; 0 disables the second limit. */
+  /** Per-token session cap; 0 explicitly disables the second limit. */
   maxSessionsPerToken: number;
+  /** Initialize attempts per client IP per minute; 0 disables. */
+  initRateLimitPerMinute: number;
+  /** Initialize attempts per token fingerprint per minute; 0 disables. */
+  tokenInitRateLimitPerMinute: number;
+  /** How long an invalid token fingerprint is remembered; 0 disables. */
+  negativeCacheTtlMs: number;
+  negativeCacheMaxEntries: number;
+  /** Total auth-validation attempts (first try + bounded retries). */
+  authValidationAttempts: number;
+  /** Retry-After delay above which validation is not retried in-request. */
+  authValidationMaxDelayMs: number;
   /** A session with no request for this long is closed. */
   sessionIdleMs: number;
   /** How often the idle sweeper runs. */
@@ -218,7 +229,7 @@ export function loadGatewayConfig(
   const maxSessionsPerToken = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN",
-    0,
+    50,
     { allowZero: true },
   );
   if (maxSessionsPerToken > maxSessions) {
@@ -227,6 +238,42 @@ export function loadGatewayConfig(
         "JANOSIK_MCP_HTTP_MAX_SESSIONS.",
     );
   }
+  const initRateLimitPerMinute = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_INIT_RATE_LIMIT",
+    600,
+    { allowZero: true },
+  );
+  const tokenInitRateLimitPerMinute = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN",
+    10,
+    { allowZero: true },
+  );
+  const negativeCacheTtlMs = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS",
+    60_000,
+    { allowZero: true, max: MAX_TIMER_MS },
+  );
+  const negativeCacheMaxEntries = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES",
+    1_000,
+    { max: 100_000 },
+  );
+  const authValidationAttempts = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS",
+    2,
+    { max: 5 },
+  );
+  const authValidationMaxDelayMs = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS",
+    1_000,
+    { allowZero: true, max: MAX_TIMER_MS },
+  );
   const sessionIdleMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_SESSION_IDLE_MS",
@@ -310,6 +357,12 @@ export function loadGatewayConfig(
       path,
       maxSessions,
       maxSessionsPerToken,
+      initRateLimitPerMinute,
+      tokenInitRateLimitPerMinute,
+      negativeCacheTtlMs,
+      negativeCacheMaxEntries,
+      authValidationAttempts,
+      authValidationMaxDelayMs,
       sessionIdleMs,
       sessionSweepMs,
       maxBodyBytes,
@@ -340,7 +393,13 @@ Environment:
   JANOSIK_MCP_HTTP_PORT               Bind port (default ${DEFAULT_HTTP_PORT})
   JANOSIK_MCP_HTTP_PATH               MCP endpoint (default ${DEFAULT_PATH})
   JANOSIK_MCP_HTTP_MAX_SESSIONS       Global session cap (default 500)
-  JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN  Per-key cap (default 0 = off)
+  JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN  Per-key cap (default 50; 0 = off)
+  JANOSIK_MCP_HTTP_INIT_RATE_LIMIT    Initialize attempts/IP/min (default 600)
+  JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN  Per-key/min (default 10)
+  JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS  Bad-key cache (default 60000)
+  JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES  Cache bound (default 1000)
+  JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS  Validation attempts (default 2)
+  JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS  Retry cap (default 1000)
   JANOSIK_MCP_HTTP_SESSION_IDLE_MS    Idle expiry (default 300000)
   JANOSIK_MCP_HTTP_SESSION_SWEEP_MS   Sweep interval (default 30000)
   JANOSIK_MCP_HTTP_MAX_BODY_BYTES     Request body cap (default 16777216)
@@ -348,7 +407,8 @@ Environment:
   JANOSIK_MCP_HTTP_READY_URL          Upstream readiness probe
   JANOSIK_MCP_HTTP_READY_CACHE_MS     Probe cache (default 5000)
   JANOSIK_MCP_HTTP_READY_TIMEOUT_MS   Probe timeout (default 3000)
-  JANOSIK_MCP_HTTP_AUTH_URL           Key-validation endpoint (default /auth/me)
+  JANOSIK_MCP_HTTP_AUTH_URL           Key-validation endpoint
+                                      (default /api/v1/auth/me)
   JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS    Key-validation timeout (default 3000)
   JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS   SSE keep-alive (default 15000; 0 = off)
   JANOSIK_MCP_HTTP_TRUST_PROXY        Trust X-Forwarded-For (default off)
