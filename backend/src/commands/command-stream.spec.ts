@@ -59,6 +59,37 @@ describe("CommandStreamSequencer (B-3/B-4)", () => {
     expect(last).not.toHaveProperty("prevSeq");
   });
 
+  it("holds the catch-up budget until every entry is emitted", async () => {
+    const emitted: BoardSseEvent[] = [];
+    const release = jest.fn(() => {
+      expect(emitted).toHaveLength(2);
+    });
+    const commands = {
+      deltaSince: jest.fn(async () => ({
+        entries: [entry(5), entry(6)],
+        resync: false,
+        release,
+      })),
+      latestSeq: jest.fn(async () => 6),
+    };
+    const sequencer = new CommandStreamSequencer(
+      commands as never,
+      "b1",
+      0,
+      (event) => emitted.push(event),
+      (error) => {
+        throw error;
+      },
+    );
+    sequencer.start();
+    await flush();
+
+    expect(
+      emitted.map((event) => (event.type === "command" ? event.seq : 0)),
+    ).toEqual([5, 6]);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it("builds one wire object for the same live frame across subscribers", async () => {
     // TASK-200.13: all subscribers receive the same bus object. The SSE frame
     // store keys serialized bytes by object identity, so the sequencers must

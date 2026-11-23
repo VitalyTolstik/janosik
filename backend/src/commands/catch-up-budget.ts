@@ -6,7 +6,9 @@
  * payload/detail memory even though the SSE frames themselves are shared.
  * This budget bounds both the number of catch-ups actually reading rows and
  * the estimated bytes they hold at once; a caller that cannot get a slot
- * answers `resync` instead of starting another page scan.
+ * answers `resync` instead of starting another page scan. The reservation is
+ * released only after the sequencer has emitted the returned entries, not
+ * when `deltaSince` returns.
  */
 export const CATCH_UP_MAX_BYTES = 32 * 1024 * 1024;
 export const CATCH_UP_MAX_IN_FLIGHT = 6;
@@ -61,5 +63,8 @@ export class CatchUpBudget {
   }
 }
 
-/** One budget per API process; injected with a test override where needed. */
+/**
+ * One budget per API process (all `CommandsService` instances share it);
+ * tests may inject their own `CatchUpBudget` instance.
+ */
 export const processCatchUpBudget = new CatchUpBudget();

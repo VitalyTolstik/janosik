@@ -156,6 +156,10 @@ const RESTORE_ACTIONS = new Set<string>([
  * request can never materialize an unbounded history.
  */
 export const COMMAND_DELTA_MAX = 5_000;
+/** Sample window for the no-detoast preflight byte estimate. */
+export const CATCH_UP_SAMPLE_ROWS = 20;
+/** Rows loaded per catch-up page; bounds six concurrent page allocations. */
+export const CATCH_UP_PAGE_ROWS = 10;
 
 const DELTA_SELECT = {
   id: true,
@@ -181,6 +185,13 @@ type DeltaRow = Prisma.CommandGetPayload<{ select: typeof DELTA_SELECT }>;
 export interface CommandDelta {
   entries: CommandDeltaEntry[];
   resync: boolean;
+  /**
+   * TASK-200.13: an SSE catch-up transfers its `CatchUpBudget` reservation
+   * to the caller. The sequencer calls this after it has emitted/closed the
+   * entry array, so the global bytes stay accounted while the objects are
+   * still alive. HTTP callers and resync responses have no release.
+   */
+  release?: () => void;
 }
 
 /**
@@ -1551,6 +1562,7 @@ export class CommandsService {
     const releaseAttempt = this.catchUpBudget.tryBegin();
     if (releaseAttempt === null) return { entries: [], resync: true };
     let releaseBytes: (() => void) | null = null;
+    let handedOff = false;
     const extraReleases: Array<() => void> = [];
     try {
       // Cheap preflight: no row/JSON materialisation in Node. `payload` and
@@ -1579,21 +1591,29 @@ export class CommandsService {
       const count = countRow?.count ?? 0n;
       if (count > BigInt(max)) return { entries: [], resync: true };
       const countNumber = Number(count);
-      const [estimate] = await client.$queryRaw<Array<{ bytes: bigint }>>(
-        Prisma.sql`SELECT COALESCE(SUM(
-            octet_length("payload"::text) +
-            COALESCE(octet_length("details"::text), 0) +
-            COALESCE(octet_length(array_to_string("touches", ',')), 0)
-          ), 0)::bigint AS "bytes"
+      // `pg_column_size` never detoasts, so this sample is bounded by the
+      // sample window even for 2 MiB descriptions. The page loop tops the
+      // reservation up from the actual JSON bytes.
+      const [sample] = await client.$queryRaw<
+        Array<{ sampled: bigint; bytes: bigint }>
+      >(
+        Prisma.sql`SELECT COUNT(*)::bigint AS "sampled",
+            COALESCE(SUM(
+              pg_column_size("payload") +
+              COALESCE(pg_column_size("details"), 0) +
+              COALESCE(pg_column_size("touches"), 0)
+            ), 0)::bigint AS "bytes"
           FROM (
             SELECT "payload", "details", "touches"
             FROM "Command" WHERE ${whereSql}
-            ORDER BY "seq" ASC LIMIT ${max}
-          ) AS "bounded"`,
+            ORDER BY "seq" ASC LIMIT ${CATCH_UP_SAMPLE_ROWS}
+          ) AS "sample"`,
       );
-      // Frame/`data:` overhead is small but per entry; keep the reservation
-      // conservative. The page loop tops it up if actual JSON is larger.
-      const estimatedBytes = Number(estimate?.bytes ?? 0n) + countNumber * 256;
+      const sampled = Number(sample?.sampled ?? 0n);
+      const sampleBytes = Number(sample?.bytes ?? 0n);
+      const estimatedBytes =
+        (sampled > 0 ? Math.ceil((sampleBytes / sampled) * countNumber) : 0) +
+        countNumber * 256;
       if (estimatedBytes > maxBytes) return { entries: [], resync: true };
       releaseBytes = this.catchUpBudget.tryReserve(estimatedBytes);
       if (releaseBytes === null) return { entries: [], resync: true };
@@ -1607,7 +1627,7 @@ export class CommandsService {
       let fetched = 0;
       let lastSeq = since;
       while (fetched < countNumber) {
-        const take = Math.min(100, countNumber - fetched);
+        const take = Math.min(CATCH_UP_PAGE_ROWS, countNumber - fetched);
         const rows = await client.command.findMany({
           where: { ...where, seq: { gt: BigInt(lastSeq) } },
           orderBy: { seq: "asc" },
@@ -1639,11 +1659,22 @@ export class CommandsService {
         }
         fetched += rows.length;
       }
-      return { entries, resync: false };
+      handedOff = true;
+      return {
+        entries,
+        resync: false,
+        release: () => {
+          for (const release of extraReleases) release();
+          releaseBytes?.();
+          releaseAttempt();
+        },
+      };
     } finally {
-      for (const release of extraReleases) release();
-      releaseBytes?.();
-      releaseAttempt();
+      if (!handedOff) {
+        for (const release of extraReleases) release();
+        releaseBytes?.();
+        releaseAttempt();
+      }
     }
   }
 

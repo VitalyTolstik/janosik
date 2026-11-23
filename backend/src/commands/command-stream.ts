@@ -132,18 +132,24 @@ export class CommandStreamSequencer {
           undefined,
           this.maxDeltaBytes,
         );
-        if (this.closed) return;
-        if (delta.resync) {
-          const head = await this.commands.latestSeq(this.boardId);
+        try {
           if (this.closed) return;
-          this.lastSeq = Math.max(this.lastSeq, head);
-          this.emit({ type: "resync" } satisfies ResyncSseEvent);
-        } else {
-          for (const entry of delta.entries) {
-            if (entry.seq > this.lastSeq) {
-              this.deliver({ type: "command", ...entry });
+          if (delta.resync) {
+            const head = await this.commands.latestSeq(this.boardId);
+            if (this.closed) return;
+            this.lastSeq = Math.max(this.lastSeq, head);
+            this.emit({ type: "resync" } satisfies ResyncSseEvent);
+          } else {
+            for (const entry of delta.entries) {
+              if (entry.seq > this.lastSeq) {
+                this.deliver({ type: "command", ...entry });
+              }
             }
           }
+        } finally {
+          // The catch-up budget owns the row/entry memory until every frame
+          // has been handed to the writer.
+          delta.release?.();
         }
       } while (this.pullAgain && !this.closed);
       this.ready = true;

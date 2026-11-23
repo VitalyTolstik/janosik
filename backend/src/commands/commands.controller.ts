@@ -208,8 +208,13 @@ export class CommandsController {
     );
     if (delta.resync) {
       res.setHeader(DELTA_RESYNC_HEADER, "1");
+      delta.release?.();
       return [];
     }
-    return delta.entries;
+    const entries = delta.entries;
+    // REST JSON serialization runs immediately after the handler returns;
+    // close the accounting window now instead of leaking the slot forever.
+    delta.release?.();
+    return entries;
   }
 }

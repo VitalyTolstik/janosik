@@ -28,12 +28,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A real slow reader is disconnected by the grace, the hard guard or
   `SSE_SLOW_CLOSE_MS` (60 s; `0` disables only this timer) and resumes from its
   last applied `?since=`. Catch-up deltas are byte-bounded by the same guard;
-  a `LIMIT max+1` SQL count runs first and only a fitting page gets the
-  `SUM(octet_length(...))` preflight, so an oversized delta is rejected
-  before loading payload rows. Accepted deltas are fetched in 100-row pages
+  a `LIMIT max+1` SQL count runs first, then `pg_column_size` (no detoast) over
+  a 20-row sample estimates the page, so an oversized delta is rejected
+  before loading payload rows. Accepted deltas are fetched in 10-row pages
   with a 32 MiB / 6-slot process-wide `CatchUpBudget`; the reservation is
-  topped up (or the stream resyncs) as actual JSON bytes accumulate, so
-  excess reconnects cannot multiply transient row memory. A
+  topped up (or the stream resyncs) as actual JSON bytes accumulate, and it
+  stays held until the sequencer emitted the entries. Excess reconnects
+  cannot multiply transient row memory. A
   larger page becomes `resync`, so an offline client cannot loop on the same
   oversized replay. `RealtimeService.slowSubscriberDrops` is exposed in
   `/admin/observability` (`jobs.realtime.slowDrops`) and its warning is
