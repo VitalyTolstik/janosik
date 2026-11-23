@@ -55,6 +55,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma as unknown as PrismaService,
       {} as never,
       {} as never,
+      { invalidatePat: jest.fn() } as never,
     );
     await expect(
       service.deleteAccount("user-1", {}, new Date()),
@@ -73,6 +74,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
     await expect(
       service.cleanupOrphanBoards("user-1", ["board-1"]),
@@ -88,6 +90,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
 
     await expect(
@@ -113,6 +116,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
 
     await expect(
@@ -129,6 +133,7 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       prisma,
       {} as never,
       boards as never,
+      { invalidatePat: jest.fn() } as never,
     );
 
     await expect(
@@ -148,5 +153,35 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
         data: expect.objectContaining({ action: "board.cleanup_recovered" }),
       }),
     );
+  });
+
+  it("drops cached PATs when a deletion schedule revokes them", async () => {
+    const invalidatePat = jest.fn();
+    const tx = {
+      $queryRaw: jest.fn(),
+      user: { update: jest.fn().mockResolvedValue({}) },
+      apiToken: {
+        findMany: jest.fn().mockResolvedValue([{ id: "token-1" }]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      agentSession: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      card: { findMany: jest.fn().mockResolvedValue([]) },
+      securityAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    };
+    const service = new AccountDeletionService(
+      {} as never,
+      {} as never,
+      {} as never,
+      { invalidatePat } as never,
+    );
+
+    await service.scheduleInTransaction(tx as never, "user-1", "user-1", {});
+
+    expect(tx.apiToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+    expect(invalidatePat).toHaveBeenCalledTimes(1);
   });
 });

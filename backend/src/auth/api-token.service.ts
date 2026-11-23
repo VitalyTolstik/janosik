@@ -120,10 +120,33 @@ export class ApiTokenService {
     options: { fresh?: boolean } = {},
   ): Promise<AuthenticatedToken> {
     const tokenHash = this.hashToken(raw);
-    if (!options.fresh) {
-      const cached = this.hotPathCache.getPat(tokenHash);
-      if (cached !== undefined) return cached;
-    }
+    if (options.fresh) return this.loadAuthenticated(tokenHash);
+    const cached = this.hotPathCache.getPat(tokenHash);
+    if (cached !== undefined) return cached;
+    const epoch = this.hotPathCache.epochs.pat;
+    // 500 agents presenting the same cold key issue one lookup, not 500.
+    // An invalidation during the load changes the epoch, so the loader does
+    // not write the older answer back into the cache.
+    return this.hotPathCache.singleFlight(
+      `pat:${tokenHash}`,
+      epoch,
+      async () => {
+        const again = this.hotPathCache.getPat(tokenHash);
+        if (again !== undefined) return again;
+        return this.loadAuthenticated(tokenHash, epoch);
+      },
+    );
+  }
+
+  /**
+   * The database half of `authenticate`. `cacheEpoch` is set only for a
+   * cacheable read: the result is remembered when no invalidation happened
+   * while the query was in flight.
+   */
+  private async loadAuthenticated(
+    tokenHash: string,
+    cacheEpoch?: number,
+  ): Promise<AuthenticatedToken> {
     const stored = await this.prisma.apiToken.findUnique({
       where: { tokenHash },
       include: { user: { select: AUTH_USER_SELECT } },
@@ -167,6 +190,8 @@ export class ApiTokenService {
     // is no expiry event on the bus, and a cached credential must never
     // outlive its `expiresAt`.
     if (
+      cacheEpoch !== undefined &&
+      this.hotPathCache.epochs.pat === cacheEpoch &&
       this.hotPathCache.patTtlMs > 0 &&
       (stored.expiresAt === null ||
         stored.expiresAt.getTime() >
@@ -218,8 +243,10 @@ export class ApiTokenService {
     const result = await this.prisma.$transaction((tx) =>
       revokeApiTokens(tx, { userId, revokedAt: null }),
     );
+    // Invalidate even when the transaction found no live rows: another
+    // replica may still hold a positive entry from before its own frame.
+    this.hotPathCache.invalidatePat();
     if (result.revokedCount > 0) {
-      this.hotPathCache.invalidatePat();
       for (const token of candidates) {
         await this.attention.notifyTokenRevoked({
           userId,
@@ -560,8 +587,10 @@ export class ApiTokenService {
         individualPausedReason: clean(reason),
       },
     });
+    // Pause/resume invalidates even on an idempotent no-op: a replica may
+    // still hold an older identity from before the first transition.
+    this.hotPathCache.invalidatePat(tokenId);
     if (result.count > 0) {
-      this.hotPathCache.invalidatePat(tokenId);
       await this.securityAudit.record({
         userId,
         actorId: userId,
@@ -599,8 +628,8 @@ export class ApiTokenService {
         individualPausedReason: null,
       },
     });
+    this.hotPathCache.invalidatePat(tokenId);
     if (result.count > 0) {
-      this.hotPathCache.invalidatePat(tokenId);
       await this.securityAudit.record({
         userId,
         actorId: userId,
@@ -640,8 +669,10 @@ export class ApiTokenService {
       orderBy: { stopAllPausedAt: "desc" },
       select: { stopAllPausedAt: true, stopAllPausedBy: true },
     });
+    // The bulk switch may be an idempotent no-op on this node while another
+    // replica still serves a cached token identity.
+    this.hotPathCache.invalidatePat();
     if (result.count > 0) {
-      this.hotPathCache.invalidatePat();
       await this.securityAudit.record({
         userId,
         actorId: userId,
@@ -668,8 +699,8 @@ export class ApiTokenService {
       where: { userId, revokedAt: null, stopAllPausedAt: { not: null } },
       data: { stopAllPausedAt: null, stopAllPausedBy: null },
     });
+    this.hotPathCache.invalidatePat();
     if (result.count > 0) {
-      this.hotPathCache.invalidatePat();
       await this.securityAudit.record({
         userId,
         actorId: userId,

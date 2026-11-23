@@ -75,6 +75,11 @@ describe("MembershipGuard", () => {
       getMembership: jest.fn().mockReturnValue(undefined),
       rememberMembership: jest.fn(),
       dropMembership: jest.fn(),
+      epochs: { membership: 0 },
+      singleFlight: jest.fn(
+        async (_key: string, _epoch: number, loader: () => Promise<unknown>) =>
+          loader(),
+      ),
     },
   ) {
     const reflector = {
@@ -327,6 +332,47 @@ describe("MembershipGuard", () => {
 
       expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
       expect(prisma.board.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not slide the TTL on cache hits", async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));
+      try {
+        const prisma = prismaWith({ id: "board-1" }, membership());
+        const hotPathCache = cache(30_000);
+        const guard = build(undefined, prisma, hotPathCache);
+
+        await guard.canActivate(context({ id: "board-1" }));
+        expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+
+        jest.advanceTimersByTime(20_000);
+        await guard.canActivate(context({ id: "board-1" }));
+        expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
+
+        // 30 s after the database read, not after the last cache hit.
+        jest.advanceTimersByTime(10_000);
+        await guard.canActivate(context({ id: "board-1" }));
+        expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("single-flights concurrent cold reads of one membership", async () => {
+      const prisma = prismaWith({ id: "board-1" }, membership());
+      prisma.boardMember.findUnique.mockImplementation(async () => {
+        await Promise.resolve();
+        return membership();
+      });
+      const hotPathCache = cache();
+      const guard = build(undefined, prisma, hotPathCache);
+
+      await Promise.all(
+        Array.from({ length: 100 }, () =>
+          guard.canActivate(context({ id: "board-1" })),
+        ),
+      );
+      expect(prisma.boardMember.findUnique).toHaveBeenCalledTimes(1);
     });
 
     it("bypasses the cache on a write and on an SSE connect", async () => {

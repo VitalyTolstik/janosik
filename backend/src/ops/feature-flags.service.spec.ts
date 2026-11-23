@@ -65,6 +65,19 @@ describe("FeatureFlagsService hot-path cache (TASK-200.5)", () => {
     expect(prismaMock.featureFlag.findUnique).toHaveBeenCalledTimes(1);
   });
 
+  it("coalesces 500 concurrent cold checks into one lookup", async () => {
+    prismaMock.featureFlag.findUnique.mockImplementation(async () => {
+      await Promise.resolve();
+      return row();
+    });
+    const service = new FeatureFlagsService(prismaMock, cache());
+
+    await Promise.all(
+      Array.from({ length: 500 }, () => service.isEnabled("realtime_sse")),
+    );
+    expect(prismaMock.featureFlag.findUnique).toHaveBeenCalledTimes(1);
+  });
+
   it("expires the row after the window", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));

@@ -68,6 +68,8 @@ const settingsMock = {
   listEnabled: jest.Mock;
 };
 
+const hotPathCacheMock = { invalidatePat: jest.fn() };
+
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: "user-1",
   email: "user@example.com",
@@ -100,9 +102,15 @@ describe("OAuthService", () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    service = new OAuthService(prismaMock, authMock, settingsMock, {
-      record: jest.fn(),
-    } as never);
+    service = new OAuthService(
+      prismaMock,
+      authMock,
+      settingsMock,
+      {
+        record: jest.fn(),
+      } as never,
+      hotPathCacheMock as never,
+    );
     settingsMock.credentials.mockResolvedValue(CREDENTIALS);
     prismaMock.apiToken.findMany.mockResolvedValue([]);
     prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
@@ -256,6 +264,8 @@ describe("OAuthService", () => {
         where: { id: { in: ["token-1"] }, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
+      // TASK-200.5: cached PAT resolutions die with the claimed credentials.
+      expect(hotPathCacheMock.invalidatePat).toHaveBeenCalled();
       expect(prismaMock.emailChangeCode.deleteMany).toHaveBeenCalledWith({
         where: { userId: "user-1" },
       });

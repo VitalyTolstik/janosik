@@ -63,13 +63,6 @@ function streamSnapshot(): StreamMembershipSnapshot {
   return {
     acceptedAt: new Date(0),
     expiresAt: null,
-    user: {
-      id: "user-1",
-      email: "u@example.com",
-      passwordHash: null,
-      emailVerifiedAt: null,
-      disabledAt: null,
-    },
     board: { deletedAt: null },
   };
 }
@@ -234,5 +227,44 @@ describe("HotPathCacheService (TASK-200.5)", () => {
     expect(cache.getFlag("realtime_sse")).not.toBeUndefined();
     jest.advanceTimersByTime(10_000);
     expect(cache.getFlag("realtime_sse")).toBeUndefined();
+  });
+
+  it("single-flights one cold load across 500 callers", async () => {
+    const cache = new HotPathCacheService(fakeBus() as never, config());
+    const loader = jest.fn(async () => {
+      await Promise.resolve();
+      return "value";
+    });
+    const epoch = cache.epochs.flags;
+    const results = await Promise.all(
+      Array.from({ length: 500 }, () =>
+        cache.singleFlight("flag:realtime_sse", epoch, loader),
+      ),
+    );
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(results.every((value) => value === "value")).toBe(true);
+  });
+
+  it("does not join a fill that predates an invalidation", async () => {
+    const bus = fakeBus();
+    const cache = new HotPathCacheService(bus as never, config());
+    let release: (() => void) | undefined;
+    const stale = new Promise<string>((resolve) => {
+      release = () => resolve("stale");
+    });
+    const staleLoader = jest.fn(() => stale);
+    const oldEpoch = cache.epochs.pat;
+
+    const pending = cache.singleFlight("pat:hash", oldEpoch, staleLoader);
+    cache.invalidatePat("token-1");
+    const freshEpoch = cache.epochs.pat;
+    expect(freshEpoch).toBeGreaterThan(oldEpoch);
+
+    const fresh = jest.fn(async () => "fresh");
+    const result = await cache.singleFlight("pat:hash", freshEpoch, fresh);
+    expect(result).toBe("fresh");
+    expect(fresh).toHaveBeenCalledTimes(1);
+    release?.();
+    await pending;
   });
 });

@@ -41,6 +41,13 @@ export type CacheInvalidation =
 
 export type CacheInvalidationListener = (event: CacheInvalidation) => void;
 
+/**
+ * Wire version of the cache-invalidation control frame. Bump it when the
+ * event shape changes incompatibly; an unknown version is ignored (TTL is
+ * the fallback) instead of being applied to a different cache generation.
+ */
+export const CACHE_INVALIDATION_VERSION = 1;
+
 /** Redis publish retries before the frame is given up on (B-4). */
 const PUBLISH_ATTEMPTS = 3;
 const PUBLISH_RETRY_MS = 250;
@@ -215,7 +222,11 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
     void this.publisher
       .publish(
         CHANNEL_INVALIDATE,
-        JSON.stringify({ origin: this.nodeId, event }),
+        JSON.stringify({
+          v: CACHE_INVALIDATION_VERSION,
+          origin: this.nodeId,
+          event,
+        }),
       )
       .catch((error: unknown) => {
         // TTL is the backstop; one failed publication must not fail a write.
@@ -231,16 +242,21 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private receiveInvalidation(payload: string): void {
     try {
       const envelope = JSON.parse(payload) as {
+        v?: unknown;
         origin?: string;
-        event?: CacheInvalidation;
+        event?: unknown;
       };
-      if (
-        envelope.origin === this.nodeId ||
-        envelope.event === undefined ||
-        typeof envelope.event !== "object"
-      ) {
+      if (envelope.origin === this.nodeId) return;
+      // Unknown versions may carry a shape this build cannot apply; letting
+      // them through could clear (or worse, mis-key) the wrong cache. Ignore
+      // and let the bounded TTL catch up.
+      if (envelope.v !== CACHE_INVALIDATION_VERSION) {
+        this.logger.warn(
+          `Ignoring cache invalidation with unsupported version ${String(envelope.v)}`,
+        );
         return;
       }
+      if (!isCacheInvalidation(envelope.event)) return;
       this.emitInvalidation(envelope.event);
     } catch {
       /* ignore malformed control frames */
@@ -454,3 +470,23 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
 const CHANNEL_PREFIX = "janosik:board:";
 /** Control-plane cache invalidation (TASK-200.5), separate from boards. */
 const CHANNEL_INVALIDATE = "janosik:cache-invalidate";
+
+/** Runtime shape check for a control frame from another build. */
+function isCacheInvalidation(value: unknown): value is CacheInvalidation {
+  if (typeof value !== "object" || value === null) return false;
+  const event = value as Record<string, unknown>;
+  switch (event.kind) {
+    case "pat":
+      return event.tokenId === undefined || typeof event.tokenId === "string";
+    case "membership":
+      return (
+        typeof event.boardId === "string" && typeof event.userId === "string"
+      );
+    case "board":
+      return typeof event.boardId === "string";
+    case "flags":
+      return event.key === undefined || typeof event.key === "string";
+    default:
+      return false;
+  }
+}

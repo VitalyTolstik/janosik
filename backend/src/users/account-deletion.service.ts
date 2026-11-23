@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { ActorType } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { CARD_ATTACHMENT_WHERE } from "@/attachments/card-attachments";
 import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
@@ -55,6 +56,7 @@ export class AccountDeletionService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly boards: BoardsService,
+    private readonly hotPathCache: HotPathCacheService,
   ) {}
 
   /** Disable the account now and record the seven-day hard-delete date. */
@@ -108,6 +110,10 @@ export class AccountDeletionService {
       where: { userId, revokedAt: null },
       data: { revokedAt: now },
     });
+    // TASK-200.5: the account is disabled and its keys revoked in this
+    // transaction. Clearing now is safe even if the caller later rolls back:
+    // a rollback only costs a re-read, never a stale positive entry.
+    this.hotPathCache.invalidatePat();
     await tx.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: now },
@@ -673,6 +679,9 @@ export class AccountDeletionService {
       }
     }
 
+    // The account row and every token are gone; drop cached resolutions now
+    // so no replica serves the erased user for the rest of the window.
+    this.hotPathCache.invalidatePat();
     try {
       await this.prisma.securityAuditLog.create({
         data: {

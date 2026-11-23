@@ -804,6 +804,7 @@ describe("ApiTokenService", () => {
     function harness(ttlMs: number): {
       cached: ApiTokenService;
       prisma: typeof prismaMock;
+      cache: HotPathCacheService;
       bus: {
         publishInvalidation: jest.Mock;
         onInvalidation: jest.Mock;
@@ -840,6 +841,7 @@ describe("ApiTokenService", () => {
           cache,
         ),
         prisma: prismaMock,
+        cache,
         bus,
       };
     }
@@ -865,6 +867,57 @@ describe("ApiTokenService", () => {
         });
       }
       expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("coalesces 500 concurrent cold reads into one PAT lookup", async () => {
+      const { cached, prisma } = harness(30_000);
+      prisma.apiToken.findUnique.mockImplementation(async () => {
+        await Promise.resolve();
+        return stored();
+      });
+
+      const results = await Promise.all(
+        Array.from({ length: 500 }, () => cached.authenticate("raw-token")),
+      );
+      expect(results.every((token) => token.tokenId === "token-1")).toBe(true);
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not cache a fill that raced with a revoke invalidation", async () => {
+      const { cached, prisma, cache } = harness(30_000);
+      let release: ((value: unknown) => void) | undefined;
+      prisma.apiToken.findUnique.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+
+      const pending = cached.authenticate("raw-token");
+      await Promise.resolve();
+      cache.invalidatePat("token-1");
+      release?.(stored());
+      await expect(pending).resolves.toMatchObject({ tokenId: "token-1" });
+
+      expect(cache.getPat(cached.hashToken("raw-token"))).toBeUndefined();
+      prisma.apiToken.findUnique.mockResolvedValue(stored());
+      await cached.authenticate("raw-token");
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it("invalidates bulk token state even when no row changed", async () => {
+      const { cached, prisma, bus } = harness(0);
+      prisma.apiToken.findMany.mockResolvedValue([]);
+      prisma.apiToken.updateMany.mockResolvedValue({ count: 0 });
+      prisma.apiToken.findFirst.mockResolvedValue(null);
+
+      await cached.revokeAll("user-1");
+      await cached.pauseAll("user-1", undefined);
+      await cached.resumeAll("user-1", undefined);
+
+      expect(bus.publishInvalidation).toHaveBeenCalledWith({
+        kind: "pat",
+      });
+      expect(bus.publishInvalidation).toHaveBeenCalledTimes(3);
     });
 
     it("bypasses the cache for writes and SSE connects", async () => {

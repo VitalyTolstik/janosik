@@ -520,6 +520,12 @@ export class AdminService {
           })
         : user;
 
+    // TASK-200.5: disabling an account must not leave its PAT resolution
+    // cached for the rest of the window.
+    if (dto.disabled === true) {
+      this.realtime.publishInvalidation({ kind: "pat" });
+    }
+
     // Moving the sign-in address is a security action of its own (TASK-51):
     // the old address must stop working everywhere immediately. Sessions
     // were revoked atomically above; only the audit and the old inbox
@@ -644,6 +650,7 @@ export class AdminService {
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    this.realtime.publishInvalidation({ kind: "pat" });
     await this.audit(admin, "user.tokens_revoked", "user", userId, {
       email: user.email,
       revoked: revoked.count,
@@ -2006,6 +2013,9 @@ export class AdminService {
       where: { id: tokenId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    // TASK-200.5: a no-op revoke on this node may still leave a positive
+    // cached resolution on another replica.
+    this.realtime.publishInvalidation({ kind: "pat", tokenId });
     if (revoked.count > 0) {
       await this.audit(admin, "token.revoke", "token", tokenId, {
         userEmail: token.user.email,

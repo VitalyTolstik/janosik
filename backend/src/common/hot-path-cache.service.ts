@@ -7,21 +7,15 @@ import { env } from "@/config/env";
 import { TtlCache } from "./ttl-cache";
 
 /**
- * The fields an open SSE stream re-validates on every keep-alive tick. The
- * joined row is cached as a snapshot, but its time/disabled/deleted bits are
- * checked on every read, so an expiry inside the window still closes the
- * stream on the next tick instead of surviving until the TTL.
+ * The membership facts an open SSE stream re-validates on every keep-alive
+ * tick. Credential and disable fields are deliberately not here: they are
+ * read fresh each tick so a password change or account block closes an open
+ * stream on the very next beat, not after the snapshot's window (TASK-200.5
+ * review).
  */
 export interface StreamMembershipSnapshot {
   acceptedAt: Date | null;
   expiresAt: Date | null;
-  user: {
-    id: string;
-    email: string;
-    passwordHash: string | null;
-    emailVerifiedAt: Date | null;
-    disabledAt: Date | null;
-  };
   board: { deletedAt: Date | null };
 }
 
@@ -65,13 +59,17 @@ export function defaultHotPathCacheConfig(): HotPathCacheConfig {
  * guards are instantiated per module, so per-guard maps would multiply the
  * entries and make invalidation only partially effective. Every key names its
  * full tenant tuple — `sha256` for a token, `boardId + userId` for a
- * membership, `flag key + userId` only at read time — so a value can never be
- * served to another user or board.
+ * membership — so a value can never be served to another user or board.
  *
- * The realtime bus is the invalidation path (TASK-200.5): a write clears the
- * local entry synchronously and publishes one control-plane frame on Redis
- * for the other replicas. A missed frame degrades to the TTL, which is why
- * every window is 10–30 s and every cache is bounded LRU.
+ * The realtime bus is the invalidation path: a write clears the local entry
+ * synchronously and publishes one versioned control-plane frame on Redis for
+ * the other replicas. A missed frame degrades to the TTL, which is why every
+ * window is 10–30 s and every cache is bounded LRU.
+ *
+ * Loads are single-flighted per key and guarded by an epoch: 500 agents that
+ * miss the same entry at once issue one database query, and an invalidation
+ * that lands while that query is in flight prevents the older answer from
+ * being written back into the cache.
  */
 @Injectable()
 export class HotPathCacheService {
@@ -82,6 +80,14 @@ export class HotPathCacheService {
     StreamMembershipSnapshot
   >;
   private readonly flags: TtlCache<string, FeatureFlag | null>;
+  /** Bumped by every local and remote invalidation (fill-race guard). */
+  private patEpoch = 0;
+  private membershipEpoch = 0;
+  private flagsEpoch = 0;
+  private readonly inFlight = new Map<
+    string,
+    { epoch: number; promise: Promise<unknown> }
+  >();
 
   constructor(
     private readonly realtime: RealtimeService,
@@ -100,6 +106,38 @@ export class HotPathCacheService {
     // The bus may already be created; registration is synchronous and works
     // with or without Redis (a single node is its own listener).
     this.realtime.onInvalidation((event) => this.apply(event));
+  }
+
+  // ---------------------------------------------------------- singleflight
+
+  get epochs(): { pat: number; membership: number; flags: number } {
+    return {
+      pat: this.patEpoch,
+      membership: this.membershipEpoch,
+      flags: this.flagsEpoch,
+    };
+  }
+
+  /**
+   * Coalesce identical loads. A call that arrives after an invalidation sees
+   * a different epoch and starts a fresh load instead of joining a stale one;
+   * the loader itself decides whether its result may still be cached.
+   */
+  async singleFlight<T>(
+    key: string,
+    epoch: number,
+    loader: () => Promise<T>,
+  ): Promise<T> {
+    const pending = this.inFlight.get(key);
+    if (pending !== undefined && pending.epoch === epoch) {
+      return pending.promise as Promise<T>;
+    }
+    const promise = loader().finally(() => {
+      const current = this.inFlight.get(key);
+      if (current?.promise === promise) this.inFlight.delete(key);
+    });
+    this.inFlight.set(key, { epoch, promise });
+    return promise;
   }
 
   // ------------------------------------------------------------------- PAT
@@ -125,6 +163,7 @@ export class HotPathCacheService {
    */
   invalidatePat(tokenId?: string): void {
     this.pats.clear();
+    this.patEpoch += 1;
     this.realtime.publishInvalidation({ kind: "pat", tokenId });
   }
 
@@ -141,6 +180,7 @@ export class HotPathCacheService {
   invalidateMembership(boardId: string, userId: string): void {
     this.memberships.delete(membershipKey(boardId, userId));
     this.streamMemberships.delete(membershipKey(boardId, userId));
+    this.membershipEpoch += 1;
     this.realtime.publishInvalidation({ kind: "membership", boardId, userId });
   }
 
@@ -153,6 +193,7 @@ export class HotPathCacheService {
     const key = membershipKey(boardId, userId);
     this.memberships.delete(key);
     this.streamMemberships.delete(key);
+    this.membershipEpoch += 1;
   }
 
   /** Board-wide change (delete, pause, bulk membership edit). */
@@ -160,6 +201,7 @@ export class HotPathCacheService {
     const prefix = `${boardId}\u0000`;
     this.memberships.deleteWhere((key) => key.startsWith(prefix));
     this.streamMemberships.deleteWhere((key) => key.startsWith(prefix));
+    this.membershipEpoch += 1;
     this.realtime.publishInvalidation({ kind: "board", boardId });
   }
 
@@ -191,6 +233,7 @@ export class HotPathCacheService {
   invalidateFlags(key?: string): void {
     if (key === undefined) this.flags.clear();
     else this.flags.delete(key);
+    this.flagsEpoch += 1;
     this.realtime.publishInvalidation({ kind: "flags", key });
   }
 
@@ -219,22 +262,26 @@ export class HotPathCacheService {
     switch (event.kind) {
       case "pat":
         this.pats.clear();
+        this.patEpoch += 1;
         return;
       case "membership": {
         const key = membershipKey(event.boardId, event.userId);
         this.memberships.delete(key);
         this.streamMemberships.delete(key);
+        this.membershipEpoch += 1;
         return;
       }
       case "board": {
         const prefix = `${event.boardId}\u0000`;
         this.memberships.deleteWhere((key) => key.startsWith(prefix));
         this.streamMemberships.deleteWhere((key) => key.startsWith(prefix));
+        this.membershipEpoch += 1;
         return;
       }
       case "flags":
         if (event.key === undefined) this.flags.clear();
         else this.flags.delete(event.key);
+        this.flagsEpoch += 1;
         return;
     }
   }

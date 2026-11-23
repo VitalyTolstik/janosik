@@ -134,17 +134,36 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
     // SSE connect reads fresh, because a write must enforce the current role
     // and a new stream must see a pause immediately. The board row is always
     // read fresh for the same reason (`agentsPausedAt` is a kill switch).
-    let membership: BoardMember | null | undefined = isCacheable(write, isSse)
+    const cacheable = isCacheable(write, isSse);
+    let usedCached = false;
+    let membership: BoardMember | null | undefined = cacheable
       ? this.hotPathCache.getMembership(boardId, user.id)
       : undefined;
-    if (membership !== undefined && !isCurrentMembership(membership)) {
-      this.hotPathCache.dropMembership(boardId, user.id);
-      membership = undefined;
+    if (cacheable && membership !== undefined) {
+      if (isCurrentMembership(membership)) {
+        usedCached = true;
+      } else {
+        this.hotPathCache.dropMembership(boardId, user.id);
+        membership = undefined;
+      }
     }
+    const rememberEpoch = this.hotPathCache.epochs.membership;
     if (membership === undefined) {
-      membership = await this.prisma.boardMember.findUnique({
-        where: { boardId_userId: { boardId, userId: user.id } },
-      });
+      membership = cacheable
+        ? await this.hotPathCache.singleFlight(
+            `membership:${boardId}\u0000${user.id}`,
+            rememberEpoch,
+            async () => {
+              const again = this.hotPathCache.getMembership(boardId, user.id);
+              if (again !== undefined) return again;
+              return this.prisma.boardMember.findUnique({
+                where: { boardId_userId: { boardId, userId: user.id } },
+              });
+            },
+          )
+        : await this.prisma.boardMember.findUnique({
+            where: { boardId_userId: { boardId, userId: user.id } },
+          });
     }
     for (;;) {
       if (!membership || membership.acceptedAt === null) {
@@ -165,9 +184,12 @@ export class MembershipGuard extends JwtAuthGuard implements CanActivate {
         where: { boardId_userId: { boardId, userId: user.id } },
       });
     }
-    // Populate on every path, including a write: the next read benefits and
-    // the write already paid for the fresh row.
-    this.hotPathCache.rememberMembership(boardId, user.id, membership);
+    // Only a row fetched from the database may renew the window: a cache hit
+    // must not turn the 30 s TTL into a sliding one. An invalidation during
+    // the read also wins over this fill.
+    if (!usedCached && this.hotPathCache.epochs.membership === rememberEpoch) {
+      this.hotPathCache.rememberMembership(boardId, user.id, membership);
+    }
 
     request.boardMembership = membership;
 

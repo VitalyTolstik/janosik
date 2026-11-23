@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import type { AdminFeatureFlagDto, FeatureFlagKey } from "@janosik/shared";
 import { FEATURE_FLAGS } from "@janosik/shared";
-import { Prisma } from "@prisma/client";
+import { Prisma, type FeatureFlag } from "@prisma/client";
 import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
@@ -43,11 +43,7 @@ export class FeatureFlagsService {
     key: FeatureFlagKey,
     userId?: string | null,
   ): Promise<boolean> {
-    let row = this.hotPathCache.getFlag(key);
-    if (row === undefined) {
-      row = await this.prisma.featureFlag.findUnique({ where: { key } });
-      this.hotPathCache.rememberFlag(key, row);
-    }
+    const row = await this.cachedFlagRow(key);
     if (userId && row?.perUser && typeof row.perUser === "object") {
       const overrides = row.perUser as Record<string, boolean>;
       if (Object.prototype.hasOwnProperty.call(overrides, userId)) {
@@ -55,6 +51,26 @@ export class FeatureFlagsService {
       }
     }
     return row?.enabled ?? this.envDefaults()[key];
+  }
+
+  /**
+   * One row lookup per key per window, even when hundreds of SSE ticks or
+   * requests miss it at the same instant. An invalidation during the query
+   * changes the epoch and prevents the older row from being cached.
+   */
+  private cachedFlagRow(key: FeatureFlagKey): Promise<FeatureFlag | null> {
+    const cached = this.hotPathCache.getFlag(key);
+    if (cached !== undefined) return Promise.resolve(cached);
+    const epoch = this.hotPathCache.epochs.flags;
+    return this.hotPathCache.singleFlight(`flag:${key}`, epoch, async () => {
+      const again = this.hotPathCache.getFlag(key);
+      if (again !== undefined) return again;
+      const row = await this.prisma.featureFlag.findUnique({ where: { key } });
+      if (this.hotPathCache.epochs.flags === epoch) {
+        this.hotPathCache.rememberFlag(key, row);
+      }
+      return row;
+    });
   }
 
   /** Throws 403 when a flag is off — the guard used by gated code paths. */

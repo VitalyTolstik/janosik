@@ -7,7 +7,7 @@ import { Reflector } from "@nestjs/core";
 import { ApiTokenService } from "@/auth/api-token.service";
 import { isWriteMethod } from "@/auth/agent-pause";
 import type { AuthUser } from "@/auth/auth.types";
-import type { HotPathCacheService } from "@/common/hot-path-cache.service";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { ARCHIVED_BOARD_MESSAGE } from "./archived-board";
 import { GuardedRequest, MembershipGuard } from "./membership.guard";

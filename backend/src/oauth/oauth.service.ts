@@ -10,6 +10,7 @@ import { env } from "@/config/env";
 import type { OAuthProviderDto, OAuthProviderId } from "@janosik/shared";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import type { AuthResult } from "@/auth/auth.types";
 import { AuthService } from "@/auth/auth.service";
@@ -44,6 +45,7 @@ export class OAuthService {
     private readonly authService: AuthService,
     private readonly settings: OAuthSettingsService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly hotPathCache: HotPathCacheService,
   ) {}
 
   /** Login buttons for the sign-in screen — only configured providers. */
@@ -369,6 +371,9 @@ export class OAuthService {
       });
       return { user: claimed, tokenIds: revoked.tokenIds };
     });
+    // The old credentials were wiped and every PAT revoked atomically; drop
+    // cached resolutions before the OAuth response can be used.
+    this.hotPathCache.invalidatePat();
     this.logger.warn(
       `OAuth claimed unverified account ${userId}: password cleared, sessions and API tokens revoked`,
     );
