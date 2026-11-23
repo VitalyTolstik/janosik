@@ -326,10 +326,11 @@ export async function runMcpAgentLoop({
       onFirstRequest?.(Date.now());
     }
     const cycleStarted = Date.now();
+    let waitConsumedCadence = false;
     worker.sampleRss();
     try {
       if (mode === "idle") {
-        await worker.call(
+        const waited = await worker.call(
           "janosik_wait_for_work",
           {
             boardId,
@@ -342,6 +343,10 @@ export async function runMcpAgentLoop({
           },
           { signal },
         );
+        // A timeout means the tool already spent the cadence waiting; do not
+        // add another full sleep. A card returned early still sleeps the
+        // remainder so the cadence is not shortened.
+        waitConsumedCadence = waited?.card === null;
       } else {
         const ready = await worker.call(
           "janosik_list_ready_cards",
@@ -456,6 +461,7 @@ export async function runMcpAgentLoop({
       if (fatal) return;
     }
     worker.sampleRss();
+    if (waitConsumedCadence) continue;
     const delay = jitteredDelay(config.cadenceMs, config.jitter ?? 0, random);
     const elapsed = Date.now() - cycleStarted;
     if (elapsed < delay) await sleep(delay - elapsed, signal);

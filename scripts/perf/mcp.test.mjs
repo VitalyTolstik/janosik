@@ -193,6 +193,28 @@ test("MCP uses wait_for_work when idle and evidence comments when working", asyn
   });
   assert.equal(idleCalls.includes("janosik_wait_for_work"), true);
 
+  const idleTimes = [];
+  const pacedWorker = {
+    sampleRss() {},
+    async call() {
+      idleTimes.push(Date.now());
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return { card: null };
+    },
+  };
+  await runMcpAgentLoop({
+    worker: pacedWorker,
+    boardId: "board-1",
+    mode: "idle",
+    config: { id: "S1", cadenceMs: 40, jitter: 0.5, leaseMs: 60_000 },
+    deadline: Date.now() + 140,
+    signal: new AbortController().signal,
+    metrics,
+    random: () => 0.999,
+  });
+  assert.equal(idleTimes.length >= 2, true);
+  assert.equal(idleTimes[1] - idleTimes[0] < 55, true);
+
   let commentArgs;
   const worker = {
     sampleRss() {},

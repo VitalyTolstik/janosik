@@ -81,6 +81,41 @@ test("S4 synchronises a burst after the ramp and reports the work window", async
   assert.equal(statusOf(result, config, metrics).status, "ok");
 });
 
+test("S4 no-burst reports the earliest observed request before the ramp end", async (t) => {
+  const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 40 });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S4",
+      "--agents",
+      "2",
+      "--ramp",
+      "500ms",
+      "--duration",
+      "500ms",
+      "--no-burst",
+      "--cadence",
+      "100ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S4");
+  const result = await runScenario({
+    id: "S4",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.actualWorkStartedAt < result.plannedWorkStartedAt, true);
+  assert.equal(result.workStartedAt, result.actualWorkStartedAt);
+  assert.equal(result.actualWorkStartedAt >= result.startedAt, true);
+});
+
 test("S5 hold starts after the observed ramp and is reported", async (t) => {
   const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 4 });
   t.after(() => mock.close());

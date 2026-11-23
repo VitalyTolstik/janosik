@@ -120,6 +120,7 @@ export class RunMetrics {
     this.recycled = 0;
     this.orphans = 0;
     this.cleanupAborted = 0;
+    this.cleanupFailed = 0;
     this.expected400 = 0;
     this.readyFallback404 = 0;
     this.durations = [];
@@ -200,9 +201,10 @@ export class RunMetrics {
     const key = Number.isInteger(agentIndex) ? agentIndex : 0;
     const entry = this.agentActions.get(key) ?? {
       count: 0,
-      firstAt: at,
-      lastAt: at,
+      lastAt: null,
+      intervals: [],
     };
+    if (entry.lastAt !== null) entry.intervals.push(at - entry.lastAt);
     entry.count += 1;
     entry.lastAt = at;
     this.agentActions.set(key, entry);
@@ -228,6 +230,10 @@ export class RunMetrics {
 
   recordCleanupAborted(count = 1) {
     this.cleanupAborted += count;
+  }
+
+  recordCleanupFailed(count = 1) {
+    this.cleanupFailed += count;
   }
 
   recordTool(name, durationMs) {
@@ -333,16 +339,16 @@ export class RunMetrics {
       };
     }
     const perAgentIntervals = [];
+    let agentsMeasured = 0;
     for (const entry of this.agentActions.values()) {
-      if (entry.count > 1) {
-        perAgentIntervals.push(
-          (entry.lastAt - entry.firstAt) / (entry.count - 1),
-        );
+      if (entry.intervals.length > 0) {
+        agentsMeasured += 1;
+        perAgentIntervals.push(...entry.intervals);
       }
     }
     const cadence = summarizeNumbers(perAgentIntervals);
     const agentCadence = {
-      agentsMeasured: perAgentIntervals.length,
+      agentsMeasured,
       minMs: cadence.min,
       medianMs: cadence.p50,
       maxMs: cadence.max,
@@ -366,6 +372,7 @@ export class RunMetrics {
       recycled: this.recycled,
       orphans: this.orphans,
       cleanupAborted: this.cleanupAborted,
+      cleanupFailed: this.cleanupFailed,
       toolCalls: this.toolCalls,
       tools,
       agentCadence,

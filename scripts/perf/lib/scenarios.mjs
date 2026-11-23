@@ -50,6 +50,7 @@ function errorRecorder(config) {
         fatal: entry.fatal === true,
         orphan: entry.orphan === true,
         cleanupAborted: entry.cleanupAborted === true,
+        cleanupFailed: entry.cleanupFailed === true,
         status: Number.isInteger(entry.error?.status)
           ? entry.error.status
           : null,
@@ -175,6 +176,7 @@ export async function runScenario({
     errors.push(entry);
     if (entry.orphan === true) metrics.recordOrphan();
     if (entry.cleanupAborted === true) metrics.recordCleanupAborted();
+    if (entry.cleanupFailed === true) metrics.recordCleanupFailed();
     if (entry.fatal === true) {
       fatal = true;
       captureMeasurement();
@@ -411,14 +413,18 @@ export async function runScenario({
         }),
       );
     }
+    await Promise.allSettled(tasks);
+    // First requests arrive while the tasks run; read them only after every
+    // worker has settled so a staggered (no-burst) S4 reports the earliest
+    // observed request, not the planned ramp end.
+    let observedWorkStartedAt = null;
     if (id === "S4") {
-      actualWorkStartedAt =
+      observedWorkStartedAt =
         workerFirstRequests.length > 0
           ? Math.min(...workerFirstRequests)
-          : Math.max(workStartedAt, Date.now());
+          : null;
+      actualWorkStartedAt = observedWorkStartedAt ?? workStartedAt;
     }
-
-    await Promise.allSettled(tasks);
     captureMeasurement();
     const mcp = mcpWorkers.length > 0 ? summarizeMcpWorkers(mcpWorkers) : null;
     return finish({
@@ -426,6 +432,7 @@ export async function runScenario({
       startedAt,
       workStartedAt: actualWorkStartedAt,
       plannedWorkStartedAt: workStartedAt,
+      actualWorkStartedAt: observedWorkStartedAt,
       measurementEndedAt,
       fatal,
       interrupted,
@@ -476,6 +483,7 @@ function finish({
   startedAt,
   workStartedAt,
   plannedWorkStartedAt = workStartedAt,
+  actualWorkStartedAt = null,
   measurementEndedAt,
   fatal,
   interrupted,
@@ -494,7 +502,7 @@ function finish({
     endedAt,
     workStartedAt,
     plannedWorkStartedAt,
-    actualWorkStartedAt: workStartedAt,
+    actualWorkStartedAt,
     workEndedAt: measuredEnd,
     workDurationMs: Math.max(0, measuredEnd - workStartedAt),
     durationMs: Math.max(0, measuredEnd - startedAt),

@@ -178,11 +178,12 @@ test("per-agent cadence is measured from observed action timestamps", () => {
   metrics.recordAgentAction(0, 2_000);
   metrics.recordAgentAction(0, 3_000);
   metrics.recordAgentAction(1, 1_500);
+  metrics.recordAgentAction(1, 3_500);
   const snapshot = metrics.snapshot({ durationMs: 60_000, agents: 2 });
-  assert.equal(snapshot.agentCadence.agentsMeasured, 1);
+  assert.equal(snapshot.agentCadence.agentsMeasured, 2);
   assert.equal(snapshot.agentCadence.medianMs, 1_000);
   assert.equal(snapshot.agentCadence.minMs, 1_000);
-  assert.equal(snapshot.agentCadence.maxMs, 1_000);
+  assert.equal(snapshot.agentCadence.maxMs, 2_000);
 });
 
 test("tool calls are measured separately from HTTP requests", () => {
@@ -209,6 +210,7 @@ test("empty RunMetrics snapshot is JSON-safe", () => {
   assert.equal(snapshot.success2xx, 0);
   assert.equal(snapshot.orphans, 0);
   assert.equal(snapshot.cleanupAborted, 0);
+  assert.equal(snapshot.cleanupFailed, 0);
   assert.equal(snapshot.requestsPerAgentPerMinute, 0);
   assert.equal(snapshot.activity.mix, null);
 });
