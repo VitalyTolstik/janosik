@@ -72,6 +72,24 @@ describe("FilterBar", () => {
     expect(search).toHaveFocus();
   });
 
+  it("keeps the active result/reset row mobile-safe under the saved-views trigger", () => {
+    renderBar({ ...EMPTY_FILTER, due: "overdue" });
+    const row = screen.getByTestId("filter-match-count").parentElement;
+    // 390 px contract: the row takes the available width and wraps instead
+    // of forcing the FilterBar past the card/board edge; desktop returns to
+    // the inline right-aligned layout.
+    expect(row).toHaveClass(
+      "w-full",
+      "flex-wrap",
+      "justify-end",
+      "gap-2",
+      "sm:ml-auto",
+      "sm:w-auto",
+    );
+    expect(screen.getByTestId("filter-reset")).toHaveClass("h-8");
+    expect(screen.getByTestId("filter-bar")).toHaveClass("flex-wrap");
+  });
+
   it("keeps the search input inline and the facets behind the popover", async () => {
     renderBar();
     expect(

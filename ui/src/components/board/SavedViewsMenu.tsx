@@ -272,6 +272,7 @@ function SavedViewsPanel({
   const [views, setViews] = useState<SavedView[]>(loaded.views);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [draft, setDraft] = useState("");
+  const [nameRequired, setNameRequired] = useState(false);
   const [error, setError] = useState<PanelError | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [writeLock, setWriteLock] = useState<SavedViewsWriteError | null>(null);
@@ -332,6 +333,16 @@ function SavedViewsPanel({
     !writeBlocked &&
     renameName !== "" &&
     !renameDuplicate;
+  const createNameError = createDuplicate
+    ? t("savedViews.duplicate")
+    : nameRequired
+      ? t("savedViews.nameRequired")
+      : null;
+  const renameNameError = renameDuplicate
+    ? t("savedViews.duplicate")
+    : nameRequired
+      ? t("savedViews.nameRequired")
+      : null;
 
   /**
    * An empty member list is the pre-load/failure state, not "everyone was
@@ -400,6 +411,7 @@ function SavedViewsPanel({
   const returnToList = (focusAfter: () => void) => {
     setMode({ kind: "list" });
     setDraft("");
+    setNameRequired(false);
     setError(null);
     focusAfter();
   };
@@ -409,13 +421,17 @@ function SavedViewsPanel({
   const openCreate = () => {
     setMode({ kind: "create" });
     setDraft("");
+    setNameRequired(false);
     setError(null);
     setConfirmDelete(null);
   };
 
   const submitCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canCreate) return;
+    if (!canCreate) {
+      if (createName === "") setNameRequired(true);
+      return;
+    }
     const result = createSavedView(views, {
       name: draft,
       filter,
@@ -432,13 +448,18 @@ function SavedViewsPanel({
   const startRename = (saved: SavedView) => {
     setMode({ kind: "rename", name: saved.name });
     setDraft(saved.name);
+    setNameRequired(false);
     setError(null);
     setConfirmDelete(null);
   };
 
   const submitRename = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (mode.kind !== "rename" || !canRename) return;
+    if (mode.kind !== "rename") return;
+    if (!canRename) {
+      if (renameName === "") setNameRequired(true);
+      return;
+    }
     const result = renameSavedView(views, mode.name, draft);
     if (!result.ok) {
       setError(result.reason);
@@ -602,11 +623,19 @@ function SavedViewsPanel({
               autoFocus
               value={draft}
               maxLength={SAVED_VIEW_NAME_LIMIT}
-              invalid={createDuplicate}
-              onChange={(event) => setDraft(event.target.value)}
+              invalid={createNameError !== null}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setNameRequired(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || canCreate) return;
+                event.preventDefault();
+                if (createName === "") setNameRequired(true);
+              }}
               placeholder={t("savedViews.namePlaceholder")}
               aria-describedby={
-                createDuplicate ? "saved-view-name-error" : undefined
+                createNameError !== null ? "saved-view-name-error" : undefined
               }
               className="h-11"
               data-testid="saved-views-name"
@@ -615,15 +644,20 @@ function SavedViewsPanel({
               length={draft.length}
               limit={SAVED_VIEW_NAME_LIMIT}
               testId="saved-views-name-limit"
+              dangerClassName="text-(--chip-red)"
             />
-            {createDuplicate && (
+            {createNameError !== null && (
               <p
                 id="saved-view-name-error"
                 role="alert"
                 className="text-xs text-(--chip-red)"
-                data-testid="saved-views-duplicate"
+                data-testid={
+                  createDuplicate
+                    ? "saved-views-duplicate"
+                    : "saved-views-name-required"
+                }
               >
-                {t("savedViews.duplicate")}
+                {createNameError}
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
@@ -705,27 +739,40 @@ function SavedViewsPanel({
                         autoFocus
                         value={draft}
                         maxLength={SAVED_VIEW_NAME_LIMIT}
-                        invalid={renameDuplicate}
-                        onChange={(event) => setDraft(event.target.value)}
+                        invalid={renameNameError !== null}
+                        onChange={(event) => {
+                          setDraft(event.target.value);
+                          setNameRequired(false);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" || canRename) return;
+                          event.preventDefault();
+                          if (renameName === "") setNameRequired(true);
+                        }}
                         onFocus={(event) => event.currentTarget.select()}
                         aria-label={t("savedViews.renameLabel", {
                           name: saved.name,
                         })}
                         aria-describedby={
-                          renameDuplicate
+                          renameNameError !== null
                             ? "saved-view-rename-error"
                             : undefined
                         }
                         className="h-11"
                         data-testid="saved-views-rename-input"
                       />
-                      {renameDuplicate && (
+                      {renameNameError !== null && (
                         <p
                           id="saved-view-rename-error"
                           role="alert"
                           className="text-xs text-(--chip-red)"
+                          data-testid={
+                            renameDuplicate
+                              ? "saved-views-rename-duplicate"
+                              : "saved-views-rename-required"
+                          }
                         >
-                          {t("savedViews.duplicate")}
+                          {renameNameError}
                         </p>
                       )}
                       <div className="flex flex-wrap items-center gap-2">

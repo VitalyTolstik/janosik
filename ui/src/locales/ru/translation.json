@@ -1467,7 +1467,7 @@
   "limits.maxItems": "Достигнут лимит ({{limit}})",
   "limits.maxLabelsOnCard": "На карточке может быть не больше {{limit}} меток",
   "limits.maxLinksOnCard": "У карточки может быть не больше {{limit}} связей",
-  "limits.remaining": "осталось {{count}} символов",
+  "limits.remaining": "Осталось символов: {{count}}",
   "notFound.back": "К доскам",
   "notFound.board.lead": "Такой доски нет, либо у вас больше нет к ней доступа.",
   "notFound.board.title": "Доска не найдена",

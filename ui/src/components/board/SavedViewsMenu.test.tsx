@@ -884,6 +884,61 @@ describe("SavedViewsMenu", () => {
     );
   });
 
+  it("shows an inline required error on Enter with an empty name", async () => {
+    renderMenu();
+    await openMenu();
+    await userEvent.click(screen.getByTestId("saved-views-save-current"));
+    const input = screen.getByLabelText("View name");
+
+    await userEvent.keyboard("{Enter}");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", "saved-view-name-error");
+    expect(screen.getByTestId("saved-views-name-required")).toHaveTextContent(
+      "Enter a name.",
+    );
+    expect(screen.getByTestId("saved-views-confirm-save")).toBeDisabled();
+
+    await userEvent.type(input, "Now named");
+    expect(
+      screen.queryByTestId("saved-views-name-required"),
+    ).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("shows an inline required error when rename is emptied", async () => {
+    saveSavedViews(USER, BOARD, [savedView({ name: "Before" })]);
+    renderMenu();
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Rename view Before" }),
+    );
+    const input = screen.getByLabelText("New name for view Before");
+    await userEvent.clear(input);
+    await userEvent.keyboard("{Enter}");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute(
+      "aria-describedby",
+      "saved-view-rename-error",
+    );
+    expect(screen.getByTestId("saved-views-rename-required")).toHaveTextContent(
+      "Enter a name.",
+    );
+    expect(screen.getByTestId("saved-views-confirm-rename")).toBeDisabled();
+  });
+
+  it("uses the AA chip-red token for the critical name counter", async () => {
+    renderMenu();
+    await openMenu();
+    await userEvent.click(screen.getByTestId("saved-views-save-current"));
+    await userEvent.type(screen.getByLabelText("View name"), "x".repeat(55));
+
+    const counter = screen.getByTestId("saved-views-name-limit");
+    expect(counter).toHaveClass("text-(--chip-red)");
+    expect(counter).not.toHaveClass("text-danger");
+  });
+
   it("fits a 390px viewport and keeps 44px targets at 768px", async () => {
     renderMenu();
     expect(screen.getByTestId("saved-views-menu")).toHaveClass(
