@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { Subscription } from "rxjs";
@@ -31,7 +32,6 @@ interface ReadyCardRow {
   claimedBy: string | null;
   leaseUntil: Date | null;
   version: number;
-  descriptionChars: number;
 }
 
 /** A raw row of the cross-board ready query. */
@@ -51,12 +51,84 @@ interface ReadyBoardRow {
 }
 
 interface ReadyOptions {
+  /** Caller id for the held-poll admission cap. */
+  userId: string;
   limit?: number;
   /** Server-side hold in ms; 0 answers the snapshot immediately. */
   wait?: number;
   /** The board `seq` the caller last observed. */
   since?: number;
   signal?: AbortSignal;
+}
+
+/** Outcome of one ready request; a timed hold is not an empty `200`. */
+export type BoardReadyPollResult =
+  | { status: "ready"; body: BoardReadyDto }
+  | { status: "timeout"; seq: number }
+  | { status: "aborted" };
+
+/** Held long-polls admitted per user before a `503` (per process). */
+export const READY_POLL_MAX_PER_USER = 1_000;
+/** Held long-polls admitted per board before a `503` (per process). */
+export const READY_POLL_MAX_PER_BOARD = 2_000;
+
+/** How long one shared post-wake snapshot is reused by co-waiters. */
+const SHARED_SNAPSHOT_TTL_MS = 1_000;
+/** Bound the per-instance shared snapshot map even under command churn. */
+const SHARED_SNAPSHOT_MAX = 1_024;
+
+/**
+ * In-process admission for held ready/work requests (TASK-200.2 review).
+ * The server may hold a request for up to a minute, so an unbounded number of
+ * hold sockets is a resource of its own. Counts are per instance and released
+ * in a `finally`, including aborted clients.
+ */
+@Injectable()
+export class ReadyPollAdmission {
+  private readonly perUser = new Map<string, number>();
+  private readonly perBoard = new Map<string, number>();
+
+  constructor(
+    private readonly maxPerUser = READY_POLL_MAX_PER_USER,
+    private readonly maxPerBoard = READY_POLL_MAX_PER_BOARD,
+  ) {}
+
+  /** Reserve one held poll, or `null` when a cap is reached. */
+  acquire(userId: string, boardId: string): (() => void) | null {
+    const user = this.perUser.get(userId) ?? 0;
+    const board = this.perBoard.get(boardId) ?? 0;
+    if (user >= this.maxPerUser || board >= this.maxPerBoard) return null;
+    this.perUser.set(userId, user + 1);
+    this.perBoard.set(boardId, board + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      decrement(this.perUser, userId);
+      decrement(this.perBoard, boardId);
+    };
+  }
+
+  /** Live held polls on this instance. */
+  active(): number {
+    let total = 0;
+    for (const count of this.perBoard.values()) total += count;
+    return total;
+  }
+
+  activeForUser(userId: string): number {
+    return this.perUser.get(userId) ?? 0;
+  }
+
+  activeForBoard(boardId: string): number {
+    return this.perBoard.get(boardId) ?? 0;
+  }
+}
+
+function decrement(map: Map<string, number>, key: string): void {
+  const next = (map.get(key) ?? 1) - 1;
+  if (next <= 0) map.delete(key);
+  else map.set(key, next);
 }
 
 /**
@@ -74,23 +146,35 @@ interface ReadyOptions {
  * - unassigned, not archived/deleted;
  * - no live claim (a null/lapsed lease is free);
  * - not the target of a live `blocks` link from a live, unarchived card.
+ *
+ * A hold wakes only on an action that can change readiness (not every command
+ * — every command carries `board:<id>` in `touches`). After a wake it
+ * re-reads; an empty result keeps holding until the deadline, and co-waiters
+ * for the same board/event share one snapshot read.
  */
 @Injectable()
 export class ReadyService {
+  private readonly sharedSnapshots = new Map<
+    string,
+    { promise: Promise<BoardReadyDto | null>; expiresAt: number }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeService,
+    private readonly polls: ReadyPollAdmission,
   ) {}
 
   /**
-   * One board's ready snapshot, optionally held until a relevant command
-   * arrives. Returns `undefined` only for a long-poll timeout/abort; the
-   * controller turns that into `204 No Content`.
+   * One board's ready snapshot, optionally held until work appears or the
+   * caller's deadline passes. `timeout` carries the latest board seq for the
+   * `204` headers; `aborted` means the client went away and no response is
+   * written.
    */
   async getBoardReady(
     boardId: string,
-    options: ReadyOptions = {},
-  ): Promise<BoardReadyDto | undefined> {
+    options: ReadyOptions,
+  ): Promise<BoardReadyPollResult> {
     const limit = normalizeLimit(options.limit);
     const wait = normalizeWait(options.wait);
     const since = normalizeSince(options.since);
@@ -99,15 +183,14 @@ export class ReadyService {
     // snapshot and the wait would otherwise be missed and the agent would
     // sleep through available work.
     let subscription: Subscription | undefined;
-    let woke = false;
-    let notify: (() => void) | undefined;
-    const event = new Promise<void>((resolve) => {
-      notify = resolve;
-    });
+    let queuedWake: string | undefined;
+    let wakeWaiter: (() => void) | undefined;
     if (wait > 0) {
       subscription = this.realtime.watch(boardId).subscribe((frame) => {
         if (!isReadyFrame(frame)) return;
-        woke = true;
+        queuedWake = wakeKeyOf(frame);
+        const notify = wakeWaiter;
+        wakeWaiter = undefined;
         notify?.();
       });
     }
@@ -115,23 +198,66 @@ export class ReadyService {
     try {
       let snapshot = await this.readSnapshot(boardId, limit);
       if (snapshot === null) throw new NotFoundException("Board not found");
-      if (snapshot.archived || snapshot.cards.length > 0) return snapshot;
+      if (snapshot.archived || snapshot.cards.length > 0) {
+        return { status: "ready", body: snapshot };
+      }
       // `since` is a change cursor: a caller whose last snapshot predates the
       // current seq gets an immediate (possibly empty) answer instead of
       // holding a request for a board that already changed.
-      if (since !== undefined && since !== snapshot.seq) return snapshot;
-      if (wait === 0) return snapshot;
-      // An event arrived while the snapshot was loading; re-read rather than
-      // waiting for the next one.
-      if (woke) {
-        snapshot = await this.readSnapshot(boardId, limit);
-        return snapshot ?? undefined;
+      if (since !== undefined && since !== snapshot.seq) {
+        return { status: "ready", body: snapshot };
       }
+      if (wait === 0) return { status: "ready", body: snapshot };
 
-      const outcome = await this.holdForEvent(wait, event, options.signal);
-      if (outcome !== "event") return undefined;
-      snapshot = await this.readSnapshot(boardId, limit);
-      return snapshot ?? undefined;
+      const release = this.polls.acquire(options.userId, boardId);
+      if (release === null) {
+        throw new ServiceUnavailableException({
+          message: "Too many held ready polls; retry shortly",
+          code: "ready_poll_capacity",
+          retryable: true,
+        });
+      }
+      try {
+        const deadline = Date.now() + wait;
+        let latestSeq = snapshot.seq;
+        for (;;) {
+          let wakeKey = queuedWake;
+          queuedWake = undefined;
+          if (wakeKey === undefined) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) {
+              return await this.timeoutResult(boardId, latestSeq);
+            }
+            const event = new Promise<void>((resolve) => {
+              wakeWaiter = resolve;
+            });
+            const outcome = await this.holdForEvent(
+              remaining,
+              event,
+              options.signal,
+            );
+            wakeWaiter = undefined;
+            if (outcome === "aborted") return { status: "aborted" };
+            if (outcome === "timeout") {
+              return await this.timeoutResult(boardId, latestSeq);
+            }
+            wakeKey = queuedWake;
+            queuedWake = undefined;
+            if (wakeKey === undefined) continue;
+          }
+
+          snapshot = await this.readSnapshotShared(boardId, limit, wakeKey);
+          if (snapshot === null) throw new NotFoundException("Board not found");
+          latestSeq = snapshot.seq;
+          if (snapshot.archived || snapshot.cards.length > 0) {
+            return { status: "ready", body: snapshot };
+          }
+          // The relevant change did not make work available: keep holding
+          // instead of returning an empty snapshot and causing a re-poll.
+        }
+      } finally {
+        release();
+      }
     } finally {
       subscription?.unsubscribe();
     }
@@ -257,6 +383,66 @@ export class ReadyService {
     };
   }
 
+  /**
+   * Post-wake read shared by every waiter that woke on the same event. The
+   * key is the command seq (or a per-frame resync id), so a burst of 500
+   * waiters performs one snapshot query for the board instead of 500.
+   */
+  private readSnapshotShared(
+    boardId: string,
+    limit: number,
+    wakeKey: string,
+  ): Promise<BoardReadyDto | null> {
+    const key = `${boardId}|${wakeKey}`;
+    const now = Date.now();
+    this.pruneSharedSnapshots(now);
+    let entry = this.sharedSnapshots.get(key);
+    if (entry === undefined) {
+      const promise = this.readSnapshot(boardId, READY_WORK_LIMIT_MAX);
+      entry = { promise, expiresAt: now + SHARED_SNAPSHOT_TTL_MS };
+      this.sharedSnapshots.set(key, entry);
+      void promise.catch(() => {
+        if (this.sharedSnapshots.get(key) === entry) {
+          this.sharedSnapshots.delete(key);
+        }
+      });
+    }
+    return entry.promise.then((snapshot) =>
+      snapshot === null ? null : withLimit(snapshot, limit),
+    );
+  }
+
+  private pruneSharedSnapshots(now: number): void {
+    for (const [key, entry] of this.sharedSnapshots) {
+      if (entry.expiresAt <= now) this.sharedSnapshots.delete(key);
+    }
+    if (this.sharedSnapshots.size <= SHARED_SNAPSHOT_MAX) return;
+    const overflow = this.sharedSnapshots.size - SHARED_SNAPSHOT_MAX;
+    let removed = 0;
+    for (const key of this.sharedSnapshots.keys()) {
+      this.sharedSnapshots.delete(key);
+      removed += 1;
+      if (removed >= overflow) break;
+    }
+  }
+
+  /**
+   * A hold that expires still reports the latest seq for `X-Board-Seq`, but a
+   * board deleted during the hold answers `404`, never `204`.
+   */
+  private async timeoutResult(
+    boardId: string,
+    knownSeq: number,
+  ): Promise<BoardReadyPollResult> {
+    const board = await this.prisma.board.findFirst({
+      where: { id: boardId, deletedAt: null },
+      select: { id: true },
+    });
+    if (board === null) throw new NotFoundException("Board not found");
+    const seq = (await this.boardSeqs([boardId])).get(boardId) ?? knownSeq;
+    return { status: "timeout", seq };
+  }
+
   /** Highest committed command seq per board, folded into one grouped read. */
   private async boardSeqs(boardIds: string[]): Promise<Map<string, number>> {
     if (boardIds.length === 0) return new Map();
@@ -307,6 +493,11 @@ export class ReadyService {
       }
     }
   }
+
+  /** Live held polls for tests and an optional ops surface. */
+  activePolls(): number {
+    return this.polls.active();
+  }
 }
 
 /** Clamp `limit` to the shared contract; invalid input is a `400`. */
@@ -353,20 +544,67 @@ export function firstWorkColumn(
 }
 
 /**
- * A realtime frame can change the ready set only when it touched a card, a
- * column or the board itself (workflow/initial-column changes travel as
- * `board:`). Presence, comments, approvals and heartbeats must not wake a
- * long-poll; a resync frame is a "your view is stale" signal and does.
+ * Actions that can change the ready set. `touches` is deliberately ignored:
+ * every command prepends `board:<id>`, and label/checklist/rename commands
+ * also touch a card or the board without changing readiness.
+ */
+const READY_WAKE_ACTIONS: ReadonlySet<string> = new Set([
+  // Cards: presence, column/position, priority, assignee, claim and links.
+  "ADD_CARD",
+  "UPDATE_CARD",
+  "MOVE_CARD",
+  "DELETE_CARD",
+  "ARCHIVE_CARD",
+  "UNARCHIVE_CARD",
+  "DUPLICATE_CARD",
+  "RESTORE_CARD",
+  "ARCHIVE_COLUMN_CARDS",
+  "RESTORE_COLUMN_CARDS",
+  "SET_CARD_PRIORITY",
+  "SET_CARD_ASSIGN",
+  "CLAIM_CARD",
+  "ADD_CARD_LINK",
+  "REMOVE_CARD_LINK",
+  // Column structure, order and workflow selection.
+  "ADD_COLUMN",
+  "RENAME_COLUMN",
+  "DELETE_COLUMN",
+  "MOVE_COLUMN",
+  "SORT_COLUMN",
+  "SET_COLUMN_CARD_ORDER",
+  "RESTORE_COLUMN",
+  "SET_BOARD_WORKFLOW",
+  // Board availability.
+  "ARCHIVE_BOARD",
+  "UNARCHIVE_BOARD",
+]);
+
+/**
+ * A realtime frame can change the ready set only for an allowed action or a
+ * "your view is stale" resync. Presence, comments, labels, checklists, board
+ * renames and heartbeats must not wake a long-poll.
  */
 export function isReadyFrame(frame: BoardSseEvent): boolean {
   if (frame.type === "resync") return true;
   if (frame.type !== "command") return false;
-  return frame.touches.some(
-    (touch) =>
-      touch.startsWith("card:") ||
-      touch.startsWith("column:") ||
-      touch.startsWith("board:"),
-  );
+  return READY_WAKE_ACTIONS.has(frame.action.type);
+}
+
+/**
+ * Co-waiters must share one post-wake snapshot. Commands carry a unique seq;
+ * a resync frame has none, so every subscriber that sees the same frame object
+ * gets the same synthetic key.
+ */
+const resyncWakeKeys = new WeakMap<BoardSseEvent, string>();
+let resyncWakeSerial = 0;
+
+export function wakeKeyOf(frame: BoardSseEvent): string {
+  if (frame.type === "command") return `cmd:${frame.seq}`;
+  const known = resyncWakeKeys.get(frame);
+  if (known !== undefined) return known;
+  const key = `resync:${++resyncWakeSerial}`;
+  resyncWakeKeys.set(frame, key);
+  return key;
 }
 
 /** Priority order used by the SQL `CASE`; shared with the client convention. */
@@ -401,8 +639,7 @@ function boardReadySql(columnId: string, limit: number): Prisma.Sql {
       c."priority",
       c."claimedBy",
       c."leaseUntil",
-      c."version",
-      COALESCE(length(c."description"), 0)::int AS "descriptionChars"
+      c."version"
     FROM "Card" c
     WHERE c."columnId" = ${columnId}
       AND c."deletedAt" IS NULL
@@ -433,7 +670,6 @@ function crossBoardReadySql(columnIds: string[], limit: number): Prisma.Sql {
       c."claimedBy",
       c."leaseUntil",
       c."version",
-      COALESCE(length(c."description"), 0)::int AS "descriptionChars",
       col."id" AS "columnId",
       col."title" AS "columnTitle",
       col."boardId" AS "boardId"
@@ -475,8 +711,12 @@ function toReadyCard(
     claimedBy: row.claimedBy,
     leaseUntil: row.leaseUntil === null ? null : row.leaseUntil.getTime(),
     version: row.version,
-    descriptionChars: row.descriptionChars,
   };
+}
+
+/** One shared snapshot, sliced to the waiter's requested limit. */
+function withLimit(snapshot: BoardReadyDto, limit: number): BoardReadyDto {
+  return { ...snapshot, limit, cards: snapshot.cards.slice(0, limit) };
 }
 
 /** Stored priority values are untrusted; unknown values display as medium. */

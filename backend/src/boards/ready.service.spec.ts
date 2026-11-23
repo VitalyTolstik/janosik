@@ -1,22 +1,29 @@
-import { BadRequestException } from "@nestjs/common";
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { Subject } from "rxjs";
 import type { BoardSseEvent } from "@janosik/shared";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import type { RealtimeService } from "@/realtime/realtime.service";
 import {
+  ReadyPollAdmission,
   ReadyService,
   firstWorkColumn,
   isReadyFrame,
   normalizeLimit,
   normalizeSince,
   normalizeWait,
+  wakeKeyOf,
 } from "./ready.service";
 
 /**
  * TASK-200.2 — the ready/work summary must stay a few small indexed reads,
  * never a board aggregate. These tests pin the column choice, the summary
- * shape, the query count (including the cross-board path) and every
- * long-poll exit: card, timeout, abort and a relevant realtime frame.
+ * shape, the query count (including the cross-board path), the wake filter,
+ * empty post-wake holding, shared snapshot coalescing, timeout/abort and the
+ * held-poll admission cap.
  */
 
 interface ReadyCardRow {
@@ -26,7 +33,6 @@ interface ReadyCardRow {
   claimedBy: string | null;
   leaseUntil: Date | null;
   version: number;
-  descriptionChars: number;
 }
 
 const CARD_ROW: ReadyCardRow = {
@@ -36,7 +42,6 @@ const CARD_ROW: ReadyCardRow = {
   claimedBy: null,
   leaseUntil: null,
   version: 4,
-  descriptionChars: 12,
 };
 
 const BOARD = {
@@ -69,8 +74,8 @@ async function waitFor(check: () => boolean, timeoutMs = 1000): Promise<void> {
   }
 }
 
-function setup(options: { watch?: Subject<BoardSseEvent> } = {}) {
-  const subject = options.watch ?? new Subject<BoardSseEvent>();
+function setup(options: { polls?: ReadyPollAdmission } = {}) {
+  const subject = new Subject<BoardSseEvent>();
   const prisma = {
     board: { findFirst: jest.fn(), findMany: jest.fn() },
     command: { groupBy: jest.fn() },
@@ -81,7 +86,8 @@ function setup(options: { watch?: Subject<BoardSseEvent> } = {}) {
   const realtime = {
     watch: jest.fn(() => subject.asObservable()),
   } as unknown as RealtimeService;
-  const service = new ReadyService(prisma, realtime);
+  const polls = options.polls ?? new ReadyPollAdmission();
+  const service = new ReadyService(prisma, realtime, polls);
   const boardFindFirst = prisma.board.findFirst as unknown as jest.Mock;
   const boardFindMany = prisma.board.findMany as unknown as jest.Mock;
   const groupBy = prisma.command.groupBy as unknown as jest.Mock;
@@ -90,6 +96,7 @@ function setup(options: { watch?: Subject<BoardSseEvent> } = {}) {
   const columnFindMany = prisma.column.findMany as unknown as jest.Mock;
   return {
     service,
+    polls,
     subject,
     boardFindFirst,
     boardFindMany,
@@ -118,37 +125,44 @@ describe("ReadyService.getBoardReady", () => {
     const mocks = setup();
     primeSnapshot(mocks);
 
-    const result = await mocks.service.getBoardReady("b1");
+    const result = await mocks.service.getBoardReady("b1", { userId: "u1" });
 
     expect(result).toMatchObject({
-      boardId: "b1",
-      boardTitle: "Alpha",
-      archived: false,
-      seq: 7,
-      limit: 30,
-      cards: [
-        {
-          id: "card-1",
-          title: "Ship it",
-          boardId: "b1",
-          boardTitle: "Alpha",
-          columnId: "col-1",
-          columnTitle: "Todo",
-          priority: "high",
-          claimedBy: null,
-          leaseUntil: null,
-          version: 4,
-          descriptionChars: 12,
-        },
-      ],
+      status: "ready",
+      body: {
+        boardId: "b1",
+        boardTitle: "Alpha",
+        archived: false,
+        seq: 7,
+        limit: 30,
+        cards: [
+          {
+            id: "card-1",
+            title: "Ship it",
+            boardId: "b1",
+            boardTitle: "Alpha",
+            columnId: "col-1",
+            columnTitle: "Todo",
+            priority: "high",
+            claimedBy: null,
+            leaseUntil: null,
+            version: 4,
+          },
+        ],
+      },
     });
-    expect(result?.cards[0]).not.toHaveProperty("description");
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.body.cards[0]).not.toHaveProperty("description");
+    expect(result.body.cards[0]).not.toHaveProperty("descriptionChars");
 
-    // The card query is scoped to the first column and carries a LIMIT.
+    // The card query is scoped to the first column, carries a LIMIT and never
+    // selects the description text.
     expect(mocks.queryRaw).toHaveBeenCalledTimes(1);
     const query = sqlCall(mocks.queryRaw);
-    expect(query.strings?.join("?")).toContain('c."columnId" = ?');
-    expect(query.strings?.join("?")).toContain("LIMIT ?");
+    const sql = query.strings?.join("?") ?? "";
+    expect(sql).toContain('c."columnId" = ?');
+    expect(sql).toContain("LIMIT ?");
+    expect(sql).not.toContain("description");
     expect(query.values).toContain("col-1");
     expect(query.values).not.toContain("col-2");
     expect(query.values).toContain(30);
@@ -175,7 +189,7 @@ describe("ReadyService.getBoardReady", () => {
       }),
     );
 
-    await mocks.service.getBoardReady("b1");
+    await mocks.service.getBoardReady("b1", { userId: "u1" });
 
     expect(sqlCall(mocks.queryRaw).values).toContain("col-2");
     expect(sqlCall(mocks.queryRaw).values).not.toContain("col-1");
@@ -202,9 +216,13 @@ describe("ReadyService.getBoardReady", () => {
     mocks.groupBy.mockResolvedValue([]);
     mocks.queryRaw.mockResolvedValue([]);
 
-    const result = await mocks.service.getBoardReady("b1", { limit: 5 });
-    expect(result?.cards).toEqual([]);
-    expect(result?.limit).toBe(5);
+    const result = await mocks.service.getBoardReady("b1", {
+      userId: "u1",
+      limit: 5,
+    });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.body.cards).toEqual([]);
+    expect(result.body.limit).toBe(5);
     expect(sqlCall(mocks.queryRaw).values).toContain(5);
 
     expect(() => normalizeLimit(0)).toThrow(BadRequestException);
@@ -225,13 +243,10 @@ describe("ReadyService.getBoardReady", () => {
       { boardId: "b1", _max: { seq: BigInt(9) } },
     ]);
 
-    const result = await mocks.service.getBoardReady("b1");
+    const result = await mocks.service.getBoardReady("b1", { userId: "u1" });
 
-    expect(result).toMatchObject({
-      archived: true,
-      seq: 9,
-      cards: [],
-    });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.body).toMatchObject({ archived: true, seq: 9, cards: [] });
     expect(mocks.queryRaw).not.toHaveBeenCalled();
   });
 
@@ -243,33 +258,89 @@ describe("ReadyService.getBoardReady", () => {
     ]);
     mocks.queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([CARD_ROW]);
 
-    const pending = mocks.service.getBoardReady("b1", { wait: 5_000 });
+    const pending = mocks.service.getBoardReady("b1", {
+      userId: "u1",
+      wait: 5_000,
+    });
     await waitFor(() => mocks.queryRaw.mock.calls.length === 1);
-    mocks.subject.next(commandFrame(["card:card-1"]));
+    mocks.subject.next(commandFrame("ADD_CARD", ["board:b1", "card:card-1"]));
     const result = await pending;
 
-    expect(result?.cards.map((card) => card.id)).toEqual(["card-1"]);
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.body.cards.map((card) => card.id)).toEqual(["card-1"]);
     expect(mocks.queryRaw).toHaveBeenCalledTimes(2);
   });
 
-  it("ignores a frame that cannot change readiness and times out with 204 semantics", async () => {
+  it("keeps holding after a relevant wake that leaves no work, then returns work", async () => {
     const mocks = setup();
     mocks.boardFindFirst.mockResolvedValue(board());
     mocks.groupBy.mockResolvedValue([]);
-    mocks.queryRaw.mockResolvedValue([]);
+    mocks.queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([CARD_ROW]);
 
     const pending = mocks.service.getBoardReady("b1", {
-      wait: 25,
-      since: 0,
+      userId: "u1",
+      wait: 5_000,
     });
-    // The first empty snapshot has seq 0 === since, so the hold starts.
     await waitFor(() => mocks.queryRaw.mock.calls.length === 1);
-    mocks.subject.next({
-      type: "presence",
-      op: "join",
-      user: { id: "u1", displayName: "A", avatarColor: null, avatarPath: null },
-    } as BoardSseEvent);
-    expect(await pending).toBeUndefined();
+    mocks.subject.next(commandFrame("MOVE_CARD", ["board:b1", "card:card-1"]));
+    await waitFor(() => mocks.queryRaw.mock.calls.length === 2);
+    // Still empty: no `200` was returned and the hold continues.
+    mocks.subject.next(
+      commandFrame("ADD_CARD", ["board:b1", "card:card-1"], 9),
+    );
+    const result = await pending;
+
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.body.cards.map((card) => card.id)).toEqual(["card-1"]);
+    expect(mocks.queryRaw).toHaveBeenCalledTimes(3);
+  });
+
+  it("coalesces a burst of co-waiters into one post-wake snapshot", async () => {
+    const mocks = setup();
+    mocks.boardFindFirst.mockResolvedValue(board());
+    mocks.groupBy.mockResolvedValue([]);
+    mocks.queryRaw.mockImplementation(() =>
+      Promise.resolve(mocks.queryRaw.mock.calls.length <= 20 ? [] : [CARD_ROW]),
+    );
+
+    const waiters = Array.from({ length: 20 }, (_, index) =>
+      mocks.service.getBoardReady("b1", {
+        userId: `u${index}`,
+        wait: 5_000,
+      }),
+    );
+    await waitFor(() => mocks.queryRaw.mock.calls.length === 20);
+    mocks.subject.next(commandFrame("ADD_CARD", ["board:b1", "card:card-1"]));
+    const results = await Promise.all(waiters);
+
+    for (const result of results) {
+      if (result.status !== "ready") throw new Error("expected ready");
+      expect(result.body.cards.map((card) => card.id)).toEqual(["card-1"]);
+    }
+    // 20 initial snapshots + one shared post-wake read, not 40.
+    expect(mocks.queryRaw).toHaveBeenCalledTimes(21);
+    expect(mocks.polls.active()).toBe(0);
+  });
+
+  it("times out with the latest seq and never returns an empty snapshot", async () => {
+    const mocks = setup();
+    mocks.boardFindFirst.mockResolvedValue(board());
+    mocks.groupBy.mockResolvedValue([
+      { boardId: "b1", _max: { seq: BigInt(7) } },
+    ]);
+    mocks.queryRaw.mockResolvedValue([]);
+
+    const result = await mocks.service.getBoardReady("b1", {
+      userId: "u1",
+      wait: 25,
+    });
+
+    expect(result).toEqual({ status: "timeout", seq: 7 });
+    // Initial snapshot only; the timeout check does not re-run the card read.
+    expect(mocks.queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it("aborts a held request when the client disconnects", async () => {
@@ -280,13 +351,16 @@ describe("ReadyService.getBoardReady", () => {
     const controller = new AbortController();
 
     const pending = mocks.service.getBoardReady("b1", {
+      userId: "u1",
       wait: 5_000,
       signal: controller.signal,
     });
     await waitFor(() => mocks.queryRaw.mock.calls.length === 1);
+    expect(mocks.polls.active()).toBe(1);
     controller.abort();
 
-    await expect(pending).resolves.toBeUndefined();
+    await expect(pending).resolves.toEqual({ status: "aborted" });
+    expect(mocks.polls.active()).toBe(0);
     expect(mocks.subject.observed).toBe(false);
   });
 
@@ -299,12 +373,73 @@ describe("ReadyService.getBoardReady", () => {
     mocks.queryRaw.mockResolvedValue([]);
 
     const result = await mocks.service.getBoardReady("b1", {
+      userId: "u1",
       wait: 5_000,
       since: 3,
     });
 
-    expect(result).toMatchObject({ seq: 8, cards: [] });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.body).toMatchObject({ seq: 8, cards: [] });
     expect(mocks.queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers 404 when the board is deleted during the hold", async () => {
+    const mocks = setup();
+    mocks.boardFindFirst
+      .mockResolvedValueOnce(board())
+      .mockResolvedValueOnce(null);
+    mocks.groupBy.mockResolvedValue([]);
+    mocks.queryRaw.mockResolvedValue([]);
+
+    const pending = mocks.service.getBoardReady("b1", {
+      userId: "u1",
+      wait: 5_000,
+    });
+    await waitFor(() => mocks.queryRaw.mock.calls.length === 1);
+    mocks.subject.next(commandFrame("ADD_CARD", ["board:b1", "card:card-1"]));
+    await expect(pending).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("answers 404 when the board is deleted before the timeout", async () => {
+    const mocks = setup();
+    mocks.boardFindFirst
+      .mockResolvedValueOnce(board())
+      .mockResolvedValueOnce(null);
+    mocks.groupBy.mockResolvedValue([]);
+    mocks.queryRaw.mockResolvedValue([]);
+
+    await expect(
+      mocks.service.getBoardReady("b1", { userId: "u1", wait: 15 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("refuses a held poll when the admission cap is reached", async () => {
+    const mocks = setup({ polls: new ReadyPollAdmission(0, 10) });
+    mocks.boardFindFirst.mockResolvedValue(board());
+    mocks.groupBy.mockResolvedValue([]);
+    mocks.queryRaw.mockResolvedValue([]);
+
+    await expect(
+      mocks.service.getBoardReady("b1", { userId: "u1", wait: 5_000 }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(mocks.polls.active()).toBe(0);
+  });
+});
+
+describe("ReadyPollAdmission", () => {
+  it("caps per user and per board and releases exactly once", () => {
+    const polls = new ReadyPollAdmission(1, 2);
+    const release = polls.acquire("u1", "b1");
+    expect(release).not.toBeNull();
+    expect(polls.acquire("u1", "b2")).toBeNull();
+    const release2 = polls.acquire("u2", "b1");
+    expect(release2).not.toBeNull();
+    expect(polls.acquire("u3", "b1")).toBeNull();
+    expect(polls.active()).toBe(2);
+    release?.();
+    release?.();
+    expect(polls.active()).toBe(1);
+    expect(polls.acquire("u1", "b2")).not.toBeNull();
   });
 });
 
@@ -368,6 +503,7 @@ describe("ReadyService.listReadyForUser", () => {
       }),
     ]);
     const query = sqlCall(mocks.queryRaw);
+    expect(query.strings?.join("?")).not.toContain("description");
     expect(query.values).toContain("col-1");
     expect(query.values).toContain("col-3");
     // An archived board never contributes a column to the card query.
@@ -395,11 +531,47 @@ describe("ReadyService.listReadyForUser", () => {
 });
 
 describe("ready realtime filter", () => {
-  it("wakes on card/column/board commands and resync, not on presence", () => {
-    expect(isReadyFrame(commandFrame(["card:c1"]))).toBe(true);
-    expect(isReadyFrame(commandFrame(["column:col-1"]))).toBe(true);
-    expect(isReadyFrame(commandFrame(["board:b1"]))).toBe(true);
-    expect(isReadyFrame(commandFrame(["label:l1"]))).toBe(false);
+  it("wakes on readiness actions, not on every command that touches board:", () => {
+    expect(
+      isReadyFrame(commandFrame("ADD_CARD", ["board:b1", "card:c1"])),
+    ).toBe(true);
+    expect(
+      isReadyFrame(commandFrame("MOVE_CARD", ["board:b1", "card:c1"])),
+    ).toBe(true);
+    expect(isReadyFrame(commandFrame("SET_BOARD_WORKFLOW", ["board:b1"]))).toBe(
+      true,
+    );
+    expect(isReadyFrame(commandFrame("ARCHIVE_BOARD", ["board:b1"]))).toBe(
+      true,
+    );
+
+    // Every command carries `board:`; label/checklist/rename frames must not
+    // wake a waiter even though they touch a card or the board.
+    expect(
+      isReadyFrame(
+        commandFrame("SET_CARD_LABEL", ["board:b1", "card:c1", "label:l1"]),
+      ),
+    ).toBe(false);
+    expect(isReadyFrame(commandFrame("RENAME_BOARD", ["board:b1"]))).toBe(
+      false,
+    );
+    expect(
+      isReadyFrame(
+        commandFrame("SET_CHECKLIST_ITEM_DONE", [
+          "board:b1",
+          "checklistItem:i1",
+        ]),
+      ),
+    ).toBe(false);
+    expect(
+      isReadyFrame({
+        type: "activity",
+        id: "a1",
+        boardId: "b1",
+        at: 1,
+        kind: "comment_added",
+      }),
+    ).toBe(false);
     expect(isReadyFrame({ type: "resync" })).toBe(true);
     expect(
       isReadyFrame({
@@ -409,13 +581,18 @@ describe("ready realtime filter", () => {
       } as BoardSseEvent),
     ).toBe(false);
   });
+
+  it("gives every node-local resync frame the same shared wake key", () => {
+    const frame = { type: "resync" } as BoardSseEvent;
+    expect(wakeKeyOf(frame)).toBe(wakeKeyOf(frame));
+  });
 });
 
-function commandFrame(touches: string[]): BoardSseEvent {
+function commandFrame(type: string, touches: string[], seq = 8): BoardSseEvent {
   return {
     type: "command",
-    seq: 8,
-    action: { type: "ADD_CARD" },
+    seq,
+    action: { type },
     actorId: "u1",
     touches,
   } as unknown as BoardSseEvent;

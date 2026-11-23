@@ -9,7 +9,7 @@ import { RealtimeModule } from "@/realtime/realtime.module";
 import { BoardsController } from "./boards.controller";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
-import { ReadyService } from "./ready.service";
+import { ReadyPollAdmission, ReadyService } from "./ready.service";
 
 /** Boards + membership + import/export (§7.2, TASK-25). */
 @Module({
@@ -26,6 +26,11 @@ import { ReadyService } from "./ready.service";
     BoardsService,
     DeletedItemsService,
     ReadyService,
+    {
+      provide: ReadyPollAdmission,
+      // Factory: the class takes numeric caps, not injectable providers.
+      useFactory: () => new ReadyPollAdmission(),
+    },
     MembershipGuard,
   ],
   // Reused by the master-account admin module (create/soft-delete board).

@@ -331,17 +331,21 @@ export class BoardsController {
    * TASK-200.2: ready cards for one board, optionally held as a long-poll.
    * Any accepted role may read it (VIEWER included). `wait` is milliseconds
    * and bounded by `READY_WORK_WAIT_MAX_MS`; a hold that times out answers
-   * `204` with no body. `since` is the last observed `seq` (also returned as
-   * `X-Board-Seq`): a changed board answers immediately even when no card is
-   * ready. The response is a summary only — never a board aggregate.
+   * `204` with no body but still carries `X-Board-Seq` and
+   * `Cache-Control: no-store`. `since` is the last observed `seq`: a changed
+   * board answers immediately even when no card is ready. After a relevant
+   * wake with no ready card the request keeps holding, so an empty post-wake
+   * `200` cannot trigger a re-poll storm. The response is a summary only —
+   * never a board aggregate.
    *
    * The abort signal fires when the client disconnects, so a closed agent
-   * connection never leaves a realtime subscription or timer behind.
+   * connection never leaves a realtime subscription or held-poll slot behind.
    */
   @UseGuards(MembershipGuard)
   @Get(":id/ready")
   async readyCards(
     @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
     @Query("limit") limitRaw: unknown,
     @Query("wait") waitRaw: unknown,
     @Query("since") sinceRaw: unknown,
@@ -371,20 +375,23 @@ export class BoardsController {
     res.on("close", onClose);
     try {
       const result = await this.ready.getBoardReady(id, {
+        userId: user.id,
         limit,
         wait,
         since,
         signal: controller.signal,
       });
-      if (result === undefined) {
+      if (result.status === "aborted") return;
+      res.setHeader("Cache-Control", "no-store");
+      if (result.status === "timeout") {
+        res.setHeader("X-Board-Seq", String(result.seq));
         if (!res.headersSent && !res.destroyed) {
           res.status(HttpStatus.NO_CONTENT).end();
         }
         return;
       }
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("X-Board-Seq", String(result.seq));
-      res.status(HttpStatus.OK).json(result);
+      res.setHeader("X-Board-Seq", String(result.body.seq));
+      res.status(HttpStatus.OK).json(result.body);
     } finally {
       req.off("aborted", onClose);
       res.off("close", onClose);
