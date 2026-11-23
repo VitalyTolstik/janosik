@@ -109,6 +109,9 @@ export const SMOKE_CAPS = {
   holdMs: 10_000,
 };
 
+/** Mock profiles are correctness checks; they cannot request a heavy board. */
+export const MOCK_LIMITS = { boards: 16, cards: 2_000 };
+
 const SCENARIO_LIST = /^[A-Za-z0-9]+$/;
 
 export const CLI_OPTIONS = {
@@ -128,6 +131,8 @@ export const CLI_OPTIONS = {
   repeats: { type: "string" },
   "watch-cadence": { type: "string" },
   mix: { type: "string" },
+  burst: { type: "boolean" },
+  "no-burst": { type: "boolean" },
   "lease-ms": { type: "string" },
   jitter: { type: "string" },
   seed: { type: "string" },
@@ -349,6 +354,8 @@ export function resolveConfig(cliValues = {}, env = {}) {
   }
   const mix = parseMix(cliValues.mix);
   if (mix !== undefined) overrides.mix = mix;
+  if (cliValues["no-burst"] === true) overrides.burst = false;
+  else if (cliValues.burst === true) overrides.burst = true;
 
   const jitter = fraction("jitter", cliValues.jitter);
   if (jitter !== undefined) overrides.jitter = jitter;
@@ -391,6 +398,11 @@ export function resolveConfig(cliValues = {}, env = {}) {
   const driver = String(cliValues.driver ?? "http").toLowerCase();
   if (!["http", "mcp"].includes(driver)) {
     throw new Error("--driver must be http or mcp");
+  }
+  if (driver === "mcp" && ids.includes("S3")) {
+    throw new Error(
+      "--driver mcp does not implement the S3 60/30/10 mixed loop; run S3 with --driver http",
+    );
   }
 
   const baseUrl = String(cliValues["base-url"] ?? DEFAULT_BASE_URL).replace(
@@ -449,8 +461,8 @@ export function resolveConfig(cliValues = {}, env = {}) {
     redisCli: cliValues["redis-cli"] ?? "redis-cli",
     mock,
     mockPort: overrides.mockPort ?? 0,
-    mockBoards: overrides.mockBoards ?? 1,
-    mockCards: overrides.mockCards ?? 120,
+    mockBoards: Math.min(overrides.mockBoards ?? 1, MOCK_LIMITS.boards),
+    mockCards: Math.min(overrides.mockCards ?? 120, MOCK_LIMITS.cards),
   };
 }
 
@@ -594,6 +606,8 @@ export function usage() {
     "      --mix <r/w/c>         S3 action mix, default 60/30/10",
     "      --duration <dur>      work window, e.g. 2m (after the S4 ramp)",
     "      --ramp <dur>          S4 start ramp / S5 connection ramp",
+    "      --burst               synchronize S4 workers at the end of the ramp (default)",
+    "      --no-burst            stagger S4 worker starts across the ramp",
     "      --hold <dur>          S5 hold after the ramp actually completes",
     "      --concurrency <n>     S6 in-flight reads (default 500)",
     "      --repeats <n>         S6 rounds (default 1)",
@@ -601,7 +615,7 @@ export function usage() {
     "      --seed <n>            deterministic jitter/mix seed (default 200001)",
     "      --lease-ms <ms>       CLAIM_CARD lease (default 300000)",
     "      --idle-endpoint <e>   board | ready (default board; ready is 200.2)",
-    "      --driver <http|mcp>   HTTP PAT loop (default) or real MCP stdio",
+    "      --driver <http|mcp>   HTTP PAT loop (default) or real MCP stdio (not S3)",
     "      --mcp-processes <n>   MCP process count (default: agents)",
     "      --shared-identity     allow more agents than PATs (same identity)",
     "      --recycle             move Done cards back when the board drains",

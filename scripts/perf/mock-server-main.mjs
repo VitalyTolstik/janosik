@@ -11,8 +11,19 @@ import { startMockServer } from "./lib/mock-server.mjs";
 const port = Number(process.env.MOCK_PORT ?? 0);
 const boardCount = Number(process.env.MOCK_BOARDS ?? 1);
 const cardsPerBoard = Number(process.env.MOCK_CARDS ?? 120);
+const injected = (name) => {
+  const value = Number(process.env[name] ?? "");
+  return Number.isInteger(value) && value >= 100 && value <= 599 ? value : null;
+};
 
-const server = await startMockServer({ port, boardCount, cardsPerBoard });
+const server = await startMockServer({
+  port,
+  boardCount,
+  cardsPerBoard,
+  commandStatus: injected("MOCK_COMMAND_STATUS"),
+  commentStatus: injected("MOCK_COMMENT_STATUS"),
+  sseStatus: injected("MOCK_SSE_STATUS"),
+});
 process.stdout.write(
   `${JSON.stringify({ baseUrl: server.baseUrl, url: server.url, port: server.port })}\n`,
 );

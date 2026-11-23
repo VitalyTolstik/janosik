@@ -303,6 +303,44 @@ test("smoke ignores real PG/board env and caps overrides", () => {
   assert.equal(publicConfig(config).redis.enabled, false);
 });
 
+test("burst can be disabled and mock board/card overrides are capped", () => {
+  const noBurst = resolveConfig(
+    parseCli(["--scenario", "S4", "--token", "jnk_x", "--no-burst"]),
+    {},
+  );
+  assert.equal(scenarioConfig(noBurst, "S4").burst, false);
+  const burst = resolveConfig(
+    parseCli(["--scenario", "S4", "--token", "jnk_x", "--burst"]),
+    {},
+  );
+  assert.equal(scenarioConfig(burst, "S4").burst, true);
+
+  const mock = resolveConfig(
+    parseCli(["--mock", "--mock-boards", "1000", "--mock-cards", "100000"]),
+    {},
+  );
+  assert.equal(mock.mockBoards, 16);
+  assert.equal(mock.mockCards, 2_000);
+});
+
+test("--driver mcp rejects the unimplemented S3 mixed loop", () => {
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli(["--scenario", "S3", "--driver", "mcp", "--token", "jnk_x"]),
+        {},
+      ),
+    /does not implement the S3/,
+  );
+  assert.equal(
+    resolveConfig(
+      parseCli(["--scenario", "S2", "--driver", "mcp", "--token", "jnk_x"]),
+      {},
+    ).driver,
+    "mcp",
+  );
+});
+
 test("usage documents scenarios, probes, drivers and exit semantics", () => {
   const text = usage();
   for (const id of ALL_SCENARIOS) assert.match(text, new RegExp(`\\b${id}\\b`));

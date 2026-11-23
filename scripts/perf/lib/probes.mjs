@@ -99,7 +99,19 @@ export class RuntimeSampler {
   stop() {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
+    this.flush();
     this.loopDelay.disable();
+  }
+
+  /** Parse the final JSONL line even if the writer never added a newline. */
+  flush() {
+    const line = this.probePartial.trim();
+    this.probePartial = "";
+    if (line === "") return;
+    const parsed = parseProbeLine(line);
+    if (parsed === null) return;
+    this.probeLines += 1;
+    this.samples.push({ source: "api-preload", ...parsed });
   }
 
   poll() {
@@ -193,6 +205,12 @@ export class RuntimeSampler {
             ? "api-proc"
             : "none",
       samples: api.length,
+      peakRssScope:
+        preload.length > 0
+          ? "scenario-window"
+          : proc.length > 0
+            ? "process-lifetime"
+            : null,
       api: {
         rss: summarizeField(api, "rssBytes"),
         peakRss: summarizeField(api, "peakRssBytes"),

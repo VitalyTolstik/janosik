@@ -90,6 +90,28 @@ test("RuntimeSampler reads proc and probe-file samples with injected IO", () => 
   sampler.stop();
 });
 
+test("RuntimeSampler flushes a final JSONL line with no newline", () => {
+  let probe = "";
+  const sampler = new RuntimeSampler({
+    apiProbeFile: "/tmp/probe.jsonl",
+    readProc: () => null,
+    readText: () => probe,
+  });
+  probe = JSON.stringify({ ts: 1_000, rssBytes: 7_000 });
+  sampler.poll();
+  assert.equal(
+    sampler.samples.filter((sample) => sample.source === "api-preload").length,
+    0,
+  );
+  sampler.flush();
+  const samples = sampler.samples.filter(
+    (sample) => sample.source === "api-preload",
+  );
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].rssBytes, 7_000);
+  sampler.stop();
+});
+
 test("RuntimeSampler keeps a partial JSONL tail and parses it next poll", () => {
   let probe = "";
   const sampler = new RuntimeSampler({

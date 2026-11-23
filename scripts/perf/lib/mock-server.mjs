@@ -19,12 +19,11 @@ export async function startMockServer({
   boardCount = 1,
   cardsPerBoard = 120,
   host = "127.0.0.1",
+  commandStatus = null,
+  commentStatus = null,
+  sseStatus = null,
 } = {}) {
   const boards = new Map();
-  for (let index = 0; index < boardCount; index += 1) {
-    const board = createBoard(index, cardsPerBoard);
-    boards.set(board.id, board);
-  }
   const sseClients = new Set();
   const commands = new Map();
   const comments = new Map();
@@ -35,6 +34,17 @@ export async function startMockServer({
     sseOpened: 0,
     statuses: {},
   };
+
+  function resetBoards() {
+    boards.clear();
+    commands.clear();
+    comments.clear();
+    for (let index = 0; index < boardCount; index += 1) {
+      const board = createBoard(index, cardsPerBoard);
+      boards.set(board.id, board);
+    }
+  }
+  resetBoards();
 
   const server = createServer((request, response) => {
     handle(request, response).catch((error) => {
@@ -78,12 +88,14 @@ export async function startMockServer({
       return send(
         response,
         200,
-        [...boards.values()].map((board) => ({
-          id: board.id,
-          title: board.title,
-          role: "MEMBER",
-          counters: { cards: Object.keys(board.cards).length },
-        })),
+        [...boards.values()]
+          .filter((board) => canAccessBoard(token, board.id))
+          .map((board) => ({
+            id: board.id,
+            title: board.title,
+            role: mockRole(token),
+            counters: { cards: Object.keys(board.cards).length },
+          })),
       );
     }
 
@@ -92,9 +104,11 @@ export async function startMockServer({
       const body = await readJson(request);
       const cardId = decodeURIComponent(commentMatch[1]);
       let card;
+      let cardBoard;
       for (const candidate of boards.values()) {
         if (candidate.cards[cardId] !== undefined) {
           card = candidate.cards[cardId];
+          cardBoard = candidate;
           break;
         }
       }
@@ -102,6 +116,15 @@ export async function startMockServer({
         return send(response, 400, {
           message: "unknown card",
           field: "cardId",
+        });
+      }
+      if (!canAccessBoard(token, cardBoard.id)) {
+        return send(response, 403, { message: "not a board member" });
+      }
+      if (commentStatus !== null) {
+        return send(response, commentStatus, {
+          message: `injected comment status ${commentStatus}`,
+          injected: true,
         });
       }
       if (typeof body?.text !== "string" || body.text.trim() === "") {
@@ -147,6 +170,9 @@ export async function startMockServer({
     if (board === undefined) {
       return send(response, 404, { message: "unknown board" });
     }
+    if (!canAccessBoard(token, board.id)) {
+      return send(response, 403, { message: "not a board member" });
+    }
     const rest = boardMatch[2] ?? "";
     if (rest === "") {
       response.setHeader("X-Board-Seq", String(board.seq));
@@ -162,11 +188,23 @@ export async function startMockServer({
       });
     }
     if (rest === "events") {
+      if (sseStatus !== null) {
+        return send(response, sseStatus, {
+          message: `injected SSE status ${sseStatus}`,
+          injected: true,
+        });
+      }
       return openSse(request, response, board);
     }
     if (rest === "commands" && request.method === "POST") {
       const body = await readJson(request);
       stats.commands += 1;
+      if (commandStatus !== null) {
+        return send(response, commandStatus, {
+          message: `injected command status ${commandStatus}`,
+          injected: true,
+        });
+      }
       const result = applyCommand(board, body, user);
       return send(response, result.status, result.body);
     }
@@ -242,6 +280,7 @@ export async function startMockServer({
     baseUrl: `http://${host}:${actual}/api/v1`,
     port: actual,
     stats: () => ({ ...stats, statuses: { ...stats.statuses } }),
+    resetBoards,
     close: async () => {
       for (const response of sseClients) response.end();
       sseClients.clear();
@@ -511,11 +550,56 @@ function createBoard(index, cardCount) {
 
 function mockUser(token) {
   const digest = createHash("sha256").update(token).digest("hex").slice(0, 10);
+  const access = mockAccess(token);
   return {
     id: `mock-user-${digest}`,
     email: `${digest}@perf.invalid`,
     displayName: `Perf agent ${digest.slice(0, 4)}`,
+    token: {
+      id: `mock-token-${digest}`,
+      name: `Perf ${digest.slice(0, 4)}`,
+      scopePreset: access.scope,
+      trustedCi: false,
+      effectiveTokenScope: access.scope,
+      boardId: access.onlyBoard,
+      readOnly: access.readOnly,
+      rateLimitPerMinute: null,
+      individualPausedAt: access.paused ? Date.now() : null,
+      stopAllPausedAt: null,
+      paused: access.paused,
+    },
   };
+}
+
+function mockAccess(token) {
+  const lower = String(token).toLowerCase();
+  const readOnly = /readonly|read-only/.test(lower);
+  const observer = /observer/.test(lower);
+  const paused = /paused/.test(lower);
+  const viewer = /viewer/.test(lower);
+  const onlyBoard = /board1|board-1/.test(lower)
+    ? "board-1"
+    : /board2|board-2/.test(lower)
+      ? "board-2"
+      : null;
+  return {
+    readOnly,
+    paused,
+    viewer,
+    onlyBoard,
+    noBoards: /noboards|no-boards/.test(lower),
+    scope: readOnly || observer ? "observer" : "worker",
+  };
+}
+
+function mockRole(token) {
+  return mockAccess(token).viewer ? "VIEWER" : "MEMBER";
+}
+
+function canAccessBoard(token, boardId) {
+  const access = mockAccess(token);
+  if (access.noBoards) return false;
+  return access.onlyBoard === null || access.onlyBoard === boardId;
 }
 
 function readJson(request) {

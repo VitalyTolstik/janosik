@@ -1,29 +1,47 @@
-// TASK-200.1 — turn a V8 `.cpuprofile` into a Top-10 self-time table.
+// TASK-200.1 — turn V8 `.cpuprofile` files into a Top-10 self-time table.
 //
 // The API is profiled out of band (`node --cpu-prof --cpu-prof-dir …`); this
-// module only reads the result. A directory is scanned for `.cpuprofile`
-// files and the newest set is aggregated by function, so a rolling profile
-// directory still produces one stable table.
+// module only reads the result. A directory is scanned for the newest set of
+// `.cpuprofile` files (within a short write window of the newest mtime), and
+// every node is aggregated before the Top-10 is taken, so a function that is
+// 11th in each of several files can still be a genuine hotspot.
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-function profileFiles(directory) {
-  return readdir(directory).then((entries) =>
-    entries.filter((entry) => entry.endsWith(".cpuprofile")),
+/** Files written within this window of the newest mtime belong to one run. */
+export const PROFILE_SET_WINDOW_MS = 60_000;
+
+async function listProfileFiles(directory) {
+  const names = (await readdir(directory)).filter((entry) =>
+    entry.endsWith(".cpuprofile"),
   );
+  const files = await Promise.all(
+    names.map(async (name) => {
+      const file = path.join(directory, name);
+      const info = await stat(file);
+      return { file, name, mtimeMs: info.mtimeMs };
+    }),
+  );
+  return files;
 }
 
-async function listProfiles(target) {
+async function selectProfileSet(target) {
   const info = await stat(target);
-  if (info.isFile()) return [target];
-  if (!info.isDirectory())
+  if (info.isFile()) {
+    return [
+      { file: target, name: path.basename(target), mtimeMs: info.mtimeMs },
+    ];
+  }
+  if (!info.isDirectory()) {
     throw new Error(`not a file or directory: ${target}`);
-  const names = await profileFiles(target);
-  if (names.length === 0) {
+  }
+  const files = await listProfileFiles(target);
+  if (files.length === 0) {
     throw new Error(`no .cpuprofile files in ${target}`);
   }
-  return names.map((name) => path.join(target, name));
+  const newest = Math.max(...files.map((file) => file.mtimeMs));
+  return files.filter((file) => file.mtimeMs >= newest - PROFILE_SET_WINDOW_MS);
 }
 
 function frameKey(frame) {
@@ -47,8 +65,8 @@ function frameLabel(frame) {
   };
 }
 
-/** Count self samples for one profile. */
-export function parseCpuProfile(profile, { file = null } = {}) {
+/** All self samples for one profile, before any Top-10 truncation. */
+function analyzeProfile(profile, { file = null } = {}) {
   const nodes = Array.isArray(profile?.nodes) ? profile.nodes : [];
   const samples = Array.isArray(profile?.samples) ? profile.samples : [];
   const deltas = Array.isArray(profile?.timeDeltas) ? profile.timeDeltas : [];
@@ -60,7 +78,6 @@ export function parseCpuProfile(profile, { file = null } = {}) {
       : deltas.length > 0
         ? deltas.reduce((sum, value) => sum + (Number(value) || 0), 0) / 1_000
         : 0;
-  const sampleMs = samples.length > 0 ? totalMs / samples.length : totalMs;
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const hits = new Map();
@@ -77,70 +94,79 @@ export function parseCpuProfile(profile, { file = null } = {}) {
   }
 
   let totalHits = 0;
-  const byFunction = new Map();
+  const entries = [];
   for (const [id, count] of hits) {
     const node = byId.get(id);
     if (node === undefined) continue;
     totalHits += count;
-    const frame = node.callFrame ?? {};
-    const key = frameKey(frame);
-    const entry = byFunction.get(key) ?? {
-      ...frameLabel(frame),
-      hits: 0,
-    };
-    entry.hits += count;
-    byFunction.set(key, entry);
+    entries.push({
+      key: frameKey(node.callFrame ?? {}),
+      ...frameLabel(node.callFrame ?? {}),
+      hits: count,
+    });
   }
+  return { file, totalMs, totalHits, entries };
+}
 
-  const top = [...byFunction.values()]
+function selfMs(entry, totalHits, totalMs) {
+  return totalHits > 0 ? (entry.hits / totalHits) * totalMs : 0;
+}
+
+/** Count self samples for one profile, already Top-10. */
+export function parseCpuProfile(profile, { file = null } = {}) {
+  const analyzed = analyzeProfile(profile, { file });
+  const top = analyzed.entries
     .map((entry) => ({
       function: entry.function,
       url: entry.url,
       line: entry.line,
       column: entry.column,
       selfMs:
-        totalHits > 0
-          ? Math.round((entry.hits / totalHits) * totalMs * 100) / 100
-          : Math.round(entry.hits * sampleMs * 100) / 100,
+        Math.round(selfMs(entry, analyzed.totalHits, analyzed.totalMs) * 100) /
+        100,
       selfPct:
-        totalHits > 0
-          ? Math.round((entry.hits / totalHits) * 10000) / 100
+        analyzed.totalMs > 0
+          ? Math.round(
+              (selfMs(entry, analyzed.totalHits, analyzed.totalMs) /
+                analyzed.totalMs) *
+                10000,
+            ) / 100
           : null,
     }))
     .sort((a, b) => b.selfMs - a.selfMs)
     .slice(0, 10);
-
   return {
     file,
-    totalMs: Math.round(totalMs * 100) / 100,
-    samples: totalHits,
+    totalMs: Math.round(analyzed.totalMs * 100) / 100,
+    samples: analyzed.totalHits,
     top,
   };
 }
 
-/** Parse one file or every `.cpuprofile` in a directory, aggregated. */
+/** Parse the newest set of profiles, aggregating every node before Top-10. */
 export async function collectCpuProfile(target) {
   if (target === undefined || target === null || target === "") {
     return { enabled: false };
   }
   try {
-    const files = await listProfiles(target);
-    const profiles = [];
-    for (const file of files) {
-      const text = await readFile(file, "utf8");
-      profiles.push({
-        file: path.basename(file),
-        ...parseCpuProfile(JSON.parse(text), { file: path.basename(file) }),
-      });
-    }
-    const totalMs = profiles.reduce((sum, item) => sum + item.totalMs, 0);
+    const files = await selectProfileSet(target);
     const aggregate = new Map();
-    for (const profile of profiles) {
-      for (const entry of profile.top) {
-        const key = `${entry.function}\u0000${entry.url}\u0000${entry.line ?? ""}`;
-        const current = aggregate.get(key) ?? { ...entry, selfMs: 0 };
-        current.selfMs += entry.selfMs;
-        aggregate.set(key, current);
+    let totalMs = 0;
+    let totalSamples = 0;
+    for (const file of files) {
+      const text = await readFile(file.file, "utf8");
+      const analyzed = analyzeProfile(JSON.parse(text), {
+        file: file.name,
+      });
+      totalMs += analyzed.totalMs;
+      totalSamples += analyzed.totalHits;
+      for (const entry of analyzed.entries) {
+        const current = aggregate.get(entry.key) ?? {
+          ...entry,
+          selfMs: 0,
+        };
+        current.selfMs += selfMs(entry, analyzed.totalHits, analyzed.totalMs);
+        aggregate.set(entry.key, current);
       }
     }
     const top = [...aggregate.values()]
@@ -160,9 +186,10 @@ export async function collectCpuProfile(target) {
     return {
       enabled: true,
       available: true,
-      files: profiles.map((profile) => profile.file),
+      files: files.map((file) => file.name),
+      newestWindowMs: PROFILE_SET_WINDOW_MS,
       totalMs: Math.round(totalMs * 100) / 100,
-      samples: profiles.reduce((sum, profile) => sum + profile.samples, 0),
+      samples: totalSamples,
       top,
     };
   } catch (error) {

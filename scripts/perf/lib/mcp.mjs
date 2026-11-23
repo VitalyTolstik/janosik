@@ -50,6 +50,27 @@ function errorMessage(result) {
   return result.structuredContent?.message ?? "MCP tool failed";
 }
 
+function errorStatus(error, structured, signal) {
+  if (Number.isInteger(structured?.status)) return structured.status;
+  if (Number.isInteger(error?.status)) return error.status;
+  if (
+    signal?.aborted === true ||
+    error?.name === "AbortError" ||
+    error?.code === "ABORT_ERR"
+  ) {
+    return -1;
+  }
+  if (
+    structured?.code === "network_error" ||
+    /fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket|timed out|timeout/i.test(
+      String(error?.message ?? ""),
+    )
+  ) {
+    return 0;
+  }
+  return 400;
+}
+
 /** One spawned MCP process plus its measured tool-call client. */
 export async function createMcpWorker({
   baseUrl,
@@ -59,6 +80,8 @@ export async function createMcpWorker({
   command = path.join(cwd, "node_modules", ".bin", "tsx"),
   args = [path.join(cwd, "mcp", "src", "index.ts")],
   requestTimeoutMs = 60_000,
+  connectTimeoutMs = 15_000,
+  signal,
   metrics,
   log = () => {},
 }) {
@@ -78,16 +101,77 @@ export async function createMcpWorker({
     if (stderr.length < 20) stderr.push(String(chunk).trim());
   });
   const client = new Client({ name: "janosik-perf", version: "0.1.0" });
+
+  const killChild = (pid = transport.pid) => {
+    if (pid === null || pid === undefined) return;
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Already gone.
+    }
+    const timer = setTimeout(() => {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }, 500);
+    timer.unref?.();
+  };
+  const dispose = () => {
+    const pid = transport.pid;
+    try {
+      client.close().catch(() => {});
+    } catch {
+      // Not connected yet.
+    }
+    try {
+      transport.close().catch(() => {});
+    } catch {
+      // Already closed.
+    }
+    killChild(pid);
+  };
+
+  let timer;
+  let onAbort;
+  const connectPromise = client.connect(transport);
+  connectPromise.catch(() => {});
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(
+          `MCP handshake timed out after ${connectTimeoutMs}ms (${command})`,
+        ),
+      );
+    }, connectTimeoutMs);
+    if (signal !== undefined) {
+      onAbort = () =>
+        reject(new Error("MCP handshake aborted by scenario signal"));
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
   try {
-    await client.connect(transport);
+    await Promise.race([connectPromise, timeout]);
   } catch (error) {
-    throw new Error(
+    const pid = transport.pid;
+    dispose();
+    const wrapped = new Error(
       `MCP process failed to start: ${error instanceof Error ? error.message : String(error)}\n${stderr.join("\n")}`,
       { cause: error },
     );
+    wrapped.pid = pid;
+    throw wrapped;
+  } finally {
+    clearTimeout(timer);
+    if (signal !== undefined && onAbort !== undefined) {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
   const pid = transport.pid;
   let peakRssBytes = null;
+  let peakVmHwmBytes = null;
   log(`  MCP pid ${pid ?? "?"} board ${boardId}`);
 
   const worker = {
@@ -100,6 +184,12 @@ export async function createMcpWorker({
         );
         if (status?.rssBytes !== null && status?.rssBytes !== undefined) {
           peakRssBytes = Math.max(peakRssBytes ?? 0, status.rssBytes);
+        }
+        if (
+          status?.peakRssBytes !== null &&
+          status?.peakRssBytes !== undefined
+        ) {
+          peakVmHwmBytes = Math.max(peakVmHwmBytes ?? 0, status.peakRssBytes);
         }
       } catch {
         // Non-Linux hosts simply report no RSS.
@@ -114,7 +204,13 @@ export async function createMcpWorker({
           timeout: requestTimeoutMs,
         });
       } catch (error) {
-        metrics?.recordTool(name, performance.now() - started);
+        const elapsed = performance.now() - started;
+        metrics?.recordRequest(
+          `mcp.${name}`,
+          elapsed,
+          errorStatus(error, null, signal),
+        );
+        metrics?.recordTool(name, elapsed);
         const status = typeof error?.status === "number" ? error.status : null;
         throw new McpToolError({
           name,
@@ -123,22 +219,34 @@ export async function createMcpWorker({
           code: error?.code ?? null,
         });
       }
-      metrics?.recordTool(name, performance.now() - started);
+      const elapsed = performance.now() - started;
       if (result.isError === true) {
         const structured = result.structuredContent ?? {};
+        const status = errorStatus(null, structured, signal);
+        const expectedLeaseConflict =
+          status === 400 &&
+          structured.field === "action.claimedBy" &&
+          /claimed by another|live claim|lease/i.test(
+            String(structured.message ?? ""),
+          );
+        metrics?.recordRequest(`mcp.${name}`, elapsed, status, 0, {
+          expected: expectedLeaseConflict,
+        });
+        metrics?.recordTool(name, elapsed);
         throw new McpToolError({
           name,
           message: errorMessage(result),
-          status:
-            typeof structured.status === "number" ? structured.status : null,
+          status: status === 0 ? null : status,
           code: structured.code ?? null,
           structured,
         });
       }
+      metrics?.recordRequest(`mcp.${name}`, elapsed, 200);
+      metrics?.recordTool(name, elapsed);
       return resultPayload(result);
     },
     rssSummary() {
-      return { pid, peakRssBytes };
+      return { pid, peakRssBytes, peakVmHwmBytes };
     },
     async close() {
       try {
@@ -319,10 +427,14 @@ export function summarizeMcpWorkers(workers) {
   const values = processes
     .map((entry) => entry.peakRssBytes)
     .filter((value) => typeof value === "number" && Number.isFinite(value));
+  const lifetime = processes
+    .map((entry) => entry.peakVmHwmBytes)
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
   return {
     processes: processes.length,
     pids: processes.map((entry) => entry.pid).filter((pid) => pid != null),
     peakRssBytes: values.length > 0 ? Math.max(...values) : null,
+    peakVmHwmBytes: lifetime.length > 0 ? Math.max(...lifetime) : null,
     totalPeakRssBytes:
       values.length > 0 ? values.reduce((sum, value) => sum + value, 0) : null,
   };
