@@ -135,12 +135,17 @@ export class BoardAggregateLoader {
     loaded: LoadedBoardAggregate,
   ): Promise<void> {
     if (!this.cache.enabled) return;
-    const current = await db.board.findUnique({
-      where: { id: boardId },
-      select: { aggregateRevision: true },
-    });
-    if (current?.aggregateRevision === loaded.revision) {
-      this.cache.set(boardId, loaded.revision, loaded.board);
+    try {
+      const current = await db.board.findUnique({
+        where: { id: boardId },
+        select: { aggregateRevision: true },
+      });
+      if (current?.aggregateRevision === loaded.revision) {
+        this.cache.set(boardId, loaded.revision, loaded.board);
+      }
+    } catch {
+      // The cache is advisory: a failed consistency check must never turn a
+      // successful read into an error. The next load simply retries.
     }
   }
 
