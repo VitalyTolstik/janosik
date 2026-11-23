@@ -278,6 +278,48 @@ test("resetBoards gives the next smoke scenario a full board again", async (t) =
   assert.equal(after.board.cards[cardId].claimedBy, undefined);
 });
 
+test("a 200-then-immediate-close SSE counts as an early close", async (t) => {
+  const mock = await startMockServer({
+    boardCount: 1,
+    cardsPerBoard: 2,
+    sseCloseImmediately: true,
+  });
+  t.after(() => mock.close());
+  const metrics = new RunMetrics("sse-early");
+  const client = new HttpClient({
+    baseUrl: mock.baseUrl,
+    token: "perf-sse-early",
+    metrics,
+  });
+  const handle = await client.openSse({ boardId: "board-1" });
+  await handle.done;
+  assert.equal(metrics.sse.opened, 1);
+  assert.equal(metrics.sse.closed, 1);
+  assert.equal(metrics.sse.closedEarly, 1);
+  assert.equal(metrics.sse.current, 0);
+});
+
+test("an SSE open with no response headers times out", async (t) => {
+  const mock = await startMockServer({
+    boardCount: 1,
+    cardsPerBoard: 2,
+    sseHang: true,
+  });
+  t.after(() => mock.close());
+  const metrics = new RunMetrics("sse-hang");
+  const client = new HttpClient({
+    baseUrl: mock.baseUrl,
+    token: "perf-sse-hang",
+    metrics,
+  });
+  await assert.rejects(
+    client.openSse({ boardId: "board-1", openTimeoutMs: 100 }),
+    /timed out/,
+  );
+  assert.equal(metrics.sse.failed, 1);
+  assert.equal(metrics.sse.current, 0);
+});
+
 test("mock enforces token board access and role for preflight tests", async (t) => {
   const mock = await startMockServer({ boardCount: 2, cardsPerBoard: 2 });
   t.after(() => mock.close());

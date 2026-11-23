@@ -22,6 +22,8 @@ export async function startMockServer({
   commandStatus = null,
   commentStatus = null,
   sseStatus = null,
+  sseCloseImmediately = false,
+  sseHang = false,
 } = {}) {
   const boards = new Map();
   const sseClients = new Set();
@@ -188,11 +190,25 @@ export async function startMockServer({
       });
     }
     if (rest === "events") {
+      if (sseHang) {
+        sseClients.add(response);
+        request.on("close", () => sseClients.delete(response));
+        return;
+      }
       if (sseStatus !== null) {
         return send(response, sseStatus, {
           message: `injected SSE status ${sseStatus}`,
           injected: true,
         });
+      }
+      if (sseCloseImmediately) {
+        stats.sseOpened += 1;
+        response.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        });
+        response.end(": connected\n\n");
+        return;
       }
       return openSse(request, response, board);
     }
@@ -302,7 +318,7 @@ export async function startMockServer({
         typeof card.leaseUntil === "number" &&
         card.leaseUntil > Date.now();
       if (action.claimedBy === null) {
-        if (live && card.claimedBy !== user.id) {
+        if (live && card.claimedBy !== user.id && user.role !== "ADMIN") {
           return claimConflict(card);
         }
         delete card.claimedBy;
@@ -555,6 +571,7 @@ function mockUser(token) {
     id: `mock-user-${digest}`,
     email: `${digest}@perf.invalid`,
     displayName: `Perf agent ${digest.slice(0, 4)}`,
+    role: mockRole(token),
     token: {
       id: `mock-token-${digest}`,
       name: `Perf ${digest.slice(0, 4)}`,
@@ -577,6 +594,7 @@ function mockAccess(token) {
   const observer = /observer/.test(lower);
   const paused = /paused/.test(lower);
   const viewer = /viewer/.test(lower);
+  const admin = /admin/.test(lower);
   const onlyBoard = /board1|board-1/.test(lower)
     ? "board-1"
     : /board2|board-2/.test(lower)
@@ -586,14 +604,17 @@ function mockAccess(token) {
     readOnly,
     paused,
     viewer,
+    admin,
     onlyBoard,
     noBoards: /noboards|no-boards/.test(lower),
-    scope: readOnly || observer ? "observer" : "worker",
+    scope: readOnly || observer ? "observer" : admin ? "admin" : "worker",
   };
 }
 
 function mockRole(token) {
-  return mockAccess(token).viewer ? "VIEWER" : "MEMBER";
+  const access = mockAccess(token);
+  if (access.admin) return "ADMIN";
+  return access.viewer ? "VIEWER" : "MEMBER";
 }
 
 function canAccessBoard(token, boardId) {

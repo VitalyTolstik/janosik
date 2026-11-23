@@ -84,6 +84,28 @@ test("a claim-lease 400 is recorded as expected contention", async () => {
   assert.equal(snapshot.errors.unexpected4xx, 0);
 });
 
+test("a 404 ready endpoint is an expected fallback, not an unexpected 4xx", async () => {
+  const metrics = new RunMetrics("ready404");
+  const client = new HttpClient({
+    baseUrl: "http://example.test/api/v1",
+    token: "jnk_x",
+    metrics,
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ message: "not implemented" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+  });
+  const response = await client.readReady("b1");
+  assert.equal(response.status, 404);
+  const snapshot = metrics.snapshot({ durationMs: 1_000, agents: 1 });
+  assert.equal(snapshot.errors.expected, 1);
+  assert.equal(snapshot.errors.leaseConflict400, 0);
+  assert.equal(snapshot.errors.readyFallback404, 1);
+  assert.equal(snapshot.errors.unexpected4xx, 0);
+  assert.equal(snapshot.errors.rate, 0);
+});
+
 test("a per-request timeout is counted as a network failure", async () => {
   const metrics = new RunMetrics("timeout");
   const client = new HttpClient({

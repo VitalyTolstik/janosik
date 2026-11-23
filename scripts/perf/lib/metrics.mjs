@@ -120,18 +120,24 @@ export class RunMetrics {
     this.recycled = 0;
     this.orphans = 0;
     this.expectedExtra = 0;
+    this.readyFallback404 = 0;
     this.durations = [];
     this.operations = new Map();
     this.statuses = new Map();
     this.activity = { reads: 0, writes: 0, comments: 0 };
+    this.agentActions = new Map();
     this.toolCalls = 0;
     this.tools = new Map();
     this.sse = {
       opened: 0,
       closed: 0,
+      closedEarly: 0,
       failed: 0,
+      readErrors: 0,
       current: 0,
       maxConcurrent: 0,
+      liveAtHoldStart: null,
+      liveAtHoldEnd: null,
       frames: 0,
       bytes: 0,
       rampObservedMs: null,
@@ -154,9 +160,10 @@ export class RunMetrics {
     durationMs,
     status,
     bytes = 0,
-    { expected = false } = {},
+    { expected = false, readyFallback = false } = {},
   ) {
     if (expected) this.expectedExtra += 1;
+    if (readyFallback) this.readyFallback404 += 1;
     const entry = this.operation(name);
     const duration = Number.isFinite(durationMs) ? durationMs : 0;
     entry.durations.push(duration);
@@ -186,6 +193,18 @@ export class RunMetrics {
             ? "comments"
             : null;
     if (key !== null) this.activity[key] += 1;
+  }
+
+  recordAgentAction(agentIndex, at = Date.now()) {
+    const key = Number.isInteger(agentIndex) ? agentIndex : 0;
+    const entry = this.agentActions.get(key) ?? {
+      count: 0,
+      firstAt: at,
+      lastAt: at,
+    };
+    entry.count += 1;
+    entry.lastAt = at;
+    this.agentActions.set(key, entry);
   }
 
   recordCycle() {
@@ -232,9 +251,26 @@ export class RunMetrics {
     return false;
   }
 
-  recordSseClose() {
+  recordSseClose(early = false) {
     this.sse.closed += 1;
+    if (early) this.sse.closedEarly += 1;
     this.sse.current = Math.max(0, this.sse.current - 1);
+  }
+
+  recordSseEarlyClose() {
+    this.sse.closedEarly += 1;
+  }
+
+  recordSseReadError() {
+    this.sse.readErrors += 1;
+  }
+
+  recordSseHoldStart() {
+    this.sse.liveAtHoldStart = this.sse.current;
+  }
+
+  recordSseHoldEnd() {
+    this.sse.liveAtHoldEnd = this.sse.current;
   }
 
   recordSseFrame(bytes) {
@@ -287,6 +323,25 @@ export class RunMetrics {
         latency: summarizeNumbers(entry.durations),
       };
     }
+    const perAgentIntervals = [];
+    for (const entry of this.agentActions.values()) {
+      if (entry.count > 1) {
+        perAgentIntervals.push(
+          (entry.lastAt - entry.firstAt) / (entry.count - 1),
+        );
+      }
+    }
+    const cadence = summarizeNumbers(perAgentIntervals);
+    const agentCadence = {
+      agentsMeasured: perAgentIntervals.length,
+      minMs: cadence.min,
+      medianMs: cadence.p50,
+      maxMs: cadence.max,
+      actionsPerAgentPerMinute:
+        agents > 0 && durationMs > 0
+          ? round(this.actions / agents / (durationMs / 60_000), 3)
+          : null,
+    };
     return {
       id: this.id,
       durationMs,
@@ -303,6 +358,7 @@ export class RunMetrics {
       orphans: this.orphans,
       toolCalls: this.toolCalls,
       tools,
+      agentCadence,
       actionsPerSecond: actionsPerSecond(this.actions, durationMs),
       requestsPerAgentPerMinute: requestsPerAgentPerMinute(
         this.requests,
@@ -335,7 +391,11 @@ export class RunMetrics {
         aborted: counts.aborted,
         auth401403: counts.auth401403,
         badRequest400: counts.badRequest400,
-        leaseConflict400: this.expectedExtra,
+        leaseConflict400: Math.max(
+          0,
+          this.expectedExtra - this.readyFallback404,
+        ),
+        readyFallback404: this.readyFallback404,
         unexpected400: Math.max(0, counts.badRequest400 - this.expectedExtra),
         conflict409,
         rateLimited429,

@@ -119,8 +119,10 @@ export class HttpClient {
       operation === "command.claim" &&
       !/Invalid command|Unsupported/i.test(text) &&
       /claimed by another|live claim|lease/i.test(text);
+    const readyFallback = response.status === 404 && operation === "ready.read";
     this.metrics.recordRequest(operation, elapsed, response.status, bytes, {
-      expected: expectedLeaseConflict,
+      expected: expectedLeaseConflict || readyFallback,
+      readyFallback,
     });
     const result = {
       status: response.status,
@@ -250,9 +252,16 @@ export class HttpClient {
     presence = false,
     signal,
     onError,
+    openTimeoutMs = 10_000,
   } = {}) {
     const controller = new AbortController();
-    const signals = [controller.signal];
+    const timeoutController = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      timeoutController.abort();
+    }, openTimeoutMs);
+    const signals = [controller.signal, timeoutController.signal];
     if (this.signal !== undefined) signals.push(this.signal);
     if (signal !== undefined) signals.push(signal);
     const combined =
@@ -270,13 +279,26 @@ export class HttpClient {
     } catch (error) {
       this.metrics.recordRequest("sse.open", performance.now() - started, 0);
       this.metrics.sse.failed += 1;
-      throw error;
+      throw timedOut
+        ? new HttpError({
+            operation: "sse.open",
+            path: `/boards/${boardId}/events`,
+            status: 0,
+            body: `SSE open timed out after ${openTimeoutMs}ms`,
+          })
+        : error;
+    } finally {
+      clearTimeout(timer);
     }
     const accepted = this.metrics.recordSseOpen(
       performance.now() - started,
       response.status,
     );
     if (!accepted || response.body === null) {
+      if (accepted) {
+        this.metrics.sse.failed += 1;
+        this.metrics.recordSseClose();
+      }
       const text = await response.text().catch(() => "");
       throw new HttpError({
         operation: "sse.open",
@@ -289,6 +311,7 @@ export class HttpClient {
     let frames = 0;
     let bytes = 0;
     let closed = false;
+    let closeRequested = false;
     let buffer = "";
     const decoder = new TextDecoder();
     const reader = response.body.getReader();
@@ -308,11 +331,15 @@ export class HttpClient {
           }
         }
       } catch (error) {
-        if (error?.name !== "AbortError") onError?.(error);
+        if (error?.name !== "AbortError") {
+          this.metrics.recordSseReadError();
+          onError?.(error);
+        }
       } finally {
         if (!closed) {
           closed = true;
-          this.metrics.recordSseClose();
+          const early = !closeRequested && !combined.aborted;
+          this.metrics.recordSseClose(early);
         }
       }
     })();
@@ -322,6 +349,7 @@ export class HttpClient {
       frames: () => frames,
       bytes: () => bytes,
       close: () => {
+        closeRequested = true;
         controller.abort();
         reader.cancel().catch(() => {});
         return done;

@@ -155,6 +155,19 @@ test("expected claim-lease 400s are excluded from unexpected rates", () => {
   assert.equal(snapshot.errors.rate, 0);
 });
 
+test("per-agent cadence is measured from observed action timestamps", () => {
+  const metrics = new RunMetrics("S2");
+  metrics.recordAgentAction(0, 1_000);
+  metrics.recordAgentAction(0, 2_000);
+  metrics.recordAgentAction(0, 3_000);
+  metrics.recordAgentAction(1, 1_500);
+  const snapshot = metrics.snapshot({ durationMs: 60_000, agents: 2 });
+  assert.equal(snapshot.agentCadence.agentsMeasured, 1);
+  assert.equal(snapshot.agentCadence.medianMs, 1_000);
+  assert.equal(snapshot.agentCadence.minMs, 1_000);
+  assert.equal(snapshot.agentCadence.maxMs, 1_000);
+});
+
 test("tool calls are measured separately from HTTP requests", () => {
   const metrics = new RunMetrics("S2");
   metrics.recordTool("janosik_claim_card", 5);

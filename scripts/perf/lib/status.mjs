@@ -68,9 +68,27 @@ export function evaluateScenarioStatus({
     if ((summary.sse?.opened ?? 0) === 0) {
       return { status: "failed", reason: "no SSE stream opened" };
     }
-    if ((summary.sse?.maxConcurrent ?? 0) === 0) {
-      return { status: "failed", reason: "no SSE stream was held" };
+    if ((summary.sse?.liveAtHoldStart ?? 0) === 0) {
+      return {
+        status: "failed",
+        reason: "no live SSE stream when the hold started",
+      };
     }
+    if ((summary.sse?.liveAtHoldEnd ?? 0) === 0) {
+      return {
+        status: "failed",
+        reason: "no live SSE stream at the end of the hold",
+      };
+    }
+  }
+  if (
+    id === "S3" &&
+    (scenario.sse ?? 0) > 0 &&
+    ((summary.sse?.opened ?? 0) === 0 ||
+      (summary.sse?.liveAtHoldStart ?? 0) === 0 ||
+      (summary.sse?.liveAtHoldEnd ?? 0) === 0)
+  ) {
+    return { status: "failed", reason: "S3 opened or held no live SSE stream" };
   }
   const expectsCycles =
     id === "S2" ||
@@ -89,10 +107,16 @@ export function evaluateScenarioStatus({
   }
 
   const reasons = [];
-  if ((summary.sse?.failed ?? 0) > 0 && id === "S5") {
+  if ((summary.sse?.failed ?? 0) > 0) {
     reasons.push(
       `${summary.sse.failed} SSE stream(s) failed to open (${summary.sse.opened ?? 0} opened)`,
     );
+  }
+  if ((summary.sse?.closedEarly ?? 0) > 0) {
+    reasons.push(`${summary.sse.closedEarly} SSE stream(s) closed early`);
+  }
+  if ((summary.sse?.readErrors ?? 0) > 0) {
+    reasons.push(`${summary.sse.readErrors} SSE read error(s)`);
   }
   if ((summary.orphans ?? 0) > 0) {
     reasons.push(
@@ -123,7 +147,7 @@ export function evaluateScenarioStatus({
       `${summary.errors.unexpected4xx} unexpected 4xx (${formatRate(summary.errors.rates?.unexpected4xx)})`,
     );
   }
-  if ((summary.exhausted ?? 0) > 0 && (summary.recycled ?? 0) === 0) {
+  if ((summary.exhausted ?? 0) > 0) {
     reasons.push(
       `board exhausted after ${summary.cycles ?? 0} cycle(s); add cards or use --recycle`,
     );

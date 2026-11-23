@@ -73,6 +73,8 @@ test("S4 synchronises a burst after the ramp and reports the work window", async
   });
   assert.equal(result.scenario.burst, true);
   assert.equal(result.workStartedAt >= started + 250, true);
+  assert.equal(result.plannedWorkStartedAt, started + 250);
+  assert.equal(result.actualWorkStartedAt >= result.plannedWorkStartedAt, true);
   assert.equal(result.workDurationMs >= 300, true);
   assert.equal(result.workDurationMs <= 1_500, true);
   assert.equal(statusOf(result, config, metrics).status, "ok");
@@ -184,6 +186,44 @@ test("--recycle keeps a small board working without inflating agent actions", as
   assert.equal(status.summary.actions, status.summary.cycles * 3);
 });
 
+test("S5 with streams that close immediately is not ok", async (t) => {
+  const mock = await startMockServer({
+    boardCount: 1,
+    cardsPerBoard: 2,
+    sseCloseImmediately: true,
+  });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S5",
+      "--sse",
+      "2",
+      "--ramp",
+      "10ms",
+      "--hold",
+      "100ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S5");
+  const result = await runScenario({
+    id: "S5",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+  });
+  const status = statusOf(result, config, metrics);
+  assert.equal(metrics.sse.opened, 2);
+  assert.equal(metrics.sse.closedEarly, 2);
+  assert.equal(metrics.sse.liveAtHoldEnd, 0);
+  assert.equal(status.status, "failed");
+});
+
 test("S5 with no live stream is failed, not an empty success", async (t) => {
   const mock = await startMockServer({
     boardCount: 1,
@@ -262,8 +302,8 @@ test("read-only S3 --mix 100/0/0 is not failed for zero cycles", async (t) => {
 
 test("scenarioConfig still exposes the requested S4 work window", () => {
   const config = resolveConfig(
-    parseCli(["--scenario", "S4", "--token", "jnk_x", "--duration", "5s"]),
-    {},
+    parseCli(["--scenario", "S4", "--duration", "5s"]),
+    { JANOSIK_PERF_TOKEN: "jnk_x" },
   );
   const scenario = scenarioConfig(config, "S4");
   assert.equal(scenario.durationMs, 5_000);
