@@ -153,7 +153,7 @@ export function renderMarkdown(report) {
     const mix = scenario.summary.activity;
     if (mix !== undefined && mix.total > 0) {
       lines.push(
-        `Actual S3 action mix: reads ${formatPercent(mix.mix?.reads)} (${mix.reads}), writes ${formatPercent(mix.mix?.writes)} (${mix.writes}), comments ${formatPercent(mix.mix?.comments)} (${mix.comments}).`,
+        `Actual S3 action-intent mix: reads ${formatPercent(mix.mix?.reads)} (${mix.reads}), write beats ${formatPercent(mix.mix?.writes)} (${mix.writes}), comment beats ${formatPercent(mix.mix?.comments)} (${mix.comments}).`,
       );
     }
     if (scenario.mcp !== undefined && scenario.mcp !== null) {

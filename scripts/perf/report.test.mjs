@@ -110,7 +110,7 @@ test("renderMarkdown includes status, commit, configuration and error columns", 
   assert.match(markdown, /command\.claim/);
   assert.match(markdown, /150\.0 MiB/);
   assert.match(markdown, /Mock \(`--mock`\) results .*prove/);
-  assert.match(markdown, /Actual S3 action mix/);
+  assert.match(markdown, /Actual S3 action-intent mix/);
   assert.match(markdown, /MCP: 1 process/);
 });
 
