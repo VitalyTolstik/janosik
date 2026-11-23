@@ -164,8 +164,8 @@ describe("ReadyService.getBoardReady", () => {
     const query = sqlCall(mocks.queryRaw);
     const sql = query.strings?.join("?") ?? "";
     expect(sql).toContain('c."columnId" = ?');
-    expect(sql).toContain('c."descriptionLength" AS "descriptionChars"');
-    expect(sql).not.toContain('c."description" ');
+    expect(sql).toMatch(/c\."descriptionLength"\s+AS\s+"descriptionChars"/);
+    expect(sql).not.toMatch(/c\."description"(?!Length)/);
     expect(sql).toContain("LIMIT ?");
     expect(query.values).toContain("col-1");
     expect(query.values).not.toContain("col-2");
@@ -508,8 +508,10 @@ describe("ReadyService.listReadyForUser", () => {
       }),
     ]);
     const query = sqlCall(mocks.queryRaw);
-    expect(query.strings?.join("?")).not.toContain('c."description" ');
-    expect(query.strings?.join("?")).toContain("descriptionLength");
+    expect(query.strings?.join("?")).not.toMatch(/c\."description"(?!Length)/);
+    expect(query.strings?.join("?")).toMatch(
+      /c\."descriptionLength"\s+AS\s+"descriptionChars"/,
+    );
     expect(query.values).toContain("col-1");
     expect(query.values).toContain("col-3");
     // An archived board never contributes a column to the card query.

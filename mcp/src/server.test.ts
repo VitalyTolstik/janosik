@@ -2104,6 +2104,38 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("does not retry wait_for_work network failures past a zero deadline", async () => {
+    readyNetworkFailures = 1;
+    const client = await connect();
+    const started = Date.now();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 0 },
+    });
+    expect(result.isError).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/ready").length,
+    ).toBe(1);
+    await client.close();
+  });
+
+  it("does not retry wait_for_work 429s past a short deadline", async () => {
+    readyRateLimitFailures = 1;
+    const client = await connect();
+    const started = Date.now();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 50 },
+    });
+    expect(result.isError).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/ready").length,
+    ).toBe(1);
+    await client.close();
+  });
+
   it("snapshots a ready board even when timeoutMs is 0", async () => {
     const client = await connect();
     const result = await client.callTool({

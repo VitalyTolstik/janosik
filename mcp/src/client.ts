@@ -638,6 +638,10 @@ export class JanosikClient {
     );
     const timeoutMs =
       options.timeoutMs ?? (wait > 0 ? wait + READY_POLL_GRACE_MS : undefined);
+    // A caller with its own deadline (a held poll, or an explicit HTTP budget
+    // such as timeoutMs:0) owns every retry pause. A deadline-less list
+    // snapshot keeps the normal GET network/429/503 retries.
+    const callerDeadline = wait > 0 || options.timeoutMs !== undefined;
     return this.request<BoardReadyDto | undefined>(
       apiPath`/boards/${boardId}/ready`,
       {
@@ -647,9 +651,7 @@ export class JanosikClient {
           ...(options.since !== undefined ? { since: options.since } : {}),
         },
         ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-        // A wait=0 list snapshot keeps the normal GET retries; only a held
-        // poll disables them so the tool can enforce its own deadline.
-        ...(wait > 0 ? { retry: false, rateLimitRetry: false } : {}),
+        ...(callerDeadline ? { retry: false, rateLimitRetry: false } : {}),
       },
     );
   }
