@@ -1,0 +1,64 @@
+# Janosik — Caddy front for 2–4 API replicas (TASK-200.12).
+#
+# Mounted by docker-compose.scale.yml at /etc/caddy/Caddyfile. Use it by
+# setting JANOSIK_PROXY_IMAGE=caddy:2-alpine (the Compose file mounts both
+# this file and nginx.conf; each image reads its own config).
+#
+# This is the plain-HTTP listener on :8080 (published as PORT, 3000 by
+# default). Put a TLS terminator in front, or replace `:8080` with your
+# domain (e.g. `kanban.example.com`), remove `auto_https off`, and publish
+# 80/443 to let Caddy obtain a certificate automatically. `reverse_proxy
+# app:3000` resolves every Compose replica and load-balances round-robin;
+# Caddy re-resolves after a reload.
+#
+# Contract mirrors deploy/scale/nginx.conf:
+#   - `encode gzip` for identity text/JSON; already-encoded API responses pass
+#     through untouched;
+#   - `flush_interval -1` forces immediate SSE writes (no proxy buffering);
+#     the transport read/write timeout is far above the 60 s PAT keep-alive;
+#   - query strings (`?since=`) and uploads pass through verbatim;
+#   - no sticky sessions are required.
+#
+# Validate: caddy validate --config deploy/scale/Caddyfile
+# Reload after a scale/rollout: docker compose ... exec proxy \
+#   caddy reload --config /etc/caddy/Caddyfile
+
+{
+    # The proxy is intentionally a plain HTTP container; TLS is either an
+    # outer proxy or this Caddyfile changed to a real domain.
+    auto_https off
+    # Behind an outer TLS proxy, add only that proxy's exact network here so
+    # Caddy preserves the client IP and X-Forwarded-Proto. Do not trust every
+    # private address: direct LAN clients could then spoof X-Forwarded-For.
+    #   servers { trusted_proxies static 172.18.0.0/16 }
+}
+
+:8080 {
+    # Compress site/app assets. The API negotiates gzip/Brotli itself for
+    # large board reads and streams SSE; excluding /api/ keeps both semantics,
+    # and avoids any compression wrapper around event-stream frames.
+    @static not path /api/*
+    encode @static gzip
+
+    # Compose healthcheck: a cheap proxy liveness endpoint. The API replicas
+    # still report their own readiness through /api/v1/health/ready.
+    respond /healthz 200
+
+    reverse_proxy app:3000 {
+        # SSE: never buffer event-stream frames. A flush interval of -1 means
+        # "flush every write immediately".
+        flush_interval -1
+        # Spread requests over every replica; no session affinity.
+        lb_policy round_robin
+
+        # Large uploads/downloads are streamed; the API enforces the real
+        # per-route body limits. Caddy has no 1 MB client body default.
+        transport http {
+            dial_timeout 5s
+            read_timeout 3600s
+            write_timeout 3600s
+            keepalive 30s
+            keepalive_idle_conns 64
+        }
+    }
+}

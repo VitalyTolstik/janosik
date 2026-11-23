@@ -29,25 +29,38 @@ case "${DATABASE_URL:-}" in
     ;;
 esac
 
-if [ "${ALLOW_REGISTRATION:-true}" = "true" ]; then
+migrate_only="${MIGRATE_ONLY:-false}"
+migrate_on_boot="${MIGRATE_ON_BOOT:-true}"
+
+# TASK-200.12: several API replicas must not race the schema on every boot.
+# The scaled overlay runs one `MIGRATE_ONLY=true` job and starts replicas with
+# `MIGRATE_ON_BOOT=false`; a single-container install keeps both defaults.
+if [ "$migrate_only" != "true" ] && [ "${ALLOW_REGISTRATION:-true}" = "true" ]; then
   echo "janosik: ALLOW_REGISTRATION is ON. Password signup requires SMTP or" \
     "one-time bootstrap. Set ALLOW_REGISTRATION=false for a private instance."
 fi
 
-echo "janosik: applying database migrations"
-# `prisma` is a runtime dependency of the backend image, so this never hits
-# the network. It retries a few times in case postgres is still warming up
-# despite the compose healthcheck.
-attempts=0
-until npx prisma migrate deploy; do
-  attempts=$((attempts + 1))
-  if [ "$attempts" -ge 10 ]; then
-    echo "janosik: migrations failed after $attempts attempts" >&2
-    exit 1
-  fi
-  echo "janosik: database not ready, retrying ($attempts/10)…" >&2
-  sleep 3
-done
+if [ "$migrate_only" = "true" ] || [ "$migrate_on_boot" = "true" ]; then
+  echo "janosik: applying database migrations"
+  # `prisma` is a runtime dependency of the backend image, so this never hits
+  # the network. It retries a few times in case postgres is still warming up
+  # despite the compose healthcheck.
+  attempts=0
+  until npx prisma migrate deploy; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 10 ]; then
+      echo "janosik: migrations failed after $attempts attempts" >&2
+      exit 1
+    fi
+    echo "janosik: database not ready, retrying ($attempts/10)…" >&2
+    sleep 3
+  done
+fi
+
+if [ "$migrate_only" = "true" ]; then
+  echo "janosik: migrations complete (one-shot job); not starting the API"
+  exit 0
+fi
 
 echo "janosik: starting API"
 exec node dist/main.js

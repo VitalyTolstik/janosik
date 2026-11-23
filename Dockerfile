@@ -117,8 +117,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 WORKDIR /app/backend
 EXPOSE 3000
+# TASK-200.12: `docker compose` and orchestrators send SIGTERM for a graceful
+# stop. Nest's shutdown hooks close listeners and background work; open SSE
+# streams reconnect through the proxy with `?since=` (see
+# docker-compose.scale.yml for the stop_grace_period).
+STOPSIGNAL SIGTERM
 
 # Migrations run on boot, then the API starts (see docker-entrypoint.sh). The
 # entrypoint starts as root only to fix the uploads volume's owner, then drops
-# to the unprivileged `node` user for everything it runs.
+# to the unprivileged `node` user for everything it runs. Set
+# MIGRATE_ON_BOOT=false when a one-shot `migrate` service owns the schema
+# (the scaled Compose overlay does this).
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
