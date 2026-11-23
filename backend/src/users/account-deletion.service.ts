@@ -21,6 +21,8 @@ export const BOARD_CLEANUP_FAILED_ACTION = "board.cleanup_failed";
 export const BOARD_CLEANUP_RECOVERED_ACTION = "board.cleanup_recovered";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Bounded command/key/detail pages during account erasure (TASK-200.11). */
+const ACCOUNT_COMMAND_PURGE_CHUNK = 500;
 
 /**
  * A board appeared between the pre-lock candidate read and the sorted board
@@ -612,22 +614,27 @@ export class AccountDeletionService {
           SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
         )
       `;
-          // TASK-200.11: keys/details have no actor column. Resolve the ids
-          // while the command rows still exist, so erasure does not depend on
-          // the deferred detail trigger or the later retention sweep.
-          await tx.$executeRaw`
-        DELETE FROM "CommandDetail"
-        WHERE "commandId" IN (
-          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
-        )
-      `;
-          await tx.$executeRaw`
-        DELETE FROM "CommandKey"
-        WHERE "id" IN (
-          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
-        )
-      `;
-          await tx.command.deleteMany({ where: { actorId: userId } });
+          // TASK-200.11: keys/details have no actor column. Resolve command
+          // ids in bounded pages while the rows still exist, so erasure does
+          // not issue unbounded detail/key DELETEs or depend on the deferred
+          // detail trigger/retention sweep.
+          for (;;) {
+            const page = await tx.command.findMany({
+              where: { actorId: userId },
+              select: { id: true },
+              take: ACCOUNT_COMMAND_PURGE_CHUNK,
+            });
+            if (page.length === 0) break;
+            const ids = page.map((row) => row.id);
+            await tx.commandDetail.deleteMany({
+              where: { commandId: { in: ids } },
+            });
+            await tx.commandKey.deleteMany({ where: { id: { in: ids } } });
+            await tx.command.deleteMany({
+              where: { id: { in: ids }, actorId: userId },
+            });
+            if (page.length < ACCOUNT_COMMAND_PURGE_CHUNK) break;
+          }
           await tx.agentRun.deleteMany({ where: { actorId: userId } });
           await tx.boardMember.deleteMany({ where: { userId } });
           await tx.boardMember.updateMany({

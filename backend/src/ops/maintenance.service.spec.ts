@@ -939,11 +939,31 @@ describe("MaintenanceService", () => {
         (call) => call[0].where.id.in.length,
       ),
     ).toEqual([PURGE_CHUNK, 40]);
-    expect(prisma.commandDetail.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: "b1" },
-    });
+    expect(
+      (prisma.commandDetail.deleteMany as jest.Mock).mock.calls.map(
+        (call) => call[0].where.commandId.in.length,
+      ),
+    ).toEqual([PURGE_CHUNK, 40]);
+    expect(
+      (prisma.commandKey.deleteMany as jest.Mock).mock.calls.map(
+        (call) => call[0].where.id.in.length,
+      ),
+    ).toEqual([PURGE_CHUNK, 40]);
+    // No purge statement carries more than one chunk, and every key/detail
+    // statement is scoped by a board or command id.
+    for (const call of [
+      ...(prisma.command.deleteMany as jest.Mock).mock.calls,
+      ...(prisma.commandDetail.deleteMany as jest.Mock).mock.calls,
+      ...(prisma.commandKey.deleteMany as jest.Mock).mock.calls,
+    ]) {
+      const list = call[0].where.id?.in ?? call[0].where.commandId?.in;
+      expect(list.length).toBeLessThanOrEqual(PURGE_CHUNK);
+    }
     expect(prisma.commandKey.deleteMany).toHaveBeenCalledWith({
-      where: { boardId: "b1" },
+      where: {
+        id: { in: ids(PURGE_CHUNK, "cmd-a").map((row) => row.id) },
+        boardId: "b1",
+      },
     });
     // Each page is read with a take bound and a boardId filter.
     expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);

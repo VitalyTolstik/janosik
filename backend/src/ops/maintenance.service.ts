@@ -631,15 +631,47 @@ export class MaintenanceService {
             take: PURGE_CHUNK,
           });
           if (page.length === 0) break;
+          const ids = page.map((row) => row.id);
+          // TASK-200.11: keep each statement bounded. The key/detail ids come
+          // from the same command page, so a 25k-command board never issues an
+          // unbounded board-wide DELETE inside the 5-minute transaction.
+          await tx.commandDetail.deleteMany({
+            where: { commandId: { in: ids } },
+          });
+          await tx.commandKey.deleteMany({
+            where: { id: { in: ids }, boardId },
+          });
           await tx.command.deleteMany({
+            where: { id: { in: ids }, boardId },
+          });
+          if (page.length < PURGE_CHUNK) break;
+        }
+        // Defensive bounded passes for legacy/orphan rows whose command was
+        // already gone before this purge.
+        for (;;) {
+          const page = await tx.commandDetail.findMany({
+            where: { boardId },
+            select: { commandId: true },
+            take: PURGE_CHUNK,
+          });
+          if (page.length === 0) break;
+          await tx.commandDetail.deleteMany({
+            where: { commandId: { in: page.map((row) => row.commandId) } },
+          });
+          if (page.length < PURGE_CHUNK) break;
+        }
+        for (;;) {
+          const page = await tx.commandKey.findMany({
+            where: { boardId },
+            select: { id: true },
+            take: PURGE_CHUNK,
+          });
+          if (page.length === 0) break;
+          await tx.commandKey.deleteMany({
             where: { id: { in: page.map((row) => row.id) }, boardId },
           });
           if (page.length < PURGE_CHUNK) break;
         }
-        // TASK-200.11: commands are gone; release the global ids and display
-        // rows now rather than waiting for the retention sweep (erasure).
-        await tx.commandDetail.deleteMany({ where: { boardId } });
-        await tx.commandKey.deleteMany({ where: { boardId } });
         await tx.checklistItem.deleteMany({
           where: { checklist: { card: { column: { boardId } } } },
         });

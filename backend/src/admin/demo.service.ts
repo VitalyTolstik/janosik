@@ -31,6 +31,8 @@ const LABELS: Array<{ name: string; color: string }> = [
   { name: "backend", color: "blue" },
   { name: "urgent", color: "orange" },
 ];
+/** Bounded command/key/detail pages during demo cleanup (TASK-200.11). */
+const DEMO_COMMAND_PURGE_CHUNK = 500;
 const SUMMARIES = [
   "Починить вёрстку карточки на мобиле",
   "Добавить фильтр по меткам",
@@ -904,26 +906,26 @@ export class DemoService implements OnModuleDestroy {
         });
       }
       await tx.activity.deleteMany({ where: { boardId, actorId: demoUsers } });
-      await tx.command.deleteMany({ where: { boardId, actorId: demoUsers } });
-      // TASK-200.11: delete only the registry/detail rows whose command is
-      // gone, so a demo stop does not release ids belonging to real commands
-      // that share the board.
-      await tx.$executeRaw`
-        DELETE FROM "CommandDetail" d
-        WHERE d."boardId" = ${boardId}
-          AND NOT EXISTS (
-            SELECT 1 FROM "Command" c
-             WHERE c."id" = d."commandId" AND c."boardId" = d."boardId"
-          )
-      `;
-      await tx.$executeRaw`
-        DELETE FROM "CommandKey" k
-        WHERE k."boardId" = ${boardId}
-          AND NOT EXISTS (
-            SELECT 1 FROM "Command" c
-             WHERE c."id" = k."id" AND c."boardId" = k."boardId"
-          )
-      `;
+      // TASK-200.11: page the command log so detail/key deletes stay bounded;
+      // only demo actors' commands are removed, real rows on a configured
+      // board keep their keys.
+      for (;;) {
+        const page = await tx.command.findMany({
+          where: { boardId, actorId: demoUsers },
+          select: { id: true },
+          take: DEMO_COMMAND_PURGE_CHUNK,
+        });
+        if (page.length === 0) break;
+        const ids = page.map((row) => row.id);
+        await tx.commandDetail.deleteMany({
+          where: { commandId: { in: ids } },
+        });
+        await tx.commandKey.deleteMany({ where: { id: { in: ids } } });
+        await tx.command.deleteMany({
+          where: { id: { in: ids }, boardId, actorId: demoUsers },
+        });
+        if (page.length < DEMO_COMMAND_PURGE_CHUNK) break;
+      }
       // Keep recorded parents when other users have added dependent rows.
       const { count: removedCards } = await tx.card.deleteMany({
         where: {

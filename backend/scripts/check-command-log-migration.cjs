@@ -28,6 +28,7 @@ const MIGRATION_DIRS = [
   "20261123132000_task_200_11_command_key_registry",
   "20261123133000_task_200_11_safe_partition_drop",
   "20261123134000_task_200_11_command_key_move",
+  "20261123135000_task_200_11_command_key_board_index",
 ];
 
 const baseUrl =
@@ -326,6 +327,11 @@ async function checkExisting(prisma, before) {
     `SELECT count(*)::int AS n FROM pg_class WHERE relname = 'CommandDetail_boardId_commandId_idx'`,
   );
   assert(boardIndex[0].n === 1, "detail rows have a board-scoped index");
+  const keyBoardIndex = await scalars(
+    prisma,
+    `SELECT count(*)::int AS n FROM pg_class WHERE relname = 'CommandKey_boardId_idx'`,
+  );
+  assert(keyBoardIndex[0].n === 1, "the registry has a board-scoped index");
   const boardColumn = await scalars(
     prisma,
     `SELECT is_nullable FROM information_schema.columns

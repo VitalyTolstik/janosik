@@ -31,7 +31,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   uniqueness; same-board duplicates of a live id are rejected by the
   application pre-check, while a raw same-board INSERT is not blocked by the
   move-compatible upsert. Default partitions and registry keys are the
-  chunk-drained rows; everything else is month DDL.
+  chunk-drained rows; everything else is month DDL. Migration
+  `20261123135000_task_200_11_command_key_board_index` adds the board-scoped
+  registry index, and account/board/demo purges now page command ids and
+  delete details/keys in bounded statements (the board purge also has bounded
+  defensive key/detail orphan passes), preserving the 5-minute board
+  transaction budget.
 
 - TASK-200.11 ops review follow-up: restore global commandId uniqueness,
   make month retention lock-safe, and bound the sweep honestly. An

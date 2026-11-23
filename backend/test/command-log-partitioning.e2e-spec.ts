@@ -442,6 +442,24 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     await prisma.commandKey.deleteMany({ where: { id } });
   });
 
+  it("handles a bulk command delete through deferred detail cleanup", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 25; index += 1) {
+      const key = `bulk-${index}`;
+      ids.push(`cmdlog-${suffix}-${key}`);
+      await createCommand(key, current, true);
+    }
+    await prisma.command.deleteMany({ where: { id: { in: ids } } });
+    expect(
+      await prisma.commandDetail.count({ where: { commandId: { in: ids } } }),
+    ).toBe(0);
+    // Keys are released by the orphan sweep, not the delete trigger.
+    expect(await prisma.commandKey.count({ where: { id: { in: ids } } })).toBe(
+      ids.length,
+    );
+    await prisma.commandKey.deleteMany({ where: { id: { in: ids } } });
+  });
+
   it("leaves no command, detail or key rows after the e2e wipe", async () => {
     await createCommand("wipe", current, true);
     await wipeAll(prisma);

@@ -69,9 +69,16 @@ Instead:
   cannot delete a live key whose command moved to a newer `createdAt`.
 - every id-only purge/sweep page is additionally paired with `boardId` (or
   accepts that the key is global). Account deletion resolves actor command ids
-  before deleting them and removes `CommandKey`/`CommandDetail`; board purge
-  and demo purge delete their board/actor-scoped keys/details with the
-  commands, so erasure does not wait for retention.
+  in bounded pages before deleting them and removes `CommandKey`/`CommandDetail`;
+  board purge and demo purge delete their board/actor-scoped keys/details from
+  the same command pages, so erasure does not wait for retention and never
+  issues an unbounded detail/key DELETE inside the board transaction. The
+  registry has a `boardId` index for the defensive orphan passes.
+- a **registry tombstone** is client-visible: deleting a command keeps its
+  `CommandKey` until the bounded orphan sweep, so reusing that id on another
+  board before then answers `409 id_conflict`. Reusing it on the same board
+  upserts the key. This is deliberate global-id retention, not an orphan leak;
+  account/board/demo erasure removes the keys immediately.
 
 The e2e wipes use `wipeAll` (including `Command`, `CommandDetail` and
 `CommandKey`); a fixed-id regression applies the same id again after the wipe.
@@ -131,10 +138,10 @@ The storage levers, in order of impact:
    command (id + board + createdAt + index, roughly 70–120 B before bloat) and
    is drained in bounded `NOT EXISTS Command` batches, not by month DDL.
    Include it in disk and WAL planning: at 50 commands/s × 30 days that is
-   another ~130M rows (order 10–15 GB plus index and vacuum/WAL overhead), and
-   deleting it creates dead tuples that autovacuum must reclaim. Partition
-   drop is cheap for Command/Detail/Preimage; the registry is the one
-   retention cost that is proportional to row count.
+   another ~130M rows (order 10–15 GB plus the PK, `createdAt` and `boardId`
+   indexes) and deleting it creates dead tuples plus WAL that autovacuum must
+   reclaim. Partition drop is cheap for Command/Detail/Preimage; the registry
+   is the one retention cost that is proportional to row count.
 
 Planning numbers (order-of-magnitude, not a benchmark claim):
 
@@ -392,6 +399,51 @@ losing commands/details for audit, then delete them through the parent
 migration. The migration deliberately refuses to guess: a silent merge could
 drop another board's history.
 
+### Runbook: defensive key backfill
+
+If a restore or manual command insert bypassed the `Command` trigger, reconcile
+missing registry rows before trusting idempotency. Check for duplicate ids
+first (cross-board duplicates cannot be reconciled automatically); then:
+
+```sql
+-- one row per command that has no key at all
+INSERT INTO "CommandKey" ("id", "boardId", "createdAt")
+SELECT c."id", c."boardId", c."createdAt"
+  FROM "Command" c
+  LEFT JOIN "CommandKey" k ON k."id" = c."id"
+ WHERE k."id" IS NULL
+ON CONFLICT ("id") DO NOTHING;
+
+-- must be 0; any remainder is a cross-board id conflict needing manual triage
+SELECT count(*) FROM "Command" c
+ LEFT JOIN "CommandKey" k ON k."id" = c."id"
+ WHERE k."id" IS NULL;
+```
+
+### Runbook: orphan detail rows
+
+The deferred Command delete trigger removes detail rows on a real delete. If a
+manual SQL delete skips triggers, drain them in bounded batches:
+
+```sql
+WITH victims AS (
+  SELECT d.ctid
+    FROM "CommandDetail" d
+   WHERE NOT EXISTS (
+     SELECT 1 FROM "Command" c
+      WHERE c."id" = d."commandId" AND c."boardId" = d."boardId"
+   )
+   LIMIT 5000
+)
+DELETE FROM "CommandDetail" d
+ USING victims v
+ WHERE d.ctid = v.ctid;
+```
+
+Repeat until 0 and mirror the query for `CommandKey` when needed. Neither table
+has a `Command` FK, so this is the manual repair path.
+
+
 ## 7. Compatibility with the other TASK-200 work
 
 - **Replay/resync (200.2/200.13):** `deltaSince` still returns `detail`; it
@@ -423,7 +475,7 @@ drop another board's history.
   indexes/FKs, board-scoped detail/no registry cascade, whole-month drop under
   a concurrent reader, default-partition skip, exact `defaultRows`/registry
   stats, move-forward key+detail retention, stale-live-key preservation,
-  wipe); `command-log-global-ids.e2e-spec.ts` (concurrent cross-board
+  bounded bulk purge, deferred cleanup, wipe); `command-log-global-ids.e2e-spec.ts` (concurrent cross-board
   collision, no duplicate/detail leak, duplicate batch, fixed id after
   `wipeAll`); `admin-throttle-demo` covers the real demo move and purge
   erasure; existing `events`, `runs`, `admin`, `commands-*` suites run on the
