@@ -6,6 +6,7 @@ import type {
   BoardCardDetailsDto,
   BoardCardPageDto,
   BoardReadSummaryDto,
+  CommandResponse,
 } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
@@ -162,8 +163,8 @@ describe("Board read model v1 (e2e)", () => {
   async function command(
     targetBoardId: string,
     action: Record<string, unknown>,
-  ): Promise<void> {
-    await server()
+  ): Promise<CommandResponse> {
+    const res = await server()
       .post(`/api/v1/boards/${targetBoardId}/commands`)
       .set(auth(adminToken))
       .send({
@@ -171,6 +172,7 @@ describe("Board read model v1 (e2e)", () => {
         action: { boardId: targetBoardId, at: Date.now(), ...action },
       })
       .expect(200);
+    return res.body as CommandResponse;
   }
 
   async function invite(
@@ -307,6 +309,13 @@ describe("Board read model v1 (e2e)", () => {
       .query({ columnId: "col-1", cursor: "not-a-cursor" })
       .set(auth(adminToken))
       .expect(400);
+    // The cursor is validated before a conditional read can answer 304.
+    await server()
+      .get(`/api/v1/boards/${boardId}/cards`)
+      .query({ columnId: "col-1", cursor: "not-a-cursor" })
+      .set(auth(adminToken))
+      .set("If-None-Match", "*")
+      .expect(400);
     // A wildcard validator must not skip the subresource existence check.
     await server()
       .get(`/api/v1/boards/${boardId}/cards`)
@@ -406,19 +415,6 @@ describe("Board read model v1 (e2e)", () => {
     ]);
     expect((source.body as BoardCardDetailDto).incomingLinks).toEqual([]);
 
-    const assignments = await server()
-      .get(`/api/v1/boards/${boardId}/labels/label-1/assignments`)
-      .set(auth(adminToken))
-      .expect(200)
-      .expect("Cache-Control", "no-store");
-    expect(assignments.body).toEqual([
-      {
-        cardId: "card-2",
-        index: 0,
-        updatedAt: expect.any(Number),
-      },
-    ]);
-
     // Batch preimages are bounded and full-detail only.
     const batch = await server()
       .get(`/api/v1/boards/${boardId}/cards`)
@@ -426,6 +422,12 @@ describe("Board read model v1 (e2e)", () => {
       .set(auth(adminToken))
       .expect(200);
     expect((batch.body as BoardCardDetailsDto).cards).toHaveLength(2);
+    // All-or-nothing, like the single-card read (no silent partial batch).
+    await server()
+      .get(`/api/v1/boards/${boardId}/cards`)
+      .query({ ids: "card-1,missing-card", detail: "full" })
+      .set(auth(adminToken))
+      .expect(404);
     await server()
       .get(`/api/v1/boards/${boardId}/cards`)
       .query({ ids: "card-1,card-2" })
@@ -471,6 +473,128 @@ describe("Board read model v1 (e2e)", () => {
       .expect((res) => {
         expect(res.body.code).toBe("invalid_read_model");
       });
+  });
+
+  it("captures the label-delete preimage inside the command transaction", async () => {
+    const labelBoard = await createBoard("Label preimage board");
+    await command(labelBoard, {
+      type: "ADD_COLUMN",
+      newColumnId: "label-col",
+      title: "Todo",
+    });
+    await command(labelBoard, {
+      type: "ADD_LABEL",
+      label: { id: "deep-label", name: "deep", color: "blue" },
+    });
+    for (const id of ["deep-a", "deep-b", "deep-c"] as const) {
+      await command(labelBoard, {
+        type: "ADD_CARD",
+        newCardId: id,
+        columnId: "label-col",
+        title: id,
+      });
+    }
+    for (const cardId of ["deep-a", "deep-b"]) {
+      await command(labelBoard, {
+        type: "SET_CARD_LABEL",
+        cardId,
+        labelId: "deep-label",
+        on: true,
+      });
+    }
+
+    // `deep-c` is labelled by an earlier command of the *same* transaction.
+    // A preimage read outside the board write lock cannot see that row; the
+    // snapshot must, because that is exactly the state DELETE_LABEL removes.
+    const batch = await server()
+      .post(`/api/v1/boards/${labelBoard}/commands/batch`)
+      .set(auth(adminToken))
+      .send({
+        commands: [
+          {
+            commandId: randomUUID(),
+            action: {
+              type: "SET_CARD_LABEL",
+              cardId: "deep-c",
+              labelId: "deep-label",
+              on: true,
+              boardId: labelBoard,
+              at: Date.now(),
+            },
+          },
+          {
+            commandId: randomUUID(),
+            action: {
+              type: "DELETE_LABEL",
+              labelId: "deep-label",
+              boardId: labelBoard,
+              at: Date.now(),
+            },
+          },
+        ],
+      })
+      .expect(200);
+    const responses = batch.body.results as CommandResponse[];
+    expect(
+      responses[1].preimage?.labelAssignments
+        .map((assignment) => assignment.cardId)
+        .sort(),
+    ).toEqual(["deep-a", "deep-b", "deep-c"]);
+    const assignments = await prisma.cardLabel.findMany({
+      where: { labelId: "deep-label" },
+    });
+    expect(assignments).toEqual([]);
+  });
+
+  it("serializes a concurrent label add against the delete snapshot", async () => {
+    const raceBoard = await createBoard("Label race board");
+    await command(raceBoard, {
+      type: "ADD_COLUMN",
+      newColumnId: "race-col",
+      title: "Todo",
+    });
+    await command(raceBoard, {
+      type: "ADD_LABEL",
+      label: { id: "race-label", name: "race", color: "green" },
+    });
+    for (const id of ["race-a", "race-b", "race-c"] as const) {
+      await command(raceBoard, {
+        type: "ADD_CARD",
+        newCardId: id,
+        columnId: "race-col",
+        title: id,
+      });
+    }
+    for (const cardId of ["race-a", "race-b"]) {
+      await command(raceBoard, {
+        type: "SET_CARD_LABEL",
+        cardId,
+        labelId: "race-label",
+        on: true,
+      });
+    }
+
+    // Both requests are in flight together; the board advisory lock decides
+    // the order. Either the add commits before the delete (and is in the
+    // snapshot), or it waits and the delete finds it already gone. No row may
+    // survive and the two original assignments must always be restorable.
+    const [deleted] = await Promise.all([
+      command(raceBoard, { type: "DELETE_LABEL", labelId: "race-label" }),
+      command(raceBoard, {
+        type: "SET_CARD_LABEL",
+        cardId: "race-c",
+        labelId: "race-label",
+        on: true,
+      }),
+    ]);
+    const snapshot = (
+      deleted.preimage?.labelAssignments.map((row) => row.cardId) ?? []
+    ).sort();
+    expect(snapshot).toEqual(expect.arrayContaining(["race-a", "race-b"]));
+    expect(snapshot.length === 2 || snapshot.length === 3).toBe(true);
+    expect(
+      await prisma.cardLabel.findMany({ where: { labelId: "race-label" } }),
+    ).toEqual([]);
   });
 
   it("serves archived boards read-only and enforces membership", async () => {

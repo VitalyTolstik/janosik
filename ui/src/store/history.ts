@@ -1,4 +1,4 @@
-import type { Board, BoardAction } from "@janosik/shared";
+import type { Board, BoardAction, LabelAssignment } from "@janosik/shared";
 import { invert } from "@janosik/shared";
 
 /**
@@ -176,6 +176,28 @@ export class BoardHistory {
     // The user's own new step invalidates the redo stack.
     this.future = [];
     this.lastAction = action;
+    return true;
+  }
+
+  /**
+   * TASK-200.9: replace a recorded DELETE_LABEL step's inverse assignment
+   * list with the server's lock-consistent snapshot. The optimistic inverse
+   * only knows the loaded cards; the command response knows every row the
+   * delete removed. Amending the stored inverse keeps the stack order intact
+   * when the response arrives after later commands were already recorded.
+   */
+  amendLabelAssignments(
+    commandId: string,
+    assignments: readonly LabelAssignment[],
+  ): boolean {
+    const entry = [...this.past, ...this.future].find(
+      (candidate) =>
+        (candidate.do as { commandId?: unknown }).commandId === commandId,
+    );
+    if (entry === undefined || entry.undo.type !== "RESTORE_LABEL") {
+      return false;
+    }
+    entry.undo = { ...entry.undo, assignments: [...assignments] };
     return true;
   }
 

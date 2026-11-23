@@ -33,7 +33,6 @@ import type {
   BoardSummary,
   BoardsReadyDto,
   DeletedBoardItemsDto,
-  LabelAssignment,
   WorkspaceSearchResult,
 } from "@janosik/shared";
 import {
@@ -93,6 +92,7 @@ import {
   boardCardDetailsProjection,
   boardPageProjection,
   boardSummaryProjection,
+  decodeBoardPageCursor,
 } from "./board-read-model";
 import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
@@ -597,6 +597,16 @@ export class BoardsController {
     if (!archived && columnId === undefined) {
       throw new BadRequestException("columnId or archived=1 is required");
     }
+    // Validate the cursor before the conditional read: `If-None-Match` can
+    // answer 304 from the board stamp without ever building the page, and a
+    // malformed cursor must still be a 400 (TASK-200.9 recheck).
+    if (cursor !== undefined) {
+      decodeBoardPageCursor(cursor, {
+        boardId: id,
+        kind: archived ? "archived" : "column",
+        ...(columnId !== undefined ? { columnId } : {}),
+      });
+    }
     await this.sendRead(res, {
       request: {
         boardId: id,
@@ -633,20 +643,6 @@ export class BoardsController {
       },
       projection: BOARD_READ_MODEL_VERSION,
     });
-  }
-
-  /**
-   * TASK-200.9: complete label assignment preimage for an undoable
-   * DELETE_LABEL. It is not a board read and carries no card content.
-   */
-  @UseGuards(MembershipGuard)
-  @Get(":id/labels/:labelId/assignments")
-  @Header("Cache-Control", "no-store")
-  labelAssignments(
-    @Param("id") id: string,
-    @Param("labelId") labelId: string,
-  ): Promise<LabelAssignment[]> {
-    return this.readModel.labelAssignments(id, labelId);
   }
 
   /** TASK-200.9: one full card (description, checklists, links). */

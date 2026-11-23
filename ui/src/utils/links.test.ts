@@ -114,6 +114,34 @@ describe("linkRowGroups", () => {
       expect.objectContaining({ title: "Deleted card", live: false }),
     ]);
   });
+
+  it("labels a paged-out target as not loaded, not deleted", () => {
+    const cards = {
+      "c-1": card("c-1", "Zebra"),
+    };
+    const facts = {
+      outgoing: [
+        { id: "l-1", type: "blocks", targetCardId: "page-two" },
+        { id: "l-2", type: "relates_to", targetCardId: "gone" },
+      ],
+      incoming: [],
+    } as unknown as Parameters<typeof linkRowGroups>[1];
+
+    const groups = linkRowGroups(cards, facts, "Deleted card", {
+      knownCardIds: new Set(["c-1", "page-two"]),
+      notLoadedTitle: "Not loaded",
+    });
+    expect(groups.find((group) => group.key === "blocks")?.rows).toEqual([
+      expect.objectContaining({
+        title: "Not loaded",
+        live: true,
+        targetCardId: "page-two",
+      }),
+    ]);
+    expect(groups.find((group) => group.key === "dangling")?.rows).toEqual([
+      expect.objectContaining({ title: "Deleted card", live: false }),
+    ]);
+  });
 });
 
 describe("linkSignature", () => {

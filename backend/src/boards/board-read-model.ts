@@ -22,7 +22,6 @@ import type {
   CardPriority,
   CoverColor,
   IncomingCardLink,
-  LabelAssignment,
   CoverGradient,
   LabelColor,
 } from "@janosik/shared";
@@ -582,39 +581,6 @@ export class BoardReadModelService {
     }
   }
 
-  /**
-   * Complete label assignment preimage for a DELETE_LABEL undo. Selects only
-   * ids/positions/stamps, never card content, so a 1 000-card board costs one
-   * indexed read instead of loading every page in the client.
-   */
-  async labelAssignments(
-    boardId: string,
-    labelId: string,
-  ): Promise<LabelAssignment[]> {
-    const label = await this.prisma.label.findFirst({
-      where: { id: labelId, boardId, deletedAt: null },
-      select: { id: true },
-    });
-    if (label === null) throw new NotFoundException("Label not found");
-    const rows = await this.prisma.cardLabel.findMany({
-      where: {
-        labelId,
-        card: { column: { boardId }, deletedAt: null },
-      },
-      orderBy: [{ position: "asc" }, { cardId: "asc" }],
-      select: {
-        cardId: true,
-        position: true,
-        card: { select: { updatedAt: true } },
-      },
-    });
-    return rows.map((row) => ({
-      cardId: row.cardId,
-      index: row.position,
-      updatedAt: row.card.updatedAt.getTime(),
-    }));
-  }
-
   async detail(
     boardId: string,
     cardId: string,
@@ -682,6 +648,11 @@ export class BoardReadModelService {
     return this.readTransaction(budget, async (tx) => {
       await this.summaryRow(tx, boardId);
       const rows = await this.loadCards(tx, boardId, unique);
+      // All-or-nothing, like the per-id read: a partial batch would silently
+      // hide a deleted/foreign card from a destructive preimage request.
+      if (rows.length !== unique.length) {
+        throw new NotFoundException("Card not found");
+      }
       const [links, incoming, labels, facts, stamp] = await Promise.all([
         tx.cardLink.findMany({
           where: { fromCardId: { in: unique }, boardId, deletedAt: null },

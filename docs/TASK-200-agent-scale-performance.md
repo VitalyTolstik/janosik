@@ -581,22 +581,30 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   `CardDialog.test.tsx`; OpenAPI и CHANGELOG обновлены.
 - **Review hardening:** инверсия `UPDATE_CARD` теперь меняет только поля,
   которые команда реально трогала (title-only rename на summary-карточке
-  больше не пишет пустое описание). Перед `DELETE_LABEL` UI забирает
-  `GET /boards/:id/labels/:labelId/assignments` — полный preimage вложений
-  (1000-карточная доска, загружена первая страница) — и инверсия
-  `RESTORE_LABEL` восстанавливает все карточки. Detail отдаёт и входящие
-  строки связей (`incomingLinks`), а reducer обновляет
-  `readModel.linkCount/blocked` на add/remove/archive, сбрасывает факты у
-  duplicate и грузит preimage для duplicate column. Гидратация страниц
-  сверяет `atSeq`/`aggregateRevision` с summary и мержит только id, ещё
-  входящие в колонку/архив; `HYDRATE_CARDS` не воскрешает tombstone и не
+  больше не пишет пустое описание). Ответ `DELETE_LABEL` несёт
+  `preimage.labelAssignments`, снятый внутри транзакции под board-write
+  lock: инверсия `RESTORE_LABEL` восстанавливает все вложения
+  (1000-карточная доска, загружена первая страница), а параллельный
+  add/remove не может обогнать снимок. Detail отдаёт и входящие строки
+  связей (`incomingLinks`), а reducer обновляет
+  `readModel.linkCount/blocked` на add/remove/archive, на delete card/column
+  (у выживших целей), сохраняет консервативный `blocked` у summary-цели,
+  пока возможен другой блокер, обновляет счётчики описания/чек-листа на
+  правках, сбрасывает факты у duplicate и грузит preimage для duplicate
+  column. Иностранная destructive-команда по незагруженной карточке
+  планирует snapshot-refetch, если факты иначе не пересчитать. Гидратация
+  страниц сверяет `atSeq`/`aggregateRevision` с summary и мержит только id,
+  ещё входящие в колонку/архив; `HYDRATE_CARDS` не воскрешает tombstone и не
   перетирает более новую карточку. Ошибки страниц ретраятся, показывают
-  partial-маркер/тост; завершённая доска не перекачивает все страницы на
-  каждый focus. `If-None-Match: *` выполняет precheck существования
-  карточки/колонки до `304`. Запросы: summary — одна страница на колонку +
-  константа, batch preimage — одна карточная выборка на 50 id
-  (`board-read-model.spec.ts`). Popover связанных карточек догружает detail
-  summary-карточки.
+  partial-маркер/тост; завершённая неизменённая доска не перекачивает все
+  страницы на каждый focus, но новый `atSeq`/revision перечитывает страницы
+  (правка на второй странице не теряется). `If-None-Match: *` выполняет
+  precheck существования карточки/колонки до `304` и не пропускает
+  валидацию cursor; частичный batch detail — all-or-nothing `404`. Запросы:
+  summary — одна страница на колонку + константа, batch preimage — одна
+  карточная выборка на 50 id (`board-read-model.spec.ts`). Popover
+  связанных карточек догружает detail summary-карточки и помечает
+  незагруженную цель «Not loaded», а не «Deleted card».
 - **Ограничение:** DoD «initial <2 МБ / <300 мс» и RSS для 10×1 000
   карточек не измерялись — нужен прогон 200.1/200.15. Таблица/карточки без
   detail показывают счётчики вместо текста описания/чек-листа (detail

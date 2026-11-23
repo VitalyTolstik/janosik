@@ -83,11 +83,51 @@ describe("BoardReadModelService query budget", () => {
     const { tx, prisma } = fakePrisma();
     const service = new BoardReadModelService(prisma as never);
     const ids = Array.from({ length: 50 }, (_, index) => `card-${index}`);
+    const now = new Date("2026-01-01T00:00:00Z");
+    tx.card.findMany.mockResolvedValue(
+      ids.map((id, position) => ({
+        id,
+        title: id,
+        description: null,
+        columnId: "col-0",
+        position,
+        version: 0,
+        dueDate: null,
+        priority: null,
+        assigneeId: null,
+        claimedBy: null,
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil: null,
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        coverType: null,
+        coverValue: null,
+        lastActorId: null,
+        attachmentCount: 0,
+        archivedAt: null,
+        archivedFromColumnId: null,
+        createdAt: now,
+        updatedAt: now,
+        labels: [],
+        checklists: [],
+      })),
+    );
 
     await service.detailsByIds("board-1", ids, budget);
 
     expect(tx.card.findMany).toHaveBeenCalledTimes(1);
     expect(tx.card.findFirst).not.toHaveBeenCalled();
     expect(tx.cardLink.findMany).toHaveBeenCalledTimes(3);
+  });
+
+  it("treats a partial detail batch as all-or-nothing", async () => {
+    const { tx, prisma } = fakePrisma();
+    const service = new BoardReadModelService(prisma as never);
+
+    await expect(
+      service.detailsByIds("board-1", ["card-0", "missing"], budget),
+    ).rejects.toThrow("Card not found");
+    expect(tx.card.findMany).toHaveBeenCalledTimes(1);
   });
 });

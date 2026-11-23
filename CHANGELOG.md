@@ -34,18 +34,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   undo, deep-link detail and adapter tests; OpenAPI and the TASK-200 doc are
   updated. Review hardening: a title-only `UPDATE_CARD` undo no longer writes
   an empty description (inverse touches only fields the command changed);
-  `GET /boards/:id/labels/:labelId/assignments` supplies the complete
-  label-delete preimage so undo restores assignments on unloaded cards of a
-  1 000-card board; detail carries reverse link rows and reducers keep the
-  link counters/blocked facts current, reset duplicated-card facts and
+  a `DELETE_LABEL` response carries a `preimage.labelAssignments` snapshot
+  read inside the board write transaction, so the inverse restores every
+  assignment on unloaded cards of a 1 000-card board and a concurrent
+  add/remove cannot race it; detail carries reverse link rows and reducers
+  keep `linkCount`/`blocked`/incoming facts current on link, archive,
+  card-delete and column-delete commands (and keep a summary target's
+  `blocked` conservative while another blocker may exist), reset
+  duplicated-card facts, update description/checklist counters on edits and
   preimage duplicate columns; page hydration rejects pages older than the
-  summary, only hydrates ids still in column/archive scope, retries failures
-  and shows a partial marker while keeping completed boards from re-downloading
-  every page on focus; `If-None-Match: *` now runs the card/column existence
-  precheck before a 304; and the 50-card preimage batch is one query. Query
-  budgets and the remaining risks are documented in the task doc. Initial
-  bytes/RSS targets still need the 200.1/200.15 harness on a dedicated host;
-  this change ships the mechanism, not measured capacity.
+  summary, only hydrates ids still in column/archive scope, re-reads pages
+  when the summary `atSeq`/`aggregateRevision` advanced even if every id is
+  present, retries failures and shows a partial marker while keeping
+  completed unchanged boards from re-downloading every page on focus;
+  `If-None-Match: *` runs the card/column existence precheck before a 304 and
+  cannot skip cursor validation; a partial detail batch is all-or-nothing
+  `404`; and the 50-card preimage batch is one query. Query budgets and the
+  remaining risks are documented in the task doc. Initial bytes/RSS targets
+  still need the 200.1/200.15 harness on a dedicated host; this change ships
+  the mechanism, not measured capacity.
 
 - TASK-200.6 compressed, conditionally revalidated and bounded board reads.
   `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least

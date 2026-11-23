@@ -35,7 +35,12 @@ export type SendFailure =
   | { kind: "rejected"; status: number; field?: string };
 
 export type SendOutcome =
-  | { ok: true; versions: EntityVersions; seq: number }
+  | {
+      ok: true;
+      versions: EntityVersions;
+      seq: number;
+      preimage?: CommandResponse["preimage"];
+    }
   | { ok: false; failure: SendFailure; uncertainCommandId?: string };
 
 export interface ServerSyncOptions {
@@ -301,7 +306,14 @@ export class ServerSync {
         if (typeof response?.seq !== "number" || !response.versions) {
           throw new ApiError(200, null, "Invalid command response");
         }
-        return { ok: true, versions: response.versions, seq: response.seq };
+        return {
+          ok: true,
+          versions: response.versions,
+          seq: response.seq,
+          ...(response.preimage !== undefined
+            ? { preimage: response.preimage }
+            : {}),
+        };
       } catch (error) {
         uncertain ||= commandResponseLost(error);
         // The same key and payload replays the persisted result if the

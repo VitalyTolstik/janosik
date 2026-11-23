@@ -7,7 +7,7 @@
  * minimal — only the wire shapes the two sides must agree on.
  */
 
-import type { BoardAction } from "./store/board-reducer";
+import type { BoardAction, LabelAssignment } from "./store/board-reducer";
 import type {
   Board,
   BoardAgentPolicy,
@@ -61,6 +61,13 @@ export interface CommandResponse {
   versions: EntityVersions;
   /** TASK-166.7: the agent run this command belongs to, when one was created. */
   runId?: string | null;
+  /**
+   * TASK-200.9: deletion snapshots captured in the same transaction as the
+   * command. A `DELETE_LABEL` response carries every assignment the delete
+   * removed, so the client inverse restores exactly that snapshot rather
+   * than racing a separate preimage read.
+   */
+  preimage?: { labelAssignments: LabelAssignment[] };
 }
 
 /**

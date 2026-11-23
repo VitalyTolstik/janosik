@@ -986,7 +986,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         markReadModelPartial(boardId, false);
         return;
       }
+      const previousBaseline = readModelBaselineRef.current.get(boardId);
       const generation = nextReadModelGeneration(boardId);
+      const advanced =
+        previousBaseline !== undefined &&
+        (summary.atSeq > previousBaseline.seq ||
+          summary.aggregateRevision > previousBaseline.revision);
       readModelBaselineRef.current.set(boardId, {
         seq: summary.atSeq,
         revision: summary.aggregateRevision,
@@ -999,8 +1004,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       const missing = allIds.some((id) => board?.cards[id] === undefined);
       // A completed board with every summary id present needs no page
       // re-download on every focus; SSE already keeps the loaded cards
-      // current. If a resync/new card leaves a hole, hydrate again.
-      if (readModelCompleteRef.current.get(boardId) === true && !missing) {
+      // current. But a newer summary seq/revision means a page card may have
+      // changed while its page was not open, so page 2+ must be re-read.
+      if (
+        readModelCompleteRef.current.get(boardId) === true &&
+        !missing &&
+        !advanced
+      ) {
         return;
       }
       readModelCompleteRef.current.set(boardId, false);
@@ -1251,6 +1261,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     sync: syncHistory,
     rollback: rollbackStep,
     markForeign,
+    amendLabelPreimage,
   } = useUndoHistory({
     getBoard: getBoardById,
     getActiveBoardId,
@@ -1950,6 +1961,47 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   );
 
   /**
+   * A foreign destructive command can leave summary link facts stale when the
+   * source card's rows are not loaded: the reducer cannot know which targets
+   * it pointed at. Schedule a snapshot instead of under-reporting forever;
+   * the normal focus/refetch path then re-reads the pages too (TASK-200.9).
+   */
+  const invalidateForeignFacts = useCallback(
+    (boardId: string, action: BoardAction) => {
+      const board = stateRef.current.find((entry) => entry.id === boardId);
+      if (board === undefined) return;
+      const unknown = (cardId: string): boolean => {
+        const card = board.cards[cardId];
+        // Absent = a later page; present but summary = no link rows.
+        if (card === undefined) return true;
+        return (
+          card.readModel !== undefined &&
+          !card.readModel.detailLoaded &&
+          card.readModel.linkCount > 0
+        );
+      };
+      let stale = false;
+      switch (action.type) {
+        case "DELETE_CARD":
+        case "ARCHIVE_CARD":
+        case "UNARCHIVE_CARD":
+          stale = unknown(action.cardId);
+          break;
+        case "DELETE_COLUMN":
+        case "ARCHIVE_COLUMN_CARDS": {
+          const column = board.columns.find(
+            (entry) => entry.id === action.columnId,
+          );
+          stale = column === undefined || column.cardIds.some(unknown);
+          break;
+        }
+      }
+      if (stale) scheduleRefetch(boardId);
+    },
+    [scheduleRefetch],
+  );
+
+  /**
    * The account's membership was revoked (TASK-36): the server sent the
    * `membership` frame on our stream, or the stream itself answered 403 on
    * reconnect. Forget the board right away — its roster, role and resume
@@ -2199,6 +2251,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         setBaseline: (id, seq) =>
           seqsRef.current.set(id, Math.max(seqsRef.current.get(id) ?? 0, seq)),
         apply,
+        onForeignAction: invalidateForeignFacts,
         markForeign,
         applyPresence: (id, event) => live.presence.apply(id, event),
         flagForeign: (id, actorId, ids) => {
@@ -2254,7 +2307,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // The handlers are stable and read refs on purpose (same as `apply`
     // above): they run from the stream, never during render.
     // eslint-disable-next-line react-hooks/refs
-  }, [serverMode, board?.id, apply, markForeign, sync, live, refetchBoard]);
+  }, [
+    serverMode,
+    board?.id,
+    apply,
+    invalidateForeignFacts,
+    markForeign,
+    sync,
+    live,
+    refetchBoard,
+  ]);
 
   // Wrapper dispatch: apply the command, then record the undo step for the
   // board it targeted. Board-scoped actions get the active board id
@@ -2299,14 +2361,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      // The assignment list is a local inverse preimage, not command data:
-      // keep it out of the command log and the SSE echo.
-      const wireAction =
-        scoped.type === "DELETE_LABEL" &&
-        scoped.preimageAssignments !== undefined
-          ? ({ ...scoped, preimageAssignments: undefined } as BoardAction)
-          : scoped;
-      return sync.enqueue(boardId, wireAction).then((outcome) => {
+      return sync.enqueue(boardId, scoped).then((outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
@@ -2315,6 +2370,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         handledOutcomesRef.current.add(outcome);
         if (outcome.ok) {
           mergeVersions(boardId, outcome.versions);
+          // TASK-200.9: the lock-consistent DELETE_LABEL snapshot from the
+          // command response replaces the optimistic (loaded-cards-only)
+          // inverse assignments, so undo restores unloaded cards too.
+          if (
+            scoped.type === "DELETE_LABEL" &&
+            outcome.preimage !== undefined
+          ) {
+            amendLabelPreimage(
+              boardId,
+              String(scoped.commandId),
+              outcome.preimage.labelAssignments,
+            );
+          }
           // The command is on the server now — the open card's history can
           // refetch without the one-behind the optimistic bump has.
           live.commits.publish(boardId, touchedIds);
@@ -2373,6 +2441,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       drainRefetch,
       scheduleRefetch,
       reconcileUncertainCommand,
+      amendLabelPreimage,
     ],
   );
 
@@ -2407,33 +2476,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         const result = runDispatch(next, opts);
         return result === undefined ? true : result;
       };
-      // A label delete removes rows on every card, not just the loaded first
-      // page. Fetch the complete assignment preimage first; undoing from the
-      // loaded subset would silently strip the label from the rest.
-      if (
-        serverMode &&
-        action.type === "DELETE_LABEL" &&
-        action.preimageAssignments === undefined
-      ) {
-        return api
-          .getLabelAssignments(boardId, action.labelId)
-          .then((assignments) =>
-            finish({ ...action, preimageAssignments: assignments }),
-          )
-          .catch((error: unknown) => {
-            // An older server has no preimage route; its legacy full board
-            // already holds every card, so the local inverse is complete.
-            if (
-              error instanceof ApiError &&
-              (error.status === 404 ||
-                error.status === 405 ||
-                error.status === 501)
-            ) {
-              return finish(action);
-            }
-            return fail(error);
-          });
-      }
       const board = stateRef.current.find((entry) => entry.id === boardId);
       const needed = preimageCardIds(action, board).filter(
         (id) => !hasCardDetail(board?.cards[id]),

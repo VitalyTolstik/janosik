@@ -927,8 +927,16 @@ function renameColumn(board: Board, action: RenameColumnAction): Board {
 function deleteColumn(board: Board, action: DeleteColumnAction): Board {
   const column = board.columns.find((c) => c.id === action.columnId);
   if (!column) return board;
+  const sources = column.cardIds.flatMap((id) => {
+    const card = cardOf(board, id);
+    return card === undefined ? [] : [card];
+  });
   const cards = { ...board.cards };
   for (const cardId of column.cardIds) delete cards[cardId];
+  // Targets outside the column lose these cards' relations. Done after the
+  // whole column left the map, so a target inside it is skipped and a
+  // detail-loaded target sees the exact surviving reverse rows.
+  for (const source of sources) detachSourceLinks(source, cards);
   return {
     ...board,
     columns: board.columns.filter((c) => c.id !== action.columnId),
@@ -1028,6 +1036,17 @@ function updateCard(
   // `undefined` (which would still satisfy `"description" in card`).
   if (description === undefined) delete nextCard.description;
   else nextCard.description = description;
+  // TASK-200.9: the list face reads the scalar counter, not the body. Keep
+  // it current on every description write (own or foreign/SSE).
+  if (nextCard.readModel !== undefined && action.description !== undefined) {
+    nextCard = {
+      ...nextCard,
+      readModel: {
+        ...nextCard.readModel,
+        descriptionChars: (nextCard.description ?? "").length,
+      },
+    };
+  }
   if (title !== target.title) {
     nextCard = appendActivity(nextCard, "renamed", action, 0, options);
   }
@@ -1050,9 +1069,11 @@ function updateCard(
 }
 
 function deleteCard(board: Board, action: DeleteCardAction): Board {
-  if (!cardOf(board, action.cardId)) return board;
+  const source = cardOf(board, action.cardId);
+  if (!source) return board;
   const cards = { ...board.cards };
   delete cards[action.cardId];
+  detachSourceLinks(source, cards);
   const columns = board.columns.map((col) => ({
     ...col,
     cardIds: col.cardIds.filter((id) => id !== action.cardId),
@@ -1113,8 +1134,9 @@ function archiveCard(
 /**
  * Keep summary link facts current when a blocker is archived/unarchived.
  * A summary target cannot prove other blockers do not exist, so its
- * `blocked` stays conservative; a detail-loaded target has the complete
- * reverse rows and can be recomputed exactly.
+ * `blocked` stays conservative unless the archived row was its only
+ * relation; a detail-loaded target has the complete reverse rows and is
+ * recomputed exactly.
  */
 function updateTargetsForArchivedSource(
   board: Board,
@@ -1124,24 +1146,96 @@ function updateTargetsForArchivedSource(
 ): void {
   for (const link of source.links ?? []) {
     if (link.targetCardId === source.id) continue;
-    const target = board.cards[link.targetCardId];
+    const target = cards[link.targetCardId] ?? board.cards[link.targetCardId];
     if (target?.readModel === undefined) continue;
     const incomingLinks = (target.incomingLinks ?? []).map((entry) =>
       entry.id === link.id ? { ...entry, fromArchived: archived } : entry,
     );
     let blocked = target.readModel.blocked;
     if (target.readModel.detailLoaded) {
+      // The reverse rows are complete; use the updated copy, not the stale
+      // target object (a column-wide unarchive updates each link in turn).
       blocked =
         link.type === "blocks" && !archived
           ? true
-          : hasLoadedIncomingBlock(board, target.id, "", source.id);
-    } else if (link.type === "blocks" && !archived) {
-      blocked = true;
+          : incomingLinks.some(
+              (entry) => entry.type === "blocks" && !entry.fromArchived,
+            );
+    } else if (link.type === "blocks") {
+      // Unarchiving a blocker blocks the target again. Archiving may clear
+      // it only when this link was the target's whole degree — otherwise a
+      // summary target keeps its conservative `blocked` fact.
+      blocked = archived
+        ? target.readModel.blocked && target.readModel.linkCount > 1
+        : true;
     }
     cards[target.id] = {
       ...target,
       readModel: { ...target.readModel, blocked },
       ...(target.readModel.detailLoaded ? { incomingLinks } : {}),
+    };
+  }
+}
+
+/**
+ * A deleted card takes its outgoing relations with it: every surviving
+ * target loses one degree and, when its detail is loaded, the reverse row.
+ * A summary target keeps `blocked` unless its degree reaches zero — the only
+ * point the client can prove no other blocker exists.
+ */
+function detachSourceLinks(source: Card, cards: Board["cards"]): void {
+  for (const link of source.links ?? []) {
+    if (link.targetCardId === source.id) continue;
+    const target = cards[link.targetCardId];
+    if (target?.readModel === undefined) continue;
+    const linkCount = Math.max(0, target.readModel.linkCount - 1);
+    const blocked = target.readModel.detailLoaded
+      ? hasLoadedIncomingBlock(cards, target, link.id)
+      : linkCount === 0
+        ? false
+        : target.readModel.blocked;
+    cards[target.id] = {
+      ...target,
+      readModel: { ...target.readModel, linkCount, blocked },
+      ...(target.readModel.detailLoaded
+        ? {
+            incomingLinks: (target.incomingLinks ?? []).filter(
+              (entry) => entry.id !== link.id,
+            ),
+          }
+        : {}),
+    };
+  }
+}
+
+/** A restored card brings its outgoing relations back to the targets. */
+function attachSourceLinks(source: Card, cards: Board["cards"]): void {
+  const fromArchived = source.archivedAt !== undefined;
+  for (const link of source.links ?? []) {
+    if (link.targetCardId === source.id) continue;
+    const target = cards[link.targetCardId];
+    if (target?.readModel === undefined) continue;
+    cards[target.id] = {
+      ...target,
+      readModel: {
+        ...target.readModel,
+        linkCount: target.readModel.linkCount + 1,
+        blocked:
+          target.readModel.blocked || (link.type === "blocks" && !fromArchived),
+      },
+      ...(target.readModel.detailLoaded
+        ? {
+            incomingLinks: [
+              ...(target.incomingLinks ?? []),
+              {
+                id: link.id,
+                type: link.type,
+                fromCardId: source.id,
+                fromArchived,
+              },
+            ],
+          }
+        : {}),
     };
   }
 }
@@ -1664,7 +1758,7 @@ function patchChecklists(
   }
   // An empty list means "no checklists" — drop the field entirely.
   const next = checklists.length > 0 ? checklists : undefined;
-  const nextCard = appendActivity(
+  let nextCard = appendActivity(
     { ...target, checklists: next, updatedAt: cardStamp(action) },
     event?.type ?? null,
     action,
@@ -1672,6 +1766,48 @@ function patchChecklists(
     options,
     event?.detail,
   );
+  // TASK-200.9: the face reads the scalar counters, not the loaded rows.
+  // A detail-loaded card has the complete list — recompute exactly. A
+  // summary card knows at most the rows created/touched locally, so apply
+  // the command's delta to the server counters instead.
+  if (nextCard.readModel !== undefined) {
+    const afterItems = (nextCard.checklists ?? []).flatMap(
+      (list) => list.items,
+    );
+    let itemCount = nextCard.readModel.checklistItemCount;
+    let doneCount = nextCard.readModel.checklistDoneCount;
+    if (nextCard.readModel.detailLoaded) {
+      itemCount = afterItems.length;
+      doneCount = afterItems.filter((item) => item.done).length;
+    } else {
+      const beforeItems = (target.checklists ?? []).flatMap(
+        (list) => list.items,
+      );
+      itemCount = Math.max(
+        0,
+        itemCount + afterItems.length - beforeItems.length,
+      );
+      doneCount = Math.max(
+        0,
+        doneCount +
+          afterItems.filter((item) => item.done).length -
+          beforeItems.filter((item) => item.done).length,
+      );
+    }
+    if (
+      nextCard.readModel.checklistItemCount !== itemCount ||
+      nextCard.readModel.checklistDoneCount !== doneCount
+    ) {
+      nextCard = {
+        ...nextCard,
+        readModel: {
+          ...nextCard.readModel,
+          checklistItemCount: itemCount,
+          checklistDoneCount: doneCount,
+        },
+      };
+    }
+  }
   return {
     ...board,
     cards: {
@@ -2204,10 +2340,28 @@ function removeCardLink(
   options: ReduceOptions,
 ): Board {
   const source = cardOf(board, action.cardId);
-  if (!source) return board;
+  const index =
+    source?.links?.findIndex((link) => link.id === action.linkId) ?? -1;
+  if (source === undefined || index === -1) {
+    // A summary source (or a page the client has not loaded) has the link
+    // counter but not the row. The action still names the other end, so the
+    // target's degree/reverse row can be kept current; never invent a row
+    // on the source.
+    if (source?.readModel === undefined) return board;
+    const cards = {
+      ...board.cards,
+      [source.id]: {
+        ...source,
+        readModel: {
+          ...source.readModel,
+          linkCount: Math.max(0, source.readModel.linkCount - 1),
+        },
+      },
+    };
+    dropTargetLinkFact(cards, action.targetCardId, action.linkId);
+    return { ...board, cards };
+  }
   const links = source.links ?? [];
-  const index = links.findIndex((link) => link.id === action.linkId);
-  if (index === -1) return board;
   const removed = links[index];
   const targetTitle = cardOf(board, removed.targetCardId)?.title;
   const nextLinks = links.filter((_, i) => i !== index);
@@ -2237,63 +2391,66 @@ function removeCardLink(
     targetTitle,
   );
   const cards = { ...board.cards, [source.id]: stampedCard };
-  const target = cardOf(board, removed.targetCardId);
-  if (target?.readModel !== undefined && target.id !== source.id) {
-    const incomingLinks = (target.incomingLinks ?? []).filter(
-      (entry) => entry.id !== removed.id,
-    );
-    const stillBlocked =
-      (removed.type === "blocks" &&
-        target.readModel.detailLoaded &&
-        !hasLoadedIncomingBlock(board, target.id, removed.id)) ||
-      (removed.type !== "blocks" && target.readModel.blocked);
-    cards[target.id] = {
-      ...target,
-      readModel: {
-        ...target.readModel,
-        linkCount: Math.max(0, target.readModel.linkCount - 1),
-        blocked: stillBlocked,
-      },
-      ...(target.readModel.detailLoaded
-        ? {
-            incomingLinks,
-          }
-        : {}),
-    };
-  }
+  dropTargetLinkFact(cards, removed.targetCardId, removed.id);
   return { ...board, cards };
 }
 
+/** Apply one removed relation to the target's summary/detail facts. */
+function dropTargetLinkFact(
+  cards: Board["cards"],
+  targetId: string,
+  linkId: string,
+): void {
+  const target = cards[targetId];
+  if (target?.readModel === undefined) return;
+  const linkCount = Math.max(0, target.readModel.linkCount - 1);
+  // A summary target cannot tell which of its remaining relations block;
+  // keep the server fact unless the degree is now zero. A detail target has
+  // the complete reverse rows and is recomputed exactly.
+  const blocked = target.readModel.detailLoaded
+    ? hasLoadedIncomingBlock(cards, target, linkId)
+    : linkCount === 0
+      ? false
+      : target.readModel.blocked;
+  cards[target.id] = {
+    ...target,
+    readModel: { ...target.readModel, linkCount, blocked },
+    ...(target.readModel.detailLoaded
+      ? {
+          incomingLinks: (target.incomingLinks ?? []).filter(
+            (entry) => entry.id !== linkId,
+          ),
+        }
+      : {}),
+  };
+}
+
 /**
- * Is there another loaded incoming `blocks` row to `targetId`? Used only
- * when the target's detail is loaded, where the reverse rows are complete;
- * a summary target keeps its server `blocked` fact rather than guessing.
+ * Is there another loaded incoming `blocks` row to this card? Used only when
+ * the target's detail is loaded (complete reverse rows) or against the
+ * post-change card map; a summary target keeps its conservative fact.
  */
 function hasLoadedIncomingBlock(
-  board: Board,
-  targetId: string,
+  cards: Board["cards"],
+  target: Card | undefined,
   excludedLinkId: string,
-  excludedSourceId?: string,
 ): boolean {
-  for (const card of Object.values(board.cards)) {
-    if (card.id === excludedSourceId) continue;
+  for (const card of Object.values(cards)) {
     for (const link of card.links ?? []) {
       if (
         link.id !== excludedLinkId &&
         link.type === "blocks" &&
-        link.targetCardId === targetId &&
+        link.targetCardId === target?.id &&
         card.archivedAt === undefined
       ) {
         return true;
       }
     }
   }
-  const target = cardOf(board, targetId);
   return (
     target?.incomingLinks?.some(
       (link) =>
         link.id !== excludedLinkId &&
-        link.fromCardId !== excludedSourceId &&
         link.type === "blocks" &&
         !link.fromArchived,
     ) ?? false
@@ -2571,6 +2728,10 @@ function restoreCard(
   }
   const restoredCard: Card =
     card.title.trim() === "" ? { ...card, title: UNTITLED_CARD_TITLE } : card;
+  const cards = { ...board.cards, [card.id]: restoredCard };
+  // The card row (and therefore its relations) survived the soft delete;
+  // bring the degree — and, for a live card, the blocked fact — back.
+  attachSourceLinks(restoredCard, cards);
   return {
     ...board,
     ...(board.archivedCardIds !== undefined
@@ -2595,7 +2756,7 @@ function restoreCard(
             : c,
         )
       : board.columns,
-    cards: { ...board.cards, [card.id]: restoredCard },
+    cards,
   };
 }
 
@@ -2630,6 +2791,7 @@ function restoreColumn(
   if (!action.cards.every((card) => listed.has(card.id))) return board;
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
+  for (const card of action.cards) attachSourceLinks(card, cards);
   return {
     ...board,
     columns: insertAt(
@@ -2753,6 +2915,16 @@ function restoreColumnCards(
   }
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
+  // RESTORE_COLUMN_CARDS changes archive state; unarchived cards block their
+  // targets again, archived ones stop blocking (the degree is unchanged).
+  for (const card of action.cards) {
+    updateTargetsForArchivedSource(
+      board,
+      card,
+      cards,
+      card.archivedAt !== undefined,
+    );
+  }
   // The order may only place cards this command rewrote live, or that the
   // column already holds — never a card that sits elsewhere or stays
   // archived — and each of them once.
@@ -2779,8 +2951,18 @@ function restoreColumnCards(
   ) {
     return board;
   }
+  let archivedCardIds: string[] | undefined;
+  if (board.archivedCardIds !== undefined) {
+    const archived = new Set(board.archivedCardIds);
+    for (const card of action.cards) {
+      if (card.archivedAt !== undefined) archived.add(card.id);
+      else archived.delete(card.id);
+    }
+    archivedCardIds = [...archived];
+  }
   return {
     ...board,
+    ...(archivedCardIds !== undefined ? { archivedCardIds } : {}),
     columns: board.columns.map((c) =>
       c.id === column.id ? { ...c, cardIds } : c,
     ),

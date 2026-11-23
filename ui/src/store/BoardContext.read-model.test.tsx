@@ -225,6 +225,45 @@ describe("BoardProvider read model (TASK-200.9)", () => {
     ).toBe(false);
   });
 
+  it("re-reads the pages when a newer revision was missed on the stream", async () => {
+    const server = new FakeServer([largeBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("count").textContent).toBe(String(CARD_COUNT)),
+    );
+    expect(screen.getByTestId("title").textContent).toBe("Card 99");
+
+    // A page-2 edit the client never saw: the server revision advanced, but
+    // no SSE frame reached this tab. Only a page re-read can refresh it.
+    server.advanceRevision("b-1", (board) => {
+      board.cards["card-99"] = {
+        ...board.cards["card-99"],
+        title: "Fresh after refocus",
+        updatedAt: board.cards["card-99"].updatedAt + 10,
+      };
+      return board;
+    });
+    const beforeFocus = server.requests.length;
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe(
+        "Fresh after refocus",
+      ),
+    );
+    expect(
+      server.requests
+        .slice(beforeFocus)
+        .some(
+          (entry) =>
+            entry.path === "/api/v1/boards/b-1/cards" && entry.method === "GET",
+        ),
+    ).toBe(true);
+  });
+
   it("falls back to the legacy aggregate when /summary is missing", async () => {
     const server = new FakeServer([largeBoard()]);
     vi.stubGlobal(

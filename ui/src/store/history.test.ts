@@ -37,6 +37,43 @@ function updateCard(
 }
 
 describe("BoardHistory", () => {
+  it("amends a recorded label delete with the server's complete preimage", () => {
+    const history = new BoardHistory();
+    const base = freshBoard();
+    const before: Board = {
+      ...base,
+      labels: [{ id: "l-1", name: "Bug", color: "red" }],
+      cards: {
+        ...base.cards,
+        "card-1": { ...base.cards["card-1"], labelIds: ["l-1"] },
+      },
+    };
+    const command: BoardAction = {
+      type: "DELETE_LABEL",
+      boardId: base.id,
+      labelId: "l-1",
+      at: AT,
+      commandId: "cmd-label",
+    } as BoardAction;
+
+    expect(history.push(before, command)).toBe(true);
+    // The optimistic inverse knows only the loaded card; the response adds
+    // the card on a later page that the delete also stripped.
+    expect(
+      history.amendLabelAssignments("cmd-label", [
+        { cardId: "card-1", index: 0, updatedAt: 1 },
+        { cardId: "page-two", index: 0, updatedAt: 2 },
+      ]),
+    ).toBe(true);
+    expect(history.undo()).toMatchObject({
+      type: "RESTORE_LABEL",
+      assignments: [
+        { cardId: "card-1", index: 0, updatedAt: 1 },
+        { cardId: "page-two", index: 0, updatedAt: 2 },
+      ],
+    });
+  });
+
   it("hands back the inverse command of the last step", () => {
     const history = new BoardHistory();
     const before = freshBoard();

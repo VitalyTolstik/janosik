@@ -217,6 +217,16 @@ export class FakeServer {
     if (board) this.boards.set(boardId, mutate(structuredClone(board)));
   }
 
+  /**
+   * Simulate a server revision this client did not receive on the stream:
+   * mutate the board and advance the seq so the next summary fetch reports a
+   * newer `atSeq`/`aggregateRevision` (TASK-200.9 page-refresh tests).
+   */
+  advanceRevision(boardId: string, mutate: (board: Board) => Board): void {
+    this.overwriteBoard(boardId, mutate);
+    this.seq.set(boardId, (this.seq.get(boardId) ?? 0) + 1);
+  }
+
   /** Simulate a foreign writer bumping one entity's version. */
   bumpVersion(boardId: string, key: string): void {
     const map = this.versions.get(boardId) ?? new Map<string, number>();
@@ -847,27 +857,6 @@ export class FakeServer {
       };
       return json(201, masked);
     }
-    const labelAssignmentsMatch =
-      /^\/api\/v1\/boards\/([^/]+)\/labels\/([^/]+)\/assignments$/.exec(path);
-    if (labelAssignmentsMatch && method === "GET") {
-      const board = this.boards.get(labelAssignmentsMatch[1]);
-      if (board === undefined) return json(404, { message: "Board not found" });
-      if (
-        !board.labels.some((label) => label.id === labelAssignmentsMatch[2])
-      ) {
-        return json(404, { message: "Label not found" });
-      }
-      return json(
-        200,
-        Object.values(board.cards)
-          .map((card) => ({
-            cardId: card.id,
-            index: card.labelIds.indexOf(labelAssignmentsMatch[2]),
-            updatedAt: card.updatedAt,
-          }))
-          .filter((entry) => entry.index !== -1),
-      );
-    }
 
     // TASK-200.9 read model. The fake stores a full board and projects it,
     // which is enough for client hydration/pagination/detail tests.
@@ -1283,6 +1272,26 @@ export class FakeServer {
     }
 
     const action = validation.action;
+    // TASK-200.9: the real server snapshots a DELETE_LABEL's assignments
+    // inside the command transaction; the fake captures them from the
+    // pre-command board before applying.
+    const labelPreimage =
+      action.type === "DELETE_LABEL"
+        ? {
+            labelAssignments: Object.values(board.cards)
+              .map((card) => ({
+                cardId: card.id,
+                index: card.labelIds.indexOf(action.labelId),
+                updatedAt: card.updatedAt,
+              }))
+              .filter((entry) => entry.index !== -1)
+              .sort(
+                (left, right) =>
+                  left.index - right.index ||
+                  left.cardId.localeCompare(right.cardId),
+              ),
+          }
+        : undefined;
     const after =
       boardReducer(
         [structuredClone(board)],
@@ -1302,7 +1311,11 @@ export class FakeServer {
       touchesOf(boardId, action),
       request.commandId,
     );
-    const response: CommandResponse = { seq, versions };
+    const response: CommandResponse = {
+      seq,
+      versions,
+      ...(labelPreimage !== undefined ? { preimage: labelPreimage } : {}),
+    };
     this.commands.set(request.commandId, response);
     if (this.commandGate !== null) await this.commandGate;
     return json(200, response);

@@ -47,7 +47,6 @@ import type {
   DeleteAccountResponse,
   EndAgentSessionRequest,
   InviteMemberRequest,
-  LabelAssignment,
   NotificationSettingsDto,
   RequestAccountDeletionCodeRequest,
   RequestAccountDeletionCodeResponse,
@@ -1034,21 +1033,6 @@ export class ApiClient {
     const query = params.toString();
     return this.request<BoardCardPageDto>(
       `/boards/${encodeURIComponent(boardId)}/cards${query === "" ? "" : `?${query}`}`,
-      { headers: { "X-Janosik-Read-Model": "v1" } },
-    );
-  }
-
-  /**
-   * TASK-200.9: every card assignment of one label, for a delete undo. It is
-   * deliberately separate from card detail so a 1 000-card board does not
-   * load every description just to restore label memberships.
-   */
-  getLabelAssignments(
-    boardId: string,
-    labelId: string,
-  ): Promise<LabelAssignment[]> {
-    return this.request<LabelAssignment[]>(
-      `/boards/${encodeURIComponent(boardId)}/labels/${encodeURIComponent(labelId)}/assignments`,
       { headers: { "X-Janosik-Read-Model": "v1" } },
     );
   }

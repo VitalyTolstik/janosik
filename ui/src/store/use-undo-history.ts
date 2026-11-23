@@ -2,7 +2,7 @@ import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Board, BoardAction } from "@janosik/shared";
+import type { Board, BoardAction, LabelAssignment } from "@janosik/shared";
 import { invert, isColumnFull } from "@janosik/shared";
 import { BoardHistory, type RollbackOutcome } from "@/store/history";
 import type { SendFailure, SendOutcome } from "@/store/server-sync";
@@ -32,6 +32,15 @@ export interface UndoHistory {
     before: Board,
     action: BoardAction,
     options?: { foreign?: boolean },
+  ) => void;
+  /**
+   * TASK-200.9: replace a recorded DELETE_LABEL inverse's assignment list
+   * with the server's lock-consistent snapshot once the response arrives.
+   */
+  amendLabelPreimage: (
+    boardId: string,
+    commandId: string,
+    assignments: readonly LabelAssignment[],
   ) => void;
   undo: () => void;
   redo: () => void;
@@ -310,6 +319,19 @@ export function useUndoHistory({
     [sync],
   );
 
+  const amendLabelPreimage = useCallback(
+    (
+      boardId: string,
+      commandId: string,
+      assignments: readonly LabelAssignment[],
+    ) => {
+      historiesRef.current
+        .get(boardId)
+        ?.amendLabelAssignments(commandId, assignments);
+    },
+    [],
+  );
+
   const drop = useCallback(
     (boardId: string) => {
       historiesRef.current.delete(boardId);
@@ -365,5 +387,6 @@ export function useUndoHistory({
     sync,
     rollback,
     markForeign,
+    amendLabelPreimage,
   };
 }

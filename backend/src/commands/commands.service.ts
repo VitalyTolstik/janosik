@@ -75,7 +75,11 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { AttentionService } from "@/notifications/attention.service";
-import { applyCommandWrites, collectVersions } from "./command-writers";
+import {
+  applyCommandWrites,
+  collectVersions,
+  readLabelAssignments,
+} from "./command-writers";
 import {
   type EntityParentageLedger,
   loadCardLinkParentage,
@@ -1417,6 +1421,22 @@ export class CommandsService {
     });
     const seq = Number(created.seq);
 
+    // TASK-200.9: snapshot the label's assignments inside this transaction
+    // and before the writer removes them. The board advisory lock is already
+    // held, so a concurrent SET_CARD_LABEL either happened before this read
+    // or waits for the commit; the response's inverse can restore exactly
+    // the rows this delete removed.
+    const labelPreimage =
+      changed && action.type === "DELETE_LABEL"
+        ? {
+            labelAssignments: await readLabelAssignments(
+              tx,
+              boardId,
+              action.labelId,
+            ),
+          }
+        : null;
+
     let touches: string[] = [];
     if (changed) {
       touches = await applyCommandWrites(tx, {
@@ -1435,6 +1455,7 @@ export class CommandsService {
       seq,
       versions,
       ...(attribution.runId !== null ? { runId: attribution.runId } : {}),
+      ...(labelPreimage !== null ? { preimage: labelPreimage } : {}),
     };
 
     await tx.command.update({

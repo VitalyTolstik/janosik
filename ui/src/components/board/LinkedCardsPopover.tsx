@@ -19,7 +19,12 @@ import { cn } from "@/lib/utils";
 import { useBoardActions, useBoardState } from "@/store/BoardContext";
 import { useBoardMember } from "@/store/board-live";
 import { cardHref, shouldLeaveToBrowser } from "@/utils/card-nav";
-import { linkRowGroups, type CardLinkFacts, type LinkRow } from "@/utils/links";
+import {
+  boardCardIds,
+  linkRowGroups,
+  type CardLinkFacts,
+  type LinkRow,
+} from "@/utils/links";
 import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 
 interface LinkedCardsPopoverProps {
@@ -160,7 +165,15 @@ function LinkedCardsContent({
   for (const column of board.columns) {
     for (const id of column.cardIds) columnTitles.set(id, column.title);
   }
-  const groups = linkRowGroups(board.cards, facts, t("card.links.deletedCard"));
+  const groups = linkRowGroups(
+    board.cards,
+    facts,
+    t("card.links.deletedCard"),
+    {
+      knownCardIds: boardCardIds(board),
+      notLoadedTitle: t("card.links.notLoaded"),
+    },
+  );
 
   const openCard = (targetCardId: string) => {
     const next = copySearchParamsWithoutLanguageHandoff(searchParams);
