@@ -363,8 +363,23 @@ Three tools let a swarm share one board without stepping on itself:
 - `janosik_list_ready_cards` returns the cards an agent can pick up now: in the
   board's **initial column** (the first column when the board has no workflow),
   unassigned, not under a live claim and not blocked by another card, most
-  urgent first. `janosik_wait_for_work` blocks until one appears (or a timeout
-  passes), so idle agents make one call instead of polling.
+  urgent first. Both it and `janosik_wait_for_work` use the server's compact
+  ready summary (`GET /boards/:id/ready`, or `GET /boards/ready` when `boardId`
+  is omitted), not a full board read. A single-board wait holds for 25–60 s per
+  request and wakes only on readiness-relevant changes; `pollMs` is ignored for
+  that hold. Without `boardId` it re-reads the cross-board snapshot every
+  15–60 s (the full range, jittered; `pollMs` raises the floor). A relevant
+  wake that leaves no work keeps holding instead of returning an empty
+  snapshot. `timeoutMs: 0` still performs one initial snapshot (bounded by a
+  5 s HTTP budget); other snapshot calls are bounded by the remaining
+  deadline. `janosik_list_ready_cards` keeps the normal GET network/429 retry
+  policy. Transient
+  network and `503 ready_poll_capacity`/`Retry-After` failures retry only
+  within the caller's deadline. The tool keeps `timeoutMs` (up to 5 min) and
+  `boardId` and still returns `{ card }` or `{ card: null }` on timeout. A
+  server predating the ready endpoint (it answers `404`) falls back to a
+  **full board read**, so the tool result does not change — upgrade the server
+  to remove the idle board reads.
 - `janosik_move_card` checks completion requirements when moving a card into a
   **done column** (the configured `doneColumnIds`, falling back to the last
   column when the list is empty or the board has no workflow). The check applies if the card has a non-empty

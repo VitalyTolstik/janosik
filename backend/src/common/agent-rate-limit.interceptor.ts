@@ -280,6 +280,10 @@ export function agentSessionIdOf(request: LimitedRequest): string | undefined {
  * Board routes carry `:id`; card/comment/attachment routes resolve the board
  * in the guard and put it on `req.boardMembership`. Parsing the path covers a
  * board route whose guard answered 404/403 before setting membership.
+ *
+ * `/boards/import`, `/boards/ready` and `/boards/search` are account/workspace
+ * routes declared before `:id`; they are not board ids for rate-limit or log
+ * attribution.
  */
 export function boardIdOf(request: LimitedRequest): string | undefined {
   if (request.boardMembership?.boardId !== undefined) {
@@ -289,8 +293,15 @@ export function boardIdOf(request: LimitedRequest): string | undefined {
     pathOf(request),
   );
   const boardId = match?.[1];
-  // `/boards/import` is an account route, not a board id.
-  return boardId === undefined || boardId === "import" ? undefined : boardId;
+  if (
+    boardId === undefined ||
+    boardId === "import" ||
+    boardId === "ready" ||
+    boardId === "search"
+  ) {
+    return undefined;
+  }
+  return boardId;
 }
 
 /**

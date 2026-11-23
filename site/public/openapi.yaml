@@ -400,6 +400,42 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/ready:
+    get:
+      tags: [Boards]
+      operationId: listReadyWork
+      summary: Snapshot ready cards across accessible boards
+      description: |
+        TASK-200.2. One bounded snapshot of the cards ready to pick up on every
+        active board where the caller has an accepted, unexpired membership.
+        A board-scoped PAT sees only its own board. Ready means the board's
+        initial column (`workflow.initialColumnId`, else the first column),
+        unassigned, without a live claim, not archived/deleted and not blocked
+        by a live `blocks` link. Archived boards are listed with
+        `archived: true` and contribute no cards. The query is scoped to those
+        first/work columns and has a single `LIMIT`; it does not read every
+        board aggregate. This route is declared before `/boards/{boardId}`.
+        It is a snapshot only — use `/boards/{boardId}/ready?wait=` to hold.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Total cards to return (default 30, max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        "200":
+          description: Accessible board summaries and the ready-card snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardsReady"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -496,6 +532,123 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/ready:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: getBoardReady
+      summary: Read ready cards, optionally long-polling
+      description: |
+        TASK-200.2. A bounded summary of the cards ready to pick up on one
+        board: the initial column (`workflow.initialColumnId`, else the first
+        column), unassigned, without a live claim, not archived/deleted and not
+        blocked by a live `blocks` link. The response carries no description
+        body (only the stored `descriptionChars` length), checklists, links or
+        labels. It is not a board aggregate read.
+
+        `wait` is a server-side hold in milliseconds (0–60000). With `wait > 0`
+        the request sleeps until a readiness-relevant command (card presence,
+        column, priority, claim, link or workflow; not every `board:` touch) or
+        a resync frame. It then re-reads and answers `200` when work exists; if
+        the relevant change still leaves no ready card it keeps holding until
+        the deadline. A timed hold answers `204` with `X-Board-Seq` and
+        `Cache-Control: no-store` and no body. Co-waiters that woke on the same
+        event share one snapshot read.
+
+        `since` is the board `seq` the caller last observed (also the
+        `X-Board-Seq` header here): if the board has advanced before the hold
+        starts, the snapshot answers immediately, even when no card is ready.
+        A client disconnecting aborts the hold and releases its realtime
+        subscription and admitted poll slot. A board deleted during the hold
+        answers `404`, not `204`. Per-instance held-poll caps answer `503
+        ready_poll_capacity` with `Retry-After`. Only a held `200`/`204` that
+        carried `X-Ready-Held: 1` is excluded from the API latency metric;
+        immediate snapshots and failures stay in it.
+
+        Any accepted role, including `VIEWER`, may read the endpoint. An
+        archived board answers `200` with `archived: true` and no cards.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Cards to return (default 30, max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+        - name: wait
+          in: query
+          required: false
+          description: |
+            Server-side hold in milliseconds, 0–60000. `0` (default) answers
+            the current snapshot immediately.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 60000
+            default: 0
+        - name: since
+          in: query
+          required: false
+          description: |
+            The board `seq` from the previous answer. A changed board answers
+            immediately instead of holding.
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: The ready-card summary.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            X-Ready-Held:
+              description: |
+                `1` when the request actually held and woke on a relevant
+                change; omitted for an immediate snapshot.
+              schema:
+                type: string
+                enum: ["1"]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardReady"
+        "204":
+          description: The long-poll timed out without ready work.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            X-Ready-Held:
+              description: Always `1` on a timed hold.
+              schema:
+                type: string
+                enum: ["1"]
+            Cache-Control:
+              description: Always `no-store` for ready snapshots.
+              schema:
+                type: string
+                enum: [no-store]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: |
+            Held-poll admission is at its per-user or per-board cap
+            (`ready_poll_capacity`); retry after `Retry-After`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying the held poll.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
   /boards/{boardId}/export:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -3653,6 +3806,7 @@ components:
         - idempotency_in_progress
         - payload_too_large
         - rate_limited
+        - ready_poll_capacity
         - request_timeout
         - login_backoff
         - current_password_invalid
@@ -3813,6 +3967,105 @@ components:
               type: integer
         role:
           $ref: "#/components/schemas/BoardRole"
+    ReadyCard:
+      type: object
+      required:
+        [
+          id,
+          title,
+          boardId,
+          boardTitle,
+          columnId,
+          columnTitle,
+          priority,
+          claimedBy,
+          leaseUntil,
+          version,
+          descriptionChars,
+        ]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        columnId:
+          type: string
+        columnTitle:
+          type: string
+          description: The board's first/work column title.
+        priority:
+          $ref: "#/components/schemas/CardPriority"
+        claimedBy:
+          type: string
+          nullable: true
+          description: |
+            Claim holder. Non-null only when the lease has lapsed; a live
+            claim is not ready.
+        leaseUntil:
+          type: integer
+          nullable: true
+          description: Unix ms lease expiry, or null.
+        version:
+          type: integer
+          description: The card's optimistic-concurrency version.
+        descriptionChars:
+          type: integer
+          description: |
+            Stored description length (0 when unset), maintained by the
+            database trigger. Counts Unicode code points (PostgreSQL
+            `char_length`); the legacy full-board fallback may report UTF-16
+            length instead. The text itself is never selected or returned.
+    ReadyBoardSummary:
+      type: object
+      required: [id, title, archived, seq]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        archived:
+          type: boolean
+        seq:
+          type: integer
+          description: Highest committed board command seq.
+    BoardReady:
+      type: object
+      required: [boardId, boardTitle, archived, seq, limit, cards]
+      properties:
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        archived:
+          type: boolean
+        seq:
+          type: integer
+          description: The board seq this snapshot reflects.
+        limit:
+          type: integer
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadyCard"
+    BoardsReady:
+      type: object
+      required: [boards, limit, cards]
+      properties:
+        boards:
+          type: array
+          description: Every accessible board, including archived summaries.
+          items:
+            $ref: "#/components/schemas/ReadyBoardSummary"
+        limit:
+          type: integer
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadyCard"
     DeletedItemType:
       type: string
       enum: [cards, columns, comments, attachments]

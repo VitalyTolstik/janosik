@@ -53,7 +53,9 @@ design (they are not reducer actions). Content lives in the command log.
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`     | `UpdateMemberDto` | `BoardMemberDto`   |
 | `DELETE` | `/boards/:id/members/me`      | member      | none              | `{ status: "ok" }` |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
+| `GET`    | `/boards/ready`               | user        | query `limit`     | `BoardsReady`      |
 | `GET`    | `/boards/search`              | user        | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
+| `GET`    | `/boards/:id/ready`           | member      | query `limit`, `wait`, `since` | `BoardReady` (or `204`) |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
 | `GET`    | `/boards/:id/deleted`         | `ADMIN`/`MEMBER` | none         | `DeletedBoardItemsDto` |
 | `POST`   | `/boards/:id/deleted/:type/:itemId/restore` | `ADMIN`/`MEMBER` | none | `{ status: "ok" }` |
@@ -116,6 +118,51 @@ an item older than the retention cutoff is hidden from the list and answers
 response header carrying the command `seq` the aggregate reflects. A client
 resumes the SSE stream from that value. An unknown or soft-deleted board
 answers `404`. The aggregate carries `workflow` when the board has one.
+
+### Ready work and long-polling
+
+`GET /boards/:id/ready?limit=&wait=&since=` is a **summary**, not a board read:
+the cards an agent can pick up now, never their descriptions, checklists, links,
+labels or comments. Ready means the board's initial column
+(`workflow.initialColumnId`, else the first column), unassigned, not
+archived/deleted, not under a live claim (a null or lapsed lease is free) and not
+the target of a live `blocks` link. The list is ordered by priority, most urgent
+first, and capped at 100. Each card carries `id`, `title`, board and column
+ids/titles, `priority`, `claimedBy`, `leaseUntil`, `version` and
+`descriptionChars` (the stored description length, counted in Unicode code
+points). The text itself is never
+selected or returned, so a large description is not detoasted. The response
+also carries the board's command `seq`, mirrored in `X-Board-Seq`.
+
+`wait` is a server-side hold in **milliseconds**, 0–60000 (default 0 = immediate
+snapshot). It wakes only on a readiness-relevant action (card presence, move,
+priority, assignee, claim, link or column/workflow change) or a resync frame —
+every command touches `board:<id>`, so label, checklist, comment and board-rename
+frames do not wake it. After a wake it re-reads and answers `200` when work
+exists; if the change still leaves no ready card it **keeps holding** until the
+deadline instead of returning an empty snapshot. Co-waiters that woke on the same
+event share one snapshot read. A held answer and a timed `204` carry
+`X-Ready-Held: 1`; the `204` also carries `X-Board-Seq` and
+`Cache-Control: no-store` and no body.
+
+`since` is the `seq` from the previous answer: when the board has advanced before
+the hold starts, the snapshot answers immediately even if no card is ready. A
+client disconnect aborts the hold and releases its subscription and admitted poll
+slot. A board deleted during the hold answers `404`, not `204`. Per-instance
+held-poll caps answer `503 ready_poll_capacity` with `Retry-After`. Only a
+successful held `200`/`204` marked `X-Ready-Held: 1` is excluded from the API
+latency p50/p95; immediate snapshots and failures stay in it. Any accepted role
+may read the endpoint, including `VIEWER`; an archived board answers `200` with
+`archived: true` and no cards. Invalid `limit`, `wait` or `since` bounds answer
+`400`.
+
+`GET /boards/ready?limit=` is the cross-board snapshot: every accessible board
+as `{ id, title, archived, seq }`, plus at most `limit` ready cards (total, not
+per board) from the active boards' initial columns. It is built with one
+board/column read, one column-scoped card query and one grouped `seq` read — no
+per-board fan-out and no full aggregates. A board-scoped PAT sees only its own
+board. This route is a snapshot only; hold one board with
+`/boards/:id/ready?wait=`.
 
 `GET /boards/:id/members` returns only **active** accepted memberships by
 default; an expired `VIEWER` is omitted so assignee pickers and filters never
