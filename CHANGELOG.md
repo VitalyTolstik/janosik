@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.9 board read model v1: `GET /boards/:id/summary`,
+  `GET /boards/:id/cards` and `GET /boards/:id/cards/:cardId`. The summary
+  returns board metadata, labels, columns with their complete ordered
+  `cardIds` and active/archived counts, archived ids and a bounded first page
+  of list-facing card summaries per column; it never carries a description
+  body, checklist, link row or task contract. Scalar counters stand in for
+  those (`descriptionChars`, checklist totals, link degree/blocked). Column
+  and archive pages use opaque, board/scope-bound keyset cursors capped at
+  100; a batch `ids=` preimage read (≤50, `detail=full`) feeds undo without a
+  full board. Full card detail is one route and resolves the card through
+  `:boardId` (a foreign card is `404`). All projections use the TASK-200.6
+  ETag/304, gzip/Brotli and bounded read path, and keep membership/role/
+  archived semantics. The legacy full aggregate remains for old clients,
+  admin/export/internal: a client declaring `X-Janosik-Read-Model: v1` must
+  request `?projection=full`, while header-less old clients are unchanged.
+  The UI hydrates summary + pages, keeps the complete id order (absolute DnD
+  indices), streams remaining summaries in the background, opens cards by
+  fetching detail, guards deep links to not-yet-loaded cards, and loads
+  detail preimages before destructive commands so undo restores full
+  descriptions/checklists/links; list faces use the scalar counters. Board,
+  table, calendar, filters/server-search, saved views and bulk selection keep
+  their existing contracts. Tests: read-model e2e (shape/limits/cursors/
+  auth/archived/legacy gate/preimages), UI store hydration/detail/preimage/
+  undo, deep-link detail and adapter tests; OpenAPI and the TASK-200 doc are
+  updated. Initial bytes/RSS targets still need the 200.1/200.15 harness on a
+  dedicated host; this change ships the mechanism, not measured capacity.
+
 - TASK-200.6 compressed, conditionally revalidated and bounded board reads.
   `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least
   1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the

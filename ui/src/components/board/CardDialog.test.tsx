@@ -323,6 +323,61 @@ describe("CardDialog comment drafts", () => {
   });
 });
 
+describe("CardDialog read-model deep links (TASK-200.9)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("opens a card outside the first summary page by fetching its detail", async () => {
+    const cardIds = Array.from({ length: 60 }, (_, index) => `deep-${index}`);
+    const server = new FakeServer([
+      {
+        id: "b-1",
+        title: "Deep board",
+        columns: [{ id: "col-1", title: "Todo", cardIds, createdAt: 1 }],
+        cards: Object.fromEntries(
+          cardIds.map((id, index) => [
+            id,
+            {
+              id,
+              title: `Deep card ${index}`,
+              description: `deep body ${index}`,
+              labelIds: [],
+              createdAt: index,
+              updatedAt: index,
+            },
+          ]),
+        ),
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderBoard("/board/b-1?card=deep-55");
+    const title = await screen.findByLabelText(
+      "Title",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(title).toHaveValue("Deep card 55");
+    expect(
+      (await screen.findByLabelText("Description")) as HTMLTextAreaElement,
+    ).toHaveValue("deep body 55");
+    expect(screen.queryByText("Card not found")).toBeNull();
+  }, 20_000);
+});
+
 /** CardDialog with a control that swaps the open card without closing it. */
 function CardSwitchHarness() {
   const [cardId, setCardId] = useState("card-1");

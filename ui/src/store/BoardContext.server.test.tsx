@@ -262,7 +262,7 @@ describe("BoardProvider in server mode", () => {
     expect(screen.getByTestId("card-title").textContent).toBe("Hello");
     const paths = server.requests.map((r) => `${r.method} ${r.path}`);
     expect(paths).toContain("GET /api/v1/boards");
-    expect(paths).toContain("GET /api/v1/boards/b-1");
+    expect(paths).toContain("GET /api/v1/boards/b-1/summary");
   });
 
   it("exports one board after the pending command queue drains", async () => {
@@ -1557,10 +1557,15 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
     );
   }
 
+  // A focus/idle refetch goes through the read-model summary (TASK-200.9);
+  // an old server fallback and the fatal-stream existence check still use the
+  // full aggregate. Count either representation as "one snapshot request".
   const snapshotGets = (server: FakeServer, boardId = "b-1") =>
     server.requests.filter(
       (entry) =>
-        entry.method === "GET" && entry.path === `/api/v1/boards/${boardId}`,
+        entry.method === "GET" &&
+        (entry.path === `/api/v1/boards/${boardId}` ||
+          entry.path === `/api/v1/boards/${boardId}/summary`),
     ).length;
 
   const sleep = (ms: number) =>
@@ -1930,6 +1935,8 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), "http://api.test");
         if (
+          url.pathname === "/api/v1/boards/b-1/summary" ||
+          url.pathname === "/api/v1/boards/b-3/summary" ||
           url.pathname === "/api/v1/boards/b-1" ||
           url.pathname === "/api/v1/boards/b-3"
         ) {
@@ -1981,6 +1988,8 @@ describe("BoardProvider realtime review fixes (U-1…U-9)", () => {
           });
         }
         if (
+          url.pathname === "/api/v1/boards/b-1/summary" ||
+          url.pathname === "/api/v1/boards/b-3/summary" ||
           url.pathname === "/api/v1/boards/b-1" ||
           url.pathname === "/api/v1/boards/b-3"
         ) {

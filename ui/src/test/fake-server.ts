@@ -8,12 +8,18 @@ import {
   type AuthUserDto,
   type Board,
   type BoardAction,
+  type BoardCardDetailDto,
+  type BoardCardDetailsDto,
+  type BoardCardPageDto,
+  type BoardCardSummaryDto,
   type BoardExportFile,
   type BoardInvitationDto,
   type BoardMemberDto,
+  type BoardReadSummaryDto,
   type BoardRole,
   type BoardSummary,
   type BoardSseEvent,
+  type Card,
   type CommandRequest,
   type CommandResponse,
   type CommandSseEvent,
@@ -841,6 +847,92 @@ export class FakeServer {
       };
       return json(201, masked);
     }
+    // TASK-200.9 read model. The fake stores a full board and projects it,
+    // which is enough for client hydration/pagination/detail tests.
+    const summaryMatch = /^\/api\/v1\/boards\/([^/]+)\/summary$/.exec(path);
+    if (summaryMatch && method === "GET") {
+      const board = this.boards.get(summaryMatch[1]);
+      if (board === undefined) return json(404, { message: "Board not found" });
+      const limit = clampPageLimit(searchParams.get("limit"));
+      return json(200, this.readSummary(board, limit));
+    }
+    const detailMatch = /^\/api\/v1\/boards\/([^/]+)\/cards\/([^/]+)$/.exec(
+      path,
+    );
+    if (detailMatch && method === "GET") {
+      const board = this.boards.get(detailMatch[1]);
+      if (board === undefined) return json(404, { message: "Board not found" });
+      const card = board.cards[detailMatch[2]];
+      if (card === undefined) return json(404, { message: "Card not found" });
+      return json(200, this.readCardDetail(board, card));
+    }
+    const cardsMatch = /^\/api\/v1\/boards\/([^/]+)\/cards$/.exec(path);
+    if (cardsMatch && method === "GET") {
+      const board = this.boards.get(cardsMatch[1]);
+      if (board === undefined) return json(404, { message: "Board not found" });
+      const ids = searchParams.get("ids");
+      if (ids !== null) {
+        const detail: BoardCardDetailsDto = {
+          boardId: board.id,
+          cards: ids
+            .split(",")
+            .map((id) => board.cards[id])
+            .filter((card): card is Card => card !== undefined)
+            .map((card) => this.readCardDetail(board, card)),
+          seq: this.seqOf(board.id),
+          atSeq: this.seqOf(board.id),
+          aggregateRevision: this.seqOf(board.id),
+        };
+        return json(200, detail);
+      }
+      const columnId = searchParams.get("columnId");
+      const archived = searchParams.get("archived") === "1";
+      const limit = clampPageLimit(searchParams.get("limit"));
+      const offset = readFakeCursor(
+        searchParams.get("cursor"),
+        archived ? "ao" : "o",
+      );
+      const cards = archived
+        ? Object.values(board.cards).filter(
+            (card) => card.archivedAt !== undefined,
+          )
+        : Object.values(board.cards)
+            .filter(
+              (card) =>
+                card.archivedAt === undefined &&
+                board.columns
+                  .find((column) => column.id === columnId)
+                  ?.cardIds.includes(card.id) === true,
+            )
+            .sort((a, b) => {
+              const column = board.columns.find((entry) =>
+                entry.cardIds.includes(a.id),
+              );
+              return (
+                (column?.cardIds.indexOf(a.id) ?? 0) -
+                (column?.cardIds.indexOf(b.id) ?? 0)
+              );
+            });
+      const page = cards.slice(offset, offset + limit);
+      const next = offset + limit < cards.length ? offset + limit : null;
+      const body: BoardCardPageDto = {
+        boardId: board.id,
+        columnId: columnId ?? null,
+        archived,
+        cards: page.map((card) => this.readSummaryCard(board, card)),
+        nextCursor:
+          next === null
+            ? null
+            : encodeFakeCursor(archived ? { ao: next } : { o: next }),
+        hasMore: next !== null,
+        total: cards.length,
+        seq: this.seqOf(board.id),
+        atSeq: this.seqOf(board.id),
+        aggregateRevision: this.seqOf(board.id),
+      };
+      return json(200, body);
+    }
+
     const exportMatch = /^\/api\/v1\/boards\/([^/]+)\/export$/.exec(path);
     if (exportMatch && method === "GET") {
       const board = this.boards.get(exportMatch[1]);
@@ -1226,6 +1318,171 @@ export class FakeServer {
     };
   }
 
+  /** TASK-200.9: project the fake's full board into the summary DTO. */
+  private readSummary(board: Board, limit: number): BoardReadSummaryDto {
+    const role = this.roles.get(board.id) ?? this.role;
+    const columns = board.columns.map((column) => {
+      const ids = column.cardIds.filter((id) => board.cards[id] !== undefined);
+      const page = ids
+        .slice(0, limit)
+        .map((id) => this.readSummaryCard(board, board.cards[id]));
+      return {
+        id: column.id,
+        title: column.title,
+        count: ids.length,
+        archivedCount: Object.values(board.cards).filter(
+          (card) =>
+            card.archivedAt !== undefined &&
+            (card.archivedFromColumnId === column.id ||
+              board.columns.find((entry) => entry.cardIds.includes(card.id))
+                ?.id === column.id),
+        ).length,
+        wipLimit: column.wipLimit ?? null,
+        ...(column.accent !== undefined ? { accent: column.accent } : {}),
+        createdAt: column.createdAt,
+        cardIds: ids,
+        cards: page,
+        nextCursor:
+          ids.length > limit
+            ? encodeFakeCursor({ o: limit, c: column.id })
+            : null,
+        hasMore: ids.length > limit,
+      };
+    });
+    const archived = Object.values(board.cards).filter(
+      (card) => card.archivedAt !== undefined,
+    );
+    const archivedPage = archived
+      .slice(0, limit)
+      .map((card) => this.readSummaryCard(board, card));
+    return {
+      board: {
+        id: board.id,
+        title: board.title,
+        createdAt: board.createdAt,
+        updatedAt: board.updatedAt,
+        ...(board.archivedAt !== undefined
+          ? { archivedAt: board.archivedAt }
+          : {}),
+        ...(board.columnStyle !== undefined
+          ? { columnStyle: board.columnStyle }
+          : {}),
+        ...(board.workflow !== undefined ? { workflow: board.workflow } : {}),
+        ...(board.workflowInvalid === true
+          ? { workflowInvalid: true as const }
+          : {}),
+        ...(board.agentPolicy !== undefined
+          ? { agentPolicy: board.agentPolicy }
+          : {}),
+        ...(board.agentsPausedAt !== undefined
+          ? {
+              agentsPausedAt: board.agentsPausedAt,
+              ...(board.agentsPausedBy !== undefined
+                ? { agentsPausedBy: board.agentsPausedBy }
+                : {}),
+              ...(board.agentsPauseReason !== undefined
+                ? { agentsPauseReason: board.agentsPauseReason }
+                : {}),
+            }
+          : {}),
+        role,
+      },
+      columns,
+      labels: board.labels.map((label) => ({ ...label })),
+      limits: {
+        cardsPerColumn: LIMITS.cardsPerColumn,
+        columns: LIMITS.columnsPerBoard,
+      },
+      archivedCardIds: archived.map((card) => card.id),
+      archivedCards: archivedPage,
+      archivedNextCursor:
+        archived.length > limit ? encodeFakeCursor({ ao: limit }) : null,
+      firstPageLimit: limit,
+      seq: this.seqOf(board.id),
+      atSeq: this.seqOf(board.id),
+      aggregateRevision: this.seqOf(board.id),
+      readModel: "v1",
+    };
+  }
+
+  private readSummaryCard(board: Board, card: Card): BoardCardSummaryDto {
+    const items = (card.checklists ?? []).flatMap((list) => list.items);
+    let linkCount = 0;
+    let blocked = false;
+    for (const other of Object.values(board.cards)) {
+      for (const link of other.links ?? []) {
+        if (other.id === card.id && board.cards[link.targetCardId]) {
+          linkCount += 1;
+        }
+        if (link.targetCardId === card.id) {
+          linkCount += 1;
+          if (link.type === "blocks" && other.archivedAt === undefined) {
+            blocked = true;
+          }
+        }
+      }
+    }
+    return {
+      id: card.id,
+      title: card.title,
+      columnId:
+        board.columns.find((column) => column.cardIds.includes(card.id))?.id ??
+        card.archivedFromColumnId ??
+        "",
+      position: 0,
+      version: 0,
+      descriptionChars: card.description?.length ?? 0,
+      checklistItemCount: items.length,
+      checklistDoneCount: items.filter((item) => item.done).length,
+      linkCount,
+      blocked,
+      labelIds: [...card.labelIds],
+      ...(card.dueDate !== undefined ? { dueDate: card.dueDate } : {}),
+      ...(card.priority !== undefined ? { priority: card.priority } : {}),
+      ...(card.assigneeId !== undefined ? { assigneeId: card.assigneeId } : {}),
+      ...(card.claimedBy !== undefined ? { claimedBy: card.claimedBy } : {}),
+      ...(card.claimedByTokenId !== undefined
+        ? { claimedByTokenId: card.claimedByTokenId }
+        : {}),
+      ...(card.claimedBySessionId !== undefined
+        ? { claimedBySessionId: card.claimedBySessionId }
+        : {}),
+      ...(card.leaseUntil !== undefined ? { leaseUntil: card.leaseUntil } : {}),
+      ...(card.cover !== undefined ? { cover: card.cover } : {}),
+      createdAt: card.createdAt,
+      updatedAt: card.updatedAt,
+      ...(card.lastActorId !== undefined
+        ? { lastActorId: card.lastActorId }
+        : {}),
+      ...(card.attachmentCount !== undefined
+        ? { attachmentCount: card.attachmentCount }
+        : {}),
+      ...(card.archivedAt !== undefined
+        ? {
+            archivedAt: card.archivedAt,
+            ...(card.archivedFromColumnId !== undefined
+              ? { archivedFromColumnId: card.archivedFromColumnId }
+              : {}),
+          }
+        : {}),
+    };
+  }
+
+  private readCardDetail(board: Board, card: Card): BoardCardDetailDto {
+    const summary = this.readSummaryCard(board, card);
+    return {
+      boardId: board.id,
+      columnId: summary.columnId,
+      card: structuredClone(card),
+      version: 0,
+      linkCount: summary.linkCount,
+      blocked: summary.blocked,
+      seq: this.seqOf(board.id),
+      atSeq: this.seqOf(board.id),
+      aggregateRevision: this.seqOf(board.id),
+    };
+  }
+
   private toSummary(board: Board): BoardSummary {
     return {
       id: board.id,
@@ -1243,6 +1500,32 @@ export class FakeServer {
 
   private session(): AuthResponseDto {
     return { accessToken: "access-token-1", user: this.publicUser() };
+  }
+}
+
+/** Page size bounds for the fake read model (matches the DTO contract). */
+function clampPageLimit(raw: string | null): number {
+  const parsed = raw === null ? 50 : Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) return 50;
+  return Math.min(parsed, 100);
+}
+
+function encodeFakeCursor(value: Record<string, number | string>): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function readFakeCursor(raw: string | null, key: "o" | "ao"): number {
+  if (raw === null) return 0;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(raw, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    const value = parsed[key];
+    return typeof value === "number" && Number.isSafeInteger(value)
+      ? Math.max(0, value)
+      : 0;
+  } catch {
+    return 0;
   }
 }
 

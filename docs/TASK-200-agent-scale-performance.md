@@ -536,6 +536,54 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `backend/src/boards/*`, `ui/src/store/*`,
 `ui/src/components/board/*`, `shared/src/api.ts`.
 
+**Реализовано (TASK-200.9, read model v1):**
+- `GET /boards/:id/summary?limit=` — метаданные доски, метки, колонки с
+  полным упорядоченным `cardIds` (для абсолютных DnD-индексов), счётчики
+  активных/архивных карточек, архивные id и первая страница карточек на
+  колонку. В теле нет `description`, `checklists`, `links`, task spec —
+  только счётчики (`descriptionChars`, элементы чек-листов, степень/blocked
+  связей). `role` входит в ответ, `seq`/`atSeq` — командная
+  последовательность, `aggregateRevision` — контентная ревизия.
+- `GET /boards/:id/cards?columnId=&cursor=&limit=` — keyset-страницы
+  `(position, id)`; `?archived=1` — архив доски `(archivedAt desc, id)`.
+  Непрозрачный cursor привязан к доске и колонке/архиву; чужой cursor —
+  `400`, чужая колонка — `404`; `limit` ≤100, `total` — полный размер
+  области. `ids=…&detail=full` (≤50) — bounded batch полных карточек для
+  undo-preimage; `detail=full` на списке запрещён.
+- `GET /boards/:id/cards/:cardId` — единственное полное чтение карточки:
+  описание, чек-листы, связи, task spec, версия, `linkCount`/`blocked`,
+  `seq`/`aggregateRevision`. Карточка ищется через `:boardId`, чужая — `404`.
+- Все три проекции идут через TASK-200.6 read path: weak ETag с board +
+  revision + route + role + canonical query, `304` до сборки тела, gzip/
+  Brotli, `Vary`, `X-Board-Seq`; membership/role/архивные правила те же.
+- Старый `GET /boards/:id` остаётся для старых клиентов, admin/export/
+  internal. Capability-гейт: клиент с `X-Janosik-Read-Model: v1` получает
+  `400 read_model_required`, пока не попросит `?projection=full`; старый
+  клиент без заголовка работает как раньше.
+- UI: гидратация идёт summary + первая страница, остальные summary-страницы
+  догружаются в фоне; полный порядок id известен сразу (DnD не становится
+  page-local). Карточка открывается с detail-запросом (диалог показывает
+  скелетон, редактор описания не монтируется до detail). Deep link на
+  карточку вне первой страницы сначала тянет detail и только потом
+  объявляет её отсутствующей. Destructive-команды (`DELETE_CARD`,
+  `DELETE_COLUMN`, `ARCHIVE_COLUMN_CARDS`, удаление чек-листов и т.п.)
+  сначала загружают preimage чанками ≤50, поэтому undo восстанавливает
+  полное содержимое. Лицевые бейджи/фильтры связей используют скалярные
+  факты summary, таблица/календарь/фильтры/сохранённые виды/
+  bulk-selection — прежние контракты. Server-search по-прежнему покрывает
+  описание/чек-листы/комментарии/вложения для query-фильтра.
+- Тесты: `backend/test/task-200-9-read-model.e2e-spec.ts` (форма/лимиты/
+  cursor/чужой cursor/чужая доска/VIEWER/outsider/архив/старый full gate/
+  batch/ETag/304, отсутствие detail-полей в payload),
+  `ui/src/store/read-model.test.ts` (адаптеры, merge деталей, link facts),
+  `ui/src/store/BoardContext.read-model.test.tsx` (summary+все страницы,
+  detail on demand, preimage+undo), deep-link тест в
+  `CardDialog.test.tsx`; OpenAPI и CHANGELOG обновлены.
+- **Ограничение:** DoD «initial <2 МБ / <300 мс» и RSS для 10×1 000
+  карточек не измерялись — нужен прогон 200.1/200.15. Таблица/карточки без
+  detail показывают счётчики вместо текста описания/чек-листа (detail
+  приходит при открытии карточки); это осознанный lazy-контракт v1.
+
 ---
 
 ### 200.10 — Per-board aggregate cache по `aggregateRevision` (P2)

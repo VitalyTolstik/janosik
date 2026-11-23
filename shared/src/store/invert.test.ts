@@ -602,6 +602,7 @@ const PLANS: Record<BoardAction["type"], Plan> = {
   ],
 
   /* no undo step at all */
+  HYDRATE_CARDS: "no-inverse",
   RESTORE_BOARD: "no-inverse",
   IMPORT_BOARDS: "no-inverse",
   ADD_BOARD: "no-inverse",

@@ -388,6 +388,50 @@ describe("ApiClient", () => {
     expect((await snapshotWith("9007199254740993")).seq).toBe(0);
   });
 
+  it("uses the read-model routes and keeps the legacy full read explicit", async () => {
+    const seen: Array<{ url: string; readModel: string | null }> = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        seen.push({
+          url: String(input),
+          readModel: headers.get("X-Janosik-Read-Model"),
+        });
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    });
+
+    await client.getBoardSummary("board-1", { limit: 25 });
+    await client.listBoardCards("board-1", {
+      columnId: "col-1",
+      cursor: "opaque",
+      limit: 10,
+    });
+    await client.getBoardCardDetail("board-1", "card-1");
+    await client.getBoardCardDetails("board-1", ["card-1", "card-2"]);
+    await client.getBoardSnapshot("board-1");
+
+    expect(seen[0]).toEqual({
+      url: "/api/v1/boards/board-1/summary?limit=25",
+      readModel: "v1",
+    });
+    expect(seen[1].url).toBe(
+      "/api/v1/boards/board-1/cards?columnId=col-1&cursor=opaque&limit=10",
+    );
+    expect(seen[2].url).toBe("/api/v1/boards/board-1/cards/card-1");
+    expect(seen[3].url).toBe(
+      "/api/v1/boards/board-1/cards?ids=card-1%2Ccard-2&detail=full",
+    );
+    expect(seen[4]).toEqual({
+      url: "/api/v1/boards/board-1?projection=full",
+      readModel: "full",
+    });
+  });
+
   it("reports a dead session once and clears the token", async () => {
     const onAuthLost = vi.fn();
     const client = new ApiClient({
