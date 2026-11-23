@@ -29,7 +29,13 @@ import type {
   JanosikClient,
   ReadyWorkQuery,
 } from "../client.js";
-import { ApiError, isTransientNetworkError } from "../errors.js";
+import {
+  ApiError,
+  RATE_LIMIT_MAX_ATTEMPTS,
+  isRateLimited,
+  isTransientNetworkError,
+  rateLimitDelayMs,
+} from "../errors.js";
 import {
   batchCommandFields,
   commandFields,
@@ -1215,6 +1221,7 @@ export function registerCardTools(
             boardTitle: board.title,
             column,
             priority: card.priority ?? DEFAULT_CARD_PRIORITY,
+            descriptionChars: card.description?.length ?? 0,
           }));
       }
       const markdown =
@@ -1325,7 +1332,7 @@ export function registerCardTools(
           let first = true;
           for (;;) {
             if (!first && Date.now() >= deadline) break;
-            const ready = await client.listReadyWork(1);
+            const ready = await crossBoardReadyWithRetry(client, deadline);
             first = false;
             const result = ready.cards[0];
             if (result !== undefined) {
@@ -1369,6 +1376,7 @@ interface ReadyToolResult {
   boardTitle: string;
   column: string;
   priority: Card["priority"];
+  descriptionChars: number;
 }
 
 /** Map the server summary onto the tool's existing result shape. */
@@ -1380,6 +1388,7 @@ function readyToolResult(card: ReadyCardDto): ReadyToolResult {
     boardTitle: card.boardTitle,
     column: card.columnTitle,
     priority: card.priority,
+    descriptionChars: card.descriptionChars,
   };
 }
 
@@ -1421,41 +1430,61 @@ function retryableReadyError(error: unknown): boolean {
 }
 
 /**
- * One ready request with bounded network retries. The same caller deadline
- * caps every retry; the hold is shortened to whatever time remains.
+ * Bounded retries for one ready snapshot. Network failures and backpressure
+ * both spend from the caller's deadline; a pause that cannot leave time for
+ * another request fails immediately instead of sleeping past it.
  */
-async function readyWithRetry(
+async function readyCallWithRetry<T>(
+  call: () => Promise<T>,
+  deadline: number,
+): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await call();
+    } catch (error) {
+      let delay: number;
+      if (isRateLimited(error)) {
+        if (attempt >= RATE_LIMIT_MAX_ATTEMPTS - 1) throw error;
+        delay = rateLimitDelayMs(error, attempt + 1);
+      } else if (retryableReadyError(error)) {
+        if (attempt >= READY_NETWORK_RETRIES) throw error;
+        delay = 250 * (attempt + 1) + Math.floor(Math.random() * 150);
+      } else {
+        throw error;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || delay >= remaining) throw error;
+      attempt += 1;
+      await sleep(delay);
+      if (Date.now() >= deadline) throw error;
+    }
+  }
+}
+
+/** One board snapshot with deadline-aware network/backpressure retries. */
+function readyWithRetry(
   client: JanosikClient,
   boardId: string,
   initial: ReadyWorkQuery,
   deadline: number,
 ) {
-  let options = initial;
-  let attempt = 0;
-  for (;;) {
-    try {
-      return await client.getBoardReady(boardId, options);
-    } catch (error) {
-      if (!retryableReadyError(error) || attempt >= READY_NETWORK_RETRIES) {
-        throw error;
-      }
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) throw error;
-      attempt += 1;
-      await sleep(
-        Math.min(250 * attempt + Math.floor(Math.random() * 150), remaining),
-      );
-      const left = deadline - Date.now();
-      if (left <= 0) throw error;
-      options = {
-        ...options,
-        waitMs:
-          options.waitMs !== undefined && options.waitMs > 0
-            ? Math.min(options.waitMs, left)
-            : 0,
-      };
-    }
-  }
+  return readyCallWithRetry(() => {
+    const left = Math.max(0, deadline - Date.now());
+    const waitMs =
+      initial.waitMs !== undefined && initial.waitMs > 0
+        ? Math.min(initial.waitMs, left)
+        : 0;
+    return client.getBoardReady(boardId, { ...initial, waitMs });
+  }, deadline);
+}
+
+/** One cross-board snapshot with the same deadline-aware retry policy. */
+function crossBoardReadyWithRetry(client: JanosikClient, deadline: number) {
+  return readyCallWithRetry(
+    () => client.listReadyWork(1, { retry: false, rateLimitRetry: false }),
+    deadline,
+  );
 }
 
 /** Jitter after an empty change frame, so a busy board never hot-loops. */
@@ -1474,14 +1503,17 @@ function readyHoldMs(remaining: number): number {
   return Math.max(1, Math.min(remaining, hold));
 }
 
-/** Jittered cross-board cadence in 15–60 s, never above the cap. */
+/**
+ * Jittered cross-board cadence spanning the full 15–60 s range. `pollMs`
+ * raises the floor (up to its 30 s schema cap), it does not cap the wait.
+ */
 function crossBoardPollMs(pollMs: number): number {
-  const base = Math.min(
+  const floor = Math.min(
     Math.max(pollMs, READY_WORK_CROSS_BOARD_MIN_MS),
     READY_WORK_CROSS_BOARD_MAX_MS,
   );
-  const jittered = base + Math.floor(Math.random() * 3_000);
-  return Math.min(READY_WORK_CROSS_BOARD_MAX_MS, jittered);
+  const span = READY_WORK_CROSS_BOARD_MAX_MS - floor + 1;
+  return floor + Math.floor(Math.random() * span);
 }
 
 /** Pre-TASK-200.2 compatibility path for a server without the endpoint. */

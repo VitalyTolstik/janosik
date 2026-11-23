@@ -33,6 +33,7 @@ interface ReadyCardRow {
   claimedBy: string | null;
   leaseUntil: Date | null;
   version: number;
+  descriptionChars: number;
 }
 
 const CARD_ROW: ReadyCardRow = {
@@ -42,6 +43,7 @@ const CARD_ROW: ReadyCardRow = {
   claimedBy: null,
   leaseUntil: null,
   version: 4,
+  descriptionChars: 12,
 };
 
 const BOARD = {
@@ -129,6 +131,7 @@ describe("ReadyService.getBoardReady", () => {
 
     expect(result).toMatchObject({
       status: "ready",
+      held: false,
       body: {
         boardId: "b1",
         boardTitle: "Alpha",
@@ -147,22 +150,23 @@ describe("ReadyService.getBoardReady", () => {
             claimedBy: null,
             leaseUntil: null,
             version: 4,
+            descriptionChars: 12,
           },
         ],
       },
     });
     if (result.status !== "ready") throw new Error("expected ready");
     expect(result.body.cards[0]).not.toHaveProperty("description");
-    expect(result.body.cards[0]).not.toHaveProperty("descriptionChars");
 
-    // The card query is scoped to the first column, carries a LIMIT and never
-    // selects the description text.
+    // The card query is scoped to the first column, carries a LIMIT and selects
+    // only the stored length, never the description text.
     expect(mocks.queryRaw).toHaveBeenCalledTimes(1);
     const query = sqlCall(mocks.queryRaw);
     const sql = query.strings?.join("?") ?? "";
     expect(sql).toContain('c."columnId" = ?');
+    expect(sql).toContain('c."descriptionLength" AS "descriptionChars"');
+    expect(sql).not.toContain('c."description" ');
     expect(sql).toContain("LIMIT ?");
-    expect(sql).not.toContain("description");
     expect(query.values).toContain("col-1");
     expect(query.values).not.toContain("col-2");
     expect(query.values).toContain(30);
@@ -267,6 +271,7 @@ describe("ReadyService.getBoardReady", () => {
     const result = await pending;
 
     if (result.status !== "ready") throw new Error("expected ready");
+    expect(result.held).toBe(true);
     expect(result.body.cards.map((card) => card.id)).toEqual(["card-1"]);
     expect(mocks.queryRaw).toHaveBeenCalledTimes(2);
   });
@@ -338,7 +343,7 @@ describe("ReadyService.getBoardReady", () => {
       wait: 25,
     });
 
-    expect(result).toEqual({ status: "timeout", seq: 7 });
+    expect(result).toEqual({ status: "timeout", seq: 7, held: true });
     // Initial snapshot only; the timeout check does not re-run the card read.
     expect(mocks.queryRaw).toHaveBeenCalledTimes(1);
   });
@@ -503,7 +508,8 @@ describe("ReadyService.listReadyForUser", () => {
       }),
     ]);
     const query = sqlCall(mocks.queryRaw);
-    expect(query.strings?.join("?")).not.toContain("description");
+    expect(query.strings?.join("?")).not.toContain('c."description" ');
+    expect(query.strings?.join("?")).toContain("descriptionLength");
     expect(query.values).toContain("col-1");
     expect(query.values).toContain("col-3");
     // An archived board never contributes a column to the card query.

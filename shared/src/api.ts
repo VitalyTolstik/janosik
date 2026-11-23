@@ -663,10 +663,10 @@ export const READY_WORK_CROSS_BOARD_MAX_MS = 60_000;
  * `GET /boards/:id/ready` and `GET /boards/ready` (TASK-200.2).
  *
  * This is a *summary*, not a board read: it carries no description body,
- * checklists, links, labels or comments. Descriptions are never selected, so
- * a large stored description is never detoasted for a ready check.
- * `claimedBy` can be non-null only when the lease has lapsed — a live claim is
- * not ready.
+ * checklists, links, labels or comments. `descriptionChars` is the stored
+ * description length (`Card.descriptionLength`), so the text itself is never
+ * detoasted or returned. `claimedBy` can be non-null only when the lease has
+ * lapsed — a live claim is not ready.
  */
 export interface ReadyCardDto {
   id: string;
@@ -681,6 +681,8 @@ export interface ReadyCardDto {
   leaseUntil: number | null;
   /** The card's optimistic-concurrency version. */
   version: number;
+  /** Stored description length, 0 when unset; the text is never selected. */
+  descriptionChars: number;
 }
 
 /**

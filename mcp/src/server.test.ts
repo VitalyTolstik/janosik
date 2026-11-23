@@ -48,6 +48,8 @@ let approvalRequiredFor: string | null;
 let readyEndpointMissing: boolean;
 /** Transient fetch failures before the next ready request succeeds. */
 let readyNetworkFailures: number;
+/** 503 ready_poll_capacity answers before the next ready request succeeds. */
+let readyCapacityFailures: number;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -235,6 +237,7 @@ function readySummary(boardId: string, limit: number) {
             claimedBy: card.claimedBy ?? null,
             leaseUntil: card.leaseUntil ?? null,
             version: card.version ?? 0,
+            descriptionChars: card.description?.length ?? 0,
           }));
       })();
   return {
@@ -267,6 +270,19 @@ async function fakeApi(
   const readyMatch = /^\/boards\/([^/]+)\/ready$/.exec(path);
   if (readyMatch && method === "GET") {
     if (readyEndpointMissing) return respond({ message: "not found" }, 404);
+    if (readyCapacityFailures > 0) {
+      readyCapacityFailures -= 1;
+      return respond(
+        {
+          message: "Too many held ready polls; retry shortly",
+          code: "ready_poll_capacity",
+          retryable: true,
+          retryAfter: 0,
+        },
+        503,
+        { "Retry-After": "0" },
+      );
+    }
     const boardId = readyMatch[1]!;
     if (boardId !== "b1" && boardId !== "b3") {
       return respond({ message: "not found" }, 404);
@@ -287,6 +303,19 @@ async function fakeApi(
   }
   if (path === "/boards/ready" && method === "GET") {
     if (readyEndpointMissing) return respond({ message: "not found" }, 404);
+    if (readyCapacityFailures > 0) {
+      readyCapacityFailures -= 1;
+      return respond(
+        {
+          message: "Too many held ready polls; retry shortly",
+          code: "ready_poll_capacity",
+          retryable: true,
+          retryAfter: 0,
+        },
+        503,
+        { "Retry-After": "0" },
+      );
+    }
     const limit = Number(searchParams.get("limit") ?? 30);
     const summary = readySummary("b1", limit);
     return respond({
@@ -788,6 +817,7 @@ beforeEach(() => {
   approvalRequiredFor = null;
   readyEndpointMissing = false;
   readyNetworkFailures = 0;
+  readyCapacityFailures = 0;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -2007,10 +2037,15 @@ describe("janosik MCP server", () => {
     expect(result.structuredContent).toBeDefined();
     const results = (
       result.structuredContent as {
-        results: Array<{ id: string }>;
+        results: Array<{ id: string; descriptionChars: number }>;
       }
     ).results;
-    expect(results.map((entry) => entry.id)).toContain("k1");
+    expect(
+      results.some(
+        (entry) =>
+          entry.id === "k1" && entry.descriptionChars === "original".length,
+      ),
+    ).toBe(true);
     expect(
       calls.some(
         (call) => call.path === "/boards/b1/ready" && call.method === "GET",
@@ -2063,6 +2098,35 @@ describe("janosik MCP server", () => {
     expect(
       calls.filter((call) => call.path === "/boards/b1/ready").length,
     ).toBeGreaterThanOrEqual(2);
+    await client.close();
+  });
+
+  it("retries ready_poll_capacity inside the deadline", async () => {
+    readyCapacityFailures = 1;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/ready").length,
+    ).toBeGreaterThanOrEqual(2);
+    await client.close();
+  });
+
+  it("retries cross-board network and capacity failures inside the deadline", async () => {
+    readyNetworkFailures = 1;
+    readyCapacityFailures = 1;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.filter((call) => call.path === "/boards/ready").length,
+    ).toBeGreaterThanOrEqual(3);
     await client.close();
   });
 

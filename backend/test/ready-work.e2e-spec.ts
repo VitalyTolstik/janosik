@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import type { BoardReadyDto, BoardsReadyDto } from "@janosik/shared";
+import type {
+  BoardReadyDto,
+  BoardsReadyDto,
+  ReadyCardDto,
+} from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
-import { ReadyService } from "@/boards/ready.service";
+import {
+  READY_POLL_MAX_PER_USER,
+  ReadyPollAdmission,
+  ReadyService,
+} from "@/boards/ready.service";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -269,14 +277,15 @@ describe("Ready/work endpoint (e2e)", () => {
       claimedBy: null,
       leaseUntil: null,
       version: expect.any(Number),
+      descriptionChars: "secret body".length,
     });
-    // A summary, not the aggregate: no description body, length, labels,
-    // checklists or links ever leave the endpoint.
+    // A summary, not the aggregate: no description body, labels, checklists
+    // or links ever leave the endpoint.
     expect(body.cards[1]).not.toHaveProperty("description");
-    expect(body.cards[1]).not.toHaveProperty("descriptionChars");
     expect(body.cards[1]).not.toHaveProperty("checklists");
     expect(body.cards[1]).not.toHaveProperty("labelIds");
     expect(body.cards[1]).not.toHaveProperty("links");
+    expect(res.headers["x-ready-held"]).toBeUndefined();
   });
 
   it("excludes archived, assigned, live-claimed, blocked and other-column cards", async () => {
@@ -302,6 +311,50 @@ describe("Ready/work endpoint (e2e)", () => {
     expect(ids).not.toContain("card-source");
     expect(ids).not.toContain("card-other-column");
     expect(ids).toHaveLength(5);
+  });
+
+  it("keeps descriptionChars in sync without returning the description", async () => {
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: "card-length",
+      columnId: "col-1",
+      title: "Length task",
+    });
+    const before = await readyCard("card-length");
+    expect(before.descriptionChars).toBe(0);
+
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId: "card-length",
+      description: "eight-char",
+    });
+    const updated = await readyCard("card-length");
+    expect(updated.descriptionChars).toBe("eight-char".length);
+    expect(updated).not.toHaveProperty("description");
+
+    await prisma.card.create({
+      data: {
+        id: "card-insert-length",
+        columnId: "col-1",
+        title: "Inserted length",
+        description: "inserted text",
+        position: 999,
+      },
+    });
+    try {
+      const inserted = await readyCard("card-insert-length");
+      expect(inserted.descriptionChars).toBe("inserted text".length);
+      expect(inserted).not.toHaveProperty("description");
+    } finally {
+      await prisma.card.delete({ where: { id: "card-insert-length" } });
+    }
+
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId: "card-length",
+      description: "x",
+    });
+    expect((await readyCard("card-length")).descriptionChars).toBe(1);
   });
 
   it("lets a VIEWER read the summary and refuses an outsider", async () => {
@@ -410,8 +463,35 @@ describe("Ready/work endpoint (e2e)", () => {
       .expect(204);
     expect(Date.now() - started).toBeGreaterThanOrEqual(30);
     expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.headers["x-ready-held"]).toBe("1");
     expect(Number(res.headers["x-board-seq"])).toBeGreaterThanOrEqual(0);
     expect(res.text).toBe("");
+  });
+
+  it("answers held-poll capacity as retryable backpressure", async () => {
+    const admission = app.get(ReadyPollAdmission);
+    const releases: Array<() => void> = [];
+    try {
+      for (let index = 0; index < READY_POLL_MAX_PER_USER; index += 1) {
+        const release = admission.acquire(adminId, holdBoardId);
+        if (release === null) throw new Error("unexpected admission refusal");
+        releases.push(release);
+      }
+      const res = await server()
+        .get(`/api/v1/boards/${holdBoardId}/ready`)
+        .query({ wait: 5000 })
+        .set(auth(adminToken))
+        .expect(503);
+      expect(res.headers["retry-after"]).toBe("5");
+      expect(res.body).toMatchObject({
+        code: "ready_poll_capacity",
+        retryable: true,
+        retryAfter: 5,
+      });
+    } finally {
+      for (const release of releases) release();
+    }
+    expect(admission.active()).toBe(0);
   });
 
   it("wakes a long-poll when a ready card is added", async () => {
@@ -502,6 +582,18 @@ describe("Ready/work endpoint (e2e)", () => {
     // three, including the archived summary.
     expect(body.cards.map((card) => card.id)).toContain("card-blocker");
   });
+
+  async function readyCard(cardId: string): Promise<ReadyCardDto> {
+    const res = await server()
+      .get(`/api/v1/boards/${boardId}/ready`)
+      .set(auth(adminToken))
+      .expect(200);
+    const card = (res.body as BoardReadyDto).cards.find(
+      (entry) => entry.id === cardId,
+    );
+    if (card === undefined) throw new Error(`card ${cardId} is not ready`);
+    return card;
+  }
 
   async function waitFor(
     check: () => boolean,

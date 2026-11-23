@@ -183,6 +183,11 @@ interface RequestOptions {
   timeoutMs?: number;
   /** Disable the one-shot network retry (a long-poll has its own deadline). */
   retry?: boolean;
+  /**
+   * Disable the generic 429/503 rate-limit retry so a caller with its own
+   * deadline (a ready long-poll) can bound every pause against it.
+   */
+  rateLimitRetry?: boolean;
   /** TASK-166.5: send `X-Approval-Id` with a lifecycle REST operation. */
   approvalId?: string;
   /** Extra request headers (`Idempotency-Key`, TASK-166.4). */
@@ -260,6 +265,7 @@ export class JanosikClient {
         return await this.send<T>(path, options);
       } catch (error) {
         if (
+          options.rateLimitRetry !== false &&
           isRateLimited(error) &&
           rateLimitAttempt < RATE_LIMIT_MAX_ATTEMPTS - 1
         ) {
@@ -638,6 +644,7 @@ export class JanosikClient {
         },
         ...(wait > 0 ? { timeoutMs: wait + READY_POLL_GRACE_MS } : {}),
         retry: false,
+        rateLimitRetry: false,
       },
     );
   }
@@ -645,10 +652,12 @@ export class JanosikClient {
   /**
    * TASK-200.2 cross-board ready snapshot. One request answers for every
    * accessible board without the per-board fan-out `listBoards` + `getBoard`
-   * used before.
+   * used before. `retry`/`rateLimitRetry` let a caller with a deadline run
+   * its own bounded retry loop.
    */
   listReadyWork(
     limit: number = READY_WORK_LIMIT_DEFAULT,
+    options: { retry?: boolean; rateLimitRetry?: boolean } = {},
   ): Promise<BoardsReadyDto> {
     const bounded = Math.min(
       Math.max(1, Math.trunc(limit)),
@@ -656,6 +665,10 @@ export class JanosikClient {
     );
     return this.request<BoardsReadyDto>("/boards/ready", {
       query: { limit: bounded },
+      ...(options.retry !== undefined ? { retry: options.retry } : {}),
+      ...(options.rateLimitRetry !== undefined
+        ? { rateLimitRetry: options.rateLimitRetry }
+        : {}),
     });
   }
 

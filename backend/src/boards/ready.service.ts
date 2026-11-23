@@ -32,6 +32,7 @@ interface ReadyCardRow {
   claimedBy: string | null;
   leaseUntil: Date | null;
   version: number;
+  descriptionChars: number;
 }
 
 /** A raw row of the cross-board ready query. */
@@ -63,8 +64,8 @@ interface ReadyOptions {
 
 /** Outcome of one ready request; a timed hold is not an empty `200`. */
 export type BoardReadyPollResult =
-  | { status: "ready"; body: BoardReadyDto }
-  | { status: "timeout"; seq: number }
+  | { status: "ready"; body: BoardReadyDto; held: boolean }
+  | { status: "timeout"; seq: number; held: true }
   | { status: "aborted" };
 
 /** Held long-polls admitted per user before a `503` (per process). */
@@ -199,15 +200,17 @@ export class ReadyService {
       let snapshot = await this.readSnapshot(boardId, limit);
       if (snapshot === null) throw new NotFoundException("Board not found");
       if (snapshot.archived || snapshot.cards.length > 0) {
-        return { status: "ready", body: snapshot };
+        return { status: "ready", body: snapshot, held: false };
       }
       // `since` is a change cursor: a caller whose last snapshot predates the
       // current seq gets an immediate (possibly empty) answer instead of
       // holding a request for a board that already changed.
       if (since !== undefined && since !== snapshot.seq) {
-        return { status: "ready", body: snapshot };
+        return { status: "ready", body: snapshot, held: false };
       }
-      if (wait === 0) return { status: "ready", body: snapshot };
+      if (wait === 0) {
+        return { status: "ready", body: snapshot, held: false };
+      }
 
       const release = this.polls.acquire(options.userId, boardId);
       if (release === null) {
@@ -215,6 +218,7 @@ export class ReadyService {
           message: "Too many held ready polls; retry shortly",
           code: "ready_poll_capacity",
           retryable: true,
+          retryAfter: 5,
         });
       }
       try {
@@ -250,7 +254,7 @@ export class ReadyService {
           if (snapshot === null) throw new NotFoundException("Board not found");
           latestSeq = snapshot.seq;
           if (snapshot.archived || snapshot.cards.length > 0) {
-            return { status: "ready", body: snapshot };
+            return { status: "ready", body: snapshot, held: true };
           }
           // The relevant change did not make work available: keep holding
           // instead of returning an empty snapshot and causing a re-poll.
@@ -440,7 +444,7 @@ export class ReadyService {
     });
     if (board === null) throw new NotFoundException("Board not found");
     const seq = (await this.boardSeqs([boardId])).get(boardId) ?? knownSeq;
-    return { status: "timeout", seq };
+    return { status: "timeout", seq, held: true };
   }
 
   /** Highest committed command seq per board, folded into one grouped read. */
@@ -639,7 +643,8 @@ function boardReadySql(columnId: string, limit: number): Prisma.Sql {
       c."priority",
       c."claimedBy",
       c."leaseUntil",
-      c."version"
+      c."version",
+      c."descriptionLength" AS "descriptionChars"
     FROM "Card" c
     WHERE c."columnId" = ${columnId}
       AND c."deletedAt" IS NULL
@@ -670,6 +675,7 @@ function crossBoardReadySql(columnIds: string[], limit: number): Prisma.Sql {
       c."claimedBy",
       c."leaseUntil",
       c."version",
+      c."descriptionLength" AS "descriptionChars",
       col."id" AS "columnId",
       col."title" AS "columnTitle",
       col."boardId" AS "boardId"
@@ -711,6 +717,7 @@ function toReadyCard(
     claimedBy: row.claimedBy,
     leaseUntil: row.leaseUntil === null ? null : row.leaseUntil.getTime(),
     version: row.version,
+    descriptionChars: row.descriptionChars,
   };
 }
 
