@@ -18,6 +18,7 @@ import { HttpClient, sleep } from "./http.mjs";
 import { RunMetrics } from "./metrics.mjs";
 import { validateScenarioConfig } from "./config.mjs";
 import { sanitizeText } from "./redact.mjs";
+import { formatDuration } from "./report.mjs";
 import {
   createMcpWorker,
   runMcpAgentLoop,
@@ -98,21 +99,27 @@ function createRecycler({ config, signal, metrics }) {
   });
   let lastAttempt = 0;
   let inFlight = null;
+  const state = { orphans: 0 };
   const recycle = async () => {
     if (inFlight !== null) return inFlight;
     if (Date.now() - lastAttempt < 500) return false;
     lastAttempt = Date.now();
     inFlight = (async () => {
       try {
-        const moved = await recycleDoneCards({
+        const result = await recycleDoneCards({
           client,
           boardId: config.boardId,
         });
-        if (moved > 0) {
-          recycleMetrics.recordAction(moved, "write");
-          metrics.recordRecycled(moved);
+        if (result.moved > 0) {
+          recycleMetrics.recordAction(result.moved, "write");
+          metrics.recordRecycled(result.moved);
         }
-        return moved > 0;
+        if (result.orphans > 0) {
+          state.orphans += result.orphans;
+          recycleMetrics.recordOrphan(result.orphans);
+          metrics.recordOrphan(result.orphans);
+        }
+        return result.moved > 0;
       } catch {
         return false;
       } finally {
@@ -121,7 +128,7 @@ function createRecycler({ config, signal, metrics }) {
     })();
     return inFlight;
   };
-  return { recycle, metrics: recycleMetrics };
+  return { recycle, metrics: recycleMetrics, state };
 }
 
 export async function runScenario({
@@ -154,6 +161,7 @@ export async function runScenario({
   });
   const onError = (entry) => {
     errors.push(entry);
+    if (entry.orphan === true) metrics.recordOrphan();
     if (entry.fatal === true) {
       fatal = true;
       captureMeasurement();
@@ -187,10 +195,10 @@ export async function runScenario({
     id === "S6"
       ? "burst"
       : id === "S5"
-        ? `${Math.round(((scenario.rampMs ?? 0) + (scenario.holdMs ?? 0)) / 1000)}s ramp+hold`
-        : `${Math.round((scenario.durationMs ?? 0) / 1000)}s`;
+        ? `${formatDuration((scenario.rampMs ?? 0) + (scenario.holdMs ?? 0))} ramp+hold`
+        : formatDuration(scenario.durationMs ?? 0);
   log(
-    `${id} ${scenario.title}: agents=${agents} humans=${humans} sse=${scenario.sse ?? 0} duration=${durationLabel}${id === "S4" ? ` (after ${Math.round((scenario.rampMs ?? 0) / 1000)}s ramp)` : ""}`,
+    `${id} ${scenario.title}: agents=${agents} humans=${humans} sse=${scenario.sse ?? 0} duration=${durationLabel}${id === "S4" ? ` (after ${formatDuration(scenario.rampMs ?? 0)} ramp)` : ""}`,
   );
 
   try {
@@ -267,6 +275,7 @@ export async function runScenario({
             boardId: boards[index % boards.length],
             metrics,
             log,
+            signal: controller.signal,
           }),
         ),
       );
@@ -390,6 +399,7 @@ export async function runScenario({
         ? {
             requests: recycler.metrics.requests,
             writes: recycler.metrics.actions,
+            orphans: recycler.state?.orphans ?? 0,
             errors: recycler.metrics.snapshot({ durationMs: 1 }).errors,
           }
         : null,
@@ -435,6 +445,7 @@ function finish({
       ? {
           requests: recycler.metrics.requests,
           writes: recycler.metrics.actions,
+          orphans: recycler.state?.orphans ?? 0,
           errors: recycler.metrics.snapshot({ durationMs: 1 }).errors,
         }
       : null,
@@ -543,7 +554,7 @@ async function runSseRamp({ scenario, clients, boards, metrics, signal, log }) {
   // ramp boundary: a slow admission path must not steal hold time.
   const holdDeadline = rampEndedAt + (scenario.holdMs ?? 0);
   log(
-    `  SSE ramp observed ${Math.round((metrics.sse.rampObservedMs ?? 0) / 1000)}s; holding ${Math.round((scenario.holdMs ?? 0) / 1000)}s from now`,
+    `  SSE ramp observed ${formatDuration(metrics.sse.rampObservedMs)}; holding ${formatDuration(scenario.holdMs ?? 0)} from now`,
   );
   await delayUntil(holdDeadline, signal);
   const holdEndedAt = await closeSseHandles(handles, metrics, rampEndedAt);

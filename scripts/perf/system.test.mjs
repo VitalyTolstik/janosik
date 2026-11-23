@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { collectCpuProfile, parseCpuProfile } from "./lib/cpuprofile.mjs";
@@ -74,6 +74,78 @@ test("collectCpuProfile aggregates a directory and reports errors", async () => 
   const missing = await collectCpuProfile("/definitely/not/here");
   assert.equal(missing.enabled, true);
   assert.equal(missing.available, false);
+});
+
+test("collectCpuProfile aggregates all nodes from the newest profile set", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-cpu-set-"));
+  const makeProfile = (prefix) => {
+    const nodes = [];
+    const samples = [];
+    for (let index = 0; index < 10; index += 1) {
+      const id = index + 1;
+      nodes.push({
+        id,
+        callFrame: {
+          functionName: `${prefix}${index}`,
+          url: `file:///app/${prefix}.js`,
+          lineNumber: index,
+        },
+      });
+      for (let hit = 0; hit < 6; hit += 1) samples.push(id);
+    }
+    nodes.push({
+      id: 11,
+      callFrame: {
+        functionName: "lowInEveryFile",
+        url: "file:///app/shared.js",
+        lineNumber: 4,
+      },
+    });
+    for (let hit = 0; hit < 5; hit += 1) samples.push(11);
+    return { startTime: 0, endTime: 1_000_000, samples, nodes };
+  };
+  try {
+    await writeFile(
+      path.join(directory, "run-a.cpuprofile"),
+      JSON.stringify(makeProfile("a")),
+      "utf8",
+    );
+    await writeFile(
+      path.join(directory, "run-b.cpuprofile"),
+      JSON.stringify(makeProfile("b")),
+      "utf8",
+    );
+    const old = path.join(directory, "old.cpuprofile");
+    await writeFile(
+      old,
+      JSON.stringify({
+        startTime: 0,
+        endTime: 1_000_000,
+        samples: [1, 1, 1],
+        nodes: [
+          {
+            id: 1,
+            callFrame: { functionName: "oldRun", url: "file:///old.js" },
+          },
+        ],
+      }),
+      "utf8",
+    );
+    await utimes(old, new Date(0), new Date(0));
+    const collected = await collectCpuProfile(directory);
+    assert.equal(collected.available, true);
+    assert.deepEqual([...collected.files].sort(), [
+      "run-a.cpuprofile",
+      "run-b.cpuprofile",
+    ]);
+    assert.equal(collected.top[0].function, "lowInEveryFile");
+    assert.equal(
+      collected.top.some((entry) => entry.function === "oldRun"),
+      false,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("parseRedisInfo extracts memory, clients, stats and keyspace", () => {
@@ -153,15 +225,25 @@ test("diffRedisInfo reports maxima and counter deltas", () => {
 
 test("redisInvocation keeps the password in the environment, not argv", () => {
   const invocation = redisInvocation({
-    redisUrl: "redis://default:redissecret@redis.test:6380/2",
+    redisUrl:
+      "redis://default:redis%40secret@redis.test:6380/2?auth_token=querysecret",
     redisCli: "redis-cli",
   });
   assert.equal(
-    invocation.args.some((arg) => arg.includes("redissecret")),
+    invocation.args.some((arg) => arg.includes("redis%40secret")),
     false,
   );
-  assert.equal(invocation.env.REDISCLI_AUTH, "redissecret");
-  assert.equal(invocation.url.includes("redissecret"), false);
+  assert.equal(
+    invocation.args.some((arg) => arg.includes("redis@secret")),
+    false,
+  );
+  assert.equal(
+    invocation.args.some((arg) => arg.includes("querysecret")),
+    false,
+  );
+  assert.equal(invocation.env.REDISCLI_AUTH, "redis@secret");
+  assert.equal(invocation.url.includes("redis@secret"), false);
+  assert.equal(invocation.url.includes("querysecret"), false);
 });
 
 test("redaction helpers remove URL userinfo, bearer tokens and child argv", () => {
@@ -170,8 +252,14 @@ test("redaction helpers remove URL userinfo, bearer tokens and child argv", () =
     "postgresql://db.test:5432/janosik",
   );
   assert.equal(
-    redactUrl("https://user:pass@example.test/api?token=abc&x=1"),
-    "https://example.test/api?token=%5Bredacted%5D&x=1",
+    redactUrl(
+      "https://user:pass@example.test/api?sslpassword=ssl&client_secret=cs&x-api-key=k&x=1",
+    ),
+    "https://example.test/api?sslpassword=%5Bredacted%5D&client_secret=%5Bredacted%5D&x-api-key=%5Bredacted%5D&x=1",
+  );
+  assert.equal(
+    sanitizeText("sslpassword=ssl client_secret=cs"),
+    "sslpassword=[redacted] client_secret=[redacted]",
   );
   assert.equal(
     sanitizeText("Authorization: Bearer jnk_secret and jnk_other", [
@@ -196,11 +284,22 @@ test("evaluateScenarioStatus distinguishes ok/partial/failed/interrupted", () =>
     scenario: { agents: 2 },
     summary: {
       requests: 10,
+      success2xx: 10,
       toolCalls: 0,
       cycles: 1,
       exhausted: 0,
       stranded: 0,
-      errors: { auth401403: 0, network: 0 },
+      recycled: 0,
+      orphans: 0,
+      errors: {
+        auth401403: 0,
+        network: 0,
+        server5xx: 0,
+        unexpected4xx: 0,
+        conflict409: 0,
+        rateLimited429: 0,
+        rates: { server5xx: 0, unexpected4xx: 0 },
+      },
       sse: {},
     },
     errors: [],
@@ -209,37 +308,130 @@ test("evaluateScenarioStatus distinguishes ok/partial/failed/interrupted", () =>
     driver: "http",
     workDurationMs: 1_000,
   };
-  assert.equal(evaluateScenarioStatus(base).status, "ok");
-  assert.equal(
+  const evaluate = (overrides = {}) =>
     evaluateScenarioStatus({
       ...base,
-      summary: { ...base.summary, exhausted: 1 },
+      ...overrides,
+      summary: { ...base.summary, ...(overrides.summary ?? {}) },
+    });
+
+  assert.equal(evaluate().status, "ok");
+  assert.equal(
+    evaluate({
+      summary: {
+        success2xx: 0,
+        errors: {
+          ...base.summary.errors,
+          server5xx: 10,
+          rates: { ...base.summary.errors.rates, server5xx: 1 },
+        },
+      },
+    }).status,
+    "failed",
+  );
+  assert.equal(
+    evaluate({ id: "S1", summary: { success2xx: 0 } }).status,
+    "failed",
+  );
+  assert.equal(
+    evaluate({
+      id: "S6",
+      summary: {
+        success2xx: 0,
+        errors: {
+          ...base.summary.errors,
+          server5xx: 10,
+          rates: { ...base.summary.errors.rates, server5xx: 1 },
+        },
+      },
+    }).status,
+    "failed",
+  );
+  assert.equal(
+    evaluate({
+      id: "S5",
+      scenario: { sse: 5000 },
+      summary: { sse: { opened: 0, failed: 5000, maxConcurrent: 0 } },
+    }).status,
+    "failed",
+  );
+  assert.equal(
+    evaluate({
+      id: "S5",
+      scenario: { sse: 5000 },
+      summary: {
+        sse: { opened: 1, failed: 4_999, maxConcurrent: 1 },
+      },
+    }).status,
+    "partial",
+  );
+  assert.equal(evaluate({ summary: { orphans: 1 } }).status, "partial");
+  assert.equal(
+    evaluate({
+      summary: {
+        errors: {
+          ...base.summary.errors,
+          server5xx: 2,
+          rates: { ...base.summary.errors.rates, server5xx: 0.2 },
+        },
+      },
     }).status,
     "partial",
   );
   assert.equal(
-    evaluateScenarioStatus({
-      ...base,
-      summary: { ...base.summary, cycles: 0 },
+    evaluate({
+      summary: {
+        errors: {
+          ...base.summary.errors,
+          unexpected4xx: 1,
+          rates: { ...base.summary.errors.rates, unexpected4xx: 0.1 },
+        },
+      },
+    }).status,
+    "partial",
+  );
+  assert.equal(
+    evaluate({
+      summary: {
+        errors: {
+          ...base.summary.errors,
+          conflict409: 9,
+          rateLimited429: 9,
+          rates: {
+            ...base.summary.errors.rates,
+            conflict409: 0.9,
+            rateLimited429: 0.9,
+          },
+        },
+      },
+    }).status,
+    "ok",
+  );
+  assert.equal(
+    evaluate({
+      id: "S3",
+      scenario: { agents: 2, mix: { reads: 1, writes: 0, comments: 0 } },
+      summary: { cycles: 0 },
+    }).status,
+    "ok",
+  );
+  assert.equal(
+    evaluate({
+      summary: { requests: 0, success2xx: 0 },
     }).status,
     "failed",
   );
+  assert.equal(evaluate({ summary: { exhausted: 1 } }).status, "partial");
+  assert.equal(evaluate({ summary: { cycles: 0 } }).status, "failed");
+  assert.equal(evaluate({ interrupted: true }).status, "interrupted");
   assert.equal(
-    evaluateScenarioStatus({ ...base, interrupted: true }).status,
-    "interrupted",
-  );
-  assert.equal(
-    evaluateScenarioStatus({
-      ...base,
-      errors: [{ fatal: true, message: "auth" }],
-    }).status,
+    evaluate({ errors: [{ fatal: true, message: "auth" }] }).status,
     "failed",
   );
   assert.equal(
-    evaluateScenarioStatus({
-      ...base,
+    evaluate({
       driver: "mcp",
-      summary: { ...base.summary, requests: 0, toolCalls: 4 },
+      summary: { requests: 4, success2xx: 4, toolCalls: 4 },
     }).status,
     "ok",
   );

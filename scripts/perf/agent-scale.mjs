@@ -23,6 +23,7 @@ import { runScenario } from "./lib/scenarios.mjs";
 import { buildReport, renderMarkdown } from "./lib/report.mjs";
 import { environmentInfo, gitInfo } from "./lib/git.mjs";
 import {
+  PG_SNAPSHOT_LIMIT,
   PgActivitySampler,
   collectPgStatements,
   diffPgStatements,
@@ -31,6 +32,12 @@ import { collectCpuProfile } from "./lib/cpuprofile.mjs";
 import { collectRedisInfo, diffRedisInfo } from "./lib/redis.mjs";
 import { startMockServer } from "./lib/mock-server.mjs";
 import { evaluateScenarioStatus } from "./lib/status.mjs";
+import {
+  PreflightError,
+  requiredIdentities,
+  selectBoards,
+  validateTokenIdentity,
+} from "./lib/preflight.mjs";
 import { redactUrl, sanitizeText } from "./lib/redact.mjs";
 
 const startedAt = Date.now();
@@ -39,13 +46,6 @@ let sampler = null;
 let pgSampler = null;
 let activeConfig = null;
 let interrupted = false;
-
-class PreflightError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = "PreflightError";
-  }
-}
 
 function log(message) {
   console.log(message);
@@ -147,7 +147,7 @@ async function main() {
         ? await collectPgStatements({
             databaseUrl: config.pgUrl,
             psql: config.psql,
-            limit: 20,
+            limit: PG_SNAPSHOT_LIMIT,
             signal: controller.signal,
           })
         : null;
@@ -156,11 +156,12 @@ async function main() {
       let fatal = false;
       for (const id of config.scenarioIds) {
         if (controller.signal.aborted || fatal) break;
+        if (config.mock && config.mode === "smoke") mock.resetBoards();
         const pgBefore = config.pgUrl
           ? await collectPgStatements({
               databaseUrl: config.pgUrl,
               psql: config.psql,
-              limit: 20,
+              limit: PG_SNAPSHOT_LIMIT,
               signal: controller.signal,
             })
           : null;
@@ -175,7 +176,7 @@ async function main() {
           const pgAfter = await collectPgStatements({
             databaseUrl: config.pgUrl,
             psql: config.psql,
-            limit: 20,
+            limit: PG_SNAPSHOT_LIMIT,
             signal: controller.signal,
           });
           scenario.pg = diffPgStatements(pgBefore, pgAfter, 20);
@@ -188,6 +189,7 @@ async function main() {
       }
 
       sampler.poll();
+      sampler.flush();
       const pgActivity = pgSampler !== null ? await pgSampler.stop() : null;
       const redisAfter = await collectRedisInfo({
         redisUrl: config.redisUrl,
@@ -203,7 +205,7 @@ async function main() {
         ? await collectPgStatements({
             databaseUrl: config.pgUrl,
             psql: config.psql,
-            limit: 20,
+            limit: PG_SNAPSHOT_LIMIT,
             signal: controller.signal,
           })
         : null;
@@ -305,7 +307,16 @@ async function resolveUsers(config, signal) {
     if (me === null || typeof me.id !== "string") {
       throw new PreflightError("GET /auth/me returned no user id");
     }
-    users.push({ token, id: me.id, email: me.email ?? null });
+    const user = validateTokenIdentity(
+      {
+        token,
+        id: me.id,
+        email: me.email ?? null,
+        tokenIdentity: me.token ?? null,
+      },
+      users.length,
+    );
+    users.push(user);
   }
   if (users.length === 0) throw new PreflightError("no usable PAT");
   return users;
@@ -313,12 +324,7 @@ async function resolveUsers(config, signal) {
 
 /** The real agent path needs one identity per agent unless explicitly shared. */
 function assertTokenPool(config, users) {
-  let required = 0;
-  for (const id of config.scenarioIds) {
-    if (!["S2", "S3", "S4"].includes(id)) continue;
-    const scenario = scenarioConfig(config, id);
-    required = Math.max(required, scenario.agents ?? 0);
-  }
+  const required = requiredIdentities(config);
   if (required > users.length && config.allowSharedIdentity !== true) {
     if (config.mock) {
       log(
@@ -327,7 +333,7 @@ function assertTokenPool(config, users) {
       return;
     }
     throw new PreflightError(
-      `token pool has ${users.length} identity(ies) for ${required} agents in S2/S3/S4; ` +
+      `token pool has ${users.length} identity(ies) for ${required} agent(s) in S2/S3/S4; ` +
         "pass more --token values or --shared-identity to model several agents per identity",
     );
   }
@@ -346,53 +352,62 @@ function isArchivedBoard(board) {
 }
 
 async function resolveBoards(config, users, signal) {
-  const client = new HttpClient({
-    baseUrl: config.baseUrl,
-    token: users[0].token,
-    metrics: new RunMetrics("bootstrap"),
-    signal,
-  });
+  const clients = users.map(
+    (user) =>
+      new HttpClient({
+        baseUrl: config.baseUrl,
+        token: user.token,
+        metrics: new RunMetrics("bootstrap"),
+        signal,
+      }),
+  );
+
   if (config.explicitBoards.length > 0) {
-    for (const id of config.explicitBoards) {
+    for (const [boardIndex, id] of config.explicitBoards.entries()) {
       let response;
       try {
-        response = await client.readBoard(id);
+        response = await clients[0].readBoard(id);
       } catch (error) {
+        const label = `token 1, board ${boardIndex + 1} (${id})`;
         if (error?.status === 401 || error?.status === 403) {
           throw new PreflightError(
-            `board ${id} is not accessible with the first token (401/403)`,
+            `${label}: not accessible (${error.status})`,
           );
         }
         if (error?.status === 404) {
-          throw new PreflightError(`board ${id} does not exist`);
+          throw new PreflightError(`${label}: does not exist`);
         }
         throw error;
       }
       if (isArchivedBoard(response.board)) {
-        throw new PreflightError(`board ${id} is archived`);
+        throw new PreflightError(
+          `token 1, board ${boardIndex + 1} (${id}): board is archived`,
+        );
       }
     }
-    return config.explicitBoards;
   }
-  const boards = await client.listBoards().catch((error) => {
-    if (error?.status === 401 || error?.status === 403) {
-      throw new PreflightError(
-        "GET /boards failed with 401/403: use a valid board-domain PAT",
-      );
+
+  const lists = [];
+  for (const [index, client] of clients.entries()) {
+    try {
+      lists.push(await client.listBoards());
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        throw new PreflightError(
+          `token ${index + 1}: GET /boards failed with ${error.status}`,
+        );
+      }
+      throw error;
     }
-    throw error;
-  });
-  const ids = boards
-    .filter((board) => typeof board?.id === "string")
-    .filter((board) => !isArchivedBoard(board))
-    .map((board) => board.id)
-    .slice(0, config.boardsCount);
-  if (ids.length === 0) {
-    throw new PreflightError(
-      "no boards visible to the PAT; pass --board <id> or create one",
-    );
   }
-  if (ids.length < config.boardsCount) {
+
+  const ids = selectBoards({
+    users,
+    lists,
+    explicitBoards: config.explicitBoards,
+    boardsCount: config.boardsCount,
+  });
+  if (config.explicitBoards.length === 0 && ids.length < config.boardsCount) {
     log(
       `warning: --boards ${config.boardsCount} requested, only ${ids.length} accessible`,
     );
@@ -473,7 +488,7 @@ async function runOne({ id, config, users, boards, signal }) {
     measuredEnd,
   );
   log(
-    `${status === "ok" ? "✓" : status === "partial" ? "◐" : status === "interrupted" ? "■" : "✗"} ${id} [${status}]: ${snapshot.requests} req · ${snapshot.cycles} cycles · ${snapshot.actionsPerSecond ?? "—"} actions/s · p95 ${snapshot.latency.p95 ?? "—"} ms · 400 ${snapshot.errors.badRequest400} · 409 ${snapshot.errors.conflict409} · 429 ${snapshot.errors.rateLimited429} · 5xx ${snapshot.errors.server5xx} · net ${snapshot.errors.network}`,
+    `${status === "ok" ? "✓" : status === "partial" ? "◐" : status === "interrupted" ? "■" : "✗"} ${id} [${status}]: ${snapshot.requests} req · ${snapshot.cycles} cycles · ${snapshot.actionsPerSecond ?? "—"} actions/s · p95 ${snapshot.latency.p95 ?? "—"} ms · 400 ${snapshot.errors.badRequest400} · 409 ${snapshot.errors.conflict409} · 429 ${snapshot.errors.rateLimited429} · 5xx ${snapshot.errors.server5xx} · net ${snapshot.errors.network} · unexp ${((snapshot.errors.rates?.unexpected ?? 0) * 100).toFixed(2)}%`,
   );
   if (reason !== null) log(`  ${reason}`);
   return {
@@ -526,7 +541,7 @@ function printSummary(report, jsonPath, markdownPath) {
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     console.log(
-      `${scenario.id.padEnd(3)} ${String(scenario.status).padEnd(11)} req=${s.requests} tools=${s.toolCalls} cycles=${s.cycles} p95=${s.latency.p95 ?? "—"}ms 400=${s.errors.badRequest400} 409=${s.errors.conflict409} 429=${s.errors.rateLimited429} 5xx=${s.errors.server5xx} net=${s.errors.network}`,
+      `${scenario.id.padEnd(3)} ${String(scenario.status).padEnd(11)} req=${s.requests} tools=${s.toolCalls} cycles=${s.cycles} p95=${s.latency.p95 ?? "—"}ms 400=${s.errors.badRequest400} 409=${s.errors.conflict409} 429=${s.errors.rateLimited429} 5xx=${s.errors.server5xx} net=${s.errors.network} unexp=${((s.errors.rates?.unexpected ?? 0) * 100).toFixed(2)}%`,
     );
   }
   console.log(`JSON: ${jsonPath}`);

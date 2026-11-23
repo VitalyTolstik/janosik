@@ -1,11 +1,26 @@
 // TASK-200.1 — one place that decides what a scenario result means.
 //
-// `429` and `5xx` are data: they are reported, not used as a pass/fail gate.
-// A run is `failed` when it measured nothing (zero requests, zero work),
-// when authentication failed, or when the API could not be reached at all.
-// `partial` means work happened but the board or the transport degraded it.
+// `429`, `409` and claim-lease `400` conflicts are expected data. A run is
+// `failed` when it measured no successful 2xx work, when authentication
+// failed, or when nothing was measured at all. A small number of other 5xx /
+// 4xx is data; above the documented thresholds it degrades the run to
+// `partial`. Orphans and S5 failed streams are always at least `partial`.
 
 export const SCENARIO_STATUSES = ["ok", "partial", "failed", "interrupted"];
+
+/** Documented degradation thresholds (fractions of requests). */
+export const STATUS_THRESHOLDS = {
+  server5xxRate: 0.01,
+  server5xxCount: 5,
+  unexpected4xxRate: 0.001,
+  unexpected4xxCount: 5,
+};
+
+function overThreshold({ count, requests, rateThreshold, countThreshold }) {
+  if (count <= 0) return false;
+  const rate = requests > 0 ? count / requests : 1;
+  return count >= countThreshold || rate > rateThreshold;
+}
 
 export function evaluateScenarioStatus({
   id,
@@ -30,10 +45,18 @@ export function evaluateScenarioStatus({
       reason: `fatal error${error?.message ? `: ${error.message}` : ""}`,
     };
   }
+  const requests = summary.requests ?? 0;
   const measuredCalls =
-    driver === "mcp" ? (summary.toolCalls ?? 0) : (summary.requests ?? 0);
+    requests > 0 ? requests : driver === "mcp" ? (summary.toolCalls ?? 0) : 0;
   if (measuredCalls === 0) {
     return { status: "failed", reason: "no requests were measured" };
+  }
+  const success2xx = summary.success2xx ?? 0;
+  if (success2xx === 0) {
+    return {
+      status: "failed",
+      reason: "no successful 2xx response was measured",
+    };
   }
   if ((summary.errors?.auth401403 ?? 0) > 0) {
     return {
@@ -49,19 +72,57 @@ export function evaluateScenarioStatus({
       return { status: "failed", reason: "no SSE stream was held" };
     }
   }
-  if (id === "S6" && (summary.requests ?? 0) === 0) {
-    return { status: "failed", reason: "read burst measured no requests" };
-  }
-  const expectsWork =
-    ["S2", "S3", "S4"].includes(id) && (scenario.agents ?? 0) > 0;
-  if (expectsWork && (summary.cycles ?? 0) === 0) {
+  const expectsCycles =
+    id === "S2" ||
+    id === "S4" ||
+    (id === "S3" && (scenario.mix?.writes ?? 0.3) > 0);
+  if (
+    expectsCycles &&
+    (scenario.agents ?? 0) > 0 &&
+    (summary.cycles ?? 0) === 0
+  ) {
     const why =
       (summary.exhausted ?? 0) > 0
         ? "board was exhausted before one cycle completed"
         : "zero work cycles completed";
     return { status: "failed", reason: why };
   }
+
   const reasons = [];
+  if ((summary.sse?.failed ?? 0) > 0 && id === "S5") {
+    reasons.push(
+      `${summary.sse.failed} SSE stream(s) failed to open (${summary.sse.opened ?? 0} opened)`,
+    );
+  }
+  if ((summary.orphans ?? 0) > 0) {
+    reasons.push(
+      `${summary.orphans} claim(s) could not be released (orphan lease)`,
+    );
+  }
+  if (
+    overThreshold({
+      count: summary.errors?.server5xx ?? 0,
+      requests,
+      rateThreshold: STATUS_THRESHOLDS.server5xxRate,
+      countThreshold: STATUS_THRESHOLDS.server5xxCount,
+    })
+  ) {
+    reasons.push(
+      `${summary.errors.server5xx} server 5xx (${formatRate(summary.errors.rates?.server5xx)})`,
+    );
+  }
+  if (
+    overThreshold({
+      count: summary.errors?.unexpected4xx ?? 0,
+      requests,
+      rateThreshold: STATUS_THRESHOLDS.unexpected4xxRate,
+      countThreshold: STATUS_THRESHOLDS.unexpected4xxCount,
+    })
+  ) {
+    reasons.push(
+      `${summary.errors.unexpected4xx} unexpected 4xx (${formatRate(summary.errors.rates?.unexpected4xx)})`,
+    );
+  }
   if ((summary.exhausted ?? 0) > 0 && (summary.recycled ?? 0) === 0) {
     reasons.push(
       `board exhausted after ${summary.cycles ?? 0} cycle(s); add cards or use --recycle`,
@@ -87,4 +148,8 @@ export function evaluateScenarioStatus({
     return { status: "partial", reason: reasons.join("; ") };
   }
   return { status: "ok", reason: null };
+}
+
+function formatRate(rate) {
+  return Number.isFinite(rate) ? `${(rate * 100).toFixed(2)}%` : "—";
 }

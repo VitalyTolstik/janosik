@@ -114,7 +114,14 @@ export class HttpClient {
 
     const elapsed = performance.now() - started;
     const bytes = byteLength(text);
-    this.metrics.recordRequest(operation, elapsed, response.status, bytes);
+    const expectedLeaseConflict =
+      response.status === 400 &&
+      operation === "command.claim" &&
+      !/Invalid command|Unsupported/i.test(text) &&
+      /claimed by another|live claim|lease/i.test(text);
+    this.metrics.recordRequest(operation, elapsed, response.status, bytes, {
+      expected: expectedLeaseConflict,
+    });
     const result = {
       status: response.status,
       ok: response.ok,

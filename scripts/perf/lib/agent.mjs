@@ -192,14 +192,18 @@ function isLeaseConflict(error) {
   );
 }
 
-/** Release a lease. Returns true when the API accepted the release. */
+/** Release a lease. Returns true only when the API answered 2xx. */
 export async function releaseClaim({ client, boardId, cardId }) {
   try {
-    await client.claim(boardId, {
+    const response = await client.claim(boardId, {
       commandId: newCommandId("release"),
       action: buildReleaseAction({ cardId, boardId, at: Date.now() }),
     });
-    return true;
+    return (
+      Number.isInteger(response?.status) &&
+      response.status >= 200 &&
+      response.status < 300
+    );
   } catch {
     return false;
   }
@@ -665,23 +669,31 @@ export async function recycleDoneCards({ client, boardId, limit = 100 }) {
   const { board } = await client.readBoard(boardId);
   const done = findDoneColumn(board);
   const first = board.columns?.find((column) => column.id !== done?.id);
-  if (done === null || first === undefined) return 0;
+  if (done === null || first === undefined) return { moved: 0, orphans: 0 };
   let moved = 0;
+  let orphans = 0;
   let remaining = [...(done.cardIds ?? [])].slice(0, limit);
   for (const cardId of [...remaining]) {
-    // The recycle PAT is a board ADMIN: clear the agent's lease first, so the
-    // moved-back card is picked up immediately instead of waiting for the
-    // lease to expire. A non-holder gets a 400 here; moving still proceeds.
+    // The recycle PAT must be a board ADMIN: clear the agent's lease first, so
+    // the moved-back card is picked up immediately. A 400/409 means the
+    // release did not happen; do not move or count the card as recycled.
+    let released;
     try {
-      await client.claim(boardId, {
+      released = await client.claim(boardId, {
         commandId: newCommandId("recycle-release"),
         action: buildReleaseAction({ cardId, boardId, at: Date.now() }),
       });
     } catch {
-      // Best effort; the lease may belong to another identity.
+      orphans += 1;
+      break;
     }
+    if (released.status < 200 || released.status >= 300) {
+      orphans += 1;
+      break;
+    }
+    let movedResponse;
     try {
-      await client.move(boardId, {
+      movedResponse = await client.move(boardId, {
         commandId: newCommandId("recycle"),
         action: {
           type: "MOVE_CARD",
@@ -694,11 +706,16 @@ export async function recycleDoneCards({ client, boardId, limit = 100 }) {
           toIndex: 0,
         },
       });
-      remaining = remaining.filter((id) => id !== cardId);
-      moved += 1;
     } catch {
+      orphans += 1;
       break;
     }
+    if (movedResponse.status < 200 || movedResponse.status >= 300) {
+      orphans += 1;
+      break;
+    }
+    remaining = remaining.filter((id) => id !== cardId);
+    moved += 1;
   }
-  return moved;
+  return { moved, orphans };
 }

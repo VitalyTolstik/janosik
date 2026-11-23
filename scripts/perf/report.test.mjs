@@ -7,6 +7,7 @@ import {
   escapeCell,
   escapeText,
   formatBytes,
+  formatDuration,
   formatInteger,
   formatMs,
   renderMarkdown,
@@ -106,7 +107,10 @@ test("renderMarkdown includes status, commit, configuration and error columns", 
   assert.match(markdown, /`partial`/);
   assert.match(markdown, /board exhausted after 1 cycle/);
   assert.match(markdown, /S2 Claim → comment → move/);
-  assert.match(markdown, /\| 409 \| 429 \| 5xx \| Network \|/);
+  assert.match(
+    markdown,
+    /\| 409 \| 409 % \| 429 \| 429 % \| 5xx \| Net \| Unexp % \|/,
+  );
   assert.match(markdown, /command\.claim/);
   assert.match(markdown, /150\.0 MiB/);
   assert.match(markdown, /Mock \(`--mock`\) results .*prove/);
@@ -246,11 +250,11 @@ test("report output never contains URL userinfo or a password", () => {
     parseCli([
       "--mock",
       "--base-url",
-      "http://alice:hunter2@example.test/api/v1",
+      "http://alice:hunter2@example.test/api/v1?client_secret=basedsecret",
       "--pg-url",
-      "postgresql://perf:pgsecret@db.test:5432/janosik",
+      "postgresql://perf:pgsecret@db.test:5432/janosik?sslpassword=sslsecret&client_secret=pgclientsecret",
       "--redis-url",
-      "redis://:redispass@redis.test:6379/0",
+      "redis://:redispass@redis.test:6379/0?auth_token=redissecretquery",
     ]),
     {},
   );
@@ -267,12 +271,43 @@ test("report output never contains URL userinfo or a password", () => {
   });
   const json = JSON.stringify(report);
   const markdown = renderMarkdown(report);
-  for (const secret of ["hunter2", "pgsecret", "redispass", "alice:"]) {
+  for (const secret of [
+    "hunter2",
+    "pgsecret",
+    "redispass",
+    "alice:",
+    "sslsecret",
+    "pgclientsecret",
+    "basedsecret",
+    "redissecretquery",
+  ]) {
     assert.equal(json.includes(secret), false, `JSON leaked ${secret}`);
     assert.equal(markdown.includes(secret), false, `Markdown leaked ${secret}`);
   }
-  assert.match(json, /"baseUrl":"http:\/\/example\.test\/api\/v1"/);
+  assert.match(
+    json,
+    /"baseUrl":"http:\/\/example\.test\/api\/v1\?client_secret=%5Bredacted%5D"/,
+  );
   assert.equal(json.includes("perf@db.test"), false);
+});
+
+test("renderMarkdown surfaces S5 failures and probe errors", () => {
+  const report = buildReport(fixture());
+  report.scenarios[0].id = "S5";
+  report.scenarios[0].title = "SSE ramp";
+  report.scenarios[0].summary.sse = {
+    opened: 1,
+    failed: 2,
+    maxConcurrent: 1,
+    rampObservedMs: 10,
+    holdObservedMs: 20,
+  };
+  report.scenarios[0].api.errors = [
+    { source: "api-preload", message: "probe file disappeared" },
+  ];
+  const markdown = renderMarkdown(report);
+  assert.match(markdown, /SSE opened 1, failed 2, max concurrent 1/);
+  assert.match(markdown, /Probe errors: api-preload: probe file disappeared/);
 });
 
 test("format helpers and statusSplit are stable", () => {
@@ -282,6 +317,9 @@ test("format helpers and statusSplit are stable", () => {
   assert.equal(formatBytes(512), "512 B");
   assert.equal(formatBytes(2 * 1024 * 1024), "2.0 MiB");
   assert.equal(formatInteger(1_234), "1,234");
+  assert.equal(formatDuration(900), "900 ms");
+  assert.equal(formatDuration(3_599_600), "1h");
+  assert.equal(formatDuration(59_000), "59.0 s");
   assert.deepEqual(statusSplit({ 200: 3, 409: 1, 500: 2, 0: 1, [-1]: 1 }), {
     client4xx: 1,
     server5xx: 2,

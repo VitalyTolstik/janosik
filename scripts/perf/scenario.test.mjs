@@ -184,6 +184,82 @@ test("--recycle keeps a small board working without inflating agent actions", as
   assert.equal(status.summary.actions, status.summary.cycles * 3);
 });
 
+test("S5 with no live stream is failed, not an empty success", async (t) => {
+  const mock = await startMockServer({
+    boardCount: 1,
+    cardsPerBoard: 2,
+    sseStatus: 503,
+  });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S5",
+      "--sse",
+      "2",
+      "--ramp",
+      "10ms",
+      "--hold",
+      "100ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S5");
+  const result = await runScenario({
+    id: "S5",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+  });
+  const status = statusOf(result, config, metrics);
+  assert.equal(metrics.sse.opened, 0);
+  assert.equal(metrics.sse.failed, 2);
+  assert.equal(status.status, "failed");
+});
+
+test("read-only S3 --mix 100/0/0 is not failed for zero cycles", async (t) => {
+  const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 4 });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S3",
+      "--agents",
+      "1",
+      "--humans",
+      "0",
+      "--sse",
+      "0",
+      "--mix",
+      "100/0/0",
+      "--duration",
+      "300ms",
+      "--cadence",
+      "50ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S3");
+  const result = await runScenario({
+    id: "S3",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+  });
+  const status = statusOf(result, config, metrics);
+  assert.equal(status.summary.cycles, 0);
+  assert.equal(status.summary.success2xx > 0, true);
+  assert.equal(status.status, "ok");
+});
+
 test("scenarioConfig still exposes the requested S4 work window", () => {
   const config = resolveConfig(
     parseCli(["--scenario", "S4", "--token", "jnk_x", "--duration", "5s"]),

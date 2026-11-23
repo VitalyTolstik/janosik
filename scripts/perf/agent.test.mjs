@@ -13,6 +13,8 @@ import {
   newCommandId,
   performAgentCycle,
   pickWork,
+  recycleDoneCards,
+  releaseClaim,
 } from "./lib/agent.mjs";
 
 function board() {
@@ -348,6 +350,71 @@ test("a network failure during the move releases the claim", async () => {
   assert.equal(released, true);
   assert.equal(result.actions, 2);
   assert.match(result.failure.message, /fetch failed/);
+});
+
+test("releaseClaim treats an allowed 409 as a failed release", async () => {
+  assert.equal(
+    await releaseClaim({
+      client: {
+        async claim() {
+          return { status: 409 };
+        },
+      },
+      boardId: "b1",
+      cardId: "c1",
+    }),
+    false,
+  );
+});
+
+test("a comment failure with a 409 release is surfaced as an orphan", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) return { status: 409 };
+      return { status: 200, json: { seq: 11 } };
+    },
+    async comment() {
+      const error = new Error("comment.create -> 429");
+      error.status = 429;
+      throw error;
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  const result = await performAgentCycle({
+    client,
+    boardId: "b1",
+    userId: "u1",
+    leaseMs: 60_000,
+    commentText: "probe",
+  });
+  assert.equal(result.actions, 1);
+  assert.equal(result.orphan, true);
+});
+
+test("recycleDoneCards does not count a 409 release as recycled", async () => {
+  let moved = false;
+  const result = await recycleDoneCards({
+    client: {
+      async readBoard() {
+        return { board: board(), seq: 10 };
+      },
+      async claim() {
+        return { status: 409 };
+      },
+      async move() {
+        moved = true;
+        return { status: 200 };
+      },
+    },
+    boardId: "b1",
+  });
+  assert.deepEqual(result, { moved: 0, orphans: 1 });
+  assert.equal(moved, false);
 });
 
 test("jitter and PRNG helpers stay bounded and deterministic", () => {

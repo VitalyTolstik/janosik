@@ -40,10 +40,15 @@ function run(command, args, options = {}) {
   });
 }
 
-async function startMockProcess() {
+async function startMockProcess(env = {}) {
   const child = spawn(process.execPath, [mockMain], {
     cwd: repoRoot,
-    env: { ...process.env, MOCK_CARDS: "80", MOCK_BOARDS: "1" },
+    env: {
+      ...process.env,
+      MOCK_CARDS: "80",
+      MOCK_BOARDS: "1",
+      ...env,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let buffer = "";
@@ -115,14 +120,14 @@ test("real mode writes JSON and Markdown with no 400s (out-of-process mock)", as
       "--duration",
       "1200ms",
       "--pg-url",
-      "postgresql://perf:pgsecret@127.0.0.1:1/perf",
+      "postgresql://perf:pgsecret@127.0.0.1:1/perf?sslpassword=sslsecret&client_secret=pgclientsecret",
       "--psql",
       "/definitely/not-psql",
       "--pg-activity",
       "--cpu-profile",
       cpuPath,
       "--redis-url",
-      "redis://:redissecret@127.0.0.1:1/0",
+      "redis://:redissecret@127.0.0.1:1/0?auth_token=redisquerysecret",
       "--redis-cli",
       "/definitely/not-redis-cli",
       "--output",
@@ -147,13 +152,154 @@ test("real mode writes JSON and Markdown with no 400s (out-of-process mock)", as
     assert.equal(report.cpuProfile.available, true);
     assert.equal(report.cpuProfile.top[0].function, "loadBoardAggregate");
     assert.equal(report.redis.available, false);
-    for (const secret of ["jnk_real_secret", "pgsecret", "redissecret"]) {
+    for (const secret of [
+      "jnk_real_secret",
+      "pgsecret",
+      "redissecret",
+      "sslsecret",
+      "pgclientsecret",
+      "redisquerysecret",
+    ]) {
       assert.equal(JSON.stringify(report).includes(secret), false);
       assert.equal(markdown.includes(secret), false);
       assert.equal(result.stdout.includes(secret), false);
       assert.equal(result.stderr.includes(secret), false);
     }
     assert.equal(markdown.includes("## Throughput and errors"), true);
+  } finally {
+    mock.child.kill("SIGTERM");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("preflight fails token/board mixed access before load with exit 2", async () => {
+  const mock = await startMockProcess({ MOCK_BOARDS: "2" });
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-preflight-"));
+  try {
+    const viewer = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--base-url",
+      mock.baseUrl,
+      "--board",
+      "board-1",
+      "--token",
+      "jnk_ok",
+      "--token",
+      "jnk_viewer",
+      "--agents",
+      "2",
+      "--duration",
+      "300ms",
+      "--output",
+      path.join(directory, "viewer.json"),
+    ]);
+    assert.equal(viewer.code, 2);
+    assert.match(viewer.stderr, /token 2, board 1 \(board-1\)/);
+    assert.match(viewer.stderr, /role VIEWER cannot write/);
+
+    const readOnly = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--base-url",
+      mock.baseUrl,
+      "--board",
+      "board-1",
+      "--token",
+      "jnk_readonly",
+      "--agents",
+      "1",
+      "--duration",
+      "300ms",
+      "--output",
+      path.join(directory, "readonly.json"),
+    ]);
+    assert.equal(readOnly.code, 2);
+    assert.match(readOnly.stderr, /token 1 is read-only/);
+
+    const scoped = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--base-url",
+      mock.baseUrl,
+      "--board",
+      "board-1",
+      "--board",
+      "board-2",
+      "--token",
+      "jnk_board1only",
+      "--agents",
+      "1",
+      "--duration",
+      "300ms",
+      "--output",
+      path.join(directory, "scoped.json"),
+    ]);
+    assert.equal(scoped.code, 2);
+    assert.match(scoped.stderr, /token 1, board 2 \(board-2\): not accessible/);
+  } finally {
+    mock.child.kill("SIGTERM");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("first Ctrl-C writes a partial report and exits 130", async () => {
+  const mock = await startMockProcess();
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-sigint-"));
+  try {
+    const output = path.join(directory, "interrupted.json");
+    const child = spawn(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        mock.baseUrl,
+        "--board",
+        "board-1",
+        "--token",
+        "jnk_sigint",
+        "--agents",
+        "1",
+        "--duration",
+        "10s",
+        "--cadence",
+        "200ms",
+        "--output",
+        output,
+      ],
+      { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const closed = new Promise((resolve) => child.on("close", resolve));
+    const deadline = Date.now() + 10_000;
+    while (!stdout.includes("S2") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.match(stdout, /S2/);
+    child.kill("SIGINT");
+    const code = await Promise.race([
+      closed,
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 20_000)),
+    ]);
+    assert.equal(code, 130, stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    await readFile(output.replace(/\.json$/, ".md"), "utf8");
+    assert.equal(report.status, "interrupted");
+    assert.equal(report.scenarios[0].status, "interrupted");
   } finally {
     mock.child.kill("SIGTERM");
     await rm(directory, { recursive: true, force: true });
@@ -192,7 +338,9 @@ test("MCP mock smoke spawns a real stdio process and counts tools", async () => 
     assert.equal(scenario.mcp.pids.length, 1);
     assert.equal(scenario.summary.toolCalls > 0, true);
     assert.equal(scenario.summary.cycles > 0, true);
-    assert.equal(scenario.summary.requests, 0);
+    assert.equal(scenario.summary.requests > 0, true);
+    assert.equal(scenario.summary.requestsPerAgentPerMinute > 0, true);
+    assert.equal(scenario.summary.success2xx > 0, true);
     assert.equal(
       Object.keys(scenario.summary.tools).includes("janosik_claim_card"),
       true,

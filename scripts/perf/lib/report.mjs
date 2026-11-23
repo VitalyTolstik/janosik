@@ -99,22 +99,22 @@ export function renderMarkdown(report) {
   lines.push("## Throughput and errors");
   lines.push("");
   lines.push(
-    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | 409 | 429 | 5xx | Network | Err % |",
+    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | 409 | 409 % | 429 | 429 % | 5xx | Net | Unexp % |",
   );
   lines.push(
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     lines.push(
-      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${s.errors.conflict409} | ${s.errors.rateLimited429} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rate)} |`,
+      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${s.errors.conflict409} | ${formatPercent(s.errors.rates?.conflict409)} | ${s.errors.rateLimited429} | ${formatPercent(s.errors.rates?.rateLimited429)} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rates?.unexpected)} |`,
     );
   }
   lines.push("");
   lines.push("## Resources");
   lines.push("");
   lines.push(
-    "| Scenario | Probe | API RSS p50 | API RSS p95 | API RSS max | API heap p95 | API loop p95 | Gen RSS max | Gen loop p95 | SSE max | SSE ramp | SSE hold | SSE bytes |",
+    "| Scenario | Probe | API RSS p50 | API RSS p95 | API peak RSS* | API heap p95 | API loop p95 | Gen RSS max | Gen loop p95 | SSE max | SSE ramp | SSE hold | SSE bytes |",
   );
   lines.push(
     "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -147,7 +147,25 @@ export function renderMarkdown(report) {
     }
     if (scenario.recycle?.requests > 0) {
       lines.push(
-        `Recycle (excluded from agent metrics): ${formatInteger(scenario.recycle.writes)} writes in ${formatInteger(scenario.recycle.requests)} requests; ${formatInteger(scenario.summary.recycled)} cards recycled.`,
+        `Recycle (excluded from agent metrics): ${formatInteger(scenario.recycle.writes)} writes in ${formatInteger(scenario.recycle.requests)} requests; ${formatInteger(scenario.summary.recycled)} cards recycled${scenario.recycle.orphans > 0 ? `; ${formatInteger(scenario.recycle.orphans)} orphan release(s)` : ""}.`,
+      );
+    }
+    if (scenario.id === "S5") {
+      const sse = scenario.summary.sse;
+      lines.push(
+        `SSE opened ${formatInteger(sse.opened)}, failed ${formatInteger(sse.failed)}, max concurrent ${formatInteger(sse.maxConcurrent)}, observed ramp ${formatDuration(sse.rampObservedMs)}, observed hold ${formatDuration(sse.holdObservedMs)}.`,
+      );
+    }
+    const probeErrors = scenario.api?.errors ?? [];
+    if (probeErrors.length > 0) {
+      lines.push("");
+      lines.push(
+        `Probe errors: ${probeErrors
+          .map(
+            (error) =>
+              `${escapeCell(error.source)}: ${escapeCell(error.message)}`,
+          )
+          .join("; ")}`,
       );
     }
     const mix = scenario.summary.activity;
@@ -158,7 +176,7 @@ export function renderMarkdown(report) {
     }
     if (scenario.mcp !== undefined && scenario.mcp !== null) {
       lines.push(
-        `MCP: ${scenario.mcp.processes} process(es), peak RSS ${formatBytes(scenario.mcp.peakRssBytes)} each, total peak ${formatBytes(scenario.mcp.totalPeakRssBytes)}.`,
+        `MCP: ${scenario.mcp.processes} process(es), sampled RSS peak ${formatBytes(scenario.mcp.peakRssBytes)}, lifetime peak ${formatBytes(scenario.mcp.peakVmHwmBytes)}, total sampled peak ${formatBytes(scenario.mcp.totalPeakRssBytes)}.`,
       );
     }
     const tools = Object.entries(scenario.summary.tools ?? {});
@@ -239,16 +257,16 @@ export function renderMarkdown(report) {
     "- This is a harness baseline, not a capacity certificate: run the generator on a separate host from the API (docs/PERF-AGENT-SCALE.md §7.1).",
   );
   lines.push(
-    "- `409` is a measured CAS conflict on the real agent path; `429` is the board/global rate limit. Both are counted, and `5xx`/network are labelled separately. They are data; failed/zero-work is a failed scenario.",
+    "- `409` is an expected CAS conflict, `429` an expected rate limit, and a `400` claim-lease conflict is expected contention too; they have separate counts/rates and are excluded from the main `Unexp %` rate. `5xx`, network failures and other unexpected 4xx degrade a measured run to `partial` above the documented small thresholds; zero successful 2xx responses is `failed`.",
   );
   lines.push(
-    "- `ok` means work was measured; `partial` means the board drained, a claim stranded or the network degraded; `failed` means zero work, zero requests or fatal auth; `interrupted` means SIGINT/SIGTERM.",
+    "- `ok` means successful work was measured; `partial` means the board drained, a claim/stream degraded, or unexpected 4xx/5xx crossed the threshold; `failed` means zero successful 2xx work, zero requests or fatal auth; `interrupted` means SIGINT/SIGTERM.",
   );
   lines.push(
     "- S1 currently polls the full board (`GET /boards/:id`); `--idle-endpoint ready` measures the 200.2 endpoint once it exists and falls back to the board on 404.",
   );
   lines.push(
-    "- API RSS comes from `--api-probe` (heap + event-loop lag) or `--api-pid` (/proc VmRSS); generator RSS/lag is sampled in-process and is not an API measurement.",
+    "- API RSS comes from `--api-probe` (heap + event-loop lag) or `--api-pid` (/proc VmRSS); generator RSS/lag is sampled in-process and is not an API measurement. `API peak RSS*` for `api-proc` is `/proc` VmHWM, the process **lifetime** peak; for `api-preload` it is the scenario-window peak.",
   );
   lines.push(
     "- Mock (`--mock`) results only prove the harness works; they are never a product baseline.",
@@ -432,13 +450,19 @@ function formatPercent(value) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
-function formatDuration(ms) {
+export function formatDuration(ms) {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";
-  if (ms < 1_000) return `${Math.round(ms)} ms`;
+  if (ms < 1_000) return `${Math.max(0, Math.round(ms))} ms`;
   if (ms < 60_000) return `${(ms / 1_000).toFixed(1)} s`;
-  const minutes = Math.floor(ms / 60_000);
-  const seconds = Math.round((ms % 60_000) / 1_000);
-  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  const totalSeconds = Math.round(ms / 1_000);
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0) parts.push(`${seconds}s`);
+  return parts.length > 0 ? parts.join(" ") : "0 ms";
 }
 
 function location(entry) {

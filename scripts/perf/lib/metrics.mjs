@@ -68,6 +68,7 @@ function numericStatus(status) {
 }
 
 export function statusCounts(statuses) {
+  let success2xx = 0;
   let client4xx = 0;
   let server5xx = 0;
   let network = 0;
@@ -76,7 +77,8 @@ export function statusCounts(statuses) {
   let badRequest400 = 0;
   for (const [key, count] of Object.entries(statuses)) {
     const status = Number(key);
-    if (status === 0) network += count;
+    if (status >= 200 && status < 300) success2xx += count;
+    else if (status === 0) network += count;
     else if (status === -1) aborted += count;
     else if (status >= 500) server5xx += count;
     else if (status >= 400) {
@@ -85,7 +87,15 @@ export function statusCounts(statuses) {
       if (status === 401 || status === 403) auth401403 += count;
     }
   }
-  return { client4xx, server5xx, network, aborted, auth401403, badRequest400 };
+  return {
+    success2xx,
+    client4xx,
+    server5xx,
+    network,
+    aborted,
+    auth401403,
+    badRequest400,
+  };
 }
 
 function rate(count, requests) {
@@ -108,6 +118,8 @@ export class RunMetrics {
     this.exhausted = 0;
     this.stranded = 0;
     this.recycled = 0;
+    this.orphans = 0;
+    this.expectedExtra = 0;
     this.durations = [];
     this.operations = new Map();
     this.statuses = new Map();
@@ -137,7 +149,14 @@ export class RunMetrics {
   }
 
   /** `status` 0 means no HTTP answer; `-1` means a deadline abort. */
-  recordRequest(name, durationMs, status, bytes = 0) {
+  recordRequest(
+    name,
+    durationMs,
+    status,
+    bytes = 0,
+    { expected = false } = {},
+  ) {
+    if (expected) this.expectedExtra += 1;
     const entry = this.operation(name);
     const duration = Number.isFinite(durationMs) ? durationMs : 0;
     entry.durations.push(duration);
@@ -181,6 +200,10 @@ export class RunMetrics {
 
   recordRecycled(count = 1) {
     this.recycled += count;
+  }
+
+  recordOrphan(count = 1) {
+    this.orphans += count;
   }
 
   recordTool(name, durationMs) {
@@ -238,7 +261,21 @@ export class RunMetrics {
     }
     const statuses = sortedStatuses(this.statuses);
     const counts = statusCounts(statuses);
+    const conflict409 = statuses["409"] ?? 0;
+    const rateLimited429 = statuses["429"] ?? 0;
+    const expected = conflict409 + rateLimited429 + this.expectedExtra;
     const totalErrors = counts.client4xx + counts.server5xx + counts.network;
+    const unexpected = Math.max(0, totalErrors - expected);
+    const other4xx =
+      counts.client4xx -
+      conflict409 -
+      rateLimited429 -
+      counts.auth401403 -
+      counts.badRequest400;
+    const unexpected4xx = Math.max(
+      0,
+      counts.badRequest400 + other4xx - this.expectedExtra,
+    );
     const activityTotal =
       this.activity.reads + this.activity.writes + this.activity.comments;
     const tools = {};
@@ -255,6 +292,7 @@ export class RunMetrics {
       durationMs,
       agents,
       requests: this.requests,
+      success2xx: counts.success2xx,
       bytes: this.bytes,
       actions: this.actions,
       cycles: this.cycles,
@@ -262,6 +300,7 @@ export class RunMetrics {
       exhausted: this.exhausted,
       stranded: this.stranded,
       recycled: this.recycled,
+      orphans: this.orphans,
       toolCalls: this.toolCalls,
       tools,
       actionsPerSecond: actionsPerSecond(this.actions, durationMs),
@@ -287,27 +326,27 @@ export class RunMetrics {
       statuses,
       errors: {
         total: totalErrors,
-        rate: rate(totalErrors, this.requests),
+        expected,
+        unexpected,
+        rate: rate(unexpected, this.requests),
         client4xx: counts.client4xx,
         server5xx: counts.server5xx,
         network: counts.network,
         aborted: counts.aborted,
         auth401403: counts.auth401403,
         badRequest400: counts.badRequest400,
-        conflict409: statuses["409"] ?? 0,
-        rateLimited429: statuses["429"] ?? 0,
-        other4xx:
-          counts.client4xx -
-          (statuses["409"] ?? 0) -
-          (statuses["429"] ?? 0) -
-          counts.auth401403 -
-          counts.badRequest400,
+        conflict409,
+        rateLimited429,
+        other4xx,
+        unexpected4xx,
         rates: {
           client4xx: rate(counts.client4xx, this.requests),
           server5xx: rate(counts.server5xx, this.requests),
           network: rate(counts.network, this.requests),
-          conflict409: rate(statuses["409"] ?? 0, this.requests),
-          rateLimited429: rate(statuses["429"] ?? 0, this.requests),
+          conflict409: rate(conflict409, this.requests),
+          rateLimited429: rate(rateLimited429, this.requests),
+          unexpected: rate(unexpected, this.requests),
+          unexpected4xx: rate(unexpected4xx, this.requests),
         },
       },
       latency: summarizeNumbers(this.durations),
