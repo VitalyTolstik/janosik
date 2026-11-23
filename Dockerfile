@@ -10,7 +10,7 @@
 # Run:    see docker-compose.yml (app + postgres + redis).
 
 # ---------------------------------------------------------------- build ----
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 
 # openssl must be present when `prisma generate` runs, so the generated query
@@ -52,7 +52,7 @@ RUN npm run build -w backend \
   && npm run build -w site
 
 # -------------------------------------------------------------- runtime ----
-FROM node:24-bookworm-slim AS runtime
+FROM node:26-bookworm-slim AS runtime
 ENV NODE_ENV=production
 # Bound the V8 old-space heap (TASK-140): a live-stream surge then triggers GC
 # instead of the container being OOM-killed (which drops *every* connection at
