@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, isApiEnabled } from "@/api/client";
@@ -19,7 +27,6 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
 import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
-import { SavedViewsMenu } from "@/components/board/SavedViewsMenu";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
@@ -49,6 +56,25 @@ import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
  * instant; this only adds the extra hits.
  */
 const SERVER_FILTER_DEBOUNCE_MS = 250;
+
+/**
+ * The saved-views menu and its storage/sanitizer live in their own chunk: the
+ * menu is secondary chrome, and its ~5 KB gzip was the last thing pushing the
+ * initial critical path against its 300 KB budget. The fallback reserves the
+ * exact 36/44 px trigger slot so the FilterBar never shifts when it arrives.
+ */
+const SavedViewsMenu = lazy(() =>
+  import("@/components/board/SavedViewsMenu").then((module) => ({
+    default: module.SavedViewsMenu,
+  })),
+);
+const SAVED_VIEWS_FALLBACK = (
+  <div
+    aria-hidden
+    data-testid="saved-views-menu-placeholder"
+    className="h-9 w-9 shrink-0 max-lg:h-11 max-lg:w-11"
+  />
+);
 
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
@@ -364,18 +390,20 @@ export function BoardSection() {
                 onChange={setFilter}
               />
             </div>
-            <SavedViewsMenu
-              userId={savedViewsUserId}
-              boardId={board.id}
-              filter={filter}
-              view={view}
-              labels={board.labels}
-              assigneeIds={savedViewAssigneeIds}
-              onApply={(nextFilter, nextView) => {
-                setFilter(nextFilter);
-                if (nextView) setView(nextView);
-              }}
-            />
+            <Suspense fallback={SAVED_VIEWS_FALLBACK}>
+              <SavedViewsMenu
+                userId={savedViewsUserId}
+                boardId={board.id}
+                filter={filter}
+                view={view}
+                labels={board.labels}
+                assigneeIds={savedViewAssigneeIds}
+                onApply={(nextFilter, nextView) => {
+                  setFilter(nextFilter);
+                  if (nextView) setView(nextView);
+                }}
+              />
+            </Suspense>
           </div>
         ) : null}
         {serverPending ? (

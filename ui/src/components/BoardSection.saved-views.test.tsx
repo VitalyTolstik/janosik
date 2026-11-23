@@ -114,7 +114,7 @@ function renderBoard(initialRoute = `/board/${BOARD_A}`) {
 }
 
 async function openSavedViews() {
-  fireEvent.click(screen.getByTestId("saved-views-menu"));
+  fireEvent.click(await screen.findByTestId("saved-views-menu"));
   return screen.findByRole("dialog", { name: "Saved views" });
 }
 
@@ -129,13 +129,15 @@ beforeEach(() => {
 });
 
 describe("BoardSection saved views integration", () => {
-  it("mounts the menu beside FilterBar", () => {
+  it("mounts the menu beside FilterBar", async () => {
     seedBoards();
     renderBoard();
 
     const toolbar = screen.getByTestId("board-toolbar");
     expect(within(toolbar).getByTestId("filter-bar")).toBeInTheDocument();
-    expect(within(toolbar).getByTestId("saved-views-menu")).toBeInTheDocument();
+    expect(
+      await within(toolbar).findByTestId("saved-views-menu"),
+    ).toBeInTheDocument();
   });
 
   it("applies filter and view, writes the URL and closes the menu", async () => {
@@ -180,7 +182,7 @@ describe("BoardSection saved views integration", () => {
     // (the serializer must keep `card` when a filter is applied next to it).
     renderBoard(`/board/${BOARD_A}?card=${BOARD_A}-card-1&keep=1`);
     await screen.findByRole("dialog");
-    fireEvent.click(screen.getByTestId("saved-views-menu"));
+    fireEvent.click(await screen.findByTestId("saved-views-menu"));
     const apply = await waitFor(() => {
       const button = document.querySelector<HTMLButtonElement>(
         "[data-saved-view-apply]",
@@ -222,7 +224,7 @@ describe("BoardSection saved views integration", () => {
     ]);
     renderBoard();
 
-    expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
+    expect(await screen.findByTestId("saved-views-menu")).toHaveAttribute(
       "aria-label",
       "Saved views (2)",
     );
@@ -272,7 +274,7 @@ describe("BoardSection saved views integration", () => {
     expect(screen.queryByText(/no longer exist/)).not.toBeInTheDocument();
   });
 
-  it("keeps a 390px static flex layout with a 44px menu target", () => {
+  it("keeps a 390px static flex layout with a 44px menu target", async () => {
     seedBoards();
     renderBoard();
 
@@ -282,7 +284,7 @@ describe("BoardSection saved views integration", () => {
       "min-w-0",
       "flex-1",
     );
-    expect(screen.getByTestId("saved-views-menu")).toHaveClass(
+    expect(await screen.findByTestId("saved-views-menu")).toHaveClass(
       "max-lg:h-11",
       "max-lg:w-11",
     );
@@ -299,6 +301,6 @@ describe("BoardSection saved views integration", () => {
     await waitFor(() =>
       expect(screen.getByTestId("bulk-select-count")).toHaveTextContent("1"),
     );
-    expect(screen.getByTestId("saved-views-menu")).toBeInTheDocument();
+    expect(await screen.findByTestId("saved-views-menu")).toBeInTheDocument();
   });
 });
