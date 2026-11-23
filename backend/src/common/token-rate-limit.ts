@@ -18,16 +18,25 @@ import {
 const WINDOW_MS = 60_000;
 
 /**
- * Count one request against `tokenId`'s window and return the whole budget,
- * so the guard can answer with `RateLimit-*` headers and a real
- * `Retry-After` instead of a generic 429.
+ * Count `cost` units (one request, or a batch's command count) against
+ * `tokenId`'s window and return the whole budget, so the guard can answer
+ * with `RateLimit-*` headers and a real `Retry-After` instead of a generic
+ * 429.
  */
 export function consumeTokenRateLimit(
   tokenId: string,
   limitPerMinute: number,
   now: number = Date.now(),
+  cost: number = 1,
 ): RateLimitDecision {
-  return consumeRateLimit("token", tokenId, limitPerMinute, WINDOW_MS, now);
+  return consumeRateLimit(
+    "token",
+    tokenId,
+    limitPerMinute,
+    WINDOW_MS,
+    now,
+    cost,
+  );
 }
 
 /**

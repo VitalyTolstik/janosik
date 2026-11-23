@@ -650,12 +650,14 @@ export function FilterBar({
         </PopoverContent>
       </Popover>
 
-      {/* Result count + reset */}
+      {/* Result count + reset. Full-width and wrapping below sm: the saved
+          views trigger keeps 44 px + the 8 px toolbar gap, so the fixed-width
+          EN/RU row would otherwise clip on a 390 px phone. */}
       {active && (
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
           <span
             data-testid="filter-match-count"
-            className="whitespace-nowrap text-xs text-muted-foreground"
+            className="max-w-full whitespace-nowrap text-xs text-muted-foreground"
           >
             {matchPending
               ? t("filter.searchingServer")
@@ -850,7 +852,9 @@ export function FilterBar({
                   aria-hidden
                 />
               )}
-              {member ? userLabel(member.displayName, member.email) : userId}
+              {member
+                ? userLabel(member.displayName, member.email)
+                : t("filter.assignee.unknown")}
               <button
                 type="button"
                 aria-label={t("label.pickerRemove")}

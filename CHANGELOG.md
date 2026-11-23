@@ -8,6 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
+  bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
+  `max(12000, 2 × THROTTLE_LIMIT)`) with continuous refill, backed by a
+  per-token agent bucket (`AGENT_TOKEN_RATE_LIMIT`, default
+  `max(600, ceil(THROTTLE_LIMIT / 4))` for keys without their own explicit
+  limit; an explicit key limit is capped at that derived share) and a raised
+  per-session floor (600 weighted units), so one abusive key or runaway
+  session cannot starve a board. A batch is charged by `commands.length` on the
+  board, token **and session** budgets. A non-batch shape or unknown action
+  type costs one unit; a known type with missing required fields still costs
+  its command count and is rejected before any work is applied.
+  Pinned budgets are 0 (auto) or at least 100, so a valid 100-command batch can
+  fit. **Upgrade note:** existing `AGENT_SESSION_RATE_LIMIT`,
+  `AGENT_TOKEN_RATE_LIMIT` or `BOARD_RATE_LIMIT` values from 1 to 99 now fail
+  startup; use 0 (auto) or at least 100. A per-key `rateLimitPerMinute` of
+  1–99 remains valid but cannot submit a 100-command batch, since a batch
+  spends its command count against the token budget. Command writes over the
+  board ceiling wait in a per-board FIFO (64 queued requests/batches / 32 MiB of serialized
+  parsed JSON, approximate for object overhead / bounded promise chain, max
+  30 000 ms) and then answer `503 rate_limited` with
+  `Retry-After` and `X-RateLimit-Queued-Ms` (`0` when the queue cap rejects
+  immediately) instead of an instant `429`; reads keep the immediate `429`.
+  The MCP client retries `429` and the queued `503` up to four attempts,
+  honouring `Retry-After` (never earlier than requested below 8 s; at or above
+  8 s it uses 7.4 s + up to 600 ms jitter) with bounded backoff and reusing the
+  same `Idempotency-Key`/`commandId`; an exhausted retry still returns the
+  actionable error instead of hanging. Docs EN/RU, OpenAPI, self-hosting env
+  reference, MCP README, `.env.example` and focused unit/e2e coverage are
+  updated.
+
 - TASK-177.20.3a/3b assignment notifications and due-mail links. A committed
   `SET_CARD_ASSIGN` now produces a deduplicated `card.assigned` attention row
   for the new assignee, but only when the board/card are live and not archived,

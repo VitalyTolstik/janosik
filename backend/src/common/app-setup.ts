@@ -1,5 +1,5 @@
-import type { INestApplication } from "@nestjs/common";
-import { ValidationPipe } from "@nestjs/common";
+import type { ArgumentMetadata, INestApplication } from "@nestjs/common";
+import { BadRequestException, ValidationPipe } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { MAX_COMMAND_BODY_BYTES, MAX_IMPORT_BYTES } from "@janosik/shared";
 import { json } from "express";
@@ -116,7 +116,36 @@ export function setupApp(
   // Nest's own parser stays registered but never sees an unparsed body.
   server.useBodyParser("json", { limit: MAX_IMPORT_BYTES });
   app.setGlobalPrefix("api/v1");
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(
+    new SafeValidationPipe({ whitelist: true, transform: true }),
+  );
+}
+
+/**
+ * Deeply nested JSON can make Nest's proto-key stripping (or class-transformer)
+ * exceed the call stack before the command validator runs. That is a client
+ * input error, not a 500; answer a generic 400 and never echo the body.
+ */
+class SafeValidationPipe extends ValidationPipe {
+  override async transform(
+    value: unknown,
+    metadata: ArgumentMetadata,
+  ): Promise<unknown> {
+    try {
+      return await super.transform(value, metadata);
+    } catch (error) {
+      if (
+        error instanceof RangeError &&
+        /Maximum call stack size exceeded/i.test(error.message)
+      ) {
+        throw new BadRequestException({
+          message: "Request body is too deeply nested",
+          code: "validation_failed",
+        });
+      }
+      throw error;
+    }
+  }
 }
 
 function formatBytes(bytes: number): string {

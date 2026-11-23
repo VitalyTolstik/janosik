@@ -1001,6 +1001,10 @@ paths:
         resend the same command ID, action and version preconditions to
         retrieve the committed result if the first request was applied.
         `Idempotency-Key` is additionally honoured for `DUPLICATE_CARD`.
+        Over the shared board budget the command waits up to
+        `AGENT_COMMAND_QUEUE_MS` (at most 30 seconds) for enough tokens and
+        then answers `503 rate_limited` with `Retry-After`. A batch is charged
+        by its command count on the board, token and session budgets.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -1017,6 +1021,8 @@ paths:
           headers:
             X-Run-Id:
               $ref: "#/components/headers/X-Run-Id"
+            X-RateLimit-Queued-Ms:
+              $ref: "#/components/headers/X-RateLimit-Queued-Ms"
           content:
             application/json:
               schema:
@@ -1025,10 +1031,11 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
-        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
   /boards/{boardId}/commands/batch:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -1041,7 +1048,10 @@ paths:
         in command order. At most 100 commands. A PAT batch creates exactly
         one `AgentRun` (kind `batch`) and sets `X-Run-Id`. If any action is
         destructive, the whole batch needs one approval. `clientRunId` keys
-        that run.
+        that run. The batch is charged by `commands.length` on the board,
+        token and session budgets, waits up to `AGENT_COMMAND_QUEUE_MS` (at
+        most 30 seconds) for the whole cost and queue capacity, and then
+        answers either `200` or `503 rate_limited`.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -1057,6 +1067,8 @@ paths:
           headers:
             X-Run-Id:
               $ref: "#/components/headers/X-Run-Id"
+            X-RateLimit-Queued-Ms:
+              $ref: "#/components/headers/X-RateLimit-Queued-Ms"
           content:
             application/json:
               schema:
@@ -1065,10 +1077,11 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
-        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
   /boards/{boardId}/plans:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -1116,7 +1129,10 @@ paths:
         `409 approval_mismatch`; a destructive plan without `X-Approval-Id`
         creates an approval and applies nothing. A PAT apply creates one
         `AgentRun` (kind `plan`) and sets `X-Run-Id`; a browser apply creates
-        no run. Atomic and idempotent like a batch.
+        no run. Atomic and idempotent like a batch. The plan is charged by its
+        command count on the board, token and session budgets, but this route
+        is deliberately not queued: over the agent budget it answers `429`
+        immediately.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -3199,24 +3215,50 @@ components:
       schema:
         type: string
     X-RateLimit-Limit:
-      description: Ceiling of the tightest bucket that counted the request.
+      description: |
+        Ceiling of the tightest bucket that counted the request. Agent buckets
+        are charged in weighted units (a batch costs its command count); the
+        headers are bucket counters, not a forecast of how many commands fit.
       schema:
         type: integer
     X-RateLimit-Remaining:
-      description: Remaining budget in that bucket.
+      description: |
+        Remaining budget in that bucket. Agent buckets report weighted units;
+        the headers describe bucket counters, not how many commands fit, and a
+        batch may consume several units at once.
       schema:
         type: integer
     X-RateLimit-Reset:
       description: Reset time as Unix seconds.
       schema:
         type: integer
+    RateLimit-Reset:
+      description: |
+        Seconds until this request's weighted cost can be admitted. For the
+        board bucket a 100-command batch waits for 100 tokens, not the next
+        single token; an allowed board request reports `0`. Fixed request-count
+        buckets report the window end.
+      schema:
+        type: integer
+        minimum: 0
     X-RateLimit-Scope:
       description: Which bucket counted the request.
       schema:
         type: string
         enum: [token, session, board]
+    X-RateLimit-Queued-Ms:
+      description: |
+        Total time a command or batch spent in the per-board queue, including
+        the wait behind earlier requests and the wait for enough board tokens.
+        Present on `200`, queued `503` and `408 request_timeout`; `0` when the
+        queue depth/byte/chained-waiter cap rejects it immediately.
+      schema:
+        type: integer
+        minimum: 0
     Retry-After:
-      description: Seconds to wait before retrying a `429`.
+      description: |
+        Seconds to wait before retrying a `429 rate_limited` or a queued `503
+        rate_limited`.
       schema:
         type: integer
         minimum: 0
@@ -3226,6 +3268,20 @@ components:
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    RequestTimeout:
+      description: |
+        The command was aborted before it could be applied (before or while it
+        waited in the per-board queue); nothing was applied. `request_timeout`,
+        retryable; resend the same `commandId` when reconnecting.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        X-RateLimit-Queued-Ms:
+          $ref: "#/components/headers/X-RateLimit-Queued-Ms"
       content:
         application/json:
           schema:
@@ -3315,6 +3371,8 @@ components:
           $ref: "#/components/headers/X-RateLimit-Remaining"
         X-RateLimit-Reset:
           $ref: "#/components/headers/X-RateLimit-Reset"
+        RateLimit-Reset:
+          $ref: "#/components/headers/RateLimit-Reset"
         X-RateLimit-Scope:
           $ref: "#/components/headers/X-RateLimit-Scope"
         Retry-After:
@@ -3347,6 +3405,42 @@ components:
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    CommandUnavailable:
+      description: |
+        One of two safe-to-retry refusals for a command or batch:
+
+        - `rate_limited`: insufficient board tokens after waiting up to
+          `AGENT_COMMAND_QUEUE_MS`, or the per-board command queue is full by
+          depth, retained bytes or chained waiters (64 queued requests/batches / 32 MiB of
+          serialized parsed JSON, approximate for object overhead / bounded
+          chain).
+          Nothing was applied; `Retry-After` is set,
+          the envelope carries `scope: "board"`, and `X-RateLimit-Queued-Ms`
+          reports the total queue wait (`0` for an immediate queue-cap
+          rejection). Retry the same `commandId`.
+        - `board_write_timeout`: the transaction holding the board write lock
+          timed out and rolled back. Retry the same `commandId`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+        RateLimit-Reset:
+          $ref: "#/components/headers/RateLimit-Reset"
+        X-RateLimit-Scope:
+          $ref: "#/components/headers/X-RateLimit-Scope"
+        X-RateLimit-Queued-Ms:
+          $ref: "#/components/headers/X-RateLimit-Queued-Ms"
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
       content:
         application/json:
           schema:
@@ -3559,6 +3653,7 @@ components:
         - idempotency_in_progress
         - payload_too_large
         - rate_limited
+        - request_timeout
         - login_backoff
         - current_password_invalid
         - oauth_proof_required
@@ -6681,6 +6776,10 @@ components:
           type: [integer, "null"]
           minimum: 1
           maximum: 100000
+          description: |
+            Weighted units per minute for this key, capped by the derived
+            per-token share. A value below 100 cannot admit a 100-command
+            batch, because a batch spends its command count against the budget.
         scopePreset:
           $ref: "#/components/schemas/ScopePreset"
         trustedCi:
@@ -6698,6 +6797,9 @@ components:
           type: [integer, "null"]
           minimum: 1
           maximum: 100000
+          description: |
+            Weighted units per minute, capped by the derived per-token share.
+            A value below 100 cannot admit a 100-command batch.
         readOnly:
           type: boolean
         scopePreset:

@@ -18,7 +18,7 @@ type CommandActionType = Exclude<
   "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD"
 >;
 
-const ACTION_REGISTRY: Record<CommandActionType, true> = {
+export const ACTION_REGISTRY: Record<CommandActionType, true> = {
   RENAME_BOARD: true,
   SET_BOARD_COLUMN_STYLE: true,
   SET_BOARD_WORKFLOW: true,
@@ -120,7 +120,19 @@ export function validateCommandAction(
     !Array.isArray(raw)
       ? { ...(raw as Record<string, unknown>), boardId: options.boardId }
       : raw;
-  const bytes = Buffer.byteLength(JSON.stringify(routed), "utf8");
+  const bytes = ((): number => {
+    try {
+      return Buffer.byteLength(JSON.stringify(routed), "utf8");
+    } catch {
+      // Deeply nested or otherwise unserializable JSON: reject with a generic
+      // client error. Never include the value (or a parser message that may
+      // quote part of it) in the response or log.
+      throw new BadRequestException({
+        message: "Command is too deeply nested or cannot be serialized",
+        field: "action",
+      });
+    }
+  })();
   const cap =
     options.allowOversize === true
       ? MAX_COMMAND_BYTES_INTERNAL

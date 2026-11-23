@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError, describeError, errorStructuredContent } from "./errors.js";
+import {
+  ApiError,
+  describeError,
+  errorStructuredContent,
+  isRateLimited,
+  parseRetryAfter,
+  rateLimitDelayMs,
+} from "./errors.js";
 
 describe("describeError", () => {
   it("points at the field of a 400 validation error", () => {
@@ -231,6 +238,97 @@ describe("describeError", () => {
     );
     expect(message).toContain("apr-1");
     expect(message).toMatch(/janosik_wait_for_decision/i);
+  });
+});
+
+describe("rate-limit retry policy (TASK-200.3)", () => {
+  it("parses delta-seconds and HTTP-date Retry-After values", () => {
+    expect(parseRetryAfter("2")).toBe(2);
+    expect(parseRetryAfter("0")).toBe(0);
+    expect(parseRetryAfter(null)).toBeUndefined();
+    expect(parseRetryAfter("soon")).toBeUndefined();
+    const at = new Date(Date.now() + 5_000).toUTCString();
+    const parsed = parseRetryAfter(at);
+    expect(parsed).toBeGreaterThanOrEqual(3);
+    expect(parsed).toBeLessThanOrEqual(5);
+  });
+
+  it("adds jitter on top of Retry-After instead of masking it", () => {
+    const error = new ApiError(429, { code: "rate_limited" }, 2);
+    const delay = rateLimitDelayMs(error, 1, () => 0);
+    expect(delay).toBeGreaterThan(2_000);
+    expect(delay).toBeLessThanOrEqual(8_000);
+    expect(delay).toBe(2_050);
+  });
+
+  it("falls back to capped, jittered exponential backoff", () => {
+    const error = new ApiError(429, { code: "rate_limited" });
+    expect(rateLimitDelayMs(error, 1, () => 0)).toBe(50);
+    expect(rateLimitDelayMs(error, 2, () => 0)).toBe(100);
+    expect(rateLimitDelayMs(error, 3, () => 1)).toBe(600);
+  });
+
+  it("waits at least Retry-After up to 8 s and jitters the headroom", () => {
+    const sevenAndHalf = new ApiError(429, { code: "rate_limited" }, 7.5);
+    expect(rateLimitDelayMs(sevenAndHalf, 1, () => 0)).toBe(7_550);
+    expect(rateLimitDelayMs(sevenAndHalf, 1, () => 0.5)).toBe(7_800);
+    const high = rateLimitDelayMs(sevenAndHalf, 1, () => 1);
+    expect(high).toBeGreaterThanOrEqual(7_500);
+    expect(high).toBeLessThanOrEqual(8_000);
+  });
+
+  it("jitters exactly 8 s instead of returning a fixed cap", () => {
+    const eight = new ApiError(429, { code: "rate_limited" }, 8);
+    expect(rateLimitDelayMs(eight, 1, () => 0)).toBe(7_400);
+    expect(rateLimitDelayMs(eight, 1, () => 0.5)).toBe(7_700);
+    const high = rateLimitDelayMs(eight, 1, () => 1);
+    expect(high).toBe(8_000);
+    expect(high).toBeLessThanOrEqual(8_000);
+  });
+
+  it("keeps jitter when Retry-After is above the cap", () => {
+    const tenSeconds = new ApiError(429, { code: "rate_limited" }, 10);
+    const low = rateLimitDelayMs(tenSeconds, 1, () => 0);
+    const high = rateLimitDelayMs(tenSeconds, 1, () => 0.999);
+    expect(low).toBe(7_400);
+    expect(high).toBeGreaterThan(low);
+    expect(high).toBeLessThanOrEqual(8_000);
+    expect(low).not.toBe(8_000);
+    expect(high).not.toBe(8_000);
+    // A fixed random inside the band is deterministic and still bounded.
+    expect(rateLimitDelayMs(tenSeconds, 1, () => 0.5)).toBe(7_700);
+    expect(
+      rateLimitDelayMs(new ApiError(429, { code: "rate_limited" }, 600), 1), //
+    ).toBeLessThanOrEqual(8_000);
+  });
+
+  it("treats the queued 503 as rate limiting, not a generic outage", () => {
+    expect(isRateLimited(new ApiError(429, { code: "rate_limited" }))).toBe(
+      true,
+    );
+    expect(isRateLimited(new ApiError(503, { code: "rate_limited" }))).toBe(
+      true,
+    );
+    expect(
+      isRateLimited(new ApiError(503, { code: "board_write_timeout" })),
+    ).toBe(false);
+    expect(isRateLimited(new Error("fetch failed"))).toBe(false);
+  });
+
+  it("explains the exhausted automatic retry without inviting a spin", () => {
+    const message = describeError(
+      new ApiError(429, { code: "rate_limited", retryAfter: 2 }),
+    );
+    expect(message).toMatch(/retried automatically/i);
+    expect(message).toMatch(/2s/);
+    expect(message).toMatch(/reduce the cadence/i);
+
+    const queued = describeError(
+      new ApiError(503, { code: "rate_limited", retryAfter: 3 }),
+    );
+    expect(queued).toMatch(/retried automatically/i);
+    expect(queued).toMatch(/3s/);
+    expect(queued).not.toMatch(/instance is unavailable/i);
   });
 });
 

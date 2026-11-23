@@ -27,7 +27,7 @@ import { SecurityAuditService } from "@/common/security-audit/security-audit.ser
 import { AttentionService } from "@/notifications/attention.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
-import { toAuthUser } from "./auth-user.mapper";
+import { AUTH_USER_SELECT, toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
 import { securityStamp } from "./security-stamp";
 import { revokeApiTokens } from "./token-revocation";
@@ -101,7 +101,7 @@ export class ApiTokenService {
     const tokenHash = this.hashToken(raw);
     const stored = await this.prisma.apiToken.findUnique({
       where: { tokenHash },
-      include: { user: true },
+      include: { user: { select: AUTH_USER_SELECT } },
     });
     if (
       !stored ||

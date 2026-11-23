@@ -19,6 +19,8 @@ interface LimitCounterProps {
    */
   position?: "static" | "below";
   className?: string;
+  /** Critical-remainder colour; AA settings pass their tinted text token. */
+  dangerClassName?: string;
 }
 
 /**
@@ -32,6 +34,7 @@ export function LimitCounter({
   id,
   position = "static",
   className,
+  dangerClassName = "text-danger",
 }: LimitCounterProps) {
   const { t } = useI18n();
   if (!showRemaining(length, limit)) return null;
@@ -45,7 +48,7 @@ export function LimitCounter({
         "text-[11px] tabular-nums",
         position === "below" &&
           "absolute left-0 top-full z-10 mt-0.5 max-w-full rounded bg-background/90 px-1 backdrop-blur-sm",
-        danger ? "font-medium text-danger" : "text-muted-foreground",
+        danger ? cn("font-medium", dangerClassName) : "text-muted-foreground",
         className,
       )}
       data-testid={testId}

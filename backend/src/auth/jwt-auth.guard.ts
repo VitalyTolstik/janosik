@@ -14,7 +14,9 @@ import {
   rateLimitException,
   type RateLimitDecision,
 } from "@/common/rate-limit";
+import { commandRateLimitCost } from "@/common/command-cost";
 import { consumeTokenRateLimit } from "@/common/token-rate-limit";
+import { effectiveAgentTokenRateLimit } from "@/config/rate-limit";
 import { ApiTokenService, type TokenScope } from "./api-token.service";
 import type { AuthPrincipal } from "./auth-principal";
 import { assertImpersonationAllows } from "./impersonation-policy";
@@ -52,6 +54,8 @@ interface GuardedRequest {
   url?: string;
   originalUrl?: string;
   headers: Record<string, string | undefined>;
+  /** Parsed JSON body, for the command cost of a batch/plan request. */
+  body?: unknown;
   user?: unknown;
   auth?: AuthPrincipal;
   /** TASK-166.10: budget consumed by this request, read by the request log. */
@@ -118,9 +122,17 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     // Per-token budget first, so an abusive token is counted even when the
     // request is then refused on scope grounds (TASK-157). TASK-166.10: the
     // same count now carries the headers and a precise Retry-After, so a
-    // well-behaved agent can pace itself instead of guessing.
+    // well-behaved agent can pace itself instead of guessing. TASK-200.3:
+    // the explicit limit is a ceiling, not an exemption — the tighter of it
+    // and the derived per-token share wins — and a batch is charged by its
+    // command count.
     if (scope.rateLimitPerMinute !== null) {
-      const decision = consumeTokenRateLimit(tokenId, scope.rateLimitPerMinute);
+      const decision = consumeTokenRateLimit(
+        tokenId,
+        effectiveAgentTokenRateLimit(scope.rateLimitPerMinute),
+        Date.now(),
+        commandRateLimitCost(request),
+      );
       request.rateLimit = decision;
       const response = context.switchToHttp().getResponse<Response>();
       applyRateLimitHeaders(response, decision);

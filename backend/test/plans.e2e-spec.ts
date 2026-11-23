@@ -251,9 +251,14 @@ describe("Plans and apply (e2e)", () => {
       });
   }
 
-  function decide(approvalId: string, planHash: string, decision = "approve") {
+  function decide(
+    approvalId: string,
+    planHash: string,
+    decision = "approve",
+    board = boardId,
+  ) {
     return server()
-      .post(`/api/v1/boards/${boardId}/approvals/${approvalId}/decision`)
+      .post(`/api/v1/boards/${board}/approvals/${approvalId}/decision`)
       .set(auth(ownerSession))
       .send({ decision, planHash });
   }
@@ -847,6 +852,233 @@ describe("Plans and apply (e2e)", () => {
     expect(otherApply.body.code).toBe("approval_mismatch");
     expect(otherApply.body.approvalId).toBe(approvalId);
     expect((await aggregate()).cards[otherCardId]?.title).toBe("Other delete");
+  });
+
+  it("recounts a replayed destructive+create plan against the real board", async () => {
+    const board = await createBoard("Replay create limits");
+    const columnId = await createColumn("Replay", board);
+    const victimId = await createCard(columnId, "Delete me", board);
+    const createOne = randomUUID();
+    const createTwo = randomUUID();
+    const commands: PlanCommand[] = [
+      planCommand({ type: "DELETE_CARD", cardId: victimId }),
+      planCommand({
+        type: "ADD_CARD",
+        newCardId: createOne,
+        columnId,
+        title: "Copy one",
+      }),
+      planCommand({
+        type: "ADD_CARD",
+        newCardId: createTwo,
+        columnId,
+        title: "Copy two",
+      }),
+    ];
+    const policy = (maxCardsPerRun: number) => ({
+      ...DEFAULT_BOARD_AGENT_POLICY,
+      maxCardsPerRun,
+    });
+    await prisma.board.update({
+      where: { id: board },
+      data: { agentPolicy: policy(2) as never },
+    });
+
+    // Seed the command rows as a browser plan (no approval), then remove the
+    // cards they created so a replay would look like two fresh creates.
+    const previewBody = (
+      await preview(commands, ownerSession, board).expect(200)
+    ).body as PlanPreviewDto;
+    await applyPlan(commands, previewBody.planHash, {
+      token: ownerSession,
+      board,
+    }).expect(200);
+    await command("DELETE_CARD", { cardId: createOne }, { board }).expect(200);
+    await command("DELETE_CARD", { cardId: createTwo }, { board }).expect(200);
+    await prisma.board.update({
+      where: { id: board },
+      data: { agentPolicy: policy(1) as never },
+    });
+
+    const pat = await createToken("replay-create-worker", "worker");
+    const approvalsBefore = await prisma.approvalRequest.count({
+      where: { boardId: board },
+    });
+    const refused = await applyPlan(commands, previewBody.planHash, {
+      token: pat.token,
+      board,
+    }).expect(409);
+
+    // The approval seam must count the two creates against the real board
+    // (soft-deleted ids are not in the aggregate); the content-free shell
+    // would have reported zero and returned approval_required instead.
+    expect(refused.body).toMatchObject({
+      code: "limit_exceeded",
+      limit: 1,
+      current: 2,
+    });
+    expect(
+      await prisma.approvalRequest.count({ where: { boardId: board } }),
+    ).toBe(approvalsBefore);
+  });
+
+  /**
+   * TASK-200.4 review: a plan may introduce the Done column itself. The
+   * preview replays `SET_BOARD_WORKFLOW`, and the apply-time pre-lock
+   * classification must load the real board rather than the content-free
+   * shell, or it classifies the recovery/move as generic and skips the done
+   * approval (or creates one of the wrong kind).
+   */
+  it("keeps a workflow+unarchive plan a done approval before and after the lock", async () => {
+    const board = await createBoard("Workflow unarchive plan");
+    const todo = await createColumn("Todo", board);
+    const done = await createColumn("Done", board);
+    await prisma.board.update({
+      where: { id: board },
+      data: {
+        agentPolicy: {
+          ...DEFAULT_BOARD_AGENT_POLICY,
+          requireApprovalFor: ["move_to_done"],
+        } as never,
+      },
+    });
+    const cardId = await createCard(todo, "Archived task", board);
+    await command("ARCHIVE_CARD", { cardId }, { board }).expect(200);
+    const admin = await createToken("workflow-unarchive-admin", "admin");
+    const commands = [
+      planCommand({
+        type: "SET_BOARD_WORKFLOW",
+        workflow: {
+          schemaVersion: 1,
+          enabled: true,
+          doneColumnIds: [done],
+          transitions: [
+            {
+              id: randomUUID(),
+              fromColumnId: todo,
+              toColumnId: done,
+              allowedRoles: ["ADMIN", "MEMBER"],
+            },
+          ],
+        },
+      }),
+      planCommand({ type: "UNARCHIVE_CARD", cardId, columnId: done }),
+    ];
+
+    const previewBody = (
+      await preview(commands, admin.token, board).expect(200)
+    ).body as PlanPreviewDto;
+    expect(previewBody.requirement).toMatchObject({
+      kind: "done",
+      requiresApproval: true,
+      requiredScope: "admin",
+    });
+    expect(previewBody.conflicts).toEqual([]);
+
+    const refused = await applyPlan(commands, previewBody.planHash, {
+      token: admin.token,
+      board,
+    }).expect(409);
+    expect(refused.body).toMatchObject({ code: "approval_required" });
+    const approvalId = refused.body.approvalId as string;
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: approvalId },
+      }),
+    ).toMatchObject({ kind: "done" });
+
+    await decide(approvalId, previewBody.planHash, "approve", board).expect(
+      200,
+    );
+    await applyPlan(commands, previewBody.planHash, {
+      token: admin.token,
+      board,
+      approvalId,
+    }).expect(200);
+    const after = await aggregate(board);
+    expect(after.workflow?.doneColumnIds).toEqual([done]);
+    expect(
+      after.columns.find((column) => column.id === done)?.cardIds,
+    ).toContain(cardId);
+  });
+
+  it("keeps a workflow+move plan a done approval when the column becomes Done", async () => {
+    const board = await createBoard("Workflow move plan");
+    const todo = await createColumn("Todo", board);
+    const done = await createColumn("Done", board);
+    await prisma.board.update({
+      where: { id: board },
+      data: {
+        agentPolicy: {
+          ...DEFAULT_BOARD_AGENT_POLICY,
+          requireApprovalFor: ["move_to_done"],
+        } as never,
+      },
+    });
+    const cardId = await createCard(todo, "Move task", board);
+    const admin = await createToken("workflow-move-admin", "admin");
+    const commands = [
+      planCommand({
+        type: "SET_BOARD_WORKFLOW",
+        workflow: {
+          schemaVersion: 1,
+          enabled: true,
+          doneColumnIds: [done],
+          transitions: [
+            {
+              id: randomUUID(),
+              fromColumnId: todo,
+              toColumnId: done,
+              allowedRoles: ["ADMIN", "MEMBER"],
+            },
+          ],
+        },
+      }),
+      planCommand({
+        type: "MOVE_CARD",
+        cardId,
+        fromColumnId: todo,
+        fromIndex: 0,
+        toColumnId: done,
+        toIndex: 0,
+      }),
+    ];
+
+    const previewBody = (
+      await preview(commands, admin.token, board).expect(200)
+    ).body as PlanPreviewDto;
+    expect(previewBody.requirement).toMatchObject({
+      kind: "done",
+      requiresApproval: true,
+      requiredScope: "admin",
+    });
+    expect(previewBody.conflicts).toEqual([]);
+
+    const refused = await applyPlan(commands, previewBody.planHash, {
+      token: admin.token,
+      board,
+    }).expect(409);
+    expect(refused.body).toMatchObject({ code: "approval_required" });
+    const approvalId = refused.body.approvalId as string;
+    expect(
+      await prisma.approvalRequest.findUniqueOrThrow({
+        where: { id: approvalId },
+      }),
+    ).toMatchObject({ kind: "done" });
+
+    await decide(approvalId, previewBody.planHash, "approve", board).expect(
+      200,
+    );
+    await applyPlan(commands, previewBody.planHash, {
+      token: admin.token,
+      board,
+      approvalId,
+    }).expect(200);
+    const after = await aggregate(board);
+    expect(after.workflow?.doneColumnIds).toEqual([done]);
+    expect(
+      after.columns.find((column) => column.id === done)?.cardIds,
+    ).toContain(cardId);
   });
 
   it("previews conflicts for stale versions and WIP limits, and warns on a no-op", async () => {

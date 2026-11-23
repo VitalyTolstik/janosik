@@ -149,6 +149,14 @@
 **Файлы:** `backend/src/config/rate-limit.ts`,
 `backend/src/common/*rate-limit*`, `mcp/src/client.ts`, `mcp/src/errors.ts`.
 
+**Статус:** реализовано в `feat/TASK-200.3-rate-budget`. Доска — высокий
+предохранительный потолок с непрерывным пополнением (`BOARD_RATE_LIMIT`,
+`max(12000, 2 × THROTTLE_LIMIT)`); справедливость — на бюджетах токена
+(`AGENT_TOKEN_RATE_LIMIT`) и сессии. Команды сверх потолка ждут
+`AGENT_COMMAND_QUEUE_MS` и получают `503 rate_limited` + `Retry-After`; MCP
+сам повторяет `429`/`503` с `Retry-After`, jitter и лимитом попыток, сохраняя
+`commandId`/`Idempotency-Key`.
+
 ---
 
 ### 200.4 — Убрать дубли aggregate на PAT-команде (P0)
@@ -171,6 +179,43 @@
 
 **Файлы:** `backend/src/commands/commands.service.ts`,
 `backend/src/auth/api-token.service.ts`, `backend/src/boards/board-aggregate.ts`.
+
+**Реализовано (TASK-200.4):**
+- Pre-lock снимок грузится только когда он реально нужен: `classifyPlan`
+  читает доску лишь для done-переходов/созданий, а card-create лимит —
+  только для `ADD_CARD`/`DUPLICATE_*`. Обычный `UPDATE_CARD`/claim/delete
+  классифицируется на `emptyBoardAggregate`, без запросов к
+  `Column`/`Label`/`Card`/`CardLink`.
+- План, который сам меняет workflow/колонки (`SET_BOARD_WORKFLOW`,
+  `ADD_COLUMN`/`DELETE_COLUMN`/`MOVE_COLUMN`, restore/archive колонок),
+  всегда берёт реальный снимок: `classifyPlan` сначала реплеит эти команды,
+  и `UNARCHIVE_CARD`/`MOVE_CARD` после них может стать done-переходом даже
+  на доске без done-колонок.
+- `loadBoardAggregate` принимает уже прочитанную строку `Board`: в
+  транзакции она одна и служит и для plan-limits, и для running state.
+  Обычный edit-replay не грузит aggregate в транзакции; create/workflow
+  replay оставляет один pre-lock снимок, потому что его всё ещё нужно
+  классифицировать/посчитать. Между pre-lock и tx нет второй/третьей
+  полной загрузки.
+- `ApprovalsService.ensureCommandApproval` принимает этот же снимок, чтобы
+  approval-seam не делал ещё одну загрузку ради `maxCardsPerRun`; планы с
+  `ADD_CARD`/`DUPLICATE_*` берут реальный снимок даже при полном replay,
+  иначе soft-deleted карточки занижали бы лимит.
+- PAT `authenticate` выбирает 12 полей пользователя вместо `include: user`
+  целиком; `disabledAt`/`expiresAt`/`revokedAt` читаются как раньше.
+- Тесты: `test/commands-aggregate-load.e2e-spec.ts` (spy на
+  `loadBoardAggregate`: 1 загрузка на fresh-команду и батч, 0 на обычный
+  edit-replay, 1 pre-lock на done workflow-replay, 0 pre-lock для
+  board-independent destructive-классификации), `board-aggregate.spec.ts`
+  (переиспользование строки `Board`), `plans.e2e-spec.ts`
+  (workflow+unarchive/move как `done`-approval, replay create-лимита).
+
+Статический счёт запросов на одну PAT `UPDATE_CARD` (без run, доска без
+workflow): было ≈31, стало ≈20 (−35%); обычный edit-replay — ≈14 → 4;
+батч из 5 команд — один aggregate вместо трёх. Safety-случаи (done
+workflow, create, смена workflow планом) добавляют один pre-lock снимок,
+но не возвращают вторую загрузку в транзакции. Это mock/статическая оценка;
+`pg_stat_statements` на живом стенде остаётся для приёмки 200.15.
 
 ---
 
@@ -545,7 +590,9 @@ S2-harness.
    targeted intents)? Это самые рычаговые изменения.
 7. Какая staleness допустима для summary (100–500 мс)?
 8. Какой retention нужен для агентских команд: 30 дней, 7 дней, архив?
-9. 600/min board budget — продуктовое требование или дефолт?
+9. 600/min board budget — продуктовое требование или дефолт? **Решено в
+   200.3:** safety ceiling `max(12000, 2 × THROTTLE_LIMIT)` + взвешенные
+   бюджеты токена/сессии.
 10. Какой 409/retry budget считаем нормой?
 
 ---

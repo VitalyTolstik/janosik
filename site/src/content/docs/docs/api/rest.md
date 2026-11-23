@@ -1153,10 +1153,12 @@ names the cause.
 | `403`  | `code: "pat_forbidden"`: a personal API token on a session-only route                                                                                     |
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
 | `405`  | a write against the public share API                                                                                                                  |
+| `408`  | `code: "request_timeout"`: the command was aborted before it could be applied; nothing was applied; `X-RateLimit-Queued-Ms` reports the queue wait |
 | `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |
 | `429`  | a rate limit was exceeded; `code: "login_backoff"` during a login backoff                                                                                 |
+| `503`  | `code: "rate_limited"` when a command had insufficient board tokens or a full per-board queue; retry after `Retry-After` with the same `commandId`                             |
 | `503`  | maintenance mode; a failed health check; `code: "board_write_timeout"` when a board write timed out (safe to retry)                                       |
 | `503`  | `POST /boards` after the board was created: `code: "starter_cleanup_failed"`, `"starter_read_failed"` or `"board_read_failed"` with `retryable: false` and `details.boardId`; open that board instead of creating another |

@@ -150,7 +150,24 @@ describe("ApiTokenService", () => {
 
       expect(prismaMock.apiToken.findUnique).toHaveBeenCalledWith({
         where: { tokenHash: sha256("raw-token") },
-        include: { user: true },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              displayName: true,
+              avatarColor: true,
+              avatarPath: true,
+              passwordHash: true,
+              disabledAt: true,
+              emailVerifiedAt: true,
+              notifyDigest: true,
+              notifyAttention: true,
+              locale: true,
+              createdAt: true,
+            },
+          },
+        },
       });
       expect(user).toEqual({
         id: "user-1",
