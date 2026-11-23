@@ -541,6 +541,35 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     expect((await identity(String(after.headers.etag))).status).toBe(304);
   });
 
+  it("invalidates the ETag on a direct claim release", async () => {
+    await command({
+      type: "CLAIM_CARD",
+      cardId,
+      claimedBy: ownerId,
+      leaseUntil: Date.now() + 900_000,
+    });
+    const before = await identity();
+    expect(bodyOf(before).cards[cardId]?.claimedBy).toBe(ownerId);
+
+    // A TOKEN_REVOKED/session-end path clears the Card claim outside the
+    // command loop; the Card trigger must still advance the revision.
+    await prisma.card.update({
+      where: { id: cardId },
+      data: {
+        claimedBy: null,
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil: null,
+      },
+    });
+
+    const after = await identity(String(before.headers.etag));
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    expect(bodyOf(after).cards[cardId]?.claimedBy).toBeUndefined();
+    expect((await identity(String(after.headers.etag))).status).toBe(304);
+  });
+
   it("invalidates the ETag when a lapsed claim is swept", async () => {
     await command({
       type: "CLAIM_CARD",
