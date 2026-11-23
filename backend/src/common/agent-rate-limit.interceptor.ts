@@ -220,6 +220,10 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
             );
           }
           if (error instanceof BoardCommandQueueAbortedError) {
+            response.setHeader(
+              "X-RateLimit-Queued-Ms",
+              Math.max(0, Math.round(Date.now() - queuedAt)),
+            );
             throw new HttpException(
               "The request was aborted before its command was queued",
               HttpStatus.REQUEST_TIMEOUT,

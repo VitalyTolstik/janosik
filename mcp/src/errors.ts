@@ -74,9 +74,9 @@ export function rateLimitDelayMs(
       ? Math.max(0, error.retryAfterSeconds * 1_000)
       : 0;
   const r = Math.min(1, Math.max(0, random()));
-  if (retryAfterMs > RATE_LIMIT_MAX_DELAY_MS) {
-    // The server asks for longer than we will wait: use the cap window with
-    // 0–600 ms of jitter, never a fixed 8 000 ms that synchronises a swarm.
+  if (retryAfterMs >= RATE_LIMIT_MAX_DELAY_MS) {
+    // The server asks for the cap or longer: use the cap window with 0–600 ms
+    // of jitter, never a fixed 8 000 ms that synchronises a swarm.
     return RATE_LIMIT_CAP_BASE_MS + Math.floor(r * RATE_LIMIT_CAP_JITTER_MS);
   }
   if (retryAfterMs > 0) {

@@ -11,9 +11,10 @@ import { COMMAND_BATCH_MAX, isBoardActionType } from "@janosik/shared";
  * validation pipe after this point and must not be able to drain a budget
  * beyond the work the service could actually do.
  *
- * A body that is not a well-shaped `commands[]` of 1–100 entries costs one
- * unit, not the array length: otherwise an oversized array could spend 100
- * units before the validation pipe answers `400`.
+ * A body that is not a well-shaped `commands[]` of 1–100 entries, or names an
+ * unknown action type, costs one unit, not the array length. A known type with
+ * missing required fields still costs its command count; the validation pipe
+ * rejects it before the service applies any work.
  */
 const BATCH_PATHS = [
   /^\/api\/v1\/boards\/[^/]+\/commands\/batch\/?$/,

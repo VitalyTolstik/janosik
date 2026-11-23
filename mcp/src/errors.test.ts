@@ -277,6 +277,15 @@ describe("rate-limit retry policy (TASK-200.3)", () => {
     expect(high).toBeLessThanOrEqual(8_000);
   });
 
+  it("jitters exactly 8 s instead of returning a fixed cap", () => {
+    const eight = new ApiError(429, { code: "rate_limited" }, 8);
+    expect(rateLimitDelayMs(eight, 1, () => 0)).toBe(7_400);
+    expect(rateLimitDelayMs(eight, 1, () => 0.5)).toBe(7_700);
+    const high = rateLimitDelayMs(eight, 1, () => 1);
+    expect(high).toBe(8_000);
+    expect(high).toBeLessThanOrEqual(8_000);
+  });
+
   it("keeps jitter when Retry-After is above the cap", () => {
     const tenSeconds = new ApiError(429, { code: "rate_limited" }, 10);
     const low = rateLimitDelayMs(tenSeconds, 1, () => 0);

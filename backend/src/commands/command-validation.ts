@@ -18,7 +18,7 @@ type CommandActionType = Exclude<
   "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD"
 >;
 
-const ACTION_REGISTRY: Record<CommandActionType, true> = {
+export const ACTION_REGISTRY: Record<CommandActionType, true> = {
   RENAME_BOARD: true,
   SET_BOARD_COLUMN_STYLE: true,
   SET_BOARD_WORKFLOW: true,

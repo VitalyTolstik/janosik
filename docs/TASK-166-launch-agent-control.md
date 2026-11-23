@@ -1337,6 +1337,7 @@ Every API error (new and changed in 166.4) returns:
 | `idempotency_conflict` | 409 | false | same key, different body | `key` |
 | `idempotency_in_progress` | 409 | true | first record is still running or its outcome is uncertain | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
+| `request_timeout` | 408 | true | client disconnected while a command waited in the board queue; nothing was applied | `retryAfter` |
 | `rate_limited` | 429, 503 (queued command) | true | global/per-token/per-agent/board limit | `retryAfter`, `limit`, `scope` |
 | `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |
 | `not_found` | 404 | false | entity/board/approval/run not found | `resource` |
@@ -1369,8 +1370,9 @@ batch/DTO is `validation_failed` (400); an oversized body is
 - `X-RateLimit-Remaining` — remaining budget;
 - `X-RateLimit-Reset` — Unix seconds when the bucket is whole again (fixed
   window end, or a full continuously refilling board bucket);
-- `RateLimit-Reset` — seconds until the next admission (the next board token,
-  or the fixed-window end);
+- `RateLimit-Reset` — seconds until **this request's weighted cost** can be
+  admitted (100 tokens for a 100-command batch, not the next single board
+  token), or the fixed-window end;
 - `Retry-After` — seconds, required on `429 rate_limited` and on the queued
   `503 rate_limited`;
 - `X-RateLimit-Queued-Ms` — total time a command spent in the per-board queue.
@@ -1391,9 +1393,13 @@ appears in the envelope (`rate_limited`, `retryable`, `retryAfter`, `limit`,
 `scope`, `requestId`). A batch or plan apply spends `commands.length` from the
 board, token and session budgets. Commands over the board ceiling wait up to
 `AGENT_COMMAND_QUEUE_MS` (default `1500`, max `30000`) in a per-board queue
-(64 commands / 32 MiB), then answer `503 rate_limited` with
-`X-RateLimit-Queued-Ms` (`0` on an immediate queue-cap rejection); other routes
-answer `429` immediately (including `plans/apply`).
+(64 commands / 32 MiB / chain bound), then answer `503 rate_limited` with
+`X-RateLimit-Queued-Ms` (`0` on an immediate queue-cap rejection: depth, byte
+or chain limit); other routes answer `429` immediately (including
+`plans/apply`). **Upgrade note:** pinned `AGENT_SESSION_RATE_LIMIT`,
+`AGENT_TOKEN_RATE_LIMIT` and `BOARD_RATE_LIMIT` values from 1 to 99 now fail
+startup; use 0 (auto) or at least 100. A per-key `rateLimitPerMinute` of 1–99
+remains valid but cannot submit a 100-command batch.
 
 The request log is one JSON line per finished API response with
 `requestId`, method/path/status/duration, `actorType`/`actorId`, `boardId`,

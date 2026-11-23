@@ -3415,7 +3415,8 @@ components:
 
         - `rate_limited`: insufficient board tokens after waiting up to
           `AGENT_COMMAND_QUEUE_MS`, or the per-board command queue is full by
-          depth or retained bytes (64 commands / 32 MiB of decompressed JSON).
+          depth, retained bytes or chained waiters (64 commands / 32 MiB of
+          decompressed JSON / bounded chain).
           Nothing was applied; `Retry-After` is set,
           the envelope carries `scope: "board"`, and `X-RateLimit-Queued-Ms`
           reports the total queue wait (`0` for an immediate queue-cap

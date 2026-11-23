@@ -313,13 +313,13 @@ behaviour.
   tokens and queue capacity, then answer `503` with
   `code: "rate_limited"`, `Retry-After` and `X-RateLimit-Queued-Ms` (total time
   spent in the per-board queue, including the wait behind earlier commands;
-  `0` when the depth/byte cap rejects immediately). Reads and other routes
+  `0` when the depth/byte/chain cap rejects immediately). Reads and other routes
   answer `429`. `POST /boards/:id/plans/apply` is not queued and answers `429`
   immediately, but still spends its command count. A command refused this way
   was not applied, so retrying it with the same `commandId` stays idempotent.
 - A batch or plan apply is charged by `commands.length` on the board, token
-  **and session** budgets. The queue keeps at most 64 commands and 32 MiB of
-  request bodies per board. A pinned `AGENT_*` budget is either `0` (auto) or
+  **and session** budgets. The queue keeps at most 64 commands, 32 MiB of
+  request bodies and a bounded promise chain per board. A pinned `AGENT_*` budget is either `0` (auto) or
   at least `100`, so a valid 100-command batch can always fit.
 
 A response carries the budget that counted the request:

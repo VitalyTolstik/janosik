@@ -233,12 +233,14 @@ the same `commandId`: the idempotency key makes the retry safe.
 A `503` with `rate_limited` is backpressure, not an outage. A command over the
 shared board budget waits up to `AGENT_COMMAND_QUEUE_MS` (default `1500` ms,
 maximum `30000`) for enough board tokens and queue capacity; if the budget or
-the per-board queue (64 commands / 32 MiB) stays exhausted, nothing is applied
+the per-board queue (64 commands / 32 MiB / bounded chain) stays exhausted,
+nothing is applied
 and the reply carries `Retry-After`, the `rate_limited` envelope with
 `scope: "board"`, and `X-RateLimit-Queued-Ms` with the total queue wait (`0`
 when the queue cap rejects immediately). Retrying the same `commandId` is
 safe. A batch is charged by `commands.length` on the board, token **and
-session** budgets.
+session** budgets. A queued command or batch that succeeds returns `200` with
+`X-RateLimit-Queued-Ms` reporting the total queue wait.
 
 Commands that reference unknown entities no-op exactly like the reducer and
 are still recorded. A replay returns the stored no-op result.

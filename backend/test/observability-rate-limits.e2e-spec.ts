@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
@@ -8,6 +9,12 @@ import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RequestLogService } from "@/common/request-log";
 import { consumeBoardRateLimit, resetRateLimits } from "@/common/rate-limit";
+import {
+  BOARD_COMMAND_QUEUE_MAX_BYTES,
+  boardCommandQueueStats,
+  enqueueBoardCommand,
+  resetBoardCommandQueues,
+} from "@/common/board-rate-limit";
 import { TrafficService } from "@/common/traffic.service";
 import { recentQueueJobs, resetQueueJobLog } from "@/ops/queue-core";
 import {
@@ -84,6 +91,7 @@ describe("Observability and agent rate limits (e2e)", () => {
     setAgentTokenRateLimit(null);
     setAgentCommandQueueMs(null);
     resetRateLimits();
+    resetBoardCommandQueues();
     await wipeAll(prisma);
     await app.close();
   });
@@ -94,6 +102,7 @@ describe("Observability and agent rate limits (e2e)", () => {
     setAgentTokenRateLimit(null);
     setAgentCommandQueueMs(null);
     resetRateLimits();
+    resetBoardCommandQueues();
   });
 
   const server = () => request(app.getHttpServer());
@@ -350,6 +359,63 @@ describe("Observability and agent rate limits (e2e)", () => {
       retryable: true,
       scope: "session",
     });
+  });
+
+  it("charges a gzip batched body by its decompressed queue bytes", async () => {
+    setBoardRateLimit(1);
+    setAgentCommandQueueMs(5_000);
+    const pat = await createToken("gzip-batch");
+    consumeBoardRateLimit(boardId, 1);
+
+    const commands = Array.from({ length: 100 }, (_, index) => ({
+      commandId: `gzip-cmd-${index}`,
+      action: {
+        boardId,
+        at: Date.now(),
+        type: "RENAME_BOARD",
+        title: `Gzip batch ${index} ${"g".repeat(2_048)}`,
+      },
+    }));
+    const parsed = Buffer.from(JSON.stringify({ commands }));
+    const compressed = gzipSync(parsed);
+    expect(parsed.length).toBeGreaterThan(100_000);
+    expect(compressed.length).toBeLessThan(parsed.length / 10);
+
+    const fillBytes = BOARD_COMMAND_QUEUE_MAX_BYTES - compressed.length - 1;
+    expect(fillBytes).toBeGreaterThan(0);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const filler = enqueueBoardCommand(boardId, () => gate, {
+      bytes: fillBytes,
+      maxBytes: BOARD_COMMAND_QUEUE_MAX_BYTES,
+    });
+    try {
+      const started = Date.now();
+      const response = await server()
+        .post(`/api/v1/boards/${boardId}/commands/batch`)
+        .set(auth(pat))
+        .set("Content-Type", "application/json")
+        .set("Content-Encoding", "gzip")
+        .serialize((data) => data)
+        .send(compressed);
+      expect(response.status).toBe(503);
+      expect(response.body).toMatchObject({
+        code: "rate_limited",
+        retryable: true,
+        scope: "board",
+      });
+      expect(response.headers["x-ratelimit-queued-ms"]).toBe("0");
+      // A compressed Content-Length would fit the 1 KiB headroom and wait for
+      // the 5 s queue; the decompressed bytes must reject it immediately.
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(boardCommandQueueStats(boardId).bytes).toBe(fillBytes);
+    } finally {
+      release();
+      await filler;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   });
 
   it("queues a command until the next board token and reports the wait", async () => {

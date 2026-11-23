@@ -399,6 +399,9 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
 
     const error = asHttpException(await pending);
     expect(error.getStatus()).toBe(408);
+    expect(Number(second.headers.get("X-RateLimit-Queued-Ms"))).toBeLessThan(
+      100,
+    );
     expect(handler.handle).not.toHaveBeenCalled();
     await new Promise((resolve) => setImmediate(resolve));
     expect(trackedBoardCommandQueues()).toBe(0);

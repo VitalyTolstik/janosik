@@ -112,7 +112,7 @@ highest sequence from its results and the batch run ID. Use `seq` as
 `retryable`, `requestId` and conflict details. The MCP server retries the API
 call automatically for a `429 rate_limited` (and the queued `503
 rate_limited`) up to four attempts, adding jitter on top of `Retry-After`;
-a pause is never shorter than the server asked for unless it exceeds eight
+a pause is never shorter than the server asked for unless it is at least eight
 seconds, where it uses 7.4 s plus up to 600 ms of jitter (each pause is thus
 ≤8 s), before returning the error; a command retry keeps its `commandId`.
 Retry only `retryable: true`
