@@ -383,6 +383,7 @@ export class BoardsController {
       });
       if (result.status === "aborted") return;
       res.setHeader("Cache-Control", "no-store");
+      if (result.held) res.setHeader("X-Ready-Held", "1");
       if (result.status === "timeout") {
         res.setHeader("X-Board-Seq", String(result.seq));
         if (!res.headersSent && !res.destroyed) {

@@ -48,7 +48,6 @@ const MAX_RECENT = 200;
 const SHARE_TOKEN_PATH = /(\/share\/)[^/?#]+/;
 const BOARD_PATH = /^\/api\/v1\/(?:admin\/)?boards\/([^/]+?)(?:\/|$)/;
 const BOARD_NON_ID_SEGMENTS = new Set(["import", "ready", "search"]);
-const READY_POLL_PATH = /^\/api\/v1\/boards\/[^/]+\/ready\/?$/;
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Public share tokens are credentials: keep them out of every log line. */
@@ -58,19 +57,17 @@ export function sanitizeRequestPath(raw: string): string {
 }
 
 /**
- * A held ready/work poll is not interactive latency. Detect it before the
- * query string is sanitized away so traffic metrics can leave its hold time
- * out of the p50/p95 (the structured log still carries the duration).
+ * Only a held ready poll that actually produced a success (`200` after a
+ * wake or `204` on timeout) is excluded from API latency. Immediate
+ * snapshots, validation failures and capacity/rate-limit `503`s stay in the
+ * latency distribution. The controller marks a real hold with
+ * `X-Ready-Held: 1`.
  */
-export function isReadyLongPoll(
-  method: string,
-  rawUrl: string | undefined,
-): boolean {
-  if (rawUrl === undefined || method.toUpperCase() !== "GET") return false;
-  const [path, query = ""] = rawUrl.split("?");
-  if (!READY_POLL_PATH.test(path ?? "")) return false;
-  const wait = new URLSearchParams(query).get("wait");
-  return wait !== null && /^\d+$/.test(wait) && Number(wait) > 0;
+export function isHeldReadyPoll(status: number, heldHeader: unknown): boolean {
+  return (
+    (status === 200 || status === 204) &&
+    (heldHeader === "1" || (Array.isArray(heldHeader) && heldHeader[0] === "1"))
+  );
 }
 
 /** Path/method/status → operation counter; bodies are never inspected. */
@@ -140,9 +137,9 @@ export function buildRequestLogEntry(
     (pathBoardId === undefined || BOARD_NON_ID_SEGMENTS.has(pathBoardId)
       ? undefined
       : pathBoardId);
-  const longPoll = isReadyLongPoll(
-    request.method ?? "GET",
-    request.originalUrl ?? request.url,
+  const longPoll = isHeldReadyPoll(
+    response.statusCode,
+    response.getHeader("X-Ready-Held"),
   );
   const runId =
     headerValue(response.getHeader("X-Run-Id")) ??
