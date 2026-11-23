@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   API_ERROR_CODES,
+  ATTENTION_NOTIFICATION_TYPES,
   USER_DATA_EXPORT_STATUSES,
 } from "../shared/src/api.ts";
 import {
@@ -40,6 +41,17 @@ test("publishes the same error codes as the shared contract and describes token 
     patch.responses[409].content["application/json"].schema.allOf[1].properties
       .code.const,
     "token_revoked",
+  );
+});
+
+test("keeps the attention type enum in sync with the shared contract", async () => {
+  const { spec } = await validateOpenApi();
+  const { AttentionNotification } = spec.components.schemas;
+  assert.deepEqual(AttentionNotification.properties.type.enum, [
+    ...ATTENTION_NOTIFICATION_TYPES,
+  ]);
+  assert.ok(
+    AttentionNotification.properties.type.enum.includes("card.assigned"),
   );
 });
 

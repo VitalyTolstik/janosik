@@ -117,6 +117,19 @@ export function attentionTarget(
     );
   }
 
+  if (item.type === "card.assigned") {
+    if (boardId === null) return null;
+    // A single assignment opens that card. A coalesced batch has no single
+    // card to focus, so the board filter lists exactly the cards now assigned
+    // to the recipient (TASK-177.20).
+    if (cardId !== null) return cardTarget(boardId, cardId);
+    const assigneeId = stringField(item.data, "assigneeId");
+    if (assigneeId === null) return null;
+    const query = new URLSearchParams({ "f.assignee": assigneeId });
+    const path = `${routes.board(boardId)}?${query.toString()}`;
+    return { kind: "board", path, href: appPath(path) };
+  }
+
   if (item.type.startsWith("approval.")) {
     if (boardId === null) return null;
     if (role === "ADMIN") {

@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-177.20.3a/3b assignment notifications and due-mail links. A committed
+  `SET_CARD_ASSIGN` now produces a deduplicated `card.assigned` attention row
+  for the new assignee, but only when the board/card are live and not archived,
+  the recipient is an active non-disabled member, and the assignee is not the
+  actor. Assignments are coalesced per recipient per command batch; the last
+  assignment per card wins, a trailing unassign or a no-op notifies nobody, and
+  replays never fan out again. The dedup key is
+  `card.assigned:<minSeq>-<maxSeq>:<recipientId>` (one row per recipient). A
+  single card opens its dialog; a batch opens the board filtered with
+  `f.assignee=<assigneeId>`. The EN/RU `attention_card_assigned` letter
+  respects `notifyAttention` while the inbox row is always written; scheduled
+  digests, governed by `notifyDigest`, label the category as assignment
+  updates. The bounded inbox/letter body names the actor and a few card titles
+  plus “and N more”. Due reminder letters now link each listed card absolutely
+  through `PUBLIC_ORIGIN` and `UI_BASE` (escaped, capped with “and N more”,
+  with plain URLs in the text alternative) while keeping `ReminderSent`
+  dedupe, opt-out and UTC labels; no in-app due rows were added. API EN/RU
+  docs, user guide, admin template docs, OpenAPI enum and CHANGELOG are
+  updated.
+
 - TASK-177.19 bulk card actions (U-08). Board and table views gain a
   selection mode with checkboxes, Shift ranges across columns, `X` on the
   keyboard cursor and `Ctrl/⌘+A` for all visible cards, capped at 100. The

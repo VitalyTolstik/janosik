@@ -6,6 +6,7 @@ import {
   CommandsService,
   MAX_COMMAND_BYTES_INTERNAL,
   actionFingerprint,
+  changedCardAssignments,
 } from "./commands.service";
 
 const row = (seq: number) => ({
@@ -250,6 +251,51 @@ describe("CommandsService.applyBatch size caps", () => {
     // The board writer — the per-board queue and the advisory lock — was
     // never entered: the whole batch failed its cheap validation first.
     expect(boardWrite.run).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TASK-177.20: only freshly written, changed assignments reach the fan-out.
+ * The helper collapses a batch to its last write per card and keeps a trailing
+ * unassign so the service can cancel an earlier assignment.
+ */
+describe("changedCardAssignments", () => {
+  const assign = (
+    seq: number,
+    cardId: string,
+    assigneeId: string | null,
+    touches = [`card:${cardId}`],
+  ) => ({
+    seq,
+    action: { type: "SET_CARD_ASSIGN" as const, cardId, assigneeId, at: 1 },
+    touches,
+  });
+
+  it("keeps the last assignment per card, including a trailing unassign", () => {
+    expect(
+      changedCardAssignments([
+        assign(1, "c1", "a"),
+        assign(2, "c1", "b"),
+        assign(3, "c2", "a"),
+        assign(4, "c2", null),
+      ]),
+    ).toEqual([
+      { cardId: "c1", assigneeId: "b", seq: 2 },
+      { cardId: "c2", assigneeId: null, seq: 4 },
+    ]);
+  });
+
+  it("ignores a no-op assignment with no card touch and any non-assignment command", () => {
+    expect(
+      changedCardAssignments([
+        assign(1, "c1", "a", []),
+        {
+          seq: 2,
+          action: { type: "RESTORE_CARD", card: {} as never, at: 1 },
+          touches: ["card:c1"],
+        },
+      ]),
+    ).toEqual([]);
   });
 });
 

@@ -261,6 +261,44 @@ export function emailChangedNoticeEmail(
   };
 }
 
+/** English singular/plural for a numeric count. */
+function countForm(count: string | number, one: string, many: string): string {
+  return Number(count) === 1 ? one : many;
+}
+
+/** Russian plural form for a count (`1 изменение`, `2 изменения`, `5 изменений`). */
+function russianForm(
+  count: string | number,
+  one: string,
+  few: string,
+  many: string,
+): string {
+  const value = Number(count);
+  if (!Number.isFinite(value)) return many;
+  const form = new Intl.PluralRules("ru").select(Math.abs(value));
+  return form === "one" ? one : form === "few" ? few : many;
+}
+
+/** Pre-renderable count phrase for a digest; the default editor uses it. */
+export function digestCountLabel(
+  count: string | number,
+  locale: MailLocale,
+): string {
+  return locale === "ru"
+    ? `${count} ${russianForm(count, "изменение", "изменения", "изменений")}`
+    : `${count} ${Number(count) === 1 ? "change" : "changes"}`;
+}
+
+/** Pre-renderable count phrase for a due reminder; the default editor uses it. */
+export function dueCountLabel(
+  count: string | number,
+  locale: MailLocale,
+): string {
+  return locale === "ru"
+    ? `${count} ${russianForm(count, "задача", "задачи", "задач")}`
+    : `${count} ${Number(count) === 1 ? "task" : "tasks"}`;
+}
+
 /**
  * Periodic board digest (TASK-72): what changed on a board in the window.
  * `{{board}}`, `{{count}}`, `{{hours}}` are editable placeholders. TASK-166.9
@@ -284,22 +322,39 @@ export function digestEmail(
         ? ""
         : `\n\n${htmlToText(attention)}`
       : digestAttentionText(attention, locale);
+  const preRendered = count === "{{countLabel}}";
+  const countLabel = preRendered
+    ? "{{countLabel}}"
+    : digestCountLabel(count, locale);
   if (locale === "ru") {
     return {
       subject: `${BRAND}: ${board} — изменений: ${count}`,
-      text: `В доске «${board}» за последние ${hours} ч было ${count} изменений.${attentionText}`,
+      text: `В доске «${board}» за последние ${hours} ч было ${countLabel}.${attentionText}`,
       html: shell(
         "Изменения на доске",
-        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">В доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч было <b>${count}</b> изменений.</p>${attentionHtml}`,
+        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">В доске <b>${escapeHtml(String(board))}</b> за последние <b>${hours}</b> ч было <b>${countLabel}</b>.</p>${attentionHtml}`,
       ),
     };
   }
+  if (preRendered) {
+    // Editable default: neutral verbs, so filling `1` never yields
+    // “there were 1 change”. `countLabel` is pre-rendered by the service.
+    return {
+      subject: `${BRAND}: ${board} — ${countLabel}`,
+      text: `Board activity on "${board}" in the last ${hours} h: ${countLabel}.${attentionText}`,
+      html: shell(
+        "Board activity",
+        `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Board activity on <b>${escapeHtml(String(board))}</b> in the last <b>${hours}</b> h: <b>${countLabel}</b>.</p>${attentionHtml}`,
+      ),
+    };
+  }
+  const verb = countForm(count, "was", "were");
   return {
-    subject: `${BRAND}: ${board} — ${count} change(s)`,
-    text: `In "${board}" there were ${count} change(s) in the last ${hours} h.${attentionText}`,
+    subject: `${BRAND}: ${board} — ${countLabel}`,
+    text: `In "${board}" there ${verb} ${countLabel} in the last ${hours} h.${attentionText}`,
     html: shell(
       "Board activity",
-      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there were <b>${count}</b> change(s) in the last <b>${hours}</b> h.</p>${attentionHtml}`,
+      `<p style="margin:0;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">In <b>${escapeHtml(String(board))}</b> there ${verb} <b>${countLabel}</b> in the last <b>${hours}</b> h.</p>${attentionHtml}`,
     ),
   };
 }
@@ -340,6 +395,10 @@ const DIGEST_ATTENTION_LABELS: Record<
     ru: "агентов ждут человека",
   },
   "comment.mention": { en: "mentions", ru: "упоминаний" },
+  "card.assigned": {
+    en: "assignment updates",
+    ru: "обновлений о назначениях",
+  },
   "claim.expired": { en: "expired claims", ru: "истёкших захватов" },
   "quota.exceeded": { en: "limit warnings", ru: "предупреждений о лимитах" },
   "token.revoked": { en: "revoked API keys", ru: "отозванных API-ключей" },
@@ -382,22 +441,48 @@ export function dueReminderEmail(
   tasksHtml: string,
   locale: MailLocale,
 ): { subject: string; text: string; html: string } {
+  const preRendered = count === "{{countLabel}}";
+  const countLabel = preRendered
+    ? "{{countLabel}}"
+    : dueCountLabel(count, locale);
   if (locale === "ru") {
+    const heading =
+      Number(count) === 1
+        ? "Задача с приближающимся сроком"
+        : "Задачи с приближающимся сроком";
     return {
-      subject: `${BRAND}: скоро срок у ${count} задач`,
-      text: `Задачи с приближающимся сроком:\n${htmlToText(tasksHtml)}`,
+      subject: `${BRAND}: ${countLabel} с приближающимся сроком`,
+      text: `${heading}:\n${htmlToText(tasksHtml)}`,
       html: shell(
         "Скоро срок",
-        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Задачи с приближающимся сроком:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${heading}:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
       ),
     };
   }
+  if (preRendered) {
+    // Editable default: neutral “Due soon: N task(s)” wording through the
+    // pre-rendered label, so filling `1` cannot say “1 tasks” or “Tasks”.
+    return {
+      subject: `${BRAND}: ${countLabel} due soon`,
+      text: `Due soon: ${countLabel}\n${htmlToText(tasksHtml)}`,
+      html: shell(
+        "Due soon",
+        `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Due soon: <b>${countLabel}</b></p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      ),
+    };
+  }
+  const heading = countForm(count, "Task", "Tasks");
+  const intro = countForm(
+    count,
+    "Task with an approaching due date",
+    "Tasks with an approaching due date",
+  );
   return {
-    subject: `${BRAND}: ${count} task(s) due soon`,
-    text: `Tasks due soon:\n${htmlToText(tasksHtml)}`,
+    subject: `${BRAND}: ${countLabel} due soon`,
+    text: `${heading} due soon:\n${htmlToText(tasksHtml)}`,
     html: shell(
-      "Tasks due soon",
-      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">Tasks with an approaching due date:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
+      heading === "Task" ? "Task due soon" : "Tasks due soon",
+      `<p style="margin:0 0 8px 0;font-size:14px;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${intro}:</p><ul style="margin:0;padding-left:20px;font-size:14px;line-height:1.6;color:#3f3f46;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;">${tasksHtml}</ul>`,
     ),
   };
 }
@@ -419,6 +504,7 @@ export const ATTENTION_EMAIL_TEMPLATE_KEYS: Record<
   "agent.blocked": "attention_agent_blocked",
   "agent.needs_human": "attention_agent_needs_human",
   "comment.mention": "attention_comment_mention",
+  "card.assigned": "attention_card_assigned",
   "claim.expired": "attention_claim_expired",
   "quota.exceeded": "attention_quota_exceeded",
   "token.revoked": "attention_token_revoked",
@@ -434,6 +520,10 @@ export interface AttentionEmailVars {
   action?: string;
   actor?: string;
   agent?: string;
+  /** Pre-rendered card titles for an assignment letter (bounded list). */
+  cards?: string;
+  /** How many cards the assignment covers (singular/plural copy). */
+  count?: number | string;
   comment?: string;
   limit?: string | number;
   current?: string | number;
@@ -508,6 +598,13 @@ export function attentionEmail(
   const summary = escapeHtml(vars.summary ?? "");
   const agent = escapeHtml(vars.agent ?? "");
   const actor = escapeHtml(vars.actor ?? "");
+  const cards = escapeHtml(vars.cards ?? "");
+  const countValue = vars.count ?? 0;
+  const countNumber = Number(countValue);
+  const countLabel = Number.isFinite(countNumber)
+    ? String(countNumber)
+    : String(countValue);
+  const oneCard = countNumber === 1;
   const risk = escapeHtml(vars.risk ?? "");
   const action = escapeHtml(vars.action ?? "");
   const expiresAt = escapeHtml(vars.expiresAt ?? "");
@@ -676,6 +773,37 @@ export function attentionEmail(
               `${who} mentioned you in a comment on card <b>${card}</b> on board <b>${board}</b>.`,
               "Open the card to reply in the discussion.",
             ],
+          );
+    }
+    case "card.assigned": {
+      const who =
+        actor === "" ? (ru ? "Участник доски" : "A board member") : actor;
+      return ru
+        ? attentionLetter(
+            "Новое назначение",
+            `${BRAND}: новое назначение на доске «${board}»`,
+            oneCard
+              ? [
+                  `${who} назначил(а) вам карточку на доске <b>${board}</b>: ${cards}.`,
+                  "Откройте карточку, чтобы посмотреть детали.",
+                ]
+              : [
+                  `${who} назначил(а) вам новые карточки (<b>${countLabel}</b>) на доске <b>${board}</b>: ${cards}.`,
+                  "Откройте доску, чтобы посмотреть детали.",
+                ],
+          )
+        : attentionLetter(
+            "New card assignment",
+            `${BRAND}: new card assignment on "${board}"`,
+            oneCard
+              ? [
+                  `${who} assigned you a card on board <b>${board}</b>: ${cards}.`,
+                  "Open the card to see the details.",
+                ]
+              : [
+                  `${who} assigned you <b>${countLabel}</b> cards on board <b>${board}</b>: ${cards}.`,
+                  "Open the board to see the details.",
+                ],
           );
     }
     case "claim.expired":
@@ -877,12 +1005,16 @@ const changeCodeDefault = emailChangeCodeEmail("{{code}}", "{{minutes}}", "en");
 const changedNoticeDefault = emailChangedNoticeEmail("{{email}}", "en");
 const digestDefault = digestEmail(
   "{{board}}",
-  "{{count}}",
+  "{{countLabel}}",
   "{{hours}}",
   "en",
   "{{attention}}",
 );
-const dueReminderDefault = dueReminderEmail("{{count}}", "{{tasks}}", "en");
+const dueReminderDefault = dueReminderEmail(
+  "{{countLabel}}",
+  "{{tasks}}",
+  "en",
+);
 const approvalRequestedDefault = attentionDefault(
   "approval.requested",
   {
@@ -948,6 +1080,26 @@ const commentMentionDefault = attentionDefault(
   { board: "{{board}}", card: "{{card}}", actor: "{{actor}}" },
   ["board", "card", "actor"],
 );
+/**
+ * Editable default for an assignment letter. Deliberately neutral: the editor
+ * previews it with `{{count}}` unresolved, so singular/plural branching here
+ * would render “1 cards” once an operator saves the default unchanged.
+ */
+const cardAssignedDefault = (() => {
+  const letter = attentionLetterBase(
+    "New card assignment",
+    `${BRAND}: new card assignment on "{{board}}"`,
+    [
+      "Card assignment on board <b>{{board}}</b>: {{cards}}.",
+      "Open the card or board in Janosik to see the details.",
+    ],
+  );
+  return {
+    subject: letter.subject,
+    bodyHtml: letter.html.replace("<html>", '<html lang="en">'),
+    placeholders: ["board", "cards", "actor"],
+  };
+})();
 const claimExpiredDefault = attentionDefault(
   "claim.expired",
   { board: "{{board}}", card: "{{card}}", agent: "{{agent}}" },
@@ -984,12 +1136,12 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   digest: {
     subject: digestDefault.subject,
     bodyHtml: digestDefault.html,
-    placeholders: ["board", "count", "hours", "attention"],
+    placeholders: ["board", "countLabel", "hours", "attention"],
   },
   due_reminder: {
     subject: dueReminderDefault.subject,
     bodyHtml: dueReminderDefault.html,
-    placeholders: ["count", "tasks"],
+    placeholders: ["countLabel", "tasks"],
   },
   attention_approval_requested: approvalRequestedDefault,
   attention_approval_decided: approvalDecidedDefault,
@@ -999,6 +1151,7 @@ export const EMAIL_TEMPLATE_DEFAULTS: Record<string, EmailTemplateDefault> = {
   attention_agent_blocked: agentBlockedDefault,
   attention_agent_needs_human: agentNeedsHumanDefault,
   attention_comment_mention: commentMentionDefault,
+  attention_card_assigned: cardAssignedDefault,
   attention_claim_expired: claimExpiredDefault,
   attention_quota_exceeded: quotaExceededDefault,
   attention_token_revoked: tokenRevokedDefault,
@@ -1016,37 +1169,89 @@ export function fillTemplate(
   );
 }
 
-/** A readable plain-text alternative from the HTML body. */
-export function htmlToText(html: string): string {
-  // Decode before scanning: decoding afterwards would turn `&lt;script&gt;`
-  // back into markup in the returned text. The scanner then walks the string
-  // once and drops every tag, so no second pass can expose a fresh one from
-  // nested input like `<<b>>`. A regex sanitizer cannot promise that, which is
-  // why this is an explicit scan rather than a chain of replacements.
-  const source = decodeHtmlEntities(html);
+/** `href` from a raw `<a …>` tag, without trusting/reconstructing the tag. */
+function hrefAttribute(tag: string): string | null {
+  const match = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(
+    tag,
+  );
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+}
+
+/**
+ * Decode one text segment and drop markup that escaped user text revealed.
+ * This keeps the old guarantee that `&lt;b&gt;` does not become markup, while
+ * the caller scans the *raw* HTML for tags: only literal template anchors are
+ * trusted links, an escaped `<a href>` stays text and contributes no URL.
+ */
+function plainTextSegment(raw: string): string {
+  const decoded = decodeHtmlEntities(raw);
   let text = "";
   let index = 0;
+  while (index < decoded.length) {
+    const open = decoded.indexOf("<", index);
+    if (open === -1) {
+      text += decoded.slice(index);
+      break;
+    }
+    text += decoded.slice(index, open);
+    const close = decoded.indexOf(">", open + 1);
+    if (close === -1) {
+      text += decoded.slice(open);
+      break;
+    }
+    index = close + 1;
+  }
+  return text;
+}
+
+/** A readable plain-text alternative from the HTML body. */
+export function htmlToText(html: string): string {
+  // Scan the raw HTML: tags in user text are escaped by the caller, so only a
+  // literal template anchor becomes a trusted link. Each text segment is
+  // decoded and stripped afterwards, so an escaped anchor cannot masquerade
+  // as a link or displace a real card URL.
+  const source = html;
+  let text = "";
+  let index = 0;
+  const links: string[] = [];
   while (index < source.length) {
     const open = source.indexOf("<", index);
     if (open === -1) {
-      text += source.slice(index);
+      text += plainTextSegment(source.slice(index));
       break;
     }
-    text += source.slice(index, open);
+    text += plainTextSegment(source.slice(index, open));
     const close = source.indexOf(">", open + 1);
     if (close === -1) {
       // An unterminated `<` is ordinary text, not a tag.
-      text += source.slice(open);
+      text += plainTextSegment(source.slice(open));
       break;
     }
-    const tag = source
-      .slice(open + 1, close)
-      .trim()
-      .toLowerCase();
+    const rawTag = source.slice(open + 1, close).trim();
+    const tag = rawTag.toLowerCase();
     if (tag === "br" || tag === "br/") {
       text += "\n";
     } else if (tag === "/p") {
       text += "\n\n";
+    } else if (tag === "li") {
+      if (text !== "" && !text.endsWith("\n")) text += "\n";
+    } else if (tag === "/li") {
+      if (!text.endsWith("\n")) text += "\n";
+    } else if (
+      tag === "a" ||
+      tag.startsWith("a ") ||
+      tag.startsWith("a\t") ||
+      tag.startsWith("a\n")
+    ) {
+      const href = hrefAttribute(rawTag);
+      links.push(href === null ? "" : decodeHtmlEntities(href));
+    } else if (tag === "/a") {
+      const href = links.pop();
+      // Keep the destination in the plain-text alternative; a label alone
+      // makes a due reminder's links unusable in a text-only mail client.
+      if (href !== undefined && href !== "" && !text.trimEnd().endsWith(href)) {
+        text += ` (${href})`;
+      }
     } else if (
       tag === "style" ||
       tag.startsWith("style ") ||

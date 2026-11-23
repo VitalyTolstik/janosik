@@ -689,10 +689,18 @@ timestamps outside the supported date range return `400 bad_request`.
 `boardId` requires live membership. Event types are `approval.requested`,
 `approval.decided`, `approval.cancelled`, `approval.consumed`,
 `approval.expired`, `agent.blocked`, `agent.needs_human`, `comment.mention`,
-`claim.expired`, `quota.exceeded` and `token.revoked` (owner only). A
+`card.assigned`, `claim.expired`, `quota.exceeded` and `token.revoked` (owner
+only). A
 `comment.mention` row tells a mentioned board member who mentioned them, on
 which card and board, with a short excerpt and a deep link to the comment; the
-immediate e-mail omits the comment text. The scheduled digest also
+immediate e-mail omits the comment text. A `card.assigned` row tells the new
+assignee about one or more cards assigned in the same command batch. The batch
+is coalesced into one row per assignee, the last assignment per card wins (a
+later unassign notifies nobody), and assigning a card to yourself is skipped.
+Its payload carries `assigneeId`, `cardIds` and the assigning actor's
+display name in `actorName` when known, plus `cardId` for a single card;
+the inbox opens that card or, for a batch, the board filtered with
+`f.assignee=<assigneeId>`. The scheduled digest also
 includes undigested attention categories once per recipient; immediate
 attention e-mail does not block the approval or comment request that produced
 it.
