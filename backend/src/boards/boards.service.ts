@@ -963,6 +963,7 @@ export class BoardsService {
   async getAggregateWithSeq(
     boardId: string,
     tx?: Prisma.TransactionClient,
+    budget?: { maxWaitMs?: number; timeoutMs?: number },
   ): Promise<{ board: BoardAggregate; seq: number; revision: bigint }> {
     const read = async (reader: Prisma.TransactionClient) => {
       const loaded = await loadBoardAggregateWithRevision(reader, boardId);
@@ -982,6 +983,15 @@ export class BoardsService {
       ? read(tx)
       : this.prisma.$transaction(read, {
           isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          // TASK-200.6: the HTTP read path passes its budget. Without these,
+          // a saturated pool or a slow aggregate surfaced as P2028 → 500
+          // internal_error.
+          ...(budget?.maxWaitMs !== undefined
+            ? { maxWait: budget.maxWaitMs }
+            : {}),
+          ...(budget?.timeoutMs !== undefined
+            ? { timeout: budget.timeoutMs }
+            : {}),
         });
   }
 

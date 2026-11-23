@@ -9,8 +9,10 @@
 -- Writers:
 --   * every command already updates the Board row → BEFORE UPDATE trigger;
 --   * non-command writers touch Card/Comment/Attachment/claim/admin rows →
---     statement-level Card triggers. One Board UPDATE per statement (not per
---     card), so a bulk position rewrite still bumps once per affected board.
+--     statement-level Card triggers. One Board UPDATE per Card SQL statement
+--     per affected board, not per row. The position writer chunks at 1 000
+--     rows, so a 5 000-card rewrite costs 5 Card statements → 5 bumps (plus
+--     the command's own Board update), not one.
 
 ALTER TABLE "Board" ADD COLUMN "aggregateRevision" BIGINT NOT NULL DEFAULT 0;
 

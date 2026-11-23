@@ -70,7 +70,10 @@ services:
       # concurrent reads coalesce before the cap. Excess readers wait
       # BOARD_READ_WAIT_MS and then get 503 board_read_busy + Retry-After;
       # a whole response is bounded by BOARD_READ_TIMEOUT_MS (must exceed the
-      # wait). JSON below the byte threshold stays identity.
+      # wait). The read transaction gets maxWait=WAIT_MS and
+      # timeout=TIMEOUT_MS−250, so P2024/P2028 map to a 503, not a 500. The cap
+      # may exceed DB_CONNECTION_LIMIT; set it at/below the pool to avoid pool
+      # waits. JSON below the byte threshold stays identity.
       BOARD_READ_CAP: ${BOARD_READ_CAP:-16}
       BOARD_READ_QUEUE_MAX: ${BOARD_READ_QUEUE_MAX:-256}
       BOARD_READ_WAIT_MS: ${BOARD_READ_WAIT_MS:-10000}

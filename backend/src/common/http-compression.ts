@@ -72,11 +72,12 @@ export function parseAcceptEncoding(
 /**
  * Pick the best supported coding. `br` wins a tie with `gzip`; an explicit
  * `q=0` for a coding excludes it, and `*` applies to the supported list when
- * a coding is not named. Identity is a representation too: an explicit
- * `identity;q` higher than both codings selects identity (`gzip;q=0.5` means
- * the client prefers plain JSON). When every coding and identity is refused,
- * the board route falls back to identity because it has no `406` contract —
- * documented rather than silently inventing an encoding.
+ * a coding is not named. Identity is a representation too, and an unmentioned
+ * identity counts as `q=1`: `gzip;q=0.5` therefore selects plain JSON, while
+ * `gzip;q=1` or `*` selects compression. An explicit `identity;q` overrides
+ * that default. When every coding and identity is refused, the board route
+ * falls back to identity because it has no `406` contract — documented rather
+ * than silently inventing an encoding.
  */
 export function negotiateContentEncoding(
   header: string | undefined,

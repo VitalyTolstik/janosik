@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
 import path from "node:path";
-import { rm } from "node:fs/promises";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -15,10 +16,12 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import {
   BOARD_READ_LIMITS,
+  BoardReadService,
   type BoardReadLimits,
 } from "@/common/board-read.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
+import { StorageService } from "@/attachments/storage.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
 
 const OWNER_EMAIL = "board-read-owner@example.com";
@@ -29,8 +32,8 @@ const PASSWORD = "correct horse battery";
 
 const TEST_LIMITS: BoardReadLimits = {
   maxConcurrent: 1,
-  queueMax: 0,
-  waitMs: 1_000,
+  queueMax: 1,
+  waitMs: 50,
   timeoutMs: 5_000,
   retryAfterSeconds: 1,
   compressMinBytes: 1024,
@@ -52,6 +55,17 @@ function deferred<T>() {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for state");
+    await delay(5);
+  }
+}
+
 /**
  * TASK-200.6: the full board read's transport and concurrency contract.
  *
@@ -64,7 +78,9 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let boards: BoardsService;
+  let boardRead: BoardReadService;
   let maintenance: MaintenanceService;
+  let uploadDir: string;
   let baseUrl: string;
   let ownerToken: string;
   let memberToken: string;
@@ -76,11 +92,14 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
   let cardId: string;
 
   beforeAll(async () => {
+    uploadDir = await mkdtemp(path.join(os.tmpdir(), "janosik-board-read-"));
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(BOARD_READ_LIMITS)
       .useValue(TEST_LIMITS)
+      .overrideProvider(StorageService)
+      .useValue(new StorageService(uploadDir))
       .compile();
     app = moduleRef.createNestApplication();
     setupApp(app);
@@ -89,6 +108,7 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     baseUrl = `http://127.0.0.1:${address.port}/api/v1`;
     prisma = app.get(PrismaService);
     boards = app.get(BoardsService);
+    boardRead = app.get(BoardReadService);
     maintenance = app.get(MaintenanceService);
     await wipe(prisma);
 
@@ -129,11 +149,8 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
 
   afterAll(async () => {
     await wipe(prisma);
-    // Attachment blobs bypass the DB wipe; this suite uploads one file.
-    await rm(path.join(process.cwd(), "data"), {
-      recursive: true,
-      force: true,
-    });
+    // Only the per-run upload directory is ours; never the shared dev tree.
+    await rm(uploadDir, { recursive: true, force: true });
     await app.close();
   });
 
@@ -218,6 +235,20 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
       select: { aggregateRevision: true },
     });
     return board.aggregateRevision;
+  }
+
+  /** One direct aggregate write must invalidate the old validator. */
+  async function expectInvalidated(
+    mutate: () => Promise<unknown>,
+    check: (body: BoardAggregate) => void,
+  ): Promise<void> {
+    const before = await identity();
+    await mutate();
+    const after = await identity(String(before.headers.etag));
+    expect(after.status).toBe(200);
+    expect(after.headers.etag).not.toBe(before.headers.etag);
+    check(bodyOf(after));
+    expect((await identity(String(after.headers.etag))).status).toBe(304);
   }
 
   /** One raw GET so compressed bytes and hop-by-hop headers stay observable. */
@@ -603,6 +634,225 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     expect((await identity(String(after.headers.etag))).status).toBe(304);
   });
 
+  it("invalidates the ETag for every direct aggregate-table mutation", async () => {
+    const initial = bodyOf(await identity());
+    const columnId = initial.columns[0]?.id;
+    if (columnId === undefined) throw new Error("Starter has no column");
+    const cards = Object.values(initial.cards).filter(
+      (card) => card.archivedAt === undefined,
+    );
+    const secondCardId =
+      cards.find((card) => card.id !== cardId)?.id ??
+      (
+        await prisma.card.create({
+          data: {
+            id: `aggregate-second-${randomUUID()}`,
+            columnId,
+            title: "Second aggregate card",
+            position: 99_998,
+            acceptanceCriteria: [],
+            definitionOfDone: [],
+          },
+        })
+      ).id;
+
+    const labelId = `aggregate-label-${randomUUID()}`;
+    await expectInvalidated(
+      () =>
+        prisma.label.create({
+          data: {
+            id: labelId,
+            boardId,
+            name: "Aggregate label",
+            color: "red",
+            position: 999,
+          },
+        }),
+      (body) => expect(body.labels.map((label) => label.id)).toContain(labelId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.label.update({
+          where: { id: labelId },
+          data: { deletedAt: new Date() },
+        }),
+      (body) =>
+        expect(body.labels.map((label) => label.id)).not.toContain(labelId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.label.update({
+          where: { id: labelId },
+          data: { deletedAt: null },
+        }),
+      (body) => expect(body.labels.map((label) => label.id)).toContain(labelId),
+    );
+    await expectInvalidated(
+      () => prisma.cardLabel.create({ data: { cardId, labelId } }),
+      (body) => expect(body.cards[cardId]?.labelIds).toContain(labelId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.cardLabel.delete({
+          where: { cardId_labelId: { cardId, labelId } },
+        }),
+      (body) =>
+        expect(body.cards[cardId]?.labelIds ?? []).not.toContain(labelId),
+    );
+
+    const newColumnId = `aggregate-column-${randomUUID()}`;
+    await expectInvalidated(
+      () =>
+        prisma.column.create({
+          data: {
+            id: newColumnId,
+            boardId,
+            title: "Aggregate column",
+            position: 999,
+          },
+        }),
+      (body) =>
+        expect(body.columns.map((column) => column.id)).toContain(newColumnId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.column.update({
+          where: { id: newColumnId },
+          data: { deletedAt: new Date() },
+        }),
+      (body) =>
+        expect(body.columns.map((column) => column.id)).not.toContain(
+          newColumnId,
+        ),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.column.update({
+          where: { id: newColumnId },
+          data: { deletedAt: null },
+        }),
+      (body) =>
+        expect(body.columns.map((column) => column.id)).toContain(newColumnId),
+    );
+
+    const checklistId = `aggregate-checklist-${randomUUID()}`;
+    await expectInvalidated(
+      () =>
+        prisma.checklist.create({
+          data: {
+            id: checklistId,
+            cardId,
+            title: "Aggregate checklist",
+            position: 99,
+          },
+        }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.checklists?.map((item) => item.id),
+        ).toContain(checklistId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.checklist.update({
+          where: { id: checklistId },
+          data: { deletedAt: new Date() },
+        }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.checklists?.map((item) => item.id) ?? [],
+        ).not.toContain(checklistId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.checklist.update({
+          where: { id: checklistId },
+          data: { deletedAt: null },
+        }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.checklists?.map((item) => item.id),
+        ).toContain(checklistId),
+    );
+
+    const itemId = `aggregate-item-${randomUUID()}`;
+    await expectInvalidated(
+      () =>
+        prisma.checklistItem.create({
+          data: {
+            id: itemId,
+            checklistId,
+            text: "Aggregate item",
+            position: 0,
+          },
+        }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.checklists
+            ?.find((checklist) => checklist.id === checklistId)
+            ?.items.map((item) => item.id),
+        ).toContain(itemId),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.checklistItem.update({
+          where: { id: itemId },
+          data: { deletedAt: new Date() },
+        }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.checklists
+            ?.find((checklist) => checklist.id === checklistId)
+            ?.items.map((item) => item.id) ?? [],
+        ).not.toContain(itemId),
+    );
+    await expectInvalidated(
+      () => prisma.checklistItem.delete({ where: { id: itemId } }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.checklists
+            ?.find((checklist) => checklist.id === checklistId)
+            ?.items.map((item) => item.id) ?? [],
+        ).not.toContain(itemId),
+    );
+
+    const linkId = `aggregate-link-${randomUUID()}`;
+    await expectInvalidated(
+      () =>
+        prisma.cardLink.create({
+          data: {
+            id: linkId,
+            boardId,
+            fromCardId: cardId,
+            toCardId: secondCardId,
+            type: "relates_to",
+            position: 0,
+          },
+        }),
+      (body) =>
+        expect(body.cards[cardId]?.links?.map((link) => link.id)).toContain(
+          linkId,
+        ),
+    );
+    await expectInvalidated(
+      () =>
+        prisma.cardLink.update({
+          where: { id: linkId },
+          data: { deletedAt: new Date() },
+        }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.links?.map((link) => link.id) ?? [],
+        ).not.toContain(linkId),
+    );
+    await expectInvalidated(
+      () => prisma.cardLink.delete({ where: { id: linkId } }),
+      (body) =>
+        expect(
+          body.cards[cardId]?.links?.map((link) => link.id) ?? [],
+        ).not.toContain(linkId),
+    );
+  });
+
   it("never matches an old ETag after a command-log sweep", async () => {
     const before = await identity();
     await command({ type: "RENAME_BOARD", title: "After sweep rename" });
@@ -657,17 +907,23 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
     }
   });
 
-  it("answers a polite 503 with Retry-After when the read slot is busy", async () => {
+  it("answers 503 for queue-wait and queue-full backpressure", async () => {
     const gate = deferred<void>();
     const started = deferred<void>();
     const real = boards.getAggregateWithSeq.bind(boards);
     const spy = jest
       .spyOn(boards, "getAggregateWithSeq")
-      .mockImplementation(async (id: string, tx?: Prisma.TransactionClient) => {
-        started.resolve();
-        await gate.promise;
-        return real(id, tx);
-      });
+      .mockImplementation(
+        async (
+          id: string,
+          tx?: Prisma.TransactionClient,
+          budget?: { maxWaitMs?: number; timeoutMs?: number },
+        ) => {
+          started.resolve();
+          await gate.promise;
+          return real(id, tx, budget);
+        },
+      );
 
     try {
       const first = rawGet(`/boards/${boardId}`, ownerToken, {
@@ -675,18 +931,53 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
       });
       await started.promise;
 
-      const refused = await rawGet(`/boards/${boardId}`, ownerToken, {
+      const queued = rawGet(`/boards/${boardId}`, ownerToken, {
         "Accept-Encoding": "gzip",
       });
-      expect(refused.status).toBe(503);
-      expect(refused.headers["retry-after"]).toBe("1");
+      await waitFor(() => boardRead.metrics.waiting === 1);
+      const full = await rawGet(`/boards/${boardId}`, ownerToken, {
+        "Accept-Encoding": "br",
+      });
+      expect(full.status).toBe(503);
+      expect(full.headers["retry-after"]).toBe("1");
       expect(
-        (JSON.parse(refused.body.toString("utf8")) as { code: string }).code,
+        (JSON.parse(full.body.toString("utf8")) as { code: string }).code,
+      ).toBe("board_read_busy");
+
+      const waited = await queued;
+      expect(waited.status).toBe(503);
+      expect(
+        (JSON.parse(waited.body.toString("utf8")) as { code: string }).code,
       ).toBe("board_read_busy");
 
       gate.resolve();
       const completed = await first;
       expect(completed.status).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("maps a Prisma read timeout to 503 board_read_timeout", async () => {
+    const spy = jest
+      .spyOn(boards, "getAggregateWithSeq")
+      .mockRejectedValue(
+        Object.assign(
+          new Error(
+            "Transaction already closed: A query cannot be executed on an expired transaction.",
+          ),
+          { code: "P2028" },
+        ),
+      );
+    try {
+      const response = await rawGet(`/boards/${boardId}`, ownerToken, {
+        "Accept-Encoding": "identity",
+      });
+      expect(response.status).toBe(503);
+      expect(response.headers["retry-after"]).toBe("1");
+      expect(
+        (JSON.parse(response.body.toString("utf8")) as { code: string }).code,
+      ).toBe("board_read_timeout");
     } finally {
       spy.mockRestore();
     }

@@ -89,7 +89,9 @@ describe("ApiExceptionFilter Retry-After", () => {
       }),
       host,
     );
-    expect(traffic.recordThrottled).toHaveBeenCalledTimes(1);
+    // The request log counts `rate_limit.read`; the 429 throttle ring must not
+    // also receive this deliberate read backpressure.
+    expect(traffic.recordThrottled).not.toHaveBeenCalled();
     expect(readBackpressure(response)).toBe("board_read");
     expect(response.status).toHaveBeenCalledWith(503);
     expect(response.setHeader).toHaveBeenCalledWith("Retry-After", "2");
@@ -104,7 +106,7 @@ describe("ApiExceptionFilter Retry-After", () => {
       }),
       timeout.host,
     );
-    expect(timeout.traffic.recordThrottled).toHaveBeenCalledTimes(1);
+    expect(timeout.traffic.recordThrottled).not.toHaveBeenCalled();
     expect(readBackpressure(timeout.response)).toBe("board_read");
   });
 

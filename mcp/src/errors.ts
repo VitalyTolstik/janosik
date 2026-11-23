@@ -153,10 +153,18 @@ export function isTransientNetworkError(error: unknown): boolean {
   );
 }
 
-/** `503 {code: "board_write_timeout"}`: the board is too busy right now. */
+/**
+ * `503 {code}`: the board is too busy right now. Write-lock timeouts and the
+ * TASK-200.6 full-read refusals are all safe to retry for an idempotent GET
+ * (the same `commandId`/`Idempotency-Key` remains on writes).
+ */
 function isBoardBusy(error: ApiError): boolean {
+  if (error.status !== 503) return false;
+  const code = asRecord(error.body).code;
   return (
-    error.status === 503 && asRecord(error.body).code === "board_write_timeout"
+    code === "board_write_timeout" ||
+    code === "board_read_busy" ||
+    code === "board_read_timeout"
   );
 }
 

@@ -13,32 +13,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the
   threshold, explicit `identity;q` honoured), always sends `Vary:
   Accept-Encoding`, skips streaming/SSE and never re-encodes a `no-transform`
-  response. A migration adds `Board.aggregateRevision` (bigint, backfilled from
-  the current command max) with a `Board` BEFORE UPDATE trigger and
-  statement-level `Card` INSERT/UPDATE/DELETE triggers: every command already
-  updates Board, while comments, attachments, claim expiry, admin edits and
-  account deletion update Card directly, and command sweeps can move `seq`
-  backwards. The weak `ETag` is derived from board id + `aggregateRevision` +
-  route + role + projection; a matching `If-None-Match` answers `304` with no
-  body before any aggregate load while still carrying the separate
-  `X-Board-Seq`. Trigger cost is one extra Board row update per affected
-  statement, not per card. `Cache-Control: private, no-store` keeps board JSON
-  out of browser/shared caches; the ETag is for explicit conditional clients
-  (the UI does not send it yet). Identical concurrent full reads coalesce into
-  one build (per board/role/projection/coding) whose linearization point is the
-  leader's database snapshot, so coalescing is not read-your-writes. A
-  per-process counting semaphore caps builds (`BOARD_READ_CAP`, default 16)
-  with a bounded waiting room (`BOARD_READ_QUEUE_MAX`, default 256,
-  `BOARD_READ_WAIT_MS`, default 10 s) and a total response bound
-  (`BOARD_READ_TIMEOUT_MS`, default 20 s, must exceed the wait; it does not
-  cancel the underlying Prisma query). Excess or timed-out readers receive
-  `503 board_read_busy`/`board_read_timeout` with `Retry-After`; the codes are
-  in the shared catalog and are contract-retryable. Queued reads are rejected
-  on shutdown. Single-flight entries are never retained after settlement, so
-  CAS writes and retries always see the database. Board-read 503s are
-  classified as read backpressure in the request log/traffic (`rateLimited.read`)
-  and are not counted as server errors. No auth, membership, flag, SSE or
-  TTL-cache behaviour changed. The gzip/Brotli byte reduction (target 70–80%)
+  response. Two migrations add `Board.aggregateRevision` (bigint, backfilled
+  from the current command max): a `Board` BEFORE UPDATE trigger, statement-level
+  `Card` INSERT/UPDATE/DELETE triggers, and statement-level triggers for Label,
+  Column, CardLink, CardLabel, Checklist and ChecklistItem (boardId resolved via
+  Card/Column where needed). Every command also updates Board; comments,
+  attachments, claim expiry, admin/demo label/checklist/link/column
+  delete/restore, and account deletion would otherwise bypass Card. Trigger
+  cost is one Board row update per affected SQL statement, not per row: the
+  position writer chunks at 1 000, so a 5 000-card rewrite costs 5 bumps, not
+  one. The weak `ETag` is derived from board id + `aggregateRevision` + route +
+  role + projection; a matching `If-None-Match` answers `304` with no body
+  before any aggregate load while still carrying the separate `X-Board-Seq`.
+  `Cache-Control: private, no-store` keeps board JSON out of browser/shared
+  caches; the ETag is for explicit conditional clients (the UI does not send it
+  yet). Identical concurrent full reads coalesce into one build (per
+  board/role/projection/coding) whose linearization point is the leader's
+  database snapshot, so coalescing is not read-your-writes. A per-process
+  counting semaphore caps builds (`BOARD_READ_CAP`, default 16) with a bounded
+  waiting room (`BOARD_READ_QUEUE_MAX`, default 256, `BOARD_READ_WAIT_MS`,
+  default 10 s) and a total response bound (`BOARD_READ_TIMEOUT_MS`, default
+  20 s, must exceed the wait). The read transaction gets `maxWait =
+  BOARD_READ_WAIT_MS` and `timeout = BOARD_READ_TIMEOUT_MS − 250`, so P2024/
+  P2028 pool waits and transaction expiry answer `503 board_read_busy`/
+  `board_read_timeout` with `Retry-After`, never `500`. The conditional stamp is
+  also deadline-bounded. The cap may exceed `DB_CONNECTION_LIMIT` (default 10):
+  extra builds wait on the pool up to the wait budget; set cap ≤ pool to avoid
+  pool waits. The codes are in the shared catalog and are contract-retryable;
+  MCP treats both as transient, while the UI retries idempotent writes once
+  without sleeping `Retry-After` and shows reads as busy (documented bounded
+  mismatch). Queued reads are rejected on shutdown. Single-flight entries are
+  never retained after settlement, so CAS writes and retries always see the
+  database. Board-read 503s are classified as read backpressure in the request
+  log/traffic (`rateLimited.read`) and are not counted as server errors. No
+  auth, membership, flag, SSE or TTL-cache behaviour changed. The gzip/Brotli byte reduction (target 70–80%)
   and the 500-read/1 000-card RSS target (<2 GB) are to be measured on a
   dedicated host; this change ships the mechanism and focused tests, not a
   claim that those numbers were observed. OpenAPI, self-hosting env docs

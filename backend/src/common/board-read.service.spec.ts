@@ -123,6 +123,99 @@ describe("BoardReadService", () => {
     });
   });
 
+  it("passes the Prisma maxWait/timeout budget into the build", async () => {
+    const read = service({ waitMs: 100, timeoutMs: 1_000 });
+    const build = jest
+      .fn()
+      .mockResolvedValue({ board: BOARD, seq: 3, revision: 3n });
+    await read.read(request({ acceptEncoding: "identity" }), {
+      stamp: () => Promise.resolve({ revision: 3n, seq: 3 }),
+      build,
+    });
+    expect(build).toHaveBeenCalledWith({ maxWaitMs: 100, timeoutMs: 750 });
+  });
+
+  it("maps P2028/P2024 transaction and pool failures to 503", async () => {
+    const cases = [
+      [
+        Object.assign(new Error("Transaction already closed"), {
+          code: "P2028",
+        }),
+        "board_read_timeout",
+      ],
+      [
+        Object.assign(
+          new Error("Unable to start a transaction in the given time."),
+          { code: "P2028" },
+        ),
+        "board_read_busy",
+      ],
+      [
+        Object.assign(new Error("Timed out fetching a new connection"), {
+          code: "P2024",
+        }),
+        "board_read_busy",
+      ],
+    ] as const;
+
+    for (const [error, code] of cases) {
+      const read = service();
+      let refusal: unknown;
+      try {
+        await read.read(request({ acceptEncoding: "identity" }), {
+          stamp: () => Promise.resolve({ revision: 3n, seq: 3 }),
+          build: () => Promise.reject(error),
+        });
+      } catch (caught) {
+        refusal = caught;
+      }
+      expect(refusal).toBeInstanceOf(ServiceUnavailableException);
+      expect(
+        (refusal as ServiceUnavailableException).getResponse(),
+      ).toMatchObject({ code, retryable: true });
+    }
+  });
+
+  it("bounds a hanging conditional stamp and answers 503", async () => {
+    const read = service({ waitMs: 10, timeoutMs: 50 });
+    let refusal: unknown;
+    try {
+      await read.read(request({ ifNoneMatch: 'W/"stale"' }), {
+        stamp: () => new Promise(() => undefined),
+        build: jest.fn(),
+      });
+    } catch (caught) {
+      refusal = caught;
+    }
+    expect(refusal).toBeInstanceOf(ServiceUnavailableException);
+    expect(
+      (refusal as ServiceUnavailableException).getResponse(),
+    ).toMatchObject({ code: "board_read_timeout", retryAfter: 2 });
+    expect(read.metrics.timeouts).toBe(1);
+  });
+
+  it("maps a pool wait in the conditional stamp to 503 busy", async () => {
+    const read = service();
+    let refusal: unknown;
+    try {
+      await read.read(request({ ifNoneMatch: 'W/"stale"' }), {
+        stamp: () =>
+          Promise.reject(
+            Object.assign(
+              new Error("Unable to start a transaction in the given time."),
+              { code: "P2028" },
+            ),
+          ),
+        build: jest.fn(),
+      });
+    } catch (caught) {
+      refusal = caught;
+    }
+    expect(
+      (refusal as ServiceUnavailableException).getResponse(),
+    ).toMatchObject({ code: "board_read_busy" });
+  });
+
   it("serves Brotli when negotiated", async () => {
     const read = service();
     const result = await read.read(request({ acceptEncoding: "br, gzip" }), {

@@ -21,11 +21,14 @@
  * snapshot can issue one more read after the coalesced one completes. Only
  * in-flight work is shared, so a later read never reuses a settled snapshot.
  *
- * `BOARD_READ_TIMEOUT_MS` bounds the HTTP response, not the database work:
- * Prisma has no request cancellation token, so an abandoned build finishes
- * and releases its slot through the normal transaction timeout. The semaphore
- * wait, build and encode are all inside the group; a timed-out caller never
- * blocks a later one.
+ * `BOARD_READ_TIMEOUT_MS` bounds the HTTP response and is also handed to the
+ * read transaction as its Prisma `timeout` (with a small encode margin);
+ * `maxWait` is `BOARD_READ_WAIT_MS`. P2028/P2024 therefore surface as
+ * `503 board_read_timeout`/`board_read_busy`, not `500`. Prisma still has no
+ * cancellation token for a query already sent: the transaction expires by
+ * its own budget and then releases the semaphore slot. The semaphore wait,
+ * build and encode are all inside the single-flight group; a timed-out caller
+ * never blocks a later one.
  */
 import {
   Inject,
@@ -35,6 +38,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { BoardAggregate } from "@janosik/shared";
+import { classifyBoardReadDbError } from "@/common/board-read-db-errors";
 import { boardReadEtag, ifNoneMatchMatches } from "@/common/board-read-etag";
 import {
   compressBody,
@@ -107,6 +111,14 @@ export interface BoardReadRequest {
   ifNoneMatch: string | undefined;
 }
 
+/** Prisma budget handed to the full-read transaction (TASK-200.6). */
+export interface BoardReadBuildBudget {
+  /** Connection-pool wait (`maxWait`) in ms. */
+  maxWaitMs: number;
+  /** Whole transaction (`timeout`) in ms. */
+  timeoutMs: number;
+}
+
 export interface BoardReadDeps {
   /**
    * Cheap metadata read, used only for a conditional request. Never the full
@@ -114,7 +126,7 @@ export interface BoardReadDeps {
    */
   stamp: () => Promise<BoardReadStamp | null>;
   /** Full aggregate build; called at most once per coalesced group. */
-  build: () => Promise<BoardReadSnapshot>;
+  build: (budget: BoardReadBuildBudget) => Promise<BoardReadSnapshot>;
 }
 
 export interface BoardReadResponse {
@@ -207,41 +219,43 @@ export class BoardReadService implements OnModuleDestroy {
     request: BoardReadRequest,
     deps: BoardReadDeps,
   ): Promise<BoardReadResponse> {
-    // The stamp is only a conditional-request optimisation. An unconditional
-    // read goes straight to the build, so the common path keeps exactly the
-    // queries it had before TASK-200.6.
-    if (request.ifNoneMatch !== undefined) {
-      const stamp = await deps.stamp();
-      if (stamp === null) throw new NotFoundException("Board not found");
-      const current = boardReadEtag({
+    try {
+      // The stamp is only a conditional-request optimisation. An
+      // unconditional read goes straight to the build, so the common path
+      // keeps exactly the queries it had before TASK-200.6. It still gets a
+      // deadline: a saturated pool must not hang the response before the
+      // semaphore is even involved.
+      if (request.ifNoneMatch !== undefined) {
+        const stamp = await this.stampWithDeadline(deps.stamp);
+        if (stamp === null) throw new NotFoundException("Board not found");
+        const current = boardReadEtag({
+          boardId: request.boardId,
+          revision: stamp.revision,
+          route: request.route,
+          role: request.role,
+          projection: request.projection,
+        });
+        if (ifNoneMatchMatches(request.ifNoneMatch, current)) {
+          this.notModified += 1;
+          // A 304 still needs the current SSE baseline; it is a separate
+          // value from the validator but comes from the same stamp.
+          return {
+            status: 304,
+            body: Buffer.alloc(0),
+            encoding: "identity",
+            etag: current,
+            seq: stamp.seq,
+          };
+        }
+      }
+
+      const negotiated = negotiateContentEncoding(request.acceptEncoding);
+      const key = boardReadKey({
         boardId: request.boardId,
-        revision: stamp.revision,
-        route: request.route,
         role: request.role,
         projection: request.projection,
+        encoding: negotiated,
       });
-      if (ifNoneMatchMatches(request.ifNoneMatch, current)) {
-        this.notModified += 1;
-        // A 304 still needs the current SSE baseline; it is a separate value
-        // from the validator but comes from the same single-statement stamp.
-        return {
-          status: 304,
-          body: Buffer.alloc(0),
-          encoding: "identity",
-          etag: current,
-          seq: stamp.seq,
-        };
-      }
-    }
-
-    const negotiated = negotiateContentEncoding(request.acceptEncoding);
-    const key = boardReadKey({
-      boardId: request.boardId,
-      role: request.role,
-      projection: request.projection,
-      encoding: negotiated,
-    });
-    try {
       return await this.singleFlight.run(
         key,
         () => this.build(request, negotiated, deps),
@@ -253,27 +267,71 @@ export class BoardReadService implements OnModuleDestroy {
         },
       );
     } catch (error) {
-      if (error instanceof ReadCapacityError) {
-        this.rejected += 1;
-        throw new ServiceUnavailableException({
-          message:
-            "The board is under heavy read load; retry after a short pause",
-          code: "board_read_busy",
-          retryable: true,
-          retryAfter: Math.max(1, error.retryAfterSeconds),
-        });
-      }
-      if (error instanceof SingleFlightTimeoutError) {
-        this.timeouts += 1;
-        throw new ServiceUnavailableException({
-          message: "The board read timed out; retry after a short pause",
-          code: "board_read_timeout",
-          retryable: true,
-          retryAfter: Math.max(1, this.limits.retryAfterSeconds),
-        });
-      }
-      throw error;
+      return this.fail(error);
     }
+  }
+
+  /** Bound the cheap conditional stamp by the queue budget. */
+  private stampWithDeadline(
+    stamp: () => Promise<BoardReadStamp | null>,
+  ): Promise<BoardReadStamp | null> {
+    const timeoutMs = Math.max(1, this.limits.waitMs);
+    return new Promise<BoardReadStamp | null>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new SingleFlightTimeoutError(timeoutMs));
+      }, timeoutMs);
+      timer.unref?.();
+      stamp().then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /** Translate backpressure/P2028/P2024 into the public 503 contract. */
+  private fail(error: unknown): never {
+    if (error instanceof ReadCapacityError) {
+      this.rejected += 1;
+      throw this.busy(error.retryAfterSeconds);
+    }
+    if (error instanceof SingleFlightTimeoutError) {
+      this.timeouts += 1;
+      throw this.timeout();
+    }
+    const dbFailure = classifyBoardReadDbError(error);
+    if (dbFailure === "pool_wait") {
+      this.rejected += 1;
+      throw this.busy(this.limits.retryAfterSeconds);
+    }
+    if (dbFailure === "timeout") {
+      this.timeouts += 1;
+      throw this.timeout();
+    }
+    throw error;
+  }
+
+  private busy(retryAfterSeconds: number): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      message: "The board is under heavy read load; retry after a short pause",
+      code: "board_read_busy",
+      retryable: true,
+      retryAfter: Math.max(1, retryAfterSeconds),
+    });
+  }
+
+  private timeout(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      message: "The board read timed out; retry after a short pause",
+      code: "board_read_timeout",
+      retryable: true,
+      retryAfter: Math.max(1, this.limits.retryAfterSeconds),
+    });
   }
 
   /** Stop admitting reads and let active builds finish, bounded. */
@@ -293,7 +351,13 @@ export class BoardReadService implements OnModuleDestroy {
     const release = await this.semaphore.acquire();
     try {
       this.fullReads += 1;
-      const snapshot = await deps.build();
+      // Leave a small encode/compression margin before the outer response
+      // deadline; Prisma gets to raise P2028 first and map it to 503.
+      const dbTimeoutMs = Math.max(1, this.limits.timeoutMs - 250);
+      const snapshot = await deps.build({
+        maxWaitMs: Math.max(1, Math.min(this.limits.waitMs, dbTimeoutMs)),
+        timeoutMs: dbTimeoutMs,
+      });
       const json = Buffer.from(JSON.stringify(snapshot.board), "utf8");
       const encoded = await compressBody(json, encoding, {
         minBytes: this.limits.compressMinBytes,

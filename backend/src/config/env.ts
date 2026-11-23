@@ -260,11 +260,18 @@ export const env = cleanEnv(process.env, {
   // transient allocation on the read path; a 500-reader burst must queue or
   // receive a polite 503 instead of building 500 aggregates at once.
   // Single-flight runs before the semaphore, so identical requests share one
-  // slot. `BOARD_READ_WAIT_MS` bounds the queue wait and
-  // `BOARD_READ_TIMEOUT_MS` bounds the whole build/serialize/compress step;
-  // both surface as `503` with `Retry-After`, never as an unhandled timeout.
+  // slot. `BOARD_READ_WAIT_MS` bounds the semaphore and Prisma `maxWait`;
+  // `BOARD_READ_TIMEOUT_MS` bounds the HTTP response and is passed to the
+  // read transaction as its `timeout` minus an encode margin. P2028/P2024
+  // is mapped to `503 board_read_timeout`/`board_read_busy` with
+  // `Retry-After`, never an unhandled 500.
+  //
+  // The cap is per process, not cluster-wide. The default 16 may exceed the
+  // default `DB_CONNECTION_LIMIT=10`: extra builds then wait in Prisma's pool
+  // for at most WAIT_MS and answer `503 board_read_busy`. Set CAP at or below
+  // the pool if you want the semaphore to keep pool waits at zero.
   BOARD_READ_CAP: positiveInt({
-    desc: "Full board aggregates built concurrently per process (TASK-200.6; this is a per-process cap, not cluster-wide)",
+    desc: "Full board aggregates built concurrently per process (TASK-200.6; per-process cap, not cluster-wide; may exceed DB_CONNECTION_LIMIT)",
     default: 16,
     example: "16",
   }),
@@ -279,7 +286,7 @@ export const env = cleanEnv(process.env, {
     example: "10000",
   }),
   BOARD_READ_TIMEOUT_MS: positiveInt({
-    desc: "Max total time for one full board read (slot + build + encode) before 503",
+    desc: "Max HTTP response time for one full board read (slot + build + encode); also caps the Prisma transaction before 503",
     default: 20_000,
     example: "20000",
   }),

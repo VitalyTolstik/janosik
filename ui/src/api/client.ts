@@ -1565,6 +1565,10 @@ export class ApiClient {
       ) {
         throw error;
       }
+      // TASK-200.6: one immediate extra attempt, deliberately bounded. The UI
+      // does not sleep the server's `Retry-After` here; full board reads are
+      // not auto-retried at all and surface as the existing busy state. A
+      // Retry-After-aware read retry remains future-client work.
       if (
         error instanceof ApiError &&
         (error.status === 0 ||

@@ -51,15 +51,15 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const boardReadBackpressure =
       status === 503 &&
       (body.code === "board_read_busy" || body.code === "board_read_timeout");
-    const backpressure =
-      status === 429 ||
-      (status === 503 &&
-        (body.code === "rate_limited" || boardReadBackpressure));
+    const rateLimitRefusal =
+      status === 429 || (status === 503 && body.code === "rate_limited");
+    const backpressure = rateLimitRefusal || boardReadBackpressure;
     if (boardReadBackpressure) {
-      // The request log runs on the same response object after this filter.
+      // The request log runs on the same response object after this filter and
+      // counts `rate_limit.read`; do not also add it to the 429 throttle ring.
       markBackpressure(response, "board_read");
     }
-    if (backpressure) this.traffic?.recordThrottled();
+    if (rateLimitRefusal) this.traffic?.recordThrottled();
     if (status >= 500 && !backpressure) {
       const detail =
         exception instanceof Error ? exception.stack : String(exception);

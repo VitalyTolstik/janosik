@@ -298,7 +298,8 @@ export class BoardsController {
       },
       {
         stamp: () => this.boards.getReadStamp(id),
-        build: () => this.boards.getAggregateWithSeq(id),
+        build: (budget) =>
+          this.boards.getAggregateWithSeq(id, undefined, budget),
       },
     );
     // Board JSON is private and must not be stored by a browser or shared

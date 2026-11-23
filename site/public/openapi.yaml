@@ -3542,16 +3542,21 @@ components:
       description: |
         Deliberate full-read backpressure (`TASK-200.6`), safe to retry:
 
-        - `board_read_busy`: this API process's read queue is full, or the
-          caller waited `BOARD_READ_WAIT_MS` for a slot. The cap is per process
-          (`BOARD_READ_CAP`), so a cluster with N replicas admits N × the cap.
+        - `board_read_busy`: this API process's read queue is full, the caller
+          waited `BOARD_READ_WAIT_MS` for a slot, or Prisma's connection pool
+          could not start the read transaction in time (P2024/P2028-start).
+          The cap is per process (`BOARD_READ_CAP`), so a cluster with N
+          replicas admits N × the cap; it may exceed `DB_CONNECTION_LIMIT`, in
+          which case extra builds wait on the pool for up to the wait budget.
           Identical reads already share one build, so only distinct
           board/role/projection/coding groups compete.
         - `board_read_timeout`: one response exceeded
           `BOARD_READ_TIMEOUT_MS` (which must exceed `BOARD_READ_WAIT_MS`)
-          while waiting, building or encoding. This bounds the response; the
-          underlying Prisma query is not cancelled and finishes by its own
-          transaction timeout.
+          while waiting, building or encoding, or the read transaction
+          expired (P2028). The transaction receives `maxWait=WAIT_MS` and
+          `timeout=TIMEOUT_MS−250`; a query already sent is not cancelled but
+          expires by that budget. The conditional stamp is deadline-bounded
+          before the aggregate load.
 
         Both set `Retry-After` and `retryable: true`; no board data is included.
       headers:
