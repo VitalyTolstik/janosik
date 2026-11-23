@@ -523,6 +523,109 @@ describe("rate-limit retries (TASK-200.3)", () => {
   });
 });
 
+describe("targeted card intents (TASK-200.7)", () => {
+  const intentResponse = {
+    seq: 9,
+    versions: { "board:b1": 2, "card:c1": 4 },
+    card: { id: "c1", title: "Card", labelIds: [], createdAt: 1, updatedAt: 2 },
+    columnId: "col1",
+    results: [],
+  };
+
+  it("reads one card context without the board aggregate", async () => {
+    const { calls } = stubFetch(() =>
+      json({
+        boardId: "b1",
+        card: { id: "c1", title: "Card", labelIds: [] },
+        columnId: "col1",
+        cardIndex: 2,
+        columns: [{ id: "col1", title: "Todo" }],
+        doneColumnIds: [],
+        seq: 8,
+        versions: { "board:b1": 2, "card:c1": 4 },
+      }),
+    );
+    const client = new JanosikClient("http://api.test", "jnk_token");
+
+    await client.getCardContext("b1", "c1");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(
+      "http://api.test/api/v1/boards/b1/cards/c1/context",
+    );
+    expect(calls[0]!.init.method).toBe("GET");
+  });
+
+  it("claims, moves and patches only the named card", async () => {
+    const { calls } = stubFetch(() => json(intentResponse));
+    const client = new JanosikClient("http://api.test", "jnk_token");
+
+    await client.claimCard("b1", "c1", {
+      commandId: "claim-1",
+      ifMatchVersions: { "card:c1": 4 },
+    });
+    await client.moveCard("b1", "c1", {
+      commandId: "move-1",
+      toColumnId: "col2",
+      ifMatchVersions: { "card:c1": 4 },
+    });
+    await client.patchCard("b1", "c1", {
+      commandId: "patch-1",
+      description: "text",
+      ifMatchVersions: { "card:c1": 4 },
+    });
+
+    expect(calls.map((call) => [call.init.method, call.url])).toEqual([
+      ["POST", "http://api.test/api/v1/boards/b1/cards/c1/claim"],
+      ["POST", "http://api.test/api/v1/boards/b1/cards/c1/move"],
+      ["PATCH", "http://api.test/api/v1/boards/b1/cards/c1"],
+    ]);
+    for (const call of calls) {
+      const body = JSON.parse(String(call.init.body));
+      expect(body.ifMatch).toBeUndefined();
+      expect(body.ifMatchVersions).toEqual({ "card:c1": 4 });
+    }
+    expect(calls.some((call) => call.url.endsWith("/boards/b1"))).toBe(false);
+  });
+
+  it("reports a targeted no-op as NoChangeError", async () => {
+    stubFetch(() =>
+      json({
+        ...intentResponse,
+        versions: {},
+        results: [{ seq: 9, versions: {} }],
+      }),
+    );
+    const client = new JanosikClient("http://api.test", "t");
+    await expect(
+      client.moveCard("b1", "c1", {
+        toColumnId: "col1",
+        ifMatchVersions: { "card:c1": 4 },
+      }),
+    ).rejects.toBeInstanceOf(NoChangeError);
+  });
+
+  it("replays a targeted write after a network failure with the same command id", async () => {
+    let attempt = 0;
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", (_input: string, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      attempt += 1;
+      if (attempt === 1) return Promise.reject(new TypeError("fetch failed"));
+      return Promise.resolve(json(intentResponse));
+    });
+    const client = new JanosikClient("http://api.test", "t");
+
+    await client.moveCard("b1", "c1", {
+      commandId: "move-retry",
+      ifMatchVersions: { "card:c1": 4 },
+    });
+
+    expect(bodies).toHaveLength(2);
+    expect(JSON.parse(bodies[1]!).commandId).toBe("move-retry");
+  });
+});
+
 describe("JanosikClient.commandOnFreshBoard", () => {
   const board = {
     id: "b1",

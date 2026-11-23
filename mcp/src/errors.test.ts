@@ -133,9 +133,15 @@ describe("describeError", () => {
 
   it("reports the current version on a version conflict", () => {
     const message = describeError(
-      new ApiError(409, { conflict: "version", currentVersion: 42 }),
+      new ApiError(409, {
+        conflict: "version",
+        currentVersion: 42,
+        versions: { "card:c1": 7 },
+      }),
     );
     expect(message).toContain("42");
+    expect(message).toContain("card:c1=7");
+    expect(message).toMatch(/targeted/i);
   });
 
   it("explains a workflow conflict without inviting a blind retry", () => {

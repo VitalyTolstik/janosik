@@ -136,6 +136,41 @@ function board(cards: Record<string, unknown> = {}) {
   };
 }
 
+/** TASK-200.7 fake card context: one card, column names and done columns. */
+function cardContext(cardId: string) {
+  const snapshot = board(cardOverrides);
+  const card = snapshot.cards[cardId as keyof typeof snapshot.cards] as
+    Record<string, unknown> | undefined;
+  const column =
+    snapshot.columns.find((entry) => entry.cardIds.includes(cardId)) ?? null;
+  const configured = (boardWorkflow as { doneColumnIds?: string[] } | null)
+    ?.doneColumnIds;
+  const doneColumnIds =
+    configured && configured.length > 0
+      ? configured
+      : snapshot.columns.length > 0
+        ? [snapshot.columns[snapshot.columns.length - 1]!.id]
+        : [];
+  return {
+    boardId: "b1",
+    card: card ?? null,
+    columnId: column?.id ?? null,
+    cardIndex: column ? column.cardIds.indexOf(cardId) : null,
+    columns: snapshot.columns.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+    })),
+    doneColumnIds,
+    ...(boardWorkflow ? { workflow: boardWorkflow } : {}),
+    seq: boardSeq,
+    versions: {
+      "board:b1": 2,
+      [`card:${cardId}`]: boardSeq,
+      ...(column ? { [`column:${column.id}`]: 1 } : {}),
+    },
+  };
+}
+
 interface FakeReadyCard {
   id: string;
   title: string;
@@ -441,6 +476,121 @@ async function fakeApi(
   }
   if (path === "/boards/b1/export" && method === "GET") {
     return respond({ formatVersion: 1, boards: [board()] });
+  }
+  const contextMatch = /^\/boards\/b1\/cards\/([^/]+)\/context$/.exec(path);
+  if (contextMatch && method === "GET") {
+    return respond(cardContext(contextMatch[1]!));
+  }
+  const intentMatch = /^\/boards\/b1\/cards\/([^/]+)(?:\/(claim|move))?$/.exec(
+    path,
+  );
+  if (intentMatch && (method === "POST" || method === "PATCH")) {
+    const [, cardId, intent] = intentMatch;
+    const request = body as {
+      ifMatch?: number;
+      ifMatchVersions?: Record<string, number>;
+      release?: boolean;
+      leaseMs?: number;
+      toColumnId?: string;
+      position?: number;
+      title?: string;
+      description?: string;
+    };
+    if (request.ifMatch !== undefined && request.ifMatch !== boardSeq) {
+      return respond(
+        {
+          conflict: "version",
+          currentVersion: boardSeq,
+          versions: { [`card:${cardId}`]: boardSeq },
+        },
+        409,
+      );
+    }
+    const pinned = request.ifMatchVersions?.[`card:${cardId}`];
+    if (pinned !== undefined) {
+      if (staleWrites > 0) {
+        staleWrites -= 1;
+        boardSeq += 1;
+        return respond(
+          {
+            conflict: "version",
+            currentVersion: boardSeq,
+            versions: { [`card:${cardId}`]: boardSeq },
+          },
+          409,
+        );
+      }
+      if (pinned !== boardSeq) {
+        return respond(
+          {
+            conflict: "version",
+            currentVersion: boardSeq,
+            versions: { [`card:${cardId}`]: boardSeq },
+          },
+          409,
+        );
+      }
+    }
+    const current = cardContext(cardId);
+    const seq = ++boardSeq;
+    const versions = {
+      "board:b1": 2,
+      [`card:${cardId}`]: seq,
+      [`column:${current.columnId ?? "col1"}`]: 1,
+    };
+    if (intent === "claim") {
+      const release = request.release === true;
+      return respond({
+        seq,
+        versions,
+        card: {
+          ...current.card,
+          ...(release
+            ? {}
+            : {
+                claimedBy: "u1",
+                leaseUntil: Date.now() + (request.leaseMs ?? 900_000),
+              }),
+        },
+        columnId: current.columnId,
+        claimedBy: release ? null : "u1",
+        leaseUntil: release ? null : Date.now() + (request.leaseMs ?? 900_000),
+        results: [{ seq, versions }],
+      });
+    }
+    if (intent === "move") {
+      const target =
+        request.toColumnId ??
+        current.columnId ??
+        current.columns[0]?.id ??
+        "col1";
+      const targetTitle =
+        current.columns.find((column) => column.id === target)?.title ?? "Todo";
+      return respond({
+        seq,
+        versions,
+        card: current.card,
+        columnId: target,
+        fromColumnId: current.columnId ?? "col1",
+        toColumnId: target,
+        toIndex: request.position ?? 0,
+        columnTitle: targetTitle,
+        results: [{ seq, versions }],
+      });
+    }
+    return respond({
+      seq,
+      versions,
+      card: {
+        ...current.card,
+        ...(request.title !== undefined ? { title: request.title } : {}),
+        ...(request.description !== undefined
+          ? { description: request.description }
+          : {}),
+      },
+      columnId: current.columnId,
+      results: [{ seq, versions }],
+    });
   }
   if (path === "/boards/b2" && method === "GET") {
     // A board too large for one JSON response.
@@ -1483,7 +1633,7 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
-  it("moves with ifMatch and retries after a concurrent write", async () => {
+  it("moves a card through the targeted intent and retries only that card", async () => {
     staleWrites = 1;
     const client = await connect();
     const result = await client.callTool({
@@ -1491,17 +1641,104 @@ describe("janosik MCP server", () => {
       arguments: { boardId: "b1", cardId: "k1", position: 2 },
     });
     expect(result.isError).toBeFalsy();
-    const writes = calls.filter((call) => call.path === "/boards/b1/commands");
+    const writes = calls.filter(
+      (call) => call.path === "/boards/b1/cards/k1/move",
+    );
     expect(writes).toHaveLength(2);
-    const last = writes[1]!.body as { ifMatch: number; action: unknown };
-    expect(last.ifMatch).toBe(4);
-    expect(last.action).toMatchObject({
-      type: "MOVE_CARD",
-      fromColumnId: "col1",
-      fromIndex: 0,
-      toColumnId: "col1",
-      toIndex: 2,
+    const last = writes[1]!.body as {
+      ifMatch?: number;
+      ifMatchVersions: Record<string, number>;
+      commandId: string;
+    };
+    expect(last.ifMatch).toBeUndefined();
+    expect(last.ifMatchVersions).toHaveProperty("card:k1");
+    // No full board read: only the one-card context.
+    expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/cards/k1/context"),
+    ).toHaveLength(2);
+    // The retry reuses the idempotency key; the first intent never applied.
+    expect((writes[0]!.body as { commandId: string }).commandId).toBe(
+      last.commandId,
+    );
+    await client.close();
+  });
+
+  it("keeps expectedVersion as the explicit full-board CAS mode", async () => {
+    const client = await connect();
+    const expected = boardSeq;
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: {
+        boardId: "b1",
+        cardId: "k1",
+        position: 2,
+        expectedVersion: expected,
+      },
     });
+    expect(result.isError).toBeFalsy();
+    const write = calls.find((call) => call.path === "/boards/b1/commands");
+    expect(write?.body).toMatchObject({ ifMatch: expected });
+    expect(calls.some((call) => call.path === "/boards/b1/cards/k1/move")).toBe(
+      false,
+    );
+    await client.close();
+  });
+
+  it("updates a card through the targeted PATCH without reading the board", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_update_card",
+      arguments: { boardId: "b1", cardId: "k1", description: "mine" },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
+    const patch = calls.find(
+      (call) => call.path === "/boards/b1/cards/k1" && call.method === "PATCH",
+    );
+    expect(patch?.body).toMatchObject({
+      description: "mine",
+      ifMatchVersions: { "card:k1": expect.any(Number) },
+    });
+    expect((patch?.body as { ifMatch?: number }).ifMatch).toBeUndefined();
+    await client.close();
+  });
+
+  it("retries a patch version conflict on the same card only", async () => {
+    staleWrites = 1;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_update_card",
+      arguments: { boardId: "b1", cardId: "k1", title: "Renamed" },
+    });
+    expect(result.isError).toBeFalsy();
+    const writes = calls.filter(
+      (call) => call.path === "/boards/b1/cards/k1" && call.method === "PATCH",
+    );
+    expect(writes).toHaveLength(2);
+    expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
+    expect((writes[0]!.body as { commandId: string }).commandId).toBe(
+      (writes[1]!.body as { commandId: string }).commandId,
+    );
+    await client.close();
+  });
+
+  it("claims a card through the targeted intent without reading the board", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_claim_card",
+      arguments: { boardId: "b1", cardId: "k1", leaseMs: 60_000 },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
+    const claim = calls.find(
+      (call) => call.path === "/boards/b1/cards/k1/claim",
+    );
+    expect(claim?.body).toMatchObject({
+      leaseMs: 60_000,
+      ifMatchVersions: { "card:k1": expect.any(Number) },
+    });
+    expect((claim?.body as { ifMatch?: number }).ifMatch).toBeUndefined();
     await client.close();
   });
 
@@ -1626,6 +1863,7 @@ describe("janosik MCP server", () => {
     );
     expect(call?.body).toMatchObject({ text: "stuck", kind: "blocker" });
     expect(call?.headers?.["Idempotency-Key"]).toBe("comment-key-1");
+    expect(calls.some((entry) => entry.path === "/boards/b1")).toBe(false);
     expect(firstText(result)).toMatch(/blocker/);
     await client.close();
   });
@@ -1889,9 +2127,10 @@ describe("janosik MCP server", () => {
     });
     expect(result.isError).toBe(true);
     expect(firstText(result)).toMatch(/Definition of Done/i);
-    expect(
-      calls.filter((call) => call.path === "/boards/b1/commands"),
-    ).toHaveLength(1);
+    expect(calls.some((call) => call.path === "/boards/b1/cards/k3/move")).toBe(
+      false,
+    );
+    expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
     await client.close();
   });
 
@@ -2358,7 +2597,8 @@ describe("janosik MCP server", () => {
     const writes = calls.filter(
       (entry) =>
         (entry.path === "/boards/b1/commands" ||
-          entry.path === "/boards/b1/commands/batch") &&
+          entry.path === "/boards/b1/commands/batch" ||
+          /^\/boards\/b1\/cards\/[^/]+\/(claim|move)$/.test(entry.path)) &&
         entry.method === "POST",
     );
     expect(writes).toHaveLength(2);
