@@ -7,12 +7,14 @@ import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
+import { CardAccessGuard } from "@/common/card-access.guard";
 import {
   HOT_PATH_CACHE_CONFIG,
   type HotPathCacheConfig,
 } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
+import { sseTiming } from "@/realtime/sse-timing";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "cache-owner@example.com";
@@ -145,11 +147,18 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
     return Number(response.headers["x-board-seq"]);
   }
 
+  it("boots the real application with the card access guard resolved", () => {
+    // A `import type` on HotPathCacheService would leave Nest without a
+    // runtime constructor token here; resolving the guard proves the module
+    // graph, not just TypeScript, is intact.
+    expect(app.get(CardAccessGuard)).toBeInstanceOf(CardAccessGuard);
+  });
+
   it("invalidates a membership snapshot the moment a role changes", async () => {
-    // Warm the cache as VIEWER: the ADMIN-only directory answers 403 but the
-    // resolved membership is remembered.
+    // Warm the cache as VIEWER: the ADMIN-only share directory answers 403
+    // but the resolved membership is remembered.
     await server()
-      .get(`/api/v1/boards/${boardId}/members`)
+      .get(`/api/v1/boards/${boardId}/shares`)
       .set(auth(memberToken))
       .expect(403);
     await server()
@@ -161,7 +170,7 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
     // Without the realtime invalidation this would still be the cached
     // VIEWER row for the next 3 s.
     await server()
-      .get(`/api/v1/boards/${boardId}/members`)
+      .get(`/api/v1/boards/${boardId}/shares`)
       .set(auth(memberToken))
       .expect(200);
   });
@@ -249,6 +258,7 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
             type: "ADD_COLUMN",
             newColumnId: "col-sse-default",
             title: "SSE default",
+            at: Date.now(),
           },
         })
         .expect(200);
@@ -294,6 +304,37 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
       .expect(403);
   });
 
+  it("closes an open stream and drops PATs immediately after a password change", async () => {
+    const ownerPat = await createPat(ownerToken, "pre-password-change");
+    await server().get("/api/v1/auth/me").set(auth(ownerPat.token)).expect(200);
+
+    const previous = sseTiming.keepAliveMs;
+    sseTiming.keepAliveMs = 100;
+    const stream = await openStream(ownerToken, await boardSeq());
+    try {
+      await stream.next("presence");
+      await server()
+        .post("/api/v1/auth/password")
+        .set(auth(ownerToken))
+        .send({
+          currentPassword: PASSWORD,
+          newPassword: "new correct horse battery",
+        })
+        .expect(200);
+
+      // The 100 ms tick reads the fresh password hash and closes the stream.
+      await expect(stream.ended(5000)).resolves.toBe(true);
+      // AuthService invalidated the PAT cache in the same operation.
+      await server()
+        .get("/api/v1/auth/me")
+        .set(auth(ownerPat.token))
+        .expect(401);
+    } finally {
+      sseTiming.keepAliveMs = previous;
+      await stream.close();
+    }
+  }, 20_000);
+
   // ------------------------------------------------------------------ SSE
 
   async function openStream(
@@ -303,6 +344,7 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
   ): Promise<{
     frames: SseFrame[];
     next: (type: string) => Promise<SseFrame>;
+    ended: (timeoutMs?: number) => Promise<boolean>;
     close: () => Promise<void>;
   }> {
     const query = `since=${since}${extra === "" ? "" : `&${extra}`}`;
@@ -363,6 +405,21 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
     return {
       frames,
       next,
+      ended: async (timeoutMs = 8000): Promise<boolean> => {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) return false;
+          try {
+            const chunk = await readWithTimeout(reader, remaining);
+            if (chunk.done) return true;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            parse();
+          } catch {
+            return false;
+          }
+        }
+      },
       close: async () => {
         if (closed) return;
         closed = true;

@@ -254,6 +254,10 @@ export class EventsController implements OnModuleDestroy {
       // validation query set onto a saturated pool.
       const keepAlive = new KeepAliveScheduler({
         ...keepAliveProfile(principal?.via === "pat"),
+        onSkip: () =>
+          this.logger.warn(
+            `SSE keep-alive tick overlapped for board ${boardId}; skipped`,
+          ),
         task: async () => {
           // The frame's presence epoch lets a client that missed a delta
           // notice it and reconnect for a fresh `sync` (TASK-145).

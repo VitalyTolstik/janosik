@@ -39,39 +39,39 @@ export class StreamAccessService {
     userId: string,
     principal: AuthPrincipal | undefined,
   ): Promise<boolean> {
-    // TASK-200.5: the joined membership snapshot is reused for its 30 s
-    // window. Membership changes invalidate it through the bus; the
-    // per-stream credential checks below (token pause/revocation, JWT
-    // expiry/stamp/family) deliberately stay fresh on every tick.
+    // TASK-200.5: only non-credential membership facts are cached. A removed
+    // member expires with the 30 s window and the bus cuts it sooner; the
+    // credential and disable fields below are read fresh on every tick.
     let membership: StreamMembershipSnapshot | null | undefined =
       this.hotPathCache.getStreamMembership(boardId, userId);
     if (membership === undefined) {
-      membership = await this.prisma.boardMember.findUnique({
-        where: { boardId_userId: { boardId, userId } },
-        select: {
-          acceptedAt: true,
-          expiresAt: true,
-          user: {
+      const epoch = this.hotPathCache.epochs.membership;
+      membership = await this.hotPathCache.singleFlight(
+        `stream-membership:${boardId}\u0000${userId}`,
+        epoch,
+        async () => {
+          const again = this.hotPathCache.getStreamMembership(boardId, userId);
+          if (again !== undefined) return again;
+          const row = await this.prisma.boardMember.findUnique({
+            where: { boardId_userId: { boardId, userId } },
             select: {
-              id: true,
-              email: true,
-              passwordHash: true,
-              emailVerifiedAt: true,
-              disabledAt: true,
+              acceptedAt: true,
+              expiresAt: true,
+              board: { select: { deletedAt: true } },
             },
-          },
-          board: { select: { deletedAt: true } },
+          });
+          // Do not write back an answer that raced with an invalidation.
+          if (row !== null && this.hotPathCache.epochs.membership === epoch) {
+            this.hotPathCache.rememberStreamMembership(boardId, userId, row);
+          }
+          return row;
         },
-      });
-      if (membership !== null) {
-        this.hotPathCache.rememberStreamMembership(boardId, userId, membership);
-      }
+      );
     }
     if (
       membership === null ||
       membership === undefined ||
       membership.acceptedAt === null ||
-      membership.user.disabledAt !== null ||
       membership.board.deletedAt !== null ||
       (membership.expiresAt !== null &&
         membership.expiresAt.getTime() <= Date.now())
@@ -91,13 +91,26 @@ export class StreamAccessService {
       ) {
         return false;
       }
+      // Credential/disable fields never ride in the snapshot: a password
+      // change or block must close an open stream on the next tick.
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          passwordHash: true,
+          emailVerifiedAt: true,
+          disabledAt: true,
+        },
+      });
+      if (user === null || user.disabledAt !== null) return false;
       // Impersonation tokens are signed without a stamp; their short TTL and
       // read-only policy are the control. A normal session must still match
       // the current credentials.
       if (
         principal.impersonatedBy == null &&
         principal.stamp !== undefined &&
-        principal.stamp !== securityStamp(membership.user)
+        principal.stamp !== securityStamp(user)
       ) {
         return false;
       }
