@@ -417,8 +417,9 @@ an agent off.
 
 A key can be scoped when you create it in **Account → API keys**: `boardId`
 restricts it to one board, `readOnly` refuses content writes (`403
-pat_read_only`), and `rateLimitPerMinute` gives it its own request budget (over
-the budget answers `429`). If an agent only needs to read data, use a read-only key restricted to one board.
+pat_read_only`), and `rateLimitPerMinute` gives it its own request budget,
+capped at the derived per-token share (over the budget answers `429`, or `503`
+for a queued command). If an agent only needs to read data, use a read-only key restricted to one board.
 
 With an active session, MCP resolves the board of a comment or attachment on
 the server before writing, and sends only that board's session. Upgrade the

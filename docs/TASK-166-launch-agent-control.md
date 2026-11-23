@@ -1337,7 +1337,7 @@ Every API error (new and changed in 166.4) returns:
 | `idempotency_conflict` | 409 | false | same key, different body | `key` |
 | `idempotency_in_progress` | 409 | true | first record is still running or its outcome is uncertain | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
-| `rate_limited` | 429 | true | global/per-token/per-agent limit | `retryAfter`, `limit` |
+| `rate_limited` | 429, 503 (queued command) | true | global/per-token/per-agent/board limit | `retryAfter`, `limit`, `scope` |
 | `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |
 | `not_found` | 404 | false | entity/board/approval/run not found | `resource` |
 | `validation_failed` | 400 | false | class-validator/shape | `field`, `message` |
@@ -1367,22 +1367,32 @@ batch/DTO is `validation_failed` (400); an oversized body is
 
 - `X-RateLimit-Limit` — current bucket ceiling;
 - `X-RateLimit-Remaining` — remaining budget;
-- `X-RateLimit-Reset` — reset time as Unix seconds;
-- `Retry-After` — seconds, required on `429 rate_limited`.
+- `X-RateLimit-Reset` — Unix seconds when the bucket is whole again (fixed
+  window end, or a full continuously refilling board bucket);
+- `RateLimit-Reset` — seconds until the next admission (the next board token,
+  or the fixed-window end);
+- `Retry-After` — seconds, required on `429 rate_limited` and on the queued
+  `503 rate_limited`;
+- `X-RateLimit-Queued-Ms` — total time a command spent in the per-board queue.
 
 The bucket is keyed by principal: user, token, or IP for anonymous requests.
 Both the per-token limit and the global limit apply.
 
-**Implementation (166.10).** The global per-principal `@nestjs/throttler`
-window is unchanged. On top of it, PAT traffic gets a per-session bucket
-(`AGENT_SESSION_RATE_LIMIT`, default = live global limit, min 60) and a
-per-board bucket (`BOARD_RATE_LIMIT`, default = 2× live global limit, min
-600). Browser sessions do not get the new buckets. The token's explicit
-`rateLimitPerMinute` remains the tightest token budget. `X-RateLimit-*` names
-the tightest bucket that counted the request (with `X-RateLimit-Scope`), and
-the same budget appears in the `429` envelope (`rate_limited`, `retryable`,
-`retryAfter`, `limit`, `scope`, `requestId`). `X-RateLimit-Reset` is Unix
-seconds; the IETF-style `RateLimit-Reset` is seconds until reset.
+**Implementation (166.10, resized by 200.3).** The global per-principal
+`@nestjs/throttler` window is unchanged. On top of it, PAT traffic gets a
+per-session bucket (`AGENT_SESSION_RATE_LIMIT`, default
+`max(600, THROTTLE_LIMIT)`), a per-token fairness bucket
+(`AGENT_TOKEN_RATE_LIMIT`, default `max(600, ceil(THROTTLE_LIMIT / 4))`; an
+explicit `rateLimitPerMinute` is capped by it) and a per-board safety ceiling
+(`BOARD_RATE_LIMIT`, default `max(12000, 2 × THROTTLE_LIMIT)`). Browser
+sessions do not get the new buckets. `X-RateLimit-*` names the tightest bucket
+that counted the request (with `X-RateLimit-Scope`), and the same budget
+appears in the envelope (`rate_limited`, `retryable`, `retryAfter`, `limit`,
+`scope`, `requestId`). A batch or plan apply spends `commands.length` from the
+token and board budgets. Commands over the board ceiling wait up to
+`AGENT_COMMAND_QUEUE_MS` (default `1500`, max `30000`) and then answer `503
+rate_limited`; other routes answer `429` immediately (including
+`plans/apply`).
 
 The request log is one JSON line per finished API response with
 `requestId`, method/path/status/duration, `actorType`/`actorId`, `boardId`,

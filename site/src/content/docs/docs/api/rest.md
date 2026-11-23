@@ -1158,5 +1158,6 @@ names the cause.
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |
 | `429`  | a rate limit was exceeded; `code: "login_backoff"` during a login backoff                                                                                 |
+| `503`  | `code: "rate_limited"` when a command exhausted its board queue wait; retry after `Retry-After` with the same `commandId`                                   |
 | `503`  | maintenance mode; a failed health check; `code: "board_write_timeout"` when a board write timed out (safe to retry)                                       |
 | `503`  | `POST /boards` after the board was created: `code: "starter_cleanup_failed"`, `"starter_read_failed"` or `"board_read_failed"` with `retryable: false` and `details.boardId`; open that board instead of creating another |

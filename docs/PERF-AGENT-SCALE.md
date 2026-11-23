@@ -437,7 +437,7 @@ These are deliberately conservative. The single-board 500-agent profile assumes 
 | 5 | MCP reads the full board before a command and sends board-wide `ifMatch` | `mcp/src/client.ts:434-465`; `mcp/src/tools/cards.ts:469-475` |
 | 6 | `wait_for_work` polls full boards every 5 s (default) for up to 30 s | `mcp/src/tools/cards.ts:1205-1265`; `loadBoards` at `:1313-1324` |
 | 7 | Board rate limit is 600/min shared per board, derived from global | `backend/src/config/rate-limit.ts:29-33`; `backend/src/config/env.ts:191-194` |
-| 8 | MCP does not retry 429; only board-busy 503/network errors | `mcp/src/errors.ts:43-60`; `mcp/src/client.ts:205-227` |
+| 8 | Before TASK-200.3 MCP did not retry 429; it now retries 429/queued 503 with `Retry-After` + jitter | `mcp/src/errors.ts`; `mcp/src/client.ts` |
 | 9 | One-board command throughput is ~42–48/s; 290/s across 100 boards | `docs/PERF-ONE-BOARD.md:45-53,86`; `docs/PERF-BASELINE.md:39-40` |
 | 10 | PAT command path can load the full aggregate three times | `backend/src/commands/commands.service.ts:404-410,568-573,694` |
 | 11 | Two full-board `stableStringify` calls per command; 0.5 ms at 200 cards | `commands.service.ts:1206-1212,2471-2482`; `docs/PERF-ONE-BOARD.md:67` |

@@ -222,11 +222,20 @@ conflict: "id" }` and writes nothing.
 | `409`  | a conflict (see above), or `commandId` used on another board                   |
 | `409`  | `commandId` reused with a different action; `field: "commandId"`               |
 | `413`  | the serialized `action` exceeds `MAX_COMMAND_BYTES` (2 MB)                     |
+| `503`  | `code: "rate_limited"`: the command exhausted its board queue wait; retry after `Retry-After` with the same `commandId` |
 | `503`  | `code: "board_write_timeout"`: the board write timed out under load            |
 
 A `503` with `board_write_timeout` means the transaction holding the board's
 write lock timed out and was rolled back, so nothing was applied. Retry with
 the same `commandId`: the idempotency key makes the retry safe.
+
+A `503` with `rate_limited` is backpressure, not an outage. A command over the
+shared board budget waits up to `AGENT_COMMAND_QUEUE_MS` (default `1500` ms)
+for enough tokens; if the queue stays full, nothing is applied and the reply
+carries `Retry-After`, the `rate_limited` envelope with `scope: "board"`, and
+`X-RateLimit-Queued-Ms` with the total queue wait. Retrying the same
+`commandId` is safe. A batch is charged by `commands.length` on the board and
+token budgets.
 
 Commands that reference unknown entities no-op exactly like the reducer and
 are still recorded. A replay returns the stored no-op result.

@@ -109,10 +109,11 @@ highest sequence from its results and the batch run ID. Use `seq` as
 `expectedVersion` for a subsequent write. The result may also carry
 `resourceId` or `approvalId`. Failed calls keep
 `isError: true` and carry `structuredContent` with `ok: false`, the API `code`,
-`retryable`, `requestId` and conflict details. The server automatically retries
-a `429 rate_limited` (and the queued `503 rate_limited`) up to four attempts,
-honouring `Retry-After` with jittered exponential backoff, before returning the
-error; a command retry keeps its `commandId`. Retry only `retryable: true`
+`retryable`, `requestId` and conflict details. The MCP server retries the API
+call automatically for a `429 rate_limited` (and the queued `503
+rate_limited`) up to four attempts, adding jitter on top of `Retry-After`
+(capped at eight seconds total), before returning the error; a command retry
+keeps its `commandId`. Retry only `retryable: true`
 failures that still come back (`rate_limited`, `board_write_timeout`,
 `idempotency_in_progress`); re-read the board on `version_conflict`, and stop on
 `approval_required`.

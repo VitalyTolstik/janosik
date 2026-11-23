@@ -191,6 +191,7 @@ it. `statusCode` is kept as a compatibility mirror.
 | `416` | `range_not_satisfiable` | an unsatisfiable `Range` on an attachment |
 | `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
 | `429` | `login_backoff` | too many failed sign-ins; wait `retryAfter` seconds |
+| `503` | `rate_limited` | the command exhausted its board queue wait; `Retry-After` is set, retry the same `commandId` |
 | `503` | `board_write_timeout` | the board write lock timed out; safe to retry |
 | `503` | `service_unavailable` | maintenance or a transient outage; retry later |
 
@@ -286,36 +287,47 @@ The public share API has its own per-token budget (see
 
 ### Agent buckets and headers
 
-Personal API tokens get two additional buckets on top of the global principal
-window. Browser sessions keep exactly the legacy per-user/IP behaviour.
+Personal API tokens get three additional buckets on top of the global
+principal window. Browser sessions keep exactly the legacy per-user/IP
+behaviour.
 
 - **Per-agent-session** — `AGENT_SESSION_RATE_LIMIT` requests per minute
   (default: `max(600, live global limit)`) per `agentSessionId`. It applies
   when the request carries `X-Agent-Session`, a session id in the path or
   `?session=` on an SSE stream.
 - **Per-token agent** — `AGENT_TOKEN_RATE_LIMIT` requests per minute
-  (default: `max(600, live global limit / 4)`) per API key **without** its own
-  explicit `rateLimitPerMinute`. Raising `THROTTLE_LIMIT` for a swarm therefore
-  does not let one key consume the whole board; an explicit key limit is kept
-  as chosen.
+  (default: `max(600, ceil(live global limit / 4))`) per API key. A key's own
+  `rateLimitPerMinute` is a ceiling, not an exemption: the effective budget is
+  `min(rateLimitPerMinute, derived share)`. Raising `THROTTLE_LIMIT` for a
+  swarm therefore does not let a 100k/min key consume the whole board, while
+  a lower explicit limit still tightens it.
 - **Per-board** — `BOARD_RATE_LIMIT` requests per minute (default:
   `max(12000, 2 × live global limit)`) per board, shared by every PAT working
   on that board. It is a safety ceiling, not the per-agent budget. The bucket
   refills continuously rather than at a window boundary. `POST
   /boards/:id/commands` and its batch route wait up to
-  `AGENT_COMMAND_QUEUE_MS` (default `1500`) for a free slot and then answer
-  `503` with `code: "rate_limited"` and `Retry-After`; reads and other routes
-  answer `429`. A command refused this way was not applied, so retrying it
-  with the same `commandId` stays idempotent.
-- A token's own `rateLimitPerMinute` remains the tightest per-token budget.
+  `AGENT_COMMAND_QUEUE_MS` (default `1500`) for enough free slots and then
+  answer `503` with `code: "rate_limited"`, `Retry-After` and
+  `X-RateLimit-Queued-Ms` (total time spent in the per-board queue, including
+  the wait behind earlier commands); reads and other routes answer `429`.
+  `POST /boards/:id/plans/apply` is not queued and answers `429` immediately,
+  but still spends its command count. A command refused this way was not
+  applied, so retrying it with the same `commandId` stays idempotent.
+- A batch or plan apply is charged by `commands.length` on the board and token
+  budgets (clamped to the 100-command batch bound), so one request cannot
+  spend a whole window for a hundred commands.
 
 A response carries the budget that counted the request:
-`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` (Unix
-seconds), `X-RateLimit-Scope` (`token`, `session` or `board`), the
-IETF-style `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset` (`Reset`
-is seconds until reset) and, on `429`, `Retry-After`. When several buckets
-exist, the headers name the tightest one, so a client that respects them will
-not be rejected by the global window first.
+`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`,
+`X-RateLimit-Scope` (`token`, `session` or `board`), the IETF-style
+`RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset` and, on `429` or a
+queued `503`, `Retry-After`. `X-RateLimit-Reset` is Unix seconds when the
+bucket is whole again (the fixed-window end, or a full board bucket);
+`RateLimit-Reset` is seconds until the next admission (`0` while a board
+token is available, otherwise the next token for the board bucket, and the
+window end for fixed buckets). When several buckets exist, the headers name
+the tightest one, so a client that respects them will not be rejected by the
+global window first.
 
 A rejection uses the shared error envelope:
 

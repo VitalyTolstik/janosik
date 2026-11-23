@@ -1001,6 +1001,10 @@ paths:
         resend the same command ID, action and version preconditions to
         retrieve the committed result if the first request was applied.
         `Idempotency-Key` is additionally honoured for `DUPLICATE_CARD`.
+        Over the shared board budget the command waits up to
+        `AGENT_COMMAND_QUEUE_MS` for a token and then answers `503
+        rate_limited` with `Retry-After`; the board and token budgets are
+        charged by the command count.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -1028,7 +1032,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
-        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
   /boards/{boardId}/commands/batch:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -1041,7 +1045,9 @@ paths:
         in command order. At most 100 commands. A PAT batch creates exactly
         one `AgentRun` (kind `batch`) and sets `X-Run-Id`. If any action is
         destructive, the whole batch needs one approval. `clientRunId` keys
-        that run.
+        that run. The batch is charged by `commands.length` on the board and
+        token budgets, waits up to `AGENT_COMMAND_QUEUE_MS` for the whole
+        cost, and then answers either `200` or `503 rate_limited`.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -1068,7 +1074,7 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
-        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
   /boards/{boardId}/plans:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -1116,7 +1122,9 @@ paths:
         `409 approval_mismatch`; a destructive plan without `X-Approval-Id`
         creates an approval and applies nothing. A PAT apply creates one
         `AgentRun` (kind `plan`) and sets `X-Run-Id`; a browser apply creates
-        no run. Atomic and idempotent like a batch.
+        no run. Atomic and idempotent like a batch. The plan is charged by its
+        command count, but this route is deliberately not queued: over the
+        agent budget it answers `429` immediately.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -3215,8 +3223,18 @@ components:
       schema:
         type: string
         enum: [token, session, board]
+    X-RateLimit-Queued-Ms:
+      description: |
+        Total time a command spent in the per-board queue, including the wait
+        behind earlier commands and the wait for enough board tokens. Present
+        only on a command or batch request that had to queue.
+      schema:
+        type: integer
+        minimum: 0
     Retry-After:
-      description: Seconds to wait before retrying a `429`.
+      description: |
+        Seconds to wait before retrying a `429 rate_limited` or a queued `503
+        rate_limited`.
       schema:
         type: integer
         minimum: 0
@@ -3347,6 +3365,36 @@ components:
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    CommandUnavailable:
+      description: |
+        One of two safe-to-retry refusals for a command or batch:
+
+        - `rate_limited`: the command waited up to `AGENT_COMMAND_QUEUE_MS`
+          for enough board tokens and the per-board queue is still full.
+          Nothing was applied; `Retry-After` is set, the envelope carries
+          `scope: "board"`, and `X-RateLimit-Queued-Ms` reports the total
+          queue wait. Retry the same `commandId`.
+        - `board_write_timeout`: the transaction holding the board write lock
+          timed out and rolled back. Retry the same `commandId`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/X-RateLimit-Limit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/X-RateLimit-Remaining"
+        X-RateLimit-Reset:
+          $ref: "#/components/headers/X-RateLimit-Reset"
+        X-RateLimit-Scope:
+          $ref: "#/components/headers/X-RateLimit-Scope"
+        X-RateLimit-Queued-Ms:
+          $ref: "#/components/headers/X-RateLimit-Queued-Ms"
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
       content:
         application/json:
           schema:
