@@ -8,8 +8,10 @@ import type {
 import { cardLinkIndex } from "@/utils/links";
 import {
   boardFromSummary,
+  cardChecklistProgress,
   cardFromDetail,
   cardFromSummary,
+  cardHasDescription,
   hasCardDetail,
 } from "./read-model";
 
@@ -203,6 +205,60 @@ describe("read-model adapters (TASK-200.9)", () => {
     // below it even when the source cards have maximum-length descriptions.
     expect(bytes).toBeLessThan(2 * 1024 * 1024);
     expect(JSON.stringify(payload)).not.toContain('"description":');
+  });
+
+  it("does not double-count a loaded detail card's link degree", () => {
+    const detail = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "a",
+        title: "a",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+        links: [{ id: "l", type: "blocks", targetCardId: "b" }],
+      },
+      version: 1,
+      linkCount: 1,
+      blocked: false,
+      seq: 1,
+      atSeq: 1,
+      aggregateRevision: 1,
+    });
+    const b: Card = {
+      id: "b",
+      title: "b",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const index = cardLinkIndex({ a: detail, b });
+    expect(index.factsOf("a").degree).toBe(1);
+    expect(index.factsOf("a").outgoing).toHaveLength(1);
+  });
+
+  it("uses real fields for badges after a detail edit", () => {
+    const card = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "a",
+        title: "a",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 2,
+        checklists: [{ id: "cl", title: "s", items: [] }],
+      },
+      version: 1,
+      linkCount: 0,
+      blocked: false,
+      seq: 1,
+      atSeq: 1,
+      aggregateRevision: 1,
+    });
+    expect(cardHasDescription(card)).toBe(false);
+    expect(cardChecklistProgress(card)).toEqual({ done: 0, total: 0 });
   });
 
   it("uses summary link facts for DnD badges/filters without double-counting", () => {
