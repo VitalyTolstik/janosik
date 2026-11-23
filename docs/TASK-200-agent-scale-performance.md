@@ -273,7 +273,11 @@ workflow, create, смена workflow планом) добавляют один 
   закрывает изменения метаданных доски без движения `seq` (agent policy,
   pause, admin restore). `304` сохраняет `X-Board-Seq`, чтобы клиент сдвинул
   базу SSE. `Cache-Control: private, no-store`; `Vary: Accept-Encoding`
-  ставится и на 200, и на 304.
+  ставится и на 200, и на 304. Это валидатор **именно полного aggregate**:
+  комментарии/вложения в него не входят, а все не-командные изменения строки
+  `Board` двигают `updatedAt`. Будущая summary-проекция с комментариями или
+  счётчиками потребует отдельного `aggregateRevision` (200.10); `seq` сам по
+  себе не станет её content revision.
 - Сжатие — только этот буферизованный JSON: gzip/Brotli через async `zlib`
   (Brotli q4 предпочтителен при равном q; q=0/`identity` соблюдаются), порог
   1 КБ, откат в identity, если сжатие не уменьшило тело. SSE, multipart,
