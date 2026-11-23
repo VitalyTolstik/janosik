@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { env } from "@/config/env";
@@ -21,7 +22,13 @@ import {
   markHistoryIncomplete,
   verifyCommentHistory,
 } from "@/comments/comment-history";
-
+import {
+  COMMAND_LOG_TABLES,
+  isWholeMonthExpired,
+  parseCommandPartitionMonth,
+  partitionMonthsToEnsure,
+} from "@/commands/command-log-partitions";
+import { commandKeyBoardIndexState } from "@/commands/command-key-index";
 /**
  * TASK-68 — regular housekeeping. Everything that used to accumulate
  * forever is swept by a named job: soft-deleted rows past the retention
@@ -31,6 +38,10 @@ import {
  * can show what a run actually removed; every sweep is idempotent.
  */
 export const MAINTENANCE_JOBS = [
+  // TASK-200.11: build the deferred CommandKey(boardId) index before any
+  // board-scoped purge/demo scan can run. On a large registry migration 6
+  // skips the inline build; the purge's orphan passes need this index.
+  "ensure-command-key-index",
   // TASK-185.6 review: repair legacy Activity links before the purge can
   // delete a comment. The purge also matches `details.commentId`, so a direct
   // `purge-soft-deleted` run is safe too.
@@ -43,6 +54,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-claims",
   "sweep-exports",
   "sweep-commands",
+  "ensure-command-partitions",
   "sweep-runs",
   "sweep-agent-sessions",
   "sweep-approvals",
@@ -79,12 +91,31 @@ export const PURGE_CHUNK = 500;
 /** Safety bound on chunks per table per run (500 × 200 = 100k rows). */
 const PURGE_MAX_CHUNKS = 200;
 /**
+ * TASK-200.11: the command log is the only table whose inflow alone can beat
+ * the generic budget (50 commands/s = 4.32M/day; 100k/hour = 2.4M/day). A
+ * dedicated 1,000-row chunk × 1,000 chunks allows 1M command rows per run per
+ * table, i.e. 24M/day at the hourly cadence — above target load — while still
+ * bounding a single run. This is a drain budget, not a retention guarantee;
+ * see the size plan in `docs/TASK-200.11-command-log-partitioning.md`.
+ */
+export const COMMAND_PURGE_CHUNK = 1_000;
+export const COMMAND_PURGE_MAX_CHUNKS = 1_000;
+/**
  * The board-subtree purge runs in one board-locked transaction so a restore
  * cannot interleave. Prisma's 5 s default is far too short for a 25k-card
  * board; keep the lock bounded but generous enough for a full subtree.
  */
 export const PURGE_BOARD_TX_TIMEOUT_MS = 5 * 60_000;
 export const PURGE_BOARD_TX_MAX_WAIT_MS = 10_000;
+
+/** Whole-month DDL waits for readers inside the SQL helper, then the sweep retries. */
+export const COMMAND_DROP_ATTEMPTS = 3;
+const COMMAND_DROP_RETRY_DELAY_MS = 75;
+
+/** `YYYY-MM-01` for a UTC month boundary; safe to cast to `date`. */
+function monthSql(month: Date): string {
+  return `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
 
 @Injectable()
 export class MaintenanceService {
@@ -104,7 +135,20 @@ export class MaintenanceService {
     if (job === "all") {
       const results: MaintenanceRunResult[] = [];
       for (const name of MAINTENANCE_JOBS) {
-        results.push(...(await this.run(name)));
+        try {
+          results.push(...(await this.run(name)));
+        } catch (error) {
+          // One wedged sweep (a locked partition, a default partition that
+          // needs moving) must not stop retention/token cleanup that follows.
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(`maintenance ${name} failed: ${message}`);
+          results.push({
+            job: name,
+            removed: 0,
+            detail: `failed: ${message}`,
+          });
+        }
       }
       return results;
     }
@@ -135,6 +179,10 @@ export class MaintenanceService {
         return this.sweepClaims();
       case "sweep-exports":
         return this.sweepExports();
+      case "ensure-command-partitions":
+        return this.ensureCommandPartitions();
+      case "ensure-command-key-index":
+        return this.ensureCommandKeyIndex();
       case "sweep-commands":
         return this.sweepCommands();
       case "sweep-runs":
@@ -576,7 +624,10 @@ export class MaintenanceService {
           });
           if (page.length === 0) break;
           await tx.commandPreimage.deleteMany({
-            where: { commandId: { in: page.map((row) => row.commandId) } },
+            where: {
+              commandId: { in: page.map((row) => row.commandId) },
+              boardId,
+            },
           });
           if (page.length < PURGE_CHUNK) break;
         }
@@ -587,10 +638,53 @@ export class MaintenanceService {
             take: PURGE_CHUNK,
           });
           if (page.length === 0) break;
+          const ids = page.map((row) => row.id);
+          // TASK-200.11: keep each statement bounded. The key/detail ids come
+          // from the same command page, so a 25k-command board never issues an
+          // unbounded board-wide DELETE inside the 5-minute transaction.
+          await tx.commandDetail.deleteMany({
+            where: { commandId: { in: ids } },
+          });
+          await tx.commandKey.deleteMany({
+            where: { id: { in: ids }, boardId },
+          });
           await tx.command.deleteMany({
-            where: { id: { in: page.map((row) => row.id) } },
+            where: { id: { in: ids }, boardId },
           });
           if (page.length < PURGE_CHUNK) break;
+        }
+        // Defensive bounded passes for legacy/orphan rows whose command was
+        // already gone before this purge.
+        for (;;) {
+          const page = await tx.commandDetail.findMany({
+            where: { boardId },
+            select: { commandId: true },
+            take: PURGE_CHUNK,
+          });
+          if (page.length === 0) break;
+          await tx.commandDetail.deleteMany({
+            where: { commandId: { in: page.map((row) => row.commandId) } },
+          });
+          if (page.length < PURGE_CHUNK) break;
+        }
+        const keyIndexState = await commandKeyBoardIndexState(tx);
+        if (keyIndexState === "valid") {
+          for (;;) {
+            const page = await tx.commandKey.findMany({
+              where: { boardId },
+              select: { id: true },
+              take: PURGE_CHUNK,
+            });
+            if (page.length === 0) break;
+            await tx.commandKey.deleteMany({
+              where: { id: { in: page.map((row) => row.id) }, boardId },
+            });
+            if (page.length < PURGE_CHUNK) break;
+          }
+        } else {
+          this.logger.warn(
+            `purge-board: CommandKey_boardId_idx is ${keyIndexState}; skipping the defensive board key orphan pass`,
+          );
         }
         await tx.checklistItem.deleteMany({
           where: { checklist: { card: { column: { boardId } } } },
@@ -647,13 +741,15 @@ export class MaintenanceService {
   private async purgeChunks<T>(
     find: (take: number) => Promise<T[]>,
     purge: (rows: T[]) => Promise<number>,
+    chunkSize: number = PURGE_CHUNK,
+    maxChunks: number = PURGE_MAX_CHUNKS,
   ): Promise<number> {
     let total = 0;
-    for (let chunk = 0; chunk < PURGE_MAX_CHUNKS; chunk += 1) {
-      const rows = await find(PURGE_CHUNK);
+    for (let chunk = 0; chunk < maxChunks; chunk += 1) {
+      const rows = await find(chunkSize);
       if (rows.length === 0) break;
       total += await purge(rows);
-      if (rows.length < PURGE_CHUNK) break;
+      if (rows.length < chunkSize) break;
     }
     return total;
   }
@@ -924,20 +1020,124 @@ export class MaintenanceService {
   }
 
   /**
-   * Trims the command log to the retention window (TASK-84, ADR §6.14). The
-   * `Command` table is the board's replay log and grows forever otherwise; a
-   * client whose `seq` baseline falls outside the window simply re-reads the
-   * board envelope on its next connection. Pre-images go first: they have no
-   * value once their command is gone, and deleting them in the same pass
-   * keeps the ordering preimages → commands. Window =
-   * `OpsSettings.retentionDays` (same knob as the soft-delete purge), default
-   * 30 days.
+   * TASK-200.11: keep the previous, current and next three months' partitions
+   * present before a write arrives. The SQL helper creates the matching
+   * partition of `Command`, `CommandDetail` and `CommandPreimage`; creating a
+   * partition also creates every parent index on it. Idempotent, so a repeated
+   * or overlapping scheduler run costs catalog lookups only.
+   *
+   * A month whose rows already sit in the default partition cannot be added
+   * without moving those rows first; the helper raises and this job reports
+   * the failure instead of silently leaving the default to grow.
+   */
+  async ensureCommandPartitions(): Promise<{
+    removed: number;
+    detail: string;
+  }> {
+    const days = await this.retentionDays();
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    const created: string[] = [];
+    const skipped: string[] = [];
+    const months = partitionMonthsToEnsure(new Date()).filter(
+      // Never recreate a month that retention already dropped (a short
+      // retention window can make the previous month fully expired).
+      (month) => !isWholeMonthExpired(month, cutoff),
+    );
+    for (const month of months) {
+      const rows = await this.prisma.$queryRaw<
+        Array<{ created: string | null }>
+      >(
+        Prisma.sql`SELECT janosik_ensure_command_partition(${monthSql(month)}::date) AS created`,
+      );
+      const value = rows[0]?.created ?? "";
+      if (value.startsWith("skipped:")) {
+        // Rows are parked in a default partition for this month. Moving them
+        // is an operator action; create no partial month and keep the rest of
+        // the scheduler running.
+        skipped.push(`${monthSql(month)} ${value.slice("skipped:".length)}`);
+        continue;
+      }
+      if (value !== "") created.push(value);
+    }
+    if (skipped.length > 0) {
+      this.logger.warn(
+        `maintenance ensure-command-partitions skipped default-partition rows: ${skipped.join(" | ")}`,
+      );
+    }
+    const parts: string[] = [];
+    if (created.length > 0) parts.push(`created ${created.join(", ")}`);
+    if (skipped.length > 0) {
+      parts.push(`skipped default-partition rows for ${skipped.join(" | ")}`);
+    }
+    return {
+      // DDL creates partitions; it never removes rows. Keep the generic
+      // maintenance result honest: the detail carries what changed.
+      removed: 0,
+      detail: parts.length === 0 ? "partitions up to date" : parts.join("; "),
+    };
+  }
+
+  /**
+   * Build the `CommandKey(boardId)` index outside a transaction when migration
+   * 6 skipped it (registry at least 1M rows or 64 MiB). `CREATE INDEX
+   * CONCURRENTLY` does not block normal writes; it still consumes I/O and
+   * needs free disk/WAL, so an operator should run it in a quiet window. An
+   * invalid leftover index from a failed build is rebuilt rather than treated
+   * as done.
+   */
+  async ensureCommandKeyIndex(): Promise<{
+    removed: number;
+    detail: string;
+  }> {
+    const state = await commandKeyBoardIndexState(this.prisma);
+    if (state === "valid") {
+      return { removed: 0, detail: "CommandKey_boardId_idx already present" };
+    }
+    if (state === "invalid") {
+      // A concurrent build interrupted earlier leaves an invalid index.
+      await this.prisma.$executeRawUnsafe(
+        'DROP INDEX CONCURRENTLY IF EXISTS "CommandKey_boardId_idx"',
+      );
+    }
+    await this.prisma.$executeRawUnsafe(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "CommandKey_boardId_idx" ON "CommandKey" ("boardId")',
+    );
+    return {
+      removed: 0,
+      detail: "created CommandKey_boardId_idx concurrently",
+    };
+  }
+
+  /**
+   * Trims the command log to the retention window (TASK-84, ADR §6.14;
+   * TASK-200.11 partitions).
+   *
+   * Two complementary mechanisms:
+   * - Whole monthly partitions strictly older than the cutoff are dropped.
+   *   That is metadata work, not a row-by-row delete, so the 30-day window
+   *   does not leave a bloated heap that autovacuum must chase forever. The
+   *   database helper drops the side table and pre-images of the same month
+   *   first and leaves the default partition alone.
+   * - Rows from the partially expired current month and anything parked in
+   *   the default partition are deleted in bounded chunks. The pre-images go
+   *   first; a real command delete removes the side row through the deferred
+   *   detail trigger. A separate bounded `NOT EXISTS Command` pass drains
+   *   `CommandKey`, because the registry is unpartitioned and a month DDL
+   *   cannot cheaply delete it inline.
+   *
+   * Window = `OpsSettings.retentionDays` (same knob as the soft-delete purge),
+   * default 30 days. Agent and human commands share the window: a shorter
+   * agent window would strand `AgentRun` rollback after its pre-images were
+   * dropped. Operators who accept that trade-off lower the global knob.
    */
   async sweepCommands(): Promise<number> {
     const days = await this.retentionDays();
     const cutoff = new Date(Date.now() - days * 86_400_000);
+    let removed = await this.dropExpiredCommandPartitions(cutoff);
+
+    // Rows left in the active month and in the default partition.
     const stale = { createdAt: { lt: cutoff } };
-    let removed = await this.purgeChunks(
+    removed += await this.purgeChunks(
       (take) =>
         this.prisma.commandPreimage.findMany({
           where: stale,
@@ -950,21 +1150,116 @@ export class MaintenanceService {
             where: { commandId: { in: rows.map((row) => row.commandId) } },
           })
         ).count,
+      COMMAND_PURGE_CHUNK,
+      COMMAND_PURGE_MAX_CHUNKS,
     );
     removed += await this.purgeChunks(
       (take) =>
         this.prisma.command.findMany({
           where: stale,
-          select: { id: true },
+          select: { id: true, boardId: true },
           take,
         }),
       async (rows) =>
         (
           await this.prisma.command.deleteMany({
-            where: { id: { in: rows.map((row) => row.id) } },
+            // Pair the id with its board even though CommandKey makes the id
+            // globally unique: a purge page must never cross a board boundary.
+            where: {
+              createdAt: { lt: cutoff },
+              OR: rows.map((row) => ({
+                id: row.id,
+                boardId: row.boardId,
+              })),
+            },
           })
         ).count,
+      COMMAND_PURGE_CHUNK,
+      COMMAND_PURGE_MAX_CHUNKS,
     );
+    // The registry is large and unpartitioned. A month DDL must not delete it
+    // inline; this pass removes only keys that have no Command at all (a live
+    // key can be older than its moved command), in bounded chunks. `boardId`
+    // is part of the NOT EXISTS probe so a same-id row on another board can
+    // never mask or delete a live key.
+    removed += await this.purgeChunks(
+      (take) =>
+        this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT k."id"
+            FROM "CommandKey" k
+           WHERE k."createdAt" < ${cutoff}
+             AND NOT EXISTS (
+               SELECT 1 FROM "Command" c
+                WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+             )
+           ORDER BY k."createdAt", k."id"
+           LIMIT ${take}
+        `),
+      async (rows) =>
+        this.prisma.$executeRaw(Prisma.sql`
+          DELETE FROM "CommandKey" k
+           WHERE k."id" IN (${Prisma.join(rows.map((row) => row.id))})
+             AND k."createdAt" < ${cutoff}
+             AND NOT EXISTS (
+               SELECT 1 FROM "Command" c
+                WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+             )
+        `),
+      COMMAND_PURGE_CHUNK,
+      COMMAND_PURGE_MAX_CHUNKS,
+    );
+    return removed;
+  }
+
+  /**
+   * Drop every monthly command-log partition whose whole range is older than
+   * `cutoff`. The caller has already resolved the retention window; this
+   * helper is separate so a test (and an operator) can exercise the partition
+   * path without running the row chunks.
+   */
+  async dropExpiredCommandPartitions(cutoff: Date): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ name: string }>>(
+      Prisma.sql`
+        SELECT child.relname AS name
+          FROM pg_inherits
+          JOIN pg_class parent ON parent.oid = pg_inherits.inhparent
+          JOIN pg_class child ON child.oid = pg_inherits.inhrelid
+          JOIN pg_namespace ns ON ns.oid = parent.relnamespace
+         WHERE ns.nspname = current_schema()
+           AND parent.relname IN (${Prisma.join([...COMMAND_LOG_TABLES])})
+         ORDER BY child.relname
+      `,
+    );
+    const months = new Map<string, Date>();
+    for (const row of rows) {
+      for (const table of COMMAND_LOG_TABLES) {
+        const month = parseCommandPartitionMonth(table, row.name);
+        if (month === null) continue;
+        months.set(month.toISOString(), month);
+        break;
+      }
+    }
+    let removed = 0;
+    for (const month of months.values()) {
+      if (!isWholeMonthExpired(month, cutoff)) continue;
+      for (let attempt = 0; attempt < COMMAND_DROP_ATTEMPTS; attempt += 1) {
+        const dropped = await this.prisma.$queryRaw<Array<{ removed: bigint }>>(
+          Prisma.sql`SELECT janosik_drop_command_partition(${monthSql(month)}::date) AS removed`,
+        );
+        const value = Number(dropped[0]?.removed ?? 0n);
+        if (value >= 0) {
+          removed += value;
+          break;
+        }
+        if (attempt === COMMAND_DROP_ATTEMPTS - 1) {
+          this.logger.warn(
+            `sweep-commands: ${monthSql(month)} is still locked by readers; leaving the partition for the next run`,
+          );
+          break;
+        }
+        await delay(COMMAND_DROP_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
     return removed;
   }
 

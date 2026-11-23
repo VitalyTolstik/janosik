@@ -714,6 +714,29 @@ restrictive CSP. Serve the public hostname over HTTPS to apply HSTS in browsers.
 | Attachments and avatars | Docker volume `janosik-uploads` |
 | Configuration | `.env` next to `docker-compose.yml` |
 
+### Command log retention
+
+The board command log is stored in monthly PostgreSQL partitions
+(`Command_YYYYMM`). Maintenance keeps the previous, current and next three
+months available and drops whole months older than the retention window
+(30 days by default, `PURGE_AFTER_DAYS` or the master-panel setting). The
+command-specific sweep budget is 1M rows per table per hourly run (24M/day);
+if the scheduler is paused, the effective window grows. Because partitions are
+monthly, the live window is effectively 30–60 days; budget ~2× the nominal
+rows/storage. A busy agent swarm can
+write tens of commands per second; read the `commandLog` field of
+`GET /api/v1/admin/observability` (not rendered on the current admin page) for
+partition size, dead tuples and vacuum times. `defaultRows` is an exact count
+and should stay at zero. The `registry` block covers the unpartitioned
+`CommandKey` table; it is drained in bounded orphan sweeps, so watch its dead
+tuples and autovacuum. Migration 6 builds the board index inline only for a
+small registry; a large install defers it to the `ensure-command-key-index`
+job (`CREATE INDEX CONCURRENTLY`, index/WAL space, quiet window). The
+partitioning upgrade needs about twice the current
+log size in free disk space and a full quiet window — the whole migration
+transaction holds the old table names while it copies and builds indexes, so
+stop old replicas before migrating; rollback is a database backup restore.
+
 Backups, restores and upgrades live in
 [Operations runbooks](/docs/runbooks/). Report vulnerabilities privately; see
 [Security](/docs/security/).

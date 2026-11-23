@@ -66,6 +66,12 @@ post('/boards', {'title':'Created after backup'}, auth['accessToken'])
 PY
 (cd "$JANOSIK_INSTALL_DIR" && docker compose exec -T app sh -c 'printf changed > /data/uploads/.smoke-marker')
 (cd "$JANOSIK_INSTALL_DIR" && docker compose stop app)
+# `pg_dump --clean` emits DROP CONSTRAINT for inherited partition constraints
+# (`Command_default_pkey`, …), which PostgreSQL refuses on a live partitioned
+# schema. Recreating the database makes those clean-up statements no-ops and
+# still restores every row, key and migration record from the dump.
+(cd "$JANOSIK_INSTALL_DIR" && docker compose exec -T postgres dropdb -U janosik --if-exists --force janosik)
+(cd "$JANOSIK_INSTALL_DIR" && docker compose exec -T postgres createdb -U janosik janosik)
 (cd "$JANOSIK_INSTALL_DIR" && docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U janosik janosik < "$test_dir/backup.sql" > /dev/null)
 (cd "$JANOSIK_INSTALL_DIR" && docker run --rm --volumes-from "$(docker compose ps -aq app)" -v "$test_dir:/out" alpine sh -c 'find /data/uploads -mindepth 1 -delete && tar xzf /out/uploads.tar.gz -C /data/uploads')
 (cd "$JANOSIK_INSTALL_DIR" && docker compose start app && docker compose up -d --wait --wait-timeout 240)

@@ -3,6 +3,7 @@ import type { AdminObservabilityDto } from "@janosik/shared";
 import { Prisma } from "@prisma/client";
 import { createRequire } from "node:module";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { env } from "@/config/env";
 import {
   COMMENT_ACTIVITY_BUDGET_BYTES,
   COMMENT_REVISION_BUDGET_BYTES,
@@ -21,6 +22,9 @@ import { DemoService } from "./demo.service";
 import type { QueueStats } from "@/ops/queue-core";
 import { DemoQueueService } from "./demo-queue.service";
 import { ExportsService } from "./exports.service";
+import { readCommandLogStats } from "./command-log-stats";
+
+type CommandLogStats = NonNullable<AdminObservabilityDto["commandLog"]>;
 
 const BACKEND_VERSION: string = (() => {
   try {
@@ -59,6 +63,15 @@ function unavailableHistoryCounters(): AdminObservabilityDto["commentHistory"] {
       writer_gap: 0,
     },
     overBudget: { revisions: 0, activity: 0 },
+  };
+}
+
+function unavailableCommandLog(): CommandLogStats {
+  return {
+    available: false,
+    retentionDays: env.PURGE_AFTER_DAYS,
+    partitions: [],
+    defaultRows: 0,
   };
 }
 
@@ -106,16 +119,25 @@ export class ObservabilityService {
   ) {}
 
   async snapshot(): Promise<AdminObservabilityDto> {
-    const [size, tables, transcode, demo, health, queues, commentHistory] =
-      await Promise.all([
-        this.databaseSize(),
-        this.tableStats(),
-        this.transcodeCounts(),
-        this.demo.status(),
-        this.healthChecks(),
-        this.queueCounters(),
-        this.commentHistoryCounters().catch(() => unavailableHistoryCounters()),
-      ]);
+    const [
+      size,
+      tables,
+      transcode,
+      demo,
+      health,
+      queues,
+      commentHistory,
+      commandLog,
+    ] = await Promise.all([
+      this.databaseSize(),
+      this.tableStats(),
+      this.transcodeCounts(),
+      this.demo.status(),
+      this.healthChecks(),
+      this.queueCounters(),
+      this.commentHistoryCounters().catch(() => unavailableHistoryCounters()),
+      this.commandLogStats().catch(() => unavailableCommandLog()),
+    ]);
 
     return {
       version: BACKEND_VERSION,
@@ -142,8 +164,19 @@ export class ObservabilityService {
         queues,
       },
       commentHistory,
+      commandLog,
       health,
     };
+  }
+
+  /**
+   * TASK-200.11: delegate the catalog/statistics read; the default-partition
+   * count is exact there, partition rows are estimates.
+   */
+  private async commandLogStats(): Promise<CommandLogStats> {
+    const retentionDays =
+      (await this.ops.retentionDays()) ?? env.PURGE_AFTER_DAYS;
+    return readCommandLogStats(this.prisma, retentionDays);
   }
 
   /**

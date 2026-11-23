@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
@@ -12,6 +13,7 @@ import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { DemoService } from "@/admin/demo.service";
 import type { Prisma } from "@prisma/client";
+import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "throttle-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
@@ -44,35 +46,7 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
-    await prisma.demoRun.deleteMany();
-    await prisma.throttleSettings.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    // The e2e DB accumulates across runs — wipe content (child → parent) so a
-    // previous demo run's commands/users cannot block this suite's setup.
-    await prisma.command.deleteMany();
-    await prisma.activity.deleteMany();
-    await prisma.commentRevision.deleteMany();
-    await prisma.comment.deleteMany();
-    await prisma.attachment.deleteMany();
-    await prisma.cardLabel.deleteMany();
-    await prisma.checklistItem.deleteMany();
-    await prisma.checklist.deleteMany();
-    await prisma.cardLink.deleteMany();
-    await prisma.card.deleteMany();
-    await prisma.column.deleteMany();
-    await prisma.label.deleteMany();
-    await prisma.boardMember.deleteMany();
-    await prisma.boardShare.deleteMany();
-    await prisma.board.deleteMany();
-    // Rows that reference a user without a cascade (another suite may have
-    // left them behind) must go before the users themselves.
-    await prisma.apiToken.deleteMany();
-    await prisma.dataExport.deleteMany();
-    await prisma.reminderSent.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
 
     await prisma.adminUser.createMany({
       data: [
@@ -281,6 +255,15 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     expect(board?._count.labels).toBe(5);
     expect(board?._count.members).toBe(4);
     expect(await prisma.card.count({ where: { column: { boardId } } })).toBe(5);
+    // More than one orphan-key page for the demo purge's bounded NOT EXISTS
+    // cleanup (TASK-200.11).
+    await prisma.commandKey.createMany({
+      data: Array.from({ length: 620 }, (_, index) => ({
+        id: `${boardId}-orphan-key-${index}`,
+        boardId,
+        createdAt: new Date(),
+      })),
+    });
 
     // A second start while one is live is refused.
     await server()
@@ -304,6 +287,8 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
         where: { email: { contains: "@janosik.demo" } },
       }),
     ).toBe(0);
+    expect(await prisma.commandKey.count({ where: { boardId } })).toBe(0);
+    expect(await prisma.commandDetail.count({ where: { boardId } })).toBe(0);
 
     // The stop is audited.
     const audit = await prisma.adminAuditLog.findFirst({
@@ -731,5 +716,75 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
       .set("Authorization", `Bearer ${ownerToken}`)
       .expect(201);
     await server().get(`/api/v1/share/${token}`).expect(404);
+  });
+
+  it("moves a command createdAt without losing its key or detail (TASK-200.11)", async () => {
+    const actor = await prisma.user.findFirstOrThrow({
+      where: { email: USER_EMAIL },
+      select: { id: true },
+    });
+    const board = await prisma.board.create({
+      data: { title: "Moved command" },
+      select: { id: true },
+    });
+    const id = `moved-${randomUUID()}`;
+    const from = new Date();
+    const to = new Date(
+      Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 15, 12),
+    );
+    await prisma.command.create({
+      data: {
+        id,
+        boardId: board.id,
+        actorId: actor.id,
+        type: "RENAME_BOARD",
+        payload: { type: "RENAME_BOARD", title: "Moved", at: Date.now() },
+        result: {},
+        createdAt: from,
+      },
+    });
+    await prisma.commandDetail.create({
+      data: {
+        commandId: id,
+        boardId: board.id,
+        createdAt: from,
+        data: { changes: [] },
+      },
+    });
+    await prisma.command.update({
+      where: { id_createdAt: { id, createdAt: from } },
+      data: { createdAt: to },
+    });
+
+    const moved = await prisma.$queryRawUnsafe<
+      Array<{ command_part: string; detail_part: string; key_created: Date }>
+    >(
+      `SELECT c.tableoid::regclass::text AS command_part,
+              d.tableoid::regclass::text AS detail_part,
+              k."createdAt" AS key_created
+         FROM "Command" c
+         JOIN "CommandDetail" d ON d."commandId" = c."id" AND d."boardId" = c."boardId"
+         JOIN "CommandKey" k ON k."id" = c."id" AND k."boardId" = c."boardId"
+        WHERE c."id" = $1`,
+      id,
+    );
+    expect(moved[0]!.command_part).toContain(
+      `Command_${to.getUTCFullYear()}${String(to.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
+    expect(moved[0]!.detail_part).toContain(
+      `CommandDetail_${to.getUTCFullYear()}${String(to.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
+    expect(new Date(moved[0]!.key_created).toISOString()).toBe(
+      to.toISOString(),
+    );
+
+    await prisma.command.deleteMany({ where: { id } });
+    expect(await prisma.commandDetail.count({ where: { commandId: id } })).toBe(
+      0,
+    );
+    // The key waits for the orphan sweep, not the delete trigger.
+    expect(await prisma.commandKey.count({ where: { id } })).toBe(1);
+    await prisma.commandKey.deleteMany({ where: { id } });
+    await prisma.board.deleteMany({ where: { id: board.id } });
   });
 });

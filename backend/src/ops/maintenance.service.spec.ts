@@ -4,6 +4,7 @@ import type { AccountDeletionService } from "@/users/account-deletion.service";
 import type { OpsSettingsService } from "./ops-settings.service";
 import {
   MaintenanceService,
+  MAINTENANCE_JOBS,
   PURGE_BOARD_TX_MAX_WAIT_MS,
   PURGE_BOARD_TX_TIMEOUT_MS,
   PURGE_CHUNK,
@@ -39,6 +40,7 @@ function makePrisma(): PrismaService {
     adminAuditLog: sweepable(0),
     securityAuditLog: sweepable(0),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $executeRawUnsafe: jest.fn().mockResolvedValue(0),
     $queryRaw: jest.fn().mockResolvedValue([]),
     emailVerificationCode: sweepable(2),
     emailChangeCode: sweepable(1),
@@ -56,6 +58,8 @@ function makePrisma(): PrismaService {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     command: sweepable(0),
+    commandDetail: sweepable(0),
+    commandKey: sweepable(0),
     commandPreimage: sweepable(0),
     agentRun: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -446,7 +450,9 @@ describe("MaintenanceService", () => {
 
   it("trims the command log to the retention window (TASK-84)", async () => {
     const prisma = makePrisma();
-    (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([
+      { id: "cmd-1", boardId: "board-1" },
+    ]);
     (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 7 });
     const service = new MaintenanceService(
       prisma,
@@ -462,6 +468,12 @@ describe("MaintenanceService", () => {
       where: { createdAt: { lt: Date } };
     };
     expect(call.where.createdAt.lt).toBeInstanceOf(Date);
+    expect(prisma.command.deleteMany).toHaveBeenCalledWith({
+      where: {
+        createdAt: { lt: expect.any(Date) },
+        OR: [{ id: "cmd-1", boardId: "board-1" }],
+      },
+    });
   });
 
   it("deletes stale pre-images before their commands (ADR §6.14)", async () => {
@@ -476,7 +488,9 @@ describe("MaintenanceService", () => {
         return { count: 2 };
       },
     );
-    (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([
+      { id: "cmd-1", boardId: "board-1" },
+    ]);
     (prisma.command.deleteMany as jest.Mock).mockImplementation(async () => {
       order.push("command");
       return { count: 7 };
@@ -498,6 +512,256 @@ describe("MaintenanceService", () => {
     const preimageCall = (prisma.commandPreimage.findMany as jest.Mock).mock
       .calls[0][0] as { where: { createdAt: { lt: Date } } };
     expect(preimageCall.where.createdAt.lt).toBeInstanceOf(Date);
+  });
+
+  it("sweeps only keys without a live command, in a bounded query (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockImplementation(
+      async (sql: { strings: string[] }) => {
+        const text = sql.strings.join("?");
+        if (text.includes("CommandKey")) return [{ id: "orphan-key" }];
+        return [];
+      },
+    );
+    (prisma.commandKey.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.commandKey.deleteMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    expect(await service.sweepCommands()).toBe(1);
+    const keyDelete = (prisma.$executeRaw as jest.Mock).mock.calls
+      .map((call) => call[0] as { strings: string[] })
+      .find((sql) =>
+        sql.strings.join("?").includes('DELETE FROM "CommandKey"'),
+      );
+    expect(keyDelete?.strings.join("?")).toContain("NOT EXISTS");
+    expect(keyDelete?.strings.join("?")).toContain('c."boardId"');
+    expect(prisma.commandKey.deleteMany).not.toHaveBeenCalled();
+    const keyQuery = (prisma.$queryRaw as jest.Mock).mock.calls
+      .map((call) => call[0] as { strings: string[] })
+      .find((sql) => sql.strings.join("?").includes("CommandKey"));
+    expect(keyQuery?.strings.join("?")).toContain("NOT EXISTS");
+    expect(keyQuery?.strings.join("?")).toContain('c."boardId"');
+    expect(keyQuery?.strings.join("?")).toContain("LIMIT");
+    expect(prisma.commandKey.findMany).not.toHaveBeenCalled();
+  });
+
+  it("builds the key board index concurrently when migration 6 deferred it", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    const result = await service.ensureCommandKeyIndex();
+    expect(result.removed).toBe(0);
+    expect(result.detail).toContain("concurrently");
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining("CREATE INDEX CONCURRENTLY"),
+    );
+  });
+
+  it("rebuilds an invalid leftover key index before creating it", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ valid: false }]);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    await service.ensureCommandKeyIndex();
+    expect(prisma.$executeRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("DROP INDEX CONCURRENTLY"),
+    );
+    expect(prisma.$executeRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("CREATE INDEX CONCURRENTLY"),
+    );
+  });
+
+  it("creates the current and future command-log partitions (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    try {
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([
+        { created: "Command_202611" },
+      ]);
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      const result = await service.ensureCommandPartitions();
+      // Previous month + current + three future months.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+      expect(result.removed).toBe(0);
+      expect(result.detail).toContain("created");
+      expect(result.detail).toContain("Command_202611");
+      const firstSql = (prisma.$queryRaw as jest.Mock).mock.calls[0]![0] as {
+        strings: string[];
+      };
+      expect(firstSql.strings.join("?")).toContain(
+        "janosik_ensure_command_partition",
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("reports a default-partition skip and keeps later months running (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    try {
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([{ created: "skipped:Command_default=2;" }])
+        .mockResolvedValue([{ created: "Command_202612" }]);
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      const result = await service.ensureCommandPartitions();
+      expect(result.removed).toBe(0);
+      expect(result.detail).toContain("skipped");
+      expect(result.detail).toContain("Command_default=2");
+      expect(result.detail).toContain("created Command_202612");
+      // The skipped month did not stop the remaining four calls.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does not recreate a month already dropped by a short retention window (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    try {
+      (opsMock.retentionDays as jest.Mock).mockResolvedValue(7);
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      await service.ensureCommandPartitions();
+      // October is fully outside a 7-day window; only Nov..Feb are ensured.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+    } finally {
+      jest.useRealTimers();
+      (opsMock.retentionDays as jest.Mock).mockResolvedValue(30);
+    }
+  });
+
+  it("keeps later maintenance jobs running when one sweep fails", async () => {
+    const prisma = makePrisma();
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    const dispatch = jest
+      .spyOn(
+        service as unknown as {
+          dispatch: (job: string) => Promise<number>;
+        },
+        "dispatch",
+      )
+      .mockImplementation(async (job: string) => {
+        if (job === "ensure-command-partitions") {
+          throw new Error("default partition wedged");
+        }
+        return 0;
+      });
+    const results = await service.run("all");
+    expect(results).toHaveLength(MAINTENANCE_JOBS.length);
+    expect(
+      results.find((row) => row.job === "ensure-command-partitions"),
+    ).toMatchObject({ removed: 0, detail: expect.stringContaining("failed:") });
+    expect(results.some((row) => row.job === "sweep-commands")).toBe(true);
+    dispatch.mockRestore();
+  });
+
+  it("drops whole expired command-log months before row chunks (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    try {
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([
+          { name: "Command_202001" },
+          { name: "CommandDetail_202001" },
+          { name: "Command_202611" },
+        ])
+        .mockResolvedValueOnce([{ removed: 123n }]);
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      expect(await service.sweepCommands()).toBe(123);
+      // One catalog read, one drop, one orphan-key probe; the current month
+      // stays.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      const dropSql = (prisma.$queryRaw as jest.Mock).mock.calls[1]![0] as {
+        strings: string[];
+      };
+      expect(dropSql.strings.join("?")).toContain(
+        "janosik_drop_command_partition",
+      );
+      expect(prisma.command.findMany).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("retries a lock-contended partition drop without failing the sweep (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock)
+      .mockResolvedValueOnce([{ name: "Command_202001" }])
+      .mockResolvedValueOnce([{ removed: -1n }])
+      .mockResolvedValueOnce([{ removed: -1n }])
+      .mockResolvedValueOnce([{ removed: 7n }]);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    expect(
+      await service.dropExpiredCommandPartitions(new Date(Date.now())),
+    ).toBe(7);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
   });
 
   it("sweeps stale empty runs but keeps runs with commands (ADR §6.14)", async () => {
@@ -619,7 +883,9 @@ describe("MaintenanceService", () => {
     (prisma.commandPreimage.deleteMany as jest.Mock).mockResolvedValue({
       count: 1,
     });
-    (prisma.command.findMany as jest.Mock).mockResolvedValue([{ id: "cmd-1" }]);
+    (prisma.command.findMany as jest.Mock).mockResolvedValue([
+      { id: "cmd-1", boardId: "board-1" },
+    ]);
     (prisma.command.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
     const service = new MaintenanceService(
       prisma,
@@ -635,7 +901,7 @@ describe("MaintenanceService", () => {
     expect(removed).toBe(1);
     // ADR §6.14 order: preimages → commands → runs.
     expect(prisma.commandPreimage.deleteMany).toHaveBeenCalledWith({
-      where: { commandId: { in: ["pre-1"] } },
+      where: { commandId: { in: ["pre-1"] }, boardId: "b1" },
     });
     expect(prisma.agentRun.deleteMany).toHaveBeenCalledWith({
       where: { boardId: "b1" },
@@ -646,10 +912,10 @@ describe("MaintenanceService", () => {
     ).toBeLessThan(
       (prisma.command.deleteMany as jest.Mock).mock.invocationCallOrder[0]!,
     );
-    // The feed and log go in pages by row id before the final transaction
-    // (TASK-156), not as one boardId batch inside it.
+    // The feed and log go in pages before the final transaction (TASK-156),
+    // with the board id repeated on the command delete (defence in depth).
     expect(prisma.command.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["cmd-1"] } },
+      where: { id: { in: ["cmd-1"] }, boardId: "b1" },
     });
     expect(prisma.boardShare.deleteMany).toHaveBeenCalledWith({
       where: { boardId: "b1", mode: "live" },
@@ -663,6 +929,7 @@ describe("MaintenanceService", () => {
 
   it("purges a stale board's feed and command log in bounded pages under the board lock (TASK-156)", async () => {
     const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ valid: false }]);
     const ids = (n: number, prefix: string) =>
       Array.from({ length: n }, (_, i) => ({ id: `${prefix}${i}` }));
     (prisma.board.findMany as jest.Mock).mockResolvedValue([{ id: "b1" }]);
@@ -718,6 +985,35 @@ describe("MaintenanceService", () => {
         (call) => call[0].where.id.in.length,
       ),
     ).toEqual([PURGE_CHUNK, 40]);
+    expect(
+      (prisma.commandDetail.deleteMany as jest.Mock).mock.calls.map(
+        (call) => call[0].where.commandId.in.length,
+      ),
+    ).toEqual([PURGE_CHUNK, 40]);
+    expect(
+      (prisma.commandKey.deleteMany as jest.Mock).mock.calls.map(
+        (call) => call[0].where.id.in.length,
+      ),
+    ).toEqual([PURGE_CHUNK, 40]);
+    // No purge statement carries more than one chunk, and every key/detail
+    // statement is scoped by a board or command id.
+    for (const call of [
+      ...(prisma.command.deleteMany as jest.Mock).mock.calls,
+      ...(prisma.commandDetail.deleteMany as jest.Mock).mock.calls,
+      ...(prisma.commandKey.deleteMany as jest.Mock).mock.calls,
+    ]) {
+      const list = call[0].where.id?.in ?? call[0].where.commandId?.in;
+      expect(list.length).toBeLessThanOrEqual(PURGE_CHUNK);
+    }
+    expect(prisma.commandKey.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ids(PURGE_CHUNK, "cmd-a").map((row) => row.id) },
+        boardId: "b1",
+      },
+    });
+    // An invalid leftover index is not planner-usable: skip the board-scoped
+    // orphan pass rather than seq-scanning the registry.
+    expect(prisma.commandKey.findMany).not.toHaveBeenCalled();
     // Each page is read with a take bound and a boardId filter.
     expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);
     expect((prisma.activity.findMany as jest.Mock).mock.calls[0][0]).toEqual({

@@ -85,8 +85,11 @@ export async function ageCommand(
 
 export async function clearCommandSnapshot(boardId: string, commandId: string) {
   validateIds(boardId, commandId);
+  // TASK-200.11: display snapshots live in the partitioned `CommandDetail`
+  // side table, not on `Command`. Removing the side row is the legacy shape
+  // the Watch feed must tolerate.
   await runSql(
-    `UPDATE "Command" SET details = NULL WHERE id = '${commandId}' AND "boardId" = '${boardId}';`,
+    `DELETE FROM "CommandDetail" WHERE "commandId" = '${commandId}' AND "boardId" = '${boardId}';`,
   );
 }
 

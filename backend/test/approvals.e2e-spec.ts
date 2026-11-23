@@ -358,7 +358,7 @@ describe("Approvals (e2e)", () => {
       firstSeq: expect.any(BigInt),
       lastSeq: expect.any(BigInt),
     });
-    const stored = await prisma.command.findUniqueOrThrow({
+    const stored = await prisma.command.findFirstOrThrow({
       where: { id: commandId },
     });
     expect(stored.runId).toBe(row.runId);

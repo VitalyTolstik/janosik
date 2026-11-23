@@ -143,9 +143,9 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
   });
 
   it("reserves more than the whole queue for an unserializable body", () => {
-    let deep: Record<string, unknown> = {};
-    for (let index = 0; index < 6_000; index += 1) deep = { a: deep };
-    expect(commandBodyBytes({ body: { commands: [deep] } })).toBe(
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(commandBodyBytes({ body: { commands: [circular] } })).toBe(
       BOARD_COMMAND_QUEUE_MAX_BYTES + 1,
     );
   });
