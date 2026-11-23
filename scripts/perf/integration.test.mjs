@@ -101,46 +101,55 @@ test("real mode writes JSON and Markdown with no 400s (out-of-process mock)", as
       }),
       "utf8",
     );
-    const result = await run(process.execPath, [
-      cli,
-      "--scenario",
-      "S2",
-      "--base-url",
-      mock.baseUrl,
-      "--board",
-      "board-1",
-      "--token",
-      "jnk_real_secret_a",
-      "--token",
-      "jnk_real_secret_b",
-      "--agents",
-      "2",
-      "--cadence",
-      "150ms",
-      "--duration",
-      "1200ms",
-      "--pg-url",
-      "postgresql://perf:pgsecret@127.0.0.1:1/perf?sslpassword=sslsecret&client_secret=pgclientsecret",
-      "--psql",
-      "/definitely/not-psql",
-      "--pg-activity",
-      "--cpu-profile",
-      cpuPath,
-      "--redis-url",
-      "redis://:redissecret@127.0.0.1:1/0?auth_token=redisquerysecret",
-      "--redis-cli",
-      "/definitely/not-redis-cli",
-      "--output",
-      output,
-    ]);
+    const result = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        mock.baseUrl,
+        "--board",
+        "board-1",
+        "--agents",
+        "2",
+        "--cadence",
+        "150ms",
+        "--duration",
+        "1200ms",
+        "--pg-url",
+        "postgresql://perf:pgsecret@127.0.0.1:1/perf?sslpassword=sslsecret&client_secret=pgclientsecret",
+        "--psql",
+        "/definitely/not-psql",
+        "--pg-activity",
+        "--cpu-profile",
+        cpuPath,
+        "--redis-url",
+        "redis://:redissecret@127.0.0.1:1/0?auth_token=redisquerysecret",
+        "--redis-cli",
+        "/definitely/not-redis-cli",
+        "--output",
+        output,
+      ],
+      {
+        env: {
+          JANOSIK_PERF_TOKEN: "jnk_real_secret_a,jnk_real_secret_b",
+        },
+      },
+    );
     assert.equal(result.code, 0, result.stderr);
     const report = JSON.parse(await readFile(output, "utf8"));
     const markdown = await readFile(output.replace(/\.json$/, ".md"), "utf8");
     assert.equal(report.mode, "real");
     assert.equal(report.config.mock, null);
+    assert.deepEqual(report.config.resolvedBoards, ["board-1"]);
     assert.equal(report.scenarios.length, 1);
     assert.equal(report.scenarios[0].status, "ok");
     assert.equal(report.scenarios[0].summary.cycles > 0, true);
+    assert.equal(
+      report.scenarios[0].summary.agentCadence.agentsMeasured > 0,
+      true,
+    );
     assert.equal(report.scenarios[0].summary.errors.badRequest400, 0);
     assert.equal(report.scenarios[0].summary.errors.conflict409 >= 0, true);
     assert.equal(report.scenarios[0].summary.statuses["400"], undefined);
@@ -176,68 +185,78 @@ test("preflight fails token/board mixed access before load with exit 2", async (
   const mock = await startMockProcess({ MOCK_BOARDS: "2" });
   const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-preflight-"));
   try {
-    const viewer = await run(process.execPath, [
-      cli,
-      "--scenario",
-      "S2",
-      "--base-url",
-      mock.baseUrl,
-      "--board",
-      "board-1",
-      "--token",
-      "jnk_ok",
-      "--token",
-      "jnk_viewer",
-      "--agents",
-      "2",
-      "--duration",
-      "300ms",
-      "--output",
-      path.join(directory, "viewer.json"),
-    ]);
+    const viewer = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        mock.baseUrl,
+        "--board",
+        "board-1",
+        "--agents",
+        "2",
+        "--duration",
+        "300ms",
+        "--output",
+        path.join(directory, "viewer.json"),
+      ],
+      {
+        env: { JANOSIK_PERF_TOKEN: "jnk_ok,jnk_viewer" },
+      },
+    );
     assert.equal(viewer.code, 2);
     assert.match(viewer.stderr, /token 2, board 1 \(board-1\)/);
     assert.match(viewer.stderr, /role VIEWER cannot write/);
 
-    const readOnly = await run(process.execPath, [
-      cli,
-      "--scenario",
-      "S2",
-      "--base-url",
-      mock.baseUrl,
-      "--board",
-      "board-1",
-      "--token",
-      "jnk_readonly",
-      "--agents",
-      "1",
-      "--duration",
-      "300ms",
-      "--output",
-      path.join(directory, "readonly.json"),
-    ]);
+    const readOnly = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        mock.baseUrl,
+        "--board",
+        "board-1",
+        "--agents",
+        "1",
+        "--duration",
+        "300ms",
+        "--output",
+        path.join(directory, "readonly.json"),
+      ],
+      {
+        env: { JANOSIK_PERF_TOKEN: "jnk_readonly" },
+      },
+    );
     assert.equal(readOnly.code, 2);
     assert.match(readOnly.stderr, /token 1 is read-only/);
 
-    const scoped = await run(process.execPath, [
-      cli,
-      "--scenario",
-      "S2",
-      "--base-url",
-      mock.baseUrl,
-      "--board",
-      "board-1",
-      "--board",
-      "board-2",
-      "--token",
-      "jnk_board1only",
-      "--agents",
-      "1",
-      "--duration",
-      "300ms",
-      "--output",
-      path.join(directory, "scoped.json"),
-    ]);
+    const scoped = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        mock.baseUrl,
+        "--board",
+        "board-1",
+        "--board",
+        "board-2",
+        "--agents",
+        "1",
+        "--duration",
+        "300ms",
+        "--output",
+        path.join(directory, "scoped.json"),
+      ],
+      {
+        env: { JANOSIK_PERF_TOKEN: "jnk_board1only" },
+      },
+    );
     assert.equal(scoped.code, 2);
     assert.match(scoped.stderr, /token 1, board 2 \(board-2\): not accessible/);
   } finally {
@@ -261,8 +280,6 @@ test("first Ctrl-C writes a partial report and exits 130", async () => {
         mock.baseUrl,
         "--board",
         "board-1",
-        "--token",
-        "jnk_sigint",
         "--agents",
         "1",
         "--duration",
@@ -272,7 +289,11 @@ test("first Ctrl-C writes a partial report and exits 130", async () => {
         "--output",
         output,
       ],
-      { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd: repoRoot,
+        env: { ...process.env, JANOSIK_PERF_TOKEN: "jnk_sigint" },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     let stdout = "";
     let stderr = "";
@@ -319,6 +340,128 @@ test("standalone mock applies the same board/card limits", async () => {
   }
 });
 
+test("harness argv contains no PAT even though it authenticates", async () => {
+  const mock = await startMockProcess();
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-argv-"));
+  try {
+    const output = path.join(directory, "argv.json");
+    const token = "jnk_argv_secret_must_not_leak";
+    const child = spawn(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--base-url",
+        mock.baseUrl,
+        "--board",
+        "board-1",
+        "--agents",
+        "1",
+        "--duration",
+        "2s",
+        "--output",
+        output,
+      ],
+      {
+        cwd: repoRoot,
+        env: { ...process.env, JANOSIK_PERF_TOKEN: token },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const closed = new Promise((resolve) => child.on("close", resolve));
+    let cmdline = "";
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        cmdline = (
+          await readFile(`/proc/${child.pid}/cmdline`, "utf8")
+        ).replace(/\0/g, " ");
+        if (cmdline.includes("agent-scale.mjs")) break;
+      } catch {
+        // Process may not be visible yet.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.match(cmdline, /agent-scale\.mjs/);
+    assert.equal(cmdline.includes(token), false);
+    assert.equal(cmdline.includes("--token"), false);
+    child.kill("SIGTERM");
+    await closed;
+  } finally {
+    mock.child.kill("SIGTERM");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+async function startInspectorProcess() {
+  const child = spawn(
+    process.execPath,
+    [
+      "--inspect=127.0.0.1:0",
+      "-e",
+      "function spin(){let x=0; for(let i=0;i<10000;i++) x+=i;} setInterval(spin,1);",
+    ],
+    { stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const wsUrl = await new Promise((resolve, reject) => {
+    let stderr = "";
+    const timer = setTimeout(
+      () => reject(new Error("inspector child did not print its URL")),
+      10_000,
+    );
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      const match = /Debugger listening on (ws:\/\/\S+)/.exec(stderr);
+      if (match === null) return;
+      clearTimeout(timer);
+      resolve(match[1]);
+    });
+    child.on("error", reject);
+  });
+  return { child, wsUrl };
+}
+
+test("--api-inspect profiles a live process and reports Top-10", async () => {
+  const inspector = await startInspectorProcess();
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-live-cpu-"));
+  try {
+    const profile = path.join(directory, "api.cpuprofile");
+    const output = path.join(directory, "live.json");
+    const result = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--mock",
+        "--agents",
+        "1",
+        "--cadence",
+        "100ms",
+        "--duration",
+        "500ms",
+        "--api-inspect",
+        inspector.wsUrl,
+        "--cpu-profile",
+        profile,
+        "--output",
+        output,
+      ],
+      { timeout: 120_000 },
+    );
+    assert.equal(result.code, 0, result.stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(report.cpuProfile.enabled, true);
+    assert.equal(report.cpuProfile.available, true);
+    assert.equal(report.cpuProfile.top.length > 0, true);
+    assert.equal(report.cpuProfile.top.length <= 10, true);
+  } finally {
+    inspector.child.kill("SIGKILL");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("Ctrl-C during preflight writes a minimal partial report", async () => {
   const directory = await mkdtemp(
     path.join(os.tmpdir(), "janosik-pre-sigint-"),
@@ -333,14 +476,16 @@ test("Ctrl-C during preflight writes a minimal partial report", async () => {
         "S2",
         "--base-url",
         "http://127.0.0.1:1/api/v1",
-        "--token",
-        "jnk_preflight",
         "--agents",
         "1",
         "--output",
         output,
       ],
-      { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd: repoRoot,
+        env: { ...process.env, JANOSIK_PERF_TOKEN: "jnk_preflight" },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     let stderr = "";
     child.stderr.setEncoding("utf8");
@@ -360,6 +505,84 @@ test("Ctrl-C during preflight writes a minimal partial report", async () => {
     assert.equal(report.status, "interrupted");
     assert.equal(report.scenarios.length, 0);
     assert.match(report.preflightError, /interrupted|health/i);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("token-file and recycle-token-file drive per-board recycling", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-recycle-"));
+  try {
+    const agentsFile = path.join(directory, "agents.tokens");
+    const recycleFile = path.join(directory, "recycle.token");
+    await writeFile(agentsFile, "jnk_ok\n", "utf8");
+    await writeFile(recycleFile, "jnk_admin_recycle\n", "utf8");
+    const output = path.join(directory, "recycle.json");
+    const result = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--mock",
+      "--mock-boards",
+      "2",
+      "--mock-cards",
+      "1",
+      "--board",
+      "board-1",
+      "--board",
+      "board-2",
+      "--token-file",
+      agentsFile,
+      "--shared-identity",
+      "--recycle",
+      "--recycle-token-file",
+      recycleFile,
+      "--agents",
+      "2",
+      "--cadence",
+      "50ms",
+      "--duration",
+      "1200ms",
+      "--output",
+      output,
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(report.config.recycle, true);
+    assert.deepEqual(report.config.resolvedBoards, ["board-1", "board-2"]);
+    assert.equal(report.scenarios[0].summary.recycled > 0, true);
+    assert.equal(report.scenarios[0].recycle.requests > 0, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("--require-ok makes a partial smoke run fail", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "janosik-require-ok-"),
+  );
+  try {
+    const output = path.join(directory, "partial.json");
+    const result = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--mock",
+      "--mock-cards",
+      "1",
+      "--agents",
+      "1",
+      "--duration",
+      "500ms",
+      "--cadence",
+      "50ms",
+      "--require-ok",
+      "--output",
+      output,
+    ]);
+    assert.equal(result.code, 1, result.stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(report.status, "partial");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -308,7 +308,14 @@ export function diffPgStatements(before, after, limit = 20) {
   const topByTotalTime = [...deltas]
     .sort((a, b) => b.totalMs - a.totalMs || b.calls - a.calls)
     .slice(0, limit);
-  return { available: true, topByCalls, topByTotalTime };
+  return {
+    available: true,
+    totalCalls: deltas.reduce((sum, row) => sum + row.calls, 0),
+    totalExecMs:
+      Math.round(deltas.reduce((sum, row) => sum + row.totalMs, 0) * 100) / 100,
+    topByCalls,
+    topByTotalTime,
+  };
 }
 
 /** One pg_stat_activity sample (states and wait events for this database). */

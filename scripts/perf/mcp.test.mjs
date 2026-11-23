@@ -171,6 +171,61 @@ test("MCP orphan is counted once by the scenario onError site", async () => {
   assert.equal(metrics.orphans, orphanEvents);
 });
 
+test("MCP uses wait_for_work when idle and evidence comments when working", async () => {
+  const metrics = new RunMetrics("mcp-tools");
+  const idleCalls = [];
+  const idleWorker = {
+    sampleRss() {},
+    async call(name) {
+      idleCalls.push(name);
+      return {};
+    },
+  };
+  await runMcpAgentLoop({
+    worker: idleWorker,
+    boardId: "board-1",
+    mode: "idle",
+    config: { id: "S1", cadenceMs: 1, jitter: 0, leaseMs: 60_000 },
+    deadline: Date.now() + 15,
+    signal: new AbortController().signal,
+    metrics,
+    random: () => 0.5,
+  });
+  assert.equal(idleCalls.includes("janosik_wait_for_work"), true);
+
+  let commentArgs;
+  const worker = {
+    sampleRss() {},
+    async call(name, args) {
+      if (name === "janosik_list_ready_cards") {
+        return { results: [{ id: "c1" }] };
+      }
+      if (name === "janosik_get_workflow") {
+        return { doneColumnIds: ["done"], seq: 1 };
+      }
+      if (name === "janosik_claim_card" || name === "janosik_move_card") {
+        return {};
+      }
+      if (name === "janosik_add_comment") {
+        commentArgs = args;
+        return {};
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+  };
+  await runMcpAgentLoop({
+    worker,
+    boardId: "board-1",
+    mode: "work",
+    config: { id: "S2", cadenceMs: 1, jitter: 0, leaseMs: 60_000 },
+    deadline: Date.now() + 15,
+    signal: new AbortController().signal,
+    metrics,
+    random: () => 0.5,
+  });
+  assert.equal(commentArgs?.kind, "evidence");
+});
+
 test("MCP tool errors are counted as requests with their real status", async () => {
   for (const status of [409, 429, 500]) {
     const mock = await startMockServer({

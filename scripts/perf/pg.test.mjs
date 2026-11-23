@@ -218,6 +218,8 @@ test("diffPgStatements returns Top-20 by calls and by total time", () => {
     delta.topByCalls.some((row) => row.queryid === "4"),
     true,
   );
+  assert.equal(delta.totalCalls, 9);
+  assert.equal(delta.totalExecMs, 120);
 });
 
 test("diffPgStatements reports unavailability instead of throwing", () => {

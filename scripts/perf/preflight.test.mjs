@@ -5,6 +5,7 @@ import {
   PreflightError,
   requiredIdentities,
   selectBoards,
+  validateBoardAccess,
   validateTokenIdentity,
 } from "./lib/preflight.mjs";
 
@@ -128,10 +129,31 @@ test("selectBoards validates every token and board, with indexed errors", () => 
   );
 });
 
+test("validateBoardAccess requires the recycle ADMIN role on every board", () => {
+  assert.doesNotThrow(() =>
+    validateBoardAccess({
+      label: "recycle token",
+      summaries: [board("b1", "ADMIN"), board("b2", "ADMIN")],
+      ids: ["b1", "b2"],
+      roles: new Set(["ADMIN"]),
+    }),
+  );
+  assert.throws(
+    () =>
+      validateBoardAccess({
+        label: "recycle token",
+        summaries: [board("b1", "ADMIN"), board("b2", "MEMBER")],
+        ids: ["b1", "b2"],
+        roles: new Set(["ADMIN"]),
+      }),
+    /recycle token, board 2 \(b2\): role MEMBER is not sufficient/,
+  );
+});
+
 test("requiredIdentities uses actual MCP workers, not requested agents", () => {
   const http = resolveConfig(
-    parseCli(["--scenario", "S2", "--token", "jnk_x", "--agents", "100"]),
-    {},
+    parseCli(["--scenario", "S2", "--agents", "100"]),
+    { JANOSIK_PERF_TOKEN: "jnk_x" },
   );
   assert.equal(requiredIdentities(http), 100);
 
@@ -141,20 +163,18 @@ test("requiredIdentities uses actual MCP workers, not requested agents", () => {
       "S2",
       "--driver",
       "mcp",
-      "--token",
-      "jnk_x",
       "--agents",
       "100",
       "--mcp-processes",
       "2",
     ]),
-    {},
+    { JANOSIK_PERF_TOKEN: "jnk_x" },
   );
   assert.equal(requiredIdentities(mcp), 2);
 
   const mcpDefault = resolveConfig(
-    parseCli(["--scenario", "S2", "--driver", "mcp", "--token", "jnk_x"]),
-    {},
+    parseCli(["--scenario", "S2", "--driver", "mcp"]),
+    { JANOSIK_PERF_TOKEN: "jnk_x" },
   );
   assert.equal(requiredIdentities(mcpDefault), 100);
 });

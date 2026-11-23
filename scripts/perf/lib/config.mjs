@@ -3,6 +3,7 @@
 // Pure helpers: no filesystem, network or clock access, so the CLI surface and
 // every derived default can be unit-tested with `node --test`.
 
+import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { redactUrl } from "./redact.mjs";
 
@@ -125,6 +126,7 @@ export const CLI_OPTIONS = {
   scenario: { type: "string", multiple: true, short: "s" },
   "base-url": { type: "string" },
   token: { type: "string", multiple: true },
+  "token-file": { type: "string", multiple: true },
   board: { type: "string", multiple: true },
   boards: { type: "string" },
   agents: { type: "string" },
@@ -149,10 +151,13 @@ export const CLI_OPTIONS = {
   driver: { type: "string" },
   "mcp-processes": { type: "string" },
   "shared-identity": { type: "boolean" },
+  "require-ok": { type: "boolean" },
   recycle: { type: "boolean" },
   "recycle-token": { type: "string" },
+  "recycle-token-file": { type: "string" },
   "api-pid": { type: "string" },
   "api-probe": { type: "string" },
+  "api-inspect": { type: "string" },
   "cpu-profile": { type: "string" },
   "pg-url": { type: "string" },
   psql: { type: "string" },
@@ -179,6 +184,24 @@ export function splitList(value) {
 
 function takeList(value) {
   return splitList(value);
+}
+
+function readTokenFiles(value) {
+  const files = takeList(value);
+  const tokens = [];
+  for (const file of files) {
+    let text;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      throw new Error(
+        `cannot read token file ${file}: ${error instanceof Error ? error.message : error}`,
+        { cause: error },
+      );
+    }
+    tokens.push(...text.split(/[\s,]+/).filter(Boolean));
+  }
+  return tokens;
 }
 
 function unique(values) {
@@ -287,11 +310,22 @@ export function parseScenarioList(raw) {
 /**
  * Resolve CLI values + environment into a validated configuration.
  *
- * Token precedence: `--token` (repeatable/comma-separated) > `JANOSIK_PERF_TOKEN`
- * > `PERF_TOKEN`. The map is deduplicated; `publicConfig()` only exposes the
- * count. Secrets stay on the internal config until a request needs them.
+ * Token precedence: `--token-file` (newline/comma-separated) >
+ * `JANOSIK_PERF_TOKEN` > `PERF_TOKEN`. `--token` is rejected because argv is
+ * visible through `/proc/<pid>/cmdline`. The map is deduplicated;
+ * `publicConfig()` only exposes the count.
  */
 export function resolveConfig(cliValues = {}, env = {}) {
+  if (cliValues.token !== undefined) {
+    throw new Error(
+      "--token is no longer accepted in argv (visible through /proc/<pid>/cmdline); use JANOSIK_PERF_TOKEN or --token-file",
+    );
+  }
+  if (cliValues["recycle-token"] !== undefined) {
+    throw new Error(
+      "--recycle-token is no longer accepted in argv; use JANOSIK_PERF_RECYCLE_TOKEN or --recycle-token-file",
+    );
+  }
   const scenarios = parseScenarioList(cliValues.scenario);
   const mock = cliValues.mock === true;
   if (cliValues.help === true) {
@@ -374,12 +408,12 @@ export function resolveConfig(cliValues = {}, env = {}) {
     overrides.idleEndpoint = cliValues["idle-endpoint"];
   }
 
-  const cliTokens = takeList(cliValues.token);
+  const fileTokens = readTokenFiles(cliValues["token-file"]);
   const envTokens = takeList(env.JANOSIK_PERF_TOKEN);
   const fallbackTokens = takeList(env.PERF_TOKEN);
   const tokens = unique(
-    cliTokens.length > 0
-      ? cliTokens
+    fileTokens.length > 0
+      ? fileTokens
       : envTokens.length > 0
         ? envTokens
         : fallbackTokens,
@@ -398,7 +432,7 @@ export function resolveConfig(cliValues = {}, env = {}) {
 
   if (!mock && tokens.length === 0) {
     throw new Error(
-      "no PAT: pass --token jnk_… or set JANOSIK_PERF_TOKEN (comma-separated for a token pool)",
+      "no PAT: set JANOSIK_PERF_TOKEN or pass --token-file (comma-separated pools)",
     );
   }
 
@@ -406,10 +440,13 @@ export function resolveConfig(cliValues = {}, env = {}) {
   if (!["http", "mcp"].includes(driver)) {
     throw new Error("--driver must be http or mcp");
   }
-  if (driver === "mcp" && ids.includes("S3")) {
-    throw new Error(
-      "--driver mcp does not implement the S3 60/30/10 mixed loop; run S3 with --driver http",
-    );
+  if (driver === "mcp") {
+    const unsupported = ids.filter((id) => ["S3", "S5", "S6"].includes(id));
+    if (unsupported.length > 0) {
+      throw new Error(
+        `--driver mcp supports S1/S2/S4 only; rejected ${unsupported.join(", ")} (S3 mixed and S5/S6 SSE/read probes are HTTP-only)`,
+      );
+    }
   }
 
   const baseUrl = String(cliValues["base-url"] ?? DEFAULT_BASE_URL).replace(
@@ -421,16 +458,26 @@ export function resolveConfig(cliValues = {}, env = {}) {
   }
 
   const apiPid = integer("api-pid", cliValues["api-pid"], { min: 1 });
+  const apiInspect = cliValues["api-inspect"];
+  if (apiInspect !== undefined && !/^wss?:\/\//.test(String(apiInspect))) {
+    throw new Error("--api-inspect must be a ws:// or wss:// URL");
+  }
+  if (apiInspect !== undefined && cliValues["cpu-profile"] === undefined) {
+    throw new Error(
+      "--api-inspect needs --cpu-profile <file|dir> for the stopped profile",
+    );
+  }
   const recycle = cliValues.recycle === true;
+  const recycleFileTokens = readTokenFiles(cliValues["recycle-token-file"]);
   const recycleTokenRaw =
-    cliValues["recycle-token"] ?? env.JANOSIK_PERF_RECYCLE_TOKEN;
+    recycleFileTokens[0] ?? env.JANOSIK_PERF_RECYCLE_TOKEN;
   const recycleToken =
     typeof recycleTokenRaw === "string" && recycleTokenRaw.trim() !== ""
       ? recycleTokenRaw.trim()
       : undefined;
   if (recycle && !mock && recycleToken === undefined) {
     throw new Error(
-      "--recycle needs --recycle-token (or JANOSIK_PERF_RECYCLE_TOKEN): use a dedicated board ADMIN PAT",
+      "--recycle needs JANOSIK_PERF_RECYCLE_TOKEN or --recycle-token-file: use a dedicated board ADMIN PAT",
     );
   }
 
@@ -459,10 +506,12 @@ export function resolveConfig(cliValues = {}, env = {}) {
         ? Math.min(mcpProcesses, 2)
         : (mcpProcesses ?? null),
     allowSharedIdentity: cliValues["shared-identity"] === true,
+    requireOk: cliValues["require-ok"] === true,
     recycle,
     recycleToken: recycleToken ?? (mock ? tokens[0] : undefined),
     apiPid,
     apiProbe: cliValues["api-probe"],
+    apiInspect,
     cpuProfile: cliValues["cpu-profile"],
     pgUrl: cliValues["pg-url"] ?? (mock ? undefined : env.JANOSIK_PERF_PG_URL),
     pgActivity: cliValues["pg-activity"] === true,
@@ -563,6 +612,7 @@ export function publicConfig(config) {
     allowSharedIdentity: config.allowSharedIdentity === true,
     recycle: config.recycle === true,
     explicitBoards: config.explicitBoards,
+    resolvedBoards: config.resolvedBoards ?? config.explicitBoards,
     boardsCount: config.boardsCount,
     mcpProcesses: config.mcpProcesses,
     jitter: config.jitter,
@@ -570,6 +620,7 @@ export function publicConfig(config) {
     label: config.label,
     apiPid: config.apiPid ?? null,
     apiProbe: config.apiProbe ?? null,
+    apiInspect: config.apiInspect ?? null,
     cpuProfile: config.cpuProfile ?? null,
     pg: config.pgUrl
       ? {
@@ -596,8 +647,10 @@ export function usage() {
     "Janosik agent-scale perf harness (TASK-200.1)",
     "",
     "Usage:",
-    "  node scripts/perf/agent-scale.mjs --scenario S2 --token jnk_… [options]",
+    "  node scripts/perf/agent-scale.mjs --scenario S2 [options]",
     "  npm run perf:smoke",
+    "",
+    "Secrets: set JANOSIK_PERF_TOKEN (pool) or pass --token-file; argv token flags are rejected.",
     "",
     "Scenarios (docs/PERF-AGENT-SCALE.md §7.1):",
     ...ALL_SCENARIOS.map((id) => `  ${id}  ${SCENARIO_DEFS[id].title}`),
@@ -607,7 +660,7 @@ export function usage() {
     "Common options:",
     "  -s, --scenario <id[,id]>  scenario list (required; use smoke --mock)",
     "      --base-url <url>      default http://localhost:3000/api/v1",
-    "      --token <pat>         PAT; repeat or comma-separate for a pool",
+    "      --token-file <path>   PAT pool file (newline/comma-separated; preferred over env only by precedence)",
     "      --board <id>          explicit board id; repeat or comma-separate",
     "      --boards <n>          pick the first N accessible boards (default 1)",
     "      --agents <n>          agent workers/processes (scenario default)",
@@ -630,14 +683,16 @@ export function usage() {
     "      --driver <http|mcp>   HTTP PAT loop (default) or real MCP stdio (not S3)",
     "      --mcp-processes <n>   MCP process count (default: agents)",
     "      --shared-identity     allow more agents than PATs (same identity)",
+    "      --require-ok          exit 1 unless every scenario is ok (not partial)",
     "      --recycle             move Done cards back when the board drains",
-    "      --recycle-token <pat> dedicated board ADMIN PAT for --recycle",
+    "      --recycle-token-file <path> dedicated board ADMIN PAT file for --recycle",
     "      --output <file.json>  JSON path; Markdown is written beside it",
     "      --label <text>        report label",
     "",
     "Instrumentation (all optional):",
     "      --api-pid <pid>       sample /proc/<pid>/status VmRSS",
     "      --api-probe <jsonl>   sample file written by api-preload.mjs",
+    "      --api-inspect <ws://…> live inspector URL; start/stop V8 Profiler",
     "      --cpu-profile <path>  API .cpuprofile file or directory (Top-10)",
     "      --pg-url <url>        PostgreSQL URL (userinfo stripped in reports)",
     "      --pg-activity         sample pg_stat_activity states/waits",
@@ -656,7 +711,7 @@ export function usage() {
     "",
     "Examples:",
     "  npm run perf:smoke",
-    '  npm run perf:agents -- --scenario S1 --token "$JANOSIK_PERF_TOKEN" --agents 100 --duration 5m',
+    "  npm run perf:agents -- --scenario S1 --agents 100 --duration 5m",
     "  npm run perf:agents -- --scenario S2 --board <id> --agents 100 --duration 2m --label baseline-100",
     "  npm run perf:agents -- --scenario S3 --board <id> --agents 500 --humans 50 --sse 100",
     "  npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid 1234",

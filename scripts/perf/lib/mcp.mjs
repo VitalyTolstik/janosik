@@ -311,6 +311,7 @@ export async function runMcpAgentLoop({
   startAt = undefined,
   onError,
   onNoWork,
+  onFirstRequest,
 }) {
   if (startAt !== undefined) {
     const wait = startAt - Date.now();
@@ -318,14 +319,27 @@ export async function runMcpAgentLoop({
   } else if (startDelayMs > 0) {
     await sleep(startDelayMs, signal);
   }
+  let firstRequest = false;
   while (!signal.aborted && Date.now() < deadline) {
+    if (!firstRequest) {
+      firstRequest = true;
+      onFirstRequest?.(Date.now());
+    }
     const cycleStarted = Date.now();
     worker.sampleRss();
     try {
       if (mode === "idle") {
         await worker.call(
-          "janosik_list_ready_cards",
-          { boardId, limit: 5, response_format: "json" },
+          "janosik_wait_for_work",
+          {
+            boardId,
+            timeoutMs: Math.min(
+              300_000,
+              Math.max(250, config.cadenceMs ?? 5_000),
+            ),
+            pollMs: Math.min(30_000, Math.max(250, config.cadenceMs ?? 5_000)),
+            response_format: "json",
+          },
           { signal },
         );
       } else {
@@ -336,7 +350,7 @@ export async function runMcpAgentLoop({
         );
         const cards = Array.isArray(ready.results) ? ready.results : [];
         if (cards.length === 0) {
-          const recycled = (await onNoWork?.(null)) === true;
+          const recycled = (await onNoWork?.(null, boardId)) === true;
           if (recycled) continue;
           metrics?.recordNoWork({ exhausted: false, stranded: true });
         } else {
@@ -382,13 +396,14 @@ export async function runMcpAgentLoop({
             throw error;
           }
           metrics?.recordAction(1, "write");
+          metrics?.recordAgentAction(agentIndex);
           try {
             await worker.call(
               "janosik_add_comment",
               {
                 cardId,
                 text: `TASK-200.1 MCP probe (${config.id})`,
-                kind: "note",
+                kind: "evidence",
               },
               { signal },
             );
@@ -406,6 +421,7 @@ export async function runMcpAgentLoop({
             continue;
           }
           metrics?.recordAction(1, "comment");
+          metrics?.recordAgentAction(agentIndex);
           try {
             await worker.call(
               "janosik_move_card",
@@ -430,6 +446,7 @@ export async function runMcpAgentLoop({
             continue;
           }
           metrics?.recordAction(1, "write");
+          metrics?.recordAgentAction(agentIndex);
           metrics?.recordCycle();
         }
       }

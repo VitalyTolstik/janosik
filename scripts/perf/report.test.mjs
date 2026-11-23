@@ -107,10 +107,12 @@ test("renderMarkdown includes status, commit, configuration and error columns", 
   assert.match(markdown, /`partial`/);
   assert.match(markdown, /board exhausted after 1 cycle/);
   assert.match(markdown, /S2 Claim → comment → move/);
+  assert.match(markdown, /\*\*Boards\*\*/);
   assert.match(
     markdown,
-    /\| 400 lease \| 400 other \| 409 \| 409 % \| 429 \| 429 % \| 5xx \| Net \| Unexp % \|/,
+    /\| 409 \| 409 % \| 429 \| 429 % \| 5xx \| Net \| Unexp % \|/,
   );
+  assert.match(markdown, /\| req\/agent\/min \|/);
   assert.match(markdown, /command\.claim/);
   assert.match(markdown, /150\.0 MiB/);
   assert.match(markdown, /Mock \(`--mock`\) results .*prove/);
@@ -156,6 +158,10 @@ test("renderMarkdown renders both PG top lists and pg_stat_activity", () => {
       enabled: true,
       available: true,
       url: "postgresql://db.perf/janosik",
+      totalCalls: 9,
+      totalExecMs: 120,
+      commands: 3,
+      queriesPerCommand: 3,
       topByCalls: [
         {
           queryid: "1",
@@ -190,6 +196,7 @@ test("renderMarkdown renders both PG top lists and pg_stat_activity", () => {
   assert.match(markdown, /Top-20 by calls/);
   assert.match(markdown, /Top-20 by total_exec_time/);
   assert.match(markdown, /SELECT 2/);
+  assert.match(markdown, /queries\/command 3\.00/);
   assert.match(markdown, /peak connections 8/);
   assert.match(markdown, /Client:ClientRead=2/);
 });
@@ -319,7 +326,12 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
   report.scenarios[0].title = "SSE ramp";
   report.scenarios[0].summary.sse = {
     opened: 1,
+    closed: 1,
+    closedEarly: 1,
     failed: 2,
+    readErrors: 1,
+    liveAtHoldStart: 1,
+    liveAtHoldEnd: 0,
     maxConcurrent: 1,
     rampObservedMs: 10,
     holdObservedMs: 20,
@@ -328,7 +340,11 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
     { source: "api-preload", message: "probe file disappeared" },
   ];
   const markdown = renderMarkdown(report);
-  assert.match(markdown, /SSE opened 1, failed 2, max concurrent 1/);
+  assert.match(
+    markdown,
+    /SSE opened 1, closed 1, failed 2, closed early 1, read errors 1/,
+  );
+  assert.match(markdown, /live at hold start\/end 1\/0/);
   assert.match(markdown, /Probe errors: api-preload: probe file disappeared/);
 });
 

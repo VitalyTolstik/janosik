@@ -29,6 +29,7 @@ import {
   diffPgStatements,
 } from "./lib/pg.mjs";
 import { collectCpuProfile } from "./lib/cpuprofile.mjs";
+import { LiveProfiler } from "./lib/inspector-profile.mjs";
 import { collectRedisInfo, diffRedisInfo } from "./lib/redis.mjs";
 import { startMockServer } from "./lib/mock-server.mjs";
 import { evaluateScenarioStatus } from "./lib/status.mjs";
@@ -36,6 +37,7 @@ import {
   PreflightError,
   requiredIdentities,
   selectBoards,
+  validateBoardAccess,
   validateTokenIdentity,
 } from "./lib/preflight.mjs";
 import { redactUrl, sanitizeText } from "./lib/redact.mjs";
@@ -116,6 +118,7 @@ async function main() {
       const users = await resolveUsers(config, controller.signal);
       assertTokenPool(config, users);
       const boards = await resolveBoards(config, users, controller.signal);
+      config.resolvedBoards = boards;
       log(
         `target: ${redactedBaseUrl(config)} · boards ${boards.length} · tokens ${users.length} · mode ${config.mode} · driver ${config.driver}`,
       );
@@ -129,6 +132,23 @@ async function main() {
         apiPid: config.apiPid,
         apiProbeFile: config.apiProbe,
       }).start();
+      let liveProfiler = null;
+      let liveProfileStartedAt = null;
+      if (config.apiInspect !== undefined) {
+        liveProfiler = new LiveProfiler({
+          wsUrl: config.apiInspect,
+          profilePath: config.cpuProfile,
+          signal: controller.signal,
+        });
+        try {
+          await liveProfiler.start();
+          liveProfileStartedAt = Date.now();
+        } catch (error) {
+          throw new PreflightError(
+            `--api-inspect failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       if (config.pgActivity && config.pgUrl) {
         pgSampler = new PgActivitySampler({
           databaseUrl: config.pgUrl,
@@ -180,6 +200,13 @@ async function main() {
             signal: controller.signal,
           });
           scenario.pg = diffPgStatements(pgBefore, pgAfter, 20);
+          scenario.pg.commands = scenario.summary.actions;
+          scenario.pg.queriesPerCommand =
+            scenario.pg.available === true && scenario.summary.actions > 0
+              ? Math.round(
+                  (scenario.pg.totalCalls / scenario.summary.actions) * 1_000,
+                ) / 1_000
+              : null;
         }
         scenarios.push(scenario);
         if (scenario.status === "failed" && scenario.fatalAuth === true) {
@@ -216,7 +243,48 @@ async function main() {
             url: redactUrl(config.pgUrl),
           }
         : { enabled: false };
-      const cpuProfile = await collectCpuProfile(config.cpuProfile);
+      if (pg.enabled === true) {
+        pg.commands = scenarios.reduce(
+          (sum, scenario) => sum + (scenario.summary.actions ?? 0),
+          0,
+        );
+        pg.queriesPerCommand =
+          pg.available === true && pg.commands > 0
+            ? Math.round((pg.totalCalls / pg.commands) * 1_000) / 1_000
+            : null;
+      }
+      let instrumentationFailed = false;
+      let instrumentationError = null;
+      let liveProfile = null;
+      if (liveProfiler !== null) {
+        try {
+          liveProfile = await liveProfiler.stop();
+        } catch (error) {
+          instrumentationFailed = true;
+          instrumentationError = sanitizeText(
+            error instanceof Error ? error.message : error,
+            config.tokens,
+          );
+        }
+      }
+      const cpuProfile =
+        liveProfiler !== null
+          ? liveProfile !== null
+            ? await collectCpuProfile(liveProfile.path, {
+                freshSince: liveProfileStartedAt,
+              })
+            : {
+                enabled: true,
+                available: false,
+                reason:
+                  instrumentationError ?? "live CPU profile was not produced",
+              }
+          : await collectCpuProfile(config.cpuProfile);
+      if (liveProfiler !== null && cpuProfile.available !== true) {
+        instrumentationFailed = true;
+        instrumentationError =
+          cpuProfile.reason ?? "live CPU profile was not produced";
+      }
 
       const report = buildReport({
         config,
@@ -230,12 +298,16 @@ async function main() {
         startedAt,
         endedAt: Date.now(),
         interrupted: interrupted || controller.signal.aborted,
+        instrumentationFailed,
+        instrumentationError,
       });
       const { jsonPath, markdownPath } = await writeReport(config, report);
       printSummary(report, jsonPath, markdownPath);
       if (interrupted || report.status === "interrupted") {
         process.exitCode = 130;
       } else if (fatal || report.status === "failed") {
+        process.exitCode = 1;
+      } else if (config.requireOk && report.status !== "ok") {
         process.exitCode = 1;
       } else {
         process.exitCode = 0;
@@ -334,7 +406,7 @@ function assertTokenPool(config, users) {
     }
     throw new PreflightError(
       `token pool has ${users.length} identity(ies) for ${required} agent(s) in S2/S3/S4; ` +
-        "pass more --token values or --shared-identity to model several agents per identity",
+        "pass more token identities (env/token-file) or --shared-identity to model several agents per identity",
     );
   }
   if (required > users.length) {
@@ -407,6 +479,35 @@ async function resolveBoards(config, users, signal) {
     explicitBoards: config.explicitBoards,
     boardsCount: config.boardsCount,
   });
+  if (config.recycle && config.recycleToken !== undefined) {
+    const recycleClient = new HttpClient({
+      baseUrl: config.baseUrl,
+      token: config.recycleToken,
+      metrics: new RunMetrics("bootstrap-recycle"),
+      signal,
+    });
+    let me;
+    let recycleLists;
+    try {
+      me = await recycleClient.me();
+      recycleLists = await recycleClient.listBoards();
+    } catch (error) {
+      throw new PreflightError(
+        `recycle token preflight failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    validateTokenIdentity(
+      { tokenIdentity: me?.token ?? null },
+      0,
+      "recycle token",
+    );
+    validateBoardAccess({
+      label: "recycle token",
+      summaries: recycleLists,
+      ids,
+      roles: new Set(["ADMIN"]),
+    });
+  }
   if (config.explicitBoards.length === 0 && ids.length < config.boardsCount) {
     log(
       `warning: --boards ${config.boardsCount} requested, only ${ids.length} accessible`,
@@ -503,6 +604,10 @@ async function runOne({ id, config, users, boards, signal }) {
     api: resources,
     workWindow: {
       workStartedAt: result.workStartedAt ?? result.startedAt,
+      plannedWorkStartedAt:
+        result.plannedWorkStartedAt ?? result.workStartedAt ?? result.startedAt,
+      actualWorkStartedAt:
+        result.actualWorkStartedAt ?? result.workStartedAt ?? result.startedAt,
       workEndedAt: measuredEnd,
       workDurationMs:
         result.workDurationMs ?? Math.max(0, measuredEnd - result.startedAt),
@@ -543,7 +648,7 @@ function printSummary(report, jsonPath, markdownPath) {
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     console.log(
-      `${scenario.id.padEnd(3)} ${String(scenario.status).padEnd(11)} req=${s.requests} tools=${s.toolCalls} cycles=${s.cycles} p95=${s.latency.p95 ?? "—"}ms 400=${s.errors.badRequest400} 409=${s.errors.conflict409} 429=${s.errors.rateLimited429} 5xx=${s.errors.server5xx} net=${s.errors.network} unexp=${((s.errors.rates?.unexpected ?? 0) * 100).toFixed(2)}%`,
+      `${scenario.id.padEnd(3)} ${String(scenario.status).padEnd(11)} req=${s.requests} tools=${s.toolCalls} req/agent/min=${s.requestsPerAgentPerMinute ?? "—"} cycles=${s.cycles} p95=${s.latency.p95 ?? "—"}ms 400=${s.errors.badRequest400} 409=${s.errors.conflict409} 429=${s.errors.rateLimited429} 5xx=${s.errors.server5xx} net=${s.errors.network} unexp=${((s.errors.rates?.unexpected ?? 0) * 100).toFixed(2)}%`,
     );
   }
   console.log(`JSON: ${jsonPath}`);

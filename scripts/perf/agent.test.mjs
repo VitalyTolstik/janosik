@@ -353,7 +353,7 @@ test("an unknown claim outcome attempts a release before the next cycle", async 
   assert.equal(releases, 1);
 });
 
-test("an unknown claim outcome whose release fails is an orphan", async () => {
+test("an unknown claim outcome whose cleanup has no holder is not an orphan", async () => {
   const client = {
     async readBoard() {
       return { board: board(), seq: 10 };
@@ -377,8 +377,75 @@ test("an unknown claim outcome whose release fails is an orphan", async () => {
       leaseMs: 60_000,
       commentText: "probe",
     }),
+    (error) => error.orphan === false,
+  );
+});
+
+test("an unknown claim outcome whose cleanup fails server-side is an orphan", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) return { status: 500 };
+      throw new Error("network timeout");
+    },
+    async comment() {
+      throw new Error("must not comment");
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
     (error) => error.orphan === true,
   );
+});
+
+test("a deadline-aborted claim releases through the cleanup client without an orphan", async () => {
+  let cleanupReleases = 0;
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim() {
+      const error = new Error("aborted by scenario deadline");
+      error.status = -1;
+      throw error;
+    },
+    async comment() {
+      throw new Error("must not comment");
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  const cleanupClient = {
+    async claim(_boardId, command) {
+      assert.equal(command.action.claimedBy, null);
+      cleanupReleases += 1;
+      return { status: 200, json: { seq: 11 } };
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      cleanupClient,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
+    (error) => error.orphan === false && error.cleanupAborted === false,
+  );
+  assert.equal(cleanupReleases, 1);
 });
 
 test("a network failure during the move releases the claim", async () => {
@@ -476,6 +543,30 @@ test("recycleDoneCards does not count a 409 release as recycled", async () => {
   });
   assert.deepEqual(result, { moved: 0, orphans: 1 });
   assert.equal(moved, false);
+});
+
+test("a delayed worker reports its first request after the start delay", async () => {
+  const { runAgentLoop } = await import("./lib/agent.mjs");
+  const starts = [];
+  const started = Date.now();
+  await runAgentLoop({
+    client: {
+      async readBoard() {
+        return { board: board(), seq: 1 };
+      },
+    },
+    userId: "u1",
+    boardId: "b1",
+    mode: "idle",
+    config: { id: "S4", cadenceMs: 1_000, jitter: 0, idleEndpoint: "board" },
+    deadline: started + 220,
+    signal: new AbortController().signal,
+    random: () => 0.5,
+    startDelayMs: 80,
+    onFirstRequest: (ts) => starts.push(ts),
+  });
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0] - started >= 70, true);
 });
 
 test("jitter and PRNG helpers stay bounded and deterministic", () => {

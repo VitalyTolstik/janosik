@@ -36,8 +36,11 @@ export function requiredIdentities(config) {
   return required;
 }
 
-export function validateTokenIdentity(user, index) {
-  const label = `token ${index + 1}`;
+export function validateTokenIdentity(
+  user,
+  index,
+  label = `token ${index + 1}`,
+) {
   const token = user?.tokenIdentity;
   if (token === null || token === undefined) {
     throw new PreflightError(
@@ -69,6 +72,32 @@ export function validateTokenIdentity(user, index) {
     user.boardScope = token.boardId;
   }
   return user;
+}
+
+export function validateBoardAccess({
+  label,
+  summaries,
+  ids,
+  roles = WRITE_ROLES,
+}) {
+  const byId = new Map((summaries ?? []).map((board) => [board?.id, board]));
+  for (const [index, boardId] of ids.entries()) {
+    const where = `${label}, board ${index + 1} (${boardId})`;
+    const summary = byId.get(boardId);
+    if (summary === undefined) {
+      throw new PreflightError(
+        `${where}: not a member (or the board does not exist)`,
+      );
+    }
+    if (summary.archivedAt !== undefined && summary.archivedAt !== null) {
+      throw new PreflightError(`${where}: board is archived`);
+    }
+    if (!roles.has(summary.role)) {
+      throw new PreflightError(
+        `${where}: role ${summary.role ?? "unknown"} is not sufficient (${[...roles].join(" or ")} required)`,
+      );
+    }
+  }
 }
 
 export function selectBoards({ users, lists, explicitBoards, boardsCount }) {

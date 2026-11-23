@@ -192,21 +192,23 @@ function isLeaseConflict(error) {
   );
 }
 
-/** Release a lease. Returns true only when the API answered 2xx. */
-export async function releaseClaim({ client, boardId, cardId }) {
+/** Release a lease. Returns the HTTP status when one was received. */
+export async function tryReleaseClaim({ client, boardId, cardId }) {
   try {
     const response = await client.claim(boardId, {
       commandId: newCommandId("release"),
       action: buildReleaseAction({ cardId, boardId, at: Date.now() }),
     });
-    return (
-      Number.isInteger(response?.status) &&
-      response.status >= 200 &&
-      response.status < 300
-    );
-  } catch {
-    return false;
+    const status = Number.isInteger(response?.status) ? response.status : 0;
+    return { released: status >= 200 && status < 300, status };
+  } catch (error) {
+    return { released: false, status: statusOf(error) };
   }
+}
+
+/** Release a lease. Returns true only when the API answered 2xx. */
+export async function releaseClaim(options) {
+  return (await tryReleaseClaim(options)).released;
 }
 
 function failureResult({ error, actions, conflicts, orphan }) {
@@ -239,6 +241,7 @@ export async function performAgentCycle({
   startIndex = 0,
   onAction,
   withComment = true,
+  cleanupClient,
 } = {}) {
   let conflicts = 0;
   let actions = 0;
@@ -281,18 +284,24 @@ export async function performAgentCycle({
         conflicts += 1;
         continue;
       }
-      if (statusOf(error) === 0) {
+      if (statusOf(error) === 0 || statusOf(error) === -1) {
         // The server may have committed the lease even though the response
-        // was lost (timeout/reset). Release it before the next cycle so a
-        // later retry cannot be blocked by an orphan claim.
-        const released = await releaseClaim({
-          client,
+        // was lost (timeout/reset/deadline abort). Use the independent
+        // cleanup client; the scenario controller is already aborted at a
+        // deadline, so the normal client would fail without trying.
+        const cleanup = await tryReleaseClaim({
+          client: cleanupClient ?? client,
           boardId,
           cardId: work.cardId,
         });
+        const tolerated = cleanup.status === 400 || cleanup.status === 409;
+        const harnessAbort =
+          statusOf(error) === -1 &&
+          (cleanup.status === 0 || cleanup.status === -1);
         const wrapped =
           error instanceof Error ? error : new Error(String(error));
-        wrapped.orphan = !released;
+        wrapped.orphan = !cleanup.released && !tolerated;
+        wrapped.cleanupAborted = harnessAbort;
         throw wrapped;
       }
       throw error;
@@ -314,7 +323,7 @@ export async function performAgentCycle({
         );
       } catch (error) {
         const released = await releaseClaim({
-          client,
+          client: cleanupClient ?? client,
           boardId,
           cardId: work.cardId,
         });
@@ -337,7 +346,7 @@ export async function performAgentCycle({
       });
     } catch (error) {
       const released = await releaseClaim({
-        client,
+        client: cleanupClient ?? client,
         boardId,
         cardId: work.cardId,
       });
@@ -355,7 +364,7 @@ export async function performAgentCycle({
     if (move.status === 409) {
       conflicts += 1;
       const released = await releaseClaim({
-        client,
+        client: cleanupClient ?? client,
         boardId,
         cardId: work.cardId,
       });
@@ -498,10 +507,17 @@ export async function runAgentLoop({
   startAt = undefined,
   onError,
   onNoWork,
+  cleanupClient,
+  onFirstRequest,
 }) {
   await waitForStart(startAt, startDelayMs, signal);
   let readyFallback = false;
+  let firstRequest = false;
   while (!signal.aborted && Date.now() < deadline) {
+    if (!firstRequest) {
+      firstRequest = true;
+      onFirstRequest?.(Date.now());
+    }
     const cycleStarted = Date.now();
     try {
       if (mode === "idle") {
@@ -520,10 +536,14 @@ export async function runAgentLoop({
           leaseMs: config.leaseMs,
           commentText: `TASK-200.1 perf probe (${config.id})`,
           startIndex: agentIndex,
-          onAction: (kind) => metrics?.recordAction(1, kind),
+          onAction: (kind) => {
+            metrics?.recordAction(1, kind);
+            metrics?.recordAgentAction(agentIndex);
+          },
+          cleanupClient,
         });
         if (result.idle) {
-          const recycled = (await onNoWork?.(result)) === true;
+          const recycled = (await onNoWork?.(result, boardId)) === true;
           if (recycled) continue;
           metrics?.recordNoWork({
             exhausted: result.exhausted === true,
@@ -578,10 +598,17 @@ export async function runMixedAgentLoop({
   startAt = undefined,
   onError,
   onNoWork,
+  cleanupClient,
+  onFirstRequest,
 }) {
   await waitForStart(startAt, startDelayMs, signal);
   let beatIndex = 0;
+  let firstRequest = false;
   while (!signal.aborted && Date.now() < deadline) {
+    if (!firstRequest) {
+      firstRequest = true;
+      onFirstRequest?.(Date.now());
+    }
     const cycleStarted = Date.now();
     const kind = pickKind(random, config.mix);
     try {
@@ -595,10 +622,14 @@ export async function runMixedAgentLoop({
           userId,
           leaseMs: config.leaseMs,
           startIndex: agentIndex + beatIndex,
-          onAction: () => metrics?.recordAction(1, "write"),
+          onAction: () => {
+            metrics?.recordAction(1, "write");
+            metrics?.recordAgentAction(agentIndex);
+          },
+          cleanupClient,
         });
         if (result.idle) {
-          const recycled = (await onNoWork?.(result)) === true;
+          const recycled = (await onNoWork?.(result, boardId)) === true;
           if (recycled) continue;
           metrics?.recordNoWork({
             exhausted: result.exhausted === true,
@@ -625,10 +656,13 @@ export async function runMixedAgentLoop({
           boardId,
           startIndex: agentIndex + beatIndex,
           commentText: `TASK-200.1 S3 comment (${config.id})`,
-          onAction: () => metrics?.recordAction(1, "comment"),
+          onAction: () => {
+            metrics?.recordAction(1, "comment");
+            metrics?.recordAgentAction(agentIndex);
+          },
         });
         if (result.idle) {
-          const recycled = (await onNoWork?.(result)) === true;
+          const recycled = (await onNoWork?.(result, boardId)) === true;
           if (recycled) continue;
           metrics?.recordNoWork({
             exhausted: result.exhausted === true,

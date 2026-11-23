@@ -24,19 +24,23 @@ export function buildReport({
   endedAt,
   interrupted = false,
   preflightError = null,
+  instrumentationFailed = false,
+  instrumentationError = null,
 }) {
   const statuses = scenarios.map((scenario) => scenario.status ?? "ok");
   const overall = interrupted
     ? "interrupted"
-    : statuses.includes("failed")
+    : instrumentationFailed
       ? "failed"
-      : statuses.includes("interrupted")
-        ? "interrupted"
-        : statuses.includes("partial")
-          ? "partial"
-          : scenarios.length === 0
-            ? "failed"
-            : "ok";
+      : statuses.includes("failed")
+        ? "failed"
+        : statuses.includes("interrupted")
+          ? "interrupted"
+          : statuses.includes("partial")
+            ? "partial"
+            : scenarios.length === 0
+              ? "failed"
+              : "ok";
   return {
     schemaVersion: SCHEMA_VERSION,
     task: "TASK-200.1",
@@ -63,6 +67,8 @@ export function buildReport({
         (interrupted ? 1 : 0),
     },
     preflightError,
+    instrumentationFailed,
+    instrumentationError,
     cpuProfile,
     pg,
     pgActivity,
@@ -84,7 +90,7 @@ export function renderMarkdown(report) {
     `**API** ${escapeInline(report.config.baseUrl)} · **Generator** node ${escapeInline(report.environment.node)} on ${escapeInline(`${report.environment.platform}/${report.environment.arch}`)}  `,
   );
   lines.push(
-    `**Scenarios** ${report.scenarios.map((scenario) => scenario.id).join(", ")} · **Tokens** ${report.config.tokenCount} · **Labels** S1–S6 from docs/PERF-AGENT-SCALE.md §7.1`,
+    `**Scenarios** ${report.scenarios.map((scenario) => scenario.id).join(", ")} · **Boards** ${(report.config.resolvedBoards ?? []).map((id) => escapeInline(id)).join(", ") || "—"} · **Tokens** ${report.config.tokenCount} · **Labels** S1–S6 from docs/PERF-AGENT-SCALE.md §7.1`,
   );
   lines.push("");
   lines.push("## Status");
@@ -96,6 +102,12 @@ export function renderMarkdown(report) {
     lines.push("");
     lines.push(`Preflight: ${escapeText(report.preflightError)}`);
   }
+  if (report.instrumentationFailed === true) {
+    lines.push("");
+    lines.push(
+      `Instrumentation failed: ${escapeText(report.instrumentationError ?? "unknown error")}`,
+    );
+  }
   for (const scenario of report.scenarios) {
     lines.push(
       `- **${scenario.id}** \`${scenario.status ?? "ok"}\`${scenario.statusReason ? ` — ${escapeText(scenario.statusReason)}` : ""}`,
@@ -105,15 +117,15 @@ export function renderMarkdown(report) {
   lines.push("## Throughput and errors");
   lines.push("");
   lines.push(
-    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | 400 lease | 400 other | 409 | 409 % | 429 | 429 % | 5xx | Net | Unexp % |",
+    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | req/agent/min | 400 lease | 400 other | 409 | 409 % | 429 | 429 % | 5xx | Net | Unexp % |",
   );
   lines.push(
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     lines.push(
-      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${formatInteger(s.errors.leaseConflict400)} | ${formatInteger(s.errors.unexpected400)} | ${s.errors.conflict409} | ${formatPercent(s.errors.rates?.conflict409)} | ${s.errors.rateLimited429} | ${formatPercent(s.errors.rates?.rateLimited429)} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rates?.unexpected)} |`,
+      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${formatDecimal(s.requestsPerAgentPerMinute)} | ${formatInteger(s.errors.leaseConflict400)} | ${formatInteger(s.errors.unexpected400)} | ${s.errors.conflict409} | ${formatPercent(s.errors.rates?.conflict409)} | ${s.errors.rateLimited429} | ${formatPercent(s.errors.rates?.rateLimited429)} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rates?.unexpected)} |`,
     );
   }
   lines.push("");
@@ -151,8 +163,14 @@ export function renderMarkdown(report) {
       `Config: ${scenarioConfigLine(scenario.config)} · requests ${formatInteger(scenario.summary.requests)} · tool calls ${formatInteger(scenario.summary.toolCalls)} · bytes/request ${formatBytes(scenario.summary.bytesPerRequest)}`,
     );
     if (scenario.workWindow !== undefined) {
+      const planned =
+        scenario.workWindow.plannedWorkStartedAt ??
+        scenario.workWindow.workStartedAt;
+      const actual =
+        scenario.workWindow.actualWorkStartedAt ??
+        scenario.workWindow.workStartedAt;
       lines.push(
-        `Work window: ${formatDuration(scenario.workWindow.workDurationMs)} (started ${new Date(scenario.workWindow.workStartedAt).toISOString()}, measured to ${new Date(scenario.workWindow.workEndedAt).toISOString()})`,
+        `Work window: ${formatDuration(scenario.workWindow.workDurationMs)} (planned start ${new Date(planned).toISOString()}, actual start ${new Date(actual).toISOString()}, measured to ${new Date(scenario.workWindow.workEndedAt).toISOString()})`,
       );
     }
     if (scenario.recycle?.requests > 0) {
@@ -160,10 +178,16 @@ export function renderMarkdown(report) {
         `Recycle (excluded from agent metrics): ${formatInteger(scenario.recycle.writes)} writes in ${formatInteger(scenario.recycle.requests)} requests; ${formatInteger(scenario.summary.recycled)} cards recycled${scenario.recycle.orphans > 0 ? `; ${formatInteger(scenario.recycle.orphans)} orphan release(s)` : ""}.`,
       );
     }
-    if (scenario.id === "S5") {
+    if (
+      scenario.id === "S5" ||
+      scenario.summary.sse.opened > 0 ||
+      scenario.summary.sse.failed > 0 ||
+      scenario.summary.sse.closedEarly > 0 ||
+      scenario.summary.sse.readErrors > 0
+    ) {
       const sse = scenario.summary.sse;
       lines.push(
-        `SSE opened ${formatInteger(sse.opened)}, failed ${formatInteger(sse.failed)}, max concurrent ${formatInteger(sse.maxConcurrent)}, observed ramp ${formatDuration(sse.rampObservedMs)}, observed hold ${formatDuration(sse.holdObservedMs)}.`,
+        `SSE opened ${formatInteger(sse.opened)}, closed ${formatInteger(sse.closed)}, failed ${formatInteger(sse.failed)}, closed early ${formatInteger(sse.closedEarly)}, read errors ${formatInteger(sse.readErrors)}, live at hold start/end ${formatInteger(sse.liveAtHoldStart)}/${formatInteger(sse.liveAtHoldEnd)}, max concurrent ${formatInteger(sse.maxConcurrent)}, observed ramp ${formatDuration(sse.rampObservedMs)}, observed hold ${formatDuration(sse.holdObservedMs)}.`,
       );
     }
     const probeErrors = scenario.api?.errors ?? [];
@@ -187,6 +211,12 @@ export function renderMarkdown(report) {
     if (scenario.mcp !== undefined && scenario.mcp !== null) {
       lines.push(
         `MCP: ${scenario.mcp.processes} process(es), sampled RSS peak ${formatBytes(scenario.mcp.peakRssBytes)}, lifetime peak ${formatBytes(scenario.mcp.peakVmHwmBytes)}, total sampled peak ${formatBytes(scenario.mcp.totalPeakRssBytes)}.`,
+      );
+    }
+    const cadence = scenario.summary.agentCadence;
+    if (cadence !== undefined && cadence.agentsMeasured > 0) {
+      lines.push(
+        `Per-agent action cadence: median ${formatMs(cadence.medianMs)} (min ${formatMs(cadence.minMs)}, max ${formatMs(cadence.maxMs)}) across ${formatInteger(cadence.agentsMeasured)} agent(s), ${formatDecimal(cadence.actionsPerAgentPerMinute)} actions/agent/min.`,
       );
     }
     const tools = Object.entries(scenario.summary.tools ?? {});
@@ -306,7 +336,7 @@ function renderPg(lines, report) {
     return;
   }
   lines.push(
-    `Database URL: ${escapeInline(redactUrl(pg.url ?? "")) || "(not reported)"}`,
+    `Database URL: ${escapeInline(redactUrl(pg.url ?? "")) || "(not reported)"} · total calls delta ${formatInteger(pg.totalCalls)} · total_exec_time delta ${formatDecimal(pg.totalExecMs)} ms · commands ${formatInteger(pg.commands)} · queries/command ${formatDecimal(pg.queriesPerCommand)}`,
   );
   for (const [title, rows] of [
     ["Top-20 by calls", pg.topByCalls ?? []],
@@ -335,14 +365,14 @@ function renderPg(lines, report) {
     lines.push("### Per-scenario deltas");
     lines.push("");
     lines.push(
-      "| Scenario | Top query by calls | Calls | Top query by time | Total ms |",
+      "| Scenario | Calls delta | Total ms | Queries/command | Top query by calls | Calls | Top query by time | Total ms |",
     );
-    lines.push("| --- | --- | ---: | --- | ---: |");
+    lines.push("| --- | ---: | ---: | ---: | --- | ---: | --- | ---: |");
     for (const scenario of perScenario) {
       const byCalls = scenario.pg.topByCalls?.[0];
       const byTime = scenario.pg.topByTotalTime?.[0];
       lines.push(
-        `| ${scenario.id} | ${escapeCell(byCalls?.query ?? "—")} | ${formatInteger(byCalls?.calls)} | ${escapeCell(byTime?.query ?? "—")} | ${formatDecimal(byTime?.totalMs)} |`,
+        `| ${scenario.id} | ${formatInteger(scenario.pg.totalCalls)} | ${formatDecimal(scenario.pg.totalExecMs)} | ${formatDecimal(scenario.pg.queriesPerCommand)} | ${escapeCell(byCalls?.query ?? "—")} | ${formatInteger(byCalls?.calls)} | ${escapeCell(byTime?.query ?? "—")} | ${formatDecimal(byTime?.totalMs)} |`,
       );
     }
   }

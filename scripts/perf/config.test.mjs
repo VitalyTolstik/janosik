@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   ALL_SCENARIOS,
@@ -106,13 +109,20 @@ test("resolveConfig builds a real run from env token and board overrides", () =>
   assert.equal(config.jitter, 0);
 });
 
-test("token precedence is CLI > JANOSIK_PERF_TOKEN > PERF_TOKEN and dedupes", () => {
-  const cli = resolveConfig(
-    parseCli(["--scenario", "S1", "--token", "jnk_cli,jnk_cli"]),
-    { JANOSIK_PERF_TOKEN: "jnk_env", PERF_TOKEN: "jnk_fallback" },
-  );
-  assert.deepEqual(cli.tokens, ["jnk_cli"]);
-  assert.equal(publicConfig(cli).tokenCount, 1);
+test("token precedence is token file > JANOSIK_PERF_TOKEN > PERF_TOKEN and dedupes", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "janosik-tokens-"));
+  try {
+    const file = path.join(directory, "tokens.txt");
+    await writeFile(file, "jnk_file,jnk_file\njnk_file2\n", "utf8");
+    const fromFile = resolveConfig(
+      parseCli(["--scenario", "S1", "--token-file", file]),
+      { JANOSIK_PERF_TOKEN: "jnk_env", PERF_TOKEN: "jnk_fallback" },
+    );
+    assert.deepEqual(fromFile.tokens, ["jnk_file", "jnk_file2"]);
+    assert.equal(publicConfig(fromFile).tokenCount, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 
   const env = resolveConfig(parseCli(["--scenario", "S1"]), {
     JANOSIK_PERF_TOKEN: "jnk_env,jnk_env",
@@ -124,6 +134,14 @@ test("token precedence is CLI > JANOSIK_PERF_TOKEN > PERF_TOKEN and dedupes", ()
     PERF_TOKEN: "jnk_fallback",
   });
   assert.deepEqual(fallback.tokens, ["jnk_fallback"]);
+
+  assert.throws(
+    () =>
+      resolveConfig(parseCli(["--scenario", "S1", "--token", "jnk_argv"]), {
+        JANOSIK_PERF_TOKEN: "jnk_env",
+      }),
+    /--token is no longer accepted in argv/,
+  );
 });
 
 test("resolveConfig rejects missing PAT, bad numbers and bad URLs", () => {
@@ -157,7 +175,15 @@ test("resolveConfig rejects missing PAT, bad numbers and bad URLs", () => {
       resolveConfig(parseCli(["--scenario", "S2", "--recycle"]), {
         PERF_TOKEN: "jnk_x",
       }),
-    /--recycle needs --recycle-token/,
+    /--recycle needs JANOSIK_PERF_RECYCLE_TOKEN or --recycle-token-file/,
+  );
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli(["--scenario", "S2", "--recycle-token", "jnk_admin"]),
+        { PERF_TOKEN: "jnk_x" },
+      ),
+    /--recycle-token is no longer accepted in argv/,
   );
 });
 
@@ -178,23 +204,16 @@ test("scenarioConfig applies documented defaults and smoke overrides", () => {
   assert.equal(smokeS2.durationMs, 4_000);
 
   const override = resolveConfig(
-    parseCli([
-      "--scenario",
-      "S2",
-      "--token",
-      "jnk_x",
-      "--agents",
-      "3",
-      "--duration",
-      "9s",
-    ]),
-    {},
+    parseCli(["--scenario", "S2", "--agents", "3", "--duration", "9s"]),
+    { JANOSIK_PERF_TOKEN: "jnk_x" },
   );
   assert.equal(scenarioConfig(override, "S2").agents, 3);
   assert.equal(scenarioConfig(override, "S2").durationMs, 9_000);
 
   const s5 = scenarioConfig(
-    resolveConfig(parseCli(["--scenario", "S5", "--token", "jnk_x"]), {}),
+    resolveConfig(parseCli(["--scenario", "S5"]), {
+      JANOSIK_PERF_TOKEN: "jnk_x",
+    }),
     "S5",
   );
   assert.equal(s5.sse, 5_000);
@@ -214,10 +233,9 @@ test("all scenarios under --mock stay small", () => {
 });
 
 test("validateScenarioConfig rejects zero loops and bad S4/S5 windows", () => {
-  const base = resolveConfig(
-    parseCli(["--scenario", "S2", "--token", "jnk_x"]),
-    {},
-  );
+  const base = resolveConfig(parseCli(["--scenario", "S2"]), {
+    JANOSIK_PERF_TOKEN: "jnk_x",
+  });
   assert.throws(
     () =>
       validateScenarioConfig(
@@ -234,15 +252,13 @@ test("validateScenarioConfig rejects zero loops and bad S4/S5 windows", () => {
       ),
     /duration must be greater than zero/,
   );
-  const s4 = resolveConfig(
-    parseCli(["--scenario", "S4", "--token", "jnk_x", "--duration", "2s"]),
-    {},
-  );
+  const s4 = resolveConfig(parseCli(["--scenario", "S4", "--duration", "2s"]), {
+    JANOSIK_PERF_TOKEN: "jnk_x",
+  });
   assert.equal(validateScenarioConfig(s4, "S4").durationMs, 2_000);
-  const s5 = resolveConfig(
-    parseCli(["--scenario", "S5", "--token", "jnk_x", "--hold", "0"]),
-    {},
-  );
+  const s5 = resolveConfig(parseCli(["--scenario", "S5", "--hold", "0"]), {
+    JANOSIK_PERF_TOKEN: "jnk_x",
+  });
   assert.throws(() => validateScenarioConfig(s5, "S5"), /hold must be greater/);
 });
 
@@ -305,15 +321,13 @@ test("smoke ignores real PG/board env and caps overrides", () => {
 });
 
 test("burst can be disabled and mock board/card overrides are capped", () => {
-  const noBurst = resolveConfig(
-    parseCli(["--scenario", "S4", "--token", "jnk_x", "--no-burst"]),
-    {},
-  );
+  const noBurst = resolveConfig(parseCli(["--scenario", "S4", "--no-burst"]), {
+    JANOSIK_PERF_TOKEN: "jnk_x",
+  });
   assert.equal(scenarioConfig(noBurst, "S4").burst, false);
-  const burst = resolveConfig(
-    parseCli(["--scenario", "S4", "--token", "jnk_x", "--burst"]),
-    {},
-  );
+  const burst = resolveConfig(parseCli(["--scenario", "S4", "--burst"]), {
+    JANOSIK_PERF_TOKEN: "jnk_x",
+  });
   assert.equal(scenarioConfig(burst, "S4").burst, true);
 
   const mock = resolveConfig(
@@ -331,18 +345,53 @@ test("burst can be disabled and mock board/card overrides are capped", () => {
 test("--driver mcp rejects the unimplemented S3 mixed loop", () => {
   assert.throws(
     () =>
-      resolveConfig(
-        parseCli(["--scenario", "S3", "--driver", "mcp", "--token", "jnk_x"]),
-        {},
-      ),
-    /does not implement the S3/,
+      resolveConfig(parseCli(["--scenario", "S3", "--driver", "mcp"]), {
+        JANOSIK_PERF_TOKEN: "jnk_x",
+      }),
+    /supports S1\/S2\/S4 only/,
+  );
+  assert.throws(
+    () =>
+      resolveConfig(parseCli(["--scenario", "S5", "--driver", "mcp"]), {
+        JANOSIK_PERF_TOKEN: "jnk_x",
+      }),
+    /rejected S5/,
   );
   assert.equal(
-    resolveConfig(
-      parseCli(["--scenario", "S2", "--driver", "mcp", "--token", "jnk_x"]),
-      {},
-    ).driver,
+    resolveConfig(parseCli(["--scenario", "S2", "--driver", "mcp"]), {
+      JANOSIK_PERF_TOKEN: "jnk_x",
+    }).driver,
     "mcp",
+  );
+});
+
+test("--api-inspect requires a ws URL and a profile destination", () => {
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli(["--scenario", "S1", "--api-inspect", "http://x"]),
+        { JANOSIK_PERF_TOKEN: "jnk_x" },
+      ),
+    /must be a ws:\/\//,
+  );
+  assert.throws(
+    () =>
+      resolveConfig(
+        parseCli([
+          "--scenario",
+          "S1",
+          "--api-inspect",
+          "ws://127.0.0.1:9229/uuid",
+        ]),
+        { JANOSIK_PERF_TOKEN: "jnk_x" },
+      ),
+    /needs --cpu-profile/,
+  );
+  assert.equal(
+    resolveConfig(parseCli(["--scenario", "S1", "--require-ok"]), {
+      JANOSIK_PERF_TOKEN: "jnk_x",
+    }).requireOk,
+    true,
   );
 });
 
