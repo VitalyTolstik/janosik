@@ -126,6 +126,22 @@
 **Файлы:** `backend/src/boards/*`, `mcp/src/tools/cards.ts`,
 `shared/src/api.ts`, docs/MCP reference.
 
+**Статус:** реализовано в `feat/TASK-200.2-ready-endpoint`.
+`GET /boards/:id/ready` — сводка по первой/начальной колонке
+(`ReadyService`, индексированный SQL с `LIMIT`), `?wait=` удерживает запрос
+0–60 с и просыпается на релевантных command-событиях (`card:`, `column:`,
+`board:`, `resync`), таймаут — `204`, `?since=` завершает удержание сразу
+после изменения доски, отключение клиента освобождает подписку.
+`GET /boards/ready` — та же сводка по всем доступным доскам за
+постоянное число запросов (без N+1); архивные доски перечислены пустыми.
+MCP `list_ready_cards`/`wait_for_work` используют эти эндпоинты: одиночная
+доска — long-poll 25–60 с с jitter, без `boardId` — cadence 15–60 с;
+контракт тула сохранён, а сервер без эндпоинта (`404`) получает прежний
+full-board fallback. Покрытие: unit `ready.service.spec.ts` (форма, лимит,
+первая колонка, timeout/wake/abort, число запросов), e2e
+`ready-work.e2e-spec.ts` (VIEWER, архив, membership, long-poll), MCP
+client/server тесты, OpenAPI и EN/RU документация.
+
 ---
 
 ### 200.3 — Budget и `429`/`Retry-After` (P0)

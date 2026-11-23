@@ -329,9 +329,15 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   active board's initial column (`workflow.initialColumnId`, or the first column
   when no workflow exists) that are unassigned, free of a live claim and not
   blocked, ordered by priority. The initial column is a convention, not a
-  column named Backlog. `janosik_wait_for_work` checks the board at the
-  requested interval until one appears or the timeout expires; it does not
-  reserve or claim the card.
+  column named Backlog. Both it and `janosik_wait_for_work` read the compact
+  server ready summary (`GET /boards/:id/ready`, or `GET /boards/ready` without
+  `boardId`) instead of a board aggregate. A single-board wait is held by the
+  server for 25–60 s per request and wakes on a relevant board command; a
+  cross-board wait re-reads the snapshot at a jittered 15–60 s cadence. The tool
+  keeps `timeoutMs`, `pollMs`, `boardId` and its `{ card: … }` /
+  `{ card: null }` result. On a server without the endpoint (`404`) it falls
+  back to the full-board read, so upgrading the server is what removes the idle
+  board load. A wait does not reserve or claim the card.
 - **A Definition-of-Done check in MCP.** When `janosik_move_card` enters a done
   column (`workflow.doneColumnIds`, falling back to the board's last column when
   the list is empty or no workflow exists), it checks cards with a task contract for unticked

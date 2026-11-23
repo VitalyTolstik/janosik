@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
+  bounded summary of the cards ready to pick up on one board — the initial/work
+  column, unassigned, without a live claim and not blocked — with
+  `id/title`, board and column ids/titles, `priority`, claim state/lease,
+  card `version` and `descriptionChars` only; it never loads a board aggregate.
+  `?wait=` holds the request for 0–60 s, wakes on a relevant command that
+  touches a card, column or the board, and answers `204` on timeout; `?since=`
+  is the previous board `seq` and answers immediately when the board changed.
+  A client disconnect aborts the hold and releases its realtime subscription.
+  `GET /boards/ready?limit=` returns the same cards across every accessible
+  board (archived boards are listed empty; a board-scoped PAT sees its board)
+  using constant-size SQL with no per-board fan-out. VIEWERs may read both.
+  MCP `janosik_list_ready_cards` and `janosik_wait_for_work` now use the
+  endpoints; a single-board wait long-polls 25–60 s with jitter, a cross-board
+  wait uses a 15–60 s jittered cadence, and an older server that answers `404`
+  keeps the legacy full-board fallback, so the tool contract (`timeoutMs`,
+  `pollMs`, `boardId`, `{ card }`/`{ card: null }`) is unchanged. Shared types,
+  OpenAPI, EN/RU API and MCP docs, the MCP README, the TASK-200 status note and
+  focused unit/e2e coverage are included.
+
 - TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
   bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
   `max(12000, 2 × THROTTLE_LIMIT)`) with continuous refill, backed by a

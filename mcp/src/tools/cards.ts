@@ -16,6 +16,7 @@ import {
   LIMITS,
   type Board,
   type Card,
+  type ReadyCardDto,
   workflowDoneColumnIds,
   workflowInitialColumnId,
 } from "@janosik/shared";
@@ -1163,7 +1164,7 @@ export function registerCardTools(
         "under a live claim and not " +
         "blocked by another card. Sorted by priority (most urgent first). " +
         "Reads one board, or every board the user can access when boardId is " +
-        "omitted.",
+        "omitted. Uses the server's summary ready endpoint, not a board read.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         limit: z
@@ -1178,19 +1179,36 @@ export function registerCardTools(
       annotations: READ,
     },
     async (args) => {
-      const boards = args.boardId
-        ? [await client.getBoard(args.boardId)]
-        : await loadBoards(client);
-      const ready = readyCards(boards, Date.now()).slice(0, args.limit);
-      const results = ready.map(({ board, card, column }) => ({
-        id: card.id,
-        title: card.title,
-        boardId: board.id,
-        boardTitle: board.title,
-        column,
-        priority: card.priority ?? DEFAULT_CARD_PRIORITY,
-        descriptionChars: card.description?.length ?? 0,
-      }));
+      let results: ReadyToolResult[];
+      try {
+        if (args.boardId !== undefined) {
+          const ready = await client.getBoardReady(args.boardId, {
+            limit: args.limit,
+          });
+          results = (ready?.cards ?? []).map(readyToolResult);
+        } else {
+          const ready = await client.listReadyWork(args.limit);
+          results = ready.cards.map(readyToolResult);
+        }
+      } catch (error) {
+        if (!missingReadyEndpoint(error)) throw error;
+        // Older server: keep the pre-TASK-200.2 behaviour rather than failing
+        // the tool. This path is the only one that still reads full boards.
+        const boards = args.boardId
+          ? [await client.getBoard(args.boardId)]
+          : await loadBoards(client);
+        results = readyCards(boards, Date.now())
+          .slice(0, args.limit)
+          .map(({ board, card, column }) => ({
+            id: card.id,
+            title: card.title,
+            boardId: board.id,
+            boardTitle: board.title,
+            column,
+            priority: card.priority ?? DEFAULT_CARD_PRIORITY,
+            descriptionChars: card.description?.length ?? 0,
+          }));
+      }
       const markdown =
         results.length === 0
           ? "No cards are ready to work."
@@ -1210,9 +1228,11 @@ export function registerCardTools(
     {
       title: "Wait for a ready card",
       description:
-        "Check periodically until a candidate card appears (see " +
-        "janosik_list_ready_cards) or the timeout passes. Returns the card " +
-        "or null on timeout. The server polls the board during this call.",
+        "Wait until a candidate card appears (see janosik_list_ready_cards) or " +
+        "the timeout passes. Returns the card or null on timeout. A single " +
+        "board is held open by the server for 25–60 s per request; without " +
+        "boardId the ready summary is re-read at a much lower, jittered " +
+        "cadence. No full board is read to find work.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         timeoutMs: z
@@ -1228,45 +1248,204 @@ export function registerCardTools(
           .min(250)
           .max(30_000)
           .default(5_000)
-          .describe("How often to re-check, in ms."),
+          .describe(
+            "Minimum re-check interval in ms. A single-board wait uses a " +
+              "25–60 s server long-poll; a cross-board wait re-reads at this " +
+              "cadence with a 15 s floor and jitter.",
+          ),
         response_format: responseFormatSchema,
       },
       annotations: READ,
     },
     async ({ boardId, timeoutMs, pollMs, response_format }) => {
       const deadline = Date.now() + timeoutMs;
-      for (;;) {
-        const boards = boardId
-          ? [await client.getBoard(boardId)]
-          : await loadBoards(client);
-        const [first] = readyCards(boards, Date.now());
-        if (first) {
-          const result = {
-            id: first.card.id,
-            title: first.card.title,
-            boardId: first.board.id,
-            boardTitle: first.board.title,
-            column: first.column,
-            priority: first.card.priority ?? DEFAULT_CARD_PRIORITY,
-          };
-          return respond(
-            response_format,
-            { card: result },
-            `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.column} — \`${result.id}\``,
-          );
+      let since: number | undefined;
+      try {
+        if (boardId !== undefined) {
+          for (;;) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) break;
+            const ready = await client.getBoardReady(boardId, {
+              limit: 1,
+              waitMs: readyHoldMs(remaining, pollMs),
+              ...(since !== undefined ? { since } : {}),
+            });
+            if (ready !== undefined) {
+              since = ready.seq;
+              const result = ready.cards[0];
+              if (result !== undefined) {
+                return respond(
+                  response_format,
+                  { card: waitResult(result) },
+                  `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.columnTitle} — \`${result.id}\``,
+                );
+              }
+              if (ready.archived) {
+                // Preserve the pre-TASK-200.2 contract: an archived board
+                // still ends with `null` at the caller's deadline, not early.
+                const remaining = deadline - Date.now();
+                if (remaining <= 0) break;
+                await sleep(Math.min(crossBoardPollMs(pollMs), remaining));
+                continue;
+              }
+              // A relevant change without a ready card: advance the cursor
+              // with a short jittered pause instead of hammering the server.
+              if (Date.now() >= deadline) break;
+              await sleep(readyChangePauseMs());
+            }
+          }
+        } else {
+          for (;;) {
+            const ready = await client.listReadyWork(1);
+            const result = ready.cards[0];
+            if (result !== undefined) {
+              return respond(
+                response_format,
+                { card: waitResult(result) },
+                `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.columnTitle} — \`${result.id}\``,
+              );
+            }
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) break;
+            await sleep(Math.min(crossBoardPollMs(pollMs), remaining));
+          }
         }
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) {
-          return respond(
-            response_format,
-            { card: null },
-            "No card became ready before the timeout.",
-          );
-        }
-        await sleep(Math.min(pollMs, remaining));
+      } catch (error) {
+        if (!missingReadyEndpoint(error)) throw error;
+        // Older server: preserve the original full-board loop. It is the
+        // documented compatibility path, not the normal idle path.
+        return legacyWaitForWork(client, {
+          deadline,
+          pollMs,
+          response_format,
+          ...(boardId !== undefined ? { boardId } : {}),
+        });
       }
+      return respond(
+        response_format,
+        { card: null },
+        "No card became ready before the timeout.",
+      );
     },
   );
+}
+
+/** One row of `janosik_list_ready_cards`. */
+interface ReadyToolResult {
+  id: string;
+  title: string;
+  boardId: string;
+  boardTitle: string;
+  column: string;
+  priority: Card["priority"];
+  descriptionChars: number;
+}
+
+/** Map the server summary onto the tool's existing result shape. */
+function readyToolResult(card: ReadyCardDto): ReadyToolResult {
+  return {
+    id: card.id,
+    title: card.title,
+    boardId: card.boardId,
+    boardTitle: card.boardTitle,
+    column: card.columnTitle,
+    priority: card.priority,
+    descriptionChars: card.descriptionChars,
+  };
+}
+
+/** Map the server summary onto `janosik_wait_for_work`'s card shape. */
+function waitResult(card: ReadyCardDto) {
+  return {
+    id: card.id,
+    title: card.title,
+    boardId: card.boardId,
+    boardTitle: card.boardTitle,
+    column: card.columnTitle,
+    priority: card.priority,
+  };
+}
+
+/** A 404 means an older server; the caller then uses the legacy read path. */
+function missingReadyEndpoint(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
+/** Server hold for one single-board long-poll: 25–60 s, jittered. */
+const READY_HOLD_MIN_MS = 25_000;
+const READY_HOLD_MAX_MS = 60_000;
+const READY_HOLD_JITTER_MS = 5_000;
+
+/**
+ * The minimum gap between cross-board snapshots. The old loop read every
+ * accessible board every `pollMs` (default 5 s); one ready snapshot every
+ * 15–63 s is the sharply reduced cadence the TASK-200.2 contract allows.
+ */
+const CROSS_BOARD_POLL_MIN_MS = 15_000;
+const CROSS_BOARD_POLL_MAX_MS = 60_000;
+const CROSS_BOARD_JITTER_MS = 3_000;
+
+/** Jitter after an empty change frame, so a busy board never hot-loops. */
+function readyChangePauseMs(): number {
+  return 250 + Math.floor(Math.random() * 500);
+}
+
+/** One server hold that never exceeds the caller's remaining deadline. */
+function readyHoldMs(remaining: number, pollMs: number): number {
+  const base = Math.min(Math.max(pollMs, READY_HOLD_MIN_MS), READY_HOLD_MAX_MS);
+  const jittered = base + Math.floor(Math.random() * READY_HOLD_JITTER_MS);
+  return Math.max(1, Math.min(remaining, jittered));
+}
+
+/** Jittered cross-board cadence, bounded by the remaining deadline. */
+function crossBoardPollMs(pollMs: number): number {
+  const base = Math.min(
+    Math.max(pollMs, CROSS_BOARD_POLL_MIN_MS),
+    CROSS_BOARD_POLL_MAX_MS,
+  );
+  return base + Math.floor(Math.random() * CROSS_BOARD_JITTER_MS);
+}
+
+/** Pre-TASK-200.2 compatibility path for a server without the endpoint. */
+async function legacyWaitForWork(
+  client: JanosikClient,
+  options: {
+    boardId?: string;
+    deadline: number;
+    pollMs: number;
+    response_format: "markdown" | "json";
+  },
+) {
+  for (;;) {
+    const boards = options.boardId
+      ? [await client.getBoard(options.boardId)]
+      : await loadBoards(client);
+    const [first] = readyCards(boards, Date.now());
+    if (first) {
+      const result = {
+        id: first.card.id,
+        title: first.card.title,
+        boardId: first.board.id,
+        boardTitle: first.board.title,
+        column: first.column,
+        priority: first.card.priority ?? DEFAULT_CARD_PRIORITY,
+      };
+      return respond(
+        options.response_format,
+        { card: result },
+        `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.column} — \`${result.id}\``,
+      );
+    }
+    const remaining = options.deadline - Date.now();
+    if (remaining <= 0) {
+      return respond(
+        options.response_format,
+        { card: null },
+        "No card became ready before the timeout.",
+      );
+    }
+    await sleep(Math.min(options.pollMs, remaining));
+  }
 }
 
 /** Cards ready to pick up, in priority order (TASK-157, E15). */
