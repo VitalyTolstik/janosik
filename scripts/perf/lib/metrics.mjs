@@ -119,7 +119,8 @@ export class RunMetrics {
     this.stranded = 0;
     this.recycled = 0;
     this.orphans = 0;
-    this.expectedExtra = 0;
+    this.cleanupAborted = 0;
+    this.expected400 = 0;
     this.readyFallback404 = 0;
     this.durations = [];
     this.operations = new Map();
@@ -160,10 +161,10 @@ export class RunMetrics {
     durationMs,
     status,
     bytes = 0,
-    { expected = false, readyFallback = false } = {},
+    { expected400 = false, readyFallback404 = false } = {},
   ) {
-    if (expected) this.expectedExtra += 1;
-    if (readyFallback) this.readyFallback404 += 1;
+    if (expected400) this.expected400 += 1;
+    if (readyFallback404) this.readyFallback404 += 1;
     const entry = this.operation(name);
     const duration = Number.isFinite(durationMs) ? durationMs : 0;
     entry.durations.push(duration);
@@ -223,6 +224,10 @@ export class RunMetrics {
 
   recordOrphan(count = 1) {
     this.orphans += count;
+  }
+
+  recordCleanupAborted(count = 1) {
+    this.cleanupAborted += count;
   }
 
   recordTool(name, durationMs) {
@@ -299,7 +304,8 @@ export class RunMetrics {
     const counts = statusCounts(statuses);
     const conflict409 = statuses["409"] ?? 0;
     const rateLimited429 = statuses["429"] ?? 0;
-    const expected = conflict409 + rateLimited429 + this.expectedExtra;
+    const expected =
+      conflict409 + rateLimited429 + this.expected400 + this.readyFallback404;
     const totalErrors = counts.client4xx + counts.server5xx + counts.network;
     const unexpected = Math.max(0, totalErrors - expected);
     const other4xx =
@@ -310,7 +316,10 @@ export class RunMetrics {
       counts.badRequest400;
     const unexpected4xx = Math.max(
       0,
-      counts.badRequest400 + other4xx - this.expectedExtra,
+      counts.badRequest400 +
+        other4xx -
+        this.expected400 -
+        this.readyFallback404,
     );
     const activityTotal =
       this.activity.reads + this.activity.writes + this.activity.comments;
@@ -356,6 +365,7 @@ export class RunMetrics {
       stranded: this.stranded,
       recycled: this.recycled,
       orphans: this.orphans,
+      cleanupAborted: this.cleanupAborted,
       toolCalls: this.toolCalls,
       tools,
       agentCadence,
@@ -391,12 +401,9 @@ export class RunMetrics {
         aborted: counts.aborted,
         auth401403: counts.auth401403,
         badRequest400: counts.badRequest400,
-        leaseConflict400: Math.max(
-          0,
-          this.expectedExtra - this.readyFallback404,
-        ),
+        leaseConflict400: this.expected400,
         readyFallback404: this.readyFallback404,
-        unexpected400: Math.max(0, counts.badRequest400 - this.expectedExtra),
+        unexpected400: Math.max(0, counts.badRequest400 - this.expected400),
         conflict409,
         rateLimited429,
         other4xx,

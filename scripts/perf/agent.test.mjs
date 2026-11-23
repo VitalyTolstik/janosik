@@ -448,6 +448,37 @@ test("a deadline-aborted claim releases through the cleanup client without an or
   assert.equal(cleanupReleases, 1);
 });
 
+test("a deadline-aborted claim whose cleanup also fails is not an orphan", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim() {
+      const error = new Error("aborted by scenario deadline");
+      error.status = -1;
+      throw error;
+    },
+  };
+  const cleanupClient = {
+    async claim() {
+      const error = new Error("cleanup socket closed");
+      error.status = -1;
+      throw error;
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      cleanupClient,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
+    (error) => error.orphan === false && error.cleanupAborted === true,
+  );
+});
+
 test("a network failure during the move releases the claim", async () => {
   let released = false;
   const client = {
@@ -524,7 +555,7 @@ test("a comment failure with a 409 release is surfaced as an orphan", async () =
   assert.equal(result.orphan, true);
 });
 
-test("recycleDoneCards does not count a 409 release as recycled", async () => {
+test("recycleDoneCards tolerates a 400/409 release as a no-holder case", async () => {
   let moved = false;
   const result = await recycleDoneCards({
     client: {
@@ -533,6 +564,27 @@ test("recycleDoneCards does not count a 409 release as recycled", async () => {
       },
       async claim() {
         return { status: 409 };
+      },
+      async move() {
+        moved = true;
+        return { status: 200 };
+      },
+    },
+    boardId: "b1",
+  });
+  assert.deepEqual(result, { moved: 1, orphans: 0 });
+  assert.equal(moved, true);
+});
+
+test("recycleDoneCards still stops on a real release failure", async () => {
+  let moved = false;
+  const result = await recycleDoneCards({
+    client: {
+      async readBoard() {
+        return { board: board(), seq: 10 };
+      },
+      async claim() {
+        return { status: 500 };
       },
       async move() {
         moved = true;

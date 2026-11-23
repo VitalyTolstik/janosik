@@ -227,7 +227,7 @@ export async function createMcpWorker({
             String(structured.message ?? ""),
           );
         metrics?.recordRequest(`mcp.${name}`, elapsed, status, 0, {
-          expected: expectedLeaseConflict,
+          expected400: expectedLeaseConflict,
         });
         metrics?.recordTool(name, elapsed);
         throw new McpToolError({

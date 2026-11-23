@@ -462,6 +462,44 @@ test("--api-inspect profiles a live process and reports Top-10", async () => {
   }
 });
 
+test("a failed --api-inspect start still writes a failed report", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "janosik-live-cpu-fail-"),
+  );
+  try {
+    const profile = path.join(directory, "api.cpuprofile");
+    const output = path.join(directory, "failed.json");
+    const result = await run(
+      process.execPath,
+      [
+        cli,
+        "--scenario",
+        "S2",
+        "--mock",
+        "--agents",
+        "1",
+        "--duration",
+        "300ms",
+        "--api-inspect",
+        "ws://127.0.0.1:1/",
+        "--cpu-profile",
+        profile,
+        "--output",
+        output,
+      ],
+      { timeout: 30_000 },
+    );
+    assert.equal(result.code, 1, result.stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(report.status, "failed");
+    assert.equal(report.instrumentationFailed, true);
+    assert.match(report.instrumentationError, /api-inspect failed/);
+    assert.equal(report.cpuProfile.available, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("Ctrl-C during preflight writes a minimal partial report", async () => {
   const directory = await mkdtemp(
     path.join(os.tmpdir(), "janosik-pre-sigint-"),
@@ -552,6 +590,38 @@ test("token-file and recycle-token-file drive per-board recycling", async () => 
     assert.deepEqual(report.config.resolvedBoards, ["board-1", "board-2"]);
     assert.equal(report.scenarios[0].summary.recycled > 0, true);
     assert.equal(report.scenarios[0].recycle.requests > 0, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("--mock --recycle works with the ADMIN fallback token", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "janosik-mock-recycle-"),
+  );
+  try {
+    const output = path.join(directory, "mock-recycle.json");
+    const result = await run(process.execPath, [
+      cli,
+      "--scenario",
+      "S2",
+      "--mock",
+      "--mock-cards",
+      "1",
+      "--recycle",
+      "--agents",
+      "1",
+      "--cadence",
+      "50ms",
+      "--duration",
+      "1200ms",
+      "--output",
+      output,
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    const report = JSON.parse(await readFile(output, "utf8"));
+    assert.equal(report.config.recycle, true);
+    assert.equal(report.scenarios[0].summary.recycled > 0, true);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

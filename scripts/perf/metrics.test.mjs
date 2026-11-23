@@ -144,7 +144,7 @@ test("RunMetrics snapshots requests, actions, errors, bytes and SSE", () => {
 test("expected claim-lease 400s are excluded from unexpected rates", () => {
   const metrics = new RunMetrics("S2");
   metrics.recordRequest("board.read", 1, 200);
-  metrics.recordRequest("command.claim", 2, 400, 0, { expected: true });
+  metrics.recordRequest("command.claim", 2, 400, 0, { expected400: true });
   const snapshot = metrics.snapshot({ durationMs: 1_000, agents: 1 });
   assert.equal(snapshot.errors.badRequest400, 1);
   assert.equal(snapshot.errors.leaseConflict400, 1);
@@ -153,6 +153,23 @@ test("expected claim-lease 400s are excluded from unexpected rates", () => {
   assert.equal(snapshot.errors.unexpected, 0);
   assert.equal(snapshot.errors.unexpected4xx, 0);
   assert.equal(snapshot.errors.rate, 0);
+});
+
+test("a ready 404 does not hide an unexpected 400", () => {
+  const metrics = new RunMetrics("S1");
+  metrics.recordRequest("board.read", 1, 200);
+  metrics.recordRequest("ready.read", 2, 404, 0, {
+    readyFallback404: true,
+  });
+  metrics.recordRequest("command.claim", 3, 400);
+  const snapshot = metrics.snapshot({ durationMs: 1_000, agents: 1 });
+  assert.equal(snapshot.errors.badRequest400, 1);
+  assert.equal(snapshot.errors.leaseConflict400, 0);
+  assert.equal(snapshot.errors.readyFallback404, 1);
+  assert.equal(snapshot.errors.unexpected400, 1);
+  assert.equal(snapshot.errors.unexpected4xx, 1);
+  assert.equal(snapshot.errors.unexpected, 1);
+  assert.equal(snapshot.errors.unexpected4xx > 0, true);
 });
 
 test("per-agent cadence is measured from observed action timestamps", () => {
@@ -191,6 +208,7 @@ test("empty RunMetrics snapshot is JSON-safe", () => {
   assert.equal(snapshot.errors.other4xx, 0);
   assert.equal(snapshot.success2xx, 0);
   assert.equal(snapshot.orphans, 0);
+  assert.equal(snapshot.cleanupAborted, 0);
   assert.equal(snapshot.requestsPerAgentPerMinute, 0);
   assert.equal(snapshot.activity.mix, null);
 });

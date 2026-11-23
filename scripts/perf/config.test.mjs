@@ -282,6 +282,16 @@ test("publicConfig redacts URL userinfo and contains no token material", () => {
   assert.equal(sanitized.includes("user:pass@"), false);
   assert.match(sanitized, /"tokenCount":2/);
   assert.equal(sanitized.includes("jnk_"), false);
+  assert.equal(publicConfig(config).requireOk, false);
+});
+
+test("mock recycle falls back to an ADMIN token and records requireOk", () => {
+  const config = resolveConfig(
+    parseCli(["--mock", "--scenario", "S2", "--recycle", "--require-ok"]),
+    {},
+  );
+  assert.equal(config.recycleToken, "perf-smoke-admin");
+  assert.equal(publicConfig(config).requireOk, true);
 });
 
 test("smoke ignores real PG/board env and caps overrides", () => {

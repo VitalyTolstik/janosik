@@ -300,8 +300,8 @@ export async function performAgentCycle({
           (cleanup.status === 0 || cleanup.status === -1);
         const wrapped =
           error instanceof Error ? error : new Error(String(error));
-        wrapped.orphan = !cleanup.released && !tolerated;
         wrapped.cleanupAborted = harnessAbort;
+        wrapped.orphan = !cleanup.released && !tolerated && !harnessAbort;
         throw wrapped;
       }
       throw error;
@@ -558,6 +558,7 @@ export async function runAgentLoop({
               error: result.failure,
               fatal,
               orphan: result.orphan === true,
+              cleanupAborted: result.cleanupAborted === true,
             });
             if (fatal) return;
           }
@@ -572,6 +573,7 @@ export async function runAgentLoop({
         error,
         fatal,
         orphan: error?.orphan === true,
+        cleanupAborted: error?.cleanupAborted === true,
       });
       if (fatal) return;
     }
@@ -645,6 +647,7 @@ export async function runMixedAgentLoop({
               error: result.failure,
               fatal,
               orphan: result.orphan === true,
+              cleanupAborted: result.cleanupAborted === true,
             });
             if (fatal) return;
           }
@@ -735,19 +738,11 @@ export async function recycleDoneCards({ client, boardId, limit = 100 }) {
   let remaining = [...(done.cardIds ?? [])].slice(0, limit);
   for (const cardId of [...remaining]) {
     // The recycle PAT must be a board ADMIN: clear the agent's lease first, so
-    // the moved-back card is picked up immediately. A 400/409 means the
-    // release did not happen; do not move or count the card as recycled.
-    let released;
-    try {
-      released = await client.claim(boardId, {
-        commandId: newCommandId("recycle-release"),
-        action: buildReleaseAction({ cardId, boardId, at: Date.now() }),
-      });
-    } catch {
-      orphans += 1;
-      break;
-    }
-    if (released.status < 200 || released.status >= 300) {
+    // the moved-back card is picked up immediately. A 400/409 release is the
+    // documented no-holder case: tolerate it and still move the card. Any
+    // other non-2xx release is a real failure and stops the recycler.
+    const release = await tryReleaseClaim({ client, boardId, cardId });
+    if (!release.released && release.status !== 400 && release.status !== 409) {
       orphans += 1;
       break;
     }

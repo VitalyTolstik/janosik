@@ -508,7 +508,8 @@ export function resolveConfig(cliValues = {}, env = {}) {
     allowSharedIdentity: cliValues["shared-identity"] === true,
     requireOk: cliValues["require-ok"] === true,
     recycle,
-    recycleToken: recycleToken ?? (mock ? tokens[0] : undefined),
+    // Mock recycle needs a board ADMIN; the default smoke tokens are MEMBER.
+    recycleToken: recycleToken ?? (mock ? "perf-smoke-admin" : undefined),
     apiPid,
     apiProbe: cliValues["api-probe"],
     apiInspect,
@@ -610,6 +611,7 @@ export function publicConfig(config) {
     baseUrl: redactUrl(config.baseUrl),
     tokenCount: unique(config.tokens).length,
     allowSharedIdentity: config.allowSharedIdentity === true,
+    requireOk: config.requireOk === true,
     recycle: config.recycle === true,
     explicitBoards: config.explicitBoards,
     resolvedBoards: config.resolvedBoards ?? config.explicitBoards,

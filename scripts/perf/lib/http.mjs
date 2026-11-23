@@ -121,8 +121,8 @@ export class HttpClient {
       /claimed by another|live claim|lease/i.test(text);
     const readyFallback = response.status === 404 && operation === "ready.read";
     this.metrics.recordRequest(operation, elapsed, response.status, bytes, {
-      expected: expectedLeaseConflict || readyFallback,
-      readyFallback,
+      expected400: expectedLeaseConflict,
+      readyFallback404: readyFallback,
     });
     const result = {
       status: response.status,
