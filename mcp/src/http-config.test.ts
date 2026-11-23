@@ -217,6 +217,16 @@ describe("loadGatewayConfig", () => {
     expect(loaded.config.maxSessionsPerToken).toBe(10);
   });
 
+  it("clamps body-read per-key defaults to lower global limits", () => {
+    const loaded = loadGatewayConfig({
+      ...baseEnv,
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "2",
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS: "2",
+    });
+    expect(loaded.config.maxConcurrentBodyReadsPerToken).toBe(2);
+    expect(loaded.config.maxConcurrentInitBodyReadsPerIp).toBe(2);
+  });
+
   it("clamps the sessionless body cap to a smaller MAX", () => {
     const loaded = loadGatewayConfig({
       ...baseEnv,

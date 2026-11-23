@@ -215,9 +215,9 @@ paths still answer `404` and disallowed origins `403`; other MCP requests get
 | `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap for all POSTs; over it gets `413`. |
 | `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES` | `min(262144, MAX_BODY_BYTES)` | Strict sessionless/initialize body cap, checked before buffering; over it gets `413`. |
 | `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS` | `16` | Global backstop for session-bound body reads; at 16 MiB each this is ~256 MiB. |
-| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN` | `4` | Per-token session-bound body reads; one token cannot starve the session gate. |
+| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN` | `min(4, MAX)` | Per-token session-bound body reads; one token cannot starve the session gate. |
 | `JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS` | `32` | Separate sessionless/initialize global budget (~8 MiB at the 256 KiB cap). |
-| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP` | `4` | Per-IP sessionless body reads; one IP cannot starve the init gate. |
+| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP` | `min(4, MAX_CONCURRENT_INIT_BODY_READS)` | Per-IP sessionless body reads; one IP cannot starve the init gate. |
 | `JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS` | `8000` | Destroy a stalled body read and release its slot independently of Node's checker. 8 s may be too short for a slow 16 MiB upload; raise it with the memory budget. |
 | `JANOSIK_MCP_HTTP_READY_URL` | `${JANOSIK_URL}/api/v1/health/ready` | Upstream readiness probe; no token is sent. |
 | `JANOSIK_MCP_HTTP_READY_CACHE_MS` | `5000` | Cache for the readiness probe (`0` = every request probes). |
@@ -231,13 +231,16 @@ paths still answer `404` and disallowed origins `403`; other MCP requests get
 | `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
 | `JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS` | `10000` | Drain window on SIGTERM/SIGINT before force-closing sockets. |
 
-**Memory budget.** Worst case is
-`MAX_CONCURRENT_BODY_READS × MAX_BODY_BYTES` = 16 × 16 MiB = 256 MiB for
-session bodies, plus `MAX_CONCURRENT_INIT_BODY_READS × INIT_MAX_BODY_BYTES` =
-32 × 256 KiB = 8 MiB for initialize. Keep the container `mem_limit` above
-`NODE_OPTIONS` (1 GiB in Compose) plus those budgets. The per-token/per-IP
-caps and the 8 s deadline keep one client from consuming either global gate;
-raise the deadline for slow large uploads.
+**Memory budget.** A body slot is held until `handleRequest` resolves, not
+just until the body is read, because the parsed body remains referenced for
+the whole tool call. Worst case is 16 × 16 MiB = 256 MiB of retained session
+bodies plus 32 × 256 KiB = 8 MiB of initialize bodies. During parsing the raw
+chunk buffers and JSON strings can add roughly one more copy of the in-flight
+bodies, so keep `mem_limit` above the 1 GiB V8 heap plus ~2× the gate budgets
+(Compose's 1536m is the minimum, not a large headroom). The per-token/per-IP
+caps and 8 s deadline keep one client from consuming either global gate; raise
+the deadline for slow large uploads. Lowering a global body limit clamps the
+unset per-token/per-IP default to it instead of failing startup.
 
 `JANOSIK_MCP_TOOLSETS`, `JANOSIK_MCP_READONLY`, `JANOSIK_APP_BASE` and the
 filesystem settings are shared with the stdio server. The gateway container

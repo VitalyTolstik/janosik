@@ -47,13 +47,13 @@ describe("MCP gateway container wiring", () => {
       "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS:-16}",
     );
     expect(block).toContain(
-      "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN:-4}",
+      "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN:-}",
     );
     expect(block).toContain(
       "JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS:-32}",
     );
     expect(block).toContain(
-      "JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP:-4}",
+      "JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP:-}",
     );
     expect(block).toContain(
       "JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS: ${JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS:-8000}",
@@ -82,6 +82,8 @@ describe("MCP gateway container wiring", () => {
     expect(workflow).toContain("janosik-mcp");
     expect(workflow).toContain("Build MCP gateway image (no push)");
     expect(workflow).toContain("Smoke test MCP gateway container");
+    expect(workflow).toContain("--network host");
+    expect(workflow).toContain("mcp/scripts/http-smoke.mjs");
     expect(workflow).toContain("gateway image size");
     expect(workflow).toContain("Build and push MCP gateway image");
     expect(workflow).toContain("Publish MCP gateway manifest");

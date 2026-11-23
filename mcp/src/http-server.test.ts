@@ -816,6 +816,77 @@ describe("MCP Streamable HTTP gateway", () => {
     await waitFor(() => running.gateway.manager.stats().sessions === 0);
   });
 
+  it("bounds retained 12 MiB bodies for one token during slow calls", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const createSlowServer = () => {
+      const server = new McpServer({ name: "slow-body", version: "0.0.0" });
+      server.registerTool(
+        "slow_body",
+        {
+          title: "Slow body",
+          description: "Holds the parsed body while finishing.",
+          inputSchema: {},
+        },
+        async () => {
+          await sleep(1_000);
+          return { content: [{ type: "text", text: "slow done" }] };
+        },
+      );
+      return server;
+    };
+    const running = await startGateway(
+      upstream,
+      {
+        maxBodyBytes: 16 * 1024 * 1024,
+        maxConcurrentBodyReads: 8,
+        maxConcurrentBodyReadsPerToken: 4,
+        bodyReadTimeoutMs: 8_000,
+      },
+      { createMcpServer: createSlowServer },
+    );
+    const sessionId = await initialize(running, ALPHA);
+    const payload = "x".repeat(12 * 1024 * 1024);
+    forceGc();
+    const before = process.memoryUsage().heapUsed;
+    const calls = Array.from({ length: 8 }, (_, index) =>
+      rpc(
+        running,
+        ALPHA,
+        {
+          jsonrpc: "2.0",
+          id: 200 + index,
+          method: "tools/call",
+          params: { name: "slow_body", arguments: { payload } },
+        },
+        sessionId,
+      ),
+    );
+    await waitForBodyReads(
+      running,
+      (stats) => stats.session.active === 4,
+      2_000,
+    );
+    expect((await bodyReadStats(running)).session.globalMax).toBe(8);
+    const results = await Promise.all(calls);
+    const statuses = results.map((result) => result.status).sort();
+    expect(statuses.filter((status) => status === 200)).toHaveLength(4);
+    expect(statuses.filter((status) => status === 503)).toHaveLength(4);
+    forceGc();
+    const deltaMb = (process.memoryUsage().heapUsed - before) / (1024 * 1024);
+    console.info(
+      `[retained-bodies] 8 × 12 MiB, cap 4: heap +${deltaMb.toFixed(1)} MB`,
+    );
+    expect(deltaMb).toBeLessThan(400);
+    const recovered = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 210, method: "tools/list" },
+      sessionId,
+    );
+    expect(recovered.status).toBe(200);
+  });
+
   it("reserves the session body gate from a cross-IP initialize flood", async () => {
     const upstream = await startUpstream();
     cleanup.push(() => upstream.close());
@@ -1532,6 +1603,8 @@ describe("MCP Streamable HTTP gateway", () => {
     cleanup.push(() => upstream.close());
     const running = await startGateway(upstream, {
       maxSessions: 600,
+      maxConcurrentInitBodyReads: 64,
+      maxConcurrentInitBodyReadsPerIp: 64,
       sessionIdleMs: 600_000,
       sessionSweepMs: 0,
     });

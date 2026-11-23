@@ -427,7 +427,17 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     }
   }
 
-  function acquireBodySlot(gate: TenantConcurrencyGate, key: string): BodySlot {
+  /**
+   * Reserve a body slot. The caller holds it through `handleRequest`, because
+   * the parsed body stays referenced for the whole tool call. Abort/close
+   * releases immediately; the caller's `finally` is idempotent.
+   */
+  function acquireBodySlot(
+    gate: TenantConcurrencyGate,
+    key: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): BodySlot {
     const decision = gate.tryAcquire(key);
     if (!decision.ok) {
       logger.warn("body_read_busy", { scope: decision.scope });
@@ -441,44 +451,36 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       );
     }
     let released = false;
-    return {
-      release() {
-        if (released) return;
-        released = true;
-        gate.release(key);
-      },
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      req.off("aborted", release);
+      res.off("close", release);
+      gate.release(key);
     };
+    // `req.close` means the request body is complete, not that the call is
+    // over. Hold the slot until the response closes or the caller's finally.
+    req.once("aborted", release);
+    res.once("close", release);
+    return { release };
   }
 
   /**
-   * Read a body under an explicit deadline. The slot is released on
-   * completion, client abort/close, timeout, or read failure; the deadline is
-   * independent of Node's request checker.
+   * Read a body under an explicit deadline. The parsed body is retained by
+   * the caller until `handleRequest` returns; the deadline is independent of
+   * Node's request checker and resets a stalled connection.
    */
   async function readBodyWithDeadline(
     req: IncomingMessage,
     limit: number,
-    slot: BodySlot,
     scope: "initialize" | "session",
   ): Promise<unknown> {
-    let released = false;
     let timedOut = false;
     let timer: NodeJS.Timeout | undefined;
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      if (timer !== undefined) clearTimeout(timer);
-      req.off("aborted", release);
-      req.off("close", release);
-      slot.release();
-    };
-    req.once("aborted", release);
-    req.once("close", release);
     if (config.bodyReadTimeoutMs > 0) {
       timer = setTimeout(() => {
         timedOut = true;
         logger.warn("body_read_timeout", { scope });
-        release();
         req.destroy(new Error("body_read_timeout"));
       }, config.bodyReadTimeoutMs);
       timer.unref?.();
@@ -504,7 +506,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       }
       throw error;
     } finally {
-      release();
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 
@@ -765,109 +767,128 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         // Take the per-IP body slot before charging initialize budgets, so a
         // `body_busy` retry cannot spend the caller's init allowance.
         const ipAddress = clientAddress(req, config.trustProxyHops);
-        const bodySlot = acquireBodySlot(initBodyReads, `ip:${ipAddress}`);
-        const ipDecision = ipInitLimiter?.take(ipAddress);
-        if (ipDecision !== undefined && !ipDecision.ok) {
-          bodySlot.release();
-          logLevel = "warn";
-          logger.warn("initialize_rate_limited", { requestId, scope: "ip" });
-          initializeRateLimited(res, ipDecision.retryAfterSeconds);
-          return;
-        }
-        const tokenDecision = tokenInitLimiter?.take(tokenHash);
-        if (tokenDecision !== undefined && !tokenDecision.ok) {
-          bodySlot.release();
-          logLevel = "warn";
-          logger.warn("initialize_rate_limited", {
-            requestId,
-            scope: "token",
-          });
-          initializeRateLimited(res, tokenDecision.retryAfterSeconds);
-          return;
-        }
-        if (negativeTokens.has(tokenHash)) {
-          bodySlot.release();
-          logLevel = "warn";
-          logger.warn("auth_validation_cached", { requestId });
-          unauthorized(res);
-          return;
-        }
-
-        // The body reader checks a declared Content-Length before reading and
-        // applies the same strict cap while streaming chunked requests.
-        const body = await readBodyWithDeadline(
+        const bodySlot = acquireBodySlot(
+          initBodyReads,
+          `ip:${ipAddress}`,
           req,
-          config.sessionlessMaxBodyBytes,
-          bodySlot,
-          "initialize",
+          res,
         );
-        if (!containsInitialize(body)) {
-          throw new GatewayHttpError(
-            400,
-            "initialization_required",
-            "Create a session with an initialize request first.",
-          );
-        }
-
-        let validation: TokenValidation;
         try {
-          validation = await authValidation.run(tokenHash, async () => {
-            const result = await validateTokenWithRetry(token);
-            if (!result.ok && result.reason === "invalid") {
-              negativeTokens.set(tokenHash);
-            }
-            return result;
-          });
-        } catch (error) {
-          if (!(error instanceof SingleFlightCapacityError)) throw error;
-          logLevel = "warn";
-          logger.warn("auth_validation_busy", { requestId });
-          throw new GatewayHttpError(
-            503,
-            "auth_busy",
-            "Too many key validations are in flight; retry shortly.",
-            { "Retry-After": "1" },
-          );
-        }
-        if (!validation.ok) {
-          logLevel = "warn";
-          logger.warn("auth_validation_failed", {
-            requestId,
-            reason: validation.reason,
-          });
-          if (validation.reason === "invalid") {
+          const ipDecision = ipInitLimiter?.take(ipAddress);
+          if (ipDecision !== undefined && !ipDecision.ok) {
+            bodySlot.release();
+            logLevel = "warn";
+            logger.warn("initialize_rate_limited", { requestId, scope: "ip" });
+            initializeRateLimited(res, ipDecision.retryAfterSeconds);
+            return;
+          }
+          const tokenDecision = tokenInitLimiter?.take(tokenHash);
+          if (tokenDecision !== undefined && !tokenDecision.ok) {
+            bodySlot.release();
+            logLevel = "warn";
+            logger.warn("initialize_rate_limited", {
+              requestId,
+              scope: "token",
+            });
+            initializeRateLimited(res, tokenDecision.retryAfterSeconds);
+            return;
+          }
+          if (negativeTokens.has(tokenHash)) {
+            bodySlot.release();
+            logLevel = "warn";
+            logger.warn("auth_validation_cached", { requestId });
             unauthorized(res);
             return;
           }
-          const retryAfter = String(
-            Math.max(
-              1,
-              Math.ceil(validation.retryAfter ?? Number(RETRY_AFTER_AUTH)),
-            ),
+
+          // The body reader checks a declared Content-Length before reading and
+          // applies the same strict cap while streaming chunked requests.
+          const body = await readBodyWithDeadline(
+            req,
+            config.sessionlessMaxBodyBytes,
+            "initialize",
           );
-          if (validation.reason === "rate_limited") {
-            sendJson(
-              res,
-              429,
-              {
-                error: "rate_limited",
-                message: "The API rate-limited key validation; retry shortly.",
-              },
+          if (!containsInitialize(body)) {
+            throw new GatewayHttpError(
+              400,
+              "initialization_required",
+              "Create a session with an initialize request first.",
+            );
+          }
+
+          let validation: TokenValidation;
+          try {
+            validation = await authValidation.run(tokenHash, async () => {
+              const result = await validateTokenWithRetry(token);
+              if (!result.ok && result.reason === "invalid") {
+                negativeTokens.set(tokenHash);
+              }
+              return result;
+            });
+          } catch (error) {
+            if (!(error instanceof SingleFlightCapacityError)) throw error;
+            logLevel = "warn";
+            logger.warn("auth_validation_busy", { requestId });
+            throw new GatewayHttpError(
+              503,
+              "auth_busy",
+              "Too many key validations are in flight; retry shortly.",
+              { "Retry-After": "1" },
+            );
+          }
+          if (!validation.ok) {
+            logLevel = "warn";
+            logger.warn("auth_validation_failed", {
+              requestId,
+              reason: validation.reason,
+            });
+            if (validation.reason === "invalid") {
+              unauthorized(res);
+              return;
+            }
+            const retryAfter = String(
+              Math.max(
+                1,
+                Math.ceil(validation.retryAfter ?? Number(RETRY_AFTER_AUTH)),
+              ),
+            );
+            if (validation.reason === "rate_limited") {
+              sendJson(
+                res,
+                429,
+                {
+                  error: "rate_limited",
+                  message:
+                    "The API rate-limited key validation; retry shortly.",
+                },
+                { "Retry-After": retryAfter },
+              );
+              return;
+            }
+            throw new GatewayHttpError(
+              503,
+              "auth_unavailable",
+              "The API could not validate this key; retry shortly.",
               { "Retry-After": retryAfter },
             );
+          }
+          const opened = await manager.open(token);
+          if (!opened.ok) {
+            logLevel = "warn";
+            if (opened.reason === "closed") {
+              throw new GatewayHttpError(
+                503,
+                "shutting_down",
+                "The gateway is shutting down.",
+                { "Retry-After": RETRY_AFTER_SHUTDOWN },
+              );
+            }
+            sessionLimitResponse(res, opened.reason);
             return;
           }
-          throw new GatewayHttpError(
-            503,
-            "auth_unavailable",
-            "The API could not validate this key; retry shortly.",
-            { "Retry-After": retryAfter },
-          );
-        }
-        const opened = await manager.open(token);
-        if (!opened.ok) {
-          logLevel = "warn";
-          if (opened.reason === "closed") {
+          session = opened.session;
+          if (session.closed) {
+            await manager.close(session, "closed_after_open");
             throw new GatewayHttpError(
               503,
               "shutting_down",
@@ -875,31 +896,21 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
               { "Retry-After": RETRY_AFTER_SHUTDOWN },
             );
           }
-          sessionLimitResponse(res, opened.reason);
-          return;
-        }
-        session = opened.session;
-        if (session.closed) {
-          await manager.close(session, "closed_after_open");
-          throw new GatewayHttpError(
-            503,
-            "shutting_down",
-            "The gateway is shutting down.",
-            { "Retry-After": RETRY_AFTER_SHUTDOWN },
-          );
-        }
-        logSessionId = session.id;
-        manager.begin(session);
-        try {
-          await session.transport.handleRequest(req, res, body);
-        } finally {
-          manager.end(session);
           logSessionId = session.id;
-          if (session.id === null) {
-            await manager.close(session, "initialize_failed");
+          manager.begin(session);
+          try {
+            await session.transport.handleRequest(req, res, body);
+          } finally {
+            manager.end(session);
+            logSessionId = session.id;
+            if (session.id === null) {
+              await manager.close(session, "initialize_failed");
+            }
           }
+          return;
+        } finally {
+          bodySlot.release();
         }
-        return;
       }
 
       const found = manager.get(requestedSessionId);
@@ -925,20 +936,20 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         );
       }
 
+      const bodySlot =
+        method === "POST"
+          ? acquireBodySlot(bodyReads, `token:${session.tokenHash}`, req, res)
+          : undefined;
       manager.begin(session);
       try {
         const body =
           method === "POST"
-            ? await readBodyWithDeadline(
-                req,
-                config.maxBodyBytes,
-                acquireBodySlot(bodyReads, `token:${session.tokenHash}`),
-                "session",
-              )
+            ? await readBodyWithDeadline(req, config.maxBodyBytes, "session")
             : undefined;
         await session.transport.handleRequest(req, res, body);
       } finally {
         manager.end(session);
+        bodySlot?.release();
       }
       if (
         method === "DELETE" &&

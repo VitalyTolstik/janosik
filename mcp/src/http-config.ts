@@ -340,7 +340,7 @@ export function loadGatewayConfig(
   const maxConcurrentBodyReadsPerToken = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN",
-    4,
+    Math.min(4, maxConcurrentBodyReads),
     { max: 256 },
   );
   if (maxConcurrentBodyReadsPerToken > maxConcurrentBodyReads) {
@@ -358,7 +358,7 @@ export function loadGatewayConfig(
   const maxConcurrentInitBodyReadsPerIp = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP",
-    4,
+    Math.min(4, maxConcurrentInitBodyReads),
     { max: 256 },
   );
   if (maxConcurrentInitBodyReadsPerIp > maxConcurrentInitBodyReads) {

@@ -25,8 +25,10 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   `min(50, MAX_SESSIONS)`), per-IP/token buckets, negative cache and
   single-flight validation with bounded retries. Sessionless and session-bound
   body reads have separate per-IP/per-token budgets with global backstops
-  (`MAX_CONCURRENT_INIT_BODY_READS` / `MAX_CONCURRENT_BODY_READS`) and a read
-  deadline (`503 body_busy`); validation pressure answers `503 auth_busy`.
+  (`MAX_CONCURRENT_INIT_BODY_READS` / `MAX_CONCURRENT_BODY_READS`); a slot is
+  held until the tool call finishes and `/health` exposes both counters. A
+  read deadline resets stalled bodies (`503 body_busy`); validation pressure
+  answers `503 auth_busy`.
   Sessions are in-memory: a restart drops them and replicas need session
   affinity.
 - Admins can open the same read-only edit history from a card, a user's

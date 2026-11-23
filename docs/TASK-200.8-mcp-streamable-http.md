@@ -93,19 +93,22 @@ invalid fingerprints. The sessionless body is capped strictly (default
 (default 4/32, ~8 MiB) separate from session-bound reads (per-token 4, global
 16, ~256 MiB). An initialize flood across many IPs therefore cannot deny
 authenticated tool calls; each class answers `503 body_busy` +
-`Retry-After` only when its own gate is full. Both use one explicit read
-deadline (default 8 s) that resets a stalled body and releases its slot
-independently of Node's request checker (the connection is reset, not a
-deliverable `408`); 8 s is tight for a slow 16 MiB upload, so raise
-`BODY_READ_TIMEOUT_MS` and the memory budget together for such clients.
-`/health` exposes `bodyReads.session` and
+`Retry-After` only when its own gate is full. The slot is held until `handleRequest` resolves, because the parsed body stays
+referenced for the whole tool call; it is released in `finally` on success,
+error, abort or timeout. Both classes use one explicit read deadline (default
+8 s) that resets a stalled body and releases its slot independently of Node's
+request checker (the connection is reset, not a deliverable `408`); 8 s is
+tight for a slow 16 MiB upload, so raise `BODY_READ_TIMEOUT_MS` together with
+the memory budget. `/health` exposes `bodyReads.session` and
 `bodyReads.initialize` active/max counters and `timeoutMs`.
 
 Every new session that passes the buckets and is not in the negative cache
 performs one authenticated API read (`/api/v1/auth/me` by default); only a
 cached invalid fingerprint skips it. Keep the Compose `mem_limit` above the
 1 GiB V8 heap plus the body and init gate products
-(16 × 16 MiB + 32 × 256 KiB ≈ 264 MiB). Concurrent
+(16 × 16 MiB + 32 × 256 KiB ≈ 264 MiB retained). Parsing keeps raw buffers and
+JSON strings too, so allow roughly another copy of the in-flight bodies in the
+container budget. Concurrent
 initializes for one fingerprint share one validation call; a `429`/`503` from
 the API is retried a bounded number of
 times, honoring a small `Retry-After` (a longer API delay is returned to the
