@@ -107,9 +107,14 @@ export interface BoardReadStamp {
 }
 
 export interface BoardReadSnapshot {
-  board: BoardAggregate;
+  /**
+   * Legacy body name for the full aggregate. New projections (TASK-200.9)
+   * put their JSON body in `body`; exactly one of the two is serialized.
+   */
+  board?: BoardAggregate;
+  body?: unknown;
   seq: number;
-  /** Revision read in the same snapshot as `board`. */
+  /** Revision read in the same snapshot as the body. */
   revision: bigint;
 }
 
@@ -438,7 +443,8 @@ export class BoardReadService implements OnModuleDestroy {
         throw new SingleFlightTimeoutError(this.limits.timeoutMs);
       }
       const snapshot = await deps.build(this.budgets(remaining));
-      const json = Buffer.from(JSON.stringify(snapshot.board), "utf8");
+      const body = snapshot.body ?? snapshot.board;
+      const json = Buffer.from(JSON.stringify(body), "utf8");
       const encoded = await compressBody(json, encoding, {
         minBytes: this.limits.compressMinBytes,
         contentType: "application/json; charset=utf-8",

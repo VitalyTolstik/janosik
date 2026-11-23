@@ -140,11 +140,44 @@ export interface CardLink {
   targetCardId: string;
 }
 
+/**
+ * Read-model metadata for a card that was loaded as a summary (TASK-200.9).
+ *
+ * The board summary and its per-column pages deliberately omit description
+ * bodies, checklists and link rows. This small object carries the
+ * list-facing facts those fields would otherwise provide — counts, not
+ * content — so a card face can keep its badges and the local filter can keep
+ * its link facets without downloading the detail. `detailLoaded` flips when
+ * `GET /boards/:id/cards/:cardId` filled the full card into the store; the
+ * card dialog loads that on open and destructive commands ensure it before
+ * recording an inverse.
+ */
+export interface CardReadModelMeta {
+  /** Stored description length (`Card.descriptionLength`), no text. */
+  descriptionChars: number;
+  /** Live checklist items across the card's checklists. */
+  checklistItemCount: number;
+  /** How many of those items are done. */
+  checklistDoneCount: number;
+  /** Live relations in both directions (the card-front link badge). */
+  linkCount: number;
+  /** A live, non-archived incoming `blocks` relation. */
+  blocked: boolean;
+  /** True once the full card (description/checklists/links) is loaded. */
+  detailLoaded: boolean;
+}
+
 export interface Card {
   id: string;
   title: string;
   /** Optional multi-line notes. Omitted (not empty) when unset. */
   description?: string;
+  /**
+   * TASK-200.9 summary metadata: present on cards hydrated from the read
+   * model, absent on full aggregates (local mode, old server fallback,
+   * create/import responses) where every field is already loaded.
+   */
+  readModel?: CardReadModelMeta;
   /** Optional subtask checklists. Omitted (not empty) when unset. */
   checklists?: Checklist[];
   /** Optional deadline as a Unix timestamp (ms). Omitted when unset. */
@@ -810,4 +843,11 @@ export interface Board {
   agentsPauseReason?: string;
   /** Set when the board is archived (not deleted) — timestamp in ms. */
   archivedAt?: number;
+  /**
+   * TASK-200.9 read-model marker: the complete archived card id list from the
+   * summary. Archived cards may not all be in `cards` yet (pages stream in),
+   * so deep links use this list to prove a card belongs to the board before
+   * its detail read. Absent on full aggregates and local boards.
+   */
+  archivedCardIds?: string[];
 }
