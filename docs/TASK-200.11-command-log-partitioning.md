@@ -288,6 +288,14 @@ Seven migrations:
   first and expect downtime proportional to the copy. `lock_timeout` is 30 s,
   so a competing lock fails the migration rather than hanging the boot
   indefinitely.
+- **Pre-release checksum:** an earlier pre-release (`5f21ac57`) applied the
+  original migration 1, and this branch corrected it in place. A database that
+  applied that checksum must be recreated or its `_prisma_migrations` row
+  resolved/updated from a backup before deploying; the old max-only `setval`
+  may already have lowered the sequence. Restore the backup (preferred) or
+  repair `Command_seq_seq` with the high-water rule above and verify the next
+  `seq` is above every surviving/deleted high-water mark. Fresh installs and
+  databases that have not run the old checksum need no action.
 
 **Steps**
 
@@ -302,7 +310,11 @@ Migration 1 (`...partitioning`, one transaction):
 4. Copy the rows and verify exact command/preimage counts; any mismatch raises
    and the whole transaction rolls back.
 5. Build PKs/FKs/indexes, transfer sequence ownership (the old table must not
-   take `Command_seq_seq` with it), advance `setval`.
+   take `Command_seq_seq` with it), then read `last_value`/`is_called` and
+   `setval` to `GREATEST(max(seq), last_value, 1)` with `is_called=true`
+   whenever `Command` is non-empty. The sequence must never move backwards or
+   reuse a deleted `seq`; deleting the newest command before this migration is
+   covered by the migration check.
 6. Drop the legacy tables after verification.
 
 Migration 2 (`...details_side_table`, one transaction):

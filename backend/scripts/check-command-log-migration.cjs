@@ -1,4 +1,4 @@
-// TASK-200.11 migration check. Creates four throwaway databases on the existing
+// TASK-200.11 migration check. Creates five throwaway databases on the existing
 // test PostgreSQL server (no Docker/containers are started):
 //
 //   * empty    — every migration, including the partition swap, detail side
@@ -7,11 +7,12 @@
 //                Command/CommandDetail/CommandPreimage rows, then all seven
 //                TASK-200.11 migrations;
 //   * deferred (two databases) — the row-count and physical-size deferred index
-//                branches.
+//                branches;
+//   * calledFalse — a non-empty Command table with sequence is_called=false.
 //
 // It asserts row counts, the details/key backfill, partition routing,
 // PK/sequence, the global id guard, FK cascade, the drop helper and a pruned
-// plan, then drops both databases.
+// plan, then drops all databases.
 //
 // Usage: `npm run test:migration:command-log -w backend`
 const fs = require("node:fs");
@@ -46,6 +47,7 @@ const names = {
   existing: `janosik_task20011_existing_${suffix}`,
   deferred: `janosik_task20011_deferred_${suffix}`,
   deferredSize: `janosik_task20011_deferred_size_${suffix}`,
+  calledFalse: `janosik_task20011_called_false_${suffix}`,
 };
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "janosik-task20011-"));
 
@@ -533,6 +535,47 @@ async function checkExisting(prisma, before) {
   assert(sweptKeys[0].n === 0, "the orphan sweep clears September keys");
 }
 
+async function seedCalledFalse(prisma) {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "User" ("id", "email") VALUES ('called-user', 'called@example.com')`,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "Board" ("id", "title", "updatedAt") VALUES ('called-board', 'Called', now())`,
+  );
+  for (let index = 0; index < 3; index += 1) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Command" ("id", "boardId", "actorId", "type", "payload", "result", "createdAt")
+       VALUES ($1, 'called-board', 'called-user', 'RENAME_BOARD', '{}'::jsonb, '{}'::jsonb, now())`,
+      `called-cmd-${index}`,
+    );
+  }
+  await prisma.$executeRawUnsafe(
+    `SELECT setval('"Command_seq_seq"', (SELECT max("seq") FROM "Command"), false)`,
+  );
+}
+
+async function checkCalledFalse(prisma) {
+  const state = await scalars(
+    prisma,
+    `SELECT last_value::bigint AS last_value, is_called
+       FROM "Command_seq_seq"`,
+  );
+  assert(
+    state[0].is_called === true,
+    "a non-empty Command table forces is_called=true",
+  );
+  const inserted = await scalars(
+    prisma,
+    `INSERT INTO "Command" ("id", "boardId", "actorId", "type", "payload", "result")
+     VALUES ('called-new', 'called-board', 'called-user', 'RENAME_BOARD', '{}'::jsonb, '{}'::jsonb)
+     RETURNING "seq"::bigint AS seq`,
+  );
+  assert(
+    Number(inserted[0].seq) > Number(state[0].last_value),
+    "next seq is above the live high-water mark",
+  );
+}
+
 async function prepareDeferredIndex(prisma, rows, pages) {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "CommandKey" ("id", "boardId", "createdAt")
@@ -563,6 +606,7 @@ async function main() {
   await admin(`CREATE DATABASE "${names.existing}"`);
   await admin(`CREATE DATABASE "${names.deferred}"`);
   await admin(`CREATE DATABASE "${names.deferredSize}"`);
+  await admin(`CREATE DATABASE "${names.calledFalse}"`);
 
   try {
     migrate(names.empty, { withTask: true });
@@ -614,6 +658,17 @@ async function main() {
     } finally {
       await deferredSize.$disconnect().catch(() => undefined);
     }
+
+    migrate(names.calledFalse, { withTask: false });
+    const calledFalse = client(names.calledFalse);
+    try {
+      await seedCalledFalse(calledFalse);
+      await calledFalse.$disconnect();
+      migrate(names.calledFalse, { withTask: true });
+      await checkCalledFalse(calledFalse);
+    } finally {
+      await calledFalse.$disconnect().catch(() => undefined);
+    }
   } finally {
     await admin(`DROP DATABASE IF EXISTS "${names.empty}" WITH (FORCE)`).catch(
       () => undefined,
@@ -627,6 +682,9 @@ async function main() {
     await admin(
       `DROP DATABASE IF EXISTS "${names.deferredSize}" WITH (FORCE)`,
     ).catch(() => undefined);
+    await admin(
+      `DROP DATABASE IF EXISTS "${names.calledFalse}" WITH (FORCE)`,
+    ).catch(() => undefined);
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
@@ -634,7 +692,7 @@ async function main() {
 main()
   .then(() => {
     console.log(
-      "TASK-200.11 command-log migration: empty + existing + deferred index OK",
+      "TASK-200.11 command-log migration: empty + existing + called-false + deferred index OK",
     );
   })
   .catch((error) => {

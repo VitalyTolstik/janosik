@@ -343,7 +343,7 @@ BEGIN
   PERFORM setval(
     '"Command_seq_seq"',
     next_last,
-    seq_called OR next_last > seq_last
+    seq_called OR maxseq > 0
   );
 END;
 $$;
