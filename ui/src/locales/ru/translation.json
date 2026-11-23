@@ -806,6 +806,7 @@
   "board.members.title": "Участники ({{count}})",
   "board.members.titlePlain": "Участники",
   "board.members.you": "вы",
+  "board.partialRead": "Часть карточек ещё не загрузилась — повторяем в фоне.",
   "board.noBoard": "Доски пока нет.",
   "board.switcher.archive": "Архивировать доску",
   "board.switcher.archiveConfirm": "Архивировать?",

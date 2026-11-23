@@ -622,7 +622,11 @@ function CardItemView({
               and the link count open the linked-cards popover instead of
               bubbling into the card dialog. */}
                 {linkFacts ? (
-                  <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
+                  <LinkedCardsPopover
+                    boardId={boardId}
+                    cardId={card.id}
+                    facts={linkFacts}
+                  />
                 ) : null}
                 {total > 0 ? (
                   <Tooltip>

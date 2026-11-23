@@ -796,6 +796,7 @@
   "board.members.title": "Members ({{count}})",
   "board.members.titlePlain": "Members",
   "board.members.you": "you",
+  "board.partialRead": "Some cards could not be loaded yet — retrying in the background.",
   "board.noBoard": "No board yet.",
   "board.switcher.archive": "Archive board",
   "board.switcher.archiveConfirm": "Archive?",

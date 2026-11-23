@@ -106,6 +106,9 @@ export function cardFromDetail(dto: BoardCardDetailDto): Card {
   const items = (card.checklists ?? []).flatMap((checklist) => checklist.items);
   return {
     ...card,
+    ...(dto.incomingLinks !== undefined && dto.incomingLinks.length > 0
+      ? { incomingLinks: dto.incomingLinks.map((link) => ({ ...link })) }
+      : {}),
     readModel: {
       descriptionChars: (card.description ?? "").length,
       checklistItemCount: items.length,
@@ -185,9 +188,9 @@ export function boardFromSummary(
         }
       : {}),
     ...(meta.archivedAt !== undefined ? { archivedAt: meta.archivedAt } : {}),
-    ...(summary.archivedCardIds.length > 0
-      ? { archivedCardIds: [...summary.archivedCardIds] }
-      : {}),
+    // Present (even empty) on every read-model board so the reducer can
+    // maintain it through archive/unarchive/delete actions.
+    archivedCardIds: [...summary.archivedCardIds],
   };
 }
 

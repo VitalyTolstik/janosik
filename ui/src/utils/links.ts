@@ -95,6 +95,18 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
     }
     return draft;
   };
+  const incomingIds = new Map<string, Set<string>>();
+  const addIncoming = (
+    cardId: string,
+    fromCardId: string,
+    link: CardLink,
+  ): void => {
+    const seen = incomingIds.get(cardId) ?? new Set<string>();
+    if (seen.has(link.id)) return;
+    seen.add(link.id);
+    incomingIds.set(cardId, seen);
+    draftOf(cardId).incoming.push({ fromCardId, link });
+  };
 
   // TASK-200.9 summary cards carry the server's complete relation count and
   // blocked flag instead of their link rows. Seed those, then still collect
@@ -111,6 +123,19 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
   }
 
   for (const card of Object.values(cards)) {
+    // Detail carries its own reverse side because a summary-only board has
+    // no rows on the source cards. Merge it before the outgoing scan; the
+    // dedupe map keeps a fully loaded source from adding the same row twice.
+    for (const incoming of card.incomingLinks ?? []) {
+      addIncoming(card.id, incoming.fromCardId, {
+        id: incoming.id,
+        type: incoming.type,
+        targetCardId: card.id,
+      });
+      if (incoming.type === "blocks" && !incoming.fromArchived) {
+        draftOf(card.id).blocked = true;
+      }
+    }
     for (const link of card.links ?? []) {
       // The outgoing side is stored on the card itself — kept whether or
       // not the target survives, so the dialog can offer to remove it.
@@ -121,7 +146,7 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
       // A summary/detail card carries the server's complete degree already;
       // its loaded rows only populate `outgoing`/`incoming` for the UI.
       if (!readModelCards.has(card.id)) draft.liveOutgoing += 1;
-      draftOf(target.id).incoming.push({ fromCardId: card.id, link });
+      addIncoming(target.id, card.id, link);
       if (link.type === "blocks" && card.archivedAt === undefined) {
         draftOf(target.id).blocked = true;
       }
@@ -174,6 +199,9 @@ export function linkSignature(cards: Board["cards"]): string {
     }
     for (const link of card.links ?? []) {
       signature += `|${link.id}:${link.type}:${link.targetCardId}`;
+    }
+    for (const link of card.incomingLinks ?? []) {
+      signature += `^${link.id}:${link.type}:${link.fromCardId}:${link.fromArchived ? 1 : 0}`;
     }
     signature += ";";
   }

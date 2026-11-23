@@ -847,6 +847,28 @@ export class FakeServer {
       };
       return json(201, masked);
     }
+    const labelAssignmentsMatch =
+      /^\/api\/v1\/boards\/([^/]+)\/labels\/([^/]+)\/assignments$/.exec(path);
+    if (labelAssignmentsMatch && method === "GET") {
+      const board = this.boards.get(labelAssignmentsMatch[1]);
+      if (board === undefined) return json(404, { message: "Board not found" });
+      if (
+        !board.labels.some((label) => label.id === labelAssignmentsMatch[2])
+      ) {
+        return json(404, { message: "Label not found" });
+      }
+      return json(
+        200,
+        Object.values(board.cards)
+          .map((card) => ({
+            cardId: card.id,
+            index: card.labelIds.indexOf(labelAssignmentsMatch[2]),
+            updatedAt: card.updatedAt,
+          }))
+          .filter((entry) => entry.index !== -1),
+      );
+    }
+
     // TASK-200.9 read model. The fake stores a full board and projects it,
     // which is enough for client hydration/pagination/detail tests.
     const summaryMatch = /^\/api\/v1\/boards\/([^/]+)\/summary$/.exec(path);
@@ -1477,6 +1499,16 @@ export class FakeServer {
       version: 0,
       linkCount: summary.linkCount,
       blocked: summary.blocked,
+      incomingLinks: Object.values(board.cards).flatMap((source) =>
+        (source.links ?? [])
+          .filter((link) => link.targetCardId === card.id)
+          .map((link) => ({
+            id: link.id,
+            type: link.type,
+            fromCardId: source.id,
+            fromArchived: source.archivedAt !== undefined,
+          })),
+      ),
       seq: this.seqOf(board.id),
       atSeq: this.seqOf(board.id),
       aggregateRevision: this.seqOf(board.id),
