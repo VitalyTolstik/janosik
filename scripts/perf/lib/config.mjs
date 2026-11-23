@@ -204,6 +204,50 @@ function readValueFile(file, option) {
   }
 }
 
+const ARGV_URL_OPTIONS = [
+  {
+    option: "--base-url",
+    envName: "JANOSIK_PERF_BASE_URL",
+    fileOption: "--base-url-file",
+  },
+  {
+    option: "--pg-url",
+    envName: "JANOSIK_PERF_PG_URL",
+    fileOption: "--pg-url-file",
+  },
+  {
+    option: "--redis-url",
+    envName: "JANOSIK_PERF_REDIS_URL",
+    fileOption: "--redis-url-file",
+  },
+];
+
+/**
+ * Reject secrets that would be visible in `ps` / `/proc/<pid>/cmdline`.
+ * This runs before `--report-only` as well, because that mode never calls
+ * `resolveConfig`.
+ */
+export function assertArgvSafe(cliValues = {}) {
+  if (cliValues.token !== undefined) {
+    throw new Error(
+      "--token is no longer accepted in argv (visible through /proc/<pid>/cmdline); use JANOSIK_PERF_TOKEN or --token-file",
+    );
+  }
+  if (cliValues["recycle-token"] !== undefined) {
+    throw new Error(
+      "--recycle-token is no longer accepted in argv; use JANOSIK_PERF_RECYCLE_TOKEN or --recycle-token-file",
+    );
+  }
+  for (const { option, envName, fileOption } of ARGV_URL_OPTIONS) {
+    const value = cliValues[option.slice(2)];
+    if (value !== undefined && hasUrlCredentials(value)) {
+      throw new Error(
+        `${option} must not contain credentials in argv (visible through /proc/<pid>/cmdline); set ${envName} or use ${fileOption}`,
+      );
+    }
+  }
+}
+
 /**
  * Resolve a URL option without putting credentials in argv. A credential-free
  * `--url` is allowed for convenience; a credential-bearing one is rejected
@@ -364,16 +408,7 @@ export function parseScenarioList(raw) {
  * `publicConfig()` only exposes the count.
  */
 export function resolveConfig(cliValues = {}, env = {}) {
-  if (cliValues.token !== undefined) {
-    throw new Error(
-      "--token is no longer accepted in argv (visible through /proc/<pid>/cmdline); use JANOSIK_PERF_TOKEN or --token-file",
-    );
-  }
-  if (cliValues["recycle-token"] !== undefined) {
-    throw new Error(
-      "--recycle-token is no longer accepted in argv; use JANOSIK_PERF_RECYCLE_TOKEN or --recycle-token-file",
-    );
-  }
+  assertArgvSafe(cliValues);
   const scenarios = parseScenarioList(cliValues.scenario);
   const mock = cliValues.mock === true;
   if (cliValues.help === true) {

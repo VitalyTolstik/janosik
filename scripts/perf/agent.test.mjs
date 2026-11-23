@@ -15,6 +15,7 @@ import {
   pickWork,
   recycleDoneCards,
   releaseClaim,
+  runMixedAgentLoop,
 } from "./lib/agent.mjs";
 
 function board() {
@@ -508,6 +509,49 @@ test("cleanup status 0 is an unresolved lease, not a deadline abort", async () =
       error.cleanupAborted === false &&
       error.cleanupFailed === true &&
       error.orphan === false,
+  );
+});
+
+test("S3 mixed loop propagates cleanupFailed from a write beat", async () => {
+  const errors = [];
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim() {
+      const error = new Error("claim timed out");
+      error.status = -1;
+      throw error;
+    },
+  };
+  const cleanupClient = {
+    async claim() {
+      return { status: 0 };
+    },
+  };
+  await runMixedAgentLoop({
+    client,
+    cleanupClient,
+    userId: "u1",
+    boardId: "b1",
+    config: {
+      id: "S3",
+      mix: { reads: 0, writes: 1, comments: 0 },
+      cadenceMs: 1,
+      jitter: 0,
+      leaseMs: 60_000,
+    },
+    deadline: Date.now() + 25,
+    signal: new AbortController().signal,
+    random: () => 0.5,
+    onError: (entry) => errors.push(entry),
+  });
+  assert.equal(errors.length > 0, true);
+  assert.equal(
+    errors.every(
+      (entry) => entry.cleanupFailed === true && entry.orphan === false,
+    ),
+    true,
   );
 });
 

@@ -694,6 +694,8 @@ export async function runMixedAgentLoop({
         error,
         fatal,
         orphan: error?.orphan === true,
+        cleanupAborted: error?.cleanupAborted === true,
+        cleanupFailed: error?.cleanupFailed === true,
       });
       if (fatal) return;
     }

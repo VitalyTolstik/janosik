@@ -51,7 +51,9 @@ npm run perf:agents -- \
 ```
 
 `--shared-identity` is only for a transport/harness run where one identity is
-acceptable; a real agent baseline should pass 100 PATs instead.
+acceptable; a real agent baseline should pass 100 PATs instead. The API URL
+itself must be credential-free (or supplied through a PAT, not basic auth):
+Node fetch ignores URL userinfo.
 
 Required token/board profile:
 
@@ -65,9 +67,12 @@ Required token/board profile:
   board index and id. Without `--board`, the first `--boards <n>` accessible,
   non-archived boards of token 1 are selected, and every other token must also
   be an ADMIN/MEMBER of each.
-- Basic-auth URLs are not supported: Node `fetch`/undici rejects credentials in
-  the URL. Use PAT `Authorization` headers (URL userinfo is stripped/redacted
-  defensively).
+- Basic-auth URLs are not supported: Node `fetch`/undici does not send URL
+  userinfo, so a credential-bearing `JANOSIK_PERF_BASE_URL`/`--base-url-file`
+  value will fail preflight even though it is accepted (and redacted) for
+  safety. Use a PAT `Authorization` header. PostgreSQL/Redis URLs may carry
+  credentials because the harness uses those values for `PGPASSWORD`/
+  `REDISCLI_AUTH` rather than Node fetch.
 - Seed enough non-Done cards. S2/S3/S4 move one card per completed cycle; a
   small board drains in seconds. The harness now reports that as `partial` (or
   `failed` when zero cycles completed) instead of a green run. Either seed

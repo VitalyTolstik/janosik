@@ -423,6 +423,11 @@ export async function runScenario({
         workerFirstRequests.length > 0
           ? Math.min(...workerFirstRequests)
           : null;
+      // A burst worker is synchronised at the planned boundary; don't let a
+      // sub-millisecond timer rounding report work before that boundary.
+      if (observedWorkStartedAt !== null && scenario.burst === true) {
+        observedWorkStartedAt = Math.max(observedWorkStartedAt, workStartedAt);
+      }
       actualWorkStartedAt = observedWorkStartedAt ?? workStartedAt;
     }
     captureMeasurement();

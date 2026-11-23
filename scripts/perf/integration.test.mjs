@@ -609,6 +609,30 @@ test("--report-only attaches a static profile without rerunning the load", async
       }),
       "utf8",
     );
+    const tokenGuard = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      profile,
+      "--token",
+      "jnk_report_only_secret",
+    ]);
+    assert.equal(tokenGuard.code, 2, tokenGuard.stderr);
+    assert.match(tokenGuard.stderr, /--token is no longer accepted in argv/);
+
+    const urlGuard = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      profile,
+      "--pg-url",
+      "postgresql://perf:secret@db.test/perf",
+    ]);
+    assert.equal(urlGuard.code, 2, urlGuard.stderr);
+    assert.match(urlGuard.stderr, /--pg-url must not contain credentials/);
+
     const attach = await run(process.execPath, [
       cli,
       "--report-only",

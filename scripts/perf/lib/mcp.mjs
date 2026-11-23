@@ -287,10 +287,19 @@ function mcpLeaseConflict(error) {
 async function releaseViaMcp(worker, boardId, cardId) {
   try {
     await worker.call("janosik_release_card", { boardId, cardId });
-    return true;
-  } catch {
-    return false;
+    return { released: true, status: 200 };
+  } catch (error) {
+    return { released: false, status: toolStatusError(error) };
   }
+}
+
+function releaseOutcome(release) {
+  const cleanupFailed = !release.released && release.status === 0;
+  return {
+    orphan: !release.released && !cleanupFailed,
+    cleanupFailed,
+    cleanupAborted: false,
+  };
 }
 
 /**
@@ -388,13 +397,13 @@ export async function runMcpAgentLoop({
               continue;
             }
             if (toolStatusError(error) === 0) {
-              const released = await releaseViaMcp(worker, boardId, cardId);
+              const release = await releaseViaMcp(worker, boardId, cardId);
               onError?.({
                 agentIndex,
                 boardId,
                 error,
                 fatal: false,
-                orphan: !released,
+                ...releaseOutcome(release),
               });
               continue;
             }
@@ -413,14 +422,14 @@ export async function runMcpAgentLoop({
               { signal },
             );
           } catch (error) {
-            const released = await releaseViaMcp(worker, boardId, cardId);
+            const release = await releaseViaMcp(worker, boardId, cardId);
             const fatal = isAuthError(error);
             onError?.({
               agentIndex,
               boardId,
               error,
               fatal,
-              orphan: !released,
+              ...releaseOutcome(release),
             });
             if (fatal) return;
             continue;
@@ -438,14 +447,14 @@ export async function runMcpAgentLoop({
               { signal },
             );
           } catch (error) {
-            const released = await releaseViaMcp(worker, boardId, cardId);
+            const release = await releaseViaMcp(worker, boardId, cardId);
             const fatal = isAuthError(error);
             onError?.({
               agentIndex,
               boardId,
               error,
               fatal,
-              orphan: !released,
+              ...releaseOutcome(release),
             });
             if (fatal) return;
             continue;

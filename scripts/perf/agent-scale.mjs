@@ -10,6 +10,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  assertArgvSafe,
   parseCli,
   resolveConfig,
   scenarioConfig,
@@ -64,6 +65,16 @@ async function main() {
     let cliValues;
     try {
       cliValues = parseCli(process.argv.slice(2));
+    } catch (error) {
+      console.error(
+        `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,
+      );
+      console.error("perf: run with --help for the CLI surface");
+      process.exitCode = 2;
+      return;
+    }
+    try {
+      assertArgvSafe(cliValues);
     } catch (error) {
       console.error(
         `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,

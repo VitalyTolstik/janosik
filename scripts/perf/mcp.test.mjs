@@ -128,6 +128,52 @@ test("runMcpAgentLoop releases a card after a network-status claim error", async
   assert.equal(metrics.orphans, 0);
 });
 
+test("MCP cleanup with no response is cleanupFailed, not orphan", async () => {
+  const errors = [];
+  const worker = {
+    sampleRss() {},
+    async call(name) {
+      if (name === "janosik_list_ready_cards") {
+        return { results: [{ id: "c1" }] };
+      }
+      if (name === "janosik_get_workflow") {
+        return { doneColumnIds: ["done"], seq: 1 };
+      }
+      if (name === "janosik_claim_card") {
+        throw new McpToolError({
+          name,
+          message: "request timed out",
+          status: 0,
+          code: "ETIMEDOUT",
+        });
+      }
+      if (name === "janosik_release_card") {
+        throw new Error("socket closed");
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+  };
+  await runMcpAgentLoop({
+    worker,
+    boardId: "board-1",
+    agentIndex: 0,
+    mode: "work",
+    config: { id: "S2", cadenceMs: 1, jitter: 0, leaseMs: 60_000 },
+    deadline: Date.now() + 25,
+    signal: new AbortController().signal,
+    metrics: new RunMetrics("mcp-cleanup-failed"),
+    random: () => 0.5,
+    onError: (entry) => errors.push(entry),
+  });
+  assert.equal(errors.length > 0, true);
+  assert.equal(
+    errors.every(
+      (entry) => entry.cleanupFailed === true && entry.orphan === false,
+    ),
+    true,
+  );
+});
+
 test("MCP orphan is counted once by the scenario onError site", async () => {
   const errors = [];
   const metrics = new RunMetrics("mcp-orphan-count");
@@ -140,12 +186,19 @@ test("MCP orphan is counted once by the scenario onError site", async () => {
       if (name === "janosik_get_workflow") {
         return { doneColumnIds: ["done"], seq: 1 };
       }
-      if (name === "janosik_claim_card" || name === "janosik_release_card") {
+      if (name === "janosik_claim_card") {
         throw new McpToolError({
           name,
           message: "network down",
           status: 0,
           code: "network_error",
+        });
+      }
+      if (name === "janosik_release_card") {
+        throw new McpToolError({
+          name,
+          message: "release rejected",
+          status: 500,
         });
       }
       throw new Error(`unexpected tool ${name}`);
