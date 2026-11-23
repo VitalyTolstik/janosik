@@ -25,6 +25,7 @@ import {
   KeyedTokenBucket,
   NegativeTokenCache,
   SingleFlight,
+  SingleFlightCapacityError,
 } from "./http-admission.js";
 import {
   createServer as createMcpServer,
@@ -322,7 +323,9 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     ttlMs: config.negativeCacheTtlMs,
     maxEntries: config.negativeCacheMaxEntries,
   });
-  const authValidation = new SingleFlight<TokenValidation>();
+  const authValidation = new SingleFlight<TokenValidation>({
+    maxKeys: config.authValidationMaxInFlight,
+  });
 
   let closing = false;
   let closePromise: Promise<void> | null = null;
@@ -686,13 +689,26 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           );
         }
 
-        const validation = await authValidation.run(tokenHash, async () => {
-          const result = await validateTokenWithRetry(token);
-          if (!result.ok && result.reason === "invalid") {
-            negativeTokens.set(tokenHash);
-          }
-          return result;
-        });
+        let validation: TokenValidation;
+        try {
+          validation = await authValidation.run(tokenHash, async () => {
+            const result = await validateTokenWithRetry(token);
+            if (!result.ok && result.reason === "invalid") {
+              negativeTokens.set(tokenHash);
+            }
+            return result;
+          });
+        } catch (error) {
+          if (!(error instanceof SingleFlightCapacityError)) throw error;
+          logLevel = "warn";
+          logger.warn("auth_validation_busy", { requestId });
+          throw new GatewayHttpError(
+            503,
+            "auth_busy",
+            "Too many key validations are in flight; retry shortly.",
+            { "Retry-After": "1" },
+          );
+        }
         if (!validation.ok) {
           logLevel = "warn";
           logger.warn("auth_validation_failed", {

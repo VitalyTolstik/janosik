@@ -104,11 +104,16 @@ JSON errors and `/health`/`/ready` use `no-store`.
 `JANOSIK_TOKEN` may be **absent**; the gateway never uses a shared key. If it
 is **present and non-empty**, it is ignored and the gateway logs a warning
 (without the value). On `initialize`, after local admission and the strict
-sessionless body cap, the gateway validates the presented key
-with a cheap authenticated API read (`/api/v1/auth/me` by default), so a
-fabricated bearer string cannot consume the global session cap; invalid keys
-get `401`, API rate limits get `429` with `Retry-After`, and an API outage gets
-`503`. The key is then bound to that session's SHA-256 fingerprint and
+sessionless body cap, the gateway validates the presented key with a cheap
+authenticated API read (`/api/v1/auth/me` by default), so a fabricated bearer
+string cannot consume the global session cap; invalid keys get `401`, API rate
+limits get `429` with `Retry-After`, and an API outage gets `503`. Every new
+session performs one validation; only a cached invalid fingerprint skips the
+call. A retryable `429`/`503` adds at most `AUTH_RETRY_ATTEMPTS - 1` more calls
+when its `Retry-After` is within `AUTH_RETRY_MAX_DELAY_MS` (default: 2 total
+attempts). At most `AUTH_MAX_IN_FLIGHT` (default 64) distinct validations run
+at once; excess keys get `503 auth_busy` + `Retry-After`. The key is then bound
+to that session's SHA-256 fingerprint and
 required (and checked in constant time) on every later request. A different
 key on the same `Mcp-Session-Id` gets `403 token_mismatch`; a request with no
 key at all gets `401`. Sessions are independent: one session's
@@ -119,10 +124,15 @@ request body: a global cap, a per-key cap (default `min(50, MAX_SESSIONS)`),
 per-IP and per-token-fingerprint initialize buckets, and a bounded negative
 cache of invalid fingerprints. A sessionless body is capped strictly (default
 256 KiB) before buffering; the normal body cap still applies to every POST.
-Concurrent initializes for one key share one validation call. A `429` from the gateway for initialize is
-`initialize_rate_limited`; `503 session_limit` and other 503s carry
-`Retry-After`. The API's own IP throttle still applies to first-time keys:
-raise `THROTTLE_LIMIT` (and the gateway's `INIT_RATE_LIMIT`) for a large
+Concurrent initializes for one key share one validation call. A `429` from the
+gateway for initialize is `initialize_rate_limited`; `503 session_limit` and
+other 503s carry `Retry-After`. The default per-key limits are **10
+initialize attempts/min and 50 live sessions**: a key that legitimately needs
+50 sessions must raise `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or create
+them over several minutes). The API's own IP throttle still applies to
+first-time keys:
+raise `THROTTLE_LIMIT` (and the gateway's
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`) for a large
 simultaneous first-time swarm, and put the gateway behind a trusted proxy so
 `TRUST_PROXY`/`JANOSIK_MCP_HTTP_TRUST_PROXY` see real client addresses.
 
@@ -141,8 +151,10 @@ JANOSIK_MCP_HTTP_HOST=0.0.0.0 \
 JANOSIK_MCP_HTTP_PORT=8080 \
 node mcp/dist/http.js
 
-# Docker image: one self-contained `dist-http/http.js` bundle
-docker run --rm -p 8080:8080 --stop-timeout 20 \
+# Docker image: one self-contained `dist-http/http.js` bundle.
+# `host.docker.internal` works on Docker Desktop; on Linux use the host IP
+# (or `--network host`) instead.
+docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
   -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 
 # or the Docker Compose profile (separate container from the API)
@@ -183,6 +195,7 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES` | `1000` | Negative-cache entry bound. |
 | `JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS` | `2` | Total key-validation attempts, including the first. |
 | `JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS` | `1000` | Do not retry in-request when the API asks for a longer `Retry-After`. |
+| `JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT` | `64` | Maximum distinct key validations in flight; excess initializes get `503 auth_busy`. |
 | `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` | `300000` | Close a session with no request for this long. |
 | `JANOSIK_MCP_HTTP_SESSION_SWEEP_MS` | `30000` | Idle sweeper interval. |
 | `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` | empty | Browser origins allowed to call the gateway; empty rejects every browser `Origin`. |
@@ -218,7 +231,8 @@ key's scopes, roles and rate limits. In Compose the published port is bound to
 `127.0.0.1`; a host proxy forwards to `127.0.0.1:8080`, while clients use the
 public `https://…/mcp` URL. Do not use the container name or internal port in
 client configuration. Raise API `THROTTLE_LIMIT`, proxy body/time limits and
-the gateway's `INIT_RATE_LIMIT` before a large first-time swarm; 500 new keys
+the gateway's `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` before a large first-time
+swarm; 500 new keys
 inside one minute exceed a `THROTTLE_LIMIT` of 300.
 
 The `mcp` package test suite includes a mock-upstream smoke that creates 100

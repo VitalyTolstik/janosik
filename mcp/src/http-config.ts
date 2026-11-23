@@ -35,6 +35,8 @@ export interface GatewayConfig {
   negativeCacheMaxEntries: number;
   /** Total auth-validation attempts (first try + bounded retries). */
   authValidationAttempts: number;
+  /** Maximum distinct token validations in flight. */
+  authValidationMaxInFlight: number;
   /** Retry-After delay above which validation is not retried in-request. */
   authValidationMaxDelayMs: number;
   /** A session with no request for this long is closed. */
@@ -285,6 +287,12 @@ export function loadGatewayConfig(
     1_000,
     { allowZero: true, max: MAX_TIMER_MS },
   );
+  const authValidationMaxInFlight = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT",
+    64,
+    { max: 1_024 },
+  );
   const sessionIdleMs = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_SESSION_IDLE_MS",
@@ -385,6 +393,7 @@ export function loadGatewayConfig(
       negativeCacheMaxEntries,
       authValidationAttempts,
       authValidationMaxDelayMs,
+      authValidationMaxInFlight,
       sessionIdleMs,
       sessionSweepMs,
       maxBodyBytes,
@@ -423,6 +432,7 @@ Environment:
   JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES  Cache bound (default 1000)
   JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS  Validation attempts (default 2)
   JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS  Retry cap (default 1000)
+  JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT  Distinct validations (default 64)
   JANOSIK_MCP_HTTP_SESSION_IDLE_MS    Idle expiry (default 300000)
   JANOSIK_MCP_HTTP_SESSION_SWEEP_MS   Sweep interval (default 30000)
   JANOSIK_MCP_HTTP_MAX_BODY_BYTES     Request body cap (default 16777216)
@@ -447,5 +457,6 @@ the stdio server. JANOSIK_TOKEN is ignored: send
 "Authorization: Bearer jnk_…" on every MCP request instead.
 
 Endpoints: JANOSIK_MCP_HTTP_PATH (default ${DEFAULT_PATH}), /health (liveness),
-/ready (readiness). Every POST response is an SSE stream; configure proxies
-with buffering off and a read timeout above long tool calls.`;
+/ready (readiness). Successful MCP POSTs return SSE; gateway errors return JSON
+and notifications return 202. Configure proxies with buffering off and a read
+timeout above long tool calls.`;

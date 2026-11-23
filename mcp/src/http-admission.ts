@@ -142,13 +142,28 @@ export class NegativeTokenCache {
   }
 }
 
-/** Deduplicate concurrent validation calls for the same token fingerprint. */
+export class SingleFlightCapacityError extends Error {
+  constructor() {
+    super("Too many distinct validation calls are already in flight.");
+    this.name = "SingleFlightCapacityError";
+  }
+}
+
+/** Deduplicate concurrent validation calls with a bounded in-flight map. */
 export class SingleFlight<T> {
   private readonly inFlight = new Map<string, Promise<T>>();
+  private readonly maxKeys: number;
+
+  constructor(options: { maxKeys?: number } = {}) {
+    this.maxKeys = Math.max(1, options.maxKeys ?? 256);
+  }
 
   run(key: string, task: () => Promise<T>): Promise<T> {
     const existing = this.inFlight.get(key);
     if (existing !== undefined) return existing;
+    if (this.inFlight.size >= this.maxKeys) {
+      throw new SingleFlightCapacityError();
+    }
     const promise: Promise<T> = task().finally(() => {
       if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
     });

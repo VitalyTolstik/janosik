@@ -71,7 +71,8 @@ Node-процесса.
 docker compose --profile mcp up -d
 # MCP endpoint: http://127.0.0.1:8080/mcp
 
-# обычный Docker: stop timeout должен быть больше 10-секундного drain
+# обычный Docker: stop timeout должен быть больше 10-секундного drain.
+# `host.docker.internal` работает в Docker Desktop; в Linux укажите IP хоста.
 docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
   -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 ```
@@ -100,10 +101,13 @@ liveness; `GET /ready` проверяет доступность API (не кл�
 подключаются и инициализируются заново. Несколько реплик требуют
 session-affine proxy (или клиенты должны принимать переподключение), общего
 хранилища сессий нет. Лимиты задают `JANOSIK_MCP_HTTP_MAX_SESSIONS` (по
-умолчанию 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (по умолчанию 50;
-`0` — без лимита), `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (по умолчанию 600/IP/мин)
-и idle-таймаут (по умолчанию 5 минут); активный вызов или открытый поток не
-сбрасывается. В Compose также заданы лимит памяти 1,5 ГБ и 2 CPU. API
+умолчанию 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (по умолчанию
+`min(50, MAX_SESSIONS)`; `0` — без лимита),
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (по умолчанию 600/IP/мин) и idle-таймаут
+(по умолчанию 5 минут); активный вызов или открытый поток не сбрасывается.
+По умолчанию 10 initialize/мин на ключ меньше лимита в 50 сессий; поднимите
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN`, если одному ключу нужно сразу
+открыть 50 сессий. В Compose также заданы лимит памяти 1,5 ГБ и 2 CPU. API
 по-прежнему проверяет область доски, роль, пресет и лимит ключа.
 
 Для большого первого роя 500 новых ключей за минуту превышают

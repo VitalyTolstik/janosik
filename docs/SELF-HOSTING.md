@@ -260,7 +260,8 @@ MCP sessions from one Node process:
 docker compose --profile mcp up -d
 # MCP endpoint: http://127.0.0.1:8080/mcp (only bound to the host by default)
 
-# plain Docker alternative (20 s stop timeout matches the drain window)
+# plain Docker alternative (20 s stop timeout matches the drain window).
+# `host.docker.internal` works on Docker Desktop; on Linux use the host IP.
 docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
   -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 ```
@@ -299,9 +300,12 @@ and health use `no-store`. If a browser-based MCP client must call it, list
 its origin in `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects all
 browser origins.
 Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
-`JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default 50; `0` = unlimited),
-`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and
-`JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) in `.env`.
+`JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default `min(50, MAX_SESSIONS)`;
+`0` = unlimited), `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and
+`JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) in `.env`. A key's
+default 10 initialize attempts/min is below its 50-session cap; raise
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must open 50 sessions
+immediately.
 `GET /ready` proves the API is reachable; it does not validate a key.
 `GET /health` is liveness. All `503`s carry `Retry-After`.
 

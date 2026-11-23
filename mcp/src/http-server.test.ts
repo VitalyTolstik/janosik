@@ -5,6 +5,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { AddressInfo } from "node:net";
+import v8 from "node:v8";
+import vm from "node:vm";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -128,7 +130,10 @@ async function startUpstream(): Promise<Upstream> {
         }
         return;
       }
-      if (authorization === "Bearer jnk_slow_auth_secret") {
+      if (
+        authorization === "Bearer jnk_slow_auth_secret" ||
+        authorization === "Bearer jnk_slow_auth_two_secret"
+      ) {
         setTimeout(valid, 100);
         return;
       }
@@ -196,6 +201,7 @@ function gatewayConfig(
     negativeCacheMaxEntries: 1_000,
     authValidationAttempts: 2,
     authValidationMaxDelayMs: 1_000,
+    authValidationMaxInFlight: 64,
     sessionIdleMs: 60_000,
     sessionSweepMs: 0,
     maxBodyBytes: 64 * 1024,
@@ -419,6 +425,18 @@ async function waitFor(
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Best-effort GC for the stream-memory smoke; map assertions are primary. */
+function forceGc(): void {
+  try {
+    v8.setFlagsFromString("--expose-gc");
+    const gc = vm.runInNewContext("gc") as (() => void) | undefined;
+    gc?.();
+    v8.setFlagsFromString("--no-expose-gc");
+  } catch {
+    // Vitest or the Node build may not expose GC; the loose bound still holds.
+  }
+}
+
 interface TransportMapSizes {
   streams: number;
   requests: number;
@@ -632,20 +650,19 @@ describe("MCP Streamable HTTP gateway", () => {
     };
 
     await callBig(100);
-    const gc = (globalThis as { gc?: () => void }).gc;
-    gc?.();
+    forceGc();
     const before = process.memoryUsage().heapUsed;
     for (let index = 1; index <= 20; index += 1) await callBig(100 + index);
-    gc?.();
+    forceGc();
     const after = process.memoryUsage().heapUsed;
     const deltaMb = (after - before) / (1024 * 1024);
     console.info(
       `[stream-smoke] 20 MiB of SSE results: heap +${deltaMb.toFixed(1)} MB`,
     );
     expectStreamMapsEmpty(running, sessionId);
-    // V8 may retain recently decoded strings without GC; the map assertions
-    // above are the deterministic leak check, this is only a loose ceiling.
-    expect(deltaMb).toBeLessThan(64);
+    // The empty maps are the deterministic leak check; with best-effort GC
+    // the retained heap should stay well below the 20 MiB result volume.
+    expect(deltaMb).toBeLessThan(32);
   });
 
   it("keeps GET SSE alive, stops an idle sweep and closes on DELETE", async () => {
@@ -876,10 +893,13 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(upstream.authCalls - beforeCache).toBe(1);
     expect(running.logs.join("")).toContain("auth_validation_cached");
 
+    const beforeLimited = upstream.authCalls;
     const limited = await rpc(running, "jnk_limited_secret", INITIALIZE);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe("7");
     expect(limited.json).toMatchObject({ error: "rate_limited" });
+    // 7 s is above AUTH_RETRY_MAX_DELAY_MS (1 s): do not sleep/retry.
+    expect(upstream.authCalls - beforeLimited).toBe(1);
     expect(running.gateway.manager.stats()).toMatchObject({
       sessions: 0,
       pending: 0,
@@ -923,6 +943,22 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(Number(responses[2]?.headers.get("retry-after"))).toBeGreaterThan(0);
     expect(upstream.authCalls - before).toBe(2);
     expect(running.gateway.manager.stats().sessions).toBe(0);
+  });
+
+  it("rejects an unauthenticated oversized body before admission", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      sessionlessMaxBodyBytes: 1_024,
+      initRateLimitPerMinute: 1,
+    });
+    const before = upstream.authCalls;
+    const unauthenticated = await rpc(running, null, "x".repeat(2_000));
+    expect(unauthenticated.status).toBe(401);
+    expect(upstream.authCalls).toBe(before);
+    // The anonymous attempt did not consume the initialize bucket.
+    const valid = await initialize(running, ALPHA);
+    expect(valid).toBeTruthy();
   });
 
   it("rejects an oversized sessionless body before buffering it", async () => {
@@ -1012,6 +1048,23 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(b.status).toBe(200);
     expect(upstream.authCalls - before).toBe(1);
     expect(running.gateway.manager.stats().sessions).toBe(2);
+  });
+
+  it("bounds distinct auth validations in flight", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      authValidationMaxInFlight: 1,
+    });
+    const before = upstream.authCalls;
+    const first = rpc(running, "jnk_slow_auth_secret", INITIALIZE);
+    await waitFor(() => upstream.authCalls > before);
+    const busy = await rpc(running, "jnk_slow_auth_two_secret", INITIALIZE);
+    expect(busy.status).toBe(503);
+    expect(busy.headers.get("retry-after")).toBe("1");
+    expect(busy.json).toMatchObject({ error: "auth_busy" });
+    const completed = await first;
+    expect(completed.status).toBe(200);
   });
 
   it("keeps one valid key from exhausting the global session pool", async () => {

@@ -65,7 +65,8 @@ Node process:
 docker compose --profile mcp up -d
 # MCP endpoint: http://127.0.0.1:8080/mcp
 
-# plain Docker: the stop timeout must exceed the 10 s drain window
+# plain Docker: the stop timeout must exceed the 10 s drain window.
+# `host.docker.internal` works on Docker Desktop; on Linux use the host IP.
 docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
   -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 ```
@@ -94,10 +95,13 @@ liveness; `GET /ready` checks API reachability (not a key) and returns `503` +
 clients reconnect and initialize again. Multiple replicas need a
 session-affine proxy (or clients must accept reconnects) because there is no
 shared session store. Limits come from `JANOSIK_MCP_HTTP_MAX_SESSIONS`
-(default 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default 50; `0` =
-unlimited), `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and the
-idle expiry (default 5 minutes); an in-flight call or open stream is never
-swept. The Compose service also sets a 1.5 GB memory limit and 2 CPUs. The API
+(default 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default
+`min(50, MAX_SESSIONS)`; `0` = unlimited),
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and the idle expiry
+(default 5 minutes); an in-flight call or open stream is never swept. A key's
+default 10 initialize attempts/min is below its 50-session cap; raise
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must open 50 sessions
+immediately. The Compose service also sets a 1.5 GB memory limit and 2 CPUs. The API
 still enforces the key's board scope, role, preset and rate limit.
 
 For a large first-time swarm, 500 new keys in one minute exceed the API's

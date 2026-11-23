@@ -4,6 +4,7 @@ import {
   KeyedTokenBucket,
   NegativeTokenCache,
   SingleFlight,
+  SingleFlightCapacityError,
 } from "./http-admission.js";
 
 describe("gateway admission", () => {
@@ -74,5 +75,24 @@ describe("gateway admission", () => {
     await expect(second).resolves.toBe("ok");
     expect(calls).toBe(1);
     expect(flight.size).toBe(0);
+  });
+
+  it("bounds distinct in-flight validation keys", async () => {
+    const flight = new SingleFlight<string>({ maxKeys: 1 });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = flight.run("a", async () => {
+      await gate;
+      return "a";
+    });
+    expect(() => flight.run("b", async () => "b")).toThrow(
+      SingleFlightCapacityError,
+    );
+    expect(flight.run("a", async () => "duplicate")).toBe(first);
+    release();
+    await expect(first).resolves.toBe("a");
+    await expect(flight.run("b", async () => "b")).resolves.toBe("b");
   });
 });

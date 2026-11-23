@@ -34,8 +34,8 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
 - stdio remains `dist/index.js`; the existing desktop configuration is
   unchanged.
 - No database and no shared token; only bounded in-memory sessions and
-  admission state (rate buckets, a short negative cache, validation
-  single-flight).
+  admission state (LRU rate buckets, a bounded negative cache, and a
+  validation single-flight capped at `AUTH_MAX_IN_FLIGHT`).
 
 ## Transport contract
 
@@ -64,6 +64,8 @@ Error contract (all `503`s carry `Retry-After`):
   includes `Retry-After`.
 - `503 auth_unavailable` — the key-validation call failed or timed out;
   includes `Retry-After`.
+- `503 auth_busy` — too many distinct validations are in flight; includes
+  `Retry-After`.
 - `503 session_limit` — global/per-key cap; includes `Retry-After`.
 - `503 shutting_down` — SIGTERM drain window; includes `Retry-After`.
 - `403 token_mismatch` — a valid key that is not the key bound to the
@@ -81,13 +83,23 @@ before reading the body**: global capacity, the per-token session cap (default
 `min(50, MAX_SESSIONS)`), a per-IP initialize bucket (default 600/min), a
 per-token-fingerprint bucket (default 10/min), and a bounded negative cache of
 invalid fingerprints. The sessionless body is capped strictly (default 256 KiB)
-before buffering; all POSTs still use the normal body cap. Only a genuinely
-unknown key reaches the cheap authenticated API read (`/api/v1/auth/me` by
-default). Concurrent initializes for one fingerprint share one validation call; a
-`429`/`503` from the API is retried a bounded number of times, honoring a small
-`Retry-After` (a longer API delay is returned to the caller instead of sleeping
-in-request). Only a successful check proceeds; `401` means the key is invalid,
-`429` carries `Retry-After`, and `503` means validation itself is unavailable.
+before buffering; all POSTs still use the normal body cap. Every new session
+that passes the buckets and is not in the negative cache performs one
+authenticated API read (`/api/v1/auth/me` by default); only a cached invalid
+fingerprint skips it. Concurrent initializes for one fingerprint share one
+validation call; a `429`/`503` from the API is retried a bounded number of
+times, honoring a small `Retry-After` (a longer API delay is returned to the
+caller instead of sleeping in-request), so a new session costs one call and a
+throttled one up to `AUTH_RETRY_ATTEMPTS` calls. At most
+`AUTH_MAX_IN_FLIGHT` distinct validations run at once; excess keys get
+`503 auth_busy` + `Retry-After`. Only a successful check proceeds; `401` means
+the key is invalid, `429` carries `Retry-After`, and `503` means validation
+itself is unavailable.
+
+The default per-key limits are 10 initialize attempts/min and 50 live
+sessions. A key that legitimately needs 50 sessions must raise
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or spread creation over several
+minutes); the session cap alone does not grant 50 immediate initializes.
 
 The token is then hashed: `SHA-256(token)` is stored as the session
 fingerprint. The raw key lives in that session's `JanosikClient` and is never
@@ -116,9 +128,11 @@ the address it saw.
   A session with an in-flight request, an open SSE stream, or an `open()` still
   connecting is never swept. Timer env values are bounded to Node's maximum.
 - Explicit `DELETE` closes immediately; transport/network close also detaches.
-- Graceful shutdown: stop accepting, release idle sessions, let in-flight
-  tool calls finish up to `SHUTDOWN_GRACE_MS`, close the remaining
-  sessions/SSE streams, then force-close sockets. A second signal exits 1.
+- Graceful shutdown: release idle sessions, keep the listener open while
+  in-flight tool calls finish up to `SHUTDOWN_GRACE_MS` (new requests get
+  `503 shutting_down` + `Retry-After`), then close the remaining sessions/SSE
+  streams, stop accepting and force-close sockets after a short grace. A
+  second signal exits 1.
 - Structured JSON logs include request id, session id, method, path, status,
   duration and client IP — never headers, bodies, keys, or token hashes.
 

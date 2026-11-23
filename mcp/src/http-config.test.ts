@@ -31,6 +31,7 @@ describe("loadGatewayConfig", () => {
       negativeCacheMaxEntries: 1_000,
       authValidationAttempts: 2,
       authValidationMaxDelayMs: 1_000,
+      authValidationMaxInFlight: 64,
       sessionIdleMs: 300_000,
       sessionSweepMs: 30_000,
       maxBodyBytes: 16 * 1024 * 1024,
@@ -67,6 +68,7 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "50",
       JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "3",
       JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS: "0",
+      JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT: "32",
       JANOSIK_MCP_HTTP_SESSION_IDLE_MS: "60000",
       JANOSIK_MCP_HTTP_SESSION_SWEEP_MS: "5000",
       JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
@@ -101,6 +103,7 @@ describe("loadGatewayConfig", () => {
       negativeCacheMaxEntries: 50,
       authValidationAttempts: 3,
       authValidationMaxDelayMs: 0,
+      authValidationMaxInFlight: 32,
       sessionIdleMs: 60_000,
       sessionSweepMs: 5_000,
       maxBodyBytes: 1024,
@@ -157,6 +160,8 @@ describe("loadGatewayConfig", () => {
     bad({ JANOSIK_MCP_HTTP_READY_TIMEOUT_MS: "2147483648" });
     bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "0" });
     bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "6" });
+    bad({ JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT: "0" });
+    bad({ JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT: "2000" });
     bad({ JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "0" });
     bad({
       JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
