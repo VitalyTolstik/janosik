@@ -2,11 +2,14 @@
 //
 // `buildReport` is pure: the CLI hands it already-measured snapshots, git
 // metadata and environment facts. That keeps the report reproducible in a
-// test and guarantees tokens never leak into the output.
+// test and guarantees tokens never leak into the output. URLs are redacted
+// before this module sees them, and `escapeCell`/`escapeText` keep labels and
+// error text from breaking the Markdown tables.
 
 import { publicConfig } from "./config.mjs";
+import { redactUrl } from "./redact.mjs";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export function buildReport({
   config,
@@ -14,14 +17,32 @@ export function buildReport({
   git,
   environment,
   pg = { enabled: false },
+  pgActivity = null,
+  cpuProfile = { enabled: false },
+  redis = { enabled: false },
   startedAt,
   endedAt,
+  interrupted = false,
 }) {
+  const statuses = scenarios.map((scenario) => scenario.status ?? "ok");
+  const overall = interrupted
+    ? "interrupted"
+    : statuses.includes("failed")
+      ? "failed"
+      : statuses.includes("interrupted")
+        ? "interrupted"
+        : statuses.includes("partial")
+          ? "partial"
+          : scenarios.length === 0
+            ? "failed"
+            : "ok";
   return {
     schemaVersion: SCHEMA_VERSION,
     task: "TASK-200.1",
     label: config.label,
     mode: config.mode,
+    driver: config.driver,
+    status: overall,
     generatedAt: new Date(endedAt).toISOString(),
     startedAt: new Date(startedAt).toISOString(),
     endedAt: new Date(endedAt).toISOString(),
@@ -30,78 +51,140 @@ export function buildReport({
     environment,
     config: publicConfig(config),
     scenarios,
+    summary: {
+      status: overall,
+      scenarios: scenarios.length,
+      ok: statuses.filter((status) => status === "ok").length,
+      partial: statuses.filter((status) => status === "partial").length,
+      failed: statuses.filter((status) => status === "failed").length,
+      interrupted:
+        statuses.filter((status) => status === "interrupted").length ||
+        (interrupted ? 1 : 0),
+    },
+    cpuProfile,
     pg,
+    pgActivity,
+    redis,
   };
 }
 
 export function renderMarkdown(report) {
   const lines = [];
-  lines.push(`# Agent-scale baseline — ${report.label}`);
+  lines.push(`# Agent-scale baseline — ${escapeText(report.label)}`);
   lines.push("");
   lines.push(
-    `**Commit** \`${report.git.commit}\` on \`${report.git.branch}\`${report.git.dirty ? " (dirty tree)" : ""}  `,
+    `**Status** \`${report.status}\` · **Commit** \`${escapeInline(report.git.commit)}\` on \`${escapeInline(report.git.branch)}\`${report.git.dirty ? " (dirty tree)" : ""}  `,
   );
   lines.push(
-    `**Mode** ${report.mode} · **Generated** ${report.generatedAt} · **Wall** ${formatDuration(report.wallMs)}  `,
+    `**Mode** ${report.mode} · **Driver** ${report.driver ?? "http"} · **Generated** ${report.generatedAt} · **Wall** ${formatDuration(report.wallMs)}  `,
   );
   lines.push(
-    `**API** ${report.config.baseUrl} · **Generator** node ${report.environment.node} on ${report.environment.platform}/${report.environment.arch}  `,
+    `**API** ${escapeInline(report.config.baseUrl)} · **Generator** node ${escapeInline(report.environment.node)} on ${escapeInline(`${report.environment.platform}/${report.environment.arch}`)}  `,
   );
   lines.push(
     `**Scenarios** ${report.scenarios.map((scenario) => scenario.id).join(", ")} · **Tokens** ${report.config.tokenCount} · **Labels** S1–S6 from docs/PERF-AGENT-SCALE.md §7.1`,
   );
   lines.push("");
+  lines.push("## Status");
+  lines.push("");
+  lines.push(
+    `ok ${report.summary?.ok ?? 0} · partial ${report.summary?.partial ?? 0} · failed ${report.summary?.failed ?? 0} · interrupted ${report.summary?.interrupted ?? 0}`,
+  );
+  for (const scenario of report.scenarios) {
+    lines.push(
+      `- **${scenario.id}** \`${scenario.status ?? "ok"}\`${scenario.statusReason ? ` — ${escapeText(scenario.statusReason)}` : ""}`,
+    );
+  }
+  lines.push("");
   lines.push("## Throughput and errors");
   lines.push("");
   lines.push(
-    "| Scenario | Agents | Duration | Requests | Actions/s | Cycles | p50 | p95 | p99 | 409 | 429 | 5xx | Err % | req/agent/min |",
+    "| Scenario | Status | Agents | Work | Requests | Tool calls | Actions/s | Cycles | No work | p50 | p95 | p99 | 409 | 429 | 5xx | Network | Err % |",
   );
   lines.push(
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     lines.push(
-      `| ${scenario.id} ${scenario.title} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${s.errors.conflict409} | ${s.errors.rateLimited429} | ${s.errors.server5xx} | ${formatPercent(s.errors.rate)} | ${formatDecimal(s.requestsPerAgentPerMinute)} |`,
+      `| ${scenario.id} ${escapeCell(scenario.title)} | ${scenario.status ?? "ok"} | ${s.agents || "—"} | ${formatDuration(s.durationMs)} | ${formatInteger(s.requests)} | ${formatInteger(s.toolCalls)} | ${formatDecimal(s.actionsPerSecond)} | ${formatInteger(s.cycles)} | ${formatInteger(s.noWork)} | ${formatMs(s.latency.p50)} | ${formatMs(s.latency.p95)} | ${formatMs(s.latency.p99)} | ${s.errors.conflict409} | ${s.errors.rateLimited429} | ${s.errors.server5xx} | ${s.errors.network} | ${formatPercent(s.errors.rate)} |`,
     );
   }
   lines.push("");
   lines.push("## Resources");
   lines.push("");
   lines.push(
-    "| Scenario | Probe | API RSS p50 | API RSS p95 | API RSS max | API heap p95 | API loop p95 | Gen RSS max | Gen loop p95 | SSE max | SSE bytes |",
+    "| Scenario | Probe | API RSS p50 | API RSS p95 | API RSS max | API heap p95 | API loop p95 | Gen RSS max | Gen loop p95 | SSE max | SSE ramp | SSE hold | SSE bytes |",
   );
   lines.push(
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   );
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     const api = scenario.api?.api ?? {};
     const generator = scenario.api?.generator ?? {};
     lines.push(
-      `| ${scenario.id} | ${scenario.api?.source ?? "none"} | ${formatBytes(api.rss?.p50)} | ${formatBytes(api.rss?.p95)} | ${formatBytes(api.rss?.max)} | ${formatBytes(api.heapUsed?.p95)} | ${formatMs(api.eventLoopLag?.p95)} | ${formatBytes(generator.rss?.max)} | ${formatMs(generator.eventLoopLag?.p95)} | ${s.sse.maxConcurrent} | ${formatBytes(s.sse.bytes)} |`,
+      `| ${scenario.id} | ${scenario.api?.source ?? "none"} | ${formatBytes(api.rss?.p50)} | ${formatBytes(api.rss?.p95)} | ${formatBytes(api.rss?.max)} | ${formatBytes(api.heapUsed?.p95)} | ${formatMs(api.eventLoopLag?.p95)} | ${formatBytes(generator.rss?.max)} | ${formatMs(generator.eventLoopLag?.p95)} | ${s.sse.maxConcurrent} | ${formatDuration(s.sse.rampObservedMs)} | ${formatDuration(s.sse.holdObservedMs)} | ${formatBytes(s.sse.bytes)} |`,
     );
   }
   lines.push("");
   lines.push("## Scenario detail");
   for (const scenario of report.scenarios) {
     lines.push("");
-    lines.push(`### ${scenario.id} — ${scenario.title}`);
+    lines.push(`### ${scenario.id} — ${escapeText(scenario.title)}`);
     lines.push("");
     lines.push(
-      `Config: ${scenarioConfigLine(scenario.config)} · requests ${formatInteger(scenario.summary.requests)} · bytes/request ${formatBytes(scenario.summary.bytesPerRequest)}`,
+      `Status: \`${scenario.status ?? "ok"}\`${scenario.statusReason ? ` — ${escapeText(scenario.statusReason)}` : ""}`,
     );
+    lines.push("");
+    lines.push(
+      `Config: ${scenarioConfigLine(scenario.config)} · requests ${formatInteger(scenario.summary.requests)} · tool calls ${formatInteger(scenario.summary.toolCalls)} · bytes/request ${formatBytes(scenario.summary.bytesPerRequest)}`,
+    );
+    if (scenario.workWindow !== undefined) {
+      lines.push(
+        `Work window: ${formatDuration(scenario.workWindow.workDurationMs)} (started ${new Date(scenario.workWindow.workStartedAt).toISOString()}, measured to ${new Date(scenario.workWindow.workEndedAt).toISOString()})`,
+      );
+    }
+    if (scenario.recycle?.requests > 0) {
+      lines.push(
+        `Recycle (excluded from agent metrics): ${formatInteger(scenario.recycle.writes)} writes in ${formatInteger(scenario.recycle.requests)} requests; ${formatInteger(scenario.summary.recycled)} cards recycled.`,
+      );
+    }
+    const mix = scenario.summary.activity;
+    if (mix !== undefined && mix.total > 0) {
+      lines.push(
+        `Actual S3 action mix: reads ${formatPercent(mix.mix?.reads)} (${mix.reads}), writes ${formatPercent(mix.mix?.writes)} (${mix.writes}), comments ${formatPercent(mix.mix?.comments)} (${mix.comments}).`,
+      );
+    }
+    if (scenario.mcp !== undefined && scenario.mcp !== null) {
+      lines.push(
+        `MCP: ${scenario.mcp.processes} process(es), peak RSS ${formatBytes(scenario.mcp.peakRssBytes)} each, total peak ${formatBytes(scenario.mcp.totalPeakRssBytes)}.`,
+      );
+    }
+    const tools = Object.entries(scenario.summary.tools ?? {});
+    if (tools.length > 0) {
+      lines.push("");
+      lines.push("| MCP tool | Calls | p50 | p95 | p99 |");
+      lines.push("| --- | ---: | ---: | ---: | ---: |");
+      for (const [name, tool] of tools) {
+        lines.push(
+          `| ${escapeCell(name)} | ${formatInteger(tool.calls)} | ${formatMs(tool.latency?.p50)} | ${formatMs(tool.latency?.p95)} | ${formatMs(tool.latency?.p99)} |`,
+        );
+      }
+    }
     const operations = Object.entries(scenario.summary.operations);
     if (operations.length > 0) {
       lines.push("");
       lines.push(
-        "| Operation | Requests | p50 | p95 | p99 | 4xx | 5xx | Bytes |",
+        "| Operation | Requests | p50 | p95 | p99 | 4xx | 5xx | Network | Aborted | Bytes |",
       );
-      lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+      lines.push(
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+      );
       for (const [name, op] of operations) {
         const counts = statusSplit(op.statuses);
         lines.push(
-          `| ${name} | ${formatInteger(op.requests)} | ${formatMs(op.latency.p50)} | ${formatMs(op.latency.p95)} | ${formatMs(op.latency.p99)} | ${counts.client4xx} | ${counts.server5xx} | ${formatBytes(op.bytes)} |`,
+          `| ${escapeCell(name)} | ${formatInteger(op.requests)} | ${formatMs(op.latency.p50)} | ${formatMs(op.latency.p95)} | ${formatMs(op.latency.p99)} | ${counts.client4xx} | ${counts.server5xx} | ${counts.network} | ${counts.aborted} | ${formatBytes(op.bytes)} |`,
         );
       }
     }
@@ -110,24 +193,43 @@ export function renderMarkdown(report) {
       lines.push("Errors (samples):");
       lines.push("");
       for (const error of scenario.errors) {
-        lines.push(`- ${error.message}`);
+        lines.push(
+          `- ${escapeText(error.message)}${error.orphan ? " _(claim release failed)_" : ""}`,
+        );
       }
     }
   }
-  if (report.pg?.enabled === true) {
+  if (report.cpuProfile?.enabled === true) {
     lines.push("");
-    lines.push("## PostgreSQL — top statements");
+    lines.push("## CPU profile — Top-10 self time");
     lines.push("");
-    if (report.pg.available === false) {
-      lines.push(`Unavailable: ${report.pg.reason}`);
+    if (report.cpuProfile.available === false) {
+      lines.push(`Unavailable: ${escapeText(report.cpuProfile.reason)}`);
     } else {
-      lines.push("| # | Calls | Total ms | Mean ms | Rows | Query |");
-      lines.push("| ---: | ---: | ---: | ---: | ---: | --- |");
-      for (const [index, query] of report.pg.queries.entries()) {
+      lines.push(
+        `Files: ${(report.cpuProfile.files ?? []).map((file) => `\`${escapeInline(file)}\``).join(", ")} · samples ${formatInteger(report.cpuProfile.samples)} · ${formatDuration(report.cpuProfile.totalMs)} profiled`,
+      );
+      lines.push("");
+      lines.push("| # | Function | Self time | Self % | Location |");
+      lines.push("| ---: | --- | ---: | ---: | --- |");
+      for (const [index, entry] of (report.cpuProfile.top ?? []).entries()) {
         lines.push(
-          `| ${index + 1} | ${formatInteger(query.calls)} | ${formatDecimal(query.totalMs)} | ${formatDecimal(query.meanMs)} | ${formatInteger(query.rows)} | ${escapeCell(query.query)} |`,
+          `| ${index + 1} | ${escapeCell(entry.function)} | ${formatMs(entry.selfMs)} | ${formatPercent(entry.selfPct === null ? null : entry.selfPct / 100)} | ${escapeCell(location(entry))} |`,
         );
       }
+    }
+  }
+  renderPg(lines, report);
+  if (report.redis?.enabled === true) {
+    lines.push("");
+    lines.push("## Redis");
+    lines.push("");
+    if (report.redis.available === false) {
+      lines.push(`Unavailable: ${escapeText(report.redis.reason)}`);
+    } else {
+      lines.push(
+        `Memory ${formatBytes(report.redis.memory?.used)} (peak ${formatBytes(report.redis.memory?.peak)}, max ${formatBytes(report.redis.memory?.max)}) · clients ${formatInteger(report.redis.clients?.connected)} connected / ${formatInteger(report.redis.clients?.blocked)} blocked · ops/s ${formatInteger(report.redis.opsPerSecond)} · rejected ${formatInteger(report.redis.rejected)} · hits/misses ${formatInteger(report.redis.keyspaceHits)}/${formatInteger(report.redis.keyspaceMisses)} · hit rate ${formatPercent(report.redis.keyspaceHitRate)}`,
+      );
     }
   }
   lines.push("");
@@ -137,7 +239,10 @@ export function renderMarkdown(report) {
     "- This is a harness baseline, not a capacity certificate: run the generator on a separate host from the API (docs/PERF-AGENT-SCALE.md §7.1).",
   );
   lines.push(
-    "- `409` is a measured CAS conflict on the real agent path; `429` is the board/global rate limit. Both are counted before any retry decision.",
+    "- `409` is a measured CAS conflict on the real agent path; `429` is the board/global rate limit. Both are counted, and `5xx`/network are labelled separately. They are data; failed/zero-work is a failed scenario.",
+  );
+  lines.push(
+    "- `ok` means work was measured; `partial` means the board drained, a claim stranded or the network degraded; `failed` means zero work, zero requests or fatal auth; `interrupted` means SIGINT/SIGTERM.",
   );
   lines.push(
     "- S1 currently polls the full board (`GET /boards/:id`); `--idle-endpoint ready` measures the 200.2 endpoint once it exists and falls back to the board on 404.",
@@ -152,6 +257,93 @@ export function renderMarkdown(report) {
   return lines.join("\n");
 }
 
+function renderPg(lines, report) {
+  const pg = report.pg ?? {};
+  if (
+    pg?.enabled !== true &&
+    pg?.available !== true &&
+    report.pgActivity?.available !== true
+  ) {
+    return;
+  }
+  lines.push("");
+  lines.push("## PostgreSQL — pg_stat_statements deltas");
+  lines.push("");
+  if (pg?.available === false) {
+    lines.push(`Unavailable: ${escapeText(pg.reason)}`);
+    renderPgActivity(lines, report.pgActivity);
+    return;
+  }
+  lines.push(
+    `Database URL: ${escapeInline(redactUrl(pg.url ?? "")) || "(not reported)"}`,
+  );
+  for (const [title, rows] of [
+    ["Top-20 by calls", pg.topByCalls ?? []],
+    ["Top-20 by total_exec_time", pg.topByTotalTime ?? []],
+  ]) {
+    lines.push("");
+    lines.push(`### ${title}`);
+    lines.push("");
+    if (rows.length === 0) {
+      lines.push("No statement deltas were observed.");
+      continue;
+    }
+    lines.push("| # | Calls | Total ms | Mean ms | Rows | Query |");
+    lines.push("| ---: | ---: | ---: | ---: | ---: | --- |");
+    for (const [index, query] of rows.entries()) {
+      lines.push(
+        `| ${index + 1} | ${formatInteger(query.calls)} | ${formatDecimal(query.totalMs)} | ${formatDecimal(query.meanMs)} | ${formatInteger(query.rows)} | ${escapeCell(query.query)} |`,
+      );
+    }
+  }
+  const perScenario = report.scenarios.filter(
+    (scenario) => scenario.pg !== undefined && scenario.pg !== null,
+  );
+  if (perScenario.length > 0) {
+    lines.push("");
+    lines.push("### Per-scenario deltas");
+    lines.push("");
+    lines.push(
+      "| Scenario | Top query by calls | Calls | Top query by time | Total ms |",
+    );
+    lines.push("| --- | --- | ---: | --- | ---: |");
+    for (const scenario of perScenario) {
+      const byCalls = scenario.pg.topByCalls?.[0];
+      const byTime = scenario.pg.topByTotalTime?.[0];
+      lines.push(
+        `| ${scenario.id} | ${escapeCell(byCalls?.query ?? "—")} | ${formatInteger(byCalls?.calls)} | ${escapeCell(byTime?.query ?? "—")} | ${formatDecimal(byTime?.totalMs)} |`,
+      );
+    }
+  }
+  renderPgActivity(lines, report.pgActivity);
+}
+
+function renderPgActivity(lines, activity) {
+  if (activity?.available !== true) return;
+  lines.push("");
+  lines.push("### pg_stat_activity (peak per state/wait)");
+  lines.push("");
+  lines.push(
+    `Samples ${formatInteger(activity.samples)} · peak connections ${formatInteger(activity.peakConnections)}`,
+  );
+  lines.push("");
+  lines.push(
+    `States: ${
+      Object.entries(activity.states ?? {})
+        .map(([state, count]) => `${escapeCell(state)}=${count}`)
+        .join(", ") || "—"
+    }`,
+  );
+  lines.push("");
+  lines.push(
+    `Waits: ${
+      Object.entries(activity.waits ?? {})
+        .map(([wait, count]) => `${escapeCell(wait)}=${count}`)
+        .join(", ") || "—"
+    }`,
+  );
+}
+
 function scenarioConfigLine(config) {
   const parts = [];
   for (const key of [
@@ -159,6 +351,7 @@ function scenarioConfigLine(config) {
     "humans",
     "sse",
     "cadenceMs",
+    "watchCadenceMs",
     "durationMs",
     "rampMs",
     "holdMs",
@@ -167,6 +360,7 @@ function scenarioConfigLine(config) {
     "leaseMs",
     "jitter",
     "idleEndpoint",
+    "burst",
   ]) {
     if (config[key] !== undefined) {
       parts.push(
@@ -174,18 +368,28 @@ function scenarioConfigLine(config) {
       );
     }
   }
+  if (config.mix !== undefined) {
+    const { reads, writes, comments } = config.mix;
+    parts.push(
+      `mix=${Math.round(reads * 100)}/${Math.round(writes * 100)}/${Math.round(comments * 100)}`,
+    );
+  }
   return parts.join(", ");
 }
 
 export function statusSplit(statuses) {
   let client4xx = 0;
   let server5xx = 0;
+  let network = 0;
+  let aborted = 0;
   for (const [status, count] of Object.entries(statuses ?? {})) {
     const value = Number(status);
-    if (value >= 500 || value === 0) server5xx += count;
+    if (value === 0) network += count;
+    else if (value === -1) aborted += count;
+    else if (value >= 500) server5xx += count;
     else if (value >= 400) client4xx += count;
   }
-  return { client4xx, server5xx };
+  return { client4xx, server5xx, network, aborted };
 }
 
 export function formatMs(value) {
@@ -229,7 +433,7 @@ function formatPercent(value) {
 }
 
 function formatDuration(ms) {
-  if (!Number.isFinite(ms)) return "—";
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "—";
   if (ms < 1_000) return `${Math.round(ms)} ms`;
   if (ms < 60_000) return `${(ms / 1_000).toFixed(1)} s`;
   const minutes = Math.floor(ms / 60_000);
@@ -237,8 +441,32 @@ function formatDuration(ms) {
   return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
 }
 
-function escapeCell(value) {
+function location(entry) {
+  if (entry.url === "(native)") return "(native)";
+  const file = String(entry.url).replace(/^file:\/\//, "");
+  const line = entry.line === null ? "" : `:${entry.line}`;
+  return `${file}${line}`;
+}
+
+/** Markdown table cell: escape pipes, backslashes and newlines. */
+export function escapeCell(value) {
   return String(value ?? "")
+    .replaceAll("\\", "\\\\")
     .replaceAll("|", "\\|")
-    .replaceAll("\n", " ");
+    .replace(/\r?\n/g, " ");
+}
+
+/** Inline code/text outside a table. */
+export function escapeInline(value) {
+  return String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("`", "\\`");
+}
+
+/** Bare text in headings/list items. */
+export function escapeText(value) {
+  return String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replace(/([`*_[\]<>#|])/g, "\\$1")
+    .replace(/\r?\n/g, " ");
 }

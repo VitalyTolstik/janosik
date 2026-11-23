@@ -4,15 +4,16 @@
 // every derived default can be unit-tested with `node --test`.
 
 import { parseArgs } from "node:util";
+import { redactUrl } from "./redact.mjs";
 
 export const TASK = "TASK-200.1";
 export const DEFAULT_BASE_URL = "http://localhost:3000/api/v1";
 export const MAX_DURATION_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Scenario defaults from `docs/PERF-AGENT-SCALE.md` §7.1. These are the
- * *documented* profiles; the CLI intentionally requires `--scenario` so a
- * bare command can never start a 1,000-agent run by accident.
+ * Scenario defaults from `docs/PERF-AGENT-SCALE.md` §7.1 and
+ * `docs/TASK-200-agent-scale-performance.md` §200.1. `durationMs` is the work
+ * window *after* the S4 ramp; S5 uses `rampMs + holdMs`.
  */
 export const SCENARIO_DEFS = {
   S1: {
@@ -39,6 +40,8 @@ export const SCENARIO_DEFS = {
       sse: 100,
       cadenceMs: 10_000,
       durationMs: 120_000,
+      watchCadenceMs: 3_000,
+      mix: { reads: 0.6, writes: 0.3, comments: 0.1 },
     },
   },
   S4: {
@@ -55,7 +58,9 @@ export const SCENARIO_DEFS = {
   S5: {
     id: "S5",
     title: "SSE ramp",
-    defaults: { sse: 3_000, rampMs: 300_000, holdMs: 600_000 },
+    // The approved profile in docs/PERF-AGENT-SCALE.md §7.1 is 0 → 5,000
+    // streams; the task spec repeats 5,000. Keep 5,000 explicit.
+    defaults: { sse: 5_000, rampMs: 300_000, holdMs: 600_000 },
   },
   S6: {
     id: "S6",
@@ -77,10 +82,31 @@ export const SMOKE_DEFAULTS = {
     sse: 2,
     cadenceMs: 250,
     durationMs: 3_000,
+    watchCadenceMs: 250,
   },
-  S4: { agents: 3, cadenceMs: 250, durationMs: 2_000, rampMs: 1_000 },
+  S4: {
+    agents: 3,
+    cadenceMs: 250,
+    durationMs: 2_000,
+    rampMs: 1_000,
+    burst: true,
+  },
   S5: { sse: 5, rampMs: 1_000, holdMs: 1_000 },
   S6: { concurrency: 4, repeats: 1 },
+};
+
+/** Hard ceilings so `--mock` can never turn into an accidental heavy run. */
+export const SMOKE_CAPS = {
+  agents: 8,
+  humans: 8,
+  sse: 20,
+  concurrency: 50,
+  repeats: 2,
+  cadenceMs: 5_000,
+  watchCadenceMs: 5_000,
+  durationMs: 30_000,
+  rampMs: 10_000,
+  holdMs: 10_000,
 };
 
 const SCENARIO_LIST = /^[A-Za-z0-9]+$/;
@@ -100,16 +126,28 @@ export const CLI_OPTIONS = {
   hold: { type: "string" },
   concurrency: { type: "string" },
   repeats: { type: "string" },
+  "watch-cadence": { type: "string" },
+  mix: { type: "string" },
   "lease-ms": { type: "string" },
   jitter: { type: "string" },
   seed: { type: "string" },
   "idle-endpoint": { type: "string" },
   output: { type: "string" },
   label: { type: "string" },
+  driver: { type: "string" },
+  "mcp-processes": { type: "string" },
+  "shared-identity": { type: "boolean" },
+  recycle: { type: "boolean" },
+  "recycle-token": { type: "string" },
   "api-pid": { type: "string" },
   "api-probe": { type: "string" },
+  "cpu-profile": { type: "string" },
   "pg-url": { type: "string" },
   psql: { type: "string" },
+  "pg-activity": { type: "boolean" },
+  "pg-activity-interval": { type: "string" },
+  "redis-url": { type: "string" },
+  "redis-cli": { type: "string" },
   mock: { type: "boolean" },
   "mock-port": { type: "string" },
   "mock-boards": { type: "string" },
@@ -129,6 +167,10 @@ export function splitList(value) {
 
 function takeList(value) {
   return splitList(value);
+}
+
+function unique(values) {
+  return [...new Set(values.filter((value) => value !== ""))];
 }
 
 function integer(name, raw, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -174,6 +216,34 @@ export function parseDurationMs(name, raw) {
   return value;
 }
 
+/**
+ * Parse the S3 action mix. Accepts percentages (`60/30/10`) or fractions
+ * (`0.6/0.3/0.1`) for reads/writes/comments; the three values must sum to
+ * roughly one.
+ */
+export function parseMix(raw) {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const parts = String(raw)
+    .split("/")
+    .map((part) => part.trim());
+  if (parts.length !== 3) {
+    throw new Error("--mix must look like reads/writes/comments (60/30/10)");
+  }
+  let values = parts.map((part) => Number(part));
+  if (values.some((value) => !Number.isFinite(value) || value < 0)) {
+    throw new Error("--mix values must be non-negative numbers");
+  }
+  const sum = values.reduce((total, value) => total + value, 0);
+  if (sum === 0) throw new Error("--mix values must not all be zero");
+  if (Math.abs(sum - 100) <= 0.01) {
+    values = values.map((value) => value / 100);
+  } else if (Math.abs(sum - 1) > 0.01) {
+    throw new Error("--mix values must sum to 100 (percent) or 1 (fractions)");
+  }
+  const [reads, writes, comments] = values;
+  return { reads, writes, comments };
+}
+
 /** Parse `--scenario` values, expanding `all` and `smoke`. */
 export function parseScenarioList(raw) {
   const requested = takeList(raw);
@@ -205,32 +275,39 @@ export function parseScenarioList(raw) {
 /**
  * Resolve CLI values + environment into a validated configuration.
  *
- * Tokens are kept internally for the HTTP clients; `publicConfig()` removes
- * them before anything reaches the report.
+ * Token precedence: `--token` (repeatable/comma-separated) > `JANOSIK_PERF_TOKEN`
+ * > `PERF_TOKEN`. The map is deduplicated; `publicConfig()` only exposes the
+ * count. Secrets stay on the internal config until a request needs them.
  */
 export function resolveConfig(cliValues = {}, env = {}) {
   const scenarios = parseScenarioList(cliValues.scenario);
-  const smoke = scenarios.mode === "smoke" || cliValues.mock === true;
-  const ids =
-    scenarios.ids.length > 0
-      ? scenarios.ids
-      : cliValues.help
-        ? []
-        : smoke
-          ? SMOKE_SCENARIOS
-          : ["smoke"];
-  const mode = smoke ? "smoke" : "real";
-
-  if (cliValues.help || (scenarios.ids.length === 0 && !smoke)) {
-    return { help: true, mode, scenarioIds: ids };
+  const mock = cliValues.mock === true;
+  if (cliValues.help === true) {
+    return { help: true, mode: "real", scenarioIds: scenarios.ids };
   }
+  if (scenarios.mode === "smoke" && !mock) {
+    throw new Error(
+      "--scenario smoke needs --mock; smoke profiles are in-process correctness checks, not real baselines",
+    );
+  }
+  const smoke = scenarios.mode === "smoke" || mock;
+  let ids = scenarios.ids;
+  if (ids.length === 0) {
+    if (!mock) {
+      throw new Error(
+        "--scenario is required; use S1…S6, all, or --scenario smoke --mock",
+      );
+    }
+    ids = SMOKE_SCENARIOS;
+  }
+  const mode = smoke ? "smoke" : "real";
 
   const overrides = {};
   const int = (key, value, options) => {
     const parsed = integer(key, value, options);
     if (parsed !== undefined) overrides[key] = parsed;
   };
-  int("agents", cliValues.agents, { min: 0, max: 100_000 });
+  int("agents", cliValues.agents, { min: 1, max: 100_000 });
   int("humans", cliValues.humans, { min: 0, max: 100_000 });
   int("sse", cliValues.sse, { min: 0, max: 100_000 });
   int("concurrency", cliValues.concurrency, { min: 1, max: 100_000 });
@@ -248,16 +325,30 @@ export function resolveConfig(cliValues = {}, env = {}) {
   int("mockPort", cliValues["mock-port"], { min: 0, max: 65_535 });
   int("mockBoards", cliValues["mock-boards"], { min: 1, max: 1_000 });
   int("mockCards", cliValues["mock-cards"], { min: 1, max: 100_000 });
+  const mcpProcesses = integer("mcp-processes", cliValues["mcp-processes"], {
+    min: 1,
+    max: 100_000,
+  });
 
   for (const [key, source] of [
     ["cadenceMs", "cadence"],
     ["durationMs", "duration"],
     ["rampMs", "ramp"],
     ["holdMs", "hold"],
+    ["watchCadenceMs", "watch-cadence"],
   ]) {
     const parsed = parseDurationMs(source, cliValues[source]);
     if (parsed !== undefined) overrides[key] = parsed;
   }
+  const activityInterval = parseDurationMs(
+    "pg-activity-interval",
+    cliValues["pg-activity-interval"],
+  );
+  if (activityInterval !== undefined) {
+    overrides.pgActivityIntervalMs = activityInterval;
+  }
+  const mix = parseMix(cliValues.mix);
+  if (mix !== undefined) overrides.mix = mix;
 
   const jitter = fraction("jitter", cliValues.jitter);
   if (jitter !== undefined) overrides.jitter = jitter;
@@ -269,26 +360,37 @@ export function resolveConfig(cliValues = {}, env = {}) {
     overrides.idleEndpoint = cliValues["idle-endpoint"];
   }
 
-  const tokens = [
-    ...takeList(cliValues.token),
-    ...takeList(env.JANOSIK_PERF_TOKEN),
-    ...takeList(env.PERF_TOKEN),
-  ];
-  if (tokens.length === 0 && cliValues.mock) {
+  const cliTokens = takeList(cliValues.token);
+  const envTokens = takeList(env.JANOSIK_PERF_TOKEN);
+  const fallbackTokens = takeList(env.PERF_TOKEN);
+  const tokens = unique(
+    cliTokens.length > 0
+      ? cliTokens
+      : envTokens.length > 0
+        ? envTokens
+        : fallbackTokens,
+  );
+  if (tokens.length === 0 && mock) {
     tokens.push("perf-smoke-token-1", "perf-smoke-token-2");
   }
 
-  const explicitBoards = [
+  const explicitBoards = unique([
     ...takeList(cliValues.board),
-    ...takeList(env.JANOSIK_PERF_BOARDS),
-  ];
-  const boardsCount =
-    integer("boards", cliValues.boards, { min: 1, max: 10_000 }) ?? 1;
+    ...(mock ? [] : takeList(env.JANOSIK_PERF_BOARDS)),
+  ]);
+  const boardsCount = mock
+    ? 1
+    : (integer("boards", cliValues.boards, { min: 1, max: 10_000 }) ?? 1);
 
-  if (!cliValues.mock && tokens.length === 0) {
+  if (!mock && tokens.length === 0) {
     throw new Error(
       "no PAT: pass --token jnk_… or set JANOSIK_PERF_TOKEN (comma-separated for a token pool)",
     );
+  }
+
+  const driver = String(cliValues.driver ?? "http").toLowerCase();
+  if (!["http", "mcp"].includes(driver)) {
+    throw new Error("--driver must be http or mcp");
   }
 
   const baseUrl = String(cliValues["base-url"] ?? DEFAULT_BASE_URL).replace(
@@ -300,6 +402,18 @@ export function resolveConfig(cliValues = {}, env = {}) {
   }
 
   const apiPid = integer("api-pid", cliValues["api-pid"], { min: 1 });
+  const recycle = cliValues.recycle === true;
+  const recycleTokenRaw =
+    cliValues["recycle-token"] ?? env.JANOSIK_PERF_RECYCLE_TOKEN;
+  const recycleToken =
+    typeof recycleTokenRaw === "string" && recycleTokenRaw.trim() !== ""
+      ? recycleTokenRaw.trim()
+      : undefined;
+  if (recycle && !mock && recycleToken === undefined) {
+    throw new Error(
+      "--recycle needs --recycle-token (or JANOSIK_PERF_RECYCLE_TOKEN): use a dedicated board ADMIN PAT",
+    );
+  }
 
   return {
     help: false,
@@ -315,11 +429,25 @@ export function resolveConfig(cliValues = {}, env = {}) {
     seed: overrides.seed ?? 200_001,
     label: cliValues.label ?? `${mode === "smoke" ? "smoke" : "baseline"}`,
     output: cliValues.output,
+    driver,
+    mcpProcesses:
+      mock && mcpProcesses !== undefined
+        ? Math.min(mcpProcesses, 2)
+        : (mcpProcesses ?? null),
+    allowSharedIdentity: cliValues["shared-identity"] === true,
+    recycle,
+    recycleToken: recycleToken ?? (mock ? tokens[0] : undefined),
     apiPid,
     apiProbe: cliValues["api-probe"],
-    pgUrl: cliValues["pg-url"] ?? env.JANOSIK_PERF_PG_URL,
+    cpuProfile: cliValues["cpu-profile"],
+    pgUrl: cliValues["pg-url"] ?? (mock ? undefined : env.JANOSIK_PERF_PG_URL),
+    pgActivity: cliValues["pg-activity"] === true,
+    pgActivityIntervalMs: activityInterval ?? 2_000,
     psql: cliValues.psql ?? "psql",
-    mock: cliValues.mock === true,
+    redisUrl:
+      cliValues["redis-url"] ?? (mock ? undefined : env.JANOSIK_PERF_REDIS_URL),
+    redisCli: cliValues["redis-cli"] ?? "redis-cli",
+    mock,
     mockPort: overrides.mockPort ?? 0,
     mockBoards: overrides.mockBoards ?? 1,
     mockCards: overrides.mockCards ?? 120,
@@ -342,7 +470,61 @@ export function scenarioConfig(config, id) {
   for (const [key, value] of Object.entries(config.overrides)) {
     if (value !== undefined) base[key] = value;
   }
+  if (config.mode === "smoke") {
+    for (const [key, cap] of Object.entries(SMOKE_CAPS)) {
+      if (typeof base[key] === "number") base[key] = Math.min(base[key], cap);
+    }
+  }
   return { ...base, id, title: def.title };
+}
+
+/**
+ * Reject profiles that cannot produce a measurement. A zero-agent scenario,
+ * a zero cadence or a zero duration would exit 0 with no data, which is the
+ * failure mode this harness exists to prevent.
+ */
+export function validateScenarioConfig(config, id) {
+  const scenario = scenarioConfig(config, id);
+  const fail = (message) => {
+    throw new Error(`${id}: ${message}`);
+  };
+  if (["S1", "S2", "S3", "S4"].includes(id)) {
+    if (!(scenario.agents > 0)) fail("--agents must be greater than zero");
+    if (!(scenario.cadenceMs > 0)) fail("--cadence must be greater than zero");
+    if (!(scenario.durationMs > 0))
+      fail("--duration must be greater than zero");
+  }
+  if (id === "S3") {
+    if (!(scenario.watchCadenceMs > 0)) {
+      fail("--watch-cadence must be greater than zero");
+    }
+    const { reads, writes, comments } = scenario.mix ?? {};
+    for (const [name, value] of Object.entries({ reads, writes, comments })) {
+      if (!Number.isFinite(value) || value < 0) {
+        fail(`--mix ${name} must be a non-negative number`);
+      }
+    }
+    if (Math.abs(reads + writes + comments - 1) > 0.01) {
+      fail("--mix reads/writes/comments must sum to 1");
+    }
+  }
+  if (id === "S4") {
+    if (!(scenario.rampMs >= 0)) fail("--ramp must not be negative");
+    // `durationMs` is measured after the ramp, so ramp < duration is not
+    // required; report both windows so a short work window is visible.
+  }
+  if (id === "S5") {
+    if (!(scenario.sse > 0)) fail("--sse must be greater than zero");
+    if (!(scenario.rampMs >= 0)) fail("--ramp must not be negative");
+    if (!(scenario.holdMs > 0)) fail("--hold must be greater than zero");
+  }
+  if (id === "S6") {
+    if (!(scenario.concurrency > 0)) {
+      fail("--concurrency must be greater than zero");
+    }
+    if (!(scenario.repeats > 0)) fail("--repeats must be greater than zero");
+  }
+  return scenario;
 }
 
 /** The subset of config that is safe to write into a report. */
@@ -350,17 +532,31 @@ export function publicConfig(config) {
   return {
     task: config.task,
     mode: config.mode,
+    driver: config.driver,
     scenarioIds: config.scenarioIds,
-    baseUrl: config.baseUrl,
-    tokenCount: config.tokens.length,
+    baseUrl: redactUrl(config.baseUrl),
+    tokenCount: unique(config.tokens).length,
+    allowSharedIdentity: config.allowSharedIdentity === true,
+    recycle: config.recycle === true,
     explicitBoards: config.explicitBoards,
     boardsCount: config.boardsCount,
+    mcpProcesses: config.mcpProcesses,
     jitter: config.jitter,
     seed: config.seed,
     label: config.label,
     apiPid: config.apiPid ?? null,
     apiProbe: config.apiProbe ?? null,
-    pg: config.pgUrl ? { enabled: true } : { enabled: false },
+    cpuProfile: config.cpuProfile ?? null,
+    pg: config.pgUrl
+      ? {
+          enabled: true,
+          url: redactUrl(config.pgUrl),
+          activity: config.pgActivity,
+        }
+      : { enabled: false, activity: false },
+    redis: config.redisUrl
+      ? { enabled: true, url: redactUrl(config.redisUrl) }
+      : { enabled: false },
     mock: config.mock
       ? {
           boards: config.mockBoards,
@@ -382,34 +578,47 @@ export function usage() {
     "Scenarios (docs/PERF-AGENT-SCALE.md §7.1):",
     ...ALL_SCENARIOS.map((id) => `  ${id}  ${SCENARIO_DEFS[id].title}`),
     "  all     S1–S6 (heavy; dedicated host only)",
-    "  smoke   S1, S2, S3, S6 against an in-process mock",
+    "  smoke   S1, S2, S3, S6 against an in-process mock (--mock required)",
     "",
     "Common options:",
-    "  -s, --scenario <id[,id]>  scenario list (required unless --mock/smoke)",
+    "  -s, --scenario <id[,id]>  scenario list (required; use smoke --mock)",
     "      --base-url <url>      default http://localhost:3000/api/v1",
     "      --token <pat>         PAT; repeat or comma-separate for a pool",
     "      --board <id>          explicit board id; repeat or comma-separate",
     "      --boards <n>          pick the first N accessible boards (default 1)",
-    "      --agents <n>          agent workers (scenario default)",
+    "      --agents <n>          agent workers/processes (scenario default)",
     "      --humans <n>          human read workers for S3",
     "      --sse <n>             SSE streams for S3/S5",
     "      --cadence <dur>       per-agent delay, e.g. 10s (default per scenario)",
-    "      --duration <dur>      scenario wall clock, e.g. 2m",
+    "      --watch-cadence <dur> S3 human Watch cadence (default 3s)",
+    "      --mix <r/w/c>         S3 action mix, default 60/30/10",
+    "      --duration <dur>      work window, e.g. 2m (after the S4 ramp)",
     "      --ramp <dur>          S4 start ramp / S5 connection ramp",
-    "      --hold <dur>          S5 hold after the ramp",
+    "      --hold <dur>          S5 hold after the ramp actually completes",
     "      --concurrency <n>     S6 in-flight reads (default 500)",
     "      --repeats <n>         S6 rounds (default 1)",
     "      --jitter <0..1>       cadence jitter fraction (default 0.2)",
+    "      --seed <n>            deterministic jitter/mix seed (default 200001)",
     "      --lease-ms <ms>       CLAIM_CARD lease (default 300000)",
     "      --idle-endpoint <e>   board | ready (default board; ready is 200.2)",
+    "      --driver <http|mcp>   HTTP PAT loop (default) or real MCP stdio",
+    "      --mcp-processes <n>   MCP process count (default: agents)",
+    "      --shared-identity     allow more agents than PATs (same identity)",
+    "      --recycle             move Done cards back when the board drains",
+    "      --recycle-token <pat> dedicated board ADMIN PAT for --recycle",
     "      --output <file.json>  JSON path; Markdown is written beside it",
     "      --label <text>        report label",
     "",
     "Instrumentation (all optional):",
     "      --api-pid <pid>       sample /proc/<pid>/status VmRSS",
     "      --api-probe <jsonl>   sample file written by api-preload.mjs",
-    "      --pg-url <url>        read top pg_stat_statements queries via psql",
+    "      --cpu-profile <path>  API .cpuprofile file or directory (Top-10)",
+    "      --pg-url <url>        PostgreSQL URL (userinfo stripped in reports)",
+    "      --pg-activity         sample pg_stat_activity states/waits",
+    "      --pg-activity-interval <dur>  sample interval (default 2s)",
     "      --psql <path>         psql binary (default psql)",
+    "      --redis-url <url>     Redis URL for INFO sampling (redacted)",
+    "      --redis-cli <path>    redis-cli binary (default redis-cli)",
     "",
     "Mock:",
     "      --mock                start the in-process mock API",
@@ -417,11 +626,16 @@ export function usage() {
     "      --mock-boards <n>     mock boards (default 1)",
     "      --mock-cards <n>      cards per mock board (default 120)",
     "",
+    "Exit codes: 0 ok/partial, 1 failed or zero-work, 2 config/preflight, 130 interrupted.",
+    "",
     "Examples:",
     "  npm run perf:smoke",
     '  npm run perf:agents -- --scenario S1 --token "$JANOSIK_PERF_TOKEN" --agents 100 --duration 5m',
     "  npm run perf:agents -- --scenario S2 --board <id> --agents 100 --duration 2m --label baseline-100",
-    "  npm run perf:agents -- --scenario S6 --boards 1 --concurrency 500 --api-pid 1234",
+    "  npm run perf:agents -- --scenario S3 --board <id> --agents 500 --humans 50 --sse 100",
+    "  npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid 1234",
+    "  npm run perf:agents -- --scenario S2 --driver mcp --agents 2 --mock",
+    "  npm run perf:agents -- --scenario S2 --cpu-profile /tmp/api.cpuprofile --pg-activity",
     "",
     "See scripts/perf/README.md for the dedicated-host baseline procedure.",
   ].join("\n");
