@@ -1,4 +1,5 @@
 import type { PrismaService } from "@/common/prisma/prisma.service";
+import type { BoardWriteService } from "@/common/board-write.service";
 import type { StorageService } from "@/attachments/storage.service";
 import type { AccountDeletionService } from "@/users/account-deletion.service";
 import type { OpsSettingsService } from "./ops-settings.service";
@@ -115,6 +116,10 @@ const attentionMock = {
 
 const approvalsMock = { expireOverdue: jest.fn() } as never;
 
+const boardWriteMock = { run: jest.fn() } as unknown as BoardWriteService & {
+  run: jest.Mock;
+};
+
 /** Epoch mtime — unambiguously older than any grace window. */
 const LONG_AGO = 0;
 
@@ -141,6 +146,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const results = await service.run("all");
     const total = results.reduce((sum, entry) => sum + entry.removed, 0);
@@ -161,6 +167,7 @@ describe("MaintenanceService", () => {
         accountDeletionMock,
         attentionMock,
         approvalsMock,
+        boardWriteMock,
       ).sweepAttention();
       expect(prisma.notificationMail.deleteMany).toHaveBeenCalledWith({
         where: { finishedAt: { lt: new Date("2026-11-17T12:00:00Z") } },
@@ -185,7 +192,22 @@ describe("MaintenanceService", () => {
       },
     ]);
     (prisma.card.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const order: string[] = [];
+    boardWriteMock.run.mockImplementation(
+      async (
+        boardId: string,
+        fn: (tx: unknown) => Promise<unknown>,
+      ): Promise<unknown> => {
+        order.push(`lock:${boardId}`);
+        const result = await fn(prisma);
+        order.push(`commit:${boardId}`);
+        return result;
+      },
+    );
     const notify = jest.fn().mockResolvedValue(undefined);
+    notify.mockImplementation(async () => {
+      order.push("notify");
+    });
     (
       attentionMock as unknown as { notifyClaimExpired: jest.Mock }
     ).notifyClaimExpired = notify;
@@ -196,6 +218,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     expect(await service.sweepClaims()).toBe(1);
@@ -216,6 +239,13 @@ describe("MaintenanceService", () => {
         leaseUntil,
       }),
     );
+    // TASK-200.10: the Card write and the revision bump happen under the
+    // board's writer lock; the attention row is raised only after commit.
+    expect(boardWriteMock.run).toHaveBeenCalledWith(
+      "board-1",
+      expect.any(Function),
+    );
+    expect(order).toEqual(["lock:board-1", "commit:board-1", "notify"]);
 
     // A concurrent/fresh claim makes the conditional update a no-op: the
     // sweep reports zero and does not send a second notification.
@@ -236,6 +266,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     expect(await service.sweepIdempotency()).toBe(2);
     expect(prisma.idempotencyRecord.deleteMany).toHaveBeenCalledWith({
@@ -256,6 +287,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const removed = await service.sweepExports();
     expect(removed).toBe(1);
@@ -288,6 +320,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(1);
@@ -311,6 +344,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const removed = await service.sweepOrphanBlobs();
     expect(removed).toBe(0);
@@ -328,6 +362,7 @@ describe("MaintenanceService", () => {
         accountDeletionMock,
         attentionMock,
         approvalsMock,
+        boardWriteMock,
       );
       await service.purgeSoftDeleted(365);
       const call = (prisma.card.findMany as jest.Mock).mock.calls[0][0] as {
@@ -384,6 +419,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -426,6 +462,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -455,6 +492,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const removed = await service.sweepCommands();
     expect(removed).toBe(7);
@@ -488,6 +526,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     expect(await service.sweepCommands()).toBe(9);
@@ -532,6 +571,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     expect(await service.sweepRuns()).toBe(1);
@@ -580,6 +620,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     expect(await service.sweepRuns()).toBe(2);
@@ -628,6 +669,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -688,6 +730,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.purgeSoftDeleted();
@@ -744,6 +787,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.sweepShares();
@@ -770,6 +814,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.sweepShares();
@@ -807,6 +852,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.sweepActivity();
@@ -833,6 +879,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.sweepAudit();
@@ -864,6 +911,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
 
     const removed = await service.sweepOrphanBlobs();

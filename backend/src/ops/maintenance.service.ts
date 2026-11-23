@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { env } from "@/config/env";
 import { ApprovalsService } from "@/approvals/approvals.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import { StorageService } from "@/attachments/storage.service";
 import {
   AccountDeletionService,
@@ -97,6 +98,7 @@ export class MaintenanceService {
     private readonly accountDeletion: AccountDeletionService,
     private readonly attention: AttentionService,
     private readonly approvals: ApprovalsService,
+    private readonly boardWrite: BoardWriteService,
   ) {}
 
   /** Runs one named sweep, or all of them. */
@@ -813,6 +815,12 @@ export class MaintenanceService {
    * concurrent `CLAIM_CARD` that already installed a fresh lease makes it a
    * no-op, so a sweep can never clear a live claim. The event is written only
    * after the row really changed, which also makes a re-run silent.
+   *
+   * TASK-200.10 review: a Card write moves `Board.aggregateRevision` through
+   * the DB trigger, so the sweep must be the board's sole writer while it
+   * does so. Cards are grouped by board and each group runs under
+   * `BoardWriteService.run` (the same advisory lock as commands); attention
+   * events go out only after that board's transaction committed.
    */
   async sweepClaims(): Promise<number> {
     const now = new Date();
@@ -837,35 +845,62 @@ export class MaintenanceService {
         column: { select: { boardId: true } },
       },
     });
-    let cleared = 0;
+    const byBoard = new Map<string, typeof cards>();
     for (const card of cards) {
-      if (card.leaseUntil === null) continue;
-      const result = await this.prisma.card.updateMany({
-        where: { id: card.id, leaseUntil: { lte: now } },
-        data: {
-          claimedBy: null,
-          claimedByTokenId: null,
-          claimedBySessionId: null,
-          leaseUntil: null,
-        },
+      const boardId = card.column.boardId;
+      const group = byBoard.get(boardId) ?? [];
+      group.push(card);
+      byBoard.set(boardId, group);
+    }
+
+    let cleared = 0;
+    for (const [boardId, boardCards] of byBoard) {
+      const outcome = await this.boardWrite.run(boardId, async (tx) => {
+        const notifications: Array<{
+          boardId: string;
+          cardId: string;
+          cardTitle: string;
+          claimedBy: string | null;
+          agentName: string | null;
+          leaseUntil: Date;
+        }> = [];
+        let count = 0;
+        for (const card of boardCards) {
+          const leaseUntil = card.leaseUntil;
+          if (leaseUntil === null) continue;
+          const result = await tx.card.updateMany({
+            where: { id: card.id, leaseUntil: { lte: now } },
+            data: {
+              claimedBy: null,
+              claimedByTokenId: null,
+              claimedBySessionId: null,
+              leaseUntil: null,
+            },
+          });
+          if (result.count === 0) continue;
+          count += result.count;
+          const session =
+            card.claimedBySessionId === null
+              ? null
+              : await tx.agentSession.findUnique({
+                  where: { id: card.claimedBySessionId },
+                  select: { name: true, clientName: true },
+                });
+          notifications.push({
+            boardId,
+            cardId: card.id,
+            cardTitle: card.title,
+            claimedBy: card.claimedBy,
+            agentName: session?.name ?? session?.clientName ?? null,
+            leaseUntil,
+          });
+        }
+        return { count, notifications };
       });
-      if (result.count === 0) continue;
-      cleared += result.count;
-      const session =
-        card.claimedBySessionId === null
-          ? null
-          : await this.prisma.agentSession.findUnique({
-              where: { id: card.claimedBySessionId },
-              select: { name: true, clientName: true },
-            });
-      await this.attention.notifyClaimExpired({
-        boardId: card.column.boardId,
-        cardId: card.id,
-        cardTitle: card.title,
-        claimedBy: card.claimedBy,
-        agentName: session?.name ?? session?.clientName ?? null,
-        leaseUntil: card.leaseUntil,
-      });
+      cleared += outcome.count;
+      for (const notification of outcome.notifications) {
+        await this.attention.notifyClaimExpired(notification);
+      }
     }
     return cleared;
   }

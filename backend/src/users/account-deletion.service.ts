@@ -400,6 +400,7 @@ export class AccountDeletionService {
     ]);
     const affectedCards = [...new Set(blobs.map((blob) => blob.cardId))];
     const tokenKeys = tokens.map((token) => `token:${token.id}`);
+    const tokenIds = tokens.map((token) => token.id);
     const boardIds = [...new Set(memberships.map((row) => row.boardId))];
     const now = new Date();
 
@@ -516,10 +517,44 @@ export class AccountDeletionService {
               card: { select: { column: { select: { boardId: true } } } },
             },
           });
+          // TASK-200.10 review: every Card write below moves its board's
+          // `aggregateRevision` through the trigger. Lock that board too, or
+          // a concurrent command can cache a snapshot that misses this erase.
+          const cardBoardIds = async (): Promise<string[]> => {
+            const [assigneeCards, claimCards, affectedRows] = await Promise.all(
+              [
+                tx.card.findMany({
+                  where: { assigneeId: userId },
+                  select: { column: { select: { boardId: true } } },
+                }),
+                tx.card.findMany({
+                  where: {
+                    OR: [
+                      { claimedBy: userId },
+                      ...(tokenIds.length > 0
+                        ? [{ claimedByTokenId: { in: tokenIds } }]
+                        : []),
+                    ],
+                  },
+                  select: { column: { select: { boardId: true } } },
+                }),
+                affectedCards.length > 0
+                  ? tx.card.findMany({
+                      where: { id: { in: affectedCards } },
+                      select: { column: { select: { boardId: true } } },
+                    })
+                  : Promise.resolve([]),
+              ],
+            );
+            return [...assigneeCards, ...claimCards, ...affectedRows].map(
+              (row) => row.column.boardId,
+            );
+          };
           const lockedBoardIds = new Set([
             ...boardIds,
             ...authoredBefore.map((row) => row.card.column.boardId),
             ...editedBefore.map((row) => row.card.column.boardId),
+            ...(await cardBoardIds()),
           ]);
           await lockBoardWrites(tx, lockedBoardIds);
 
@@ -546,8 +581,27 @@ export class AccountDeletionService {
             ...authoredComments.map((row) => row.card.column.boardId),
             ...editedComments.map((row) => row.card.column.boardId),
           ].filter((boardId) => !lockedBoardIds.has(boardId));
-          if (discovered.length > 0) throw new EraseLockOrderRetry();
+          const discoveredCardBoards = (await cardBoardIds()).filter(
+            (boardId) => !lockedBoardIds.has(boardId),
+          );
+          if (discovered.length > 0 || discoveredCardBoards.length > 0) {
+            throw new EraseLockOrderRetry();
+          }
           const authoredIds = authoredComments.map((row) => row.id);
+
+          // TASK-200.10 review: the attachment rows were deleted earlier in
+          // this transaction; recount the badge now that the board lock is
+          // held, so the Card write that moves `aggregateRevision` cannot
+          // race a command's aggregate load.
+          for (const cardId of affectedCards) {
+            const live = await tx.attachment.count({
+              where: { cardId, ...CARD_ATTACHMENT_WHERE },
+            });
+            await tx.card.updateMany({
+              where: { id: cardId },
+              data: { attachmentCount: live },
+            });
+          }
 
           if (authoredIds.length > 0) {
             await deleteCommentActivitySnapshots(tx, authoredIds);
@@ -629,12 +683,7 @@ export class AccountDeletionService {
             where: { createdBy: userId, mode: "live", revokedAt: null },
             data: { revokedAt: now },
           });
-          await this.releaseClaims(
-            tx,
-            userId,
-            tokens.map((token) => token.id),
-            now,
-          );
+          await this.releaseClaims(tx, userId, tokenIds, now);
           await tx.user.delete({ where: { id: userId } });
           return true;
         });
@@ -659,15 +708,6 @@ export class AccountDeletionService {
         .catch(() => undefined);
     }
 
-    for (const cardId of affectedCards) {
-      const live = await this.prisma.attachment.count({
-        where: { cardId, ...CARD_ATTACHMENT_WHERE },
-      });
-      await this.prisma.card.updateMany({
-        where: { id: cardId },
-        data: { attachmentCount: live },
-      });
-    }
     for (const blob of blobs) {
       for (const name of [
         blob.storedName,
