@@ -15,21 +15,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   LRU-bounded cache (5000 PAT / 10000 membership / 64 flag entries). All
   writes and SSE connects bypass the PAT/membership cache, `expiresAt` is
   re-checked on every read, and a PAT that would expire inside the window is
-  not cached. Revoke, token edit/pause/resume/pause-all, role or membership
-  changes, board pause/resume, owner transfer and flag updates invalidate
-  synchronously on the writer and across replicas through a new
-  `janosik:cache-invalidate` control channel on the existing realtime bus;
-  a missed frame is bounded by the TTL. Membership events now double as
+  not cached, so a resolution cannot outlive the token. Revoke, token
+  edit/pause/resume/pause-all,
+  role or membership changes, board pause/resume, owner transfer and flag updates
+  invalidate synchronously on the writer and are propagated best-effort to other
+  replicas through a versioned `janosik:cache-invalidate` control channel on the
+  existing realtime bus (Redis required for prompt cross-replica invalidation;
+  otherwise the 10–30 s TTL is the bound). Membership events double as
   invalidation, so boards, invitations, admin membership edits and profile
-  updates need no cache plumbing. Agent (PAT) SSE streams default to
+  updates need no cache plumbing. Cold cache loads are single-flighted per key
+  and guarded by an epoch, so 500 simultaneous misses issue one query and a
+  revoke that races the query cannot write the older answer back. Agent (PAT)
+  SSE streams default to
   `presence=0` (browsers keep presence; `?presence=1` opts an agent back
   in), PAT keep-alive is 60 s while human streams stay at 25 s, both carry
-  jitter, a slow tick is skipped instead of stacking, one scheduler owns each
-  stream and module shutdown stops every timer. The SSE keep-alive reuses a
-  30 s joined-membership snapshot while token active/pause, JWT
-  expiry/stamp/family and log-head checks stay fresh. `.env.example`,
-  EN/RU self-hosting docs, TASK-200 evidence, unit/e2e coverage and the
-  CHANGELOG are updated.
+  jitter, a slow tick is skipped (and logged) instead of stacking, one scheduler
+  owns each stream and module shutdown stops every timer. The SSE keep-alive
+  reuses a 30 s membership/board snapshot while token active/pause, JWT
+  credential stamp/disable state, expiry/family and log-head checks stay fresh.
+  `.env.example`, EN/RU REST and self-hosting docs, TASK-200 evidence,
+  unit/e2e coverage and the CHANGELOG are updated.
 
 - TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
   bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default

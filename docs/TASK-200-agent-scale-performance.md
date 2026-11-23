@@ -250,11 +250,16 @@ workflow, create, смена workflow планом) добавляют один 
   флага применяются после чтения строки, поэтому строка безопасна для всех.
 - Инвалидация — control-plane канал `janosik:cache-invalidate` в
   существующем `RealtimeService`: локальные слушатели срабатывают
-  синхронно, Redis разносит кадр по репликам. Membership-кадры автоматически
-  инвалидируют `(board, user)`; token revoke/update/pause/resume/all и
-  `FeatureFlagsService.update` публикуют явно; admin-правки членства и
-  передача владельца — тоже. Без Redis один узел инвалидирует себя сам;
-  пропущенный кадр ограничен TTL.
+  синхронно, при наличии Redis версионированный кадр (v1) разносится по
+  репликам (без Redis — только TTL-граница на других узлах). Membership-кадры
+  автоматически инвалидируют `(board, user)`; token revoke/update/pause/resume/
+  pause-all/resume-all, password reset/change, OAuth claim, admin revoke/disable,
+  account deletion и `FeatureFlagsService.update` публикуют явно; admin-правки
+  членства и передача владельца — тоже. Пропущенный кадр ограничен TTL.
+- Загрузка кэша singleflight по ключу + epoch-guard: 500 одновременных
+  промахов дают один запрос, а инвалидация во время запроса не даёт записать
+  устаревший ответ. TTL не скользит: окно членства продлевается только
+  чтением из БД, не попаданием в кэш.
 - Bypass: PAT `authenticate({fresh})` для всех write-методов и SSE-коннекта;
   `MembershipGuard` читает членство из кэша только для обычных GET. Борда
   (`agentsPausedAt`) читается всегда свежей, а pause/resume проверяется на
@@ -265,23 +270,31 @@ workflow, create, смена workflow планом) добавляют один 
   ростер), JWT — как раньше `presence=1`. Ticks: 25 с для людей и 60 с для
   PAT, с jitter (2,5 с / 6 с) и overlap-guard; один
   `KeepAliveScheduler` на поток, `onModuleDestroy` останавливает все таймеры.
-  Keep-alive tick переиспользует join-снапшот членства на 30 с, но
-  token active/pause, JWT stamp/family и `verifyCaughtUp` остаются свежими.
+  Keep-alive tick переиспользует только `acceptedAt`/`expiresAt`/`board.deletedAt`
+  на 30 с; token active/pause, `passwordHash`/`disabledAt`/`email` для JWT-stamp,
+  expiry/family и `verifyCaughtUp` читаются свежими на каждом тике.
 - Тесты: `ttl-cache.spec.ts` (LRU/expiry), `hot-path-cache.spec.ts`
-  (инвалидация, изоляция тенантов, границы), `keep-alive.spec.ts`
-  (jitter/overlap/stop), `sse-timing.spec.ts` (25 s/60 s), `feature-flags.service.spec.ts` (500 чтений = 1
-  запрос, TTL, update, per-user), `api-token.service.spec.ts` (500 PAT =
-  1 lookup, fresh bypass, revoke/pause), `membership.guard.spec.ts`
-  (read-hit, write/SSE bypass, expired row, fresh role),
-  `events.controller.spec.ts` (presence default),
-  `task-200-5-auth-cache.e2e-spec.ts` (revoke только по TTL vs немедленно,
-  role/pause/flag invalidation, presence defaults). Mock-оценка: обычный
+  (инвалидация, изоляция тенантов, границы, singleflight/epoch),
+  `cache-invalidation.spec.ts` (локальный канал, membership-кадр, версия),
+  `keep-alive.spec.ts` (jitter/overlap/stop), `sse-timing.spec.ts` (25 s/60 s),
+  `feature-flags.service.spec.ts` (500 чтений и 500 конкурентных = 1 запрос,
+  TTL, update, per-user), `api-token.service.spec.ts` (500 PAT = 1 lookup,
+  fresh bypass, revoke/pause, инвалидация без изменённых строк),
+  `membership.guard.spec.ts` (read-hit без скольжения TTL, singleflight,
+  write/SSE bypass, expired row, fresh role),
+  `stream-access.service.spec.ts` (свежие password/disable поля при
+  закэшированном membership), `admin-cache-invalidation.spec.ts`,
+  `events.controller.spec.ts` (presence default, shutdown таймеров),
+  `env.spec.ts` (неотрицательные TTL/bounds), плюс
+  `task-200-5-auth-cache.e2e-spec.ts` (bootstrap DI, revoke только по TTL
+  vs немедленно, role/pause/flag invalidation, presence defaults, смена
+  пароля закрывает поток). Mock-оценка: обычный
   board GET с PAT — 1 запрос в steady-state (board) вместо 3 (PAT + board +
-  membership); 500 одинаковых PAT-чтений и 500 флаговых проверок дают по
-  одному lookup. SSE: 3 000 PAT-потоков тикают ~50 раз/с вместо ~120 при
-  25 с; человеческий 25-секундный тик попадает в кэш флагов/членства через
-  раз. Это mock/unit оценка; реальные 500 агентов и `pg_stat_statements` —
-  приёмка 200.15.
+  membership); 500 одинаковых/конкурентных PAT-чтений и флаговых проверок
+  дают по одному lookup. SSE: 3 000 PAT-потоков тикают ~50 раз/с вместо
+  ~120 при 25 с; человеческий 25-секундный тик попадает в кэш
+  флагов/членства через раз. Это mock/unit оценка; реальные 500 агентов и
+  `pg_stat_statements` — приёмка 200.15.
 
 ---
 

@@ -185,7 +185,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;          # realtime (SSE)
-        proxy_read_timeout 3600s;     # keep long-lived streams open
+        proxy_read_timeout 3600s;     # долгие потоки; больше 60-секундного keep-alive PAT
     }
 }
 ```
@@ -332,7 +332,7 @@ Yandex и Mail.ru нужен пароль приложения при включ
 | `SMTP_USER` | пусто | Пользователь SMTP. |
 | `SMTP_PASS` | пусто | Пароль SMTP. |
 | `SMTP_FROM` | `Janosik <no-reply@janosik.local>` | Заголовок From для исходящей почты. |
-| `REDIS_URL` | пусто | URL Redis для очередей BullMQ, рассылки realtime между узлами и общих счётчиков ограничения частоты и задержки входа. Пусто означает внутрипроцессную очередь и счётчики в каждом процессе. |
+| `REDIS_URL` | пусто | URL Redis для очередей BullMQ, рассылки realtime и инвалидации кэшей auth/членства/флагов между узлами, а также общих счётчиков ограничения частоты и задержки входа. Пусто означает внутрипроцессную очередь, счётчики в каждом процессе и инвалидацию кэшей только по TTL на каждой реплике. |
 | `QUEUES_DASHBOARD` | `false` | Монтирует дашборд очередей Bull Board по `/api/v1/admin/queues`. Только для владельца. |
 | `SETTINGS_SECRET` | пусто | Шифрует учётные данные, сохранённые из панели мастера. При пустом значении выводится из `JWT_SECRET`. |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | Публичный базовый URL интерфейса. Строит callback-URL для OAuth. Compose по умолчанию задаёт `http://localhost:3000`. |

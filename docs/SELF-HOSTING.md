@@ -165,7 +165,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;          # realtime (SSE)
-        proxy_read_timeout 3600s;     # keep long-lived streams open
+        proxy_read_timeout 3600s;     # keep long-lived streams open; must exceed the 60 s PAT keep-alive
     }
 }
 ```
@@ -388,7 +388,10 @@ board event fan-out is already cross-node (TASK-74) and BullMQ workers spread
 across replicas, so you can run several API replicas behind a load balancer:
 drop the host `ports:` mapping from the `app` service and let the balancer reach
 the replicas on the container network (or run them under an orchestrator), and
-set `TRUST_PROXY=1`. Keep the Postgres budget in mind — `DB_CONNECTION_LIMIT`
+set `TRUST_PROXY=1`. Redis also carries the auth/membership/feature-flag cache
+invalidations between replicas; without it each replica still bounds staleness
+by its 10–30 s TTL, but a revoke/role change is only prompt on the node that
+performed it. Keep the Postgres budget in mind — `DB_CONNECTION_LIMIT`
 (per process) × replicas must stay under `POSTGRES_MAX_CONNECTIONS`. One
 limitation remains: **presence** (the list of people on a board) is stored per
 node until shared Redis storage is implemented, so the roster can differ

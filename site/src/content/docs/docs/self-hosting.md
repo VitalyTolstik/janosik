@@ -181,7 +181,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;          # realtime (SSE)
-        proxy_read_timeout 3600s;     # keep long-lived streams open
+        proxy_read_timeout 3600s;     # keep long-lived streams open; must exceed the 60 s PAT keep-alive
     }
 }
 ```
@@ -325,7 +325,7 @@ compose stack fills the ones it needs from `.env`.
 | `SMTP_USER` | empty | SMTP user. |
 | `SMTP_PASS` | empty | SMTP password. |
 | `SMTP_FROM` | `Janosik <no-reply@janosik.local>` | From header for outgoing mail. |
-| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue and per-process counters. |
+| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out and auth/membership/flag cache invalidation across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue, per-process counters, and per-replica TTL-only cache invalidation. |
 | `QUEUES_DASHBOARD` | `false` | Mount the Bull Board queue dashboard at `/api/v1/admin/queues`. Owner only. |
 | `SETTINGS_SECRET` | empty | Encrypts credentials saved from the master panel. Derived from `JWT_SECRET` when unset. |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | Public base URL of the UI. Builds OAuth callback URLs. Compose defaults it to `http://localhost:3000`. |
