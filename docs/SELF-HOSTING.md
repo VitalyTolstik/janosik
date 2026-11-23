@@ -12,17 +12,19 @@ HTTPS, day-2 operations (upgrades, backups) and troubleshooting.
 
 ## What you get
 
-`docker compose up -d` starts three containers:
+`docker compose up -d` starts three containers by default. A fourth, the
+optional MCP gateway in the table, is enabled with `--profile mcp`:
 
 | Service | Image | Role |
 | --- | --- | --- |
 | `app` | `ghcr.io/vitalytolstik/janosik` | The whole application: NestJS API under `/api/v1`, the built SPA, the master panel at `/app/admin`, background jobs. Serves on port `3000`. |
+| `mcp` (profile `mcp`) | `ghcr.io/vitalytolstik/janosik-mcp` | Shared MCP Streamable HTTP gateway for many agents. Serves `/mcp` on port `8080`, plus `/health` and `/ready`. |
 | `postgres` | `postgres:16-alpine` | The database (boards, users, command log, audit). |
 | `redis` | `redis:7-alpine` | Job queues (mail, video transcoding, maintenance, exports). |
 
-`postgres` and `redis` are **not** published to the host — only the app port
-is exposed. On boot the `app` container applies database migrations, then
-starts the API.
+`postgres` and `redis` are **not** published to the host. The app port is
+published by default; the optional gateway publishes `127.0.0.1:8080` only.
+On boot the `app` container applies database migrations, then starts the API.
 
 ---
 
@@ -246,6 +248,96 @@ on another machine or in a container, its `localhost` refers to that machine
 or container; use a reachable HTTPS origin instead. Use a separate scoped key
 per agent. See [the MCP guide](../mcp/README.md) for client configuration and
 optional toolsets.
+
+#### Many agents: shared HTTP gateway
+
+One stdio process per agent costs roughly 100 MB each, so a swarm on one host
+should use the optional gateway container instead. It is a separate process
+from the API (a gateway crash cannot take down board writes) and serves many
+MCP sessions from one Node process:
+
+```bash
+docker compose --profile mcp up -d
+# MCP endpoint: http://127.0.0.1:8080/mcp (only bound to the host by default)
+
+# plain Docker alternative (20 s stop timeout matches the drain window).
+# `host.docker.internal` works on Docker Desktop; on Linux use the host IP.
+docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
+  -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
+```
+
+Each client connects to that URL with its **own** personal key in an
+`Authorization: Bearer jnk_…` header; the gateway never receives a shared
+`JANOSIK_TOKEN` (it may be absent; if present it is ignored with a warning).
+Admission is local before the API: a global cap, a per-key cap (default
+`min(50, MAX_SESSIONS)` sessions), per-IP and per-token initialize buckets,
+and a short negative cache
+for invalid fingerprints. Only then does the gateway call the API
+`/api/v1/auth/me` (invalid keys `401`, API rate limits `429`, outage `503`);
+concurrent initializes for one key share one call and a one-shot API
+`429`/`503` is retried within a small `Retry-After` bound. The key is then
+bound to the MCP session, and a different key on the same session gets `403`.
+Configure the MCP client's remote/URL transport with the header, for example:
+
+```json
+{
+  "mcpServers": {
+    "janosik": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer jnk_your_personal_key" }
+    }
+  }
+}
+```
+
+For production, terminate TLS in front of port 8080 and set
+`JANOSIK_MCP_BIND_ADDRESS=127.0.0.1`. The proxy runs on the host and forwards
+to `127.0.0.1:8080`; clients use the public `https://…/mcp` URL, never the
+Compose service name or the internal port. Turn proxy buffering off and set a
+read timeout above the longest tool call: a successful MCP POST is an SSE
+stream and long `janosik_wait_for_work` calls send keepalives, not a JSON
+body; gateway errors are JSON. SSE uses `no-cache, no-transform`, while errors
+and health use `no-store`. If a browser-based MCP client must call it, list
+its origin in `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects all
+browser origins.
+Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
+`JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default `min(50, MAX_SESSIONS)`;
+`0` = unlimited), `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and
+`JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) in `.env`. A key's
+default 10 initialize attempts/min is below its 50-session cap; raise
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must reach its per-key
+session cap immediately.
+`GET /ready` proves the API is reachable; it does not validate a key.
+`GET /health` is liveness and reports `bodyReads.session` /
+`bodyReads.initialize` counters. Sessionless and tool bodies use separate
+per-IP/per-token budgets with global backstops; a full gate answers `503
+body_busy` + `Retry-After`; JSON-RPC batches are rejected. All `503`s carry
+`Retry-After`. During drain,
+unknown paths still answer `404` and disallowed origins `403`; other MCP
+requests get `503 shutting_down`.
+
+For a large first-time swarm, 500 keys inside one minute exceed the API's
+default `THROTTLE_LIMIT=300`; raise `THROTTLE_LIMIT`, the gateway's
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`, the 4/IP–32 global init body gates, the
+64 validation in-flight cap and any proxy/IP limits together, and use
+`JANOSIK_MCP_HTTP_TRUST_PROXY=1` behind a trusted proxy.
+
+**Sessions are in-memory.** Restarting the gateway container drops every MCP
+session; clients reconnect and initialize again. Multiple replicas need a
+session-affine proxy (or clients must accept reconnects), because there is no
+shared session store. The Compose service sets `stop_grace_period: 20s`
+(above the 10 s drain window), a 2 GB memory limit and 2 CPUs by default;
+override with `JANOSIK_MCP_MEM_LIMIT` / `JANOSIK_MCP_CPUS`.
+
+Sessions are independent: each has its own `JanosikClient` and token
+fingerprint, and an idle sweeper closes abandoned ones without ever sweeping
+an in-flight call or an open SSE stream. The API still enforces the key's
+board scope, role, preset and rate limit. Before exposing the gateway, check:
+TLS front, `127.0.0.1` bind, explicit origin allowlist, no shared
+`JANOSIK_TOKEN`, per-token cap, API `THROTTLE_LIMIT`, proxy body/read limits,
+and monitoring for `429`/`initialize_rate_limited`. See
+[the MCP guide](../mcp/README.md#shared-streamable-http-gateway) for the full
+environment table.
 
 ---
 
