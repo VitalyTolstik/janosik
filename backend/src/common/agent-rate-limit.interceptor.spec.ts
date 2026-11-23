@@ -3,6 +3,7 @@ import {
   type CallHandler,
   type ExecutionContext,
 } from "@nestjs/common";
+import { EventEmitter } from "node:events";
 import { lastValueFrom, of } from "rxjs";
 import type { Response } from "express";
 import {
@@ -11,7 +12,10 @@ import {
   setAgentTokenRateLimit,
   setBoardRateLimit,
 } from "@/config/rate-limit";
-import { resetBoardCommandQueues } from "./board-rate-limit";
+import {
+  resetBoardCommandQueues,
+  trackedBoardCommandQueues,
+} from "./board-rate-limit";
 import { resetRateLimits } from "./rate-limit";
 import {
   AgentRateLimitInterceptor,
@@ -20,18 +24,22 @@ import {
   isQueueableCommand,
 } from "./agent-rate-limit.interceptor";
 
-function context(request: Record<string, unknown>) {
+function context(requestInit: Record<string, unknown>) {
   const headers = new Map<string, unknown>();
-  const response = {
+  const request = Object.assign(new EventEmitter(), requestInit);
+  const response = Object.assign(new EventEmitter(), {
+    writableEnded: false,
     setHeader: (name: string, value: unknown) => headers.set(name, value),
     getHeader: (name: string) => headers.get(name),
-  } as unknown as Response;
+  }) as unknown as Response;
   const http = {
     getRequest: () => request,
     getResponse: () => response,
   };
   return {
     headers,
+    request,
+    response,
     context: {
       getType: () => "http",
       switchToHttp: () => http,
@@ -39,9 +47,9 @@ function context(request: Record<string, unknown>) {
   };
 }
 
-async function run(ctx: ExecutionContext) {
+async function run(ctx: ExecutionContext, handler: CallHandler = next) {
   return lastValueFrom(
-    await new AgentRateLimitInterceptor().intercept(ctx, next),
+    await new AgentRateLimitInterceptor().intercept(ctx, handler),
   );
 }
 
@@ -151,7 +159,7 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       Promise.all(agents.map((agent) => run(agent.context))),
     ).resolves.toHaveLength(100);
 
-    // One abusive key burns its 20-request token budget.
+    // One abusive key burns its two-request token budget.
     setAgentTokenRateLimit(2);
     const noisy = context({
       auth: { via: "pat", apiTokenId: "noisy" },
@@ -173,6 +181,66 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       originalUrl: "/api/v1/boards/swarm",
       params: { id: "swarm" },
       agentSession: { id: "quiet-session" },
+    });
+    await expect(run(quiet.context)).resolves.toEqual({ ok: true });
+  });
+
+  it("charges a batch by its command count on the board budget", async () => {
+    setBoardRateLimit(4);
+    setAgentTokenRateLimit(100);
+    setAgentCommandQueueMs(0);
+    const batch = (commandCount: number) =>
+      context({
+        auth: { via: "pat", apiTokenId: "batch-token" },
+        method: "POST",
+        originalUrl: "/api/v1/boards/b1/commands/batch",
+        params: { id: "b1" },
+        body: { commands: Array.from({ length: commandCount }, () => ({})) },
+      });
+
+    const first = batch(2);
+    await expect(run(first.context)).resolves.toEqual({ ok: true });
+    expect(first.headers.get("X-RateLimit-Remaining")).toBe(2);
+
+    const single = context({
+      auth: { via: "pat", apiTokenId: "batch-token" },
+      method: "POST",
+      originalUrl: "/api/v1/boards/b1/commands",
+      params: { id: "b1" },
+      body: { action: {} },
+    });
+    await expect(run(single.context)).resolves.toEqual({ ok: true });
+
+    // Two more commands need two tokens; only one is left, and a queue wait
+    // of zero must answer 503 instead of admitting the amplified request.
+    const denied = asHttpException(
+      await run(batch(2).context).catch((error) => error),
+    );
+    expect(denied.getStatus()).toBe(503);
+    expect(denied.getResponse()).toMatchObject({
+      code: "rate_limited",
+      scope: "board",
+      retryable: true,
+    });
+
+    // The batch's weight also applies to its token budget.
+    resetRateLimits();
+    setBoardRateLimit(1000);
+    setAgentTokenRateLimit(3);
+    await expect(run(batch(2).context)).resolves.toEqual({ ok: true });
+    const tokenDenied = asHttpException(
+      await run(batch(2).context).catch((error) => error),
+    );
+    expect(tokenDenied.getStatus()).toBe(429);
+    expect(tokenDenied.getResponse()).toMatchObject({ scope: "token" });
+
+    // A parallel quiet token still fits on the same board.
+    const quiet = context({
+      auth: { via: "pat", apiTokenId: "quiet-batch-token" },
+      method: "POST",
+      originalUrl: "/api/v1/boards/b1/commands/batch",
+      params: { id: "b1" },
+      body: { commands: [{}] },
     });
     await expect(run(quiet.context)).resolves.toEqual({ ok: true });
   });
@@ -219,6 +287,31 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       await run(read.context).catch((error) => error),
     );
     expect(readDenied.getStatus()).toBe(429);
+  });
+
+  it("drops a queued command when the client aborts the request", async () => {
+    setBoardRateLimit(1);
+    setAgentCommandQueueMs(30_000);
+    const command = {
+      auth: { via: "pat", apiTokenId: "abort-token" },
+      method: "POST",
+      originalUrl: "/api/v1/boards/b1/commands",
+      params: { id: "b1" },
+    };
+    await expect(run(context(command).context)).resolves.toEqual({ ok: true });
+
+    const handler: CallHandler = { handle: jest.fn(() => of({ ok: true })) };
+    const second = context(command);
+    const pending = run(second.context, handler).catch((error) => error);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(trackedBoardCommandQueues()).toBe(1);
+    second.request.emit("aborted");
+
+    const error = asHttpException(await pending);
+    expect(error.getStatus()).toBe(408);
+    expect(handler.handle).not.toHaveBeenCalled();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(trackedBoardCommandQueues()).toBe(0);
   });
 
   it("uses only verified sessions, never untrusted path or query IDs", () => {

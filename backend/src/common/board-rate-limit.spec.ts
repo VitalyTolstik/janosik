@@ -1,9 +1,14 @@
 import {
+  applyRateLimitHeaders,
   consumeBoardRateLimit,
   rateLimitQueueException,
   resetRateLimits,
+  trackedRateLimitBuckets,
+  type RateLimitHeaderSink,
 } from "./rate-limit";
 import {
+  BoardCommandQueueAbortedError,
+  BoardCommandQueueFullError,
   enqueueBoardCommand,
   resetBoardCommandQueues,
   trackedBoardCommandQueues,
@@ -55,6 +60,62 @@ describe("consumeBoardRateLimit", () => {
     const decision = consumeBoardRateLimit("b1", 0, 60_000, T0);
     expect(decision.allowed).toBe(false);
     expect(decision.retryAfter).toBe(60);
+  });
+
+  it("charges a batch by its command count", () => {
+    // 60/min: a 10-command batch spends 10 tokens.
+    const batch = consumeBoardRateLimit("b1", 60, 60_000, T0, 10);
+    expect(batch).toMatchObject({ allowed: true, remaining: 50 });
+    const rest = consumeBoardRateLimit("b1", 60, 60_000, T0, 50);
+    expect(rest.allowed).toBe(true);
+    expect(rest.remaining).toBe(0);
+    // One more command now needs a whole refill token and is refused.
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0).allowed).toBe(false);
+    // A batch larger than the bucket cannot pass at once either.
+    expect(consumeBoardRateLimit("b2", 5, 60_000, T0, 6).allowed).toBe(false);
+  });
+
+  it("does not refill when the clock moves backwards", () => {
+    for (let i = 0; i < 60; i += 1) {
+      consumeBoardRateLimit("b1", 60, 60_000, T0);
+    }
+    // Replaying an earlier timestamp must not rewind `updatedAt`; otherwise
+    // the next forward tick would credit the same elapsed time twice.
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0 - 1_000).allowed).toBe(
+      false,
+    );
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0 + 500).allowed).toBe(
+      false,
+    );
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0 + 1_000).allowed).toBe(
+      true,
+    );
+  });
+
+  it("reports RateLimit-Reset as the next token while a board token is free", () => {
+    const headers = new Map<string, unknown>();
+    const response: RateLimitHeaderSink = {
+      setHeader: (name, value) => headers.set(name, value),
+      getHeader: (name) =>
+        headers.get(name) as string | number | string[] | undefined,
+    };
+    const board = consumeBoardRateLimit("b1", 60, 60_000, T0);
+    expect(board.retryAfter).toBe(0);
+    applyRateLimitHeaders(response, board);
+    expect(headers.get("RateLimit-Reset")).toBe(0);
+    expect(headers.get("X-RateLimit-Reset")).toBe(
+      Math.ceil((T0 + 1_000) / 1000),
+    );
+  });
+
+  it("bounds the continuously refilling board map", () => {
+    for (let i = 0; i < 20_000; i += 1) {
+      consumeBoardRateLimit(`b${i}`, 5, 60_000, T0);
+    }
+    expect(trackedRateLimitBuckets()).toBeLessThanOrEqual(20_000);
+    expect(consumeBoardRateLimit("fresh", 5, 60_000, T0 + 1).allowed).toBe(
+      true,
+    );
   });
 });
 
@@ -120,6 +181,67 @@ describe("waitForBoardRateLimit", () => {
       retryAfter: 1,
       scope: "board",
     });
+    // The token that became free at the deadline was not spent by the
+    // exhausted waiter; the next request can still use it.
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0 + 1_000).allowed).toBe(
+      true,
+    );
+  });
+
+  it("checks the deadline before the first consume", async () => {
+    const clock = fakeClock(T0 + 2_000);
+    const outcome = await waitForBoardRateLimit("b1", {
+      limit: 2,
+      deadline: T0 + 1_000,
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(outcome.decision.allowed).toBe(false);
+    expect(outcome.decision.retryAfter).toBeGreaterThanOrEqual(1);
+    expect(outcome.waitedMs).toBe(0);
+    expect(clock.sleeps).toEqual([]);
+    // The expired request did not spend one of the two tokens.
+    expect(consumeBoardRateLimit("b1", 2, 60_000, T0 + 2_000)).toMatchObject({
+      allowed: true,
+      remaining: 1,
+    });
+  });
+
+  it("does not spend a token when the queue wait reaches the deadline", async () => {
+    for (let i = 0; i < 60; i += 1) {
+      consumeBoardRateLimit("b1", 60, 60_000, T0);
+    }
+    const clock = fakeClock(T0);
+    const outcome = await waitForBoardRateLimit("b1", {
+      limit: 60,
+      deadline: T0 + 1_000,
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(outcome.decision.allowed).toBe(false);
+    expect(outcome.waitedMs).toBe(1_000);
+    // Exactly one token refilled at the deadline; the waiter must leave it
+    // for the retry rather than consuming it after its budget expired.
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0 + 1_000).allowed).toBe(
+      true,
+    );
+  });
+
+  it("spends a batch's whole cost only when enough tokens are available", async () => {
+    for (let i = 0; i < 60; i += 1) {
+      consumeBoardRateLimit("b1", 60, 60_000, T0);
+    }
+    const clock = fakeClock(T0);
+    const outcome = await waitForBoardRateLimit("b1", {
+      limit: 60,
+      cost: 2,
+      deadline: T0 + 5_000,
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(outcome.decision.allowed).toBe(true);
+    expect(outcome.waitedMs).toBe(2_000);
+    expect(outcome.decision.remaining).toBe(0);
   });
 });
 
@@ -154,5 +276,65 @@ describe("enqueueBoardCommand", () => {
     await expect(enqueueBoardCommand("b1", async () => "ok")).resolves.toBe(
       "ok",
     );
+  });
+
+  it("rejects a new waiter immediately when the board queue is full", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let ran = false;
+    const first = enqueueBoardCommand("b1", () => gate, { maxDepth: 1 });
+    await expect(
+      enqueueBoardCommand(
+        "b1",
+        async () => {
+          ran = true;
+          return "never";
+        },
+        { maxDepth: 1 },
+      ),
+    ).rejects.toBeInstanceOf(BoardCommandQueueFullError);
+    expect(ran).toBe(false);
+    release();
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(trackedBoardCommandQueues()).toBe(0);
+  });
+
+  it("does not execute an aborted waiter", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = enqueueBoardCommand("b1", () => gate);
+    const controller = new AbortController();
+    let ran = false;
+    const second = enqueueBoardCommand(
+      "b1",
+      async () => {
+        ran = true;
+        return "never";
+      },
+      { signal: controller.signal },
+    );
+    controller.abort();
+    await expect(second).rejects.toBeInstanceOf(BoardCommandQueueAbortedError);
+    release();
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ran).toBe(false);
+    expect(trackedBoardCommandQueues()).toBe(0);
+  });
+
+  it("rejects an already-aborted waiter before it enters the queue", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const task = jest.fn(async () => "never");
+    await expect(
+      enqueueBoardCommand("b1", task, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(BoardCommandQueueAbortedError);
+    expect(task).not.toHaveBeenCalled();
+    expect(trackedBoardCommandQueues()).toBe(0);
   });
 });

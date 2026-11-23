@@ -16,7 +16,10 @@ import { throttleLimit } from "./throttle";
  *
  * - session: `max(600, THROTTLE_LIMIT)` — one runaway agent session;
  * - token:   `max(600, ceil(THROTTLE_LIMIT / 4))` — one abusive key cannot
- *   consume a board; a token is usually shared by one agent/run;
+ *   consume a board; a token is usually shared by one agent/run. An explicit
+ *   token `rateLimitPerMinute` is a ceiling too: the effective budget is
+ *   `min(explicit, derived)`, so a 100k/min PAT cannot bypass the share when
+ *   `THROTTLE_LIMIT` is raised;
  * - board:   `max(12000, 2 × THROTTLE_LIMIT)` — a high safety ceiling for
  *   every agent on that board together;
  * - command queue: 1500 ms — a burst waits briefly for the board bucket to
@@ -48,8 +51,8 @@ export function deriveAgentSessionRateLimit(
  * keys a PAT separately, so this bucket matters most when an operator raises
  * `THROTTLE_LIMIT` for a swarm: a key without an explicit
  * `rateLimitPerMinute` then keeps a quarter of the global window instead of
- * inheriting the whole of it. A key with an explicit limit keeps that limit;
- * the default never silently tightens an operator's choice.
+ * inheriting the whole of it. An explicit limit is a ceiling as well; use
+ * {@link effectiveAgentTokenRateLimit} so it cannot exceed the derived share.
  */
 export function deriveAgentTokenRateLimit(
   globalLimit: number,
@@ -60,6 +63,20 @@ export function deriveAgentTokenRateLimit(
     AGENT_TOKEN_RATE_LIMIT_MIN,
     Math.ceil(globalLimit / AGENT_TOKEN_RATE_LIMIT_DIVISOR),
   );
+}
+
+/**
+ * The budget a token may actually spend: the tighter of its explicit
+ * `rateLimitPerMinute` and the derived share. `null`/`undefined` means the key
+ * has no explicit limit, so the derived share is its budget.
+ */
+export function effectiveAgentTokenRateLimit(
+  explicit: number | null | undefined,
+  derived: number = agentTokenRateLimit(),
+): number {
+  return explicit === null || explicit === undefined
+    ? derived
+    : Math.min(explicit, derived);
 }
 
 /**

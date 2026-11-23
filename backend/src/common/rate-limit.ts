@@ -32,13 +32,22 @@ export interface RateLimitDecision {
   limit: number;
   /** Requests still allowed in the current window (never negative). */
   remaining: number;
-  /** Unix timestamp (ms) when the current window resets. */
+  /**
+   * Unix timestamp (ms) when the bucket is whole again: the fixed window's
+   * end, or the moment the continuously refilling board bucket is full.
+   */
   resetAt: number;
-  /** Whole seconds until the reset, at least 1 (`Retry-After`). */
+  /**
+   * Whole seconds until the next admission (`Retry-After`), at least 1 when
+   * the request is denied. For an allowed board token bucket this is `0`,
+   * because a token is available now; for a fixed window it is the time to
+   * the window reset. The IETF-style `RateLimit-Reset` header uses it.
+   */
   retryAfter: number;
   /**
    * TASK-200.3: for the continuously refilling board bucket, the instant the
-   * next request becomes admissible. Fixed-window buckets leave it unset.
+   * next request (or the next `cost` tokens) becomes admissible. Fixed-window
+   * buckets leave it unset.
    */
   nextTokenAt?: number;
 }
@@ -68,9 +77,11 @@ const buckets = new Map<string, Bucket>();
 const boardBuckets = new Map<string, BoardBucket>();
 
 /**
- * Count one request against `scope:key` and describe the resulting budget.
+ * Count `cost` units against `scope:key` and describe the resulting budget.
  * A denied request still advances the counter — the bucket is already over
- * its ceiling, and the reset time does not move.
+ * its ceiling, and the reset time does not move. TASK-200.3 charges a command
+ * batch by its command count, so one request cannot spend a whole window's
+ * budget for the work of a hundred commands.
  */
 export function consumeRateLimit(
   scope: RateLimitScope,
@@ -78,7 +89,9 @@ export function consumeRateLimit(
   limitPerWindow: number,
   windowMs: number = RATE_LIMIT_WINDOW_MS,
   now: number = Date.now(),
+  cost: number = 1,
 ): RateLimitDecision {
+  const weight = Math.max(1, Math.floor(cost));
   const storageKey = `${scope}:${key}`;
   let bucket = buckets.get(storageKey);
   if (bucket === undefined || bucket.resetAt <= now) {
@@ -86,7 +99,7 @@ export function consumeRateLimit(
     bucket = { count: 0, resetAt: now + windowMs };
     buckets.set(storageKey, bucket);
   }
-  bucket.count += 1;
+  bucket.count += weight;
   const remaining = Math.max(0, limitPerWindow - bucket.count);
   return {
     scope,
@@ -99,18 +112,20 @@ export function consumeRateLimit(
 }
 
 /**
- * TASK-200.3: count one request against a board's continuously refilling
+ * TASK-200.3: count `cost` units against a board's continuously refilling
  * bucket. The capacity is the configured per-minute limit, so a swarm may
  * still burst up to a full minute's budget; the refill rate makes an
  * over-budget command admissible again within milliseconds instead of waiting
- * for a window boundary.
+ * for a window boundary. A batch is charged by its command count.
  */
 export function consumeBoardRateLimit(
   key: string,
   limitPerWindow: number,
   windowMs: number = RATE_LIMIT_WINDOW_MS,
   now: number = Date.now(),
+  cost: number = 1,
 ): RateLimitDecision {
+  const weight = Math.max(1, Math.floor(cost));
   if (limitPerWindow <= 0) {
     return {
       scope: "board",
@@ -128,26 +143,103 @@ export function consumeBoardRateLimit(
     bucket = { tokens: limitPerWindow, updatedAt: now };
     boardBuckets.set(key, bucket);
   } else {
-    const elapsed = Math.max(0, now - bucket.updatedAt);
-    bucket.tokens = Math.min(
-      limitPerWindow,
-      bucket.tokens + elapsed * (limitPerWindow / windowMs),
-    );
-    bucket.updatedAt = now;
+    refillBoardBucket(bucket, limitPerWindow, windowMs, now);
   }
-  const allowed = bucket.tokens >= 1;
-  if (allowed) bucket.tokens -= 1;
+  const decision = describeBoardBucket(
+    bucket.tokens,
+    limitPerWindow,
+    windowMs,
+    now,
+    weight,
+    true,
+  );
+  if (decision.allowed) bucket.tokens -= weight;
+  // A backwards clock must not rewind the refill origin: doing so would
+  // credit the same elapsed time twice on the next forward tick.
+  bucket.updatedAt = Math.max(bucket.updatedAt, now);
+  return decision;
+}
+
+/**
+ * Inspect a board's budget without spending a token. The queue uses this to
+ * answer `503` when a request's deadline has already passed.
+ */
+export function inspectBoardRateLimit(
+  key: string,
+  limitPerWindow: number,
+  windowMs: number = RATE_LIMIT_WINDOW_MS,
+  now: number = Date.now(),
+  cost: number = 1,
+): RateLimitDecision {
+  const weight = Math.max(1, Math.floor(cost));
+  if (limitPerWindow <= 0) {
+    return {
+      scope: "board",
+      allowed: false,
+      limit: limitPerWindow,
+      remaining: 0,
+      resetAt: now + windowMs,
+      retryAfter: Math.max(1, Math.ceil(windowMs / 1000)),
+      nextTokenAt: now + windowMs,
+    };
+  }
+  const bucket = boardBuckets.get(key);
+  const tokens =
+    bucket === undefined
+      ? limitPerWindow
+      : Math.min(
+          limitPerWindow,
+          bucket.tokens +
+            Math.max(0, now - bucket.updatedAt) * (limitPerWindow / windowMs),
+        );
+  return describeBoardBucket(
+    tokens,
+    limitPerWindow,
+    windowMs,
+    now,
+    weight,
+    false,
+  );
+}
+
+/** Refill in place; a backwards clock contributes no elapsed time. */
+function refillBoardBucket(
+  bucket: BoardBucket,
+  limitPerWindow: number,
+  windowMs: number,
+  now: number,
+): void {
+  const elapsed = Math.max(0, now - bucket.updatedAt);
+  bucket.tokens = Math.min(
+    limitPerWindow,
+    bucket.tokens + elapsed * (limitPerWindow / windowMs),
+  );
+}
+
+/** Shape one board decision from an already-refilled token count. */
+function describeBoardBucket(
+  tokens: number,
+  limitPerWindow: number,
+  windowMs: number,
+  now: number,
+  cost: number,
+  spend: boolean,
+): RateLimitDecision {
   const rate = limitPerWindow / windowMs;
-  const msToNextToken = allowed ? 0 : (1 - bucket.tokens) / rate;
-  const msToFull = (limitPerWindow - bucket.tokens) / rate;
+  const allowed = tokens >= cost;
+  const available = spend && allowed ? tokens - cost : tokens;
+  const msToNextToken = allowed ? 0 : (cost - tokens) / rate;
+  const msToFull = (limitPerWindow - available) / rate;
   const nextTokenAt = now + Math.max(0, Math.ceil(msToNextToken));
   return {
     scope: "board",
     allowed,
     limit: limitPerWindow,
-    remaining: Math.max(0, Math.floor(bucket.tokens)),
+    remaining: Math.max(0, Math.floor(available)),
     resetAt: now + Math.max(1, Math.ceil(msToFull)),
-    retryAfter: Math.max(1, Math.ceil(msToNextToken / 1000)),
+    // An allowed board request has a token now; `RateLimit-Reset` is 0 until
+    // the bucket is actually exhausted again.
+    retryAfter: allowed ? 0 : Math.max(1, Math.ceil(msToNextToken / 1000)),
     nextTokenAt,
   };
 }
@@ -250,8 +342,13 @@ export function mirrorStandardRateLimitHeaders(
  * Put the budget on the response.
  *
  * Two families are written: the ADR's `X-RateLimit-*` (`Reset` is a Unix
- * timestamp in seconds) and the IETF-style `RateLimit-*` (`Reset` is seconds
- * until reset). `Retry-After` is added only when the request was denied.
+ * timestamp in seconds) and the IETF-style `RateLimit-*`. TASK-200.3 pins the
+ * `RateLimit-Reset` semantics: seconds until the next admission for the
+ * continuously refilling board bucket (0 while a token is available), and
+ * seconds until the window reset for fixed buckets. `X-RateLimit-Reset` keeps
+ * naming when the bucket is whole again (the fixed window end / full board
+ * bucket), which is not the same instant. `Retry-After` is added only when
+ * the request was denied.
  *
  * With `onlyIfTighter` the headers are not overwritten when the existing
  * global throttle already describes a lower ceiling — the response then
@@ -331,4 +428,11 @@ export function rateLimitQueueException(
 /** Request property the scoped limiter and the request log share. */
 export interface RateLimitedRequest {
   rateLimit?: RateLimitDecision;
+  /**
+   * TASK-200.3: true when the request was refused with the `rate_limited`
+   * envelope. A `503` can also mean `board_write_timeout`, which is a real
+   * server error, so telemetry cannot infer backpressure from the status
+   * alone (an allowed request may carry budget headers and later fail).
+   */
+  rateLimited?: boolean;
 }

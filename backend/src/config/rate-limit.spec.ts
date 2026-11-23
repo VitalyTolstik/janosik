@@ -10,6 +10,7 @@ import {
   deriveAgentSessionRateLimit,
   deriveAgentTokenRateLimit,
   deriveBoardRateLimit,
+  effectiveAgentTokenRateLimit,
   setAgentCommandQueueMs,
   setAgentSessionRateLimit,
   setAgentTokenRateLimit,
@@ -37,6 +38,15 @@ describe("agent budget derivations", () => {
     expect(deriveBoardRateLimit(12_000, 0)).toBe(24_000);
     // A pinned positive value always wins.
     expect(deriveAgentTokenRateLimit(12_000, 900)).toBe(900);
+  });
+
+  it("caps an explicit token limit at the derived share", () => {
+    // A 100k/min PAT must not outspend the swarm share when the global
+    // limit is raised: the tighter budget wins.
+    expect(effectiveAgentTokenRateLimit(100_000, 3_000)).toBe(3_000);
+    expect(effectiveAgentTokenRateLimit(120, 600)).toBe(120);
+    expect(effectiveAgentTokenRateLimit(null, 600)).toBe(600);
+    expect(effectiveAgentTokenRateLimit(undefined, 600)).toBe(600);
   });
 });
 

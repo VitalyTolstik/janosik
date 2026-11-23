@@ -104,11 +104,10 @@ const jwtSecret = makeValidator((v) => {
 });
 
 // TASK-156: the pool cap must be a whole, non-negative number (`0` means
-// "leave Prisma's default alone").
+// "leave Prisma's default alone"). An empty value has always meant 0 (envalid
+// passes the empty string through), so keep that for existing knobs such as
+// `DB_CONNECTION_LIMIT` and `MAX_BOARDS_PER_USER`.
 export function parseNonNegativeInt(v: string): number {
-  if (v.trim() === "") {
-    throw new Error("must be a non-negative integer");
-  }
   const parsed = Number(v);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error("must be a non-negative integer");
@@ -117,6 +116,29 @@ export function parseNonNegativeInt(v: string): number {
 }
 
 const nonNegativeInt = makeValidator(parseNonNegativeInt);
+
+/**
+ * A non-negative whole number with an upper bound, used by the TASK-200.3
+ * agent-budget knobs. A typo such as a millisecond value in a requests-per-
+ * minute field must fail at boot instead of silently loosening the guard.
+ */
+export function parseBoundedNonNegativeInt(v: string, maximum: number): number {
+  const parsed = parseNonNegativeInt(v);
+  if (parsed > maximum) {
+    throw new Error(
+      `must be a non-negative integer no greater than ${maximum}`,
+    );
+  }
+  return parsed;
+}
+
+const budgetInt = (maximum: number) =>
+  makeValidator((v: string) => parseBoundedNonNegativeInt(v, maximum));
+
+/** Upper bounds for the TASK-200.3 agent budgets (requests per minute). */
+export const AGENT_BUDGET_MAX = 1_000_000;
+/** A command may queue for at most 30 seconds. */
+export const AGENT_COMMAND_QUEUE_MS_MAX = 30_000;
 
 /** A whole number strictly above zero (durations, retention windows, …). */
 export function parsePositiveInt(v: string): number {
@@ -189,24 +211,24 @@ export const env = cleanEnv(process.env, {
   // from the live global limit: session = max(600, THROTTLE_LIMIT), token =
   // max(600, THROTTLE_LIMIT/4), board = max(12000, 2 × THROTTLE_LIMIT). Set
   // positive values to pin them independently. Browser sessions are unaffected.
-  AGENT_SESSION_RATE_LIMIT: nonNegativeInt({
+  AGENT_SESSION_RATE_LIMIT: budgetInt(AGENT_BUDGET_MAX)({
     desc: "Per-agent-session request budget per minute; 0 = max(600, THROTTLE_LIMIT)",
     default: 0,
     example: "600",
   }),
-  AGENT_TOKEN_RATE_LIMIT: nonNegativeInt({
-    desc: "Per-token agent request budget per minute for keys without their own limit; 0 = max(600, THROTTLE_LIMIT/4)",
+  AGENT_TOKEN_RATE_LIMIT: budgetInt(AGENT_BUDGET_MAX)({
+    desc: "Per-token agent request budget per minute for keys without their own limit; 0 = max(600, ceil(THROTTLE_LIMIT/4))",
     default: 0,
     example: "1500",
   }),
-  BOARD_RATE_LIMIT: nonNegativeInt({
+  BOARD_RATE_LIMIT: budgetInt(AGENT_BUDGET_MAX)({
     desc: "Per-board agent request budget per minute (safety ceiling); 0 = max(12000, 2 × THROTTLE_LIMIT)",
     default: 0,
     example: "24000",
   }),
   // TASK-200.3: a command over the board budget waits this long for a refill
   // instead of failing at once. 0 = answer 503 with Retry-After immediately.
-  AGENT_COMMAND_QUEUE_MS: nonNegativeInt({
+  AGENT_COMMAND_QUEUE_MS: budgetInt(AGENT_COMMAND_QUEUE_MS_MAX)({
     desc: "Max time a command waits for the board agent budget before 503 Retry-After",
     default: 1500,
     example: "1500",

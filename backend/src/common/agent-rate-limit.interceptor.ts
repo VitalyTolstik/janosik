@@ -1,4 +1,6 @@
 import {
+  HttpException,
+  HttpStatus,
   Injectable,
   type CallHandler,
   type ExecutionContext,
@@ -23,7 +25,14 @@ import {
   agentTokenRateLimit,
   boardRateLimit,
 } from "@/config/rate-limit";
-import { enqueueBoardCommand, waitForBoardRateLimit } from "./board-rate-limit";
+import {
+  BoardCommandQueueAbortedError,
+  BoardCommandQueueFullError,
+  enqueueBoardCommand,
+  waitForBoardRateLimit,
+  type BoardRateLimitWait,
+} from "./board-rate-limit";
+import { commandRateLimitCost } from "./command-cost";
 
 /** The request bits this interceptor reads after the guards have run. */
 interface LimitedRequest extends Request, RateLimitedRequest {
@@ -75,14 +84,25 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
     // browser requests keep exactly the legacy global throttle.
     if (request.auth?.via !== "pat") return next.handle();
     let applied: RateLimitDecision | undefined;
+    // TASK-200.3: one batch/plan request executes up to 100 commands, so the
+    // agent budgets are charged by that work, not by the HTTP round-trip.
+    const cost = commandRateLimitCost(request);
 
     const consume = (
       scope: "token" | "session",
       key: string,
       limit: number,
       message: string,
+      weight: number = 1,
     ): void => {
-      const decision = consumeRateLimit(scope, key, limit);
+      const decision = consumeRateLimit(
+        scope,
+        key,
+        limit,
+        undefined,
+        undefined,
+        weight,
+      );
       request.rateLimit = decision;
       if (!decision.allowed) {
         applyRateLimitHeaders(response, decision);
@@ -94,8 +114,9 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
       }
     };
 
-    // TASK-200.3: an explicit per-token budget was already consumed by
-    // `JwtAuthGuard`; only keys without one get the default agent-token bucket.
+    // TASK-200.3: an explicit per-token budget is consumed by `JwtAuthGuard`
+    // with the same command cost, capped by the derived share. Only keys
+    // without an explicit limit get their token bucket here.
     const tokenId = request.auth.apiTokenId;
     const explicitTokenLimit = request.auth.tokenScope?.rateLimitPerMinute;
     if (tokenId !== undefined && explicitTokenLimit == null) {
@@ -104,6 +125,7 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
         tokenId,
         agentTokenRateLimit(),
         "Too many requests for this API token",
+        cost,
       );
     }
     const sessionId = agentSessionIdOf(request);
@@ -118,7 +140,13 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
     const boardId = boardIdOf(request);
     if (boardId !== undefined) {
       const limit = boardRateLimit();
-      const decision = consumeBoardRateLimit(boardId, limit);
+      const decision = consumeBoardRateLimit(
+        boardId,
+        limit,
+        undefined,
+        undefined,
+        cost,
+      );
       if (decision.allowed) {
         request.rateLimit = decision;
         if (applied === undefined || decision.remaining < applied.remaining) {
@@ -127,24 +155,66 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
       } else if (isQueueableCommand(request)) {
         // TASK-200.3: compute the deadline on arrival so time spent waiting
         // behind other commands counts against this request's budget. Normal
-        // commands never enter the queue; only a refused one waits for the
-        // next token.
+        // commands never enter the queue; only a refused one waits for enough
+        // tokens for its whole (possibly batched) work.
+        request.rateLimit = decision;
         const deadline = Date.now() + agentCommandQueueMs();
-        const outcome = await enqueueBoardCommand(boardId, () =>
-          waitForBoardRateLimit(boardId, { limit, deadline }),
-        );
+        const queuedAt = Date.now();
+        const abort = new AbortController();
+        const onAbort = (): void => abort.abort();
+        request.once("aborted", onAbort);
+        const onClose = (): void => {
+          // `close` also fires after a normal finish; only a connection that
+          // went away before the response completed cancels the waiter.
+          if (!response.writableEnded) abort.abort();
+        };
+        response.once("close", onClose);
+        let outcome: BoardRateLimitWait;
+        try {
+          outcome = await enqueueBoardCommand(
+            boardId,
+            () =>
+              waitForBoardRateLimit(boardId, {
+                limit,
+                deadline,
+                cost,
+                signal: abort.signal,
+              }),
+            { signal: abort.signal },
+          );
+        } catch (error) {
+          if (error instanceof BoardCommandQueueFullError) {
+            request.rateLimited = true;
+            applyRateLimitHeaders(response, decision);
+            throw rateLimitQueueException(
+              decision,
+              "The board command queue is full — retry the same command",
+            );
+          }
+          if (error instanceof BoardCommandQueueAbortedError) {
+            throw new HttpException(
+              "The request was aborted before its command was queued",
+              HttpStatus.REQUEST_TIMEOUT,
+            );
+          }
+          throw error;
+        } finally {
+          request.off("aborted", onAbort);
+          response.off("close", onClose);
+        }
         request.rateLimit = outcome.decision;
+        // TASK-200.3: report the whole queue-chain wait, not just the time
+        // this waiter spent after the earlier commands settled.
+        const queuedMs = Date.now() - queuedAt;
+        if (queuedMs >= 1) {
+          response.setHeader("X-RateLimit-Queued-Ms", Math.round(queuedMs));
+        }
         if (!outcome.decision.allowed) {
+          request.rateLimited = true;
           applyRateLimitHeaders(response, outcome.decision);
           throw rateLimitQueueException(
             outcome.decision,
             "The board is busy with agent traffic — retry the same command",
-          );
-        }
-        if (outcome.waitedMs >= 1) {
-          response.setHeader(
-            "X-RateLimit-Queued-Ms",
-            Math.round(outcome.waitedMs),
           );
         }
         if (
