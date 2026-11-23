@@ -239,6 +239,7 @@ test("nginx main config raises the stream/file-descriptor ceiling", () => {
   assert.match(main, /worker_processes 4;/);
   assert.match(main, /worker_rlimit_nofile 131072;/);
   assert.match(main, /worker_connections 65536;/);
+  assert.match(main, /send_timeout 120s;/);
   assert.match(main, /include \/etc\/nginx\/conf\.d\/\*\.conf;/);
 });
 
@@ -253,6 +254,11 @@ test("nginx proxy config: SSE, normal API timeouts, retries, uploads", () => {
   assert.match(nginx, /gzip on;/);
   assert.match(nginx, /location ~ \^\/api\/v1\//);
   assert.match(nginx, /proxy_buffering off;/);
+  assert.match(
+    nginx,
+    /events\/\?\$ \{[\s\S]*?send_timeout 3600s;/,
+    "the SSE location needs a downstream send_timeout above the keep-alive jitter",
+  );
   assert.match(nginx, /proxy_read_timeout 3600s;/);
   assert.match(nginx, /proxy_send_timeout 3600s;/);
   assert.match(nginx, /proxy_read_timeout 90s;/);
@@ -307,6 +313,7 @@ test("rollout never forces a stale --scale value", () => {
     "utf8",
   );
   assert.doesNotMatch(rollout, /up -d[^\n]*--scale/);
+  assert.match(rollout, /up -d --no-deps proxy --wait/);
   assert.match(rollout, /API_REPLICAS/);
   assert.match(rollout, /short API gap is possible/);
 });

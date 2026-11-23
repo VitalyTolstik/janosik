@@ -224,7 +224,10 @@ The default stack runs one `app` container. `docker-compose.scale.yml` is an
 optional overlay that runs 2–4 API replicas behind nginx (default) or Caddy,
 with a one-shot migration job. The single-container quick start is unchanged.
 The overlay and `deploy/scale/` files ship with the source at the release tag;
-copy them next to an installer-created `docker-compose.yml` if needed.
+copy them next to an installer-created `docker-compose.yml` if needed. If an
+older `.env` explicitly sets `TRUST_PROXY=0`, change it to `1` (or remove it)
+before starting replicas; an explicit 0 overrides the overlay default and
+breaks client-IP rate limits.
 
 ```bash
 # Stop the single app first; named volumes survive.
@@ -303,6 +306,9 @@ API_NOFILE=65536
 NODE_OPTIONS=--max-old-space-size=768
 DB_CONNECTION_LIMIT=10
 SSE_MAX_CONNECTIONS=2000
+PROXY_CPUS=0.5
+PROXY_MEMORY_LIMIT=512M
+PROXY_NOFILE=131072
 JANOSIK_PROXY_IMAGE=nginx:1.27-alpine
 ```
 
@@ -337,9 +343,11 @@ The bundled configs are `deploy/scale/nginx-main.conf`,
 `deploy/scale/nginx.conf` and `deploy/scale/Caddyfile`. The nginx main config
 raises `worker_connections` to 65 536 and `worker_rlimit_nofile` to 131 072
 (the stock image's 1024 is too small for the documented streams); both proxies
-use retry/passive-failure handling. SSE routes use 3600 s timeouts and no
-buffering; ordinary API requests use 90 s (covering the 60 s ready long-poll);
-uploads/downloads use the long timeout. nginx caches content-hashed `/_astro/` and `/app/assets/` output for
+use retry/passive-failure handling. SSE routes use 3600 s read/send timeouts,
+  3600 s downstream `send_timeout` (the default 60 s would cut PAT streams
+  during their 0–6 s keep-alive jitter) and no buffering; ordinary API requests
+  use 90 s (covering the 60 s ready long-poll); uploads/downloads use the long
+  timeout. nginx caches content-hashed `/_astro/` and `/app/assets/` output for `/app/assets/` output for
 7 days; Caddy forwards static assets without an extra cache. `/healthz` proxies
 the API readiness probe on both. Validate with `npm run deploy:test` (no
 containers are started). For a live cross-replica SSE check on a Linux Docker
@@ -353,14 +361,16 @@ COMPOSE="docker compose -f docker-compose.yml -f docker-compose.scale.yml"
 $COMPOSE pull
 $COMPOSE run --rm migrate                 # only if the release changes the schema
 $COMPOSE up -d --no-deps app --wait       # replica count from API_REPLICAS/.env
+$COMPOSE up -d --no-deps proxy --wait     # if proxy image/resources changed
 $COMPOSE exec -T proxy nginx -s reload    # Caddy: caddy reload
 curl -fsS http://localhost:3000/api/v1/health/ready
 ```
 
 Plain Compose replaces the API service as a unit, so there can be a short window
 with no API replica ready. The proxy retries another upstream and SSE reconnects
-with `?since=`; this is not a zero-downtime rollout. Use Swarm or Kubernetes if
-zero dropped requests is a hard requirement. `deploy/scale/rollout.sh` follows
+with `?since=`; this is not a zero-downtime rollout. Re-creating the proxy itself
+(when its image/resources change) also has a brief public gap. Use Swarm or
+Kubernetes if zero dropped requests is a hard requirement. `deploy/scale/rollout.sh` follows
 the same sequence and never forces `--scale` down from a stale shell value.
 
 Roll back to **one replica behind the same proxy**:

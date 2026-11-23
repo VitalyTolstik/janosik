@@ -2,8 +2,8 @@
 # Janosik — health-gated API replica re-create (TASK-200.12).
 #
 # Pulls the pinned image, optionally runs the one-shot migration job, re-creates
-# the API service with --wait, then reloads whichever proxy image is running so
-# it resolves the new replica addresses.
+# the API service and the proxy with --wait, then reloads the proxy so it
+# resolves the new replica addresses.
 #
 #   ./deploy/scale/rollout.sh
 #   API_REPLICAS=4 ./deploy/scale/rollout.sh
@@ -66,6 +66,9 @@ fi
 echo "janosik: re-creating the API replicas (${replicas:-overlay default}), waiting for health"
 echo "janosik: note: plain Compose replaces the service as a unit; a short API gap is possible" >&2
 "${compose[@]}" up -d --no-deps app --wait
+
+echo "janosik: re-creating the proxy if its image/resources changed"
+"${compose[@]}" up -d --no-deps proxy --wait
 
 echo "janosik: reloading the proxy's replica list"
 # One command works for both supported proxy images; `exec` keeps the signal in

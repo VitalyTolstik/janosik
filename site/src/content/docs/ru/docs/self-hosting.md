@@ -229,6 +229,9 @@ http:
 одноразовая задача миграций. Быстрый запуск с одним контейнером не меняется.
 Overlay и файлы `deploy/scale/` входят в исходники релизного тега; для
 установки, созданной installer'ом, скопируйте их рядом с `docker-compose.yml`.
+Если старый `.env` явно задаёт `TRUST_PROXY=0`, измените его на `1` (или
+удалите строку) перед запуском реплик: явный 0 переопределяет default overlay
+и ломает лимиты/аудит по реальному IP клиента.
 
 ```bash
 # Сначала остановите одиночный app; именованные тома сохраняются.
@@ -308,6 +311,9 @@ API_NOFILE=65536
 NODE_OPTIONS=--max-old-space-size=768
 DB_CONNECTION_LIMIT=10
 SSE_MAX_CONNECTIONS=2000
+PROXY_CPUS=0.5
+PROXY_MEMORY_LIMIT=512M
+PROXY_NOFILE=131072
 JANOSIK_PROXY_IMAGE=nginx:1.27-alpine
 ```
 
@@ -342,9 +348,11 @@ SSE-лимиты instance/user/board (анонимные share-потоки ог
 `deploy/scale/Caddyfile`. Главный конфиг nginx поднимает
 `worker_connections` до 65 536 и `worker_rlimit_nofile` до 131 072 (стандартных
 1024 мало для документированных потоков); оба прокси используют retry и
-пассивную проверку отказов. SSE-маршруты — 3600 с без буферизации, обычные
-API-запросы — 90 с (с запасом на 60-секундный ready long-poll), загрузки/
-скачивания — длинный таймаут. nginx кэширует
+пассивную проверку отказов. SSE-маршруты — 3600 с на read/send, 3600 с
+downstream `send_timeout` (дефолтные 60 с обрывали бы PAT-поток во время
+0–6 с jitter keep-alive) и без буферизации; обычные API-запросы — 90 с
+(с запасом на 60-секундный ready long-poll), загрузки/скачивания — длинный
+таймаут. nginx кэширует
 контентно-хэшированные `/_astro/` и `/app/assets/` на 7 дней; Caddy проксирует
 статику без дополнительного кэша. `/healthz` на обоих проверяет readiness API.
 Проверка без запуска контейнеров: `npm run deploy:test`. Живая проверка SSE
@@ -359,14 +367,16 @@ COMPOSE="docker compose -f docker-compose.yml -f docker-compose.scale.yml"
 $COMPOSE pull
 $COMPOSE run --rm migrate                 # только если релиз меняет схему
 $COMPOSE up -d --no-deps app --wait       # число реплик из API_REPLICAS/.env
+$COMPOSE up -d --no-deps proxy --wait     # если образ/лимиты прокси изменились
 $COMPOSE exec -T proxy nginx -s reload    # для Caddy: caddy reload
 curl -fsS http://localhost:3000/api/v1/health/ready
 ```
 
 Обычный Compose пересоздаёт сервис API целиком, поэтому возможен короткий
 интервал без готовой реплики. Прокси повторяет запрос на другой upstream, SSE
-переподключается с `?since=`; это не zero-downtime раскатка. Если потеря
-запросов недопустима, используйте Swarm или Kubernetes.
+переподключается с `?since=`; это не zero-downtime раскатка. Пересоздание самого
+прокси (при смене образа/лимитов) тоже даёт короткий публичный простой. Если
+потеря запросов недопустима, используйте Swarm или Kubernetes.
 `deploy/scale/rollout.sh` выполняет ту же последовательность и никогда не
 передаёт устаревший `--scale`.
 

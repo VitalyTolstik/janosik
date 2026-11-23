@@ -412,6 +412,12 @@ files copied beside it (the compose paths are relative to the project root).
 For a local image build, uncomment `build: .` on both the base `app` service and
 the overlay's `migrate` service.
 
+**Upgrading an existing install:** older `.env` files set `TRUST_PROXY=0`.
+Because Compose passes an explicit value through, the overlay's default of 1
+does not apply. Change it to `1` (or remove the line) before starting replicas,
+otherwise every request appears to come from the proxy IP and rate limits are
+wrong.
+
 ```bash
 # Stop the single app first (named volumes survive), then start the proxy.
 docker compose down
@@ -582,9 +588,10 @@ The bundled configs live in `deploy/scale/nginx-main.conf`,
   a second compression;
 - SSE locations (`/api/v1/boards/:id/events`, `/api/v1/share/:token/events`)
   disable buffering and use 3600 s read/send timeouts above the 60 s PAT /
-  25 s human keep-alives; ordinary API requests use 90 s (covering the 60 s
-  ready long-poll), and uploads/downloads use the long timeout without proxy
-  buffering;
+  25 s human keep-alives, plus a 3600 s downstream nginx `send_timeout`
+  (the default 60 s would cut a PAT stream during its 0–6 s keep-alive jitter);
+  ordinary API requests use 90 s (covering the 60 s ready long-poll), and
+  uploads/downloads use the long timeout without proxy buffering;
 - `client_max_body_size 30m` for nginx attachments, imports and command
   batches; Caddy has no 1 MB body default and streams request bodies;
 - upload routes (`cards/:id/attachments`, `users/*/avatar`, `boards/import`)
@@ -626,9 +633,11 @@ card.
 A rollout re-creates the API service from the new image. Plain Compose replaces
 a service as a unit, so there can be a short window with no API replica ready;
 the proxy retries another upstream and SSE clients reconnect with `?since=`, but
-this is not a zero-downtime rollout. On `SIGTERM` the API completes its open
-streams and closes listeners (the image declares `STOPSIGNAL SIGTERM`), so a
-replica stops without waiting for the whole keep-alive period.
+this is not a zero-downtime rollout. Re-creating the proxy itself (needed when
+its image or resource limits change) also has a brief public gap. On `SIGTERM`
+the API completes its open streams and closes listeners (the image declares
+`STOPSIGNAL SIGTERM`), so a replica stops without waiting for the whole
+keep-alive period.
 
 The replica count comes from `API_REPLICAS` in the environment or `.env`, or
 from the overlay's default. The script never passes `--scale`, so a stale shell
@@ -653,8 +662,10 @@ $COMPOSE run --rm migrate
 #    API_REPLICAS / deploy.replicas, not a forced --scale value.
 $COMPOSE up -d --no-deps app --wait
 
-# 3. Refresh the proxy's replica list. nginx resolves `app` at startup, so a
-#    reload is required after scaling or replacing replicas.
+# 3. Re-create the proxy if its image or resource limits changed, then refresh
+#    its replica list. nginx resolves `app` at startup, so the reload is
+#    required after scaling or replacing replicas.
+$COMPOSE up -d --no-deps proxy --wait
 $COMPOSE exec -T proxy nginx -s reload
 # Caddy variant:
 # $COMPOSE exec -T proxy caddy reload --config /etc/caddy/Caddyfile

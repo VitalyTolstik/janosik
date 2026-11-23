@@ -14,16 +14,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   6k/20k streams), a shared upstream zone, `proxy_next_upstream_tries 0` across
   3–4 replicas, and proxy `PROXY_CPUS`/`PROXY_MEMORY_LIMIT`/`PROXY_NOFILE`
   sizing. SSE (`boards/:id/events`, `share/:token/events`) has a separate
-  3600 s no-buffer location; ordinary API requests use 90 s (covering the 60 s
-  ready long-poll), uploads and attachment/avatar reads keep the long timeout,
-  and the upload regex now
+  3600 s no-buffer location with a 3600 s downstream `send_timeout` (nginx's
+  default 60 s would cut PAT streams during their 0–6 s keep-alive jitter);
+  ordinary API requests use 90 s (covering the 60 s ready long-poll), uploads
+  and attachment/avatar reads keep the long timeout, and the upload regex now
   matches `users/*/avatar`, `boards/import` and attachment content/thumbnail/
   poster. Caddy gained `lb_try_duration`/`fail_duration`/`max_fails`, an SSE
   handle block, and proxies `/healthz` to the readiness probe. `.env.example`
   leaves `TRUST_PROXY` unset so the overlay default of 1 is not defeated.
   `deploy/scale/rollout.sh` no longer forces `--scale`, reads/validates the
-  configured `API_REPLICAS` (2–4, 1 for rollback), and states honestly that
-  plain Compose re-creates the service as a unit. Redis shutdown uses one
+  configured `API_REPLICAS` (2–4, 1 for rollback), re-creates the proxy when
+  its image/resources changed, and states honestly that plain Compose
+  re-creates the service as a unit. Redis shutdown uses one
   bounded quit helper for the throttler, realtime, health and login-backoff
   clients. Docs now scope every limiter (cluster-wide global throttler and
   live limit edits; Redis-shared login backoff; per-replica panel/token/agent/

@@ -609,9 +609,11 @@ health-gated зависимость прокси. Полный `deploy/scale/ngi
 поднимает `worker_connections 65536` и `worker_rlimit_nofile 131072` (стоковые
 1024 не покрывают 6k/20k потоков), прокси имеет собственные
 `PROXY_CPUS`/`PROXY_MEMORY_LIMIT`/`PROXY_NOFILE`, общий upstream zone и
-`proxy_next_upstream_tries 0` для 3–4 реплик. SSE-локация — 3600 с без
-буферизации, обычный API — 90 с (с запасом на 60-секундный ready long-poll),
-upload/download — длинный таймаут; regex
+`proxy_next_upstream_tries 0` для 3–4 реплик. SSE-локация — 3600 с на
+read/send и downstream `send_timeout` (дефолтные 60 с обрывали бы PAT-поток
+во время 0–6 с jitter keep-alive), без буферизации; обычный API — 90 с
+(с запасом на 60-секундный ready long-poll), upload/download — длинный
+таймаут; regex
 покрывает `users/*/avatar`, `boards/import`, attachment content/thumbnail/
 poster. Caddy: `lb_try_duration`/`fail_duration`/`max_fails`, SSE-handle и
 `/healthz` через readiness API. `.env.example` больше не задаёт
