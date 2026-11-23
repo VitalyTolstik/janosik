@@ -3,32 +3,40 @@
 // The harness deliberately keeps the drivers simple: a scenario is a set of
 // async workers bounded by a deadline. Heavy profiles are configuration, not
 // separate code paths, so a smoke run exercises the same loop as a 500-agent
-// baseline.
+// baseline. Deadlines are measured independently of worker drain time, and
+// per-scenario status is derived from what was actually measured.
 
-import { mulberry32, runAgentLoop, runHumanLoop } from "./agent.mjs";
+import {
+  isAuthError,
+  mulberry32,
+  recycleDoneCards,
+  runAgentLoop,
+  runHumanLoop,
+  runMixedAgentLoop,
+} from "./agent.mjs";
 import { HttpClient, sleep } from "./http.mjs";
-import { scenarioConfig } from "./config.mjs";
+import { RunMetrics } from "./metrics.mjs";
+import { validateScenarioConfig } from "./config.mjs";
+import { sanitizeText } from "./redact.mjs";
+import {
+  createMcpWorker,
+  runMcpAgentLoop,
+  summarizeMcpWorkers,
+} from "./mcp.mjs";
 
-function linkSignal(parent, child) {
-  if (parent === undefined) return () => {};
-  const abort = () => child.abort();
-  if (parent.aborted) child.abort();
-  else parent.addEventListener("abort", abort, { once: true });
-  return () => parent.removeEventListener("abort", abort);
-}
-
-function clientsFor(config, users, metrics) {
+function clientsFor(config, users, metrics, signal) {
   return users.map(
     (user) =>
       new HttpClient({
         baseUrl: config.baseUrl,
         token: user.token,
         metrics,
+        signal,
       }),
   );
 }
 
-function errorRecorder() {
+function errorRecorder(config) {
   const errors = [];
   return {
     push(entry) {
@@ -37,10 +45,16 @@ function errorRecorder() {
         agent: entry.agentIndex ?? entry.workerIndex ?? null,
         boardId: entry.boardId ?? null,
         fatal: entry.fatal === true,
-        message:
+        orphan: entry.orphan === true,
+        status: Number.isInteger(entry.error?.status)
+          ? entry.error.status
+          : null,
+        message: sanitizeText(
           entry.error instanceof Error
             ? entry.error.message
             : String(entry.error),
+          config.tokens,
+        ),
       });
     },
     list() {
@@ -49,12 +63,65 @@ function errorRecorder() {
   };
 }
 
-function scenarioDuration(scenario) {
-  if (scenario.id === "S6") return 0;
-  if (scenario.id === "S5") {
-    return (scenario.rampMs ?? 0) + (scenario.holdMs ?? 0);
+function joinSignal(parent, onAbort) {
+  if (parent === undefined) return () => {};
+  if (parent.aborted) {
+    onAbort();
+    return () => {};
   }
-  return scenario.durationMs ?? 60_000;
+  parent.addEventListener("abort", onAbort, { once: true });
+  return () => parent.removeEventListener("abort", onAbort);
+}
+
+async function delayUntil(target, signal) {
+  const wait = target - Date.now();
+  if (wait > 0) await sleep(wait, signal);
+}
+
+function startAtFor({ id, scenario, index, agents, startedAt }) {
+  if (id !== "S4" || (scenario.rampMs ?? 0) <= 0) return startedAt;
+  if (scenario.burst === true) return startedAt + scenario.rampMs;
+  if (agents <= 1) return startedAt;
+  return startedAt + Math.round((index / (agents - 1)) * scenario.rampMs);
+}
+
+function createRecycler({ config, signal, metrics }) {
+  if (config.recycle !== true || config.recycleToken === undefined) {
+    return { recycle: null, metrics: null };
+  }
+  const recycleMetrics = new RunMetrics("recycle");
+  const client = new HttpClient({
+    baseUrl: config.baseUrl,
+    token: config.recycleToken,
+    metrics: recycleMetrics,
+    signal,
+  });
+  let lastAttempt = 0;
+  let inFlight = null;
+  const recycle = async () => {
+    if (inFlight !== null) return inFlight;
+    if (Date.now() - lastAttempt < 500) return false;
+    lastAttempt = Date.now();
+    inFlight = (async () => {
+      try {
+        const moved = await recycleDoneCards({
+          client,
+          boardId: config.boardId,
+        });
+        if (moved > 0) {
+          recycleMetrics.recordAction(moved, "write");
+          metrics.recordRecycled(moved);
+        }
+        return moved > 0;
+      } catch {
+        return false;
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+  return { recycle, metrics: recycleMetrics };
 }
 
 export async function runScenario({
@@ -66,26 +133,94 @@ export async function runScenario({
   signal,
   log = () => {},
 }) {
-  const scenario = scenarioConfig(config, id);
-  const clients = clientsFor(config, users, metrics);
-  const errors = errorRecorder();
+  const scenario = validateScenarioConfig(config, id);
+  const errors = errorRecorder(config);
   const controller = new AbortController();
-  const unlink = linkSignal(signal, controller);
   const startedAt = Date.now();
-  const durationMs = scenarioDuration(scenario);
-  const deadline = startedAt + durationMs;
+  let measurementEndedAt = null;
+  let fatal = false;
+  let interrupted = signal?.aborted === true;
+  let timedOut = false;
   let timer = null;
+  let mcpWorkers = [];
 
+  const captureMeasurement = () => {
+    if (measurementEndedAt === null) measurementEndedAt = Date.now();
+  };
+  const unlink = joinSignal(signal, () => {
+    interrupted = true;
+    captureMeasurement();
+    controller.abort();
+  });
   const onError = (entry) => {
     errors.push(entry);
-    if (entry.fatal) controller.abort();
+    if (entry.fatal === true) {
+      fatal = true;
+      captureMeasurement();
+      controller.abort();
+    }
   };
 
+  const clients = clientsFor(config, users, metrics, controller.signal);
+  const recycler = createRecycler({
+    config: { ...config, boardId: boards[0] },
+    signal: controller.signal,
+    metrics,
+  });
+  const onNoWork =
+    recycler.recycle === null ? undefined : async () => recycler.recycle();
+
+  const agents = Math.max(0, scenario.agents ?? 0);
+  const humans = Math.max(0, scenario.humans ?? 0);
+  const mcpProcesses =
+    config.driver === "mcp"
+      ? config.mode === "smoke"
+        ? Math.min(config.mcpProcesses ?? agents, 2)
+        : (config.mcpProcesses ?? agents)
+      : 0;
+
+  const workStartedAt =
+    id === "S4" ? startedAt + (scenario.rampMs ?? 0) : startedAt;
+  let actualWorkStartedAt = workStartedAt;
+
+  const durationLabel =
+    id === "S6"
+      ? "burst"
+      : id === "S5"
+        ? `${Math.round(((scenario.rampMs ?? 0) + (scenario.holdMs ?? 0)) / 1000)}s ramp+hold`
+        : `${Math.round((scenario.durationMs ?? 0) / 1000)}s`;
   log(
-    `${id} ${scenario.title}: agents=${scenario.agents ?? 0} humans=${scenario.humans ?? 0} sse=${scenario.sse ?? 0} duration=${id === "S6" ? "burst" : `${Math.round(durationMs / 1000)}s`}`,
+    `${id} ${scenario.title}: agents=${agents} humans=${humans} sse=${scenario.sse ?? 0} duration=${durationLabel}${id === "S4" ? ` (after ${Math.round((scenario.rampMs ?? 0) / 1000)}s ramp)` : ""}`,
   );
 
   try {
+    if (id === "S5") {
+      const result = await runSseRamp({
+        scenario,
+        clients,
+        boards,
+        metrics,
+        signal: controller.signal,
+        log,
+      });
+      captureMeasurement();
+      return finish({
+        scenario,
+        startedAt,
+        workStartedAt,
+        measurementEndedAt:
+          interrupted || fatal
+            ? measurementEndedAt
+            : (result.holdEndedAt ?? measurementEndedAt),
+        fatal,
+        interrupted,
+        errors,
+        metrics,
+        recycler,
+        mcp: null,
+      });
+    }
+
     if (id === "S6") {
       await runReadBurst({
         scenario,
@@ -93,87 +228,217 @@ export async function runScenario({
         boards,
         signal: controller.signal,
       });
-    } else if (id === "S5") {
-      await runSseRamp({
+      captureMeasurement();
+      return finish({
         scenario,
-        clients,
-        boards,
-        metrics,
-        signal: controller.signal,
         startedAt,
-        log,
+        workStartedAt,
+        measurementEndedAt,
+        fatal,
+        interrupted,
+        errors,
+        metrics,
+        recycler,
+        mcp: null,
       });
-    } else {
-      timer = setTimeout(() => controller.abort(), durationMs);
-      timer.unref?.();
-      const tasks = [];
-      const agents = Math.max(0, scenario.agents ?? 0);
-      for (let index = 0; index < agents; index += 1) {
-        const startDelayMs =
-          id === "S4" && (scenario.rampMs ?? 0) > 0 && agents > 1
-            ? Math.round((index / (agents - 1)) * scenario.rampMs)
-            : 0;
+    }
+
+    const workEnd =
+      id === "S4"
+        ? startedAt + (scenario.rampMs ?? 0) + scenario.durationMs
+        : startedAt + scenario.durationMs;
+    timer = setTimeout(
+      () => {
+        timedOut = true;
+        captureMeasurement();
+        controller.abort();
+      },
+      Math.max(1, workEnd - Date.now()),
+    );
+
+    const tasks = [];
+    if (config.driver === "mcp" && mcpProcesses > 0) {
+      const tokens = users.map((user) => user.token);
+      const settled = await Promise.allSettled(
+        Array.from({ length: mcpProcesses }, (_, index) =>
+          createMcpWorker({
+            baseUrl: config.baseUrl,
+            token: tokens[index % tokens.length],
+            boardId: boards[index % boards.length],
+            metrics,
+            log,
+          }),
+        ),
+      );
+      mcpWorkers = settled
+        .filter((entry) => entry.status === "fulfilled")
+        .map((entry) => entry.value);
+      const failed = settled.find((entry) => entry.status === "rejected");
+      if (failed !== undefined) onError({ error: failed.reason, fatal: true });
+      for (let index = 0; index < mcpWorkers.length; index += 1) {
         tasks.push(
-          runAgentLoop({
+          runMcpAgentLoop({
+            worker: mcpWorkers[index],
+            boardId: boards[index % boards.length],
+            agentIndex: index,
+            mode: id === "S1" ? "idle" : "work",
+            config: scenario,
+            deadline: workEnd,
+            signal: controller.signal,
+            metrics,
+            random: mulberry32(config.seed + index + id.charCodeAt(1) * 1_000),
+            startAt: startAtFor({
+              id,
+              scenario,
+              index,
+              agents: mcpWorkers.length,
+              startedAt,
+            }),
+            onError,
+            onNoWork,
+          }),
+        );
+      }
+    } else {
+      for (let index = 0; index < agents; index += 1) {
+        tasks.push(
+          (id === "S3" ? runMixedAgentLoop : runAgentLoop)({
             client: clients[index % clients.length],
             userId: users[index % users.length].id,
             boardId: boards[index % boards.length],
             agentIndex: index,
             mode: id === "S1" ? "idle" : "work",
             config: scenario,
-            deadline,
+            deadline: workEnd,
             signal: controller.signal,
             metrics,
             random: mulberry32(config.seed + index + id.charCodeAt(1) * 1_000),
-            startDelayMs,
+            startAt: startAtFor({ id, scenario, index, agents, startedAt }),
             onError,
+            onNoWork,
           }),
         );
       }
-      const humans = Math.max(0, scenario.humans ?? 0);
-      for (let index = 0; index < humans; index += 1) {
-        tasks.push(
-          runHumanLoop({
-            client: clients[(agents + index) % clients.length],
-            boardId: boards[index % boards.length],
-            workerIndex: index,
-            config: scenario,
-            deadline,
-            signal: controller.signal,
-            random: mulberry32(config.seed + 50_000 + index),
-            onError,
-          }),
-        );
-      }
-      if (id === "S3" && (scenario.sse ?? 0) > 0) {
-        tasks.push(
-          holdSseStreams({
-            count: scenario.sse,
-            rampMs: 0,
-            deadline,
-            clients,
-            boards,
-            metrics,
-            signal: controller.signal,
-            log,
-          }),
-        );
-      }
-      await Promise.allSettled(tasks);
     }
+
+    for (let index = 0; index < humans; index += 1) {
+      tasks.push(
+        runHumanLoop({
+          client: clients[(agents + index) % clients.length],
+          boardId: boards[index % boards.length],
+          workerIndex: index,
+          config: scenario,
+          deadline: workEnd,
+          signal: controller.signal,
+          random: mulberry32(config.seed + 50_000 + index),
+          onError,
+        }),
+      );
+    }
+    if (id === "S3" && (scenario.sse ?? 0) > 0) {
+      tasks.push(
+        holdSseStreams({
+          count: scenario.sse,
+          rampMs: 0,
+          deadline: workEnd,
+          clients,
+          boards,
+          metrics,
+          signal: controller.signal,
+          log,
+        }),
+      );
+    }
+    if (id === "S4") {
+      actualWorkStartedAt = Math.max(workStartedAt, Date.now());
+    }
+
+    await Promise.allSettled(tasks);
+    captureMeasurement();
+    const mcp = mcpWorkers.length > 0 ? summarizeMcpWorkers(mcpWorkers) : null;
+    return finish({
+      scenario,
+      startedAt,
+      workStartedAt: actualWorkStartedAt,
+      measurementEndedAt,
+      fatal,
+      interrupted,
+      errors,
+      metrics,
+      recycler,
+      mcp,
+      timedOut,
+    });
+  } catch (error) {
+    onError({ error, fatal: isAuthError(error) });
+    captureMeasurement();
+    return {
+      scenario,
+      startedAt,
+      measurementEndedAt,
+      endedAt: Date.now(),
+      workStartedAt,
+      workEndedAt: measurementEndedAt,
+      workDurationMs: Math.max(0, measurementEndedAt - workStartedAt),
+      durationMs: Math.max(0, measurementEndedAt - startedAt),
+      drainEndedAt: Date.now(),
+      errors: errors.list(),
+      fatalAuth: fatal,
+      interrupted,
+      recycled: metrics.recycled,
+      recycle: recycler.metrics
+        ? {
+            requests: recycler.metrics.requests,
+            writes: recycler.metrics.actions,
+            errors: recycler.metrics.snapshot({ durationMs: 1 }).errors,
+          }
+        : null,
+      mcp: null,
+    };
   } finally {
     if (timer !== null) clearTimeout(timer);
     controller.abort();
     unlink();
+    await Promise.allSettled(mcpWorkers.map((worker) => worker.close()));
   }
+}
 
+function finish({
+  scenario,
+  startedAt,
+  workStartedAt,
+  measurementEndedAt,
+  fatal,
+  interrupted,
+  errors,
+  metrics,
+  recycler,
+  mcp,
+}) {
   const endedAt = Date.now();
+  const measuredEnd = measurementEndedAt ?? endedAt;
   return {
     scenario,
-    durationMs: endedAt - startedAt,
     startedAt,
+    measurementEndedAt: measuredEnd,
     endedAt,
+    workStartedAt,
+    workEndedAt: measuredEnd,
+    workDurationMs: Math.max(0, measuredEnd - workStartedAt),
+    durationMs: Math.max(0, measuredEnd - startedAt),
+    drainEndedAt: endedAt,
     errors: errors.list(),
+    fatalAuth: fatal,
+    interrupted,
+    recycled: metrics.recycled,
+    recycle: recycler.metrics
+      ? {
+          requests: recycler.metrics.requests,
+          writes: recycler.metrics.actions,
+          errors: recycler.metrics.snapshot({ durationMs: 1 }).errors,
+        }
+      : null,
+    mcp,
   };
 }
 
@@ -193,10 +458,9 @@ async function runReadBurst({ scenario, clients, boards, signal }) {
   }
 }
 
-async function holdSseStreams({
+async function openSseRamp({
   count,
   rampMs,
-  deadline,
   clients,
   boards,
   metrics,
@@ -204,15 +468,14 @@ async function holdSseStreams({
   log,
 }) {
   const handles = [];
-  const startedAt = Date.now();
+  const rampStartedAt = Date.now();
   const total = Math.max(0, count);
   for (let index = 0; index < total; index += 1) {
     if (signal.aborted) break;
     const target =
-      startedAt +
+      rampStartedAt +
       (total <= 1 || rampMs <= 0 ? 0 : (index / (total - 1)) * rampMs);
-    const wait = target - Date.now();
-    if (wait > 0) await sleep(wait, signal);
+    await delayUntil(target, signal);
     try {
       const handle = await clients[index % clients.length].openSse({
         boardId: boards[index % boards.length],
@@ -227,31 +490,62 @@ async function holdSseStreams({
       log(`  SSE ${index}/${total} (${metrics.sse.current} live)`);
     }
   }
+  const rampEndedAt = Date.now();
+  metrics.sse.rampObservedMs = rampEndedAt - rampStartedAt;
   log(`  SSE ramp done: ${handles.length}/${total} live`);
-  const wait = deadline - Date.now();
-  if (wait > 0) await sleep(wait, signal);
-  await Promise.allSettled(handles.map((handle) => handle.close()));
+  return { handles, rampStartedAt, rampEndedAt };
 }
 
-async function runSseRamp({
-  scenario,
+async function closeSseHandles(handles, metrics, rampEndedAt) {
+  const closedAt = Date.now();
+  await Promise.allSettled(handles.map((handle) => handle.close()));
+  metrics.sse.holdObservedMs = Math.max(0, closedAt - rampEndedAt);
+  return closedAt;
+}
+
+async function holdSseStreams({
+  count,
+  rampMs,
+  deadline,
   clients,
   boards,
   metrics,
   signal,
-  startedAt,
   log,
 }) {
-  const rampMs = scenario.rampMs ?? 0;
-  const holdMs = scenario.holdMs ?? 0;
-  await holdSseStreams({
-    count: scenario.sse ?? 0,
+  const { handles, rampEndedAt } = await openSseRamp({
+    count,
     rampMs,
-    deadline: startedAt + rampMs + holdMs,
     clients,
     boards,
     metrics,
     signal,
     log,
   });
+  await delayUntil(deadline, signal);
+  return closeSseHandles(handles, metrics, rampEndedAt);
+}
+
+async function runSseRamp({ scenario, clients, boards, metrics, signal, log }) {
+  const { handles, rampEndedAt } = await openSseRamp({
+    count: scenario.sse ?? 0,
+    rampMs: scenario.rampMs ?? 0,
+    clients,
+    boards,
+    metrics,
+    signal,
+    log,
+  });
+  if (handles.length === 0) {
+    return { rampEndedAt, holdEndedAt: Date.now(), opened: 0 };
+  }
+  // The hold starts when the ramp *actually* finishes, not at the planned
+  // ramp boundary: a slow admission path must not steal hold time.
+  const holdDeadline = rampEndedAt + (scenario.holdMs ?? 0);
+  log(
+    `  SSE ramp observed ${Math.round((metrics.sse.rampObservedMs ?? 0) / 1000)}s; holding ${Math.round((scenario.holdMs ?? 0) / 1000)}s from now`,
+  );
+  await delayUntil(holdDeadline, signal);
+  const holdEndedAt = await closeSseHandles(handles, metrics, rampEndedAt);
+  return { rampEndedAt, holdEndedAt, opened: handles.length };
 }

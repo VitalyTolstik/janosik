@@ -3,17 +3,18 @@
 // TASK-200.1 — agent-scale performance harness.
 //
 // This is a reproducible driver, not a capacity certificate. It runs S1–S6
-// from docs/PERF-AGENT-SCALE.md §7.1 with a PAT-backed HTTP agent loop and
-// writes a JSON + Markdown report containing the commit and effective config.
+// from docs/PERF-AGENT-SCALE.md §7.1 with a PAT-backed HTTP agent loop or real
+// MCP stdio processes, and writes a JSON + Markdown report containing the
+// commit, effective config, per-scenario status and the measurement windows.
 
 import { mkdir, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import {
   parseCli,
   resolveConfig,
   scenarioConfig,
   usage,
+  validateScenarioConfig,
 } from "./lib/config.mjs";
 import { HttpClient } from "./lib/http.mjs";
 import { RunMetrics } from "./lib/metrics.mjs";
@@ -21,164 +22,373 @@ import { RuntimeSampler } from "./lib/probes.mjs";
 import { runScenario } from "./lib/scenarios.mjs";
 import { buildReport, renderMarkdown } from "./lib/report.mjs";
 import { environmentInfo, gitInfo } from "./lib/git.mjs";
-import { collectPgStats } from "./lib/pg.mjs";
+import {
+  PgActivitySampler,
+  collectPgStatements,
+  diffPgStatements,
+} from "./lib/pg.mjs";
+import { collectCpuProfile } from "./lib/cpuprofile.mjs";
+import { collectRedisInfo, diffRedisInfo } from "./lib/redis.mjs";
 import { startMockServer } from "./lib/mock-server.mjs";
+import { evaluateScenarioStatus } from "./lib/status.mjs";
+import { redactUrl, sanitizeText } from "./lib/redact.mjs";
 
 const startedAt = Date.now();
 let mock = null;
 let sampler = null;
+let pgSampler = null;
+let activeConfig = null;
 let interrupted = false;
+
+class PreflightError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "PreflightError";
+  }
+}
 
 function log(message) {
   console.log(message);
 }
 
+function redactedBaseUrl(config) {
+  return redactUrl(config.baseUrl);
+}
+
 async function main() {
   let config;
+  const keepAlive = setInterval(() => {}, 1_000);
   try {
-    config = resolveConfig(parseCli(process.argv.slice(2)), process.env);
-  } catch (error) {
-    console.error(`perf: ${error instanceof Error ? error.message : error}`);
-    console.error("");
-    console.error(usage());
-    process.exitCode = 2;
-    return;
-  }
-  if (config.help) {
-    console.log(usage());
-    return;
-  }
-
-  if (config.mock) {
-    mock = await startMockServer({
-      port: config.mockPort,
-      boardCount: config.mockBoards,
-      cardsPerBoard: config.mockCards,
-    });
-    config.baseUrl = mock.baseUrl;
-    log(`mock API: ${config.baseUrl}`);
-  }
-
-  const controller = new AbortController();
-  const stop = () => {
-    if (interrupted) return;
-    interrupted = true;
-    console.error(
-      "\ninterrupted — closing workers and writing a partial report",
-    );
-    controller.abort();
-  };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-
-  try {
-    await waitForHealth(config);
-    const users = await resolveUsers(config);
-    const boards = await resolveBoards(config, users);
-    log(
-      `target: ${config.baseUrl} · boards ${boards.length} · tokens ${users.length} · mode ${config.mode}`,
-    );
-
-    sampler = new RuntimeSampler({
-      apiPid: config.apiPid,
-      apiProbeFile: config.apiProbe,
-    }).start();
-
-    const scenarios = [];
-    for (const id of config.scenarioIds) {
-      if (controller.signal.aborted) break;
-      scenarios.push(
-        await runOne({ id, config, users, boards, signal: controller.signal }),
+    try {
+      config = resolveConfig(parseCli(process.argv.slice(2)), process.env);
+    } catch (error) {
+      console.error(
+        `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,
       );
+      console.error("perf: run with --help for the CLI surface");
+      process.exitCode = 2;
+      return;
+    }
+    activeConfig = config;
+    if (config.help) {
+      console.log(usage());
+      return;
     }
 
-    sampler.poll();
-    const pg = await collectPgStats({
-      databaseUrl: config.pgUrl,
-      psql: config.psql,
-      limit: 20,
-    });
+    // Fail on an invalid profile before spawning a mock or touching the API.
+    try {
+      for (const id of config.scenarioIds) validateScenarioConfig(config, id);
+    } catch (error) {
+      console.error(
+        `perf: ${sanitizeText(error instanceof Error ? error.message : error)}`,
+      );
+      process.exitCode = 2;
+      return;
+    }
 
-    const report = buildReport({
-      config,
-      scenarios,
-      git: gitInfo(),
-      environment: environmentInfo(),
-      pg,
-      startedAt,
-      endedAt: Date.now(),
-    });
-    const { jsonPath, markdownPath } = await writeReport(config, report);
-    printSummary(report, jsonPath, markdownPath);
+    if (config.mock) {
+      mock = await startMockServer({
+        port: config.mockPort,
+        boardCount: config.mockBoards,
+        cardsPerBoard: config.mockCards,
+      });
+      config.baseUrl = mock.baseUrl;
+      log(`mock API: ${redactedBaseUrl(config)}`);
+    }
 
-    if (interrupted) process.exitCode = 130;
-    else if (config.mode === "smoke" && smokeFailed(report)) {
-      process.exitCode = 1;
+    const controller = new AbortController();
+    const stop = (signal) => {
+      if (interrupted) {
+        console.error(`perf: second ${signal} — exiting 130 without waiting`);
+        process.exit(130);
+      }
+      interrupted = true;
+      console.error(
+        "\nperf: interrupted — cancelling in-flight requests and writing a partial report",
+      );
+      controller.abort();
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+
+    try {
+      await waitForHealth(config, controller.signal);
+      const users = await resolveUsers(config, controller.signal);
+      assertTokenPool(config, users);
+      const boards = await resolveBoards(config, users, controller.signal);
+      log(
+        `target: ${redactedBaseUrl(config)} · boards ${boards.length} · tokens ${users.length} · mode ${config.mode} · driver ${config.driver}`,
+      );
+      if (config.pgActivity && !config.pgUrl) {
+        log(
+          "warning: --pg-activity needs --pg-url; skipping activity sampling",
+        );
+      }
+
+      sampler = new RuntimeSampler({
+        apiPid: config.apiPid,
+        apiProbeFile: config.apiProbe,
+      }).start();
+      if (config.pgActivity && config.pgUrl) {
+        pgSampler = new PgActivitySampler({
+          databaseUrl: config.pgUrl,
+          psql: config.psql,
+          intervalMs: config.pgActivityIntervalMs,
+        }).start(controller.signal);
+      }
+
+      const redisBefore = await collectRedisInfo({
+        redisUrl: config.redisUrl,
+        redisCli: config.redisCli,
+        signal: controller.signal,
+      });
+      const redisStartedAt = Date.now();
+      const pgSuiteBefore = config.pgUrl
+        ? await collectPgStatements({
+            databaseUrl: config.pgUrl,
+            psql: config.psql,
+            limit: 20,
+            signal: controller.signal,
+          })
+        : null;
+
+      const scenarios = [];
+      let fatal = false;
+      for (const id of config.scenarioIds) {
+        if (controller.signal.aborted || fatal) break;
+        const pgBefore = config.pgUrl
+          ? await collectPgStatements({
+              databaseUrl: config.pgUrl,
+              psql: config.psql,
+              limit: 20,
+              signal: controller.signal,
+            })
+          : null;
+        const scenario = await runOne({
+          id,
+          config,
+          users,
+          boards,
+          signal: controller.signal,
+        });
+        if (config.pgUrl && pgBefore !== null) {
+          const pgAfter = await collectPgStatements({
+            databaseUrl: config.pgUrl,
+            psql: config.psql,
+            limit: 20,
+            signal: controller.signal,
+          });
+          scenario.pg = diffPgStatements(pgBefore, pgAfter, 20);
+        }
+        scenarios.push(scenario);
+        if (scenario.status === "failed" && scenario.fatalAuth === true) {
+          fatal = true;
+          log("perf: fatal auth — stopping the suite");
+        }
+      }
+
+      sampler.poll();
+      const pgActivity = pgSampler !== null ? await pgSampler.stop() : null;
+      const redisAfter = await collectRedisInfo({
+        redisUrl: config.redisUrl,
+        redisCli: config.redisCli,
+        signal: controller.signal,
+      });
+      const redis = diffRedisInfo(
+        redisBefore,
+        redisAfter,
+        Date.now() - redisStartedAt,
+      );
+      const pgSuiteAfter = config.pgUrl
+        ? await collectPgStatements({
+            databaseUrl: config.pgUrl,
+            psql: config.psql,
+            limit: 20,
+            signal: controller.signal,
+          })
+        : null;
+      const pg = config.pgUrl
+        ? {
+            ...diffPgStatements(pgSuiteBefore, pgSuiteAfter, 20),
+            enabled: true,
+            url: redactUrl(config.pgUrl),
+          }
+        : { enabled: false };
+      const cpuProfile = await collectCpuProfile(config.cpuProfile);
+
+      const report = buildReport({
+        config,
+        scenarios,
+        git: gitInfo(),
+        environment: environmentInfo(),
+        pg,
+        pgActivity,
+        cpuProfile,
+        redis,
+        startedAt,
+        endedAt: Date.now(),
+        interrupted: interrupted || controller.signal.aborted,
+      });
+      const { jsonPath, markdownPath } = await writeReport(config, report);
+      printSummary(report, jsonPath, markdownPath);
+      if (interrupted || report.status === "interrupted") {
+        process.exitCode = 130;
+      } else if (fatal || report.status === "failed") {
+        process.exitCode = 1;
+      } else {
+        process.exitCode = 0;
+      }
+    } finally {
+      sampler?.stop();
+      if (pgSampler !== null) await pgSampler.stop();
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
     }
   } finally {
-    sampler?.stop();
-    if (mock !== null) await mock.close();
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
+    clearInterval(keepAlive);
+    if (mock !== null) await mock.close().catch(() => {});
   }
 }
 
-async function waitForHealth(config) {
+async function waitForHealth(config, signal) {
   const client = new HttpClient({
     baseUrl: config.baseUrl,
     token: "",
     metrics: new RunMetrics("bootstrap"),
+    signal,
   });
   let lastError;
   for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (signal.aborted)
+      throw new PreflightError("interrupted during health check");
     try {
       const response = await client.health();
       if (response.ok) return;
       lastError = new Error(`GET /health -> ${response.status}`);
     } catch (error) {
+      if (signal.aborted) {
+        throw new PreflightError("interrupted during health check");
+      }
       lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(
-    `API is not reachable at ${config.baseUrl}/health: ${lastError instanceof Error ? lastError.message : lastError}`,
+  throw new PreflightError(
+    `API is not reachable at ${redactedBaseUrl(config)}/health: ${sanitizeText(
+      lastError instanceof Error ? lastError.message : lastError,
+      config.tokens,
+    )}`,
   );
 }
 
-async function resolveUsers(config) {
-  const tokens = [...new Set(config.tokens)];
+async function resolveUsers(config, signal) {
   const metrics = new RunMetrics("bootstrap");
   const users = [];
-  for (const token of tokens) {
+  for (const token of config.tokens) {
     const client = new HttpClient({
       baseUrl: config.baseUrl,
       token,
       metrics,
+      signal,
     });
-    const me = await client.me();
+    let me;
+    try {
+      me = await client.me();
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        throw new PreflightError(
+          "token preflight failed with 401/403: use a valid board-domain PAT with the write preset",
+        );
+      }
+      throw error;
+    }
     if (me === null || typeof me.id !== "string") {
-      throw new Error("GET /auth/me returned no user id");
+      throw new PreflightError("GET /auth/me returned no user id");
     }
     users.push({ token, id: me.id, email: me.email ?? null });
   }
-  if (users.length === 0) throw new Error("no usable PAT");
+  if (users.length === 0) throw new PreflightError("no usable PAT");
   return users;
 }
 
-async function resolveBoards(config, users) {
-  if (config.explicitBoards.length > 0) return config.explicitBoards;
+/** The real agent path needs one identity per agent unless explicitly shared. */
+function assertTokenPool(config, users) {
+  let required = 0;
+  for (const id of config.scenarioIds) {
+    if (!["S2", "S3", "S4"].includes(id)) continue;
+    const scenario = scenarioConfig(config, id);
+    required = Math.max(required, scenario.agents ?? 0);
+  }
+  if (required > users.length && config.allowSharedIdentity !== true) {
+    if (config.mock) {
+      log(
+        `warning: ${required} mock agents share ${users.length} identity(ies)`,
+      );
+      return;
+    }
+    throw new PreflightError(
+      `token pool has ${users.length} identity(ies) for ${required} agents in S2/S3/S4; ` +
+        "pass more --token values or --shared-identity to model several agents per identity",
+    );
+  }
+  if (required > users.length) {
+    log(
+      `warning: ${required} agents share ${users.length} identity(ies) (--shared-identity)`,
+    );
+  }
+}
+
+function isArchivedBoard(board) {
+  return (
+    board?.archived === true ||
+    (board?.archivedAt !== null && board?.archivedAt !== undefined)
+  );
+}
+
+async function resolveBoards(config, users, signal) {
   const client = new HttpClient({
     baseUrl: config.baseUrl,
     token: users[0].token,
     metrics: new RunMetrics("bootstrap"),
+    signal,
   });
-  const boards = await client.listBoards();
+  if (config.explicitBoards.length > 0) {
+    for (const id of config.explicitBoards) {
+      let response;
+      try {
+        response = await client.readBoard(id);
+      } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+          throw new PreflightError(
+            `board ${id} is not accessible with the first token (401/403)`,
+          );
+        }
+        if (error?.status === 404) {
+          throw new PreflightError(`board ${id} does not exist`);
+        }
+        throw error;
+      }
+      if (isArchivedBoard(response.board)) {
+        throw new PreflightError(`board ${id} is archived`);
+      }
+    }
+    return config.explicitBoards;
+  }
+  const boards = await client.listBoards().catch((error) => {
+    if (error?.status === 401 || error?.status === 403) {
+      throw new PreflightError(
+        "GET /boards failed with 401/403: use a valid board-domain PAT",
+      );
+    }
+    throw error;
+  });
   const ids = boards
     .filter((board) => typeof board?.id === "string")
+    .filter((board) => !isArchivedBoard(board))
     .map((board) => board.id)
     .slice(0, config.boardsCount);
   if (ids.length === 0) {
-    throw new Error(
+    throw new PreflightError(
       "no boards visible to the PAT; pass --board <id> or create one",
     );
   }
@@ -194,7 +404,7 @@ async function runOne({ id, config, users, boards, signal }) {
   const effective = scenarioConfig(config, id);
   const metrics = new RunMetrics(id);
   log(
-    `\n▶ ${id} ${effective.title} · agents ${effective.agents ?? 0} · humans ${effective.humans ?? 0} · sse ${effective.sse ?? 0}`,
+    `\n▶ ${id} ${effective.title} · agents ${effective.agents ?? 0} · humans ${effective.humans ?? 0} · sse ${effective.sse ?? 0} · driver ${config.driver}`,
   );
   let result;
   let failure = null;
@@ -210,72 +420,96 @@ async function runOne({ id, config, users, boards, signal }) {
     });
   } catch (error) {
     failure = error;
+    const now = Date.now();
     result = {
       scenario: effective,
-      durationMs: 0,
-      startedAt: Date.now(),
-      endedAt: Date.now(),
+      startedAt: now,
+      measurementEndedAt: now,
+      endedAt: now,
+      workStartedAt: now,
+      workEndedAt: now,
+      workDurationMs: 0,
+      durationMs: 1,
+      drainEndedAt: now,
       errors: [
-        { message: error instanceof Error ? error.message : String(error) },
+        {
+          message: sanitizeText(
+            error instanceof Error ? error.message : error,
+            config.tokens,
+          ),
+          fatal: error?.status === 401 || error?.status === 403,
+        },
       ],
+      fatalAuth: error?.status === 401 || error?.status === 403,
+      interrupted: signal.aborted,
+      recycled: 0,
+      mcp: null,
     };
   }
   sampler.poll();
-  const windowEnd = Date.now();
+  const measuredEnd = result.measurementEndedAt ?? Date.now();
+  const metricDuration = Math.max(
+    1,
+    result.workDurationMs ?? result.durationMs,
+  );
   const snapshot = metrics.snapshot({
-    durationMs: Math.max(1, result.durationMs),
+    durationMs: metricDuration,
     agents: effective.agents ?? 0,
   });
-  const resources = sampler.summarize(result.startedAt, windowEnd);
-  log(
-    `${failure === null ? "✓" : "✗"} ${id}: ${snapshot.requests} req · ${snapshot.cycles} cycles · ${snapshot.actionsPerSecond ?? "—"} actions/s · p95 ${snapshot.latency.p95 ?? "—"} ms · 409 ${snapshot.errors.conflict409} · 429 ${snapshot.errors.rateLimited429} · 5xx ${snapshot.errors.server5xx}`,
+  const usesMcp =
+    config.driver === "mcp" && ["S1", "S2", "S3", "S4"].includes(id);
+  const { status, reason } = evaluateScenarioStatus({
+    id,
+    scenario: effective,
+    summary: snapshot,
+    errors: result.errors ?? [],
+    fatal: result.fatalAuth === true || failure !== null,
+    interrupted: result.interrupted === true || interrupted,
+    driver: usesMcp ? "mcp" : "http",
+    workDurationMs: result.workDurationMs,
+  });
+  const resources = sampler.summarize(
+    result.workStartedAt ?? result.startedAt,
+    measuredEnd,
   );
-  if (failure !== null) {
-    log(
-      `  scenario failed: ${failure instanceof Error ? failure.message : failure}`,
-    );
-  }
+  log(
+    `${status === "ok" ? "✓" : status === "partial" ? "◐" : status === "interrupted" ? "■" : "✗"} ${id} [${status}]: ${snapshot.requests} req · ${snapshot.cycles} cycles · ${snapshot.actionsPerSecond ?? "—"} actions/s · p95 ${snapshot.latency.p95 ?? "—"} ms · 400 ${snapshot.errors.badRequest400} · 409 ${snapshot.errors.conflict409} · 429 ${snapshot.errors.rateLimited429} · 5xx ${snapshot.errors.server5xx} · net ${snapshot.errors.network}`,
+  );
+  if (reason !== null) log(`  ${reason}`);
   return {
     id,
     title: effective.title,
+    status,
+    statusReason: reason,
     config: { ...effective },
     summary: snapshot,
     api: resources,
-    errors: [
-      ...(failure === null
-        ? []
-        : [
-            {
-              message:
-                failure instanceof Error ? failure.message : String(failure),
-            },
-          ]),
-      ...(result.errors ?? []),
-    ],
+    workWindow: {
+      workStartedAt: result.workStartedAt ?? result.startedAt,
+      workEndedAt: measuredEnd,
+      workDurationMs:
+        result.workDurationMs ?? Math.max(0, measuredEnd - result.startedAt),
+    },
+    mcp: result.mcp ?? null,
+    recycle: result.recycle ?? null,
+    errors: result.errors ?? [],
+    fatalAuth: result.fatalAuth === true,
   };
 }
 
-function smokeFailed(report) {
-  if (report.scenarios.length === 0) return true;
-  for (const scenario of report.scenarios) {
-    const summary = scenario.summary;
-    if (summary.requests === 0) return true;
-    if (summary.errors.server5xx > 0 || summary.errors.network > 0) return true;
-    if (scenario.id === "S2" && summary.cycles === 0) return true;
-  }
-  return false;
-}
-
 async function writeReport(config, report) {
-  const stamp = timestampSlug(new Date(report.endedAt));
-  const defaultPath =
-    config.mode === "smoke"
-      ? path.join(
-          os.tmpdir(),
-          "janosik-perf",
-          `agent-scale-smoke-${stamp}.json`,
-        )
-      : path.join("scripts", "perf", "results", `agent-scale-${stamp}.json`);
+  const date = report.generatedAt.slice(0, 10);
+  const time = report.generatedAt.slice(11, 19).replaceAll(":", "");
+  const sha = String(report.git.commit ?? "unknown").slice(0, 8);
+  const scenarioSlug =
+    config.scenarioIds.length === 0 ? "none" : config.scenarioIds.join("-");
+  const defaultPath = path.join(
+    "scripts",
+    "perf",
+    "results",
+    `${date}-${sha}`,
+    `${config.mode}-${scenarioSlug}-${config.driver}-${time}.json`,
+  );
   const jsonPath = path.resolve(config.output ?? defaultPath);
   const markdownPath = jsonPath.replace(/\.json$/i, "") + ".md";
   await mkdir(path.dirname(jsonPath), { recursive: true });
@@ -284,26 +518,15 @@ async function writeReport(config, report) {
   return { jsonPath, markdownPath };
 }
 
-function timestampSlug(date) {
-  const pad = (value) => String(value).padStart(2, "0");
-  return [
-    date.getUTCFullYear(),
-    pad(date.getUTCMonth() + 1),
-    pad(date.getUTCDate()),
-    "-",
-    pad(date.getUTCHours()),
-    pad(date.getUTCMinutes()),
-    pad(date.getUTCSeconds()),
-  ].join("");
-}
-
 function printSummary(report, jsonPath, markdownPath) {
   console.log("");
-  console.log(`commit ${report.git.commit} · ${report.git.branch}`);
+  console.log(
+    `commit ${report.git.commit} · ${report.git.branch} · status ${report.status}`,
+  );
   for (const scenario of report.scenarios) {
     const s = scenario.summary;
     console.log(
-      `${scenario.id.padEnd(3)} req=${s.requests} cycles=${s.cycles} p95=${s.latency.p95 ?? "—"}ms 409=${s.errors.conflict409} 429=${s.errors.rateLimited429} 5xx=${s.errors.server5xx}`,
+      `${scenario.id.padEnd(3)} ${String(scenario.status).padEnd(11)} req=${s.requests} tools=${s.toolCalls} cycles=${s.cycles} p95=${s.latency.p95 ?? "—"}ms 400=${s.errors.badRequest400} 409=${s.errors.conflict409} 429=${s.errors.rateLimited429} 5xx=${s.errors.server5xx} net=${s.errors.network}`,
     );
   }
   console.log(`JSON: ${jsonPath}`);
@@ -314,8 +537,14 @@ function printSummary(report, jsonPath, markdownPath) {
 }
 
 void main().catch(async (error) => {
-  console.error(error instanceof Error ? error.stack : error);
-  sampler?.stop();
-  if (mock !== null) await mock.close().catch(() => {});
-  process.exitCode = 1;
+  const message = sanitizeText(
+    error instanceof Error ? error.message : error,
+    activeConfig?.tokens ?? [],
+  );
+  console.error(`perf: ${message}`);
+  process.exitCode = interrupted
+    ? 130
+    : error instanceof PreflightError
+      ? 2
+      : 1;
 });

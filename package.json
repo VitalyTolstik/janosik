@@ -62,14 +62,19 @@
     "perf:admin-filters": "node scripts/perf/admin-filter-bench.mjs",
     "perf:agents": "node scripts/perf/agent-scale.mjs",
     "perf:smoke": "node scripts/perf/agent-scale.mjs --scenario smoke --mock",
+    "perf:mcp-smoke": "node scripts/perf/agent-scale.mjs --scenario S2 --driver mcp --mock --agents 1 --cadence 300ms --duration 2s",
     "perf:test": "node --test scripts/perf/*.test.mjs",
     "perf:lint": "eslint scripts/perf eslint.config.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@seriousme/openapi-schema-validator": "^2.11.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",
-    "prettier-plugin-astro": "^1.1.2"
+    "prettier-plugin-astro": "^1.1.2",
+    "tsx": "^4.20.6"
   }
 }
