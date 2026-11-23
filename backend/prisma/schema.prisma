@@ -402,8 +402,10 @@ model ApiToken {
 // `20261123130000_task_200_11_command_log_partitioning`,
 // `20261123131000_task_200_11_command_details_side_table`,
 // `20261123132000_task_200_11_command_key_registry`,
-// `20261123133000_task_200_11_safe_partition_drop` and
-// `20261123134000_task_200_11_command_key_move`). PostgreSQL requires
+// `20261123133000_task_200_11_safe_partition_drop`,
+// `20261123134000_task_200_11_command_key_move`,
+// `20261123135000_task_200_11_command_key_board_index` and
+// `20261123136000_task_200_11_command_preimage_move`). PostgreSQL requires
 // every unique constraint on a partitioned table to contain the partition
 // key, so the table primary key is `(id, createdAt)` rather than `id`.
 // Global commandId uniqueness — the old `Command_pkey` guarantee — is restored

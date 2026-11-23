@@ -610,7 +610,9 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       v1PatchId,
     ).expect(200);
     const v1PatchFingerprint = (await fingerprintOf(v1PatchId)).slice(3);
-    await setIntentDetail(v1PatchId, boardId, { intentFingerprint: v1PatchFingerprint });
+    await setIntentDetail(v1PatchId, boardId, {
+      intentFingerprint: v1PatchFingerprint,
+    });
     await patch(
       boardId,
       v1PatchCard,
@@ -631,7 +633,9 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       v1MoveId,
     ).expect(200);
     const v1MoveFingerprint = (await fingerprintOf(v1MoveId)).slice(3);
-    await setIntentDetail(v1MoveId, boardId, { intentFingerprint: v1MoveFingerprint });
+    await setIntentDetail(v1MoveId, boardId, {
+      intentFingerprint: v1MoveFingerprint,
+    });
     await move(
       boardId,
       v1MoveCard,

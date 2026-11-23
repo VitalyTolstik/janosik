@@ -29,6 +29,7 @@ const MIGRATION_DIRS = [
   "20261123133000_task_200_11_safe_partition_drop",
   "20261123134000_task_200_11_command_key_move",
   "20261123135000_task_200_11_command_key_board_index",
+  "20261123136000_task_200_11_command_preimage_move",
 ];
 
 const baseUrl =

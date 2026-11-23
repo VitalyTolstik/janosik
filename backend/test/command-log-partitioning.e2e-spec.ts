@@ -378,24 +378,41 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     const from = new Date(Date.UTC(2019, 3, 15, 12, 0, 0));
     const to = new Date(Date.UTC(2019, 4, 15, 12, 0, 0));
     await createCommand("moved", from, true);
+    await prisma.commandPreimage.create({
+      data: {
+        commandId: id,
+        boardId,
+        runId: `run-${suffix}`,
+        data: { schemaVersion: 1, entities: [] },
+        createdAt: from,
+      },
+    });
     await prisma.command.updateMany({
       where: { id, createdAt: from },
       data: { createdAt: to },
     });
     const routed = await prisma.$queryRawUnsafe<
-      Array<{ command_part: string; detail_part: string; key_created: Date }>
+      Array<{
+        command_part: string;
+        detail_part: string;
+        preimage_part: string;
+        key_created: Date;
+      }>
     >(
       `SELECT c.tableoid::regclass::text AS command_part,
               d.tableoid::regclass::text AS detail_part,
+              p.tableoid::regclass::text AS preimage_part,
               k."createdAt" AS key_created
          FROM "Command" c
          JOIN "CommandDetail" d ON d."commandId" = c."id" AND d."boardId" = c."boardId"
+         JOIN "CommandPreimage" p ON p."commandId" = c."id"
          JOIN "CommandKey" k ON k."id" = c."id" AND k."boardId" = c."boardId"
         WHERE c."id" = $1`,
       id,
     );
     expect(routed[0]!.command_part).toContain("Command_201905");
     expect(routed[0]!.detail_part).toContain("CommandDetail_201905");
+    expect(routed[0]!.preimage_part).toContain("CommandPreimage_201905");
     expect(new Date(routed[0]!.key_created).toISOString()).toBe(
       to.toISOString(),
     );
@@ -407,6 +424,9 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     expect(await prisma.commandDetail.count({ where: { commandId: id } })).toBe(
       1,
     );
+    expect(
+      await prisma.commandPreimage.count({ where: { commandId: id } }),
+    ).toBe(1);
     expect(await prisma.commandKey.count({ where: { id } })).toBe(1);
     await prisma.$queryRawUnsafe(
       `SELECT janosik_drop_command_partition($1::date)`,
@@ -547,6 +567,73 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
       await prisma.commandKey.count({ where: { boardId: boardIdForPurge } }),
     ).toBe(0);
     await prisma.user.deleteMany({ where: { id: userIdForPurge } });
+  });
+
+  it("keeps a live detail when the orphan repair uses tableoid+ctid", async () => {
+    for (const date of ["2019-06-01", "2019-07-01"]) {
+      await prisma.$queryRawUnsafe(
+        `SELECT janosik_ensure_command_partition($1::date)`,
+        date,
+      );
+    }
+    const orphanId = `cmdlog-${suffix}-orphan-detail`;
+    const orphanCreated = new Date(Date.UTC(2019, 5, 15, 12, 0, 0));
+    await prisma.commandDetail.create({
+      data: {
+        commandId: orphanId,
+        boardId,
+        createdAt: orphanCreated,
+        data: { changes: [] },
+      },
+    });
+    await createCommand(
+      "orphan-live",
+      new Date(Date.UTC(2019, 6, 15, 12, 0, 0)),
+      true,
+    );
+    const liveId = `cmdlog-${suffix}-orphan-live`;
+    const positions = await prisma.$queryRawUnsafe<
+      Array<{ command_id: string; ctid: string }>
+    >(
+      `SELECT "commandId" AS command_id, ctid::text AS ctid
+         FROM "CommandDetail"
+        WHERE "commandId" IN ($1, $2)
+        ORDER BY "commandId"`,
+      orphanId,
+      liveId,
+    );
+    expect(positions).toHaveLength(2);
+    expect(positions[0]!.ctid).toBe(positions[1]!.ctid);
+
+    await prisma.$executeRawUnsafe(
+      `WITH victims AS (
+         SELECT d.tableoid, d.ctid
+           FROM "CommandDetail" d
+          WHERE NOT EXISTS (
+            SELECT 1 FROM "Command" c
+             WHERE c."id" = d."commandId" AND c."boardId" = d."boardId"
+          )
+          LIMIT 5000
+       )
+       DELETE FROM "CommandDetail" d
+        USING victims v
+        WHERE d.tableoid = v.tableoid AND d.ctid = v.ctid`,
+    );
+    expect(
+      await prisma.commandDetail.count({ where: { commandId: orphanId } }),
+    ).toBe(0);
+    expect(
+      await prisma.commandDetail.count({ where: { commandId: liveId } }),
+    ).toBe(1);
+
+    await prisma.command.deleteMany({ where: { id: liveId } });
+    await prisma.commandKey.deleteMany({ where: { id: liveId } });
+    for (const date of ["2019-06-01", "2019-07-01"]) {
+      await prisma.$queryRawUnsafe(
+        `SELECT janosik_drop_command_partition($1::date)`,
+        date,
+      );
+    }
   });
 
   it("leaves no command, detail or key rows after the e2e wipe", async () => {

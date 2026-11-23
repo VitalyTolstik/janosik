@@ -18,15 +18,15 @@ describe("shared BOARD_ACTION_TYPES", () => {
 
 describe("deep command actions", () => {
   it("answers a generic 400 when the action cannot be serialized", () => {
-    let deep: Record<string, unknown> = {};
-    for (let index = 0; index < 6_000; index += 1) deep = { a: deep };
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
     let error: unknown;
     try {
       validateCommandAction({
         type: "RENAME_BOARD",
         title: "deep",
         at: Date.now(),
-        deep,
+        deep: circular,
       });
     } catch (caught) {
       error = caught;

@@ -149,17 +149,21 @@ The storage levers, in order of impact:
    reclaim. Partition drop is cheap for Command/Detail/Preimage; the registry
    is the one retention cost that is proportional to row count.
 
-Planning numbers (order-of-magnitude, not a benchmark claim):
+Planning numbers (order-of-magnitude, not a benchmark claim). Partition
+granularity is monthly and the sweep runs hourly, so the **effective live
+window is 30–60 days** (the current and previous calendar month); budget for
+up to ~2× the nominal 30-day rows:
 
-| Load | Commands / 30 days | At ~0.5–1 KB/row incl. indexes | At ~2 KB/row |
-| --- | --- | --- | --- |
-| 25 cmds/s | ~65M | ~30–65 GB | ~130 GB |
-| 50 cmds/s | ~130M | ~65–130 GB | ~260 GB |
+| Load | Commands / 30d | Commands / 30–60d | Storage at ~0.5–1 KB/row | Storage at ~2 KB/row |
+| --- | --- | --- | --- | --- |
+| 25 cmds/s | ~65M | ~130M | ~65–130 GB | ~260 GB |
+| 50 cmds/s | ~130M | ~260M | ~130–260 GB | ~520 GB |
 
 Add the unpartitioned registry on top: ~130M rows at 50/s × 30 days, roughly
-10–15 GB of heap+index plus dead tuples/WAL from the orphan sweep. WAL is not
-in these figures; a large backfill or delete series needs free WAL space and
-autovacuum headroom.
+10–15 GB of heap+index; the 30–60-day live window can double that (~20–30 GB),
+plus dead tuples/WAL from the orphan sweep. WAL is not included in these
+figures; a large backfill, index build or delete series needs free WAL space
+and autovacuum headroom.
 
 The target is **not** “always under 100 GB”; it is that growth is a function
 of the chosen window, not of history, and that the operator can see the
@@ -202,6 +206,12 @@ Three maintenance jobs (all idempotent, part of the existing scheduler and
   month for the next hourly run. Agent runs are swept afterwards by the
   existing `sweep-runs`.
 
+The board purge takes the board advisory lock and pages its subtrees; the
+month drop takes partition locks in reader order. They do not share a lock
+order, so a concurrent drop can meet the board transaction: the drop has a 2 s
+`lock_timeout` and returns `-1`, and the sweep leaves that month for the next
+hourly run instead of failing. A purge/erase never waits on the DDL.
+
 `GET /api/v1/admin/observability` includes `commandLog` (the current admin
 Observability page does not render this block yet; it is an API/CLI metric):
 
@@ -243,7 +253,7 @@ months, and the next `ensure` will report `skipped:` until it is moved.
 
 ## 6. Migration
 
-Six migrations:
+Seven migrations:
 
 1. `20261123130000_task_200_11_command_log_partitioning` — partition swap.
 2. `20261123131000_task_200_11_command_details_side_table` — details backfill
@@ -258,6 +268,8 @@ Six migrations:
    for purge scans; inline only for a registry under 1M rows **and** 64 MiB,
    otherwise deferred to
    `ensure-command-key-index` (`CREATE INDEX CONCURRENTLY`).
+7. `20261123136000_task_200_11_command_preimage_move` — move pre-images with a
+   command's `createdAt` (seed/backdate), keeping the run pair in one month.
 
 **Pre-checks**
 
@@ -340,11 +352,17 @@ Migration 6 (`...command_key_board_index`):
    Reserve index + WAL free space and expect I/O during the build. A plain
    inline build on a 100–130M registry is never attempted at boot.
 
+Migration 7 (`...command_preimage_move`):
+
+1. Recreate the key claim/move triggers so a `Command.createdAt` rewrite also
+   moves `CommandPreimage.createdAt`/`boardId` with the command and detail.
+2. `ANALYZE CommandPreimage`; no index or table rewrite.
+
 **Empty DB:** the same steps create empty parents/partitions and drop empty
 legacy tables. **Existing DB:** the automated check
 (`npm run test:migration:command-log -w backend`) builds both cases on
 throwaway databases: it stops before the TASK-200.11 migrations, seeds three
-months of commands/details/pre-images, then applies all six and asserts
+months of commands/details/pre-images, then applies all seven and asserts
 counts, routing, sequence, key uniqueness, detail move/no cascade,
 `CommandKey_boardId_idx`, the skipped default month, pruning and retention.
 
@@ -407,23 +425,20 @@ default copy instead of reinserting it — the registry is global.
 
 ### Runbook: intermediate duplicate ids
 
-`CommandKey` has a primary key on `id`. If an environment ran the earlier
-partitioned schema long enough to create the same client id on two boards, the
-key migration stops with a duplicate-id exception. Inspect and resolve before
-re-running `prisma migrate deploy`:
+`CommandKey` has a primary key on `id`, so the registry itself cannot hold two
+rows for the same id. The duplicate state exists only in the earlier
+partitioned `Command` table (composite PK), before migration 3 backfills the
+registry. Inspect and resolve it before re-running `prisma migrate deploy`:
 
 ```sql
-SELECT k.id, array_agg(k."boardId") AS boards, array_agg(k."createdAt") AS times
-  FROM "CommandKey" k
- GROUP BY k.id HAVING count(*) > 1;
--- and, if CommandKey does not exist yet:
-SELECT id, array_agg("boardId") AS boards FROM "Command"
+SELECT id, array_agg("boardId") AS boards, array_agg("createdAt") AS times
+  FROM "Command"
  GROUP BY id HAVING count(*) > 1;
 ```
 
 Pick the canonical board/row (usually the first committed seq), export the
 losing commands/details for audit, then delete them through the parent
-(partitioned `Command` delete) and delete the losing `CommandKey`. Re-run the
+(partitioned `Command` delete). There is no losing `CommandKey` yet. Re-run the
 migration. The migration deliberately refuses to guess: a silent merge could
 drop another board's history.
 
@@ -455,7 +470,7 @@ manual SQL delete skips triggers, drain them in bounded batches:
 
 ```sql
 WITH victims AS (
-  SELECT d.ctid
+  SELECT d.tableoid, d.ctid
     FROM "CommandDetail" d
    WHERE NOT EXISTS (
      SELECT 1 FROM "Command" c
@@ -465,11 +480,14 @@ WITH victims AS (
 )
 DELETE FROM "CommandDetail" d
  USING victims v
- WHERE d.ctid = v.ctid;
+ WHERE d.tableoid = v.tableoid AND d.ctid = v.ctid;
 ```
 
-Repeat until 0 and mirror the query for `CommandKey` when needed. Neither table
-has a `Command` FK, so this is the manual repair path.
+`ctid` is only unique inside one physical partition/table; always pair it with
+`tableoid` (or delete by `(commandId, createdAt)`). A ctid-only predicate can
+delete a live row in another monthly partition that reuses the same item
+pointer. Repeat until 0 and mirror the query for `CommandKey` when needed.
+Neither table has a `Command` FK, so this is the manual repair path.
 
 
 ## 7. Compatibility with the other TASK-200 work
