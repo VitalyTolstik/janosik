@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { showRemaining } from "@/utils/limit-format";
 import { I18nProvider } from "@/i18n";
+import ru from "@/locales/ru/translation.json";
 
 /**
  * Unit tests for the shared "N characters left" counter (TASK-20): it
@@ -39,6 +40,26 @@ describe("LimitCounter", () => {
       </I18nProvider>,
     );
     expect(screen.getByTestId("counter").className).toContain("text-danger");
+  });
+
+  it("can use an AA tinted-danger token for critical text", () => {
+    render(
+      <I18nProvider>
+        <LimitCounter
+          length={295}
+          limit={300}
+          testId="counter"
+          dangerClassName="text-(--chip-red)"
+        />
+      </I18nProvider>,
+    );
+    const counter = screen.getByTestId("counter");
+    expect(counter.className).toContain("text-(--chip-red)");
+    expect(counter.className).not.toContain("text-danger");
+  });
+
+  it("uses a grammar-neutral RU remaining label", () => {
+    expect(ru["limits.remaining"]).toBe("Осталось символов: {{count}}");
   });
 
   it("renders nothing while the input is short", () => {
