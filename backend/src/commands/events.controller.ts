@@ -205,6 +205,7 @@ export class EventsController implements OnModuleDestroy {
       frames: this.frames,
       maxBufferBytes: env.SSE_MAX_BUFFER_BYTES,
       slowCloseMs: env.SSE_SLOW_CLOSE_MS,
+      onSlowConsumer: (info) => this.realtime.noteSlowSubscriber(boardId, info),
       onClose: () => owner.subscription?.unsubscribe(),
     });
     // Match `@Sse`'s early header commit: the client's `fetch` resolves and
