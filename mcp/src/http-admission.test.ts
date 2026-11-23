@@ -1,22 +1,25 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ConcurrencyGate,
   KeyedTokenBucket,
   NegativeTokenCache,
   SingleFlight,
   SingleFlightCapacityError,
+  TenantConcurrencyGate,
 } from "./http-admission.js";
 
 describe("gateway admission", () => {
-  it("bounds concurrent holders without queueing", () => {
-    const gate = new ConcurrencyGate(2);
-    expect(gate.tryAcquire()).toBe(true);
-    expect(gate.tryAcquire()).toBe(true);
-    expect(gate.tryAcquire()).toBe(false);
-    gate.release();
-    expect(gate.tryAcquire()).toBe(true);
-    expect(gate.inUse).toBe(2);
+  it("bounds per-key and global concurrent holders without queueing", () => {
+    const gate = new TenantConcurrencyGate(2, 3);
+    expect(gate.tryAcquire("a").ok).toBe(true);
+    expect(gate.tryAcquire("a").ok).toBe(true);
+    expect(gate.tryAcquire("a")).toEqual({ ok: false, scope: "token" });
+    expect(gate.tryAcquire("b").ok).toBe(true);
+    expect(gate.tryAcquire("c")).toEqual({ ok: false, scope: "global" });
+    gate.release("a");
+    expect(gate.tryAcquire("c").ok).toBe(true);
+    expect(gate.inUse).toBe(3);
+    expect(gate.keys).toBe(3);
   });
 
   it("limits a key, reports Retry-After and refills over time", () => {

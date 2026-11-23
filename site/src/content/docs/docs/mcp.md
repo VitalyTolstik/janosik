@@ -101,8 +101,8 @@ shared session store. Limits come from `JANOSIK_MCP_HTTP_MAX_SESSIONS`
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and the idle expiry
 (default 5 minutes); an in-flight call or open stream is never swept. A key's
 default 10 initialize attempts/min is below its 50-session cap; raise
-`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must open 50 sessions
-immediately. The Compose service also sets a 1.5 GB memory limit and 2 CPUs. The API
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must reach its per-key
+session cap immediately. The Compose service also sets a 1.5 GB memory limit and 2 CPUs. The API
 still enforces the key's board scope, role, preset and rate limit.
 
 For a large first-time swarm, 500 new keys in one minute exceed the API's

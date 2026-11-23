@@ -34,4 +34,8 @@ describe("trusted proxy address selection", () => {
   it("selects the right edge, not a spoofed leftmost entry", () => {
     expect(clientAddress(request("9.9.9.9, 1.2.3.4"), 1)).toBe("1.2.3.4");
   });
+
+  it("ignores X-Forwarded-For entirely when trustedHops is 0", () => {
+    expect(clientAddress(request("1.2.3.4"), 0)).toBe("10.0.0.7");
+  });
 });

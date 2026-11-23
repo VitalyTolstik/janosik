@@ -35,8 +35,8 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
   unchanged.
 - No database and no shared token; only bounded in-memory sessions and
   admission state (LRU rate buckets, a bounded negative cache, a validation
-  single-flight capped at `AUTH_MAX_IN_FLIGHT`, and body reads capped at
-  `MAX_CONCURRENT_BODY_READS`).
+  single-flight capped at `AUTH_MAX_IN_FLIGHT`, and session-bound body reads
+  capped per token and globally with an explicit read deadline).
 
 ## Transport contract
 
@@ -67,8 +67,9 @@ Error contract (all `503`s carry `Retry-After`):
   includes `Retry-After`.
 - `503 auth_busy` — too many distinct validations are in flight; includes
   `Retry-After`.
-- `503 body_busy` — too many request bodies are being read concurrently;
-  includes `Retry-After`.
+- `503 body_busy` — too many session-bound request bodies are being read for
+  this key or globally; includes `Retry-After`. Sessionless initialize does
+  not use this gate.
 - `503 session_limit` — global/per-key cap; includes `Retry-After`.
 - `503 shutting_down` — SIGTERM drain window; includes `Retry-After`.
 - `403 token_mismatch` — a valid key that is not the key bound to the
@@ -77,7 +78,9 @@ Error contract (all `503`s carry `Retry-After`):
   all browser origins denied). An allowed origin also gets CORS preflight and
   response headers, so a browser MCP host is usable when deliberately enabled.
 - `404 session_not_found` — unknown or expired `Mcp-Session-Id`.
-- `413 payload_too_large` — body over `JANOSIK_MCP_HTTP_MAX_BODY_BYTES`.
+- `413 payload_too_large` — sessionless body over
+  `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES`, or any body over
+  `JANOSIK_MCP_HTTP_MAX_BODY_BYTES`.
 
 ## Token validation and isolation
 
@@ -86,13 +89,20 @@ before reading the body**: global capacity, the per-token session cap (default
 `min(50, MAX_SESSIONS)`), a per-IP initialize bucket (default 600/min), a
 per-token-fingerprint bucket (default 10/min), and a bounded negative cache of
 invalid fingerprints. The sessionless body is capped strictly (default
-`min(256 KiB, MAX_BODY_BYTES)`) before buffering; all POSTs still use the
-normal body cap, and at most `MAX_CONCURRENT_BODY_READS` bodies are read at
-once. Every new session
+`min(256 KiB, MAX_BODY_BYTES)`) before buffering and does not share the
+session-bound gate. Session-bound reads use a per-token (or initialize-IP) cap
+(default 4) with a global backstop (default 16; 16 × 16 MiB = 256 MiB worst
+case), and an explicit read deadline (default 8 s)
+destroys a stalled body and releases its slot independently of Node's request
+checker. A full gate answers `503 body_busy` + `Retry-After`; one key cannot
+deny other keys or sessionless initialize. Every new session
 that passes the buckets and is not in the negative cache performs one
 authenticated API read (`/api/v1/auth/me` by default); only a cached invalid
-fingerprint skips it. Concurrent initializes for one fingerprint share one
-validation call; a `429`/`503` from the API is retried a bounded number of
+fingerprint skips it. The body-gate memory product is
+`MAX_CONCURRENT_BODY_READS × MAX_BODY_BYTES` (16 × 16 MiB = 256 MiB); keep the
+Compose `mem_limit` above the 1 GiB V8 heap plus that product. Concurrent
+initializes for one fingerprint share one validation call; a `429`/`503` from
+the API is retried a bounded number of
 times, honoring a small `Retry-After` (a longer API delay is returned to the
 caller instead of sleeping in-request), so a new session costs one call and a
 throttled one up to `AUTH_RETRY_ATTEMPTS` calls. At most
@@ -135,8 +145,10 @@ the address it saw.
   connecting is never swept. Timer env values are bounded to Node's maximum.
 - Explicit `DELETE` closes immediately; transport/network close also detaches.
 - Graceful shutdown: release idle sessions, keep the listener open while
-  in-flight tool calls finish up to `SHUTDOWN_GRACE_MS` (new requests get
-  `503 shutting_down` + `Retry-After`), then close the remaining sessions/SSE
+  in-flight tool calls finish up to `SHUTDOWN_GRACE_MS`; unknown paths still
+  answer `404` and disallowed origins `403` before the closing check, while
+  other MCP requests get `503 shutting_down` + `Retry-After`. Then close the
+  remaining sessions/SSE
   streams, stop accepting and force-close sockets after a short grace. A
   second signal exits 1.
 - Structured JSON logs include request id, session id, method, path, status,
@@ -167,6 +179,9 @@ Docker or heavy load):
   session-bound body between INIT and MAX is allowed;
 - XFF trusted-hop selection covers short chains, non-IP, IPv4:port, IPv6 and a
   spoofed leftmost entry; `TRUST_PROXY=17` is rejected;
+- stalled session bodies fill only their per-token gate: another key and a
+  sessionless initialize still work, a full gate returns `503 body_busy`, and
+  the explicit read timeout/client abort releases the slot;
 - global limit (503), explicit DELETE, replacement session;
 - active slow tool call is drained before close; a request during drain gets
   `503 shutting_down` + `Retry-After`; open GET SSE closes during drain; idle

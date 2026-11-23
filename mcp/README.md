@@ -123,13 +123,19 @@ Admission is checked locally before `/api/v1/auth/me` and before reading the
 request body: a global cap, a per-key cap (default `min(50, MAX_SESSIONS)`),
 per-IP and per-token-fingerprint initialize buckets, and a bounded negative
 cache of invalid fingerprints. A sessionless body is capped strictly (default
-256 KiB) before buffering; the normal body cap still applies to every POST.
-Concurrent initializes for one key share one validation call. A `429` from the
+256 KiB) before buffering and is **not** part of the session body gate; the
+normal body cap still applies to every POST. Session-bound bodies use a
+per-token gate (default 4) with a global backstop (default 16) and an explicit
+read deadline (default 8 s); a stalled client gets its slot destroyed and a
+full gate answers `503 body_busy` + `Retry-After` without denying other keys
+or sessionless initialize. Concurrent initializes for one key share one
+validation call. A `429` from the
 gateway for initialize is `initialize_rate_limited`; `503 session_limit` and
 other 503s carry `Retry-After`. The default per-key limits are **10
 initialize attempts/min and 50 live sessions**: a key that legitimately needs
-50 sessions must raise `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or create
-them over several minutes). The API's own IP throttle still applies to
+the per-key session cap must raise
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or create them over several
+minutes). The API's own IP throttle still applies to
 first-time keys:
 raise the API `THROTTLE_LIMIT` (and the gateway's
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`) for a large
@@ -180,7 +186,9 @@ The gateway exposes `GET /health` (liveness, no auth) and `GET /ready`
 (readiness: the API's `/api/v1/health/ready` must answer). `/ready` does
 **not** validate an MCP key; it only reports API reachability (cached). Both
 endpoints return `Retry-After` on `503`. MCP requests use `POST`/`GET`/`DELETE`
-on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
+on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`). During SIGTERM drain, unknown
+paths still answer `404` and disallowed origins `403`; other MCP requests get
+`503 shutting_down` + `Retry-After` while active calls finish.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -199,9 +207,11 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` | `300000` | Close a session with no request for this long. |
 | `JANOSIK_MCP_HTTP_SESSION_SWEEP_MS` | `30000` | Idle sweeper interval. |
 | `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` | empty | Browser origins allowed to call the gateway; empty rejects every browser `Origin`. |
-| `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap for all POSTs. |
+| `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap for all POSTs; over it gets `413`. |
 | `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES` | `min(262144, MAX_BODY_BYTES)` | Strict sessionless/initialize body cap, checked before buffering; over it gets `413`. |
-| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS` | `64` | Maximum request bodies read concurrently across all POSTs. |
+| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS` | `16` | Global backstop for concurrent session-bound body reads; at 16 MiB each this is ~256 MiB. |
+| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN` | `4` | Per-key (token or initialize IP) body reads; one key cannot starve the global gate. |
+| `JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS` | `8000` | Destroy a stalled body read and release its slot independently of Node's checker. |
 | `JANOSIK_MCP_HTTP_READY_URL` | `${JANOSIK_URL}/api/v1/health/ready` | Upstream readiness probe; no token is sent. |
 | `JANOSIK_MCP_HTTP_READY_CACHE_MS` | `5000` | Cache for the readiness probe (`0` = every request probes). |
 | `JANOSIK_MCP_HTTP_READY_TIMEOUT_MS` | `3000` | Readiness probe timeout. |
@@ -213,6 +223,12 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_TRUST_PROXY` | `0` | Trusted proxy hops from the right of `X-Forwarded-For` (`0`–`16`; legacy `true` = `1`). |
 | `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
 | `JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS` | `10000` | Drain window on SIGTERM/SIGINT before force-closing sockets. |
+
+**Memory budget.** The body gate's worst case is
+`MAX_CONCURRENT_BODY_READS × MAX_BODY_BYTES` = 16 × 16 MiB = 256 MiB; keep the
+container `mem_limit` above `NODE_OPTIONS` (1 GiB in Compose) plus that body
+budget. The per-token cap and 8 s read deadline prevent one client's stalled
+bodies from consuming the global backstop.
 
 `JANOSIK_MCP_TOOLSETS`, `JANOSIK_MCP_READONLY`, `JANOSIK_APP_BASE` and the
 filesystem settings are shared with the stdio server. The gateway container

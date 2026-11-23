@@ -1,6 +1,7 @@
 import {
   createServer as createHttpServer,
   request as httpRequest,
+  type ClientRequest,
   type IncomingMessage,
   type Server,
   type ServerResponse,
@@ -207,7 +208,9 @@ function gatewayConfig(
     sessionSweepMs: 0,
     maxBodyBytes: 64 * 1024,
     sessionlessMaxBodyBytes: 4 * 1024,
-    maxConcurrentBodyReads: 64,
+    maxConcurrentBodyReads: 16,
+    maxConcurrentBodyReadsPerToken: 4,
+    bodyReadTimeoutMs: 8_000,
     allowedOrigins: new Set(),
     readinessUrl: `${upstream.url}/api/v1/health/ready`,
     readinessCacheMs: 0,
@@ -410,6 +413,64 @@ async function listBoards(
   return (payload.structuredContent?.boards ?? []).map(
     (board) => board.title ?? "",
   );
+}
+
+function startStalledPost(
+  running: RunningGateway,
+  token: string,
+  sessionId?: string,
+): ClientRequest {
+  const url = new URL(`${running.url}/mcp`);
+  const request = httpRequest(
+    {
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        "content-length": "100",
+        ...(sessionId === undefined
+          ? {}
+          : {
+              "mcp-session-id": sessionId,
+              "mcp-protocol-version": "2025-06-18",
+            }),
+      },
+    },
+    (response) => response.resume(),
+  );
+  request.on("error", () => undefined);
+  request.flushHeaders();
+  request.write("{");
+  return request;
+}
+
+interface BodyReadStats {
+  active: number;
+  globalMax: number;
+  perTokenMax: number;
+  timeoutMs: number;
+}
+
+async function bodyReadStats(running: RunningGateway): Promise<BodyReadStats> {
+  const response = await fetch(`${running.url}/health`);
+  const body = (await response.json()) as { bodyReads: BodyReadStats };
+  return body.bodyReads;
+}
+
+async function waitForBodyReads(
+  running: RunningGateway,
+  predicate: (stats: BodyReadStats) => boolean,
+  timeoutMs = 3_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate(await bodyReadStats(running))) return;
+    await sleep(10);
+  }
+  throw new Error("body-read stats did not reach the expected state");
 }
 
 function chunkedPost(
@@ -744,6 +805,97 @@ describe("MCP Streamable HTTP gateway", () => {
     await waitFor(() => running.gateway.manager.stats().sessions === 0);
   });
 
+  it("isolates stalled session bodies per key and releases timed-out slots", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      maxConcurrentBodyReads: 2,
+      maxConcurrentBodyReadsPerToken: 1,
+      bodyReadTimeoutMs: 200,
+    });
+    const alphaSession = await initialize(running, ALPHA);
+    const betaSession = await initialize(running, BETA);
+    const stalled = startStalledPost(running, ALPHA, alphaSession);
+    await waitForBodyReads(running, (stats) => stats.active >= 1);
+    expect((await bodyReadStats(running)).perTokenMax).toBe(1);
+
+    const busy = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 40, method: "tools/list" },
+      alphaSession,
+    );
+    expect(busy.status).toBe(503);
+    expect(busy.json).toMatchObject({ error: "body_busy" });
+
+    // Another tenant and a sessionless initialize are not globally denied.
+    const beta = await rpc(
+      running,
+      BETA,
+      { jsonrpc: "2.0", id: 41, method: "tools/list" },
+      betaSession,
+    );
+    expect(beta.status).toBe(200);
+    const initializeWhileStalled = await rpc(running, ALPHA, INITIALIZE);
+    expect(initializeWhileStalled.status).toBe(200);
+
+    // The stalled read hits the explicit deadline and frees the per-key slot.
+    await waitForBodyReads(running, (stats) => stats.active === 0, 2_000);
+    const recovered = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 42, method: "tools/list" },
+      alphaSession,
+    );
+    expect(recovered.status).toBe(200);
+    stalled.destroy();
+  });
+
+  it("takes the per-IP body slot before charging initialize buckets", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      maxConcurrentBodyReadsPerToken: 1,
+      initRateLimitPerMinute: 2,
+      bodyReadTimeoutMs: 250,
+    });
+    const stalled = startStalledPost(running, ALPHA);
+    await waitForBodyReads(running, (stats) => stats.active >= 1);
+
+    const busy = await rpc(running, ALPHA, INITIALIZE);
+    expect(busy.status).toBe(503);
+    expect(busy.json).toMatchObject({ error: "body_busy" });
+
+    // The body_busy retry did not spend the remaining init budget.
+    await waitForBodyReads(running, (stats) => stats.active === 0, 2_000);
+    const recovered = await rpc(running, ALPHA, INITIALIZE);
+    expect(recovered.status).toBe(200);
+    stalled.destroy();
+  });
+
+  it("releases a body slot when the client aborts", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      maxConcurrentBodyReadsPerToken: 1,
+      bodyReadTimeoutMs: 8_000,
+    });
+    const sessionId = await initialize(running, ALPHA);
+    const stalled = startStalledPost(running, ALPHA, sessionId);
+    await waitForBodyReads(running, (stats) => stats.active >= 1);
+    stalled.destroy();
+    await waitForBodyReads(running, (stats) => stats.active === 0);
+    expect(running.logs.join("")).toContain("body_read_aborted");
+    expect(running.logs.join("")).not.toContain("request_failed");
+    const recovered = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 43, method: "tools/list" },
+      sessionId,
+    );
+    expect(recovered.status).toBe(200);
+  });
+
   it("drains an active slow tool call before closing", async () => {
     const upstream = await startUpstream();
     cleanup.push(() => upstream.close());
@@ -791,6 +943,12 @@ describe("MCP Streamable HTTP gateway", () => {
     await startedPromise;
     const closePromise = running.gateway.close("test");
     await sleep(25);
+    const unknownPath = await fetch(`${running.url}/not-mcp`);
+    expect(unknownPath.status).toBe(404);
+    const evilOrigin = await rpc(running, ALPHA, INITIALIZE, undefined, {
+      origin: "https://evil.example",
+    });
+    expect(evilOrigin.status).toBe(403);
     const duringDrain = await rpc(running, ALPHA, INITIALIZE, undefined, {
       origin: "https://allowed.example",
     });
@@ -1038,6 +1196,7 @@ describe("MCP Streamable HTTP gateway", () => {
     cleanup.push(() => upstream.close());
     const running = await startGateway(upstream, {
       sessionlessMaxBodyBytes: 64,
+      initRateLimitPerMinute: 1,
     });
     const before = upstream.authCalls;
     const response = await chunkedPost(running, ALPHA, [
@@ -1047,6 +1206,9 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(response.status).toBe(413);
     expect(response.body).toContain("payload_too_large");
     expect(upstream.authCalls).toBe(before);
+    const followUp = await rpc(running, ALPHA, INITIALIZE);
+    expect(followUp.status).toBe(429);
+    expect(followUp.json).toMatchObject({ error: "initialize_rate_limited" });
   });
 
   it("allows a session-bound body between INIT_MAX and MAX", async () => {
@@ -1063,6 +1225,22 @@ describe("MCP Streamable HTTP gateway", () => {
     const result = await rpc(running, ALPHA, body, sessionId);
     expect(result.status).toBe(200);
     expect(toolResult(result)).toHaveProperty("tools");
+  });
+
+  it("rejects a session-bound body over MAX with 413", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      sessionlessMaxBodyBytes: 1_024,
+      maxBodyBytes: 1_024,
+    });
+    const sessionId = await initialize(running, ALPHA);
+    const body =
+      JSON.stringify({ jsonrpc: "2.0", id: 78, method: "tools/list" }) +
+      " ".repeat(2_000);
+    const result = await rpc(running, ALPHA, body, sessionId);
+    expect(result.status).toBe(413);
+    expect(result.json).toMatchObject({ error: "payload_too_large" });
   });
 
   it("consumes the initialize bucket even for malformed sessionless bodies", async () => {

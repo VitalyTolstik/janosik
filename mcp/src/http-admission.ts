@@ -142,27 +142,43 @@ export class NegativeTokenCache {
   }
 }
 
-/** A simple bounded concurrency gate (try-acquire, no queue). */
-export class ConcurrencyGate {
-  private readonly maxConcurrent: number;
-  private active = 0;
+export type TenantGateDecision =
+  { ok: true } | { ok: false; scope: "token" | "global" };
 
-  constructor(maxConcurrent: number) {
-    this.maxConcurrent = Math.max(1, maxConcurrent);
+/** Per-key concurrency with a global backstop (try-acquire, no queue). */
+export class TenantConcurrencyGate {
+  private readonly counts = new Map<string, number>();
+  private total = 0;
+  private readonly maxPerKey: number;
+  private readonly maxGlobal: number;
+
+  constructor(maxPerKey: number, maxGlobal: number) {
+    this.maxPerKey = Math.max(1, maxPerKey);
+    this.maxGlobal = Math.max(1, maxGlobal);
   }
 
-  tryAcquire(): boolean {
-    if (this.active >= this.maxConcurrent) return false;
-    this.active += 1;
-    return true;
+  tryAcquire(key: string): TenantGateDecision {
+    const current = this.counts.get(key) ?? 0;
+    if (current >= this.maxPerKey) return { ok: false, scope: "token" };
+    if (this.total >= this.maxGlobal) return { ok: false, scope: "global" };
+    this.counts.set(key, current + 1);
+    this.total += 1;
+    return { ok: true };
   }
 
-  release(): void {
-    if (this.active > 0) this.active -= 1;
+  release(key: string): void {
+    const current = this.counts.get(key) ?? 0;
+    if (current <= 1) this.counts.delete(key);
+    else this.counts.set(key, current - 1);
+    if (this.total > 0) this.total -= 1;
   }
 
   get inUse(): number {
-    return this.active;
+    return this.total;
+  }
+
+  get keys(): number {
+    return this.counts.size;
   }
 }
 

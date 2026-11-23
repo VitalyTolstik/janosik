@@ -37,8 +37,27 @@ describe("MCP gateway container wiring", () => {
     expect(block).toContain('JANOSIK_MCP_HTTP_PORT: "8080"');
     expect(block).toContain("JANOSIK_MCP_HTTP_MAX_SESSIONS");
     expect(block).toContain("JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN:");
-    expect(block).toContain("JANOSIK_MCP_HTTP_MAX_BODY_BYTES:");
-    expect(block).toContain("JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES:");
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_MAX_BODY_BYTES: ${JANOSIK_MCP_HTTP_MAX_BODY_BYTES:-16777216}",
+    );
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES: ${JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES:-}",
+    );
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS:-16}",
+    );
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN: ${JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN:-4}",
+    );
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS: ${JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS:-8000}",
+    );
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS: ${JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS:-60000}",
+    );
+    expect(block).toContain(
+      "JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS: ${JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS:-60000}",
+    );
     expect(block).toContain("JANOSIK_MCP_HTTP_INIT_RATE_LIMIT:");
     expect(block).toContain("JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS:");
     expect(block).toContain("JANOSIK_MCP_HTTP_SESSION_IDLE_MS");

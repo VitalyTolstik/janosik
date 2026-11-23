@@ -305,8 +305,8 @@ Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
 `0` = unlimited), `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` (default 600/IP/min) and
 `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) in `.env`. A key's
 default 10 initialize attempts/min is below its 50-session cap; raise
-`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must open 50 sessions
-immediately.
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must reach its per-key
+session cap immediately.
 `GET /ready` proves the API is reachable; it does not validate a key.
 `GET /health` is liveness. All `503`s carry `Retry-After`.
 
