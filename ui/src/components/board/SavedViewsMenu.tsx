@@ -584,6 +584,7 @@ function SavedViewsPanel({
 
         {mode.kind === "create" ? (
           <form
+            noValidate
             onSubmit={submitCreate}
             onKeyDown={cancelWithEscape}
             data-saved-view-editing
@@ -694,6 +695,7 @@ function SavedViewsPanel({
                 >
                   {renaming ? (
                     <form
+                      noValidate
                       onSubmit={submitRename}
                       onKeyDown={cancelWithEscape}
                       data-saved-view-editing
