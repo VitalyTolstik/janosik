@@ -118,7 +118,9 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
       draft.outgoing.push(link);
       const target = cards[link.targetCardId];
       if (!target || target.id === card.id) continue;
-      draft.liveOutgoing += 1;
+      // A summary/detail card carries the server's complete degree already;
+      // its loaded rows only populate `outgoing`/`incoming` for the UI.
+      if (!readModelCards.has(card.id)) draft.liveOutgoing += 1;
       draftOf(target.id).incoming.push({ fromCardId: card.id, link });
       if (link.type === "blocks" && card.archivedAt === undefined) {
         draftOf(target.id).blocked = true;

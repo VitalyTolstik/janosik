@@ -26,6 +26,37 @@ export function hasCardDetail(card: Card | undefined): boolean {
   );
 }
 
+/**
+ * Description presence for a card face. A detail-loaded card uses the real
+ * body so clearing it immediately removes the badge; a summary uses the
+ * server counter without downloading the text.
+ */
+export function cardHasDescription(card: Card): boolean {
+  if (card.readModel?.detailLoaded === true) {
+    return Boolean(card.description?.trim());
+  }
+  if (card.readModel !== undefined) return card.readModel.descriptionChars > 0;
+  return Boolean(card.description?.trim());
+}
+
+/** Checklist progress for a card face/table cell. */
+export function cardChecklistProgress(card: Card): {
+  done: number;
+  total: number;
+} {
+  if (card.readModel?.detailLoaded !== true && card.readModel !== undefined) {
+    return {
+      done: card.readModel.checklistDoneCount,
+      total: card.readModel.checklistItemCount,
+    };
+  }
+  const items = (card.checklists ?? []).flatMap((list) => list.items);
+  return {
+    done: items.filter((item) => item.done).length,
+    total: items.length,
+  };
+}
+
 /** Convert one summary/page card to the frontend model. */
 export function cardFromSummary(dto: BoardCardSummaryDto): Card {
   return {

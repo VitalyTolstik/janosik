@@ -35,6 +35,7 @@ import {
   type SortState,
 } from "@/components/board/table-parts";
 import { DueBadge } from "@/components/board/DueBadge";
+import { cardHasDescription } from "@/store/read-model";
 import { PriorityBadge } from "@/components/board/PriorityBadge";
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { LabelPicker } from "@/components/board/LabelPicker";
@@ -1273,11 +1274,7 @@ function TableRowBody({
           ) : null}
           {visibleColumns.includes("description") ? (
             <td className="hidden px-3 py-2 lg:table-cell">
-              {(
-                card.readModel !== undefined
-                  ? card.readModel.descriptionChars > 0
-                  : Boolean(card.description)
-              ) ? (
+              {cardHasDescription(card) ? (
                 <AlignLeft
                   data-testid="table-description"
                   className="h-3.5 w-3.5 text-muted-foreground"

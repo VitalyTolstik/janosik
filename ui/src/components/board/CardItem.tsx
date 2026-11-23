@@ -17,6 +17,7 @@ import { HighlightedText } from "@/components/ui/highlight";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useAuth } from "@/auth/AuthContext";
 import { cn } from "@/lib/utils";
+import { cardChecklistProgress, cardHasDescription } from "@/store/read-model";
 import { useI18n } from "@/i18n";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { checklistMatch, descriptionSnippet } from "@/utils/filter";
@@ -200,16 +201,9 @@ function CardItemView({
   // confirmation (✓ / ✗), so a brushed click never archives silently.
   const [confirmArchive, setConfirmArchive] = useState(false);
   // TASK-200.9: summary cards carry counts instead of the description body
-  // and checklist rows; full cards keep using the loaded fields.
-  const hasDescription =
-    card.readModel !== undefined
-      ? card.readModel.descriptionChars > 0
-      : Boolean(card.description?.trim());
-  const items = (card.checklists ?? []).flatMap((c) => c.items);
-  const done =
-    card.readModel?.checklistDoneCount ??
-    items.filter((item) => item.done).length;
-  const total = card.readModel?.checklistItemCount ?? items.length;
+  // and checklist rows; detail-loaded cards use the real fields.
+  const hasDescription = cardHasDescription(card);
+  const { done, total } = cardChecklistProgress(card);
 
   // Where the highlight query matched: the title renders <mark>s inline;
   // a description-only match lights up the description badge instead
