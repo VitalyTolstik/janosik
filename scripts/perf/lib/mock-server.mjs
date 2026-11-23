@@ -185,9 +185,14 @@ export async function startMockServer({
       return send(response, 200, { items: [], nextCursor: null });
     }
     if (rest === "ready") {
+      const limit = readyLimit(url.searchParams.get("limit"));
       return send(response, 200, {
-        items: readyCards(board),
-        nextCursor: null,
+        boardId: board.id,
+        boardTitle: board.title,
+        archived: false,
+        seq: board.seq,
+        limit,
+        cards: readyCards(board, limit),
       });
     }
     if (rest === "events") {
@@ -507,7 +512,13 @@ function actualPort(server, fallback) {
   return typeof address === "object" && address ? address.port : fallback;
 }
 
-function readyCards(board) {
+function readyLimit(raw) {
+  const parsed = Number(raw ?? 30);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(100, Math.max(1, Math.trunc(parsed)));
+}
+
+function readyCards(board, limit = 30) {
   const done = board.public.columns[board.public.columns.length - 1];
   const cards = [];
   for (const column of board.public.columns) {
@@ -526,11 +537,18 @@ function readyCards(board) {
         id: card.id,
         title: card.title,
         boardId: board.id,
-        column: column.title,
+        boardTitle: board.title,
+        columnId: column.id,
+        columnTitle: column.title,
+        priority: card.priority ?? "medium",
+        claimedBy: card.claimedBy ?? null,
+        leaseUntil: card.leaseUntil ?? null,
+        version: card.version ?? board.seq,
+        descriptionChars: (card.description ?? "").length,
       });
     }
   }
-  return cards;
+  return cards.slice(0, limit);
 }
 
 function createBoard(index, cardCount) {
