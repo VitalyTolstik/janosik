@@ -17,16 +17,24 @@ SET LOCAL lock_timeout = '5s';
 DO $$
 DECLARE
   registry_rows bigint;
+  registry_bytes bigint;
 BEGIN
-  SELECT GREATEST(reltuples, 0)::bigint
-    INTO registry_rows
-    FROM pg_class
-   WHERE relname = 'CommandKey';
+  SELECT GREATEST(c.reltuples, 0)::bigint,
+         pg_total_relation_size(c.oid)::bigint
+    INTO registry_rows, registry_bytes
+    FROM pg_class c
+   WHERE c.relname = 'CommandKey'
+     AND c.relnamespace = current_schema()::regnamespace;
 
-  IF COALESCE(registry_rows, 0) >= 1000000 THEN
+  -- reltuples is stale after a bulk restore; use the physical size as the
+  -- independent trigger so a 100M-row registry with reltuples=0 cannot take a
+  -- blocking SHARE lock at boot. 64 MiB is far below a production registry
+  -- and comfortably above the tiny CI/test table.
+  IF COALESCE(registry_bytes, 0) >= 67108864
+     OR COALESCE(registry_rows, 0) >= 1000000 THEN
     RAISE NOTICE
-      'TASK-200.11: CommandKey has % rows; deferring CommandKey_boardId_idx to ensure-command-key-index (CREATE INDEX CONCURRENTLY)',
-      registry_rows;
+      'TASK-200.11: CommandKey is % bytes / % rows; deferring CommandKey_boardId_idx to ensure-command-key-index (CREATE INDEX CONCURRENTLY)',
+      registry_bytes, registry_rows;
     RETURN;
   END IF;
 

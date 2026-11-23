@@ -740,6 +740,30 @@ describe("Limits & data safety (e2e)", () => {
         await prisma.commandKey.count({ where: { id: doomedCommandId } }),
       ).toBe(1);
 
+      const bulkIds = Array.from(
+        { length: 620 },
+        (_, index) => `${doomedCommandId}-bulk-${index}`,
+      );
+      await prisma.command.createMany({
+        data: bulkIds.map((id) => ({
+          id,
+          boardId: doomedBoard.id,
+          actorId: userId,
+          type: "RENAME_BOARD",
+          payload: { type: "RENAME_BOARD", title: "Bulk", at: Date.now() },
+          result: {},
+          createdAt: new Date(),
+        })),
+      });
+      await prisma.commandPreimage.createMany({
+        data: bulkIds.map((commandId) => ({
+          commandId,
+          boardId: doomedBoard.id,
+          data: { schemaVersion: 1, entities: [] },
+          createdAt: new Date(),
+        })),
+      });
+
       await server()
         .delete("/api/v1/users/me")
         .set(auth(token))
@@ -807,6 +831,17 @@ describe("Limits & data safety (e2e)", () => {
       expect(
         await prisma.commandPreimage.count({
           where: { commandId: doomedCommandId },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.command.count({ where: { id: { in: bulkIds } } }),
+      ).toBe(0);
+      expect(
+        await prisma.commandKey.count({ where: { id: { in: bulkIds } } }),
+      ).toBe(0);
+      expect(
+        await prisma.commandPreimage.count({
+          where: { commandId: { in: bulkIds } },
         }),
       ).toBe(0);
       expect(

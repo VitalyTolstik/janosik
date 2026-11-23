@@ -393,6 +393,15 @@ table (rows, bytes, dead tuples, vacuum); it is drained in bounded orphan
 sweeps rather than month DDL, so its dead tuples after a sweep are expected
 and autovacuum must keep up.
 
+Migration 6 (`20261123135000_task_200_11_command_key_board_index`) builds the
+`CommandKey(boardId)` index inline only for a small registry (under 1M rows /
+64 MiB). A large installation defers it; run the `ensure-command-key-index`
+maintenance job (or `POST /admin/maintenance/run` with that job) in a quiet
+window. It uses `CREATE INDEX CONCURRENTLY`, so writes continue, but reserve
+index + WAL free space and expect I/O. The job runs first in the `all`
+scheduler order; a direct board/demo purge checks the index and skips only the
+bounded key-orphan pass when it is still absent.
+
 The upgrade that introduced this layout copies the existing log into the new
 tables and verifies counts before dropping the old ones. It needs roughly twice
 the current command-log size in free disk space and a full quiet window, not

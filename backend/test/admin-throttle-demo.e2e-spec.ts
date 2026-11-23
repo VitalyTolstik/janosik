@@ -255,6 +255,15 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     expect(board?._count.labels).toBe(5);
     expect(board?._count.members).toBe(4);
     expect(await prisma.card.count({ where: { column: { boardId } } })).toBe(5);
+    // More than one orphan-key page for the demo purge's bounded NOT EXISTS
+    // cleanup (TASK-200.11).
+    await prisma.commandKey.createMany({
+      data: Array.from({ length: 620 }, (_, index) => ({
+        id: `${boardId}-orphan-key-${index}`,
+        boardId,
+        createdAt: new Date(),
+      })),
+    });
 
     // A second start while one is live is refused.
     await server()

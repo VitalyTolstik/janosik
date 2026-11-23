@@ -947,23 +947,34 @@ export class DemoService implements OnModuleDestroy {
         `;
         if (removed === 0) break;
       }
-      for (;;) {
-        const removed = await tx.$executeRaw`
-          WITH victims AS (
-            SELECT k."id"
-              FROM "CommandKey" k
-             WHERE k."boardId" = ${boardId}
-               AND NOT EXISTS (
-                 SELECT 1 FROM "Command" c
-                  WHERE c."id" = k."id" AND c."boardId" = k."boardId"
-               )
-             LIMIT ${DEMO_COMMAND_PURGE_CHUNK}
-          )
-          DELETE FROM "CommandKey" k
-           USING victims v
-           WHERE k."id" = v."id" AND k."boardId" = ${boardId}
-        `;
-        if (removed === 0) break;
+      const keyBoardIndex = await tx.$queryRaw<
+        Array<{ present: boolean }>
+      >(Prisma.sql`
+        SELECT to_regclass('"CommandKey_boardId_idx"') IS NOT NULL AS "present"
+      `);
+      if (keyBoardIndex[0]?.present === true) {
+        for (;;) {
+          const removed = await tx.$executeRaw`
+            WITH victims AS (
+              SELECT k."id"
+                FROM "CommandKey" k
+               WHERE k."boardId" = ${boardId}
+                 AND NOT EXISTS (
+                   SELECT 1 FROM "Command" c
+                    WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+                 )
+               LIMIT ${DEMO_COMMAND_PURGE_CHUNK}
+            )
+            DELETE FROM "CommandKey" k
+             USING victims v
+             WHERE k."id" = v."id" AND k."boardId" = ${boardId}
+          `;
+          if (removed === 0) break;
+        }
+      } else {
+        this.logger.warn(
+          "demo purge: CommandKey_boardId_idx is absent; skipping the board key orphan pass",
+        );
       }
       // Keep recorded parents when other users have added dependent rows.
       const { count: removedCards } = await tx.card.deleteMany({

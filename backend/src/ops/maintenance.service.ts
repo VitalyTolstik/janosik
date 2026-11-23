@@ -37,6 +37,10 @@ import {
  * can show what a run actually removed; every sweep is idempotent.
  */
 export const MAINTENANCE_JOBS = [
+  // TASK-200.11: build the deferred CommandKey(boardId) index before any
+  // board-scoped purge/demo scan can run. On a large registry migration 6
+  // skips the inline build; the purge's orphan passes need this index.
+  "ensure-command-key-index",
   // TASK-185.6 review: repair legacy Activity links before the purge can
   // delete a comment. The purge also matches `details.commentId`, so a direct
   // `purge-soft-deleted` run is safe too.
@@ -50,7 +54,6 @@ export const MAINTENANCE_JOBS = [
   "sweep-exports",
   "sweep-commands",
   "ensure-command-partitions",
-  "ensure-command-key-index",
   "sweep-runs",
   "sweep-agent-sessions",
   "sweep-approvals",
@@ -663,17 +666,28 @@ export class MaintenanceService {
           });
           if (page.length < PURGE_CHUNK) break;
         }
-        for (;;) {
-          const page = await tx.commandKey.findMany({
-            where: { boardId },
-            select: { id: true },
-            take: PURGE_CHUNK,
-          });
-          if (page.length === 0) break;
-          await tx.commandKey.deleteMany({
-            where: { id: { in: page.map((row) => row.id) }, boardId },
-          });
-          if (page.length < PURGE_CHUNK) break;
+        const keyBoardIndex = await tx.$queryRaw<
+          Array<{ present: boolean }>
+        >(Prisma.sql`
+          SELECT to_regclass('"CommandKey_boardId_idx"') IS NOT NULL AS "present"
+        `);
+        if (keyBoardIndex[0]?.present === true) {
+          for (;;) {
+            const page = await tx.commandKey.findMany({
+              where: { boardId },
+              select: { id: true },
+              take: PURGE_CHUNK,
+            });
+            if (page.length === 0) break;
+            await tx.commandKey.deleteMany({
+              where: { id: { in: page.map((row) => row.id) }, boardId },
+            });
+            if (page.length < PURGE_CHUNK) break;
+          }
+        } else {
+          this.logger.warn(
+            "purge-board: CommandKey_boardId_idx is absent; skipping the defensive board key orphan pass",
+          );
         }
         await tx.checklistItem.deleteMany({
           where: { checklist: { card: { column: { boardId } } } },

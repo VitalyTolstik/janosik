@@ -181,8 +181,12 @@ agent cutoff.
 
 ## 5. Maintenance and metrics
 
-Two maintenance jobs (both idempotent, part of the existing scheduler and
-`POST /admin/maintenance/run`):
+Three maintenance jobs (all idempotent, part of the existing scheduler and
+`POST /admin/maintenance/run`; `ensure-command-key-index` runs first in the
+`all` order so purge/demo board scans have the registry index):
+
+- `ensure-command-key-index` — builds the deferred `CommandKey(boardId)` index
+  with `CREATE INDEX CONCURRENTLY` when migration 6 skipped it.
 
 - `ensure-command-partitions` — ensures previous, current and the next three
   UTC months (never a month already fully outside the retention window). If a

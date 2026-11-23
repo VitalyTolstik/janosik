@@ -41,6 +41,7 @@ const suffix = `${process.pid}_${Date.now()}`;
 const names = {
   empty: `janosik_task20011_empty_${suffix}`,
   existing: `janosik_task20011_existing_${suffix}`,
+  deferred: `janosik_task20011_deferred_${suffix}`,
 };
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "janosik-task20011-"));
 
@@ -59,8 +60,11 @@ async function admin(sql) {
   }
 }
 
-function copyMigrations({ withTask }) {
-  const target = path.join(scratch, withTask ? "full" : "before");
+function copyMigrations({ withTask, deferIndex = false }) {
+  const target = path.join(
+    scratch,
+    deferIndex ? "deferred" : withTask ? "full" : "before",
+  );
   fs.mkdirSync(path.join(target, "prisma"), { recursive: true });
   fs.copyFileSync(SCHEMA, path.join(target, "prisma", "schema.prisma"));
   fs.cpSync(MIGRATIONS, path.join(target, "prisma", "migrations"), {
@@ -73,12 +77,22 @@ function copyMigrations({ withTask }) {
         force: true,
       });
     }
+  } else if (deferIndex) {
+    fs.rmSync(
+      path.join(
+        target,
+        "prisma",
+        "migrations",
+        "20261123135000_task_200_11_command_key_board_index",
+      ),
+      { recursive: true, force: true },
+    );
   }
   return path.join(target, "prisma", "schema.prisma");
 }
 
-function migrate(database, { withTask }) {
-  const schema = copyMigrations({ withTask });
+function migrate(database, { withTask, deferIndex = false }) {
+  const schema = copyMigrations({ withTask, deferIndex });
   const prismaCli = require.resolve("prisma/build/index.js");
   const dbUrl = new URL(baseUrl);
   dbUrl.pathname = `/${database}`;
@@ -480,9 +494,40 @@ async function checkExisting(prisma, before) {
   assert(sweptKeys[0].n === 0, "the orphan sweep clears September keys");
 }
 
+async function checkDeferredIndex(prisma) {
+  // Simulate a huge registry with stale/zero reltuples driven by physical
+  // size; migration 6 must not take the blocking inline branch.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "CommandKey" ("id", "boardId", "createdAt")
+     VALUES ('deferred-key', 'deferred-board', now())`,
+  );
+  await prisma.$executeRawUnsafe(
+    `UPDATE pg_class
+        SET reltuples = 2000000
+      WHERE relname = 'CommandKey'
+        AND relnamespace = current_schema()::regnamespace`,
+  );
+  const index = await scalars(
+    prisma,
+    `SELECT count(*)::int AS n FROM pg_class
+      WHERE relname = 'CommandKey_boardId_idx'`,
+  );
+  assert(index[0].n === 0, "deferred branch leaves the index for the job");
+}
+
+async function checkDeferredIndexAfterMigration(prisma) {
+  const index = await scalars(
+    prisma,
+    `SELECT count(*)::int AS n FROM pg_class
+      WHERE relname = 'CommandKey_boardId_idx'`,
+  );
+  assert(index[0].n === 0, "deferred registry did not build the index inline");
+}
+
 async function main() {
   await admin(`CREATE DATABASE "${names.empty}"`);
   await admin(`CREATE DATABASE "${names.existing}"`);
+  await admin(`CREATE DATABASE "${names.deferred}"`);
 
   try {
     migrate(names.empty, { withTask: true });
@@ -509,6 +554,19 @@ async function main() {
     } finally {
       await existing.$disconnect().catch(() => undefined);
     }
+
+    // Deferred index branch: apply through 134, fake a huge stale reltuples,
+    // then run migration 135.
+    migrate(names.deferred, { withTask: true, deferIndex: true });
+    const deferred = client(names.deferred);
+    try {
+      await checkDeferredIndex(deferred);
+      await deferred.$disconnect();
+      migrate(names.deferred, { withTask: true });
+      await checkDeferredIndexAfterMigration(deferred);
+    } finally {
+      await deferred.$disconnect().catch(() => undefined);
+    }
   } finally {
     await admin(`DROP DATABASE IF EXISTS "${names.empty}" WITH (FORCE)`).catch(
       () => undefined,
@@ -516,13 +574,18 @@ async function main() {
     await admin(
       `DROP DATABASE IF EXISTS "${names.existing}" WITH (FORCE)`,
     ).catch(() => undefined);
+    await admin(
+      `DROP DATABASE IF EXISTS "${names.deferred}" WITH (FORCE)`,
+    ).catch(() => undefined);
     fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
 
 main()
   .then(() => {
-    console.log("TASK-200.11 command-log migration: empty + existing data OK");
+    console.log(
+      "TASK-200.11 command-log migration: empty + existing + deferred index OK",
+    );
   })
   .catch((error) => {
     console.error(error);

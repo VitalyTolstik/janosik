@@ -460,6 +460,39 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     await prisma.commandKey.deleteMany({ where: { id: { in: ids } } });
   });
 
+  it("builds the key board index concurrently and recovers an invalid leftover", async () => {
+    const service = new MaintenanceService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await prisma.$executeRawUnsafe(
+      'DROP INDEX CONCURRENTLY IF EXISTS "CommandKey_boardId_idx"',
+    );
+    await service.ensureCommandKeyIndex();
+    const valid = await prisma.$queryRawUnsafe<Array<{ valid: boolean }>>(
+      `SELECT i.indisvalid AS valid
+         FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'CommandKey_boardId_idx'`,
+    );
+    expect(valid[0]?.valid).toBe(true);
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE pg_index SET indisvalid = false
+        WHERE indexrelid = '"CommandKey_boardId_idx"'::regclass`,
+    );
+    await service.ensureCommandKeyIndex();
+    const recovered = await prisma.$queryRawUnsafe<Array<{ valid: boolean }>>(
+      `SELECT i.indisvalid AS valid
+         FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'CommandKey_boardId_idx'`,
+    );
+    expect(recovered[0]?.valid).toBe(true);
+  });
+
   it("purges a board with more than one command page without unbounded deletes", async () => {
     const userIdForPurge = `purge-user-${suffix}`;
     const boardIdForPurge = `purge-board-${suffix}`;
