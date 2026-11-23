@@ -1774,6 +1774,7 @@ export class AdminEntitiesService {
     });
     const details = await commandDetailMap(
       this.prisma,
+      card.column.boardId,
       commands.map((command) => command.id),
     );
 

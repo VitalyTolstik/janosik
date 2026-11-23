@@ -53,7 +53,7 @@ describe("CommandsService.deltaSince", () => {
     );
   });
 
-  it("carries the commandId (the Command PK) on every entry", async () => {
+  it("carries the client commandId on every entry", async () => {
     const findMany = jest.fn().mockResolvedValue([row(3)]);
     const delta = await service(findMany).deltaSince("board-1", 0);
     expect(delta).toEqual({
@@ -88,7 +88,10 @@ describe("CommandsService.deltaSince", () => {
     );
     expect(delta.entries[0]).not.toHaveProperty("preimages");
     expect(detailFindMany).toHaveBeenCalledWith({
-      where: { commandId: { in: ["cmd-7"] } },
+      where: {
+        commandId: { in: ["cmd-7"] },
+        commandKey: { boardId: "board-1" },
+      },
       select: { commandId: true, data: true },
     });
   });
@@ -309,6 +312,33 @@ describe("changedCardAssignments", () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+/**
+ * TASK-200.11: a batch is a set of distinct ids. Two entries with the same
+ * client commandId must never reach the transaction: the partitioned PK no
+ * longer rejects them.
+ */
+describe("CommandsService.applyBatch duplicate ids", () => {
+  it("rejects a duplicated commandId before touching the database", async () => {
+    const findMany = jest.fn();
+    const service = (() => {
+      const prisma = {
+        command: { findMany },
+      } as unknown as PrismaService;
+      return new CommandsService(prisma, {} as never, {} as never, {} as never);
+    })();
+    await expect(
+      service.applyBatch("board-1", "user-1", [
+        { commandId: "same-id" },
+        { commandId: "same-id" },
+      ] as never),
+    ).rejects.toMatchObject({
+      status: 400,
+      response: { code: "idempotency_conflict" },
+    });
+    expect(findMany).not.toHaveBeenCalled();
   });
 });
 

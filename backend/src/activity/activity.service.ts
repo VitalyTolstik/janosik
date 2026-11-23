@@ -159,6 +159,7 @@ export class ActivityService {
     );
     const details = await commandDetailMap(
       this.prisma,
+      boardId,
       commands.map((row) => row.id),
     );
     const merged = [

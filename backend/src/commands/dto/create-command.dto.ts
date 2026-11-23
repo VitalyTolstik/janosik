@@ -11,7 +11,7 @@ import {
 
 /** Body of `POST /boards/:id/commands` (§7.4). */
 export class CreateCommandDto {
-  /** Client-generated idempotency key — the `Command` primary key. */
+  /** Client-generated idempotency key, globally claimed in `CommandKey`. */
   @IsString()
   @IsNotEmpty()
   @MaxLength(64)

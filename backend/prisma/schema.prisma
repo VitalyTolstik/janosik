@@ -398,15 +398,17 @@ model ApiToken {
 }
 
 // TASK-200.11: the command log is range-partitioned by `createdAt` (one
-// parent + monthly partitions + a default partition, see
-// `20261123130000_task_200_11_command_log_partitioning` and
-// `20261123131000_task_200_11_command_details_side_table`). PostgreSQL requires
+// parent + monthly partitions + a default partition, see the migrations
+// `20261123130000_task_200_11_command_log_partitioning`,
+// `20261123131000_task_200_11_command_details_side_table` and
+// `20261123132000_task_200_11_command_key_registry`). PostgreSQL requires
 // every unique constraint on a partitioned table to contain the partition
-// key, so the primary key is `(id, createdAt)` rather than `id`. `id` is still
-// the client commandId and remains unique per board: every apply resolves the
-// ids inside the serialized board-write transaction, and a same-board retry
-// returns the stored result. There is deliberately no second unique index on
-// `id` alone — the database cannot enforce one across partitions.
+// key, so the table primary key is `(id, createdAt)` rather than `id`.
+// Global commandId uniqueness — the old `Command_pkey` guarantee — is restored
+// by the unpartitioned `CommandKey` registry: a BEFORE INSERT trigger claims
+// the id and a unique violation aborts a cross-board collision. Same-board
+// retries are still resolved inside the serialized board-write transaction
+// before an insert is attempted.
 model Command {
   id             String // = client commandId → idempotent retries
   board          Board    @relation(fields: [boardId], references: [id])
@@ -445,31 +447,49 @@ model Command {
 }
 
 /**
- * TASK-200.11 — heavy command display snapshots (the "from → to" diff frozen
- * at apply time by `commandDetails`). One row per command that has a diff;
- * partition key = command `createdAt`, so retention drops the pair together.
- * Deliberately no Prisma relation/FK to `Command`: a partitioned child FK to a
- * partitioned parent creates per-partition constraints that make
- * `DROP TABLE Command_YYYYMM` fail (PostgreSQL asks for the parent FK to be
- * dropped and revalidated over the whole table). The writer inserts both rows
- * in one transaction; a database trigger removes the side row on a row delete,
- * and the retention helper drops the detail partition before the command
- * partition. Reads batch by `commandId` (the PK prefix).
+ * TASK-200.11 — global commandId registry. Unpartitioned on purpose: a unique
+ * index on a partitioned table must contain the partition key, which is exactly
+ * what allowed the same client id on two boards after the swap. The registry
+ * has the old `id` primary key and is populated in the same transaction by a
+ * BEFORE INSERT trigger on `Command` (and removed by the delete trigger /
+ * retention helper). `boardId` lets detail reads and purge paths be scoped even
+ * if an old caller only has the id; `createdAt` lets retention delete a month.
  */
-model CommandDetail {
-  commandId String
-  createdAt DateTime @default(now())
-  data      Json
+model CommandKey {
+  id        String          @id
+  boardId   String
+  createdAt DateTime        @default(now())
+  details   CommandDetail[]
 
-  @@id([commandId, createdAt])
   @@index([createdAt])
 }
 
-// TASK-200.11: pre-images are partitioned by their own `createdAt` (written a
-// few milliseconds after the command, so month-boundary skew is possible and
-// harmless — there is no FK, exactly as before). Retention can drop a month
-// without a per-row delete; the preimage-first delete order still protects a
-// partial month.
+/**
+ * TASK-200.11 — heavy command display snapshots (the "from → to" diff frozen
+ * at apply time by `commandDetails`). One row per command that has a diff;
+ * partition key = command `createdAt`, so retention drops the pair together.
+ * There is deliberately no FK to `Command`: a partitioned child FK to a
+ * partitioned parent creates per-partition constraints that make
+ * `DROP TABLE Command_YYYYMM` fail. The FK goes to the unpartitioned
+ * `CommandKey` instead, which cascades the side row when a key is deleted and
+ * lets reads filter by `commandKey.boardId`. The writer inserts the command
+ * (which claims the key) and the detail in one transaction; retention drops
+ * the detail partition first.
+ */
+model CommandDetail {
+  commandId  String
+  createdAt  DateTime   @default(now())
+  data       Json
+  commandKey CommandKey @relation(fields: [commandId], references: [id], onDelete: Cascade)
+
+  @@id([commandId, createdAt])
+}
+
+// TASK-200.11: pre-images are partitioned by the command's `createdAt` (the
+// writer passes the explicit clock now, so a pre-image cannot cross a month
+// boundary away from its command). Retention can drop a month without a
+// per-row delete; the preimage-first delete order still protects a partial
+// month.
 model CommandPreimage {
   commandId String
   boardId   String

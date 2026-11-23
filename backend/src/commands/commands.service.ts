@@ -116,13 +116,30 @@ function commandDetail(details: Prisma.JsonValue | null): string | undefined {
 }
 
 /**
+ * TASK-200.11: `CommandKey.id` is the global uniqueness guard. A concurrent
+ * request that uses the same client commandId on another board (or the same
+ * board through a bypassed pre-check) trips the registry primary key. Postgres
+ * reports 23505; Prisma surfaces it as P2002, or P2010 with the SQLSTATE in
+ * `meta.code` when a trigger raises it. Both mean the same thing to the client:
+ * an id conflict, never a 500.
+ */
+function isCommandIdConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown; meta?: { code?: unknown } };
+  return (
+    candidate.code === "P2002" ||
+    (candidate.code === "P2010" && candidate.meta?.code === "23505")
+  );
+}
+
+/**
  * Command-log transport (§7.4, TASK-26).
  *
  * The server replays the *same* `boardReducer` the client uses, writes the
  * command row and mirrors the resulting board into the normalized tables
- * through per-action writers (§7.4.1 variant В). `commandId` is the primary
- * key, so a retry returns the stored `result` without a second entity or a
- * second `seq`.
+ * through per-action writers (§7.4.1 variant В). `commandId` is the global
+ * idempotency key (`CommandKey`), so a retry returns the stored `result`
+ * without a second entity or a second `seq`.
  *
  * `SUPPORTED_ACTIONS` is the command surface the reducer and the writers
  * understand: board-scoped columns, cards, labels, checklists (TASK-26/27)
@@ -485,6 +502,20 @@ export class CommandsService {
     // passes the membership role resolved by `MembershipGuard`; internal
     // callers (the master panel, demo seeding) act as an ADMIN.
     const actorRole: Role = options.actorRole ?? Role.ADMIN;
+    // A batch is a set of distinct client commandIds. The partition swap no
+    // longer lets the Command PK catch a duplicate pair in the same batch, so
+    // reject it here, before the board lock and before either entry can insert.
+    const batchIds = new Set<string>();
+    for (const dto of dtos) {
+      if (batchIds.has(dto.commandId)) {
+        throw new BadRequestException({
+          message: "duplicate commandId in one batch",
+          field: "commandIds",
+          code: "idempotency_conflict",
+        });
+      }
+      batchIds.add(dto.commandId);
+    }
     // Validate every command *before* the board lock (TASK-147 follow-up): an
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
@@ -916,6 +947,7 @@ export class CommandsService {
               boardId,
               runId,
               data: preimage,
+              createdAt: outcome.createdAt,
             });
           }
           responses.push(outcome.response);
@@ -1315,6 +1347,7 @@ export class CommandsService {
     touches: string[];
     prevSeq: number;
     board: Board;
+    createdAt: Date;
   }> {
     const {
       boardId,
@@ -1401,23 +1434,35 @@ export class CommandsService {
     // never split the pair across two monthly partitions.
     const createdAt = new Date();
 
-    const created = await tx.command.create({
-      data: {
-        id: dto.commandId,
-        boardId,
-        actorId,
-        actorType,
-        apiTokenId: attribution.apiTokenId,
-        agentSessionId: attribution.agentSessionId,
-        runId: attribution.runId,
-        agentName: attribution.agentName,
-        type: action.type,
-        payload: jsonSafe(action),
-        result: {},
-        touches: [],
-        createdAt,
-      },
-    });
+    const created = await tx.command
+      .create({
+        data: {
+          id: dto.commandId,
+          boardId,
+          actorId,
+          actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          runId: attribution.runId,
+          agentName: attribution.agentName,
+          type: action.type,
+          payload: jsonSafe(action),
+          result: {},
+          touches: [],
+          createdAt,
+        },
+      })
+      .catch((error: unknown) => {
+        if (isCommandIdConflict(error)) {
+          throw new ConflictException({
+            message: "commandId already used on another board",
+            field: "commandId",
+            code: "id_conflict",
+            conflict: "id",
+          });
+        }
+        throw error;
+      });
     if (details !== null) {
       await tx.commandDetail.create({
         data: {
@@ -1449,7 +1494,7 @@ export class CommandsService {
       ...(attribution.runId !== null ? { runId: attribution.runId } : {}),
     };
 
-    await tx.command.updateMany({
+    const updated = await tx.command.updateMany({
       where: { id: created.id, createdAt },
       data: {
         payload: jsonSafe(action),
@@ -1457,7 +1502,16 @@ export class CommandsService {
         touches,
       },
     });
-    return { response, touches, prevSeq: currentVersion, board: after };
+    if (updated.count !== 1) {
+      throw new Error("Command row disappeared during apply");
+    }
+    return {
+      response,
+      touches,
+      prevSeq: currentVersion,
+      board: after,
+      createdAt,
+    };
   }
 
   /**
@@ -1537,6 +1591,7 @@ export class CommandsService {
     });
     const details = await commandDetailMap(
       client,
+      boardId,
       rows.map((row) => row.id),
     );
     const truncated = rows.length > max;
