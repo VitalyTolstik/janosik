@@ -40,6 +40,7 @@ function makePrisma(): PrismaService {
     adminAuditLog: sweepable(0),
     securityAuditLog: sweepable(0),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $executeRawUnsafe: jest.fn().mockResolvedValue(0),
     $queryRaw: jest.fn().mockResolvedValue([]),
     emailVerificationCode: sweepable(2),
     emailChangeCode: sweepable(1),
@@ -547,6 +548,47 @@ describe("MaintenanceService", () => {
     expect(keyQuery?.strings.join("?")).toContain('c."boardId"');
     expect(keyQuery?.strings.join("?")).toContain("LIMIT");
     expect(prisma.commandKey.findMany).not.toHaveBeenCalled();
+  });
+
+  it("builds the key board index concurrently when migration 6 deferred it", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    const result = await service.ensureCommandKeyIndex();
+    expect(result.removed).toBe(0);
+    expect(result.detail).toContain("concurrently");
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining("CREATE INDEX CONCURRENTLY"),
+    );
+  });
+
+  it("rebuilds an invalid leftover key index before creating it", async () => {
+    const prisma = makePrisma();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ valid: false }]);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+    );
+    await service.ensureCommandKeyIndex();
+    expect(prisma.$executeRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("DROP INDEX CONCURRENTLY"),
+    );
+    expect(prisma.$executeRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("CREATE INDEX CONCURRENTLY"),
+    );
   });
 
   it("creates the current and future command-log partitions (TASK-200.11)", async () => {

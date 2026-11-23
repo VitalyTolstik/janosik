@@ -33,10 +33,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   move-compatible upsert. Default partitions and registry keys are the
   chunk-drained rows; everything else is month DDL. Migration
   `20261123135000_task_200_11_command_key_board_index` adds the board-scoped
-  registry index, and account/board/demo purges now page command ids and
-  delete details/keys in bounded statements (the board purge also has bounded
-  defensive key/detail orphan passes), preserving the 5-minute board
-  transaction budget.
+  registry index; it builds inline only below 1M keys (5 s `lock_timeout`) and
+  otherwise defers to the `ensure-command-key-index` maintenance job's
+  `CREATE INDEX CONCURRENTLY` (index/WAL space, quiet window, no blocking
+  writes). Account/board/demo purges page command ids and delete
+  preimages/details/keys in bounded statements (the board purge also has
+  bounded defensive key/detail orphan passes), preserving the 5-minute board
+  transaction budget; the account e2e includes a preimage.
 
 - TASK-200.11 ops review follow-up: restore global commandId uniqueness,
   make month retention lock-safe, and bound the sweep honestly. An

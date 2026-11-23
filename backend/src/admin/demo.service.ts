@@ -926,6 +926,45 @@ export class DemoService implements OnModuleDestroy {
         });
         if (page.length < DEMO_COMMAND_PURGE_CHUNK) break;
       }
+      // Bounded board-orphan cleanup for legacy demo rows whose command was
+      // already gone; real commands on a configured shared board keep their
+      // key/detail.
+      for (;;) {
+        const removed = await tx.$executeRaw`
+          WITH victims AS (
+            SELECT DISTINCT d."commandId"
+              FROM "CommandDetail" d
+             WHERE d."boardId" = ${boardId}
+               AND NOT EXISTS (
+                 SELECT 1 FROM "Command" c
+                  WHERE c."id" = d."commandId" AND c."boardId" = d."boardId"
+               )
+             LIMIT ${DEMO_COMMAND_PURGE_CHUNK}
+          )
+          DELETE FROM "CommandDetail" d
+           USING victims v
+           WHERE d."commandId" = v."commandId" AND d."boardId" = ${boardId}
+        `;
+        if (removed === 0) break;
+      }
+      for (;;) {
+        const removed = await tx.$executeRaw`
+          WITH victims AS (
+            SELECT k."id"
+              FROM "CommandKey" k
+             WHERE k."boardId" = ${boardId}
+               AND NOT EXISTS (
+                 SELECT 1 FROM "Command" c
+                  WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+               )
+             LIMIT ${DEMO_COMMAND_PURGE_CHUNK}
+          )
+          DELETE FROM "CommandKey" k
+           USING victims v
+           WHERE k."id" = v."id" AND k."boardId" = ${boardId}
+        `;
+        if (removed === 0) break;
+      }
       // Keep recorded parents when other users have added dependent rows.
       const { count: removedCards } = await tx.card.deleteMany({
         where: {

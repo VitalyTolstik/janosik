@@ -728,6 +728,14 @@ describe("Limits & data safety (e2e)", () => {
           data: { changes: [] },
         },
       });
+      await prisma.commandPreimage.create({
+        data: {
+          commandId: doomedCommandId,
+          boardId: doomedBoard.id,
+          data: { schemaVersion: 1, entities: [] },
+          createdAt: new Date(),
+        },
+      });
       expect(
         await prisma.commandKey.count({ where: { id: doomedCommandId } }),
       ).toBe(1);
@@ -793,6 +801,11 @@ describe("Limits & data safety (e2e)", () => {
       ).toBe(0);
       expect(
         await prisma.commandDetail.count({
+          where: { commandId: doomedCommandId },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.commandPreimage.count({
           where: { commandId: doomedCommandId },
         }),
       ).toBe(0);

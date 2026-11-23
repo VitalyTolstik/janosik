@@ -50,6 +50,7 @@ export const MAINTENANCE_JOBS = [
   "sweep-exports",
   "sweep-commands",
   "ensure-command-partitions",
+  "ensure-command-key-index",
   "sweep-runs",
   "sweep-agent-sessions",
   "sweep-approvals",
@@ -176,6 +177,8 @@ export class MaintenanceService {
         return this.sweepExports();
       case "ensure-command-partitions":
         return this.ensureCommandPartitions();
+      case "ensure-command-key-index":
+        return this.ensureCommandKeyIndex();
       case "sweep-commands":
         return this.sweepCommands();
       case "sweep-runs":
@@ -1060,6 +1063,44 @@ export class MaintenanceService {
       // maintenance result honest: the detail carries what changed.
       removed: 0,
       detail: parts.length === 0 ? "partitions up to date" : parts.join("; "),
+    };
+  }
+
+  /**
+   * Build the `CommandKey(boardId)` index outside a transaction when migration
+   * 6 skipped it (registry >= 1M rows). `CREATE INDEX CONCURRENTLY` does not
+   * block normal writes; it still consumes I/O and needs free disk/WAL, so an
+   * operator should run it in a quiet window. An invalid leftover index from a
+   * failed click is rebuilt rather than treated as done.
+   */
+  async ensureCommandKeyIndex(): Promise<{
+    removed: number;
+    detail: string;
+  }> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ valid: boolean | null }>
+    >(Prisma.sql`
+      SELECT i.indisvalid AS "valid"
+        FROM pg_class c
+        LEFT JOIN pg_index i ON i.indexrelid = c.oid
+       WHERE c.relname = 'CommandKey_boardId_idx'
+         AND c.relnamespace = current_schema()::regnamespace
+    `);
+    if (rows[0]?.valid === true) {
+      return { removed: 0, detail: "CommandKey_boardId_idx already present" };
+    }
+    if (rows.length > 0) {
+      // A concurrent build interrupted earlier leaves an invalid index.
+      await this.prisma.$executeRawUnsafe(
+        'DROP INDEX CONCURRENTLY IF EXISTS "CommandKey_boardId_idx"',
+      );
+    }
+    await this.prisma.$executeRawUnsafe(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "CommandKey_boardId_idx" ON "CommandKey" ("boardId")',
+    );
+    return {
+      removed: 0,
+      detail: "created CommandKey_boardId_idx concurrently",
     };
   }
 

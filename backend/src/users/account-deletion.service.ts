@@ -605,19 +605,10 @@ export class AccountDeletionService {
           await deleteMentionAttentionForComments(tx, authoredIds);
           await tx.comment.deleteMany({ where: { authorId: userId } });
           await tx.activity.deleteMany({ where: { actorId: userId } });
-          // ADR §6.14 purge order: preimages → commands → runs. The preimage
-          // table has no actor column, so resolve the user's commands in SQL
-          // before the command rows disappear.
-          await tx.$executeRaw`
-        DELETE FROM "CommandPreimage"
-        WHERE "commandId" IN (
-          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
-        )
-      `;
-          // TASK-200.11: keys/details have no actor column. Resolve command
-          // ids in bounded pages while the rows still exist, so erasure does
-          // not issue unbounded detail/key DELETEs or depend on the deferred
-          // detail trigger/retention sweep.
+          // ADR §6.14 purge order: preimages → details → keys → commands →
+          // runs. The preimage table has no actor column, so resolve command
+          // ids in bounded pages while the rows still exist. TASK-200.11 also
+          // deletes the registry/display rows in those same pages.
           for (;;) {
             const page = await tx.command.findMany({
               where: { actorId: userId },
@@ -626,6 +617,9 @@ export class AccountDeletionService {
             });
             if (page.length === 0) break;
             const ids = page.map((row) => row.id);
+            await tx.commandPreimage.deleteMany({
+              where: { commandId: { in: ids } },
+            });
             await tx.commandDetail.deleteMany({
               where: { commandId: { in: ids } },
             });

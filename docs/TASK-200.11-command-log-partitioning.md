@@ -80,8 +80,14 @@ Instead:
   upserts the key. This is deliberate global-id retention, not an orphan leak;
   account/board/demo erasure removes the keys immediately.
 
-The e2e wipes use `wipeAll` (including `Command`, `CommandDetail` and
-`CommandKey`); a fixed-id regression applies the same id again after the wipe.
+- Demo purge keeps a bounded board-orphan `NOT EXISTS Command` pass for
+  legacy demo rows whose command was already gone; real commands on a shared
+  configured board keep their keys/details.
+
+The fixed-id command suites (`events`, `commands-undo`, `admin-throttle-demo`,
+the partition/global-id specs) use `wipeAll`, which includes `Command`,
+`CommandDetail` and `CommandKey`. Other suites keep their custom wipes; those
+must delete the same three tables or use `wipeAll` before a fixed-id retry.
 
 The migration keeps the ordinary `Command → Board/User` FKs (a partitioned
 child referencing an unpartitioned parent is supported and does not block
@@ -233,7 +239,7 @@ months, and the next `ensure` will report `skipped:` until it is moved.
 
 ## 6. Migration
 
-Five migrations:
+Six migrations:
 
 1. `20261123130000_task_200_11_command_log_partitioning` — partition swap.
 2. `20261123131000_task_200_11_command_details_side_table` — details backfill
@@ -244,13 +250,18 @@ Five migrations:
    and lock-ordered/retrying drop helper.
 5. `20261123134000_task_200_11_command_key_move` — board-scoped detail column,
    no detail cascade, upsert/deferred move lifecycle, keys swept separately.
+6. `20261123135000_task_200_11_command_key_board_index` — `CommandKey(boardId)`
+   for purge scans; inline only below 1M rows, otherwise deferred to
+   `ensure-command-key-index` (`CREATE INDEX CONCURRENTLY`).
 
 **Pre-checks**
 
 - Take a `pg_dump` (rollback is a backup restore; there is no down
   migration).
 - Free space: peak is roughly **2× the current command-log size** (old +
-  new table while copying).
+  new table while copying), plus the `CommandKey` index/WAL footprint for
+  migration 6. The concurrent build needs at least the final index size free
+  while it runs.
 - Stop writes/old API replicas for the **whole migration**, not just the swap.
   Migration 1 renames the old tables and then copies/builds indexes inside one
   transaction; the old names carry an ACCESS EXCLUSIVE lock until that
@@ -312,13 +323,24 @@ Migration 5 (`...command_key_move`, one transaction):
 3. Stop the drop helper from deleting registry keys inline; the maintenance
    sweep drains `NOT EXISTS Command` keys in bounded chunks.
 
+Migration 6 (`...command_key_board_index`):
+
+1. `SET LOCAL lock_timeout = '5s'` and inspect `CommandKey` reltuples.
+2. Below 1M rows, build `CommandKey_boardId_idx` inline (CI/fresh install).
+   At 1M+ rows, skip the blocking build and log a notice.
+3. Operators run `POST /admin/maintenance/run {"job":"ensure-command-key-index"}`
+   in a quiet window; it builds `CREATE INDEX CONCURRENTLY` (out of
+   transaction), retries an invalid leftover, and does not block writes.
+   Reserve index + WAL free space and expect I/O during the build. A plain
+   inline build on a 100–130M registry is never attempted at boot.
+
 **Empty DB:** the same steps create empty parents/partitions and drop empty
 legacy tables. **Existing DB:** the automated check
 (`npm run test:migration:command-log -w backend`) builds both cases on
 throwaway databases: it stops before the TASK-200.11 migrations, seeds three
-months of commands/details/pre-images, then applies all five and asserts
-counts, routing, sequence, key uniqueness, detail move/no cascade, the skipped
-default month, pruning and retention.
+months of commands/details/pre-images, then applies all six and asserts
+counts, routing, sequence, key uniqueness, detail move/no cascade,
+`CommandKey_boardId_idx`, the skipped default month, pruning and retention.
 
 **Rollout note:** after the swap, the first `ensure-command-partitions` run
 is a no-op for the pre-created months; the scheduler extends the window.
@@ -475,10 +497,12 @@ has a `Command` FK, so this is the manual repair path.
   indexes/FKs, board-scoped detail/no registry cascade, whole-month drop under
   a concurrent reader, default-partition skip, exact `defaultRows`/registry
   stats, move-forward key+detail retention, stale-live-key preservation,
-  bounded bulk purge, deferred cleanup, wipe); `command-log-global-ids.e2e-spec.ts` (concurrent cross-board
+  bounded bulk purge, >500-command board purge, deferred cleanup, wipe);
+  `command-log-global-ids.e2e-spec.ts` (concurrent cross-board
   collision, no duplicate/detail leak, duplicate batch, fixed id after
   `wipeAll`); `admin-throttle-demo` covers the real demo move and purge
-  erasure; existing `events`, `runs`, `admin`, `commands-*` suites run on the
+  erasure; `limits-data-safety` includes a preimage on account erasure;
+  existing `events`, `runs`, `admin`, `commands-*` suites run on the
   partitioned schema (the fixed-id events/undo suites were run twice in a
   row).
 - Migration: `backend/scripts/check-command-log-migration.cjs` (empty +

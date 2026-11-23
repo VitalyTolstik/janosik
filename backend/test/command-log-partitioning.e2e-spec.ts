@@ -460,6 +460,62 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
     await prisma.commandKey.deleteMany({ where: { id: { in: ids } } });
   });
 
+  it("purges a board with more than one command page without unbounded deletes", async () => {
+    const userIdForPurge = `purge-user-${suffix}`;
+    const boardIdForPurge = `purge-board-${suffix}`;
+    await prisma.user.create({
+      data: { id: userIdForPurge, email: `${userIdForPurge}@example.com` },
+    });
+    await prisma.board.create({
+      data: {
+        id: boardIdForPurge,
+        title: "Purge board",
+        deletedAt: new Date(Date.now() - 2 * 86_400_000),
+      },
+    });
+    const commands = Array.from({ length: 620 }, (_, index) => ({
+      id: `${boardIdForPurge}-cmd-${index}`,
+      boardId: boardIdForPurge,
+      actorId: userIdForPurge,
+      type: "RENAME_BOARD",
+      payload: { type: "RENAME_BOARD", title: "Purged", at: 1 },
+      result: {},
+      touches: [],
+      createdAt: new Date(current.getTime() + index),
+    }));
+    await prisma.command.createMany({ data: commands });
+    await prisma.commandDetail.createMany({
+      data: commands.map((command) => ({
+        commandId: command.id,
+        boardId: boardIdForPurge,
+        createdAt: command.createdAt,
+        data: { changes: [] },
+      })),
+    });
+    const service = new MaintenanceService(
+      prisma as never,
+      { remove: async () => undefined } as never,
+      { retentionDays: async () => 30 } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await service.purgeSoftDeleted(1);
+    expect(
+      await prisma.board.findUnique({ where: { id: boardIdForPurge } }),
+    ).toBeNull();
+    expect(
+      await prisma.command.count({ where: { boardId: boardIdForPurge } }),
+    ).toBe(0);
+    expect(
+      await prisma.commandDetail.count({ where: { boardId: boardIdForPurge } }),
+    ).toBe(0);
+    expect(
+      await prisma.commandKey.count({ where: { boardId: boardIdForPurge } }),
+    ).toBe(0);
+    await prisma.user.deleteMany({ where: { id: userIdForPurge } });
+  });
+
   it("leaves no command, detail or key rows after the e2e wipe", async () => {
     await createCommand("wipe", current, true);
     await wipeAll(prisma);
