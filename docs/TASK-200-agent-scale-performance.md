@@ -254,8 +254,10 @@ workflow, create, смена workflow планом) добавляют один 
   репликам (без Redis — только TTL-граница на других узлах). Membership-кадры
   автоматически инвалидируют `(board, user)`; token revoke/update/pause/resume/
   pause-all/resume-all, password reset/change, OAuth claim, admin revoke/disable,
-  account deletion и `FeatureFlagsService.update` публикуют явно; admin-правки
-  членства и передача владельца — тоже. Пропущенный кадр ограничен TTL.
+  account deletion (только после коммита внешней транзакции) и
+  `FeatureFlagsService.update` публикуют явно; admin-правки
+  членства, передача владельца и удаление доски — тоже. Пропущенный кадр
+  ограничен TTL.
 - Загрузка кэша singleflight по ключу + epoch-guard: 500 одновременных
   промахов дают один запрос, а инвалидация во время запроса не даёт записать
   устаревший ответ. TTL не скользит: окно членства продлевается только
@@ -268,11 +270,14 @@ workflow, create, смена workflow планом) добавляют один 
   PAT, истекающий внутри окна, не кэшируется.
 - SSE: PAT-поток по умолчанию `presence=0` (явный `?presence=1` возвращает
   ростер), JWT — как раньше `presence=1`. Ticks: 25 с для людей и 60 с для
-  PAT, с jitter (2,5 с / 6 с) и overlap-guard; один
+  PAT, с jitter (2,5 с / 6 с) и overlap-guard; пропущенные из-за
+  пересечения тики агрегируются в одну строку лога в минуту; один
   `KeepAliveScheduler` на поток, `onModuleDestroy` останавливает все таймеры.
   Keep-alive tick переиспользует только `acceptedAt`/`expiresAt`/`board.deletedAt`
   на 30 с; token active/pause, `passwordHash`/`disabledAt`/`email` для JWT-stamp,
-  expiry/family и `verifyCaughtUp` читаются свежими на каждом тике.
+  expiry/family и `verifyCaughtUp` читаются свежими на каждом тике. Удаление
+  доски очищает board/membership-снапшоты, поэтому открытый поток закрывается
+  на следующем тике, а не через 30 с.
 - Тесты: `ttl-cache.spec.ts` (LRU/expiry), `hot-path-cache.spec.ts`
   (инвалидация, изоляция тенантов, границы, singleflight/epoch),
   `cache-invalidation.spec.ts` (локальный канал, membership-кадр, версия),
@@ -283,12 +288,14 @@ workflow, create, смена workflow планом) добавляют один 
   `membership.guard.spec.ts` (read-hit без скольжения TTL, singleflight,
   write/SSE bypass, expired row, fresh role),
   `stream-access.service.spec.ts` (свежие password/disable поля при
-  закэшированном membership), `admin-cache-invalidation.spec.ts`,
-  `events.controller.spec.ts` (presence default, shutdown таймеров),
+  закэшированном membership), `admin-cache-invalidation.spec.ts` (revoke и
+  disable), `account-deletion.service.spec.ts` / `account-data.service.spec.ts`
+  (инвалидация только после коммита), `events.controller.spec.ts` (presence
+  default, shutdown таймеров, агрегация skip-логов),
   `env.spec.ts` (неотрицательные TTL/bounds), плюс
   `task-200-5-auth-cache.e2e-spec.ts` (bootstrap DI, revoke только по TTL
-  vs немедленно, role/pause/flag invalidation, presence defaults, смена
-  пароля закрывает поток). Mock-оценка: обычный
+  vs немедленно, role/pause/flag invalidation, presence defaults, удаление
+  доски закрывает поток, смена пароля закрывает поток). Mock-оценка: обычный
   board GET с PAT — 1 запрос в steady-state (board) вместо 3 (PAT + board +
   membership); 500 одинаковых/конкурентных PAT-чтений и флаговых проверок
   дают по одному lookup. SSE: 3 000 PAT-потоков тикают ~50 раз/с вместо

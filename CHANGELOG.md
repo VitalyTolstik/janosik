@@ -17,8 +17,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   re-checked on every read, and a PAT that would expire inside the window is
   not cached, so a resolution cannot outlive the token. Revoke, token
   edit/pause/resume/pause-all,
-  role or membership changes, board pause/resume, owner transfer and flag updates
-  invalidate synchronously on the writer and are propagated best-effort to other
+  role or membership changes, board pause/resume/delete, owner transfer and flag
+  updates invalidate synchronously on the writer (account deletion only after
+  its transaction commits) and are propagated best-effort to other
   replicas through a versioned `janosik:cache-invalidate` control channel on the
   existing realtime bus (Redis required for prompt cross-replica invalidation;
   otherwise the 10–30 s TTL is the bound). Membership events double as
@@ -29,7 +30,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   SSE streams default to
   `presence=0` (browsers keep presence; `?presence=1` opts an agent back
   in), PAT keep-alive is 60 s while human streams stay at 25 s, both carry
-  jitter, a slow tick is skipped (and logged) instead of stacking, one scheduler
+  jitter, a slow tick is skipped (and aggregated into one log line per minute)
+  instead of stacking, one scheduler
   owns each stream and module shutdown stops every timer. The SSE keep-alive
   reuses a 30 s membership/board snapshot while token active/pause, JWT
   credential stamp/disable state, expiry/family and log-head checks stay fresh.

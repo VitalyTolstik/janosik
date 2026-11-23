@@ -155,9 +155,8 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
     );
   });
 
-  it("drops cached PATs when a deletion schedule revokes them", async () => {
-    const invalidatePat = jest.fn();
-    const tx = {
+  function scheduleTx() {
+    return {
       $queryRaw: jest.fn(),
       user: { update: jest.fn().mockResolvedValue({}) },
       apiToken: {
@@ -169,6 +168,11 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       card: { findMany: jest.fn().mockResolvedValue([]) },
       securityAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
+  }
+
+  it("does not invalidate inside a caller-owned deletion transaction", async () => {
+    const invalidatePat = jest.fn();
+    const tx = scheduleTx();
     const service = new AccountDeletionService(
       {} as never,
       {} as never,
@@ -182,6 +186,36 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
       where: { userId: "user-1", revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    // Clearing before commit would let a concurrent read refill the old key.
+    expect(invalidatePat).not.toHaveBeenCalled();
+  });
+
+  it("invalidates only after the schedule transaction commits", async () => {
+    const tx = scheduleTx();
+    let committed = false;
+    let invalidatedBeforeCommit = false;
+    const invalidatePat = jest.fn(() => {
+      if (!committed) invalidatedBeforeCommit = true;
+    });
+    const prisma = {
+      $transaction: jest.fn(
+        async (fn: (client: unknown) => Promise<unknown>) => {
+          const result = await fn(tx);
+          committed = true;
+          return result;
+        },
+      ),
+    };
+    const service = new AccountDeletionService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      { invalidatePat } as never,
+    );
+
+    await service.schedule("user-1", "user-1", {});
+
+    expect(invalidatedBeforeCommit).toBe(false);
     expect(invalidatePat).toHaveBeenCalledTimes(1);
   });
 });

@@ -140,9 +140,13 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
   }
 
   async function boardSeq(): Promise<number> {
+    return boardSeqFor(ownerToken, boardId);
+  }
+
+  async function boardSeqFor(token: string, board: string): Promise<number> {
     const response = await server()
-      .get(`/api/v1/boards/${boardId}`)
-      .set(auth(ownerToken))
+      .get(`/api/v1/boards/${board}`)
+      .set(auth(token))
       .expect(200);
     return Number(response.headers["x-board-seq"]);
   }
@@ -304,14 +308,49 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
       .expect(403);
   });
 
+  it("closes an open stream when its board is deleted", async () => {
+    const fresh = await register("cache-delete@example.com", "Deleter");
+    const created = await server()
+      .post("/api/v1/boards")
+      .set(auth(fresh.accessToken))
+      .send({ title: "Delete me" })
+      .expect(201);
+    const doomedBoard = created.body.id as string;
+
+    const previous = sseTiming.keepAliveMs;
+    sseTiming.keepAliveMs = 100;
+    let stream: Awaited<ReturnType<typeof openStream>> | undefined;
+    try {
+      stream = await openStream(
+        fresh.accessToken,
+        await boardSeqFor(fresh.accessToken, doomedBoard),
+        "",
+        doomedBoard,
+      );
+      await stream.next("presence");
+      await server()
+        .delete(`/api/v1/boards/${doomedBoard}`)
+        .set(auth(fresh.accessToken))
+        .expect(200);
+
+      // The board invalidation clears the 30 s snapshot; the next 100 ms
+      // tick sees `deletedAt` and closes the stream.
+      await expect(stream.ended(5000)).resolves.toBe(true);
+    } finally {
+      sseTiming.keepAliveMs = previous;
+      await stream?.close();
+    }
+  }, 20_000);
+
   it("closes an open stream and drops PATs immediately after a password change", async () => {
     const ownerPat = await createPat(ownerToken, "pre-password-change");
     await server().get("/api/v1/auth/me").set(auth(ownerPat.token)).expect(200);
 
     const previous = sseTiming.keepAliveMs;
     sseTiming.keepAliveMs = 100;
-    const stream = await openStream(ownerToken, await boardSeq());
+    let stream: Awaited<ReturnType<typeof openStream>> | undefined;
     try {
+      stream = await openStream(ownerToken, await boardSeq());
       await stream.next("presence");
       await server()
         .post("/api/v1/auth/password")
@@ -331,7 +370,7 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
         .expect(401);
     } finally {
       sseTiming.keepAliveMs = previous;
-      await stream.close();
+      await stream?.close();
     }
   }, 20_000);
 
@@ -341,6 +380,7 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
     token: string,
     since: number,
     extra = "",
+    board = boardId,
   ): Promise<{
     frames: SseFrame[];
     next: (type: string) => Promise<SseFrame>;
@@ -348,15 +388,12 @@ describe("Auth hot-path caches + SSE presence (e2e, TASK-200.5)", () => {
     close: () => Promise<void>;
   }> {
     const query = `since=${since}${extra === "" ? "" : `&${extra}`}`;
-    const response = await fetch(
-      `${baseUrl}/boards/${boardId}/events?${query}`,
-      {
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${token}`,
-        },
+    const response = await fetch(`${baseUrl}/boards/${board}/events?${query}`, {
+      headers: {
+        Accept: "text/event-stream",
+        Authorization: `Bearer ${token}`,
       },
-    );
+    });
     expect(response.status).toBe(200);
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");

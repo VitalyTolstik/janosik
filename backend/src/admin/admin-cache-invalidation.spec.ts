@@ -60,4 +60,48 @@ describe("AdminService PAT cache invalidation (TASK-200.5)", () => {
       kind: "pat",
     });
   });
+
+  it("invalidates cached PATs when the panel disables the account", async () => {
+    const user = {
+      id: "user-1",
+      email: "u@example.com",
+      displayName: null,
+      disabledAt: null,
+    };
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      passwordResetToken: { deleteMany: jest.fn() },
+      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          $queryRaw: jest.fn(),
+          passwordResetToken: { deleteMany: jest.fn() },
+          user: {
+            update: jest
+              .fn()
+              .mockResolvedValue({ ...user, disabledAt: new Date() }),
+          },
+        }),
+      ),
+    };
+    const target = {
+      prisma,
+      realtime: { publishInvalidation: jest.fn() },
+      revokeUserSessions: jest.fn().mockResolvedValue({ revoked: 1 }),
+      audit: jest.fn(),
+      securityAudit: { record: jest.fn() },
+      userRow: jest.fn().mockResolvedValue({}),
+    };
+    const call = AdminService.prototype.updateUser as (
+      this: typeof target,
+      userId: string,
+      dto: { disabled?: boolean },
+      admin: { id: string },
+    ) => Promise<unknown>;
+
+    await call.call(target, "user-1", { disabled: true }, { id: "admin-1" });
+
+    expect(target.realtime.publishInvalidation).toHaveBeenCalledWith({
+      kind: "pat",
+    });
+  });
 });

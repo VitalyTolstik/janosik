@@ -147,9 +147,10 @@ kanban.example.com {
 sudo systemctl reload caddy
 ```
 
-**nginx** — terminate TLS and proxy everything to the app. Realtime works
-without extra tuning because the API sends `X-Accel-Buffering: no`, but
-turning buffering off explicitly is harmless and makes the intent clear:
+**nginx** — terminate TLS and proxy everything to the app. The API sends
+`X-Accel-Buffering: no`, but realtime still has one proxy requirement: turn
+buffering off and set `proxy_read_timeout` above the 60 s PAT keep-alive
+(`3600s` is safe). No other tuning is needed:
 
 ```nginx
 server {

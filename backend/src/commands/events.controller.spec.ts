@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import {
   EventsController,
   parsePresence,
@@ -59,5 +60,32 @@ describe("EventsController shutdown (TASK-200.5)", () => {
     expect(task).not.toHaveBeenCalled();
     expect(privateController.keepAlives.size).toBe(0);
     expect(scheduler.isStopped).toBe(true);
+  });
+
+  it("aggregates overlap skips into one log line per minute", () => {
+    jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));
+    const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation();
+    try {
+      const controller = new EventsController(
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      const note = (
+        controller as unknown as { noteKeepAliveSkip: () => void }
+      ).noteKeepAliveSkip.bind(controller);
+
+      for (let i = 0; i < 100; i += 1) note();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("1 skipped"));
+
+      jest.advanceTimersByTime(60_000);
+      note();
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

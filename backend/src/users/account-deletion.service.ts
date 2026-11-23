@@ -69,9 +69,23 @@ export class AccountDeletionService {
       agentSessionId?: string | null;
     } = {},
   ): Promise<{ deleteAfter: Date }> {
-    return this.prisma.$transaction((tx) =>
+    const result = await this.prisma.$transaction((tx) =>
       this.scheduleInTransaction(tx, userId, actorId, attribution),
     );
+    // Post-commit only: the token rows and `disabledAt` are visible now, so a
+    // concurrent read cannot refill the cache with the pre-deletion snapshot.
+    this.hotPathCache.invalidatePat();
+    return result;
+  }
+
+  /**
+   * Post-commit invalidator for callers that own the transaction (self-service
+   * deletion runs `scheduleInTransaction` inside its own credential check).
+   * Calling it from inside that transaction would let a concurrent read refill
+   * the cache before the disable/revoke rows commit.
+   */
+  invalidatePatCache(): void {
+    this.hotPathCache.invalidatePat();
   }
 
   /**
@@ -110,10 +124,6 @@ export class AccountDeletionService {
       where: { userId, revokedAt: null },
       data: { revokedAt: now },
     });
-    // TASK-200.5: the account is disabled and its keys revoked in this
-    // transaction. Clearing now is safe even if the caller later rolls back:
-    // a rollback only costs a re-read, never a stale positive entry.
-    this.hotPathCache.invalidatePat();
     await tx.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: now },

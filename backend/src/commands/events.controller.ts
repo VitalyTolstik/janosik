@@ -79,6 +79,9 @@ export class EventsController implements OnModuleDestroy {
   private readonly logger = new Logger(EventsController.name);
   /** One live scheduler per open stream; drained on app shutdown. */
   private readonly keepAlives = new Set<KeepAliveScheduler>();
+  /** Aggregated overlap counter (one warn per minute, not per stream). */
+  private skippedKeepAlives = 0;
+  private lastSkipLogAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly commands: CommandsService,
@@ -92,6 +95,22 @@ export class EventsController implements OnModuleDestroy {
   onModuleDestroy(): void {
     for (const keepAlive of this.keepAlives) keepAlive.stop();
     this.keepAlives.clear();
+  }
+
+  /**
+   * TASK-200.5 review: an overlap is a warning signal, but one line per stream
+   * per skipped tick is a log storm at 3 000 connections. Aggregate to one
+   * line per minute with the count.
+   */
+  private noteKeepAliveSkip(): void {
+    this.skippedKeepAlives += 1;
+    const now = Date.now();
+    if (now - this.lastSkipLogAt < 60_000) return;
+    this.logger.warn(
+      `SSE keep-alive overlap: ${this.skippedKeepAlives} skipped tick(s) in the last minute`,
+    );
+    this.lastSkipLogAt = now;
+    this.skippedKeepAlives = 0;
   }
 
   @UseGuards(MembershipGuard, RealtimeFlagGuard)
@@ -254,10 +273,7 @@ export class EventsController implements OnModuleDestroy {
       // validation query set onto a saturated pool.
       const keepAlive = new KeepAliveScheduler({
         ...keepAliveProfile(principal?.via === "pat"),
-        onSkip: () =>
-          this.logger.warn(
-            `SSE keep-alive tick overlapped for board ${boardId}; skipped`,
-          ),
+        onSkip: () => this.noteKeepAliveSkip(),
         task: async () => {
           // The frame's presence epoch lets a client that missed a delta
           // notice it and reconnect for a fresh `sync` (TASK-145).

@@ -158,9 +158,10 @@ kanban.example.com {
 sudo systemctl reload caddy
 ```
 
-**nginx** terminates TLS and proxies everything to the app. Realtime works
-without extra tuning because the API sends `X-Accel-Buffering: no`, but turning
-buffering off explicitly is harmless and makes the intent clear. Raise
+**nginx** terminates TLS and proxies everything to the app. The API sends
+`X-Accel-Buffering: no`, but realtime still has a proxy requirement: turn
+buffering off and set `proxy_read_timeout` above the 60 s PAT keep-alive
+(`3600s` is safe). No other tuning is needed. Raise
 `client_max_body_size`: nginx refuses bodies over 1 MB by default, which would
 break attachments (up to 25 MB), board imports (25 MB), command/plan bodies
 (10 MB) and large commands (2 MB) with a `413`.
