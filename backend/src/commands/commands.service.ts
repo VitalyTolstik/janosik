@@ -13,6 +13,7 @@ import type {
   Board,
   BoardAction,
   BoardScopedAction,
+  CardLink,
   Checklist,
   CommandDeltaEntry,
   CommandResponse,
@@ -28,6 +29,7 @@ import {
   evaluateCardTransition,
   evaluateTransition,
   hasLinkedPair,
+  isCardLinkType,
   LIMITS,
   MAX_COMMAND_BYTES,
   readBoardWorkflow,
@@ -49,7 +51,8 @@ import {
   planFromPreparedCommands,
   type PlanRequirement,
 } from "@/approvals/approval-plan";
-import { emptyBoardAggregate } from "@/boards/board-aggregate";
+import { emptyBoardAggregate, toCard } from "@/boards/board-aggregate";
+import type { CardWithRelations } from "@/boards/board-aggregate";
 import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import {
   loadTargetedBoardAggregate,
@@ -276,16 +279,6 @@ export interface InversePreconditionFailure {
   touch: string;
   reason: "wip" | "assignee_not_member" | "payload_too_large";
   currentVersion: number;
-}
-
-/**
- * Overlay one optional card field from the committed row: `null` means the
- * aggregate's optional-field rule omits it, not that it is stored as null.
- */
-function assignOptional(target: object, key: string, value: unknown): void {
-  const record = target as Record<string, unknown>;
-  if (value === null || value === undefined) delete record[key];
-  else record[key] = value;
 }
 
 /** Best-effort entity label for a precondition conflict. */
@@ -554,58 +547,82 @@ export class CommandsService {
   }
 
   /**
-   * TASK-200.10: a command's in-memory reducer result and the row the writer
-   * committed differ in a few **server-attribution** fields that are not part
-   * of the action: `Card.lastActorId`, the claim token/session columns, the
-   * denormalized `attachmentCount`, and bookkeeping stamps. A fresh aggregate
-   * read includes them, so a cache entry built from the reducer result alone
-   * would answer a later GET with subtly different cards.
+   * TASK-200.10 review: a command's in-memory reducer result is not the same
+   * as the row a fresh aggregate read returns. Writers normalize (and in
+   * `RESTORE_*` ignore) client-supplied fields such as `activity`, `links`,
+   * claim attribution and the denormalized attachment badge; a cached
+   * `running` board would therefore leak client-controlled state or carry a
+   * stale count. Rebuild every card the batch touched from the database with
+   * the same mapping as a full load (`toCard` + label/checklist/link rows),
+   * replace it in the aggregate, and drop cards that no longer exist.
    *
-   * Read a narrow projection for exactly the cards this batch touched (one
-   * query, no relations) and copy those fields onto the final aggregate. This
-   * keeps the cached snapshot deep-equal to a fresh load without re-reading
-   * the whole board.
+   * Two queries per batch (cards with relations + their outgoing links), not
+   * per card; untouched cards keep the snapshot they were loaded from.
    */
-  private async reconcileCardWriteMetadata(
+  private async rebuildTouchedCards(
     tx: Prisma.TransactionClient,
+    boardId: string,
     board: BoardAggregate,
     cardIds: ReadonlySet<string>,
   ): Promise<void> {
     if (cardIds.size === 0) return;
-    const rows = await tx.card.findMany({
-      where: { id: { in: [...cardIds] } },
-      select: {
-        id: true,
-        deletedAt: true,
-        lastActorId: true,
-        claimedBy: true,
-        claimedByTokenId: true,
-        claimedBySessionId: true,
-        leaseUntil: true,
-        attachmentCount: true,
-        updatedAt: true,
-        archivedAt: true,
-        archivedFromColumnId: true,
-      },
-    });
+    const ids = [...cardIds];
+    const [rows, links] = await Promise.all([
+      tx.card.findMany({
+        where: {
+          id: { in: ids },
+          deletedAt: null,
+          column: { boardId },
+        },
+        include: {
+          labels: true,
+          checklists: {
+            where: { deletedAt: null },
+            orderBy: { position: "asc" },
+            include: {
+              items: {
+                where: { deletedAt: null },
+                orderBy: { position: "asc" },
+              },
+            },
+          },
+        },
+      }),
+      tx.cardLink.findMany({
+        where: { boardId, fromCardId: { in: ids }, deletedAt: null },
+        orderBy: [{ position: "asc" }, { id: "asc" }],
+      }),
+    ]);
+
+    // Same filter and grouping as `loadBoardAggregateWithRevision`.
+    const linksBySource = new Map<string, CardLink[]>();
+    for (const link of links) {
+      if (!isCardLinkType(link.type)) continue;
+      const list = linksBySource.get(link.fromCardId) ?? [];
+      list.push({
+        id: link.id,
+        type: link.type,
+        targetCardId: link.toCardId,
+      });
+      linksBySource.set(link.fromCardId, list);
+    }
+    const boardLabelIds = new Set(board.labels.map((label) => label.id));
     for (const row of rows) {
-      const card = board.cards[row.id];
-      // A soft-deleted card is expected to be gone from the reducer's map;
-      // the delete/restore commands own that transition, not this overlay.
-      if (card === undefined || row.deletedAt !== null) continue;
-      assignOptional(card, "lastActorId", row.lastActorId);
-      assignOptional(card, "claimedBy", row.claimedBy);
-      assignOptional(card, "claimedByTokenId", row.claimedByTokenId);
-      assignOptional(card, "claimedBySessionId", row.claimedBySessionId);
-      assignOptional(card, "leaseUntil", row.leaseUntil?.getTime() ?? null);
-      assignOptional(
-        card,
-        "attachmentCount",
-        row.attachmentCount > 0 ? row.attachmentCount : null,
+      board.cards[row.id] = toCard(
+        row as CardWithRelations,
+        boardLabelIds,
+        linksBySource.get(row.id),
       );
-      assignOptional(card, "archivedAt", row.archivedAt?.getTime() ?? null);
-      assignOptional(card, "archivedFromColumnId", row.archivedFromColumnId);
-      card.updatedAt = row.updatedAt.getTime();
+    }
+
+    const found = new Set(rows.map((row) => row.id));
+    for (const cardId of ids) {
+      if (found.has(cardId)) continue;
+      delete board.cards[cardId];
+      for (const column of board.columns) {
+        const index = column.cardIds.indexOf(cardId);
+        if (index !== -1) column.cardIds.splice(index, 1);
+      }
     }
   }
 
@@ -1153,9 +1170,9 @@ export class CommandsService {
           // partial board to the next full read.
           options.targeted !== true
         ) {
-          // Reducer state + server-only card attribution = the fresh-read
-          // shape; one narrow query for the cards this batch touched.
-          await this.reconcileCardWriteMetadata(tx, running, touchedCards);
+          // Reducer state + fully normalized touched cards = the fresh-read
+          // shape; the rebuild also drops client-only `activity`/`links`.
+          await this.rebuildTouchedCards(tx, boardId, running, touchedCards);
           const finalRow = await tx.board.findUnique({
             where: { id: boardId },
             select: { aggregateRevision: true },
@@ -1286,7 +1303,11 @@ export class CommandsService {
     client: Prisma.TransactionClient | PrismaService = this.prisma,
     options: { exemptRestoreLimits?: boolean } = {},
   ): Promise<InversePreconditionFailure[]> {
-    let board = await this.boardAggregates.load(client, boardId);
+    let board = await this.boardAggregates.load(client, boardId, {
+      // Called with a write transaction on the revert path; a miss may see
+      // uncommitted revisions and must not be cached.
+      cacheOnMiss: false,
+    });
     if (board === null) return [];
     const currentVersion = await this.latestSeq(boardId, client);
     const failures: InversePreconditionFailure[] = [];

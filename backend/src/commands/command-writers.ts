@@ -132,17 +132,19 @@ export function stripAttachmentReference(
 }
 
 /** Keep description uploads reversible: detached blobs remain readable for
- * undo and snapshots, but disappear from the live attachment list. */
+ * undo and snapshots, but disappear from the live attachment list. Returns
+ * every card whose denormalized `attachmentCount` changed — the blob's owner
+ * can differ from the card whose description was edited. */
 export async function reconcileDescriptionAttachments(
   tx: Tx,
   boardId: string,
   before: string | undefined,
   after: string | undefined,
-): Promise<void> {
+): Promise<string[]> {
   const candidates = [
     ...new Set([...attachmentIds(before), ...attachmentIds(after)]),
   ];
-  if (!candidates.length) return;
+  if (!candidates.length) return [];
   const files = await tx.attachment.findMany({
     where: {
       id: { in: candidates },
@@ -152,7 +154,7 @@ export async function reconcileDescriptionAttachments(
     },
     select: { id: true, cardId: true, descriptionDetached: true },
   });
-  if (!files.length) return;
+  if (!files.length) return [];
   const urls = files.map((file) => `/attachments/${file.id}/content`);
   const [cards, comments] = await Promise.all([
     tx.card.findMany({
@@ -196,6 +198,7 @@ export async function reconcileDescriptionAttachments(
     // Avoid changing updatedAt or version for attachment bookkeeping.
     await tx.$executeRaw`UPDATE "Card" SET "attachmentCount" = ${count} WHERE "id" = ${cardId}`;
   }
+  return [...changedCards];
 }
 
 export interface WriteContext {
@@ -1569,15 +1572,24 @@ async function writeCardAction(
           version: { increment: 1 },
         },
       });
+      const attachmentCards: string[] = [];
       if (action.type === "UPDATE_CARD" && action.description !== undefined) {
-        await reconcileDescriptionAttachments(
-          tx,
-          boardId,
-          cardOf(before, card.id)?.description,
-          card.description,
+        attachmentCards.push(
+          ...(await reconcileDescriptionAttachments(
+            tx,
+            boardId,
+            cardOf(before, card.id)?.description,
+            card.description,
+          )),
         );
       }
-      return [boardTouch, touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.card(card.id),
+        // The edited description can embed another card's upload; that card's
+        // `attachmentCount` changes and the aggregate cache must rebuild it.
+        ...attachmentCards.map(touch.card),
+      ];
     }
 
     case "ARCHIVE_CARD": {

@@ -523,8 +523,14 @@ export class AttachmentsService {
         editorId: initiatorId,
         attribution,
         cause: "attachment_deleted",
-        reconcileMedia: (beforeText, afterText) =>
-          reconcileDescriptionAttachments(tx, boardId, beforeText, afterText),
+        reconcileMedia: async (beforeText, afterText) => {
+          await reconcileDescriptionAttachments(
+            tx,
+            boardId,
+            beforeText,
+            afterText,
+          );
+        },
       });
       // The pre-flight verified this row under the same board lock; a gap
       // here is a programming/writer error, so rolling the transaction back
