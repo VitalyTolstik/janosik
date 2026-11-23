@@ -420,7 +420,12 @@ an agent.
 }
 ```
 
-Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex.
+Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex. For a
+swarm of agents on one host, the package also ships a **separate Streamable
+HTTP gateway** (`janosik-mcp-http`): one process serves many sessions, each
+binding its own `Authorization: Bearer jnk_…`, so 500 agents do not spawn 500
+Node processes. Start it with `docker compose --profile mcp up -d`; see
+[mcp/README.md](./mcp/README.md#shared-streamable-http-gateway).
 `JANOSIK_APP_BASE` is only needed when the app is not at the site root (e.g.
 `/app`). By default the server registers the board-work and agent-session
 tools; member, share and account-identity tools are opt-in

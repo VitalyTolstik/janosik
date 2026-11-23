@@ -407,6 +407,14 @@ workflow, create, смена workflow планом) добавляют один 
 
 **Файлы:** `mcp/src/index.ts`, новый `mcp/src/http*`, Docker/CI.
 
+> **TASK-200.8 update (implemented).** Отдельный `janosik-mcp-http`
+> (Streamable HTTP, один процесс на много сессий, токен из `Authorization`
+> на сессию, idle/limit/health/graceful shutdown, structured logs без
+> токенов), отдельный Docker-образ/Compose-профиль и CI-сборка. stdio
+> остаётся по умолчанию для desktop. HTTP-smoke: 100 → 500 сессий в одном
+> процессе, ~570 MB RSS на dev-хосте. Контракт, env и остаточные
+> ограничения — [`TASK-200.8-mcp-streamable-http.md`](TASK-200.8-mcp-streamable-http.md).
+
 ---
 
 ### 200.9 — Read model v1: summary + pages + detail (P1)

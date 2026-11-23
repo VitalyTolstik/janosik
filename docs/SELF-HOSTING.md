@@ -12,11 +12,13 @@ HTTPS, day-2 operations (upgrades, backups) and troubleshooting.
 
 ## What you get
 
-`docker compose up -d` starts three containers:
+`docker compose up -d` starts three containers; the optional MCP gateway in
+the table is enabled with `--profile mcp`:
 
 | Service | Image | Role |
 | --- | --- | --- |
 | `app` | `ghcr.io/vitalytolstik/janosik` | The whole application: NestJS API under `/api/v1`, the built SPA, the master panel at `/app/admin`, background jobs. Serves on port `3000`. |
+| `mcp` (profile `mcp`) | `ghcr.io/vitalytolstik/janosik-mcp` | Shared MCP Streamable HTTP gateway for many agents. Serves `/mcp` on port `8080`, plus `/health` and `/ready`. |
 | `postgres` | `postgres:16-alpine` | The database (boards, users, command log, audit). |
 | `redis` | `redis:7-alpine` | Job queues (mail, video transcoding, maintenance, exports). |
 
@@ -246,6 +248,49 @@ on another machine or in a container, its `localhost` refers to that machine
 or container; use a reachable HTTPS origin instead. Use a separate scoped key
 per agent. See [the MCP guide](../mcp/README.md) for client configuration and
 optional toolsets.
+
+#### Many agents: shared HTTP gateway
+
+One stdio process per agent costs roughly 100 MB each, so a swarm on one host
+should use the optional gateway container instead. It is a separate process
+from the API (a gateway crash cannot take down board writes) and serves many
+MCP sessions from one Node process:
+
+```bash
+docker compose --profile mcp up -d
+# MCP endpoint: http://127.0.0.1:8080/mcp (only bound to the host by default)
+```
+
+Each client connects to that URL with its **own** personal key in an
+`Authorization: Bearer jnk_…` header; the gateway never receives a shared
+`JANOSIK_TOKEN`. The key is bound to the MCP session, and a different key on
+the same session gets `403`. Configure the MCP client's remote/URL transport
+with the header, for example:
+
+```json
+{
+  "mcpServers": {
+    "janosik": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer jnk_your_personal_key" }
+    }
+  }
+}
+```
+
+For production, terminate TLS in front of port 8080 and set
+`JANOSIK_MCP_BIND_ADDRESS=127.0.0.1`. If a browser-based MCP client must call
+it, list its origin in `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects
+all browser origins. Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
+`JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) and
+`JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default unlimited) in `.env`.
+`GET /ready` proves the API is reachable too; `GET /health` is liveness.
+
+Sessions are independent: each has its own `JanosikClient` and token
+fingerprint, and an idle sweeper closes abandoned ones. The API still enforces
+the key's board scope, role, preset and rate limit. See
+[the MCP guide](../mcp/README.md#shared-streamable-http-gateway) for the full
+environment table.
 
 ---
 

@@ -74,6 +74,99 @@ session and return 403 to a personal API key.
 The same `command` + `env` shape works everywhere MCP is configured. For a
 local checkout, `command` can be `node` with `args: ["/path/to/mcp/dist/index.js"]`.
 
+## Shared Streamable HTTP gateway
+
+The stdio server is the right shape for one developer's desktop client. For a
+swarm of agents on one host it is the wrong shape: every client starts its own
+Node process (100+ MB each). The package also ships a **separate Streamable
+HTTP gateway** (`janosik-mcp-http`) that serves many MCP sessions from one
+process, with no database and no shared credential.
+
+Each MCP client connects to the same URL and sends its own personal key:
+
+```
+POST https://mcp.example.com/mcp
+Authorization: Bearer jnk_…
+Content-Type: application/json
+Accept: application/json, text/event-stream
+```
+
+The gateway reads `JANOSIK_URL` and the normal tool settings, but it **never**
+reads `JANOSIK_TOKEN`. A key is accepted on the `initialize` request, bound to
+that session's SHA-256 fingerprint, and required (and checked in constant
+time) on every later request. A different key on the same `Mcp-Session-Id`
+gets `403 token_mismatch`; a missing or malformed key gets `401`. Sessions are
+independent: one session's `JanosikClient` and board observations never cross
+into another.
+
+```bash
+# from a checkout
+npm run build -w mcp
+JANOSIK_URL=http://localhost:3000 \
+JANOSIK_MCP_HTTP_HOST=0.0.0.0 \
+JANOSIK_MCP_HTTP_PORT=8080 \
+node mcp/dist/http.js
+
+# or the Docker Compose profile (separate container from the API)
+docker compose --profile mcp up -d
+# endpoint: http://127.0.0.1:8080/mcp
+```
+
+A remote MCP client configuration uses a URL and headers instead of a command
+(the exact key names differ by client; this is the common shape):
+
+```json
+{
+  "mcpServers": {
+    "janosik": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer jnk_your_personal_key" }
+    }
+  }
+}
+```
+
+The gateway exposes `GET /health` (liveness, no auth) and `GET /ready`
+(readiness: the API's `/api/v1/health/ready` must also answer). MCP requests
+use `POST`/`GET`/`DELETE` on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `JANOSIK_MCP_HTTP_HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` in a container. |
+| `JANOSIK_MCP_HTTP_PORT` | `8080` | Bind port. |
+| `JANOSIK_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path; `/health` and `/ready` are reserved. |
+| `JANOSIK_MCP_HTTP_MAX_SESSIONS` | `500` | Global live-session cap; excess initializes get `503` + `Retry-After`. |
+| `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` | `0` | Optional per-key cap (`0` = global only). |
+| `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` | `300000` | Close a session with no request for this long. |
+| `JANOSIK_MCP_HTTP_SESSION_SWEEP_MS` | `30000` | Idle sweeper interval. |
+| `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` | empty | Browser origins allowed to call the gateway; empty rejects every browser `Origin`. |
+| `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap. |
+| `JANOSIK_MCP_HTTP_READY_URL` | `${JANOSIK_URL}/api/v1/health/ready` | Upstream readiness probe; no token is sent. |
+| `JANOSIK_MCP_HTTP_READY_CACHE_MS` | `5000` | Cache for the readiness probe (`0` = every request probes). |
+| `JANOSIK_MCP_HTTP_READY_TIMEOUT_MS` | `3000` | Readiness probe timeout. |
+| `JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS` | `360000` | Node request timeout; `0` disables it (long `wait_for_work` calls). |
+| `JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS` | `60000` | Node headers timeout. |
+| `JANOSIK_MCP_HTTP_TRUST_PROXY` | off | Use the first `X-Forwarded-For` hop in logs. |
+| `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
+| `JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS` | `10000` | Drain window on SIGTERM/SIGINT before force-closing sockets. |
+
+`JANOSIK_MCP_TOOLSETS`, `JANOSIK_MCP_READONLY`, `JANOSIK_APP_BASE` and the
+filesystem settings are shared with the stdio server. The gateway container
+has no host filesystem mount by default, so attachment upload/download should
+stay off unless you deliberately add a volume.
+
+**Security.** Put the gateway behind TLS (a reverse proxy or private network)
+and never expose it unauthenticated. It refuses browser `Origin`s unless
+listed, does not log authorization headers or request bodies, and sends
+no-store responses. The per-session idle expiry and global cap are resource
+guards, not an authorization boundary: the Janosik API still enforces each
+key's scopes, roles and rate limits.
+
+The `mcp` package test suite includes a mock-upstream smoke that creates 100
+then 500 real HTTP sessions in one process; on the development host 500
+sessions used about 570 MB RSS (one process, not 500 × 100 MB). See
+`mcp/src/http-server.test.ts`.
+
 ## Tools
 
 Tools come in groups. The default set works the board, agent sessions,
