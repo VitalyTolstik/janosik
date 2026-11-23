@@ -327,10 +327,11 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   even though the server recomputes a lease or move coordinates; refreshed
   `ifMatchVersions` pins do not break it. A different intent, a different
   actor or a different fingerprinted intent under the same key answers
-  `idempotency_conflict`. Rows with a v1 fingerprint or none at all fall back
-  to the older action/card/actor semantic match (including claim lease length
-  and move position; an unverifiable legacy `expectedDescription` is refused),
-  so the same actor’s matching request replays. A genuine missing card on a
+  `idempotency_conflict`. A bare v1 hash from the predecessor branch is the
+  same hash JSON and replays exactly. Only genuinely fingerprint-less rows use
+  the older action/card/actor semantic match (claim lease length within 1 ms,
+  move destination; position is not verifiable, and an unverifiable legacy
+  `expectedDescription` is refused). A genuine missing card on a
   200.7 server is a normal
   `not_found` and does **not** fall back; a context `404` without
   `X-Janosik-Intent-API: 1` can mean a pre-200.7 server and triggers the

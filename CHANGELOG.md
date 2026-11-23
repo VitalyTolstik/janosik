@@ -24,10 +24,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it is a true replay rather than an `idempotency_conflict`/`version_conflict`.
   A stable v2 intent fingerprint (including field presence and the
   authenticated actor, excluding version pins) proves the retry is the same
-  request; refreshed `ifMatchVersions` still replay. Rows with a v1 fingerprint
-  or none keep the older action/card/actor semantic match during a rolling
-  upgrade (claim lease length, move position; an unverifiable legacy
-  `expectedDescription` is refused). Identical concurrent requests are
+  request; refreshed `ifMatchVersions` still replay. A bare v1 hash from the
+  predecessor branch is accepted exactly. Only genuinely fingerprint-less rows
+  use the older action/card/actor semantic match (claim lease length within
+  1 ms, move destination; position is not verifiable, and an unverifiable
+  legacy `expectedDescription` is refused). Identical concurrent requests are
   serialized per `(board, commandId)` in-process. Version conflicts carry
   the pinned
   `card:`/`column:`/`board:` versions in `versions`, exported in

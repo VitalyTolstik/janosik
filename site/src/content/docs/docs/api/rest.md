@@ -397,10 +397,13 @@ different intent under the same key still answers `409 idempotency_conflict`
 because the server stores a stable v2 intent fingerprint (including which
 fields were present and the authenticated actor), not the server-derived
 action. Version pins are excluded, so refreshing `ifMatchVersions` on a retry
-still replays the committed write. Rows with a v1 fingerprint or none at all
-keep the older action/card/actor semantic match during a rolling upgrade; it
-also compares claim lease length and move position, and a legacy patch with
-an unverifiable `expectedDescription` is refused rather than replayed. A stale precondition
+still replays the committed write. A bare v1 hash from the predecessor branch
+is the same hash JSON and is accepted exactly. Only genuinely fingerprint-less
+rows use the older action/card/actor semantic match during a rolling upgrade;
+it compares claim lease length (1 ms tolerance) and the move destination, but
+not a move position (the old action stored only the clamped index). A legacy
+patch with an unverifiable `expectedDescription` is refused rather than
+replayed. A stale precondition
 answers `409 version_conflict` with the board `seq` in `currentVersion` and
 the versions of the pinned entities in `versions`; merge those into
 `ifMatchVersions` and retry the same call, or re-read only

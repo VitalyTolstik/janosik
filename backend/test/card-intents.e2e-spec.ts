@@ -133,6 +133,19 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     return cardId;
   }
 
+  async function fingerprintOf(commandId: string): Promise<string> {
+    const row = await prisma.command.findUniqueOrThrow({
+      where: { id: commandId },
+      select: { details: true },
+    });
+    const fingerprint = (row.details as { intentFingerprint?: string })
+      .intentFingerprint;
+    if (typeof fingerprint !== "string") {
+      throw new Error("command has no intent fingerprint");
+    }
+    return fingerprint;
+  }
+
   async function createPat(
     boardId: string,
     scopePreset: "worker" | "reviewer" | "admin" | "observer" = "admin",
@@ -551,14 +564,15 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     ).expect(409);
     expect(legacyLease.body).toMatchObject({ code: "idempotency_conflict" });
 
-    // v1 rows (a bare hash from the earlier branch commit) use the same
-    // semantic bridge.
+    // The real predecessor (`2b175874`) stored the same hash JSON without the
+    // `v2:` prefix; stripping the prefix reproduces that v1 row exactly.
     const v1Card = await card(boardId, "V1 fingerprint row");
     const v1Id = randomUUID();
     await claim(boardId, v1Card, { leaseMs: 60_000 }, pat, v1Id).expect(200);
+    const v1Fingerprint = (await fingerprintOf(v1Id)).slice(3);
     await prisma.command.update({
       where: { id: v1Id },
-      data: { details: { intentFingerprint: "a".repeat(64) } },
+      data: { details: { intentFingerprint: v1Fingerprint } },
     });
     await claim(boardId, v1Card, { leaseMs: 60_000 }, pat, v1Id).expect(200);
     const v1Different = await claim(
@@ -569,6 +583,54 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       v1Id,
     ).expect(409);
     expect(v1Different.body).toMatchObject({ code: "idempotency_conflict" });
+
+    // A v1 patch with expectedDescription replays exactly instead of falling
+    // into the conservative fingerprint-less patch branch.
+    const v1PatchCard = await card(boardId, "V1 patch");
+    const v1PatchId = randomUUID();
+    await patch(
+      boardId,
+      v1PatchCard,
+      { description: "v1", expectedDescription: "" },
+      pat,
+      v1PatchId,
+    ).expect(200);
+    const v1PatchFingerprint = (await fingerprintOf(v1PatchId)).slice(3);
+    await prisma.command.update({
+      where: { id: v1PatchId },
+      data: { details: { intentFingerprint: v1PatchFingerprint } },
+    });
+    await patch(
+      boardId,
+      v1PatchCard,
+      { description: "v1", expectedDescription: "" },
+      pat,
+      v1PatchId,
+    ).expect(200);
+
+    // A v1 clamped move also replays: the hash contains the requested
+    // position, not the clamped action index.
+    const v1MoveCard = await card(boardId, "V1 clamped move");
+    const v1MoveId = randomUUID();
+    await move(
+      boardId,
+      v1MoveCard,
+      { toColumnId: doingId, position: 99 },
+      pat,
+      v1MoveId,
+    ).expect(200);
+    const v1MoveFingerprint = (await fingerprintOf(v1MoveId)).slice(3);
+    await prisma.command.update({
+      where: { id: v1MoveId },
+      data: { details: { intentFingerprint: v1MoveFingerprint } },
+    });
+    await move(
+      boardId,
+      v1MoveCard,
+      { toColumnId: doingId, position: 99 },
+      pat,
+      v1MoveId,
+    ).expect(200);
 
     const legacyMoveCard = await card(boardId, "Legacy move");
     const legacyMoveId = randomUUID();
@@ -590,14 +652,16 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
       legacyMoveId,
     ).expect(200);
-    const legacyPosition = await move(
+    // A fingerprint-less row cannot verify the requested position (the
+    // action stored only the clamped index), so the destination-only semantic
+    // match replays it. v1/v2 hashes above cover the position exactly.
+    await move(
       boardId,
       legacyMoveCard,
       { toColumnId: doingId, position: 1 },
       pat,
       legacyMoveId,
-    ).expect(409);
-    expect(legacyPosition.body).toMatchObject({ code: "idempotency_conflict" });
+    ).expect(200);
 
     const legacyPatchCard = await card(boardId, "Legacy patch");
     const legacyPatchId = randomUUID();

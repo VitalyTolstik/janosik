@@ -166,7 +166,7 @@ export class CardIntentsService {
         return (
           typeof at === "number" &&
           typeof leaseUntil === "number" &&
-          leaseUntil - at === duration
+          Math.abs(leaseUntil - at - duration) <= 1
         );
       },
     );
@@ -232,10 +232,11 @@ export class CardIntentsService {
       dto.commandId,
       "MOVE_CARD",
       fingerprint,
+      // A genuinely fingerprint-less row did not store the requested
+      // position separately from the clamped action index, so only the
+      // destination can be verified. v1/v2 hashes cover the position exactly.
       (payload) =>
-        (dto.toColumnId === undefined ||
-          payload.toColumnId === dto.toColumnId) &&
-        (dto.position === undefined || payload.toIndex === dto.position),
+        dto.toColumnId === undefined || payload.toColumnId === dto.toColumnId,
     );
     if (replay !== null) {
       return this.moveResponse(replay.response, boardId, cardId, {
@@ -488,10 +489,9 @@ export class CardIntentsService {
 
   /**
    * An exact retry returns the stored result before a server-derived action
-   * or a stale-description precondition is evaluated. v2 fingerprinted rows
-   * must match the full intent; v1 and pre-fingerprint rows use the older
-   * action/card/actor match as a rolling-upgrade bridge (a different body on
-   * a v2 row is an idempotency conflict).
+   * or a stale-description precondition is evaluated. v2 and bare v1 hashes
+   * must match the full intent; only genuinely fingerprint-less rows use the
+   * older action/card/actor semantic bridge.
    */
   private async replay(
     boardId: string,
@@ -526,13 +526,13 @@ export class CardIntentsService {
     const payload = asRecord(row.payload);
     const details = asRecord(row.details);
     const storedFingerprint = details?.intentFingerprint;
-    // v2 fingerprints bind the actor and full intent. v1 rows (a bare hash
-    // from an earlier branch commit) and fully legacy rows keep the semantic
-    // match as the rolling-deploy bridge.
+    // `2b175874` wrote the same hash JSON without the `v2:` prefix, so a bare
+    // hash still proves the full intent exactly. Only genuinely fingerprint-
+    // less/unknown rows use the weaker semantic bridge.
     const fingerprintMatches =
-      typeof storedFingerprint === "string" &&
-      storedFingerprint.startsWith("v2:")
-        ? storedFingerprint === fingerprint
+      typeof storedFingerprint === "string"
+        ? storedFingerprint === fingerprint ||
+          storedFingerprint === fingerprint.slice(3)
         : row.actorId === actorId && legacyMatches(payload ?? {});
     if (
       payload === null ||
