@@ -17,6 +17,12 @@ export class ApiError extends Error {
     readonly status: number,
     readonly body: unknown,
     retryAfterSeconds?: number,
+    /**
+     * TASK-200.7: the response carried `X-Janosik-Intent-API: 1`. On a `404`
+     * this distinguishes a genuine missing card from a server older than the
+     * card-context route (which must fall back to the command API).
+     */
+    readonly intentApi = false,
   ) {
     super(`HTTP ${status}`);
     this.name = "ApiError";
@@ -155,6 +161,39 @@ export function isTransientNetworkError(error: unknown): boolean {
 }
 
 /**
+ * TASK-200.7: a stale per-entity precondition (`409 version`). Targeted tools
+ * refresh only the card they touched and retry; unrelated commands do not
+ * produce this error.
+ */
+export function isVersionConflict(error: unknown): error is ApiError {
+  if (!(error instanceof ApiError) || error.status !== 409) return false;
+  const body = asRecord(error.body);
+  return (
+    body.conflict === "version" ||
+    body.code === "version_conflict" ||
+    body.code === "move_stale"
+  );
+}
+
+/** Current entity versions carried by a `409` conflict, when present. */
+export function conflictVersions(
+  error: unknown,
+): Record<string, number> | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const raw = asRecord(error.body).versions;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return undefined;
+  }
+  const versions: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      versions[key] = value;
+    }
+  }
+  return Object.keys(versions).length > 0 ? versions : undefined;
+}
+
+/**
  * `503 {code}`: the board is too busy right now. Write-lock timeouts and the
  * TASK-200.6 full-read refusals are all safe to retry for an idempotent GET
  * (the same `commandId`/`Idempotency-Key` remains on writes).
@@ -174,6 +213,8 @@ interface ConflictBody {
   code?: string;
   conflict?: "version" | "wip" | "id" | "workflow";
   currentVersion?: number;
+  /** TASK-200.7 actual entity versions behind a version conflict. */
+  versions?: Record<string, number>;
   allowedToColumnIds?: string[];
   workflow?: {
     code?: string;
@@ -237,9 +278,10 @@ export function describeError(error: unknown): string {
   }
   if (error instanceof NoChangeError) {
     return (
-      `Error: nothing changed (${error.actionType}). An id may not exist on ` +
-      "this board, or the value was already set. Re-read the board with " +
-      "janosik_get_board and check the ids."
+      `Error: nothing changed (${error.actionType}). The card id may not ` +
+      "exist on this board, or the value/position was already set. Re-read " +
+      "only the card with janosik_get_card and check the id; a targeted " +
+      "claim/move/update does not need a full board read."
     );
   }
   if (error instanceof Error) {
@@ -596,12 +638,22 @@ function describeApiErrorBody(error: ApiError): string {
         );
       }
       if (conflict === "version") {
+        const versions = conflictVersions(error);
         return (
-          `Error: the board changed since you read it` +
+          `Error: the target changed since you read it` +
           (currentVersion !== undefined
-            ? ` (now at version ${currentVersion})`
+            ? ` (currentVersion ${currentVersion}; it is a board seq, an ` +
+              "entity version or an agent-policy version depending on the " +
+              "precondition)"
             : "") +
-          ". Re-read the board and retry."
+          (versions !== undefined
+            ? `; current versions: ${Object.entries(versions)
+                .map(([key, value]) => `${key}=${value}`)
+                .join(", ")}`
+            : "") +
+          ". Retry the same targeted call; it re-reads only the card it " +
+          "touches. Re-read the board only if you intentionally chose the " +
+          "full-board mode."
         );
       }
       if (conflict === "id") {
@@ -612,11 +664,13 @@ function describeApiErrorBody(error: ApiError): string {
       }
       if (scoped.code === "version_conflict") {
         return (
-          "Error: the board changed since you read it" +
+          "Error: the target changed since you read it" +
           (currentVersion !== undefined
-            ? ` (now at version ${currentVersion})`
+            ? ` (currentVersion ${currentVersion}; this may be a board seq, ` +
+              "an entity version or an agent-policy version)"
             : "") +
-          ". Re-read the board and retry."
+          ". Retry the same targeted call, or re-read the board only in " +
+          "explicit full-board mode."
         );
       }
       const detail = restMessage(body);

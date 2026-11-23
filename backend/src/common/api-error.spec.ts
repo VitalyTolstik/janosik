@@ -40,16 +40,23 @@ describe("apiErrorEnvelope", () => {
   it("keeps the legacy conflict shape and derives version_conflict", () => {
     const body = apiErrorEnvelope(
       409,
-      { conflict: "version", currentVersion: 42 },
+      {
+        conflict: "version",
+        currentVersion: 42,
+        versions: { "card:c1": 7, "column:col1": 2, garbage: "x" },
+      },
       "req-2",
     );
     expect(body).toMatchObject({
       code: "version_conflict",
       conflict: "version",
       currentVersion: 42,
+      versions: { "card:c1": 7, "column:col1": 2 },
       retryable: false,
       requestId: "req-2",
     });
+    // The version map is a first-class field, not a details blob.
+    expect(body.details).toBeUndefined();
   });
 
   it("promotes workflow destinations and keeps the workflow details", () => {

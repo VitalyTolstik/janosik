@@ -9,7 +9,7 @@ separate web server is required, and SSE and cookies work on a single origin.
 
 ## What the stack runs
 
-`docker compose up -d` starts three containers:
+`docker compose up -d` starts three containers by default:
 
 - **`app`** — the site, application, API, master panel and background jobs.
   It listens on port `3000`. Its image is `ghcr.io/vitalytolstik/janosik`;
@@ -19,9 +19,15 @@ separate web server is required, and SSE and cookies work on a single origin.
 - **`redis`** — the `redis:7-alpine` service for background jobs, including
   mail, transcoding, maintenance and exports.
 
-Only the app port is published to the host; `postgres` and `redis` stay
-internal. On boot the `app` container applies database migrations, then starts
-the API.
+A fourth, optional **`mcp`** service (image
+`ghcr.io/vitalytolstik/janosik-mcp`) runs the shared MCP Streamable HTTP
+gateway for many agents when you add `--profile mcp`. It listens on port
+`8080`, is bound to `127.0.0.1` by default, and keeps its sessions in memory.
+See [Connect MCP](#connect-mcp).
+
+`postgres` and `redis` stay internal. The app port is published by default;
+the optional gateway publishes only `127.0.0.1:8080`. On boot the `app`
+container applies database migrations, then starts the API.
 
 This is the whole install for one host. To run 2–4 API replicas behind the
 bundled nginx/Caddy proxy, see *Scale horizontally* below; the
@@ -453,6 +459,21 @@ machine as described in [MCP and agents](/docs/mcp/). For this local trial use
 `JANOSIK_URL=http://localhost:3210` and `JANOSIK_APP_BASE=/app`. The MCP
 process needs Node.js and network access to that URL; on another machine or in
 a container, use a reachable HTTPS origin instead of `localhost`.
+
+For many agents, start the shared gateway instead of one stdio process per
+agent: `docker compose --profile mcp up -d`, then point clients at
+`https://your-gateway/mcp` with their own `Authorization: Bearer jnk_…` header.
+The gateway checks local admission (global and per-key caps — 50 by default —
+plus per-IP/token initialize buckets and a negative cache) before validating
+the key with the API. It keeps sessions **in memory**: restarting it drops
+them, and multiple replicas need a session-affine proxy (or clients must
+reconnect). Successful MCP POSTs are SSE streams and gateway errors are JSON,
+so disable proxy buffering and set a read timeout above the longest tool call.
+Defaults are a 500-session cap, a 2 GB memory limit and 2 CPUs. Compose sets
+`stop_grace_period: 20s`; with plain Docker use `--stop-timeout 20` so the
+10 s drain can finish. A large first-time swarm must also raise API
+`THROTTLE_LIMIT` and `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`; see
+[the MCP guide](/docs/mcp/#shared-http-gateway-for-many-agents).
 
 ## Email (optional)
 

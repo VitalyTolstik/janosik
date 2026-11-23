@@ -11,6 +11,7 @@ import Redis from "ioredis";
 import type { BoardSseEvent, CommandSseEvent } from "@janosik/shared";
 import { env } from "@/config/env";
 import { quitRedis } from "@/common/redis-shutdown";
+import type { SlowSseConsumer } from "./sse-frames";
 
 /**
  * A command frame as it travels on the internal bus (B-4): the wire event
@@ -124,6 +125,11 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly nodeId = randomUUID();
   /** Cache-invalidation subscribers (TASK-200.5). */
   private readonly invalidationListeners = new Set<CacheInvalidationListener>();
+  /** Slow SSE subscribers dropped instead of buffering without bound
+   *  (TASK-200.13). A metric, not a correctness counter: the client resumes
+   *  from `?since=` on reconnect. */
+  private slowDrops = 0;
+  private lastSlowLogAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     // Optional so Nest does not try to resolve the plain options object as a
@@ -416,6 +422,28 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   /** Live SSE subscriber count (TASK-64 observability). */
   get subscriberCount(): number {
     return this.subscribers;
+  }
+
+  /** Slow SSE subscribers destroyed rather than buffered (TASK-200.13). */
+  get slowSubscriberDrops(): number {
+    return this.slowDrops;
+  }
+
+  /**
+   * Record a subscriber that stopped reading and was disconnected. Logged at
+   * most once a minute — an overloaded event loop must not answer a fan-out
+   * problem with one log line per dropped connection.
+   */
+  noteSlowSubscriber(boardId: string, info: SlowSseConsumer): void {
+    this.slowDrops += 1;
+    const now = Date.now();
+    if (now - this.lastSlowLogAt < 60_000) return;
+    this.lastSlowLogAt = now;
+    this.logger.warn(
+      `SSE slow subscriber dropped (${info.reason}, ${info.queuedFrames} frame(s), ` +
+        `${info.queuedBytes} referenced byte(s); shared buffers are not copied) ` +
+        `on board ${boardId}; total drops: ${this.slowDrops}`,
+    );
   }
 
   /** True when multi-node fan-out is active. */

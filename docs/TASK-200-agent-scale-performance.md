@@ -491,6 +491,43 @@ workflow, create, смена workflow планом) добавляют один 
 **Файлы:** `mcp/src/client.ts`, `mcp/src/tools/*`,
 `backend/src/commands/*`, `shared/src/api.ts`.
 
+**Реализовано (TASK-200.7):**
+- Точечные маршруты `GET /boards/:id/cards/:cardId/context`,
+  `POST .../claim`, `POST .../move`, `PATCH /boards/:id/cards/:cardId`.
+  Загрузчик `commands/targeted-board.ts` читает оболочку доски
+  (колонки/метки/workflow), одну карточку с checklist/link и, для move,
+  лёгкий индекс `id + columnId` только source/destination-колонок; context
+  индексирует только колонку карточки. Полный aggregate и board-wide
+  card-id скан для этих действий не грузятся; spy-тесты это фиксируют.
+- Точный retry с тем же `commandId` отвечает сохранённым результатом до
+  пересчёта lease/move-координат/`expectedDescription`; иначе одинаковый
+  retry становился бы `idempotency_conflict` или `version_conflict`.
+- Intent собирает обычное действие `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD` и
+  вызывает тот же `CommandsService.applyBatch` с `targeted: true`. Поэтому
+  `commandId`-идемпотентность, approvals/agent policy, WIP/workflow,
+  run-preimages, `seq`/`versions` и SSE не дублируются. `ifMatchVersions`
+  проверяется как раньше; если клиент его не прислал, intent сам фиксирует
+  версию прочитанной карточки. Move сам вычисляет source column/index под
+  блокировкой доски.
+- `MCP`: `claim_card`, `release_card`, `move_card`, `update_card` больше не
+  читают доску (кроме явного `expectedVersion` — это полнодосковный
+  `ifMatch = seq` режим). DoD и `expectedDescription` проверяются по
+  one-card context; после `409` обновляется только карточка и повторяется
+  тот же intent (до 3 попыток). На pre-200.7 сервере (context → `404`)
+  claim/move/update/release откатываются на command API. `add_comment` уже
+  ходит в точечный comment-роут.
+- Контракт ошибок: `409 {conflict:"version"}` теперь содержит
+  `versions: {"card:<id>": n, "column:<id>": n, ...}` в `ConflictError` и
+  `ApiErrorEnvelope`; MCP печатает их и предлагает точечный retry.
+- Тесты: `commands/targeted-board.spec.ts`, `common/api-error.spec.ts`
+  (versions в конверте), `backend/test/card-intents.e2e-spec.ts` 8/8
+  (разные карточки без 409, та же карточка 409 + versions + retry, exact
+  replay claim/move/expectedDescription, WIP/workflow/approval+preimage,
+  observer/pause/cross-board, archived/release ownership, ifMatch=seq/null,
+  отсутствие full aggregate вызова),
+  MCP client/server tests (targeted routes, no full board GET, retry,
+  DoD/claim/comment). Тяжёлый load и 500-agent приёмка не запускались.
+
 ---
 
 ### 200.8 — MCP Streamable HTTP gateway (P1)
@@ -511,6 +548,23 @@ workflow, create, смена workflow планом) добавляют один 
 - Нагрузочный тест: 100/500 HTTP-сессий.
 
 **Файлы:** `mcp/src/index.ts`, новый `mcp/src/http*`, Docker/CI.
+
+> **TASK-200.8 update (implemented).** Отдельный `janosik-mcp-http`
+> (Streamable HTTP, один процесс на много сессий, токен из `Authorization`
+> на сессию, локальный admission per-IP/per-token с negative cache,
+> single-flight проверкой ключа, раздельными body gate для initialize
+> (IP/`MAX_CONCURRENT_INIT_BODY_READS`) и инструментов
+> (токен/`MAX_CONCURRENT_BODY_READS`); слот удерживается до завершения всех
+> tool-промисов POST, JSON-RPC batch отклоняется, `/health` показывает оба
+> счётчика, дедлайн сбрасывает зависшее тело (`503 body_busy`), `503 auth_busy`
+> — при переполнении валидаций, idle/limit/
+> health и graceful drain (новые запросы получают 503, listener закрывается
+> после активных вызовов),
+> structured logs без токенов), отдельный Docker-образ/Compose-профиль и
+> CI-сборка. stdio остаётся по умолчанию для desktop. HTTP-smoke: 100 → 500
+> сессий в одном процессе, ~800 MB RSS на dev-хосте. Контракт, env и
+> остаточные ограничения —
+> [`TASK-200.8-mcp-streamable-http.md`](TASK-200.8-mcp-streamable-http.md).
 
 ---
 
@@ -657,6 +711,103 @@ rollout range, SSE `?since=`), unit-тесты общего throttler и SSE м�
 
 **Файлы:** `backend/src/commands/events.controller.ts`,
 `backend/src/realtime/*`.
+
+**Реализовано (TASK-200.13):**
+- `SseFrameStore` (`backend/src/realtime/sse-frames.ts`) строит полный кадр
+  `id: …\ndata: …\n\n` один раз на объект события и кладёт его в `WeakMap`.
+  Для live-команд этого достаточно, потому что `CommandStreamSequencer`
+  мемоизирует `toWire` по объекту из шины. Catch-up создаёт свежие объекты на
+  каждого подписчика, поэтому immutable command-кадры дополнительно
+  кэшируются по глобальному `Command.seq` в bounded LRU (32 МиБ): на
+  уровне frame-store 100×64 КиБ дельта для трёх подписчиков даёт 100 сборок
+  и одни и те же `Buffer`, а не 300 копий. В e2e с реальной БД используется
+  поддерживаемая бюджетом страница 3×10×64 КиБ; 3×100×64 КиБ по оценке
+  ~57 МиБ превысили бы process-wide 32 МиБ, и лишние потоки законно получили
+  бы `resync`. `data:`-фрейминг, порядок и `resync` сохранены. `id:` — это **process frame id** (один и тот же id у всех
+  подписчиков одного события), а не per-connection курсор: API не читает
+  `Last-Event-ID`, и переподключение всегда идёт с `?since=<board seq>`.
+- Catch-up не грузит до 5 000 payload/details-строк вслепую. Сначала идёт
+  bounded SQL preflight: `COUNT(*)` по подзапросу с `LIMIT max+1` (не полный
+  скан истории), затем **логические** `octet_length(payload::text/details/
+  touches)` только по окну из 20 строк (bounded detoast), экстраполяция на
+  count с запасом 1,25 на разброс поздних строк. Поэтому 300×64 КиБ
+  (~19,2 МиБ) отдаёт `resync` до первого page-`findMany`. Иначе строки
+  читаются страницами по 10, фактический JSON-размер проверяется на каждой
+  странице, а резервация бюджета увеличивается до фактического объёма или
+  отдаёт `resync`. Глобальный
+  `CatchUpBudget` (32 МиБ и 6 одновременных catch-up на процесс)
+  удерживается до конца emission в `CommandStreamSequencer.pull()` и только
+  там освобождается, поэтому 3 000 переподключений не могут одновременно
+  умножить entry/row память. Кэш command-кадров (32 МиБ) — отдельная
+  shared-память `Buffer`; delta-entry/rows — per-subscriber transient-память
+  под этим бюджетом.
+- Member-SSE больше не идёт через Nest `@Sse`: контроллер отдаёт тот же
+  контракт (`Content-Type`, `X-Accel-Buffering: no`, заголовки, лидирующий
+  `\n`, presence/keep-alive/teardown) через `SseConnection` и `@Res`. Это
+  убирает per-subscriber `JSON.stringify` и не даёт `concatMap` копить
+  сообщения при медленном сокете. 200-ответ коммитится только после
+  синхронного setup (`presence.join`, `watch`), поэтому гонка
+  `client_id_taken` по-прежнему отдаётся как `409`, а не как пустой 200-поток;
+  ошибки после заголовков закрывают поток обычным концом.
+- У каждого подписчика ограниченная очередь: при `write() === false` кадры
+  ждут `drain` как ссылки на общие `Buffer`. Синхронный burst из одной
+  команды/батча не видит `drain` до конца текущего стека, поэтому мягкий
+  лимит `SSE_MAX_BUFFER_BYTES` (128 КиБ) можно превысить на
+  `SSE_BURST_GRACE_MS` (5 с); жёсткий потолок — 16 МиБ, или 2× мягкого
+  лимита, если он выше 8 МиБ. Grace взводится через `setImmediate`, то есть
+  после текущего синхронного publish-такта и poll-фазы, поэтому долгий
+  fan-out успевает получить `drain` раньше таймера. Легитимный батч 10–100
+  команд по 64 КиБ (~6,4 МиБ) укладывается в потолок и сливается после
+  публикации, а медленный читатель уничтожается по grace, по
+  `SSE_SLOW_CLOSE_MS` (60 с; `0` отключает только этот таймер, байтовые
+  guard'ы остаются) или по жёсткому потолку. Очередь подписчика хранит
+  **ссылки** на общие `Buffer` кадров live и replay; 100×64 КиБ — это
+  ~6,4 МиБ уникальной памяти на command seq, а не на каждого из N
+  подписчиков; `queuedBytes` в метрике — referenced bytes. Catch-up-дельта
+  сама ограничена тем же hard guard: страница больше него превращается в
+  `resync`, поэтому переподключение не зацикливается на одной и той же
+  огромной дельте. Кадр, который уже принял сокет при `write() === false`,
+  в мягкий лимит не входит: реальный худший случай — лимит плюс один такой
+  кадр; `SSE_MAX_BUFFER_BYTES=0` означает «без очереди» и роняет первый
+  кадр после backpressure, а не блокирующий; на catch-up-бюджет и preflight
+  это не влияет. Клиент переподключается с
+  последним `?since=` и получает дельту/`resync`; здоровые подписчики не
+  теряют ни одного кадра. Метрика — `RealtimeService.slowSubscriberDrops`,
+  она отдаётся в `/admin/observability` (`jobs.realtime.slowDrops`), лог
+  агрегируется до одной строки в минуту. Оба лимита проброшены в
+  `docker-compose.yml`.
+- Keep-alive из 200.5 не менялся: 25 с/60 с, jitter и overlap-guard, один
+  scheduler на поток; тесты `keep-alive.spec.ts`, `sse-timing.spec.ts` и
+  e2e-проверка кадра проходят через новый writer.
+- **Summary-канал для агентов не добавлялся.** Решение: агентам SSE не нужен
+  для работы (200.2 даёт ready/long-poll); если поток всё же открыт, это
+  `?presence=0` с полными command-кадрами для отладки/oversight. Отдельный
+  summary-контракт потребовал бы нового типа в `@janosik/shared`, версии
+  клиента и не входит в файловый scope 200.13.
+- Тесты: `sse-frames.spec.ts` (один build на событие, N=64 подписчиков,
+  идентичные байты, **100 catch-up-кадров на трёх подписчиков = 100 сборок**,
+  32-МиБ LRU eviction, drain без потерь, **10 и 100 кадров по 64 КиБ без
+  drop**, 16-МиБ hard guard, grace после блокирующего publish-такта,
+  grace-timeout для медленного читателя, `SSE_MAX_BUFFER_BYTES=0` и healthy
+  catch-up, timeout, peer close), `catch-up-budget.spec.ts` (глобальные
+  32 МиБ/6 слотов и release), `commands.service.spec.ts` (preflight
+  count/octet_length без загрузки строк, пагинация, глобальный budget →
+  `resync`), `command-stream.spec.ts` (общий wire-объект для live-кадра),
+  `events.controller.spec.ts` (медленный подписчик →
+  метрика/уничтожение и teardown; синхронный setup-error → `409` без
+  SSE-заголовков; `headersSent`-ветка), `realtime.service.spec.ts` (счётчик и
+  агрегированный лог), `events.e2e-spec.ts` (два подписчика получают
+  байт-в-байт один кадр, `builtCount +1` на команду после live-кадра,
+  catch-up 3×10×64 КиБ = один Buffer на seq (frame-store unit покрывает
+  3×100), дельта >16 МиБ → `resync`, живые батчи 10/100 команд по 64 КиБ,
+  reconnect с `?since=`, keep-alive через writer).
+- **Ограничение:** целевые «fan-out CPU −2…10×» и p95 <500 мс на 3 000
+  соединений не измерялись — тяжёлый нагрузочный прогон в рамках 200.13 не
+  запускался; это остаётся 200.1/200.14. Pre-serialized fan-out касается только
+  **авторизованных member-потоков** (`/boards/:id/events`). Публичный share-SSE
+  (`share.controller.ts`) по-прежнему использует `@Sse` и сериализует кадр
+  на подписчика: его контракт — отдельная проекция с allowlist, вне файлового
+  scope этой задачи; это явно оговорено в runbook (EN/RU и self-hosting).
 
 ---
 

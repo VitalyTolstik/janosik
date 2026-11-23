@@ -6,8 +6,8 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { Role } from "@prisma/client";
-import type { ApprovalRequest, Prisma } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
+import type { ApprovalRequest, Board as BoardRow } from "@prisma/client";
 import type {
   ActorType,
   Board,
@@ -17,6 +17,7 @@ import type {
   CommandDeltaEntry,
   CommandResponse,
   ConflictError,
+  EntityVersions,
 } from "@janosik/shared";
 import {
   atWipLimit,
@@ -52,6 +53,11 @@ import {
   emptyBoardAggregate,
   loadBoardAggregate,
 } from "@/boards/board-aggregate";
+import {
+  loadTargetedBoardAggregate,
+  targetedCardIds,
+  targetedIndexColumnIds,
+} from "./targeted-board";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
@@ -75,6 +81,7 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { AttentionService } from "@/notifications/attention.service";
+import { CatchUpBudget, processCatchUpBudget } from "./catch-up-budget";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import {
   type EntityParentageLedger,
@@ -155,6 +162,25 @@ const RESTORE_ACTIONS = new Set<string>([
  * request can never materialize an unbounded history.
  */
 export const COMMAND_DELTA_MAX = 5_000;
+/** Sample window for the no-detoast preflight byte estimate. */
+export const CATCH_UP_SAMPLE_ROWS = 20;
+/** Rows loaded per catch-up page; bounds six concurrent page allocations. */
+export const CATCH_UP_PAGE_ROWS = 10;
+
+const DELTA_SELECT = {
+  id: true,
+  seq: true,
+  actorId: true,
+  actorType: true,
+  apiTokenId: true,
+  agentSessionId: true,
+  runId: true,
+  agentName: true,
+  payload: true,
+  touches: true,
+  details: true,
+} as const;
+type DeltaRow = Prisma.CommandGetPayload<{ select: typeof DELTA_SELECT }>;
 
 /**
  * One page of the command delta (B-3). `resync` means the gap since the
@@ -165,6 +191,13 @@ export const COMMAND_DELTA_MAX = 5_000;
 export interface CommandDelta {
   entries: CommandDeltaEntry[];
   resync: boolean;
+  /**
+   * TASK-200.13: an SSE catch-up transfers its `CatchUpBudget` reservation
+   * to the caller. The sequencer calls this after it has emitted/closed the
+   * entry array, so the global bytes stay accounted while the objects are
+   * still alive. HTTP callers and resync responses have no release.
+   */
+  release?: () => void;
 }
 
 /**
@@ -403,6 +436,27 @@ export interface ApplyOptions {
     runId: string,
     results: CommandResponse[],
   ) => Promise<void>;
+  /**
+   * TASK-200.7: the caller is a card intent (claim/move/field patch), so the
+   * board snapshot may be the targeted one — the shell plus the named card(s)
+   * and, for a move, the active card order. Never set this for a normal
+   * command whose reducer may read an unrelated card.
+   */
+  targeted?: boolean;
+  /**
+   * TASK-200.7: stable hash of the original card intent (not the
+   * server-derived action). Stored on the command row so a retry with the same
+   * `commandId` can prove it is the same request even when the action carries
+   * a fresh lease or recomputed move coordinates.
+   */
+  intentFingerprint?: string;
+  /**
+   * TASK-200.7: canonicalize the stored/hashed approval plan (not the action
+   * actually applied). Targeted moves replace resolved indexes with a
+   * client-intent marker so an unrelated positional change between approval
+   * and retry does not change the plan hash.
+   */
+  planForApproval?: (plan: ApprovalPlan) => ApprovalPlan;
 }
 
 @Injectable()
@@ -413,6 +467,8 @@ export class CommandsService {
     private readonly realtime: RealtimeService,
     private readonly approvals: ApprovalsService,
     @Optional() private readonly attention?: AttentionService,
+    @Optional()
+    private readonly catchUpBudget: CatchUpBudget = processCatchUpBudget,
   ) {}
 
   /**
@@ -452,6 +508,29 @@ export class CommandsService {
       response: applied.results[0]!,
       applied: applied.freshCommandIds.includes(dto.commandId),
     };
+  }
+
+  /**
+   * TASK-200.7: choose the snapshot width for one command batch. A targeted
+   * card intent loads the shell and its card(s); a normal command keeps the
+   * full aggregate because its reducer may read an unrelated card.
+   */
+  private async loadCommandBoard(
+    client: Prisma.TransactionClient,
+    boardId: string,
+    board: BoardRow,
+    actions: BoardAction[],
+    targeted: boolean,
+  ): Promise<BoardAggregate | null> {
+    if (!targeted) {
+      return loadBoardAggregate(client, boardId, { board });
+    }
+    const loaded = await loadTargetedBoardAggregate(client, boardId, {
+      board,
+      cardIds: targetedCardIds(actions),
+      indexColumnIds: targetedIndexColumnIds(actions),
+    });
+    return loaded?.board ?? null;
   }
 
   /**
@@ -525,6 +604,9 @@ export class CommandsService {
     const approvalId =
       options.principal?.via === "pat" ? options.approvalId : undefined;
     const plan = planFromPreparedCommands(boardId, prepared);
+    // TASK-200.7: the approval is about the client intent, not the source/
+    // destination indexes the server resolved for this attempt.
+    const approvalPlan = options.planForApproval?.(plan) ?? plan;
     let requirement: PlanRequirement | null = null;
     if (options.principal?.via === "pat") {
       try {
@@ -555,8 +637,18 @@ export class CommandsService {
         const snapshotNeeded =
           planNeedsClassificationSnapshot(plan, boardRow.workflow) ||
           planCreatesCards(plan);
+        // TASK-200.7: a card intent never needs every card. The shell,
+        // columns, workflow and its one card are enough for classification —
+        // even a move into a done column, where the source card is part of
+        // the decision.
         const aggregate = snapshotNeeded
-          ? await loadBoardAggregate(this.prisma, boardId, { board: boardRow })
+          ? await this.loadCommandBoard(
+              this.prisma,
+              boardId,
+              boardRow,
+              prepared.map((entry) => entry.action),
+              options.targeted === true,
+            )
           : null;
         if (snapshotNeeded && aggregate === null) {
           throw new NotFoundException("Board not found");
@@ -589,7 +681,7 @@ export class CommandsService {
             role: actorRole,
             principal: options.principal,
             agentSessionId: attribution.agentSessionId,
-            plan,
+            plan: approvalPlan,
             requirement,
             policy,
             prepared,
@@ -655,8 +747,8 @@ export class CommandsService {
           const authorized = await this.approvals.authorizeCommandApply(tx, {
             boardId,
             approvalId,
-            plan,
-            planHash: approvalPlanHash(plan),
+            plan: approvalPlan,
+            planHash: approvalPlanHash(approvalPlan),
             requirement,
             principal: options.principal,
             agentSessionId: attribution.agentSessionId,
@@ -723,7 +815,13 @@ export class CommandsService {
         // is applied to; an all-replay request loads nothing.
         let running: BoardAggregate | null = null;
         if (fresh.length > 0) {
-          const aggregate = await loadBoardAggregate(tx, boardId, { board });
+          const aggregate = await this.loadCommandBoard(
+            tx,
+            boardId,
+            board,
+            fresh.map((entry) => entry.action),
+            options.targeted === true,
+          );
           if (aggregate === null) {
             throw new NotFoundException("Board not found");
           }
@@ -813,7 +911,7 @@ export class CommandsService {
               clientRunId,
               planHash:
                 options.run?.planHash ??
-                (approval !== null ? approvalPlanHash(plan) : null),
+                (approval !== null ? approvalPlanHash(approvalPlan) : null),
               approvalId: approval !== null ? approval.id : null,
               commandCount: prepared.length,
               revertsRunId: options.run?.revertsRunId ?? null,
@@ -903,6 +1001,9 @@ export class CommandsService {
             board: running,
             exemptRestoreLimits: options.exemptRestoreLimits === true,
             exemptClaimGuard: options.exemptClaimGuard === true,
+            ...(options.intentFingerprint !== undefined
+              ? { intentFingerprint: options.intentFingerprint }
+              : {}),
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -1308,6 +1409,8 @@ export class CommandsService {
       board: Board;
       exemptRestoreLimits?: boolean;
       exemptClaimGuard?: boolean;
+      /** TASK-200.7 stable intent hash stored beside the display details. */
+      intentFingerprint?: string;
     },
   ): Promise<{
     response: CommandResponse;
@@ -1395,6 +1498,15 @@ export class CommandsService {
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;
+    const storedDetails =
+      details !== null || params.intentFingerprint !== undefined
+        ? {
+            ...(details ?? {}),
+            ...(params.intentFingerprint !== undefined
+              ? { intentFingerprint: params.intentFingerprint }
+              : {}),
+          }
+        : null;
 
     const created = await tx.command.create({
       data: {
@@ -1409,8 +1521,8 @@ export class CommandsService {
         type: action.type,
         payload: jsonSafe(action),
         result: {},
-        ...(details !== null
-          ? { details: jsonSafe(details) as Prisma.InputJsonValue }
+        ...(storedDetails !== null
+          ? { details: jsonSafe(storedDetails) as Prisma.InputJsonValue }
           : {}),
         touches: [],
       },
@@ -1474,6 +1586,11 @@ export class CommandsService {
    *   no longer in the log: the retention sweep trimmed it, and possibly
    *   commands after it.
    * Either way `resync: true` — the caller must re-read the board snapshot.
+   *
+   * TASK-200.13: an SSE catch-up also passes `maxBytes` (the same hard guard
+   * as the subscriber queue). A delta over that budget is unrepresentable
+   * for this stream — replaying it would drop the connection and make the
+   * client retry the same oversized page — so it becomes `resync` instead.
    */
   async deltaSince(
     boardId: string,
@@ -1485,6 +1602,7 @@ export class CommandsService {
       agentSessionId?: string;
     } = {},
     client: Prisma.TransactionClient = this.prisma,
+    maxBytes: number = Number.POSITIVE_INFINITY,
   ): Promise<CommandDelta> {
     if (since > 0) {
       const baseline = await client.command.findFirst({
@@ -1495,62 +1613,177 @@ export class CommandsService {
         return { entries: [], resync: true };
       }
     }
-    const rows = await client.command.findMany({
-      where: {
-        boardId,
-        ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
-        ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
-        ...(filters.apiTokenId !== undefined
-          ? { apiTokenId: filters.apiTokenId }
-          : {}),
-        ...(filters.agentSessionId !== undefined
-          ? { agentSessionId: filters.agentSessionId }
-          : {}),
-      },
-      orderBy: { seq: "asc" },
-      // One extra row tells "exactly max" apart from "more than max".
-      take: max + 1,
-      select: {
-        id: true,
-        seq: true,
-        actorId: true,
-        actorType: true,
-        apiTokenId: true,
-        agentSessionId: true,
-        runId: true,
-        agentName: true,
-        payload: true,
-        touches: true,
-        details: true,
-      },
-    });
-    const truncated = rows.length > max;
+    const where: Prisma.CommandWhereInput = {
+      boardId,
+      ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
+      ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
+      ...(filters.apiTokenId !== undefined
+        ? { apiTokenId: filters.apiTokenId }
+        : {}),
+      ...(filters.agentSessionId !== undefined
+        ? { agentSessionId: filters.agentSessionId }
+        : {}),
+    };
+
+    if (!Number.isFinite(maxBytes)) {
+      const rows = await client.command.findMany({
+        where,
+        orderBy: { seq: "asc" },
+        // One extra row tells "exactly max" apart from "more than max".
+        take: max + 1,
+        select: DELTA_SELECT,
+      });
+      const truncated = rows.length > max;
+      return {
+        entries: (truncated ? rows.slice(0, max) : rows).map((row) =>
+          this.deltaEntry(boardId, row),
+        ),
+        resync: truncated,
+      };
+    }
+
+    const releaseAttempt = this.catchUpBudget.tryBegin();
+    if (releaseAttempt === null) return { entries: [], resync: true };
+    let releaseBytes: (() => void) | null = null;
+    let handedOff = false;
+    const extraReleases: Array<() => void> = [];
+    try {
+      // Cheap preflight: no row/JSON materialisation in Node. `payload` and
+      // `details` are detoasted only inside PostgreSQL for this aggregate.
+      const conditions: Prisma.Sql[] = [Prisma.sql`"boardId" = ${boardId}`];
+      if (since > 0) conditions.push(Prisma.sql`"seq" > ${BigInt(since)}`);
+      if (filters.runId !== undefined) {
+        conditions.push(Prisma.sql`"runId" = ${filters.runId}`);
+      }
+      if (filters.apiTokenId !== undefined) {
+        conditions.push(Prisma.sql`"apiTokenId" = ${filters.apiTokenId}`);
+      }
+      if (filters.agentSessionId !== undefined) {
+        conditions.push(
+          Prisma.sql`"agentSessionId" = ${filters.agentSessionId}`,
+        );
+      }
+      const whereSql = Prisma.join(conditions, " AND ");
+      // Count only a bounded window. `since=0` on a large board must not scan
+      // the full history just to discover it is too large to replay.
+      const [countRow] = await client.$queryRaw<Array<{ count: bigint }>>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS "count" FROM (
+          SELECT 1 FROM "Command" WHERE ${whereSql} LIMIT ${max + 1}
+        ) AS "bounded"`,
+      );
+      const count = countRow?.count ?? 0n;
+      if (count > BigInt(max)) return { entries: [], resync: true };
+      const countNumber = Number(count);
+      // Logical bytes, not compressed `pg_column_size`: repeated 64 KiB text
+      // must not look tiny. Detoasting is bounded to the sample window only,
+      // and a 1.25 variance factor covers later rows that are larger.
+      const [sample] = await client.$queryRaw<
+        Array<{ sampled: bigint; bytes: bigint }>
+      >(
+        Prisma.sql`SELECT COUNT(*)::bigint AS "sampled",
+            COALESCE(SUM(
+              octet_length("payload"::text) +
+              COALESCE(octet_length("details"::text), 0) +
+              COALESCE(octet_length(array_to_string("touches", ',')), 0)
+            ), 0)::bigint AS "bytes"
+          FROM (
+            SELECT "payload", "details", "touches"
+            FROM "Command" WHERE ${whereSql}
+            ORDER BY "seq" ASC LIMIT ${CATCH_UP_SAMPLE_ROWS}
+          ) AS "sample"`,
+      );
+      const sampled = Number(sample?.sampled ?? 0n);
+      const sampleBytes = Number(sample?.bytes ?? 0n);
+      const estimatedBytes =
+        (sampled > 0
+          ? Math.ceil((sampleBytes / sampled) * countNumber * 1.25)
+          : 0) +
+        countNumber * 256;
+      if (estimatedBytes > maxBytes) return { entries: [], resync: true };
+      releaseBytes = this.catchUpBudget.tryReserve(estimatedBytes);
+      if (releaseBytes === null) return { entries: [], resync: true };
+      let reservedBytes = estimatedBytes;
+
+      // Fetch in small pages: never hold more than one page of row objects
+      // while replaying, and abort to resync if the actual JSON exceeds the
+      // reservation or the local byte guard.
+      const entries: CommandDeltaEntry[] = [];
+      let usedBytes = 0;
+      let fetched = 0;
+      let lastSeq = since;
+      while (fetched < countNumber) {
+        const take = Math.min(CATCH_UP_PAGE_ROWS, countNumber - fetched);
+        const rows = await client.command.findMany({
+          where: { ...where, seq: { gt: BigInt(lastSeq) } },
+          orderBy: { seq: "asc" },
+          take,
+          select: DELTA_SELECT,
+        });
+        // The log changed under the estimate (e.g. retention ran): losing a
+        // row silently is worse than a resync.
+        if (rows.length === 0) return { entries: [], resync: true };
+        for (const row of rows) {
+          const entry = this.deltaEntry(boardId, row);
+          usedBytes += Buffer.byteLength(JSON.stringify(entry), "utf8") + 64;
+          if (usedBytes > maxBytes) return { entries: [], resync: true };
+          if (usedBytes > reservedBytes) {
+            // The SQL estimate was low for this entry. Grow the process-wide
+            // reservation before keeping the bytes; otherwise another
+            // catch-up could already be using that headroom.
+            const releaseExtra = this.catchUpBudget.tryReserve(
+              usedBytes - reservedBytes,
+            );
+            if (releaseExtra === null) {
+              return { entries: [], resync: true };
+            }
+            extraReleases.push(releaseExtra);
+            reservedBytes = usedBytes;
+          }
+          entries.push(entry);
+          lastSeq = Number(row.seq);
+        }
+        fetched += rows.length;
+      }
+      handedOff = true;
+      return {
+        entries,
+        resync: false,
+        release: () => {
+          for (const release of extraReleases) release();
+          releaseBytes?.();
+          releaseAttempt();
+        },
+      };
+    } finally {
+      if (!handedOff) {
+        for (const release of extraReleases) release();
+        releaseBytes?.();
+        releaseAttempt();
+      }
+    }
+  }
+
+  private deltaEntry(boardId: string, row: DeltaRow): CommandDeltaEntry {
+    const detail = commandDetail(row.details);
     return {
-      entries: (truncated ? rows.slice(0, max) : rows).map((row) => {
-        const detail = commandDetail(row.details);
-        return {
-          seq: Number(row.seq),
-          // Rows written before ingress stamping may lack `boardId`; replay
-          // them scoped to the queried board so the UI's realtime bridge keeps
-          // them.
-          action: {
-            ...(row.payload as Record<string, unknown>),
-            boardId,
-          } as BoardAction,
-          actorId: row.actorId,
-          actorType: row.actorType as ActorType,
-          commandId: row.id,
-          touches: row.touches,
-          ...(detail === undefined ? {} : { detail }),
-          ...attributionFields({
-            apiTokenId: row.apiTokenId,
-            agentSessionId: row.agentSessionId,
-            runId: row.runId,
-            agentName: row.agentName,
-          }),
-        };
+      seq: Number(row.seq),
+      // Rows written before ingress stamping may lack `boardId`; replay them
+      // scoped to the queried board so the UI's realtime bridge keeps them.
+      action: {
+        ...(row.payload as Record<string, unknown>),
+        boardId,
+      } as BoardAction,
+      actorId: row.actorId,
+      actorType: row.actorType as ActorType,
+      commandId: row.id,
+      touches: row.touches,
+      ...(detail === undefined ? {} : { detail }),
+      ...attributionFields({
+        apiTokenId: row.apiTokenId,
+        agentSessionId: row.agentSessionId,
+        runId: row.runId,
+        agentName: row.agentName,
       }),
-      resync: truncated,
     };
   }
 
@@ -2407,6 +2640,19 @@ export class CommandsService {
       ids.set(match[2], expected);
     }
     const versions = await entityVersions(tx, boardId, wanted);
+    // TASK-200.7: answer with the versions this command pinned (and the board
+    // seq above), so a client can retry only the entity it touched instead of
+    // re-reading the whole board. A missing entity is left out: there is no
+    // version to retry with, and the normal reducer/no-change path explains
+    // the stale id.
+    const actualVersions: EntityVersions = {};
+    for (const [entity, expectations] of wanted) {
+      const actual = versions.get(entity);
+      for (const id of expectations.keys()) {
+        const value = actual?.get(id);
+        if (value !== undefined) actualVersions[`${entity}:${id}`] = value;
+      }
+    }
     for (const [entity, expectations] of wanted) {
       const actual = versions.get(entity);
       for (const [id, expected] of expectations) {
@@ -2415,6 +2661,9 @@ export class CommandsService {
           throw new ConflictException({
             conflict: "version",
             currentVersion,
+            ...(Object.keys(actualVersions).length > 0
+              ? { versions: actualVersions }
+              : {}),
           } satisfies ConflictError);
         }
       }
