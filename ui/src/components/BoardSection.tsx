@@ -355,6 +355,12 @@ export function BoardSection() {
   const focusAttachmentId = searchParams.get("attachment") ?? undefined;
   // Selection is a write affordance and only exists where cards are rows.
   const selectionEnabled = !readOnly && (view === "board" || view === "table");
+  const savedViewsUnavailable = (
+    <div role="status" data-testid="saved-views-menu-unavailable">
+      {SAVED_VIEWS_FALLBACK}
+      <span className="sr-only">{t("savedViews.unavailable")}</span>
+    </div>
+  );
 
   return (
     <CardSelectionProvider
@@ -392,7 +398,7 @@ export function BoardSection() {
                 onChange={setFilter}
               />
             </div>
-            <SavedViewsMenuBoundary fallback={SAVED_VIEWS_FALLBACK}>
+            <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
               <Suspense fallback={SAVED_VIEWS_FALLBACK}>
                 <SavedViewsMenu
                   userId={savedViewsUserId}

@@ -11,9 +11,17 @@ import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 
+const loader = vi.hoisted(() => {
+  const failure = new Error("saved views chunk unavailable");
+  const rejection = Promise.reject(failure);
+  // The boundary handles it; mark it observed so Vitest does not report an
+  // extra unhandled rejection on top of React's development log.
+  void rejection.catch(() => {});
+  return { failure, loadSavedViewsMenu: vi.fn(() => rejection) };
+});
+
 vi.mock("@/components/board/saved-views-loader", () => ({
-  loadSavedViewsMenu: () =>
-    Promise.reject(new Error("saved views chunk unavailable")),
+  loadSavedViewsMenu: loader.loadSavedViewsMenu,
 }));
 
 function renderBoard() {
@@ -48,11 +56,8 @@ afterEach(() => {
 });
 
 describe("saved views chunk failure", () => {
-  it("keeps the board usable and shows only the reserved placeholder", async () => {
-    // React reports a caught lazy-chunk error to console/reportError; the
-    // assertion is the visible fallback, not the log line.
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal("reportError", vi.fn());
+  it("keeps the board usable and reports the boundary fallback", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
     renderBoard();
 
     expect(
@@ -60,11 +65,18 @@ describe("saved views chunk failure", () => {
     ).toBeInTheDocument();
     expect(screen.getByTestId("filter-bar")).toBeInTheDocument();
 
-    const placeholder = await screen.findByTestId(
-      "saved-views-menu-placeholder",
+    expect(loader.loadSavedViewsMenu).toHaveBeenCalled();
+    const firstLoad = loader.loadSavedViewsMenu.mock.results[0]?.value;
+    await expect(firstLoad).rejects.toThrow(loader.failure.message);
+
+    const unavailable = await screen.findByTestId(
+      "saved-views-menu-unavailable",
     );
-    // Same footprint as the trigger (36 px, 44 px below lg); the FilterBar
-    // does not shift and the rest of the board stays interactive.
+    expect(unavailable).toHaveTextContent(
+      "Saved views are unavailable in this browser.",
+    );
+    // The failed boundary keeps the same 36/44 px slot as the trigger.
+    const placeholder = screen.getByTestId("saved-views-menu-placeholder");
     expect(placeholder).toHaveClass(
       "h-9",
       "w-9",
@@ -74,5 +86,10 @@ describe("saved views chunk failure", () => {
     );
     expect(screen.queryByTestId("saved-views-menu")).not.toBeInTheDocument();
     expect(screen.queryByTestId("error-compact")).not.toBeInTheDocument();
+    expect(
+      errorLog.mock.calls.some(([message]) =>
+        String(message).includes("[saved-views]"),
+      ),
+    ).toBe(true);
   });
 });

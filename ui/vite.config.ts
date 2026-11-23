@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 import { serviceWorkerPlugin } from "./vite/sw-plugin.ts";
+import { assertLazySavedViewsPlugin } from "./vite/assert-lazy-saved-views.ts";
 
 // Vite config: React plugin + Tailwind v4 plugin + `@/` path alias.
 // Vendor chunks (TASK-19): stable, long-cached groups + parallel loading.
@@ -26,7 +27,12 @@ export default defineConfig({
   // site owns the root — see the Dockerfile). Defaults to the root so dev and
   // standalone deployments are unchanged; the value must keep both slashes.
   base: process.env.UI_BASE ?? "/",
-  plugins: [react(), tailwindcss(), serviceWorkerPlugin()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    serviceWorkerPlugin(),
+    assertLazySavedViewsPlugin(),
+  ],
   // Same-origin API in dev (TASK-29): the UI calls `/api/v1`, Vite forwards
   // to the backend on :3000 — production nginx proxies the same path.
   // `UI_API_PROXY` lets a secondary checkout (E2E against a disposable stack)
@@ -78,7 +84,7 @@ export default defineConfig({
             // the group also keeps their utils out of the board entry.
             {
               name: "savedviews",
-              test: /[\\/]src[\\/](components[\\/]board[\\/]SavedViewsMenu|utils[\\/]saved-views)/,
+              test: /[\\/]src[\\/](components[\\/]board[\\/]SavedViewsMenu\.tsx|utils[\\/]saved-views\.ts)/,
             },
             // Framework core — changes rarely, cached long.
             {
