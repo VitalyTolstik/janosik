@@ -11,6 +11,7 @@ import {
   lockBoardWrites,
   verifyCommentHistory,
 } from "@/comments/comment-history";
+import { revokeApiTokens } from "@/auth/token-revocation";
 import { deleteMentionAttentionForComments } from "@/notifications/mention-attention";
 
 /** TASK-166 D22/§12.5: the self-service deletion window. */
@@ -109,20 +110,10 @@ export class AccountDeletionService {
       now.getTime() + ACCOUNT_DELETE_GRACE_DAYS * DAY_MS,
     );
     await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR NO KEY UPDATE`;
-    const tokenIds = (
-      await tx.apiToken.findMany({
-        where: { userId },
-        select: { id: true },
-      })
-    ).map((token) => token.id);
 
     await tx.user.update({
       where: { id: userId },
       data: { disabledAt: now },
-    });
-    await tx.apiToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: now },
     });
     await tx.refreshToken.updateMany({
       where: { userId, revokedAt: null },
@@ -139,7 +130,11 @@ export class AccountDeletionService {
         endReason: "account_delete",
       },
     });
-    await this.releaseClaims(tx, userId, tokenIds, now);
+    // TASK-200.10 review: same board-lock set as every other revocation
+    // (token scope + unscoped memberships + claim boards). Replacing the old
+    // direct `apiToken.updateMany` + unlocked `releaseClaims` keeps a command
+    // from caching a revision that misses this claim cleanup.
+    await revokeApiTokens(tx, { userId, revokedAt: null }, now);
     await tx.securityAuditLog.create({
       data: {
         userId,
@@ -398,7 +393,6 @@ export class AccountDeletionService {
         select: { boardId: true },
       }),
     ]);
-    const affectedCards = [...new Set(blobs.map((blob) => blob.cardId))];
     const tokenKeys = tokens.map((token) => `token:${token.id}`);
     const tokenIds = tokens.map((token) => token.id);
     const boardIds = [...new Set(memberships.map((row) => row.boardId))];
@@ -472,6 +466,16 @@ export class AccountDeletionService {
               return false;
             }
           }
+          // TASK-200.10 review: derive attachment-affected cards inside this
+          // transaction (the outer `blobs` read is only for storage cleanup).
+          // Their boards enter the lock set below; the same set is recounted.
+          const attachmentCards = await tx.attachment.findMany({
+            where: { uploadedById: userId },
+            select: { cardId: true },
+          });
+          const attachmentCardIds = [
+            ...new Set(attachmentCards.map((row) => row.cardId)),
+          ];
           await tx.agentSession.deleteMany({ where: { userId } });
           await tx.approvalRequest.deleteMany({
             where: { requestedBy: userId },
@@ -491,7 +495,6 @@ export class AccountDeletionService {
           await tx.attentionNotification.deleteMany({ where: { userId } });
           await tx.notificationMail.deleteMany({ where: { userId } });
           await tx.dataExport.deleteMany({ where: { userId } });
-          await tx.attachment.deleteMany({ where: { uploadedById: userId } });
           // TASK-185.1: history cleanup must happen before the user row (the
           // editor FK is RESTRICT) and before comments/Activity disappear.
           // Collect the complete union before taking ANY board lock; the global
@@ -538,9 +541,9 @@ export class AccountDeletionService {
                   },
                   select: { column: { select: { boardId: true } } },
                 }),
-                affectedCards.length > 0
+                attachmentCardIds.length > 0
                   ? tx.card.findMany({
-                      where: { id: { in: affectedCards } },
+                      where: { id: { in: attachmentCardIds } },
                       select: { column: { select: { boardId: true } } },
                     })
                   : Promise.resolve([]),
@@ -550,8 +553,12 @@ export class AccountDeletionService {
               (row) => row.column.boardId,
             );
           };
+          const currentMemberships = await tx.boardMember.findMany({
+            where: { userId, acceptedAt: { not: null } },
+            select: { boardId: true },
+          });
           const lockedBoardIds = new Set([
-            ...boardIds,
+            ...currentMemberships.map((row) => row.boardId),
             ...authoredBefore.map((row) => row.card.column.boardId),
             ...editedBefore.map((row) => row.card.column.boardId),
             ...(await cardBoardIds()),
@@ -584,16 +591,49 @@ export class AccountDeletionService {
           const discoveredCardBoards = (await cardBoardIds()).filter(
             (boardId) => !lockedBoardIds.has(boardId),
           );
-          if (discovered.length > 0 || discoveredCardBoards.length > 0) {
+          // A membership accepted between the pre-read and the lock must not
+          // escape the lock set; retry the whole erasure with a fresh read.
+          const lateMemberships = (
+            await tx.boardMember.findMany({
+              where: { userId, acceptedAt: { not: null } },
+              select: { boardId: true },
+            })
+          )
+            .map((row) => row.boardId)
+            .filter((boardId) => !lockedBoardIds.has(boardId));
+          const attachmentCardsAfter = await tx.attachment.findMany({
+            where: { uploadedById: userId },
+            select: { cardId: true },
+          });
+          const lateAttachmentCardIds = [
+            ...new Set(attachmentCardsAfter.map((row) => row.cardId)),
+          ].filter((cardId) => !attachmentCardIds.includes(cardId));
+          const lateAttachmentBoards =
+            lateAttachmentCardIds.length > 0
+              ? (
+                  await tx.card.findMany({
+                    where: { id: { in: lateAttachmentCardIds } },
+                    select: { column: { select: { boardId: true } } },
+                  })
+                )
+                  .map((row) => row.column.boardId)
+                  .filter((boardId) => !lockedBoardIds.has(boardId))
+              : [];
+          if (
+            discovered.length > 0 ||
+            discoveredCardBoards.length > 0 ||
+            lateMemberships.length > 0 ||
+            lateAttachmentBoards.length > 0
+          ) {
             throw new EraseLockOrderRetry();
           }
           const authoredIds = authoredComments.map((row) => row.id);
 
-          // TASK-200.10 review: the attachment rows were deleted earlier in
-          // this transaction; recount the badge now that the board lock is
-          // held, so the Card write that moves `aggregateRevision` cannot
-          // race a command's aggregate load.
-          for (const cardId of affectedCards) {
+          // TASK-200.10 review: the recount happens in the same transaction
+          // and under the board locks, using the card ids the transaction
+          // itself read (not the pre-lock `blobs` snapshot).
+          await tx.attachment.deleteMany({ where: { uploadedById: userId } });
+          for (const cardId of attachmentCardIds) {
             const live = await tx.attachment.count({
               where: { cardId, ...CARD_ATTACHMENT_WHERE },
             });

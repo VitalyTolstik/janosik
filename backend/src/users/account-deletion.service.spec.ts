@@ -158,14 +158,26 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
   function scheduleTx() {
     return {
       $queryRaw: jest.fn(),
+      $executeRaw: jest.fn().mockResolvedValue(1),
       user: { update: jest.fn().mockResolvedValue({}) },
       apiToken: {
-        findMany: jest.fn().mockResolvedValue([{ id: "token-1" }]),
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: "token-1", userId: "user-1", boardId: "board-1" },
+          ]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      boardMember: { findMany: jest.fn().mockResolvedValue([]) },
       refreshToken: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       agentSession: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      card: { findMany: jest.fn().mockResolvedValue([]) },
+      approvalRequest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      card: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       securityAuditLog: { create: jest.fn().mockResolvedValue({}) },
     };
   }
@@ -183,9 +195,12 @@ describe("AccountDeletionService orphan-board reaper (TASK-166.6)", () => {
     await service.scheduleInTransaction(tx as never, "user-1", "user-1", {});
 
     expect(tx.apiToken.updateMany).toHaveBeenCalledWith({
-      where: { userId: "user-1", revokedAt: null },
+      where: { id: { in: ["token-1"] }, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+    // TASK-200.10: the schedule path takes the token's board lock before the
+    // claim cleanup; the old direct update had no lock at all.
+    expect(tx.$executeRaw).toHaveBeenCalled();
     // Clearing before commit would let a concurrent read refill the old key.
     expect(invalidatePat).not.toHaveBeenCalled();
   });
