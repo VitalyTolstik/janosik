@@ -160,9 +160,20 @@ export class CommandStreamSequencer {
   }
 }
 
+/**
+ * TASK-200.13: the same committed event reaches every subscriber's sequencer
+ * (the bus fans out one object), so its wire projection is built once too.
+ * The SSE frame store keys pre-serialized bytes by object identity; without
+ * this cache each subscriber would hand it a fresh object and stringify the
+ * command again.
+ */
+const wireFrames = new WeakMap<InternalCommandEvent, CommandSseEvent>();
+
 /** The wire frame: exactly the shared `CommandSseEvent`, no internals. */
 function toWire(event: InternalCommandEvent): CommandSseEvent {
-  return {
+  const cached = wireFrames.get(event);
+  if (cached !== undefined) return cached;
+  const wire: CommandSseEvent = {
     type: "command",
     seq: event.seq,
     action: event.action,
@@ -177,4 +188,6 @@ function toWire(event: InternalCommandEvent): CommandSseEvent {
     ...(event.runId !== undefined ? { runId: event.runId } : {}),
     ...(event.agentName !== undefined ? { agentName: event.agentName } : {}),
   };
+  wireFrames.set(event, wire);
+  return wire;
 }

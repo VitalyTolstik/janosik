@@ -1,18 +1,18 @@
 import {
   Controller,
+  Get,
   Logger,
   MessageEvent,
   Param,
   Query,
   Res,
   ServiceUnavailableException,
-  Sse,
   UseGuards,
   type OnModuleDestroy,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
-import { Observable } from "rxjs";
+import { Observable, type Subscription } from "rxjs";
 import type { AgentPauseStamp } from "@/auth/agent-pause";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentPrincipal } from "@/auth/auth-principal";
@@ -28,7 +28,9 @@ import {
 } from "@/realtime/realtime.service";
 import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { KeepAliveScheduler } from "@/realtime/keep-alive";
+import { SseConnection, SseFrameStore } from "@/realtime/sse-frames";
 import { keepAliveProfile } from "@/realtime/sse-timing";
+import { env } from "@/config/env";
 import { CommandStreamSequencer } from "./command-stream";
 import { CommandsService } from "./commands.service";
 import { parseSince } from "./parse-since";
@@ -89,6 +91,13 @@ export class EventsController implements OnModuleDestroy {
     private readonly presence: PresenceService,
     private readonly access: StreamAccessService,
     private readonly flags: FeatureFlagsService,
+    /**
+     * TASK-200.13: one frame store per process. A published event object is
+     * shared by every subscriber, so the first write serializes it and the
+     * rest reuse the same Buffer. Injectable so e2e can assert the build
+     * count; the default keeps direct unit construction working.
+     */
+    private readonly frames: SseFrameStore = new SseFrameStore(),
   ) {}
 
   /** TASK-200.5: stop every stream timer before Nest closes the sockets. */
@@ -113,18 +122,28 @@ export class EventsController implements OnModuleDestroy {
     this.skippedKeepAlives = 0;
   }
 
+  /**
+   * TASK-200.13: a raw `@Res` instead of Nest's `@Sse`.
+   *
+   * `@Sse` pipes every subscriber through its own `SseStream`, which
+   * JSON-stringifies the same event once per connection and queues emitted
+   * messages in an unbounded `concatMap` while a slow socket is blocked.
+   * Here the route keeps the same admission, resume and keep-alive logic but
+   * writes pre-serialized frames through `SseConnection`, which bounds the
+   * per-subscriber queue and disconnects a reader that stopped draining.
+   */
   @UseGuards(MembershipGuard, RealtimeFlagGuard)
-  @Sse()
+  @Get()
   events(
     @Param("id") id: string,
+    @Res() res: Response,
     @Query("since") since?: string,
     @Query("client") client?: string,
     @Query("presence") presence?: string,
     @Query("session") session?: string,
     @CurrentUser() user?: AuthUser,
     @CurrentPrincipal() principal?: AuthPrincipal,
-    @Res({ passthrough: true }) res?: Response,
-  ): Observable<MessageEvent> {
+  ): void {
     const clientId =
       client !== undefined && CLIENT_ID.test(client) ? client : randomUUID();
     // `?presence=0` opts a stream out of presence entirely (agent/CI viewers):
@@ -148,21 +167,94 @@ export class EventsController implements OnModuleDestroy {
     // per-user and per-board ceiling instead of an unbounded memory draw.
     const admission = this.realtime.reserveSubscriber(id, user?.id ?? null);
     if (!admission.ok) {
-      res?.setHeader("Retry-After", "5");
+      res.setHeader("Retry-After", "5");
       throw new ServiceUnavailableException({
         message: `Too many live streams (${admission.reason} limit ${admission.limit})`,
       });
     }
-    return this.stream(
+    this.serve(
       id,
       sinceSeq,
       clientId,
       presenceEnabled,
       admission.release,
+      res,
       user,
       principal,
       session,
     );
+  }
+
+  /** Start one admitted stream and own its response/lifecycle wiring. */
+  private serve(
+    boardId: string,
+    since: number,
+    clientId: string,
+    presenceEnabled: boolean,
+    releaseTracking: () => void,
+    res: Response,
+    user?: AuthUser,
+    principal?: AuthPrincipal,
+    sessionId?: string,
+  ): void {
+    // A holder rather than a `let`: the close listener is attached before
+    // `subscribe()` returns, and a synchronous source can close the writer in
+    // the same tick.
+    const owner: { subscription?: Subscription } = {};
+    const connection = new SseConnection(res, {
+      frames: this.frames,
+      maxBufferBytes: env.SSE_MAX_BUFFER_BYTES,
+      slowCloseMs: env.SSE_SLOW_CLOSE_MS,
+      onClose: () => owner.subscription?.unsubscribe(),
+    });
+    // Match `@Sse`'s early header commit: the client's `fetch` resolves and
+    // reconnects see a live stream even before the delta catch-up lands.
+    try {
+      connection.open();
+    } catch (error) {
+      connection.dispose();
+      releaseTracking();
+      throw error;
+    }
+    if (connection.isClosed) {
+      releaseTracking();
+      return;
+    }
+    try {
+      owner.subscription = this.stream(
+        boardId,
+        since,
+        clientId,
+        presenceEnabled,
+        releaseTracking,
+        user,
+        principal,
+        sessionId,
+      ).subscribe({
+        next: (message) => connection.write(message.data),
+        error: (error: unknown) => {
+          this.logger.warn(
+            `Stream for board ${boardId} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          connection.end();
+        },
+        complete: () => connection.end(),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Stream setup for board ${boardId} failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      connection.end();
+      releaseTracking();
+      return;
+    }
+    // A synchronous source can hit the bound before `subscribe` returns, when
+    // `onClose` had no subscription to cancel yet.
+    if (connection.isClosed) owner.subscription.unsubscribe();
   }
 
   private stream(
