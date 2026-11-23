@@ -13,11 +13,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { type BoardMember, Role } from "@prisma/client";
-import type {
-  CommandBatchResponse,
-  CommandDeltaEntry,
-  CommandResponse,
-} from "@janosik/shared";
+import type { CommandBatchResponse, CommandResponse } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import {
@@ -182,12 +178,12 @@ export class CommandsController {
   @Get()
   async list(
     @Param("id") id: string,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
     @Query("since") since?: string,
     @Query("runId") runId?: string,
     @Query("apiTokenId") apiTokenId?: string,
     @Query("agentSessionId") agentSessionId?: string,
-  ): Promise<CommandDeltaEntry[]> {
+  ): Promise<void> {
     const delta = await this.commands.deltaSince(
       id,
       parseSince(since),
@@ -208,13 +204,14 @@ export class CommandsController {
     );
     if (delta.resync) {
       res.setHeader(DELTA_RESYNC_HEADER, "1");
+      res.json([]);
       delta.release?.();
-      return [];
+      return;
     }
-    const entries = delta.entries;
-    // REST JSON serialization runs immediately after the handler returns;
-    // close the accounting window now instead of leaking the slot forever.
+    // JSON.stringify runs inside `res.json`; keep the catch-up reservation
+    // (and its transient entries) alive until that synchronous serialization
+    // finished, then release it.
+    res.json(delta.entries);
     delta.release?.();
-    return entries;
   }
 }

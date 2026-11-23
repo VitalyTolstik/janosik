@@ -722,11 +722,23 @@ describe("Board events SSE (e2e)", () => {
     expect(delta.headers["x-delta-resync"]).toBe("1");
     expect(delta.body).toEqual([]);
 
+    const pageLoad = jest.spyOn(prisma.command, "findMany");
     const stream = openReader(await openQuietStream(memberToken, baseline));
     try {
       const [frame] = await stream.next(1, "resync", 30_000);
       expect(frame.type).toBe("resync");
+      // The logical-byte sample rejected 300 x 64 KiB before any 10-row page.
+      expect(
+        pageLoad.mock.calls.filter(
+          ([args]) =>
+            (args as { take?: number; where?: { boardId?: string } }).take ===
+              10 &&
+            (args as { where?: { boardId?: string } }).where?.boardId ===
+              boardId,
+        ),
+      ).toHaveLength(0);
     } finally {
+      pageLoad.mockRestore();
       await stream.close();
       await command(
         ownerToken,

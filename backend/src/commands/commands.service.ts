@@ -1591,17 +1591,17 @@ export class CommandsService {
       const count = countRow?.count ?? 0n;
       if (count > BigInt(max)) return { entries: [], resync: true };
       const countNumber = Number(count);
-      // `pg_column_size` never detoasts, so this sample is bounded by the
-      // sample window even for 2 MiB descriptions. The page loop tops the
-      // reservation up from the actual JSON bytes.
+      // Logical bytes, not compressed `pg_column_size`: repeated 64 KiB text
+      // must not look tiny. Detoasting is bounded to the sample window only,
+      // and a 1.25 variance factor covers later rows that are larger.
       const [sample] = await client.$queryRaw<
         Array<{ sampled: bigint; bytes: bigint }>
       >(
         Prisma.sql`SELECT COUNT(*)::bigint AS "sampled",
             COALESCE(SUM(
-              pg_column_size("payload") +
-              COALESCE(pg_column_size("details"), 0) +
-              COALESCE(pg_column_size("touches"), 0)
+              octet_length("payload"::text) +
+              COALESCE(octet_length("details"::text), 0) +
+              COALESCE(octet_length(array_to_string("touches", ',')), 0)
             ), 0)::bigint AS "bytes"
           FROM (
             SELECT "payload", "details", "touches"
@@ -1612,7 +1612,9 @@ export class CommandsService {
       const sampled = Number(sample?.sampled ?? 0n);
       const sampleBytes = Number(sample?.bytes ?? 0n);
       const estimatedBytes =
-        (sampled > 0 ? Math.ceil((sampleBytes / sampled) * countNumber) : 0) +
+        (sampled > 0
+          ? Math.ceil((sampleBytes / sampled) * countNumber * 1.25)
+          : 0) +
         countNumber * 256;
       if (estimatedBytes > maxBytes) return { entries: [], resync: true };
       releaseBytes = this.catchUpBudget.tryReserve(estimatedBytes);

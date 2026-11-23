@@ -388,10 +388,11 @@ comfortably. Two knobs matter when you grow, and both have safe defaults:
   hard guard is 16 MiB, or 2x the soft bound when it is above 8 MiB. Live and
   replayed command frames are shared Buffers (command cache up to 32 MiB); the
   guard bounds queue references, not per-subscriber copies. Catch-up first
-  runs a `LIMIT max+1` count and a 20-row `pg_column_size` estimate (no
-  detoast), then rows are read in 10-row pages under a process-wide 32 MiB /
-  6-slot budget held until the sequencer emitted them; excess or oversized
-  reconnects answer `resync` instead of replaying forever.
+  runs a `LIMIT max+1` count and a 20-row logical `octet_length` sample
+  (bounded detoast, 1.25 variance factor), then rows are read in 10-row pages
+  under a process-wide 32 MiB / 6-slot budget held until the sequencer emitted
+  them; excess or oversized reconnects answer `resync` instead of replaying
+  forever.
   `SSE_MAX_BUFFER_BYTES=0` affects only the blocked queue, not this catch-up
   budget.
   This pre-serialized path is for authenticated member streams; public share

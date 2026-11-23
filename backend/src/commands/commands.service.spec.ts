@@ -123,8 +123,26 @@ describe("CommandsService.deltaSince", () => {
     const sampleSql = (
       queryRaw.mock.calls[1]?.[0] as { text?: string } | undefined
     )?.text;
-    expect(sampleSql).toContain("pg_column_size");
-    expect(sampleSql).not.toContain("octet_length");
+    expect(sampleSql).toContain("octet_length");
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a 300 x 64 KiB delta in the sample before page rows", async () => {
+    const findMany = jest.fn();
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ count: 300n }])
+      // 20 sample rows of 64 KiB logical bytes -> ~19.2 MiB extrapolated.
+      .mockResolvedValueOnce([{ sampled: 20n, bytes: 20n * 64_000n }]);
+    const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
+      "board-1",
+      0,
+      undefined,
+      undefined,
+      undefined,
+      16 * 1024 * 1024,
+    );
+    expect(delta).toEqual({ entries: [], resync: true });
     expect(findMany).not.toHaveBeenCalled();
   });
 
@@ -269,6 +287,30 @@ describe("CommandsService.deltaSince", () => {
     // The preflight reserve fits, but the real entry is larger; the budget
     // refuses the top-up and the stream must resync.
     expect(delta).toEqual({ entries: [], resync: true });
+    expect(budget.activeBytes).toBe(0);
+  });
+
+  it("tops up a low preflight reserve from actual page bytes", async () => {
+    const budget = new CatchUpBudget(10_000, 6);
+    const big = {
+      ...row(1),
+      payload: { type: "RENAME_BOARD", title: "x".repeat(500), at: 1 },
+    };
+    const findMany = jest.fn().mockResolvedValue([big]);
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ count: 1n }])
+      .mockResolvedValueOnce([{ sampled: 1n, bytes: 0n }]);
+    const delta = await service(
+      findMany,
+      jest.fn(),
+      queryRaw,
+      budget,
+    ).deltaSince("board-1", 0, undefined, undefined, undefined, 10_000);
+
+    expect(delta.resync).toBe(false);
+    expect(budget.activeBytes).toBeGreaterThan(256);
+    delta.release?.();
     expect(budget.activeBytes).toBe(0);
   });
 

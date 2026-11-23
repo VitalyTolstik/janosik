@@ -35,6 +35,25 @@ describe("CatchUpBudget (TASK-200.13)", () => {
     expect(budget.tryReserve(101)).toBeNull();
   });
 
+  it("fits six concurrent pages inside the 32 MiB default", () => {
+    const budget = new CatchUpBudget();
+    const attempts = Array.from({ length: 6 }, () => budget.tryBegin());
+    expect(attempts.every((release) => release !== null)).toBe(true);
+    expect(budget.tryBegin()).toBeNull();
+
+    const reservations = Array.from({ length: 6 }, () =>
+      budget.tryReserve(5 * 1024 * 1024),
+    );
+    expect(reservations.every((release) => release !== null)).toBe(true);
+    expect(budget.activeBytes).toBe(30 * 1024 * 1024);
+    expect(budget.tryReserve(3 * 1024 * 1024)).toBeNull();
+
+    for (const release of reservations) release?.();
+    for (const release of attempts) release?.();
+    expect(budget.activeBytes).toBe(0);
+    expect(budget.activeCatchUps).toBe(0);
+  });
+
   it("uses a 32 MiB / 6 in-flight default", () => {
     const budget = new CatchUpBudget();
     expect(CATCH_UP_MAX_BYTES).toBe(32 * 1024 * 1024);
