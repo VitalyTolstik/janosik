@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import {
   buildRequestLogEntry,
+  isReadyLongPoll,
   operationOf,
   sanitizeRequestPath,
   toRequestLogLine,
@@ -148,6 +149,43 @@ describe("buildRequestLogEntry", () => {
       Date.now(),
     );
     expect(entry.boardId).toBeUndefined();
+  });
+
+  it("does not mistake the ready or search routes for board ids", () => {
+    for (const path of ["/api/v1/boards/ready", "/api/v1/boards/search"]) {
+      const entry = buildRequestLogEntry(
+        request({ originalUrl: path, user: { id: "user-1" } }),
+        response(200),
+        Date.now(),
+      );
+      expect(entry.path).toBe(path);
+      expect(entry.boardId).toBeUndefined();
+    }
+  });
+
+  it("marks a held ready poll so its duration stays out of latency", () => {
+    expect(isReadyLongPoll("GET", "/api/v1/boards/b1/ready?wait=25000")).toBe(
+      true,
+    );
+    expect(isReadyLongPoll("GET", "/api/v1/boards/b1/ready?wait=0")).toBe(
+      false,
+    );
+    expect(isReadyLongPoll("GET", "/api/v1/boards/b1/ready")).toBe(false);
+    expect(isReadyLongPoll("GET", "/api/v1/boards/ready?wait=25000")).toBe(
+      false,
+    );
+
+    const entry = buildRequestLogEntry(
+      request({
+        originalUrl: "/api/v1/boards/b1/ready?wait=25000",
+        user: { id: "user-1" },
+        boardMembership: { boardId: "b1" },
+      }),
+      response(204),
+      Date.now(),
+    );
+    expect(entry.longPoll).toBe(true);
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   it("marks every 429 as rate limited, including the global throttler", () => {

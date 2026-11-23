@@ -24,6 +24,8 @@ export interface RequestLogEntry {
   runId?: string;
   approvalId?: string;
   operation?: OperationKind;
+  /** A held ready/work poll; its duration is not user-facing latency. */
+  longPoll?: boolean;
   rateLimit?: {
     scope: RateLimitScope;
     limit: number;
@@ -45,12 +47,30 @@ export interface LoggedRequest extends Request, RateLimitedRequest {
 const MAX_RECENT = 200;
 const SHARE_TOKEN_PATH = /(\/share\/)[^/?#]+/;
 const BOARD_PATH = /^\/api\/v1\/(?:admin\/)?boards\/([^/]+?)(?:\/|$)/;
+const BOARD_NON_ID_SEGMENTS = new Set(["import", "ready", "search"]);
+const READY_POLL_PATH = /^\/api\/v1\/boards\/[^/]+\/ready\/?$/;
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Public share tokens are credentials: keep them out of every log line. */
 export function sanitizeRequestPath(raw: string): string {
   const path = (raw.split("?")[0] ?? "").split("#")[0] ?? "";
   return path.replace(SHARE_TOKEN_PATH, "$1[redacted]");
+}
+
+/**
+ * A held ready/work poll is not interactive latency. Detect it before the
+ * query string is sanitized away so traffic metrics can leave its hold time
+ * out of the p50/p95 (the structured log still carries the duration).
+ */
+export function isReadyLongPoll(
+  method: string,
+  rawUrl: string | undefined,
+): boolean {
+  if (rawUrl === undefined || method.toUpperCase() !== "GET") return false;
+  const [path, query = ""] = rawUrl.split("?");
+  if (!READY_POLL_PATH.test(path ?? "")) return false;
+  const wait = new URLSearchParams(query).get("wait");
+  return wait !== null && /^\d+$/.test(wait) && Number(wait) > 0;
 }
 
 /** Path/method/status → operation counter; bodies are never inspected. */
@@ -117,7 +137,13 @@ export function buildRequestLogEntry(
   const pathBoardId = BOARD_PATH.exec(path)?.[1];
   const boardId =
     request.boardMembership?.boardId ??
-    (pathBoardId === "import" ? undefined : pathBoardId);
+    (pathBoardId === undefined || BOARD_NON_ID_SEGMENTS.has(pathBoardId)
+      ? undefined
+      : pathBoardId);
+  const longPoll = isReadyLongPoll(
+    request.method ?? "GET",
+    request.originalUrl ?? request.url,
+  );
   const runId =
     headerValue(response.getHeader("X-Run-Id")) ??
     stringParam(request.params?.runId);
@@ -139,6 +165,7 @@ export function buildRequestLogEntry(
   if (stringParam(request.params?.approvalId) !== undefined) {
     entry.approvalId = stringParam(request.params?.approvalId);
   }
+  if (longPoll) entry.longPoll = true;
   const operation = operationOf(entry.method, path, entry.status);
   if (operation !== undefined) entry.operation = operation;
   if (request.rateLimit !== undefined) {
@@ -185,6 +212,7 @@ export class RequestLogService {
       durationMs: entry.durationMs,
       actorType: entry.actorType,
       write: WRITE_METHODS.has(entry.method),
+      ...(entry.longPoll === true ? { longPoll: true } : {}),
       ...(entry.rateLimit !== undefined
         ? {
             rateLimit: {

@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 import type { BoardReadyDto, BoardsReadyDto } from "@janosik/shared";
 import request from "supertest";
 import { AppModule } from "@/app.module";
+import { ReadyService } from "@/boards/ready.service";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
@@ -31,6 +32,7 @@ describe("Ready/work endpoint (e2e)", () => {
   let boardId: string;
   let emptyBoardId: string;
   let archivedBoardId: string;
+  let holdBoardId: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -142,6 +144,13 @@ describe("Ready/work endpoint (e2e)", () => {
       title: "Backlog",
     });
 
+    holdBoardId = await createBoard("Hold board");
+    await command(holdBoardId, {
+      type: "ADD_COLUMN",
+      newColumnId: "hold-col",
+      title: "Backlog",
+    });
+
     archivedBoardId = await createBoard("Archived board");
     await command(archivedBoardId, {
       type: "ADD_COLUMN",
@@ -244,6 +253,7 @@ describe("Ready/work endpoint (e2e)", () => {
       limit: 2,
     });
     expect(body.seq).toEqual(expect.any(Number));
+    expect(res.headers["x-board-seq"]).toBe(String(body.seq));
     expect(body.cards.map((card) => card.id)).toEqual([
       "card-blocker",
       "card-high",
@@ -259,11 +269,11 @@ describe("Ready/work endpoint (e2e)", () => {
       claimedBy: null,
       leaseUntil: null,
       version: expect.any(Number),
-      descriptionChars: "secret body".length,
     });
-    // A summary, not the aggregate: no description body, labels, checklists
-    // or links ever leave the endpoint.
+    // A summary, not the aggregate: no description body, length, labels,
+    // checklists or links ever leave the endpoint.
     expect(body.cards[1]).not.toHaveProperty("description");
+    expect(body.cards[1]).not.toHaveProperty("descriptionChars");
     expect(body.cards[1]).not.toHaveProperty("checklists");
     expect(body.cards[1]).not.toHaveProperty("labelIds");
     expect(body.cards[1]).not.toHaveProperty("links");
@@ -325,6 +335,36 @@ describe("Ready/work endpoint (e2e)", () => {
       .expect(404);
   });
 
+  it("scopes a board-scoped PAT to its own board", async () => {
+    const pat = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(adminToken))
+      .send({ name: "ready-scope", boardId, scopePreset: "observer" })
+      .expect(201)
+      .then((res) => res.body.token as string);
+
+    const own = await server()
+      .get(`/api/v1/boards/${boardId}/ready`)
+      .set(auth(pat))
+      .expect(200);
+    expect((own.body as BoardReadyDto).cards.map((card) => card.id)).toContain(
+      "card-blocker",
+    );
+
+    await server()
+      .get(`/api/v1/boards/${emptyBoardId}/ready`)
+      .set(auth(pat))
+      .expect(403);
+
+    const all = await server()
+      .get("/api/v1/boards/ready")
+      .set(auth(pat))
+      .expect(200);
+    expect((all.body as BoardsReadyDto).boards.map((row) => row.id)).toEqual([
+      boardId,
+    ]);
+  });
+
   it("returns archived boards as an empty, explicitly archived summary", async () => {
     const res = await server()
       .get(`/api/v1/boards/${archivedBoardId}/ready`)
@@ -352,16 +392,26 @@ describe("Ready/work endpoint (e2e)", () => {
         .set(auth(adminToken))
         .expect(400);
     }
+    for (const limit of ["0", "101", "2.5"]) {
+      await server()
+        .get("/api/v1/boards/ready")
+        .query({ limit })
+        .set(auth(adminToken))
+        .expect(400);
+    }
   });
 
-  it("answers 204 after a long-poll timeout", async () => {
+  it("answers 204 after a long-poll timeout with seq and no-store", async () => {
     const started = Date.now();
-    await server()
+    const res = await server()
       .get(`/api/v1/boards/${emptyBoardId}/ready`)
       .query({ wait: 40 })
       .set(auth(adminToken))
       .expect(204);
     expect(Date.now() - started).toBeGreaterThanOrEqual(30);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(Number(res.headers["x-board-seq"])).toBeGreaterThanOrEqual(0);
+    expect(res.text).toBe("");
   });
 
   it("wakes a long-poll when a ready card is added", async () => {
@@ -416,6 +466,21 @@ describe("Ready/work endpoint (e2e)", () => {
     expect(body.seq).toBeGreaterThan(current.seq);
   });
 
+  it("releases a held poll when the client disconnects", async () => {
+    const readyService = app.get(ReadyService);
+    const held = server()
+      .get(`/api/v1/boards/${holdBoardId}/ready`)
+      .query({ wait: 5000 })
+      .set(auth(adminToken))
+      .timeout({ response: 150 })
+      .then((res) => res)
+      .catch(() => undefined);
+
+    await waitFor(() => readyService.activePolls() === 1);
+    await held;
+    await waitFor(() => readyService.activePolls() === 0);
+  });
+
   it("answers the cross-board snapshot without per-board reads", async () => {
     const res = await server()
       .get("/api/v1/boards/ready")
@@ -437,6 +502,17 @@ describe("Ready/work endpoint (e2e)", () => {
     // three, including the archived summary.
     expect(body.cards.map((card) => card.id)).toContain("card-blocker");
   });
+
+  async function waitFor(
+    check: () => boolean,
+    timeoutMs = 2_000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!check()) {
+      if (Date.now() > deadline) throw new Error("condition not reached");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
 
   async function wipe(db: PrismaService): Promise<void> {
     await db.attachment.deleteMany();
