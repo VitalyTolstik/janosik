@@ -275,7 +275,7 @@ that matter most:
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.2.0`). |
 | `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Password registration requires email delivery; production logs omit message contents. |
-| `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep (fallback when the panel has no setting). |
+| `PURGE_AFTER_DAYS` | `30` | Retention for the hourly soft-delete sweep and the command log (whole months past the window are dropped; fallback when the panel has no setting). |
 | `MAX_BOARDS_PER_USER` | `0` | Server-mode board cap per account; `0` = unlimited (product default). Local/offline mode keeps its 10-board localStorage guard. |
 | `AUDIT_RETENTION_DAYS` | `365` | Retention for the master audit trail (separate, longer window). |
 | `DB_CONNECTION_LIMIT` | `10` | Prisma pool size per API process. Keep `replicas × this` well under `POSTGRES_MAX_CONNECTIONS`. |
@@ -371,6 +371,30 @@ npm run db:indexes --workspace backend
 
 Compose users get the same statements inline on first start; schedule that
 upgrade during a quiet period on a large installation.
+
+### Command log growth and retention
+
+The board's command log is a monthly partitioned PostgreSQL table
+(`Command_YYYYMM`). The maintenance job `ensure-command-partitions` keeps the
+previous, current and next three months present; `sweep-commands` drops whole
+months
+older than the retention window instead of deleting rows one by one. The
+default window is 30 days (`PURGE_AFTER_DAYS`, or the retention setting in the
+master panel). A large agent swarm writes 25–50 commands per second; at 50/s,
+30 days is roughly 130 million commands, so check the **Admin → Observability**
+`commandLog` block for partition size, dead tuples and the last
+vacuum/autovacuum. `defaultRows` should stay near zero — a growing default
+partition means a month was missed or a restored row fell outside the
+pre-created range.
+
+The upgrade that introduced this layout copies the existing log into the new
+tables and verifies counts before dropping the old ones. It needs roughly twice
+the current command-log size in free disk space and a quiet window: stop the
+old API before running it. On a single Compose host the container applies it
+on boot; with several replicas, stop them first. Rollback is a database backup
+restore — take a `pg_dump` before the upgrade. The full design, size plan and
+rollback notes are in
+[TASK-200.11](./TASK-200.11-command-log-partitioning.md).
 
 ### Scaling (streams and multiple nodes)
 

@@ -500,6 +500,73 @@ describe("MaintenanceService", () => {
     expect(preimageCall.where.createdAt.lt).toBeInstanceOf(Date);
   });
 
+  it("creates the current and future command-log partitions (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    try {
+      (prisma.$queryRaw as jest.Mock).mockResolvedValue([
+        { created: "Command_202611" },
+      ]);
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      const result = await service.ensureCommandPartitions();
+      // Previous month + current + three future months.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+      expect(result).toEqual({
+        removed: 5,
+        detail: expect.stringContaining("Command_202611"),
+      });
+      const firstSql = (prisma.$queryRaw as jest.Mock).mock.calls[0]![0] as {
+        strings: string[];
+      };
+      expect(firstSql.strings.join("?")).toContain(
+        "janosik_ensure_command_partition",
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("drops whole expired command-log months before row chunks (TASK-200.11)", async () => {
+    const prisma = makePrisma();
+    jest.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    try {
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([
+          { name: "Command_202001" },
+          { name: "CommandDetail_202001" },
+          { name: "Command_202611" },
+        ])
+        .mockResolvedValueOnce([{ removed: 123n }]);
+      const service = new MaintenanceService(
+        prisma,
+        storageMock,
+        opsMock,
+        accountDeletionMock,
+        attentionMock,
+        approvalsMock,
+      );
+      expect(await service.sweepCommands()).toBe(123);
+      // One catalog read and one drop; the current month stays.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      const dropSql = (prisma.$queryRaw as jest.Mock).mock.calls[1]![0] as {
+        strings: string[];
+      };
+      expect(dropSql.strings.join("?")).toContain(
+        "janosik_drop_command_partition",
+      );
+      expect(prisma.command.findMany).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("sweeps stale empty runs but keeps runs with commands (ADR §6.14)", async () => {
     const prisma = makePrisma();
     const old = new Date(Date.now() - 90 * 86_400_000);

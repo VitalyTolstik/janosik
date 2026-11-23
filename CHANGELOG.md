@@ -8,6 +8,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.11 partitioned command log and a heat-aware detail side table. The
+  `Command` table is now a monthly `RANGE (createdAt)` partitioned table
+  (`Command_YYYYMM` plus a default), and `CommandPreimage` follows the same
+  scheme; retention drops a whole expired month instead of deleting millions
+  of rows. Because PostgreSQL requires every unique constraint on a
+  partitioned table to contain the partition key, the primary key is
+  `(id, createdAt)`; commandId idempotency is still resolved inside the
+  serialized per-board write transaction, and no same-board retry can insert a
+  second row. Heavy display snapshots (`details`) move to the new
+  `CommandDetail` side table, read in batches by `commandId`; a partitioned→
+  partitioned FK would make monthly `DROP TABLE` impossible, so the writer
+  inserts both rows in one transaction, an `AFTER DELETE` trigger removes the
+  side row on any row delete, and retention drops the detail partition first.
+  Description/detail snapshots are capped at 1 024 characters per side and
+  16 KiB serialized (previously a 64 000-character description edit froze two
+  64k walls per command), with diff-aware clipping for description edits.
+  New maintenance job `ensure-command-partitions` pre-creates the previous,
+  current and next three UTC months through
+  `janosik_ensure_command_partition(date)`; `sweep-commands` uses
+  `janosik_drop_command_partition(date)` for whole months and keeps the
+  chunked delete for the partial current/default partitions. Agent and human
+  commands share the retention window because a shorter agent window would
+  strand `AgentRun` rollback; operators can lower the global knob.
+  `GET /admin/observability` gains a `commandLog` section with per-partition
+  estimated rows, bytes, dead tuples and vacuum/autovacuum timestamps
+  (`pg_class.reltuples`, never `count(*)`) plus a `defaultRows` warning
+  counter. Two migrations —
+  `20261123130000_task_200_11_command_log_partitioning` and
+  `20261123131000_task_200_11_command_details_side_table` —
+  rename the old tables aside, copy, verify exact command/detail/pre-image
+  counts, build the per-partition indexes, transfer the shared
+  `Command_seq_seq`, drop the legacy tables, and have a documented
+  backup-restore rollback and 2×-disk pre-check. Replay/resync
+  (`deltaSince`/`resync`), undo pre-images, admin command/timeline queries and
+  the TASK-200.4/200.6/200.7 paths keep their contracts; `events`, `runs`,
+  `admin` and `commands-*` suites run on the partitioned schema. New tests
+  cover the caps, UTC partition naming/expiry, ensure/drop jobs, routing,
+  pruning, trigger deletion, whole-month retention, PK/index shape and an
+  empty-plus-existing-data migration check. Design, migration/rollback and
+  the 30-day size plan: `docs/TASK-200.11-command-log-partitioning.md`;
+  self-hosting retention notes are updated in EN/RU.
+
 - TASK-200.6 compressed, conditionally revalidated and bounded board reads.
   `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least
   1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the

@@ -497,6 +497,19 @@ restrictive CSP. Serve the public hostname over HTTPS to apply HSTS in browsers.
 | Attachments and avatars | Docker volume `janosik-uploads` |
 | Configuration | `.env` next to `docker-compose.yml` |
 
+### Command log retention
+
+The board command log is stored in monthly PostgreSQL partitions
+(`Command_YYYYMM`). Maintenance keeps the previous, current and next three
+months
+available and drops whole months older than the retention window (30 days by
+default, `PURGE_AFTER_DAYS` or the master-panel setting). A busy agent swarm can
+write tens of commands per second; check **Admin → Observability → commandLog**
+for partition size, dead tuples and vacuum times. `defaultRows` should stay
+near zero. The partitioning upgrade needs about twice the current log size in
+free disk space and a quiet window (stop old replicas before migrating);
+rollback is a database backup restore.
+
 Backups, restores and upgrades live in
 [Operations runbooks](/docs/runbooks/). Report vulnerabilities privately; see
 [Security](/docs/security/).
