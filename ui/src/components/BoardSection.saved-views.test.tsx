@@ -134,10 +134,15 @@ describe("BoardSection saved views integration", () => {
     renderBoard();
 
     const toolbar = screen.getByTestId("board-toolbar");
-    expect(within(toolbar).getByTestId("filter-bar")).toBeInTheDocument();
-    expect(
-      await within(toolbar).findByTestId("saved-views-menu"),
-    ).toBeInTheDocument();
+    const filterBar = within(toolbar).getByTestId("filter-bar");
+    const menu = await within(toolbar).findByTestId("saved-views-menu");
+    expect(filterBar).toBeInTheDocument();
+    expect(menu).toBeInTheDocument();
+    expect([
+      ...toolbar.querySelectorAll(
+        '[data-testid="filter-bar"], [data-testid="saved-views-menu"]',
+      ),
+    ]).toEqual([filterBar, menu]);
   });
 
   it("applies filter and view, writes the URL and closes the menu", async () => {
@@ -200,7 +205,7 @@ describe("BoardSection saved views integration", () => {
     });
   });
 
-  it("does not auto-restore a saved view on load", () => {
+  it("does not auto-restore a saved view on load", async () => {
     seedBoards();
     saveSavedViews("local", BOARD_A, [
       {
@@ -209,6 +214,7 @@ describe("BoardSection saved views integration", () => {
       },
     ]);
     renderBoard();
+    await screen.findByTestId("saved-views-menu");
 
     expect(screen.getByTestId("route-probe")).toHaveTextContent(/^$/);
   });
@@ -285,6 +291,8 @@ describe("BoardSection saved views integration", () => {
       "flex-1",
     );
     expect(await screen.findByTestId("saved-views-menu")).toHaveClass(
+      "h-9",
+      "w-9",
       "max-lg:h-11",
       "max-lg:w-11",
     );

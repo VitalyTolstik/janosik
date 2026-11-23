@@ -22,6 +22,15 @@
       "gzip": true
     },
     {
+      "name": "lazy saved views chunk (gzip)",
+      "path": [
+        "dist/assets/savedviews-*.js"
+      ],
+      "limit": "8 KB",
+      "gzip": true,
+      "running": false
+    },
+    {
       "name": "lazy animated icons (motion vendor + per-icon chunks, gzip)",
       "path": [
         "dist/assets/motion-*.js",

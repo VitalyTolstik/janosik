@@ -27,6 +27,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
 import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
+import { SavedViewsMenuBoundary } from "@/components/board/SavedViewsMenuBoundary";
+import { loadSavedViewsMenu } from "@/components/board/saved-views-loader";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
@@ -64,7 +66,7 @@ const SERVER_FILTER_DEBOUNCE_MS = 250;
  * exact 36/44 px trigger slot so the FilterBar never shifts when it arrives.
  */
 const SavedViewsMenu = lazy(() =>
-  import("@/components/board/SavedViewsMenu").then((module) => ({
+  loadSavedViewsMenu().then((module) => ({
     default: module.SavedViewsMenu,
   })),
 );
@@ -390,20 +392,22 @@ export function BoardSection() {
                 onChange={setFilter}
               />
             </div>
-            <Suspense fallback={SAVED_VIEWS_FALLBACK}>
-              <SavedViewsMenu
-                userId={savedViewsUserId}
-                boardId={board.id}
-                filter={filter}
-                view={view}
-                labels={board.labels}
-                assigneeIds={savedViewAssigneeIds}
-                onApply={(nextFilter, nextView) => {
-                  setFilter(nextFilter);
-                  if (nextView) setView(nextView);
-                }}
-              />
-            </Suspense>
+            <SavedViewsMenuBoundary fallback={SAVED_VIEWS_FALLBACK}>
+              <Suspense fallback={SAVED_VIEWS_FALLBACK}>
+                <SavedViewsMenu
+                  userId={savedViewsUserId}
+                  boardId={board.id}
+                  filter={filter}
+                  view={view}
+                  labels={board.labels}
+                  assigneeIds={savedViewAssigneeIds}
+                  onApply={(nextFilter, nextView) => {
+                    setFilter(nextFilter);
+                    if (nextView) setView(nextView);
+                  }}
+                />
+              </Suspense>
+            </SavedViewsMenuBoundary>
           </div>
         ) : null}
         {serverPending ? (
