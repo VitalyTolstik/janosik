@@ -51,8 +51,13 @@ export class LiveProfiler {
         settled = true;
         clearTimeout(timer);
         this.signal?.removeEventListener("abort", onAbort);
-        if (error) reject(error);
-        else resolve();
+        ws.removeEventListener("close", onCloseBeforeOpen);
+        if (error) {
+          this.close();
+          reject(error);
+        } else {
+          resolve();
+        }
       };
       const timer = setTimeout(
         () =>
@@ -63,6 +68,9 @@ export class LiveProfiler {
           ),
         this.connectTimeoutMs,
       );
+      const onCloseBeforeOpen = () =>
+        finish(new Error("inspector closed before the WebSocket opened"));
+      ws.addEventListener("close", onCloseBeforeOpen, { once: true });
       const onAbort = () =>
         finish(new Error("inspector connect aborted by scenario signal"));
       ws.addEventListener("open", () => finish(null), { once: true });
@@ -127,15 +135,20 @@ export class LiveProfiler {
   }
 
   async start() {
-    await this.connect();
-    await this.send("Profiler.enable");
-    if (this.samplingIntervalUs > 0) {
-      await this.send("Profiler.setSamplingInterval", {
-        interval: this.samplingIntervalUs,
-      });
+    try {
+      await this.connect();
+      await this.send("Profiler.enable");
+      if (this.samplingIntervalUs > 0) {
+        await this.send("Profiler.setSamplingInterval", {
+          interval: this.samplingIntervalUs,
+        });
+      }
+      await this.send("Profiler.start");
+      this.started = true;
+    } catch (error) {
+      this.close();
+      throw error;
     }
-    await this.send("Profiler.start");
-    this.started = true;
   }
 
   resolveProfilePath() {
@@ -149,27 +162,41 @@ export class LiveProfiler {
   }
 
   async stop() {
-    if (!this.started) throw new Error("inspector profiler was not started");
-    const result = await this.send("Profiler.stop");
-    const profile = result.profile;
-    if (profile === undefined || profile === null) {
-      throw new Error("inspector Profiler.stop returned no profile");
+    if (!this.started) {
+      this.close();
+      throw new Error("inspector profiler was not started");
     }
-    const file = this.resolveProfilePath();
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, `${JSON.stringify(profile)}\n`, "utf8");
-    this.started = false;
     try {
-      await this.send("Profiler.disable");
-    } catch {
-      // The profile is already written; a closing socket is harmless.
+      const result = await this.send("Profiler.stop");
+      const profile = result.profile;
+      if (profile === undefined || profile === null) {
+        throw new Error("inspector Profiler.stop returned no profile");
+      }
+      const file = this.resolveProfilePath();
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, `${JSON.stringify(profile)}\n`, "utf8");
+      this.started = false;
+      try {
+        await this.send("Profiler.disable");
+      } catch {
+        // The profile is already written; a closing socket is harmless.
+      }
+      const info = await stat(file);
+      return { path: file, bytes: info.size, mtimeMs: info.mtimeMs };
+    } finally {
+      this.started = false;
+      this.close();
     }
-    this.close();
-    const info = await stat(file);
-    return { path: file, bytes: info.size, mtimeMs: info.mtimeMs };
   }
 
   close() {
+    // A pending inspector request must not keep its timeout timer alive after
+    // the socket goes away; otherwise a failed stop can delay process exit.
+    for (const { reject, timer } of this.pending.values()) {
+      clearTimeout(timer);
+      reject(new Error("inspector connection closed"));
+    }
+    this.pending.clear();
     if (this.ws !== null) {
       try {
         this.ws.close();

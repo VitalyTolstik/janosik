@@ -99,6 +99,10 @@ async function main() {
     }
 
     const controller = new AbortController();
+    let liveProfiler = null;
+    let liveProfileStartedAt = null;
+    let instrumentationFailed = false;
+    let instrumentationError = null;
     const stop = (signal) => {
       if (interrupted) {
         console.error(`perf: second ${signal} — exiting 130 without waiting`);
@@ -132,8 +136,6 @@ async function main() {
         apiPid: config.apiPid,
         apiProbeFile: config.apiProbe,
       }).start();
-      let liveProfiler = null;
-      let liveProfileStartedAt = null;
       if (config.apiInspect !== undefined) {
         liveProfiler = new LiveProfiler({
           wsUrl: config.apiInspect,
@@ -144,9 +146,14 @@ async function main() {
           await liveProfiler.start();
           liveProfileStartedAt = Date.now();
         } catch (error) {
-          throw new PreflightError(
+          instrumentationFailed = true;
+          instrumentationError = sanitizeText(
             `--api-inspect failed: ${error instanceof Error ? error.message : String(error)}`,
+            config.tokens,
           );
+          log(`warning: ${instrumentationError}; continuing without a profile`);
+          liveProfiler.close();
+          liveProfiler = null;
         }
       }
       if (config.pgActivity && config.pgUrl) {
@@ -253,8 +260,6 @@ async function main() {
             ? Math.round((pg.totalCalls / pg.commands) * 1_000) / 1_000
             : null;
       }
-      let instrumentationFailed = false;
-      let instrumentationError = null;
       let liveProfile = null;
       if (liveProfiler !== null) {
         try {
@@ -267,9 +272,12 @@ async function main() {
           );
         }
       }
+      // Static `node --cpu-prof` writes only after the API exits, so the file
+      // is legitimately older than this harness process. Freshness is checked
+      // for the live inspector flow only.
       const cpuProfile =
-        liveProfiler !== null
-          ? liveProfile !== null
+        config.apiInspect !== undefined
+          ? liveProfiler !== null && liveProfile !== null
             ? await collectCpuProfile(liveProfile.path, {
                 freshSince: liveProfileStartedAt,
               })
@@ -280,7 +288,11 @@ async function main() {
                   instrumentationError ?? "live CPU profile was not produced",
               }
           : await collectCpuProfile(config.cpuProfile);
-      if (liveProfiler !== null && cpuProfile.available !== true) {
+      if (
+        config.apiInspect !== undefined &&
+        liveProfiler !== null &&
+        cpuProfile.available !== true
+      ) {
         instrumentationFailed = true;
         instrumentationError =
           cpuProfile.reason ?? "live CPU profile was not produced";
@@ -313,6 +325,7 @@ async function main() {
         process.exitCode = 0;
       }
     } finally {
+      liveProfiler?.close();
       sampler?.stop();
       if (pgSampler !== null) await pgSampler.stop();
       process.removeListener("SIGINT", stop);
@@ -574,6 +587,7 @@ async function runOne({ id, config, users, boards, signal }) {
     durationMs: metricDuration,
     agents: actualAgents,
   });
+  snapshot.timedOut = result.timedOut === true;
   const usesMcp =
     config.driver === "mcp" && ["S1", "S2", "S3", "S4"].includes(id);
   const { status, reason } = evaluateScenarioStatus({
@@ -599,6 +613,7 @@ async function runOne({ id, config, users, boards, signal }) {
     title: effective.title,
     status,
     statusReason: reason,
+    timedOut: result.timedOut === true,
     config: { ...effective, agents: actualAgents },
     summary: snapshot,
     api: resources,
