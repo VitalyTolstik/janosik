@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
+  bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
+  `max(12000, 2 × THROTTLE_LIMIT)`) with continuous refill, backed by a
+  per-token agent bucket (`AGENT_TOKEN_RATE_LIMIT`, default
+  `max(600, THROTTLE_LIMIT / 4)` for keys without their own explicit limit)
+  and a raised per-session floor (600), so one
+  abusive key or runaway session cannot starve a board. Command writes over
+  the board ceiling wait in a per-board FIFO for up to
+  `AGENT_COMMAND_QUEUE_MS` (default 1500 ms) and then answer
+  `503 rate_limited` with `Retry-After` instead of an instant `429`; reads keep
+  the immediate `429`. Every budget remains validated as a non-negative
+  integer. The MCP client retries `429` and the queued `503` up to four
+  attempts, honouring `Retry-After` with capped jittered exponential backoff
+  and reusing the same `Idempotency-Key`/`commandId`; an exhausted retry still
+  returns the actionable error instead of hanging. Docs EN/RU, self-hosting
+  env reference, MCP README, `.env.example` and focused unit/e2e coverage are
+  updated.
+
 - TASK-177.20.3a/3b assignment notifications and due-mail links. A committed
   `SET_CARD_ASSIGN` now produces a deduplicated `card.assigned` attention row
   for the new assignee, but only when the board/card are live and not archived,

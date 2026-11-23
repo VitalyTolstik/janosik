@@ -36,6 +36,11 @@ export interface RateLimitDecision {
   resetAt: number;
   /** Whole seconds until the reset, at least 1 (`Retry-After`). */
   retryAfter: number;
+  /**
+   * TASK-200.3: for the continuously refilling board bucket, the instant the
+   * next request becomes admissible. Fixed-window buckets leave it unset.
+   */
+  nextTokenAt?: number;
 }
 
 interface Bucket {
@@ -43,7 +48,24 @@ interface Bucket {
   resetAt: number;
 }
 
+/**
+ * TASK-200.3: the board bucket is a token bucket, not a fixed window.
+ *
+ * A fixed window is a poor fit for a shared board: a swarm that drains the
+ * minute budget waits for the window boundary even though a burst will pass
+ * once the next window opens, and the server cannot queue briefly because no
+ * slot frees until reset. A token bucket refills continuously at
+ * `limit / windowMs`, so the command interceptor can wait for the next token
+ * (bounded) instead of answering 429 at once, while `limit` stays the burst
+ * capacity and the sustained per-minute rate.
+ */
+interface BoardBucket {
+  tokens: number;
+  updatedAt: number;
+}
+
 const buckets = new Map<string, Bucket>();
+const boardBuckets = new Map<string, BoardBucket>();
 
 /**
  * Count one request against `scope:key` and describe the resulting budget.
@@ -77,6 +99,60 @@ export function consumeRateLimit(
 }
 
 /**
+ * TASK-200.3: count one request against a board's continuously refilling
+ * bucket. The capacity is the configured per-minute limit, so a swarm may
+ * still burst up to a full minute's budget; the refill rate makes an
+ * over-budget command admissible again within milliseconds instead of waiting
+ * for a window boundary.
+ */
+export function consumeBoardRateLimit(
+  key: string,
+  limitPerWindow: number,
+  windowMs: number = RATE_LIMIT_WINDOW_MS,
+  now: number = Date.now(),
+): RateLimitDecision {
+  if (limitPerWindow <= 0) {
+    return {
+      scope: "board",
+      allowed: false,
+      limit: limitPerWindow,
+      remaining: 0,
+      resetAt: now + windowMs,
+      retryAfter: Math.max(1, Math.ceil(windowMs / 1000)),
+      nextTokenAt: now + windowMs,
+    };
+  }
+  let bucket = boardBuckets.get(key);
+  if (bucket === undefined) {
+    if (boardBuckets.size >= MAX_BUCKETS) evictBoard(now, windowMs);
+    bucket = { tokens: limitPerWindow, updatedAt: now };
+    boardBuckets.set(key, bucket);
+  } else {
+    const elapsed = Math.max(0, now - bucket.updatedAt);
+    bucket.tokens = Math.min(
+      limitPerWindow,
+      bucket.tokens + elapsed * (limitPerWindow / windowMs),
+    );
+    bucket.updatedAt = now;
+  }
+  const allowed = bucket.tokens >= 1;
+  if (allowed) bucket.tokens -= 1;
+  const rate = limitPerWindow / windowMs;
+  const msToNextToken = allowed ? 0 : (1 - bucket.tokens) / rate;
+  const msToFull = (limitPerWindow - bucket.tokens) / rate;
+  const nextTokenAt = now + Math.max(0, Math.ceil(msToNextToken));
+  return {
+    scope: "board",
+    allowed,
+    limit: limitPerWindow,
+    remaining: Math.max(0, Math.floor(bucket.tokens)),
+    resetAt: now + Math.max(1, Math.ceil(msToFull)),
+    retryAfter: Math.max(1, Math.ceil(msToNextToken / 1000)),
+    nextTokenAt,
+  };
+}
+
+/**
  * Drop expired buckets, then the oldest live one, so a flood of distinct ids
  * can never grow the map past `MAX_BUCKETS`. The current key may be the
  * oldest; deleting it is harmless (its window is the closest to resetting).
@@ -92,11 +168,29 @@ function evict(now: number): void {
   }
 }
 
+/** Same bound for the board bucket map; a full bucket is also droppable. */
+function evictBoard(now: number, windowMs: number): void {
+  for (const [key, bucket] of boardBuckets) {
+    if (bucket.updatedAt + windowMs <= now) boardBuckets.delete(key);
+  }
+  while (boardBuckets.size >= MAX_BUCKETS) {
+    const oldest = boardBuckets.keys().next().value;
+    if (oldest === undefined) break;
+    boardBuckets.delete(oldest);
+  }
+}
+
 /** Test/ops hook: clear every bucket, or only one scope. */
 export function resetRateLimits(scope?: RateLimitScope): void {
   if (scope === undefined) {
     buckets.clear();
+    boardBuckets.clear();
     return;
+  }
+  if (scope === "board") {
+    boardBuckets.clear();
+    // A handful of unit tests still exercise the fixed-window helper with the
+    // board scope; clearing both keeps the hook predictable.
   }
   const prefix = `${scope}:`;
   for (const key of buckets.keys()) {
@@ -106,7 +200,7 @@ export function resetRateLimits(scope?: RateLimitScope): void {
 
 /** Number of tracked buckets (observability/tests). */
 export function trackedRateLimitBuckets(): number {
-  return buckets.size;
+  return buckets.size + boardBuckets.size;
 }
 
 /** Shape of the response surface the header helper needs. */
@@ -205,6 +299,32 @@ export function rateLimitException(
       scope: decision.scope,
     },
     HttpStatus.TOO_MANY_REQUESTS,
+  );
+}
+
+/**
+ * TASK-200.3: the answer for a command that exhausted its short queue.
+ *
+ * It is still the shared `rate_limited` envelope (`retryable`, `retryAfter`,
+ * `scope`, `limit`), but `503` says "the server will take this work soon"
+ * rather than "this caller is abusive", and every client already treats 503 as
+ * retryable. The work was never applied, so retrying a command with the same
+ * `commandId` stays idempotent.
+ */
+export function rateLimitQueueException(
+  decision: RateLimitDecision,
+  message: string,
+): HttpException {
+  return new HttpException(
+    {
+      message,
+      code: "rate_limited",
+      retryable: true,
+      retryAfter: decision.retryAfter,
+      limit: decision.limit,
+      scope: decision.scope,
+    },
+    HttpStatus.SERVICE_UNAVAILABLE,
   );
 }
 

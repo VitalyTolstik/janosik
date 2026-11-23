@@ -105,13 +105,18 @@ const jwtSecret = makeValidator((v) => {
 
 // TASK-156: the pool cap must be a whole, non-negative number (`0` means
 // "leave Prisma's default alone").
-const nonNegativeInt = makeValidator((v) => {
+export function parseNonNegativeInt(v: string): number {
+  if (v.trim() === "") {
+    throw new Error("must be a non-negative integer");
+  }
   const parsed = Number(v);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error("must be a non-negative integer");
   }
   return parsed;
-});
+}
+
+const nonNegativeInt = makeValidator(parseNonNegativeInt);
 
 /** A whole number strictly above zero (durations, retention windows, …). */
 export function parsePositiveInt(v: string): number {
@@ -180,18 +185,31 @@ export const env = cleanEnv(process.env, {
     default: 300,
     example: "300",
   }),
-  // TASK-166.10 agent buckets. 0 = derive from the live global limit: the
-  // session budget follows `THROTTLE_LIMIT` (min 60), the board budget is
-  // twice it (min 600). Set positive values to pin them independently.
-  AGENT_SESSION_RATE_LIMIT: num({
-    desc: "Per-agent-session request budget per minute; 0 = derive from THROTTLE_LIMIT",
-    default: 0,
-    example: "300",
-  }),
-  BOARD_RATE_LIMIT: num({
-    desc: "Per-board agent request budget per minute; 0 = 2x THROTTLE_LIMIT (min 600)",
+  // TASK-166.10 agent buckets, resized by TASK-200.3 for swarms. 0 = derive
+  // from the live global limit: session = max(600, THROTTLE_LIMIT), token =
+  // max(600, THROTTLE_LIMIT/4), board = max(12000, 2 × THROTTLE_LIMIT). Set
+  // positive values to pin them independently. Browser sessions are unaffected.
+  AGENT_SESSION_RATE_LIMIT: nonNegativeInt({
+    desc: "Per-agent-session request budget per minute; 0 = max(600, THROTTLE_LIMIT)",
     default: 0,
     example: "600",
+  }),
+  AGENT_TOKEN_RATE_LIMIT: nonNegativeInt({
+    desc: "Per-token agent request budget per minute for keys without their own limit; 0 = max(600, THROTTLE_LIMIT/4)",
+    default: 0,
+    example: "1500",
+  }),
+  BOARD_RATE_LIMIT: nonNegativeInt({
+    desc: "Per-board agent request budget per minute (safety ceiling); 0 = max(12000, 2 × THROTTLE_LIMIT)",
+    default: 0,
+    example: "24000",
+  }),
+  // TASK-200.3: a command over the board budget waits this long for a refill
+  // instead of failing at once. 0 = answer 503 with Retry-After immediately.
+  AGENT_COMMAND_QUEUE_MS: nonNegativeInt({
+    desc: "Max time a command waits for the board agent budget before 503 Retry-After",
+    default: 1500,
+    example: "1500",
   }),
   // Reverse-proxy hops in front of the API (TASK-91). 0 (default) trusts no
   // proxy, so `req.ip` is the socket address. Behind one nginx set it to the

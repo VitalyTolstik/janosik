@@ -299,6 +299,16 @@ Ranked by impact on agent scale / (effort + risk). "S" ≤ 1 engineer-week, "M" 
 | 7 | **Agent SSE hygiene.** Default agent streams to `?presence=0`; cache keep-alive validations; jitter the 25 s timer; add an overlap guard; consider 60 s for PAT streams. | Cuts SSE keep-alive DB load 2–5×; avoids 5,000 concurrent tick queries against a 10-connection pool. | S–M | Low. Measure queries/s per 1,000 streams and event-loop lag. |
 | 8 | **MCP HTTP gateway.** Add a Streamable-HTTP transport (token pass-through) as a separate service; keep stdio for desktop clients. | 500 × 50–110 MB → one/few processes of a few hundred MB; no co-location OOM. | M | Low–medium. Verify per-session token isolation and that no token leaks across sessions. |
 
+> **TASK-200.3 update (implemented).** Recommendation 2 is in `main`:
+> `BOARD_RATE_LIMIT` is now a high, continuously refilling safety ceiling
+> (default `max(12000, 2 × THROTTLE_LIMIT)`), with per-token
+> (`AGENT_TOKEN_RATE_LIMIT`) and per-session budgets providing fairness.
+> Commands over the board ceiling wait briefly and then answer `503
+> rate_limited` + `Retry-After`; the MCP client retries `429`/queued `503` with
+> `Retry-After`, jitter and a four-attempt bound, keeping the same
+> `commandId`/`Idempotency-Key`. Remaining capacity work in this document
+> (ready endpoint, per-entity CAS, aggregate loads) is unchanged.
+
 ### 6.2 Medium-term (the real 5–10× levers)
 
 | # | Change | Expected gain | Effort | Risk |

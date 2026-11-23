@@ -290,12 +290,23 @@ Personal API tokens get two additional buckets on top of the global principal
 window. Browser sessions keep exactly the legacy per-user/IP behaviour.
 
 - **Per-agent-session** — `AGENT_SESSION_RATE_LIMIT` requests per minute
-  (default: the live global limit, at least 60) per `agentSessionId`. It
-  applies when the request carries `X-Agent-Session`, a session id in the path
-  or `?session=` on an SSE stream.
-- **Per-board** — `BOARD_RATE_LIMIT` requests per minute (default: twice the
-  live global limit, at least 600) per board, shared by every PAT working on
-  that board.
+  (default: `max(600, live global limit)`) per `agentSessionId`. It applies
+  when the request carries `X-Agent-Session`, a session id in the path or
+  `?session=` on an SSE stream.
+- **Per-token agent** — `AGENT_TOKEN_RATE_LIMIT` requests per minute
+  (default: `max(600, live global limit / 4)`) per API key **without** its own
+  explicit `rateLimitPerMinute`. Raising `THROTTLE_LIMIT` for a swarm therefore
+  does not let one key consume the whole board; an explicit key limit is kept
+  as chosen.
+- **Per-board** — `BOARD_RATE_LIMIT` requests per minute (default:
+  `max(12000, 2 × live global limit)`) per board, shared by every PAT working
+  on that board. It is a safety ceiling, not the per-agent budget. The bucket
+  refills continuously rather than at a window boundary. `POST
+  /boards/:id/commands` and its batch route wait up to
+  `AGENT_COMMAND_QUEUE_MS` (default `1500`) for a free slot and then answer
+  `503` with `code: "rate_limited"` and `Retry-After`; reads and other routes
+  answer `429`. A command refused this way was not applied, so retrying it
+  with the same `commandId` stays idempotent.
 - A token's own `rateLimitPerMinute` remains the tightest per-token budget.
 
 A response carries the budget that counted the request:

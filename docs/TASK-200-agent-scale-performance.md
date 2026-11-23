@@ -149,6 +149,14 @@
 **Файлы:** `backend/src/config/rate-limit.ts`,
 `backend/src/common/*rate-limit*`, `mcp/src/client.ts`, `mcp/src/errors.ts`.
 
+**Статус:** реализовано в `feat/TASK-200.3-rate-budget`. Доска — высокий
+предохранительный потолок с непрерывным пополнением (`BOARD_RATE_LIMIT`,
+`max(12000, 2 × THROTTLE_LIMIT)`); справедливость — на бюджетах токена
+(`AGENT_TOKEN_RATE_LIMIT`) и сессии. Команды сверх потолка ждут
+`AGENT_COMMAND_QUEUE_MS` и получают `503 rate_limited` + `Retry-After`; MCP
+сам повторяет `429`/`503` с `Retry-After`, jitter и лимитом попыток, сохраняя
+`commandId`/`Idempotency-Key`.
+
 ---
 
 ### 200.4 — Убрать дубли aggregate на PAT-команде (P0)

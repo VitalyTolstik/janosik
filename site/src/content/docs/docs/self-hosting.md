@@ -289,6 +289,10 @@ compose stack fills the ones it needs from `.env`.
 | `ACCESS_TOKEN_TTL` | `15m` | Access-token lifetime, a vercel/ms duration string. |
 | `REFRESH_TOKEN_TTL_DAYS` | `30` | Refresh-token lifetime in days. |
 | `THROTTLE_LIMIT` | `300` | Global API rate limit, requests per minute per principal: the user, the API key, or the IP for anonymous calls. |
+| `AGENT_SESSION_RATE_LIMIT` | `0` (auto) | Per-agent-session requests per minute. `0` = `max(600, THROTTLE_LIMIT)`. |
+| `AGENT_TOKEN_RATE_LIMIT` | `0` (auto) | Per-API-key agent requests per minute for keys without their own explicit limit. `0` = `max(600, THROTTLE_LIMIT / 4)`. |
+| `BOARD_RATE_LIMIT` | `0` (auto) | Per-board agent safety ceiling, requests per minute shared by all agents on the board. `0` = `max(12000, 2 × THROTTLE_LIMIT)`. Size it for a larger swarm; token and session buckets provide fairness. |
+| `AGENT_COMMAND_QUEUE_MS` | `1500` | How long a command over the board ceiling waits for a refill before `503` + `Retry-After`. `0` answers immediately. |
 | `TRUST_PROXY` | `0` | Trusted reverse-proxy hops. Set `1` behind one proxy. |
 | `UPLOAD_DIR` | empty | Blob root for attachments and avatars. Empty means `backend/data/uploads`; a relative value anchors to the backend package, never the process working directory. |
 | `STATIC_DIR` | empty | Built UI directory. Empty means API only. The image sets `/app/public`. Inline scripts here are allowed by CSP hashes computed at startup, so restart the API after rebuilding the UI. |
