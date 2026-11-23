@@ -46,6 +46,8 @@ let approvalStatus:
 let approvalRequiredFor: string | null;
 /** Older-server simulation: the ready endpoints answer 404. */
 let readyEndpointMissing: boolean;
+/** Transient fetch failures before the next ready request succeeds. */
+let readyNetworkFailures: number;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -233,7 +235,6 @@ function readySummary(boardId: string, limit: number) {
             claimedBy: card.claimedBy ?? null,
             leaseUntil: card.leaseUntil ?? null,
             version: card.version ?? 0,
-            descriptionChars: card.description?.length ?? 0,
           }));
       })();
   return {
@@ -786,9 +787,20 @@ beforeEach(() => {
   approvalStatus = "pending";
   approvalRequiredFor = null;
   readyEndpointMissing = false;
+  readyNetworkFailures = 0;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
+    if (readyNetworkFailures > 0) {
+      readyNetworkFailures -= 1;
+      calls.push({
+        path: url.pathname.replace("/api/v1", ""),
+        method,
+        body: undefined,
+        headers: (init?.headers ?? {}) as Record<string, string>,
+      });
+      return Promise.reject(new TypeError("fetch failed"));
+    }
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     const headers = (init?.headers ?? {}) as Record<string, string>;
     calls.push({
@@ -1934,7 +1946,10 @@ describe("janosik MCP server", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(60);
     expect(
       calls.filter((call) => call.path === "/boards/b3/ready").length,
-    ).toBeGreaterThan(1);
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      calls.filter((call) => call.path === "/boards/b3/ready").length,
+    ).toBeLessThanOrEqual(2);
     expect(
       calls.some((call) => call.path === "/boards/b3" && call.method === "GET"),
     ).toBe(false);
@@ -1992,15 +2007,10 @@ describe("janosik MCP server", () => {
     expect(result.structuredContent).toBeDefined();
     const results = (
       result.structuredContent as {
-        results: Array<{ id: string; descriptionChars: number }>;
+        results: Array<{ id: string }>;
       }
     ).results;
-    expect(
-      results.some(
-        (entry) =>
-          entry.id === "k1" && entry.descriptionChars === "original".length,
-      ),
-    ).toBe(true);
+    expect(results.map((entry) => entry.id)).toContain("k1");
     expect(
       calls.some(
         (call) => call.path === "/boards/b1/ready" && call.method === "GET",
@@ -2009,6 +2019,67 @@ describe("janosik MCP server", () => {
     expect(
       calls.some((call) => call.path === "/boards/b1" && call.method === "GET"),
     ).toBe(false);
+    await client.close();
+  });
+
+  it("snapshots a ready board even when timeoutMs is 0", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 0 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/b1/ready" && call.method === "GET",
+      ),
+    ).toBe(true);
+    await client.close();
+  });
+
+  it("snapshots the cross-board ready set even when timeoutMs is 0", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { timeoutMs: 0 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/ready" && call.method === "GET",
+      ),
+    ).toBe(true);
+    await client.close();
+  });
+
+  it("retries a transient network failure inside the long-poll deadline", async () => {
+    readyNetworkFailures = 1;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/ready").length,
+    ).toBeGreaterThanOrEqual(2);
+    await client.close();
+  });
+
+  it("falls back to a full board read when list_ready_cards gets a 404", async () => {
+    readyEndpointMissing = true;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_list_ready_cards",
+      arguments: { boardId: "b1", response_format: "json" },
+    });
+    const results = (
+      result.structuredContent as { results: Array<{ id: string }> }
+    ).results;
+    expect(results.map((entry) => entry.id)).toContain("k1");
+    expect(
+      calls.some((call) => call.path === "/boards/b1" && call.method === "GET"),
+    ).toBe(true);
     await client.close();
   });
 

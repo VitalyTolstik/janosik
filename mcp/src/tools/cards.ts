@@ -14,14 +14,22 @@ import {
   CLAIM_LEASE_MIN_MS,
   DEFAULT_CARD_PRIORITY,
   LIMITS,
+  READY_WORK_CROSS_BOARD_MAX_MS,
+  READY_WORK_CROSS_BOARD_MIN_MS,
+  READY_WORK_HOLD_MAX_MS,
+  READY_WORK_HOLD_MIN_MS,
   type Board,
   type Card,
   type ReadyCardDto,
   workflowDoneColumnIds,
   workflowInitialColumnId,
 } from "@janosik/shared";
-import type { BatchCommandItem, JanosikClient } from "../client.js";
-import { ApiError } from "../errors.js";
+import type {
+  BatchCommandItem,
+  JanosikClient,
+  ReadyWorkQuery,
+} from "../client.js";
+import { ApiError, isTransientNetworkError } from "../errors.js";
 import {
   batchCommandFields,
   commandFields,
@@ -1164,7 +1172,8 @@ export function registerCardTools(
         "under a live claim and not " +
         "blocked by another card. Sorted by priority (most urgent first). " +
         "Reads one board, or every board the user can access when boardId is " +
-        "omitted. Uses the server's summary ready endpoint, not a board read.",
+        "omitted. Uses the server's summary ready endpoint; an older server " +
+        "without it falls back to a full board read.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         limit: z
@@ -1206,7 +1215,6 @@ export function registerCardTools(
             boardTitle: board.title,
             column,
             priority: card.priority ?? DEFAULT_CARD_PRIORITY,
-            descriptionChars: card.description?.length ?? 0,
           }));
       }
       const markdown =
@@ -1230,9 +1238,11 @@ export function registerCardTools(
       description:
         "Wait until a candidate card appears (see janosik_list_ready_cards) or " +
         "the timeout passes. Returns the card or null on timeout. A single " +
-        "board is held open by the server for 25–60 s per request; without " +
-        "boardId the ready summary is re-read at a much lower, jittered " +
-        "cadence. No full board is read to find work.",
+        "board is held open by the server for 25–60 s per request and wakes " +
+        "only on a readiness-relevant change; without boardId the ready " +
+        "summary is re-read every 15–60 s with jitter. A current server never " +
+        "reads a full board to find work; an older server without the ready " +
+        "endpoint falls back to a full board read.",
       inputSchema: {
         boardId: boardIdSchema.optional().describe("Limit to one board."),
         timeoutMs: z
@@ -1249,9 +1259,9 @@ export function registerCardTools(
           .max(30_000)
           .default(5_000)
           .describe(
-            "Minimum re-check interval in ms. A single-board wait uses a " +
-              "25–60 s server long-poll; a cross-board wait re-reads at this " +
-              "cadence with a 15 s floor and jitter.",
+            "Cross-board re-check floor in ms (raised to 15–60 s with " +
+              "jitter). A single-board wait ignores it and always uses a " +
+              "25–60 s server long-poll.",
           ),
         response_format: responseFormatSchema,
       },
@@ -1262,14 +1272,23 @@ export function registerCardTools(
       let since: number | undefined;
       try {
         if (boardId !== undefined) {
+          let first = true;
           for (;;) {
+            // `timeoutMs: 0` still performs one initial snapshot; after that
+            // the deadline is re-checked before every request and sleep.
+            if (!first && Date.now() >= deadline) break;
             const remaining = deadline - Date.now();
-            if (remaining <= 0) break;
-            const ready = await client.getBoardReady(boardId, {
-              limit: 1,
-              waitMs: readyHoldMs(remaining, pollMs),
-              ...(since !== undefined ? { since } : {}),
-            });
+            const ready = await readyWithRetry(
+              client,
+              boardId,
+              {
+                limit: 1,
+                waitMs: remaining > 0 ? readyHoldMs(remaining) : 0,
+                ...(since !== undefined ? { since } : {}),
+              },
+              deadline,
+            );
+            first = false;
             if (ready !== undefined) {
               since = ready.seq;
               const result = ready.cards[0];
@@ -1280,23 +1299,34 @@ export function registerCardTools(
                   `# Work available\n\n- ${result.title} — ${result.boardTitle} › ${result.columnTitle} — \`${result.id}\``,
                 );
               }
-              if (ready.archived) {
-                // Preserve the pre-TASK-200.2 contract: an archived board
-                // still ends with `null` at the caller's deadline, not early.
-                const remaining = deadline - Date.now();
-                if (remaining <= 0) break;
-                await sleep(Math.min(crossBoardPollMs(pollMs), remaining));
-                continue;
-              }
-              // A relevant change without a ready card: advance the cursor
-              // with a short jittered pause instead of hammering the server.
+              const left = deadline - Date.now();
+              if (left <= 0) break;
+              // An archived board still ends with `null` at the caller's
+              // deadline, preserving the pre-TASK-200.2 contract.
+              await sleep(
+                Math.min(
+                  ready.archived
+                    ? crossBoardPollMs(pollMs)
+                    : readyChangePauseMs(),
+                  left,
+                ),
+              );
               if (Date.now() >= deadline) break;
-              await sleep(readyChangePauseMs());
+              continue;
             }
+            // `204`: the server consumed its hold. Loop only if the caller
+            // still has time; never issue a request after the deadline.
+            const left = deadline - Date.now();
+            if (left <= 0) break;
+            await sleep(Math.min(readyChangePauseMs(), left));
+            if (Date.now() >= deadline) break;
           }
         } else {
+          let first = true;
           for (;;) {
+            if (!first && Date.now() >= deadline) break;
             const ready = await client.listReadyWork(1);
+            first = false;
             const result = ready.cards[0];
             if (result !== undefined) {
               return respond(
@@ -1308,6 +1338,7 @@ export function registerCardTools(
             const remaining = deadline - Date.now();
             if (remaining <= 0) break;
             await sleep(Math.min(crossBoardPollMs(pollMs), remaining));
+            if (Date.now() >= deadline) break;
           }
         }
       } catch (error) {
@@ -1338,7 +1369,6 @@ interface ReadyToolResult {
   boardTitle: string;
   column: string;
   priority: Card["priority"];
-  descriptionChars: number;
 }
 
 /** Map the server summary onto the tool's existing result shape. */
@@ -1350,7 +1380,6 @@ function readyToolResult(card: ReadyCardDto): ReadyToolResult {
     boardTitle: card.boardTitle,
     column: card.columnTitle,
     priority: card.priority,
-    descriptionChars: card.descriptionChars,
   };
 }
 
@@ -1371,39 +1400,88 @@ function missingReadyEndpoint(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
-/** Server hold for one single-board long-poll: 25–60 s, jittered. */
-const READY_HOLD_MIN_MS = 25_000;
-const READY_HOLD_MAX_MS = 60_000;
-const READY_HOLD_JITTER_MS = 5_000;
+/** Extra attempts for a transient failure inside the caller's deadline. */
+const READY_NETWORK_RETRIES = 2;
 
 /**
- * The minimum gap between cross-board snapshots. The old loop read every
- * accessible board every `pollMs` (default 5 s); one ready snapshot every
- * 15–63 s is the sharply reduced cadence the TASK-200.2 contract allows.
+ * A long-poll whose HTTP budget expired is not a transient socket failure:
+ * retrying it would exceed the tool's deadline. `isTransientNetworkError`
+ * otherwise covers fetch/ECONNRESET-style failures.
  */
-const CROSS_BOARD_POLL_MIN_MS = 15_000;
-const CROSS_BOARD_POLL_MAX_MS = 60_000;
-const CROSS_BOARD_JITTER_MS = 3_000;
+function retryableReadyError(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return false;
+    }
+  }
+  if (error instanceof ApiError) {
+    return error.status === 502 || error.status === 504;
+  }
+  return isTransientNetworkError(error);
+}
+
+/**
+ * One ready request with bounded network retries. The same caller deadline
+ * caps every retry; the hold is shortened to whatever time remains.
+ */
+async function readyWithRetry(
+  client: JanosikClient,
+  boardId: string,
+  initial: ReadyWorkQuery,
+  deadline: number,
+) {
+  let options = initial;
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await client.getBoardReady(boardId, options);
+    } catch (error) {
+      if (!retryableReadyError(error) || attempt >= READY_NETWORK_RETRIES) {
+        throw error;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw error;
+      attempt += 1;
+      await sleep(
+        Math.min(250 * attempt + Math.floor(Math.random() * 150), remaining),
+      );
+      const left = deadline - Date.now();
+      if (left <= 0) throw error;
+      options = {
+        ...options,
+        waitMs:
+          options.waitMs !== undefined && options.waitMs > 0
+            ? Math.min(options.waitMs, left)
+            : 0,
+      };
+    }
+  }
+}
 
 /** Jitter after an empty change frame, so a busy board never hot-loops. */
 function readyChangePauseMs(): number {
   return 250 + Math.floor(Math.random() * 500);
 }
 
-/** One server hold that never exceeds the caller's remaining deadline. */
-function readyHoldMs(remaining: number, pollMs: number): number {
-  const base = Math.min(Math.max(pollMs, READY_HOLD_MIN_MS), READY_HOLD_MAX_MS);
-  const jittered = base + Math.floor(Math.random() * READY_HOLD_JITTER_MS);
-  return Math.max(1, Math.min(remaining, jittered));
+/**
+ * One server hold that never exceeds the caller's remaining deadline. It is
+ * deliberately independent of `pollMs`: a single-board wait always asks for
+ * 25–60 s and lets the server wake it.
+ */
+function readyHoldMs(remaining: number): number {
+  const span = READY_WORK_HOLD_MAX_MS - READY_WORK_HOLD_MIN_MS + 1;
+  const hold = READY_WORK_HOLD_MIN_MS + Math.floor(Math.random() * span);
+  return Math.max(1, Math.min(remaining, hold));
 }
 
-/** Jittered cross-board cadence, bounded by the remaining deadline. */
+/** Jittered cross-board cadence in 15–60 s, never above the cap. */
 function crossBoardPollMs(pollMs: number): number {
   const base = Math.min(
-    Math.max(pollMs, CROSS_BOARD_POLL_MIN_MS),
-    CROSS_BOARD_POLL_MAX_MS,
+    Math.max(pollMs, READY_WORK_CROSS_BOARD_MIN_MS),
+    READY_WORK_CROSS_BOARD_MAX_MS,
   );
-  return base + Math.floor(Math.random() * CROSS_BOARD_JITTER_MS);
+  const jittered = base + Math.floor(Math.random() * 3_000);
+  return Math.min(READY_WORK_CROSS_BOARD_MAX_MS, jittered);
 }
 
 /** Pre-TASK-200.2 compatibility path for a server without the endpoint. */

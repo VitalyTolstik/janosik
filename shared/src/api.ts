@@ -163,6 +163,7 @@ export const API_ERROR_CODES = [
   "idempotency_in_progress",
   "payload_too_large",
   "rate_limited",
+  "ready_poll_capacity",
   "request_timeout",
   "login_backoff",
   "current_password_invalid",
@@ -645,15 +646,27 @@ export const READY_WORK_LIMIT_MAX = 100;
  */
 export const READY_WORK_WAIT_MAX_MS = 60_000;
 
+/** Shortest single-board long-poll an MCP client asks the server to hold. */
+export const READY_WORK_HOLD_MIN_MS = 25_000;
+
+/** Longest single-board long-poll an MCP client asks the server to hold. */
+export const READY_WORK_HOLD_MAX_MS = READY_WORK_WAIT_MAX_MS;
+
+/** Shortest gap between cross-board ready snapshots in MCP. */
+export const READY_WORK_CROSS_BOARD_MIN_MS = 15_000;
+
+/** Longest gap between cross-board ready snapshots in MCP. */
+export const READY_WORK_CROSS_BOARD_MAX_MS = 60_000;
+
 /**
  * One card that is ready to pick up, as returned by
  * `GET /boards/:id/ready` and `GET /boards/ready` (TASK-200.2).
  *
  * This is a *summary*, not a board read: it carries no description body,
- * checklists, links, labels or comments. `descriptionChars` is only the
- * stored length (0 when unset) so the existing MCP output keeps its shape;
- * the text itself never leaves the server. `claimedBy` can be non-null only
- * when the lease has lapsed — a live claim is not ready.
+ * checklists, links, labels or comments. Descriptions are never selected, so
+ * a large stored description is never detoasted for a ready check.
+ * `claimedBy` can be non-null only when the lease has lapsed — a live claim is
+ * not ready.
  */
 export interface ReadyCardDto {
   id: string;
@@ -668,7 +681,6 @@ export interface ReadyCardDto {
   leaseUntil: number | null;
   /** The card's optimistic-concurrency version. */
   version: number;
-  descriptionChars: number;
 }
 
 /**
