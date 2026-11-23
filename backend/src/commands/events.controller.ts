@@ -1,18 +1,18 @@
 import {
   Controller,
+  Get,
   Logger,
   MessageEvent,
   Param,
   Query,
   Res,
   ServiceUnavailableException,
-  Sse,
   UseGuards,
   type OnModuleDestroy,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
-import { Observable } from "rxjs";
+import { Observable, type Subscription } from "rxjs";
 import type { AgentPauseStamp } from "@/auth/agent-pause";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { CurrentPrincipal } from "@/auth/auth-principal";
@@ -28,7 +28,9 @@ import {
 } from "@/realtime/realtime.service";
 import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
 import { KeepAliveScheduler } from "@/realtime/keep-alive";
+import { SseConnection, SseFrameStore } from "@/realtime/sse-frames";
 import { keepAliveProfile } from "@/realtime/sse-timing";
+import { env } from "@/config/env";
 import { CommandStreamSequencer } from "./command-stream";
 import { CommandsService } from "./commands.service";
 import { parseSince } from "./parse-since";
@@ -89,6 +91,13 @@ export class EventsController implements OnModuleDestroy {
     private readonly presence: PresenceService,
     private readonly access: StreamAccessService,
     private readonly flags: FeatureFlagsService,
+    /**
+     * TASK-200.13: one frame store per process. A published event object is
+     * shared by every subscriber, so the first write serializes it and the
+     * rest reuse the same Buffer. Injectable so e2e can assert the build
+     * count; the default keeps direct unit construction working.
+     */
+    private readonly frames: SseFrameStore = new SseFrameStore(),
   ) {}
 
   /** TASK-200.5: stop every stream timer before Nest closes the sockets. */
@@ -113,18 +122,28 @@ export class EventsController implements OnModuleDestroy {
     this.skippedKeepAlives = 0;
   }
 
+  /**
+   * TASK-200.13: a raw `@Res` instead of Nest's `@Sse`.
+   *
+   * `@Sse` pipes every subscriber through its own `SseStream`, which
+   * JSON-stringifies the same event once per connection and queues emitted
+   * messages in an unbounded `concatMap` while a slow socket is blocked.
+   * Here the route keeps the same admission, resume and keep-alive logic but
+   * writes pre-serialized frames through `SseConnection`, which bounds the
+   * per-subscriber queue and disconnects a reader that stopped draining.
+   */
   @UseGuards(MembershipGuard, RealtimeFlagGuard)
-  @Sse()
+  @Get()
   events(
     @Param("id") id: string,
+    @Res() res: Response,
     @Query("since") since?: string,
     @Query("client") client?: string,
     @Query("presence") presence?: string,
     @Query("session") session?: string,
     @CurrentUser() user?: AuthUser,
     @CurrentPrincipal() principal?: AuthPrincipal,
-    @Res({ passthrough: true }) res?: Response,
-  ): Observable<MessageEvent> {
+  ): void {
     const clientId =
       client !== undefined && CLIENT_ID.test(client) ? client : randomUUID();
     // `?presence=0` opts a stream out of presence entirely (agent/CI viewers):
@@ -148,21 +167,114 @@ export class EventsController implements OnModuleDestroy {
     // per-user and per-board ceiling instead of an unbounded memory draw.
     const admission = this.realtime.reserveSubscriber(id, user?.id ?? null);
     if (!admission.ok) {
-      res?.setHeader("Retry-After", "5");
+      res.setHeader("Retry-After", "5");
       throw new ServiceUnavailableException({
         message: `Too many live streams (${admission.reason} limit ${admission.limit})`,
       });
     }
-    return this.stream(
+    this.serve(
       id,
       sinceSeq,
       clientId,
       presenceEnabled,
       admission.release,
+      res,
       user,
       principal,
       session,
     );
+  }
+
+  /** Start one admitted stream and own its response/lifecycle wiring. */
+  private serve(
+    boardId: string,
+    since: number,
+    clientId: string,
+    presenceEnabled: boolean,
+    releaseTracking: () => void,
+    res: Response,
+    user?: AuthUser,
+    principal?: AuthPrincipal,
+    sessionId?: string,
+  ): void {
+    // A holder rather than a `let`: the close listener is attached before
+    // `subscribe()` returns, and a synchronous source can close the writer in
+    // the same tick.
+    const owner: { subscription?: Subscription } = {};
+    const connection = new SseConnection(res, {
+      frames: this.frames,
+      maxBufferBytes: env.SSE_MAX_BUFFER_BYTES,
+      slowCloseMs: env.SSE_SLOW_CLOSE_MS,
+      onSlowConsumer: (info) => this.realtime.noteSlowSubscriber(boardId, info),
+      onClose: () => owner.subscription?.unsubscribe(),
+    });
+    // `stream()` calls `onOpen` only after its synchronous setup (presence
+    // join, live watch) succeeded. A setup error therefore still becomes the
+    // proper HTTP status (a 409 client-id race included), never an empty 200
+    // SSE response. The writer opens lazily on the first frame too.
+    let subscribing = true;
+    let hasSyncError = false;
+    let syncError: unknown;
+    try {
+      owner.subscription = this.stream(
+        boardId,
+        since,
+        clientId,
+        presenceEnabled,
+        releaseTracking,
+        user,
+        principal,
+        sessionId,
+        () => connection.open(),
+      ).subscribe({
+        next: (message) => connection.write(message.data),
+        error: (error: unknown) => {
+          if (subscribing && !connection.responseStarted) {
+            hasSyncError = true;
+            syncError = error;
+            return;
+          }
+          this.logger.warn(
+            `Stream for board ${boardId} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          connection.end();
+        },
+        complete: () => connection.end(),
+      });
+    } catch (error) {
+      subscribing = false;
+      if (connection.responseStarted || res.headersSent) {
+        this.logger.warn(
+          `Stream setup for board ${boardId} failed after headers: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        connection.end();
+        releaseTracking();
+        return;
+      }
+      connection.dispose();
+      releaseTracking();
+      throw error;
+    }
+    subscribing = false;
+    if (hasSyncError) {
+      // A response already on the wire cannot turn into a JSON error; close
+      // it instead of letting the exception filter write into a sent stream.
+      if (res.headersSent) {
+        connection.end();
+        releaseTracking();
+        return;
+      }
+      connection.dispose();
+      releaseTracking();
+      throw syncError;
+    }
+    // A synchronous source can hit the bound before `subscribe` returns, when
+    // `onClose` had no subscription to cancel yet.
+    if (connection.isClosed) owner.subscription.unsubscribe();
   }
 
   private stream(
@@ -174,6 +286,7 @@ export class EventsController implements OnModuleDestroy {
     user?: AuthUser,
     principal?: AuthPrincipal,
     sessionId?: string,
+    onOpen?: () => void,
   ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       const send = (data: object | string): void => {
@@ -213,46 +326,89 @@ export class EventsController implements OnModuleDestroy {
         }
       }
 
-      const live = this.realtime.watch(boardId).subscribe((event) => {
-        if (event.type === "presence") {
-          if (presenceEnabled) send(event as unknown as object);
-          return;
+      const liveRef: { subscription?: Subscription } = {};
+      try {
+        liveRef.subscription = this.realtime
+          .watch(boardId)
+          .subscribe((event) => {
+            if (event.type === "presence") {
+              if (presenceEnabled) send(event as unknown as object);
+              return;
+            }
+            // A membership change (TASK-36): every subscriber refreshes its
+            // member directory; the removed user gets the frame as the last
+            // one on their stream and the server then closes it. Other
+            // members' streams keep following the board.
+            if (event.type === "membership") {
+              send(event as unknown as object);
+              if (
+                (event.change === "removed" || event.change === "left") &&
+                user !== undefined &&
+                event.userId === user.id
+              ) {
+                subscriber.complete();
+              }
+              return;
+            }
+            // An activity frame (TASK-37: a new or deleted comment) is not a
+            // command: no seq, no log — pass it straight through like
+            // presence.
+            if (event.type === "activity") {
+              send(event as unknown as object);
+              return;
+            }
+            // TASK-166: agent-session lifecycle frames are control-plane only.
+            if (event.type === "agent") {
+              send(event as unknown as object);
+              return;
+            }
+            // TASK-166.5/166.7: approval and run lifecycle frames are control
+            // plane, not commands — no seq, no log; pass them straight
+            // through.
+            if (event.type === "approval" || event.type === "run") {
+              send(event as unknown as object);
+              return;
+            }
+            if (event.type !== "command") return;
+            sequencer.offer(event as InternalCommandEvent);
+          });
+      } catch (error) {
+        // `watch()` holds a ref-counted channel; a throw after the presence
+        // join must release both, or the roster leaks a ghost user.
+        releaseTracking();
+        if (presenceToken !== null) {
+          this.presence.leave(boardId, clientId, presenceToken.token);
         }
-        // A membership change (TASK-36): every subscriber refreshes its
-        // member directory; the removed user gets the frame as the last one
-        // on their stream and the server then closes it. Other members'
-        // streams keep following the board.
-        if (event.type === "membership") {
-          send(event as unknown as object);
-          if (
-            (event.change === "removed" || event.change === "left") &&
-            user !== undefined &&
-            event.userId === user.id
-          ) {
-            subscriber.complete();
+        subscriber.error(error);
+        return;
+      }
+      const live = liveRef.subscription;
+      if (live === undefined) {
+        // Defensive: `subscribe` never returns undefined, but a missing
+        // teardown must not leak the presence join or admission slot.
+        releaseTracking();
+        if (presenceToken !== null) {
+          this.presence.leave(boardId, clientId, presenceToken.token);
+        }
+        subscriber.error(new Error("Realtime watch returned no subscription"));
+        return;
+      }
+
+      // Everything that can reject synchronously (presence join, watch) has
+      // succeeded: commit the 200 now, just before the first possible frame.
+      if (onOpen !== undefined) {
+        try {
+          onOpen();
+        } catch (error) {
+          live.unsubscribe();
+          releaseTracking();
+          if (presenceToken !== null) {
+            this.presence.leave(boardId, clientId, presenceToken.token);
           }
+          subscriber.error(error);
           return;
         }
-        // An activity frame (TASK-37: a new or deleted comment) is not a
-        // command: no seq, no log — pass it straight through like presence.
-        if (event.type === "activity") {
-          send(event as unknown as object);
-          return;
-        }
-        // TASK-166: agent-session lifecycle frames are control-plane only.
-        if (event.type === "agent") {
-          send(event as unknown as object);
-          return;
-        }
-        // TASK-166.5/166.7: approval and run lifecycle frames are control
-        // plane, not commands — no seq, no log; pass them straight through.
-        if (event.type === "approval" || event.type === "run") {
-          send(event as unknown as object);
-          return;
-        }
-        if (event.type !== "command") return;
-        sequencer.offer(event as InternalCommandEvent);
-      });
+      }
 
       // This stream's one-time full roster: "you are here, with N others".
       // Reuse the roster `join` just built instead of scanning again (A5).

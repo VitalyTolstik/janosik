@@ -137,6 +137,7 @@ export class ObservabilityService {
           boards: this.realtime.activeBoards,
           clients:
             this.realtime.subscriberCount + this.presence.totalSessions(),
+          slowDrops: this.realtime.slowSubscriberDrops,
         },
         queues,
       },
