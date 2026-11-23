@@ -15,7 +15,7 @@ test("reserves the board shell until the snapshot arrives", async ({
 }) => {
   await board.open(page);
 
-  await delayNextRoute(page, `**/api/v1/boards/${board.id}`, 1500);
+  await delayNextRoute(page, `**/api/v1/boards/${board.id}/summary*`, 1500);
   await page.goto(navigation.boardUrl);
 
   const skeleton = page.getByTestId("board-shell-skeleton");
@@ -68,7 +68,7 @@ test("disables the shimmer when reduced motion is requested", async ({
 }) => {
   await board.open(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await delayNextRoute(page, `**/api/v1/boards/${board.id}`, 1500);
+  await delayNextRoute(page, `**/api/v1/boards/${board.id}/summary*`, 1500);
   await page.goto(navigation.boardUrl);
 
   const skeleton = page.getByTestId("board-shell-skeleton");
@@ -95,7 +95,7 @@ test("announces background hydration outside the board switcher grid", async ({
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route(`**/api/v1/boards/${extra.id}`, async (route) => {
+  await page.route(`**/api/v1/boards/${extra.id}/summary*`, async (route) => {
     await blocked;
     await route.continue();
   });

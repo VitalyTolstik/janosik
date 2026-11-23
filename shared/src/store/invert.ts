@@ -87,6 +87,11 @@ function build(before: Board, action: BoardAction): BoardAction | null {
   const head = { at, boardId };
 
   switch (action.type) {
+    // A read-model hydrate is not a command: it has no inverse and is never
+    // recorded in history (TASK-200.9).
+    case "HYDRATE_CARDS":
+      return null;
+
     /* ---------------------------------------------------------------- columns */
     case "ADD_COLUMN":
       return { ...head, type: "DELETE_COLUMN", columnId: action.newColumnId };
@@ -200,12 +205,18 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         ...head,
         type: "UPDATE_CARD",
         cardId: card.id,
-        // A legacy blank title cannot be written back: UPDATE_CARD refuses
-        // blanks. Omitting the field reverts only the description/stamp and
-        // leaves the first real title in place.
-        ...(card.title.trim() === "" ? {} : { title: card.title }),
+        // Undo only the fields the command actually touched. A title-only
+        // rename on a read-model summary has no loaded description; writing
+        // `description: ""` here would erase the stored body (TASK-200.9).
+        // A legacy blank title cannot be written back at all: UPDATE_CARD
+        // refuses blanks, so the first real title stays.
+        ...(action.title !== undefined && card.title.trim() !== ""
+          ? { title: card.title }
+          : {}),
         // An empty string is how the reducer spells "no description".
-        description: card.description ?? "",
+        ...(action.description !== undefined
+          ? { description: card.description ?? "" }
+          : {}),
         cardUpdatedAt: card.updatedAt,
         cardActivity: feedOf(card),
       };
@@ -500,6 +511,9 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       const label = before.labels[index];
       // Every card it was attached to, where in the list it sat, and the
       // card's own stamp before the delete — TASK-183.3 restores all three.
+      // The optimistic list only knows loaded cards; the provider replaces
+      // it with the server's complete command-response snapshot before undo
+      // is allowed to pop this step (TASK-200.9).
       const assignments = Object.values(before.cards)
         .map((card) => ({
           cardId: card.id,

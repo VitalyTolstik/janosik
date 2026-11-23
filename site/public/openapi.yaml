@@ -370,16 +370,18 @@ paths:
     get:
       tags: [Boards]
       operationId: searchWorkspaceMatches
-      summary: Search comments and attachment names across boards
+      summary: Search content across boards
       description: |
-        Case-insensitive substring search over comment text and attachment
-        file names on every board where the caller has an accepted, unexpired
-        membership (TASK-177.13). Text that is part of the board aggregate —
-        titles, descriptions, labels and checklists — is matched by the
-        client. Matches are deduped per board/card/kind and merged newest-first
-        across comments and files; at most 200 are returned and `total` /
-        `truncated` describe the complete result. A board-scoped PAT sees only
-        its own board. This route is declared before `/boards/{boardId}`.
+        Case-insensitive substring search over comment text, attachment file
+        names, card descriptions and checklist items on every board where the
+        caller has an accepted, unexpired membership (TASK-177.13,
+        TASK-200.9). The read model no longer ships description or checklist
+        text to the client, so the palette's single cross-board request covers
+        those fields too; titles and labels are still matched locally. Matches
+        are deduped per board/card/kind and merged newest-first; at most 200
+        are returned and `total` / `truncated` describe the complete result. A
+        board-scoped PAT sees only its own board. This route is declared before
+        `/boards/{boardId}`.
       parameters:
         - name: q
           in: query
@@ -392,7 +394,7 @@ paths:
             maxLength: 200
       responses:
         "200":
-          description: Matching comment and attachment rows.
+          description: Matching comment, attachment, description and checklist rows.
           content:
             application/json:
               schema:
@@ -463,8 +465,29 @@ paths:
         private, no-store` deliberately keeps board JSON out of browser/shared
         caches; the ETag is for explicit conditional clients (the UI does not
         send `If-None-Match` yet).
+
+        TASK-200.9 capability gate: old clients that send no
+        `X-Janosik-Read-Model` header keep this endpoint unchanged. A client
+        that declares `X-Janosik-Read-Model: v1` is refused with `400
+        read_model_required` unless it explicitly asks for `?projection=full`;
+        admin/export/internal callers do exactly that. `X-Janosik-Read-Model:
+        full` is also accepted.
       parameters:
         - $ref: "#/components/parameters/IfNoneMatch"
+        - name: projection
+          in: query
+          required: false
+          description: Must be `full` for the legacy aggregate.
+          schema:
+            type: string
+            enum: [full]
+        - name: X-Janosik-Read-Model
+          in: header
+          required: false
+          description: Capability declaration (`v1` requires `projection=full`; `full` is an explicit legacy request).
+          schema:
+            type: string
+            enum: [v1, full]
       responses:
         "200":
           description: The board aggregate, possibly gzip/Brotli encoded.
@@ -574,6 +597,235 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/summary:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: getBoardReadSummary
+      summary: Read the board read-model summary
+      description: |
+        TASK-200.9 read model v1. The initial board view: board metadata,
+        columns with their complete ordered `cardIds`, active/archived counts,
+        labels, archived card ids and a bounded first page of card summaries per
+        column. The payload never contains a description body, checklist or
+        link row — only scalar counters (`descriptionChars`,
+        `checklistItemCount`, `checklistDoneCount`, `linkCount`, `blocked`).
+        `seq`/`atSeq` is the command sequence and `aggregateRevision` the
+        content revision; use `GET /boards/{boardId}/cards` for further pages
+        and `GET /boards/{boardId}/cards/{cardId}` for full detail.
+
+        Supports the TASK-200.6 read path: weak ETag scoped by board, revision,
+        route, role and the canonical query, `If-None-Match` → `304` before the
+        body is built, gzip/Brotli and `Vary: Accept-Encoding`. VIEWERs may
+        read; archived boards answer `200` with `archivedAt` set.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: First-page size per column (1–100, default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The read-model summary.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Vary:
+              $ref: "#/components/headers/Vary"
+            Cache-Control:
+              $ref: "#/components/headers/PrivateNoStore"
+            X-Janosik-Read-Model:
+              description: Read-model capability, `v1`.
+              schema:
+                type: string
+                const: v1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardReadSummary"
+        "304":
+          description: The summary still matches `If-None-Match`; body is empty.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Vary:
+              $ref: "#/components/headers/Vary"
+            Cache-Control:
+              $ref: "#/components/headers/PrivateNoStore"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/BoardReadUnavailable" }
+  /boards/{boardId}/cards:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+    get:
+      tags: [Boards]
+      operationId: listBoardCardPage
+      summary: Read one bounded card page or full-card preimages
+      description: |
+        TASK-200.9. With `columnId`, returns one keyset page of active card
+        summaries for that column (`(position, id)` order); with `archived=1`,
+        returns the board-wide archived page (`archivedAt` descending). The
+        opaque cursor is bound to the board and the column/archived scope; a
+        malformed or foreign cursor is `400`, a column from another board is
+        `404`. `limit` is capped at 100 and `total` is the scope's complete
+        count.
+
+        With `ids=` (comma-separated, ≤50) the route returns full-detail cards
+        for undo preimages; `detail=full` is required in that mode and is never
+        accepted for a column/archive list. Response bodies use the same ETag,
+        304, compression and membership rules as the summary.
+      parameters:
+        - name: columnId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: archived
+          in: query
+          required: false
+          description: "`1`/`true` pages the board-wide archive; mutually exclusive with `columnId`."
+          schema:
+            type: boolean
+            default: false
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: ids
+          in: query
+          required: false
+          description: Comma-separated card ids for a bounded preimage batch (≤50); requires `detail=full`.
+          schema:
+            type: string
+        - name: detail
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: A card page, or the bounded full-card preimage batch.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Vary:
+              $ref: "#/components/headers/Vary"
+            Cache-Control:
+              $ref: "#/components/headers/PrivateNoStore"
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/BoardCardPage"
+                  - $ref: "#/components/schemas/BoardCardDetails"
+        "304":
+          description: The page still matches `If-None-Match`; body is empty.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/BoardReadUnavailable" }
+  /boards/{boardId}/labels/{labelId}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - name: labelId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Boards]
+      operationId: listLabelAssignments
+      deprecated: true
+      summary: Read a label's card assignment preimage (compatibility)
+      description: |
+        Deprecated TASK-200.9. The current contract carries this snapshot in
+        the `DELETE_LABEL` command response, captured inside the board write
+        lock. This read remains for one release so an older UI keeps full undo
+        during a rolling deploy; new clients must not use it.
+      responses:
+        "200":
+          description: Assignment rows (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardLabelAssignment"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/cards/{cardId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [Boards]
+      operationId: getBoardCardDetail
+      summary: Read one full card
+      description: |
+        TASK-200.9. The only full-detail card read: description, checklists,
+        links and the task contract, plus board/column identity, card version,
+        `linkCount`/`blocked` and the `seq`/`aggregateRevision` the snapshot
+        reflects. Membership is resolved against `:boardId`; a card that
+        belongs to another board answers `404` (no id oracle). Same ETag/304,
+        compression and archived-board rules as the summary.
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The full card.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Vary:
+              $ref: "#/components/headers/Vary"
+            Cache-Control:
+              $ref: "#/components/headers/PrivateNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardCardDetail"
+        "304":
+          description: The card still matches `If-None-Match`; body is empty.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/BoardReadUnavailable" }
   /boards/{boardId}/ready:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -740,10 +992,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiErrorEnvelope"
         "429": { $ref: "#/components/responses/TooManyRequests" }
-  /boards/{boardId}/cards/{cardId}:
-    parameters:
-      - $ref: "#/components/parameters/BoardId"
-      - $ref: "#/components/parameters/CardId"
     patch:
       tags: [Commands, Cards]
       operationId: patchCardIntent
@@ -4439,6 +4687,262 @@ components:
         truncated:
           type: boolean
           description: True when older rows fall outside this page.
+    BoardCardSummary:
+      type: object
+      description: |
+        TASK-200.9 list-facing card. No description body, checklists or link
+        rows; the scalar counters stand in for them.
+      required:
+        [
+          id,
+          title,
+          columnId,
+          position,
+          version,
+          descriptionChars,
+          checklistItemCount,
+          checklistDoneCount,
+          linkCount,
+          blocked,
+          labelIds,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        columnId: { type: string }
+        position: { type: integer }
+        version: { type: integer }
+        descriptionChars: { type: integer }
+        checklistItemCount: { type: integer }
+        checklistDoneCount: { type: integer }
+        linkCount: { type: integer }
+        blocked: { type: boolean }
+        labelIds:
+          type: array
+          items: { type: string }
+        dueDate: { type: integer }
+        priority:
+          $ref: "#/components/schemas/CardPriority"
+        assigneeId: { type: string }
+        claimedBy: { type: string }
+        claimedByTokenId: { type: string }
+        claimedBySessionId: { type: string }
+        leaseUntil: { type: integer }
+        cover:
+          $ref: "#/components/schemas/CardCover"
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        lastActorId: { type: string }
+        attachmentCount: { type: integer }
+        archivedAt: { type: integer }
+        archivedFromColumnId: { type: string }
+    BoardReadColumn:
+      type: object
+      required:
+        [
+          id,
+          title,
+          count,
+          archivedCount,
+          wipLimit,
+          createdAt,
+          cardIds,
+          cards,
+          nextCursor,
+          hasMore,
+        ]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        count: { type: integer, description: Active cards in the column. }
+        archivedCount: { type: integer }
+        wipLimit:
+          type: integer
+          nullable: true
+        accent:
+          $ref: "#/components/schemas/CardCover"
+        createdAt: { type: integer }
+        cardIds:
+          type: array
+          description: Complete ordered active ids; DnD indices stay absolute before every page loads.
+          items: { type: string }
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardCardSummary"
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore: { type: boolean }
+    BoardReadMeta:
+      type: object
+      required: [id, title, createdAt, updatedAt, role]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        archivedAt: { type: integer }
+        columnStyle:
+          $ref: "#/components/schemas/ColumnAccentStyle"
+        workflow:
+          $ref: "#/components/schemas/BoardWorkflow"
+        workflowInvalid:
+          type: boolean
+          const: true
+        agentPolicy:
+          $ref: "#/components/schemas/BoardAgentPolicy"
+        agentsPausedAt: { type: integer }
+        agentsPausedBy: { type: string }
+        agentsPauseReason: { type: string }
+        role:
+          $ref: "#/components/schemas/BoardRole"
+    BoardReadSummary:
+      type: object
+      required:
+        [
+          board,
+          columns,
+          labels,
+          limits,
+          archivedCardIds,
+          archivedCards,
+          archivedNextCursor,
+          firstPageLimit,
+          seq,
+          atSeq,
+          aggregateRevision,
+          readModel,
+        ]
+      properties:
+        board:
+          $ref: "#/components/schemas/BoardReadMeta"
+        columns:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardReadColumn"
+        labels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Label"
+        limits:
+          type: object
+          required: [cardsPerColumn, columns]
+          properties:
+            cardsPerColumn: { type: integer }
+            columns: { type: integer }
+        archivedCardIds:
+          type: array
+          items: { type: string }
+        archivedCards:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardCardSummary"
+        archivedNextCursor:
+          type: string
+          nullable: true
+        firstPageLimit: { type: integer }
+        seq: { type: integer }
+        atSeq: { type: integer }
+        aggregateRevision: { type: integer }
+        readModel:
+          type: string
+          const: v1
+    BoardCardPage:
+      type: object
+      required:
+        [
+          boardId,
+          columnId,
+          archived,
+          cards,
+          nextCursor,
+          hasMore,
+          total,
+          seq,
+          atSeq,
+          aggregateRevision,
+        ]
+      properties:
+        boardId: { type: string }
+        columnId:
+          type: string
+          nullable: true
+        archived: { type: boolean }
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardCardSummary"
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore: { type: boolean }
+        total: { type: integer }
+        seq: { type: integer }
+        atSeq: { type: integer }
+        aggregateRevision: { type: integer }
+    BoardLabelAssignment:
+      type: object
+      required: [cardId, index, updatedAt]
+      properties:
+        cardId: { type: string }
+        index: { type: integer }
+        updatedAt: { type: integer }
+    BoardIncomingCardLink:
+      type: object
+      required: [id, type, fromCardId, fromArchived]
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [blocks, relates_to, duplicates]
+        fromCardId: { type: string }
+        fromArchived: { type: boolean }
+    BoardCardDetail:
+      type: object
+      required:
+        [
+          boardId,
+          columnId,
+          card,
+          version,
+          linkCount,
+          blocked,
+          incomingLinks,
+          seq,
+          atSeq,
+          aggregateRevision,
+        ]
+      properties:
+        boardId: { type: string }
+        columnId: { type: string }
+        card:
+          $ref: "#/components/schemas/Card"
+        version: { type: integer }
+        linkCount: { type: integer }
+        blocked: { type: boolean }
+        incomingLinks:
+          type: array
+          description: Reverse link rows loaded with the detail for summary-only boards.
+          items:
+            $ref: "#/components/schemas/BoardIncomingCardLink"
+        seq: { type: integer }
+        atSeq: { type: integer }
+        aggregateRevision: { type: integer }
+    BoardCardDetails:
+      type: object
+      required: [boardId, cards, seq, atSeq, aggregateRevision]
+      properties:
+        boardId: { type: string }
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardCardDetail"
+        seq: { type: integer }
+        atSeq: { type: integer }
+        aggregateRevision: { type: integer }
     BoardAggregate:
       type: object
       description: The frontend `Board` model.
@@ -4930,10 +5434,48 @@ components:
           description: Short snippet around the matched file name.
         attachmentId:
           type: string
+    WorkspaceDescriptionSearchMatch:
+      type: object
+      required: [matchIn, boardId, boardTitle, cardId, cardTitle, text]
+      properties:
+        matchIn:
+          type: string
+          const: description
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        cardId:
+          type: string
+        cardTitle:
+          type: string
+        text:
+          type: string
+          description: Short snippet around the matched description text.
+    WorkspaceChecklistSearchMatch:
+      type: object
+      required: [matchIn, boardId, boardTitle, cardId, cardTitle, text]
+      properties:
+        matchIn:
+          type: string
+          const: checklist
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        cardId:
+          type: string
+        cardTitle:
+          type: string
+        text:
+          type: string
+          description: Short snippet around the matched checklist item.
     WorkspaceSearchMatch:
       oneOf:
         - $ref: "#/components/schemas/WorkspaceCommentSearchMatch"
         - $ref: "#/components/schemas/WorkspaceAttachmentSearchMatch"
+        - $ref: "#/components/schemas/WorkspaceDescriptionSearchMatch"
+        - $ref: "#/components/schemas/WorkspaceChecklistSearchMatch"
     WorkspaceSearchResult:
       type: object
       required: [matches, total, truncated]
@@ -5162,6 +5704,28 @@ components:
             type: integer
         runId:
           type: [string, "null"]
+        preimage:
+          type: object
+          description: |
+            TASK-200.9. Deletion snapshots captured inside the command
+            transaction. A `DELETE_LABEL` response carries every label
+            assignment the delete removed (including cards the client has not
+            paged in), so its inverse restores exactly that set.
+          properties:
+            labelAssignments:
+              type: array
+              items:
+                $ref: "#/components/schemas/LabelAssignment"
+          required: [labelAssignments]
+    LabelAssignment:
+      type: object
+      required: [cardId, index]
+      properties:
+        cardId: { type: string }
+        index: { type: integer }
+        updatedAt:
+          type: integer
+          description: Card `updatedAt` before the delete, when known.
     CommandBatchResponse:
       type: object
       required: [results]

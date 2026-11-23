@@ -1,5 +1,5 @@
 import type { Board, BoardAction } from "@janosik/shared";
-import { applyCommandWrites } from "./command-writers";
+import { applyCommandWrites, readLabelAssignments } from "./command-writers";
 
 /**
  * TASK-156 (items 2/43 follow-ups): the soft-delete writers must only restamp
@@ -110,11 +110,17 @@ describe("command writers — soft-delete hygiene (TASK-156)", () => {
       // join rows are the restore record (DELETE_CARD keeps them too), and
       // hard-deleting them here would strip the label from a revived card.
       expect(tx.cardLabel.findMany).toHaveBeenCalledWith({
-        where: { labelId: "label-1", card: { deletedAt: null } },
+        where: {
+          labelId: "label-1",
+          card: { deletedAt: null, column: { boardId: "board-1" } },
+        },
         select: { cardId: true },
       });
       expect(tx.cardLabel.deleteMany).toHaveBeenCalledWith({
-        where: { labelId: "label-1", card: { deletedAt: null } },
+        where: {
+          labelId: "label-1",
+          card: { deletedAt: null, column: { boardId: "board-1" } },
+        },
       });
       expect(tx.label.update).toHaveBeenCalledWith({
         where: { id: "label-1" },
@@ -185,6 +191,46 @@ describe("command writers — soft-delete hygiene (TASK-156)", () => {
         "board:board-1",
         "label:label-1",
         "card:card-live",
+      ]);
+    });
+  });
+
+  describe("readLabelAssignments", () => {
+    it("returns the complete live snapshot in one ordered query", async () => {
+      const tx = {
+        cardLabel: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              cardId: "card-live",
+              position: 1,
+              card: { updatedAt: new Date(1_234) },
+            },
+          ]),
+        },
+      };
+
+      const rows = await readLabelAssignments(
+        tx as never,
+        "board-1",
+        "label-1",
+      );
+
+      // Same predicate as the writer's delete: the snapshot must be exactly
+      // the rows the transaction is about to remove.
+      expect(tx.cardLabel.findMany).toHaveBeenCalledWith({
+        where: {
+          labelId: "label-1",
+          card: { deletedAt: null, column: { boardId: "board-1" } },
+        },
+        orderBy: [{ position: "asc" }, { cardId: "asc" }],
+        select: {
+          cardId: true,
+          position: true,
+          card: { select: { updatedAt: true } },
+        },
+      });
+      expect(rows).toEqual([
+        { cardId: "card-live", index: 1, updatedAt: 1_234 },
       ]);
     });
   });

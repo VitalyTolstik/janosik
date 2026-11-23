@@ -15,7 +15,11 @@ import type { CreateCommandDto } from "./dto/create-command.dto";
 /** Every action type the command endpoint understands (TASK-96). */
 type CommandActionType = Exclude<
   BoardAction["type"],
-  "RESTORE_BOARD" | "IMPORT_BOARDS" | "ADD_BOARD" | "REMOVE_BOARD"
+  | "RESTORE_BOARD"
+  | "IMPORT_BOARDS"
+  | "ADD_BOARD"
+  | "REMOVE_BOARD"
+  | "HYDRATE_CARDS"
 >;
 
 export const ACTION_REGISTRY: Record<CommandActionType, true> = {

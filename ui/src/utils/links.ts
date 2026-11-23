@@ -95,8 +95,47 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
     }
     return draft;
   };
+  const incomingIds = new Map<string, Set<string>>();
+  const addIncoming = (
+    cardId: string,
+    fromCardId: string,
+    link: CardLink,
+  ): void => {
+    const seen = incomingIds.get(cardId) ?? new Set<string>();
+    if (seen.has(link.id)) return;
+    seen.add(link.id);
+    incomingIds.set(cardId, seen);
+    draftOf(cardId).incoming.push({ fromCardId, link });
+  };
+
+  // TASK-200.9 summary cards carry the server's complete relation count and
+  // blocked flag instead of their link rows. Seed those, then still collect
+  // every row a fully loaded card contributes — the count is not summed from
+  // the partial rows.
+  const readModelCards = new Set<string>();
+  for (const card of Object.values(cards)) {
+    const readModel = card.readModel;
+    if (readModel === undefined) continue;
+    readModelCards.add(card.id);
+    const draft = draftOf(card.id);
+    draft.liveOutgoing = readModel.linkCount;
+    draft.blocked = readModel.blocked;
+  }
 
   for (const card of Object.values(cards)) {
+    // Detail carries its own reverse side because a summary-only board has
+    // no rows on the source cards. Merge it before the outgoing scan; the
+    // dedupe map keeps a fully loaded source from adding the same row twice.
+    for (const incoming of card.incomingLinks ?? []) {
+      addIncoming(card.id, incoming.fromCardId, {
+        id: incoming.id,
+        type: incoming.type,
+        targetCardId: card.id,
+      });
+      if (incoming.type === "blocks" && !incoming.fromArchived) {
+        draftOf(card.id).blocked = true;
+      }
+    }
     for (const link of card.links ?? []) {
       // The outgoing side is stored on the card itself — kept whether or
       // not the target survives, so the dialog can offer to remove it.
@@ -104,8 +143,10 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
       draft.outgoing.push(link);
       const target = cards[link.targetCardId];
       if (!target || target.id === card.id) continue;
-      draft.liveOutgoing += 1;
-      draftOf(target.id).incoming.push({ fromCardId: card.id, link });
+      // A summary/detail card carries the server's complete degree already;
+      // its loaded rows only populate `outgoing`/`incoming` for the UI.
+      if (!readModelCards.has(card.id)) draft.liveOutgoing += 1;
+      addIncoming(target.id, card.id, link);
       if (link.type === "blocks" && card.archivedAt === undefined) {
         draftOf(target.id).blocked = true;
       }
@@ -117,7 +158,9 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
     facts.set(cardId, {
       outgoing: draft.outgoing,
       incoming: draft.incoming,
-      degree: draft.liveOutgoing + draft.incoming.length,
+      degree: readModelCards.has(cardId)
+        ? draft.liveOutgoing
+        : draft.liveOutgoing + draft.incoming.length,
       blocked: draft.blocked,
     });
   }
@@ -151,8 +194,14 @@ export function linkSignature(cards: Board["cards"]): string {
   for (const id of Object.keys(cards).sort()) {
     const card = cards[id];
     signature += `${id}${card.archivedAt !== undefined ? "!" : ""}`;
+    if (card.readModel !== undefined) {
+      signature += `#${card.readModel.linkCount}:${card.readModel.blocked ? 1 : 0}`;
+    }
     for (const link of card.links ?? []) {
       signature += `|${link.id}:${link.type}:${link.targetCardId}`;
+    }
+    for (const link of card.incomingLinks ?? []) {
+      signature += `^${link.id}:${link.type}:${link.fromCardId}:${link.fromArchived ? 1 : 0}`;
     }
     signature += ";";
   }
@@ -261,26 +310,48 @@ export type LinkGroupKey =
   | "duplicatedBy"
   | "dangling";
 
+/** Every id the summary places on the board, even when no body is paged in. */
+export function boardCardIds(
+  board: Pick<Board, "columns"> & Partial<Pick<Board, "archivedCardIds">>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const column of board.columns) {
+    for (const id of column.cardIds) ids.add(id);
+  }
+  for (const id of board.archivedCardIds ?? []) ids.add(id);
+  return ids;
+}
+
 /**
  * A card's relations grouped the way they read from *this* card (the same
  * order the card dialog lists them in). Typed groups hold only live rows;
  * rows pointing at a deleted card land in the tail `dangling` group with
  * their "Deleted card" title — they still occupy the card's link cap, so
- * every view that lists relations must render them.
+ * every view that lists relations must render them. On a paged board a
+ * target may simply not have its body loaded: `knownCardIds` keeps such a
+ * row navigable and labels it "not loaded" instead of "deleted".
  */
 export function linkRowGroups(
   cards: Board["cards"],
   facts: CardLinkFacts,
   deletedCardTitle: string,
+  options?: {
+    knownCardIds?: ReadonlySet<string>;
+    notLoadedTitle?: string;
+  },
 ): { key: LinkGroupKey; rows: LinkRow[] }[] {
+  const known = options?.knownCardIds;
+  const notLoadedTitle = options?.notLoadedTitle ?? deletedCardTitle;
+  const exists = (id: string) => id in cards || known?.has(id) === true;
+  const titleOf = (id: string) => cards[id]?.title ?? notLoadedTitle;
   const outOf = (type: CardLinkType): LinkRow[] =>
     facts.outgoing
-      .filter((link) => link.type === type && link.targetCardId in cards)
+      .filter((link) => link.type === type && exists(link.targetCardId))
       .map((link) => ({
         linkId: link.id,
         targetCardId: link.targetCardId,
         type,
-        title: cards[link.targetCardId]?.title ?? "",
+        title: titleOf(link.targetCardId),
         live: true,
       }));
   const inOf = (type: CardLinkType): LinkRow[] =>
@@ -290,12 +361,12 @@ export function linkRowGroups(
         linkId: entry.link.id,
         targetCardId: entry.fromCardId,
         type: entry.link.type,
-        title: cards[entry.fromCardId]?.title ?? "",
+        title: titleOf(entry.fromCardId),
         live: true,
       }));
   const dangling = (): LinkRow[] =>
     facts.outgoing
-      .filter((link) => !(link.targetCardId in cards))
+      .filter((link) => !exists(link.targetCardId))
       .map((link) => ({
         linkId: link.id,
         targetCardId: link.targetCardId,

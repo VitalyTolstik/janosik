@@ -8,6 +8,78 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.9 board read model v1: `GET /boards/:id/summary`,
+  `GET /boards/:id/cards` and `GET /boards/:id/cards/:cardId`. The summary
+  returns board metadata, labels, columns with their complete ordered
+  `cardIds` and active/archived counts, archived ids and a bounded first page
+  of list-facing card summaries per column; it never carries a description
+  body, checklist, link row or task contract. Scalar counters stand in for
+  those (`descriptionChars`, checklist totals, link degree/blocked). Column
+  and archive pages use opaque, board/scope-bound keyset cursors capped at
+  100; a batch `ids=` preimage read (≤50, `detail=full`) feeds undo without a
+  full board. Full card detail is one route and resolves the card through
+  `:boardId` (a foreign card is `404`). All projections use the TASK-200.6
+  ETag/304, gzip/Brotli and bounded read path, and keep membership/role/
+  archived semantics. The legacy full aggregate remains for old clients,
+  admin/export/internal: a client declaring `X-Janosik-Read-Model: v1` must
+  request `?projection=full`, while header-less old clients are unchanged.
+  The UI hydrates summary + pages, keeps the complete id order (absolute DnD
+  indices), streams remaining summaries in the background, opens cards by
+  fetching detail, guards deep links to not-yet-loaded cards, and loads
+  detail preimages before destructive commands so undo restores full
+  descriptions/checklists/links; list faces use the scalar counters. Board,
+  table, calendar, filters/server-search, saved views and bulk selection keep
+  their existing contracts. Tests: read-model e2e (shape/limits/cursors/
+  auth/archived/legacy gate/preimages), UI store hydration/detail/preimage/
+  undo, deep-link detail and adapter tests; OpenAPI and the TASK-200 doc are
+  updated. Review hardening: a title-only `UPDATE_CARD` undo no longer writes
+  an empty description (inverse touches only fields the command changed);
+  a `DELETE_LABEL` response carries a `preimage.labelAssignments` snapshot
+  read inside the board write transaction, so the inverse restores every
+  assignment on unloaded cards of a 1 000-card board and a concurrent
+  add/remove cannot race it; undo/redo presses wait for that response before
+  popping the step, a failed delete drops the queued press instead of undoing
+  an older step, and a redo's fresh command snapshots its own inverse.
+  The deprecated `GET .../labels/:labelId/assignments` read remains for one
+  release so an older UI keeps full undo during a rolling deploy; the new UI
+  also snapshots it before the delete as a fallback when talking to an older
+  backend. Detail carries reverse link rows and reducers keep
+  `linkCount`/`blocked`/incoming facts current on link, archive,
+  card/column delete and restore — including surviving *sources* of a deleted
+  target — and keep a summary target's `blocked` conservative while another
+  blocker or a non-blocking relation may exist. A fact-only summary change
+  (same `updatedAt`) merges the fresh count/blocked into cached detail,
+  keeps `detailLoaded` so an open dialog never falls back to its loading
+  skeleton, drops the reverse rows and marks them stale; the dialog and
+  linked-cards popover then refetch the detail. Full-aggregate cards
+  (create/import/legacy, no `readModel`) keep their body on a same-or-older
+  summary instead of being downgraded. Every detail read stores the board
+  `atSeq` it observed (`factsAtSeq`); an older page or summary can no longer
+  overwrite those facts at the same card stamp, and a same-count swap seen
+  only at a newer revision marks the reverse rows stale for a lazy refetch.
+  A same-stamp detail read is still applied when the reverse-row identity
+  changed, and it clears the stale flag even when it has no incoming rows.
+  Foreign checklist edits on summary cards schedule the same refresh.
+  Reducers also reset duplicated-card facts, update description/checklist
+  counters on edits and preimage duplicate columns; page hydration rejects
+  pages older than the summary, only hydrates ids still in column/archive
+  scope, re-reads pages when the summary `atSeq`/`aggregateRevision` advanced
+  even if every id is present, retries failures and shows a partial marker
+  with a retry action while keeping completed unchanged boards from
+  re-downloading every page on focus; `If-None-Match: *` runs the
+  card/column existence precheck before a 304 and cannot skip cursor
+  validation; a partial detail batch is all-or-nothing `404`; and the
+  50-card preimage batch is one query. Query budgets and the remaining risks
+  are documented in the task doc. Initial bytes/RSS targets still need the
+  200.1/200.15 harness on a dedicated host; this change ships the mechanism,
+  not measured capacity. The global palette's single cross-board search also
+  matches description and checklist text now that the read model no longer
+  ships those bodies, and a summary card face no longer claims a
+  description-only match it cannot prove. Deep links and undo preimages
+  resolve a card id only as an own property, so `?card=constructor` stays
+  inert. Browser e2e skeleton, resync and deep-link waits follow the summary
+  route instead of the legacy aggregate.
+
 - TASK-200.11 CI follow-up: the browser e2e legacy-watch fixture clears the
   `CommandDetail` side row instead of the removed `Command.details` column, so
   the Watch feed is still tested against a command without a display snapshot.

@@ -17,6 +17,7 @@ import { HighlightedText } from "@/components/ui/highlight";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useAuth } from "@/auth/AuthContext";
 import { cn } from "@/lib/utils";
+import { cardChecklistProgress, cardHasDescription } from "@/store/read-model";
 import { useI18n } from "@/i18n";
 import { useBoardMember, useEntityAttribution } from "@/store/board-live";
 import { checklistMatch, descriptionSnippet } from "@/utils/filter";
@@ -96,6 +97,13 @@ interface CardItemProps {
   selectionMode?: boolean;
   /** Toggles this card in the bulk selection (shift extends the range). */
   onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
+  /**
+   * TASK-200.9: the server filter matched this card's description. A
+   * read-model summary has only `descriptionChars`, so only the server can
+   * prove that a text hit is in the description rather than a checklist item
+   * or a comment.
+   */
+  descriptionMatch?: boolean;
 }
 
 /**
@@ -169,6 +177,7 @@ function CardItemView({
   selected = false,
   selectionMode = false,
   onToggleSelect,
+  descriptionMatch,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped(!compact);
   // Entry animation only for a card that appears in this tab now (created,
@@ -199,11 +208,10 @@ function CardItemView({
   // Archive uses the board-archive two-step: first click arms the
   // confirmation (✓ / ✗), so a brushed click never archives silently.
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const hasDescription = Boolean(card.description?.trim());
-  // Checklist progress summed across all of the card's checklists.
-  const items = (card.checklists ?? []).flatMap((c) => c.items);
-  const done = items.filter((item) => item.done).length;
-  const total = items.length;
+  // TASK-200.9: summary cards carry counts instead of the description body
+  // and checklist rows; detail-loaded cards use the real fields.
+  const hasDescription = cardHasDescription(card);
+  const { done, total } = cardChecklistProgress(card);
 
   // Where the highlight query matched: the title renders <mark>s inline;
   // a description-only match lights up the description badge instead
@@ -218,12 +226,20 @@ function CardItemView({
       ),
     );
   const checklistMatched = query !== "" && checklistMatch(card, query) !== null;
+  // A summary card carries only `descriptionChars`, never the body, so the
+  // face cannot prove a text match happened in the description. The board
+  // filter asks the server for the match field (the query can hit a checklist
+  // item or a comment instead); local mode and loaded detail keep the old
+  // behaviour.
+  const descriptionKnown =
+    card.readModel === undefined || card.readModel.detailLoaded === true;
   const descriptionOnly =
     query !== "" &&
     !titleMatched &&
     !labelMatched &&
     !checklistMatched &&
-    hasDescription;
+    hasDescription &&
+    (descriptionKnown || descriptionMatch === true);
   const snippet = descriptionOnly
     ? descriptionSnippet(card.description ?? "", query)
     : null;
@@ -622,7 +638,11 @@ function CardItemView({
               and the link count open the linked-cards popover instead of
               bubbling into the card dialog. */}
                 {linkFacts ? (
-                  <LinkedCardsPopover boardId={boardId} facts={linkFacts} />
+                  <LinkedCardsPopover
+                    boardId={boardId}
+                    cardId={card.id}
+                    facts={linkFacts}
+                  />
                 ) : null}
                 {total > 0 ? (
                   <Tooltip>

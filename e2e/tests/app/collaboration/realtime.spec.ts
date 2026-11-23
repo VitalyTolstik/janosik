@@ -271,7 +271,8 @@ for (const lostReplies of [1, 2]) {
     const reconciled =
       lostReplies === 2
         ? page.waitForResponse(
-            (response) => response.url().endsWith(path) && response.ok(),
+            (response) =>
+              response.url().includes(`${path}/summary`) && response.ok(),
           )
         : undefined;
 

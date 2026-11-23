@@ -123,6 +123,8 @@ interface DndBoardProps {
   filterPending?: boolean;
   /** Filter/search query highlighted on the card fronts. */
   highlight?: string;
+  /** TASK-200.9: ids the server filter matched in their description. */
+  descriptionMatchIds?: ReadonlySet<string>;
   /** Fired on a card click (and the e/Enter hotkey) — the dialog itself
    *  lives in BoardSection so it works from every view. */
   onCardClick: (cardId: string) => void;
@@ -137,6 +139,7 @@ export function DndBoard({
   isFiltering = false,
   filterPending = false,
   highlight,
+  descriptionMatchIds,
   onCardClick,
   density = "full",
   readOnly = false,
@@ -794,6 +797,7 @@ export function DndBoard({
                 isFiltered={isFiltering}
                 filterPending={filterPending}
                 highlight={highlight}
+                descriptionMatchIds={descriptionMatchIds}
                 cursorCardId={cursorCardId}
                 onCardClick={handleCardClick}
                 density={density}

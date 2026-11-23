@@ -590,6 +590,98 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `backend/src/boards/*`, `ui/src/store/*`,
 `ui/src/components/board/*`, `shared/src/api.ts`.
 
+**Реализовано (TASK-200.9, read model v1):**
+- `GET /boards/:id/summary?limit=` — метаданные доски, метки, колонки с
+  полным упорядоченным `cardIds` (для абсолютных DnD-индексов), счётчики
+  активных/архивных карточек, архивные id и первая страница карточек на
+  колонку. В теле нет `description`, `checklists`, `links`, task spec —
+  только счётчики (`descriptionChars`, элементы чек-листов, степень/blocked
+  связей). `role` входит в ответ, `seq`/`atSeq` — командная
+  последовательность, `aggregateRevision` — контентная ревизия.
+- `GET /boards/:id/cards?columnId=&cursor=&limit=` — keyset-страницы
+  `(position, id)`; `?archived=1` — архив доски `(archivedAt desc, id)`.
+  Непрозрачный cursor привязан к доске и колонке/архиву; чужой cursor —
+  `400`, чужая колонка — `404`; `limit` ≤100, `total` — полный размер
+  области. `ids=…&detail=full` (≤50) — bounded batch полных карточек для
+  undo-preimage; `detail=full` на списке запрещён.
+- `GET /boards/:id/cards/:cardId` — единственное полное чтение карточки:
+  описание, чек-листы, связи, task spec, версия, `linkCount`/`blocked`,
+  `seq`/`aggregateRevision`. Карточка ищется через `:boardId`, чужая — `404`.
+- Все три проекции идут через TASK-200.6 read path: weak ETag с board +
+  revision + route + role + canonical query, `304` до сборки тела, gzip/
+  Brotli, `Vary`, `X-Board-Seq`; membership/role/архивные правила те же.
+- Старый `GET /boards/:id` остаётся для старых клиентов, admin/export/
+  internal. Capability-гейт: клиент с `X-Janosik-Read-Model: v1` получает
+  `400 read_model_required`, пока не попросит `?projection=full`; старый
+  клиент без заголовка работает как раньше.
+- UI: гидратация идёт summary + первая страница, остальные summary-страницы
+  догружаются в фоне; полный порядок id известен сразу (DnD не становится
+  page-local). Карточка открывается с detail-запросом (диалог показывает
+  скелетон, редактор описания не монтируется до detail). Deep link на
+  карточку вне первой страницы сначала тянет detail и только потом
+  объявляет её отсутствующей. Destructive-команды (`DELETE_CARD`,
+  `DELETE_COLUMN`, `ARCHIVE_COLUMN_CARDS`, удаление чек-листов и т.п.)
+  сначала загружают preimage чанками ≤50, поэтому undo восстанавливает
+  полное содержимое. Лицевые бейджи/фильтры связей используют скалярные
+  факты summary, таблица/календарь/фильтры/сохранённые виды/
+  bulk-selection — прежние контракты. Server-search по-прежнему покрывает
+  описание/чек-листы/комментарии/вложения для query-фильтра.
+- Тесты: `backend/test/task-200-9-read-model.e2e-spec.ts` (форма/лимиты/
+  cursor/чужой cursor/чужая доска/VIEWER/outsider/архив/старый full gate/
+  batch/ETag/304, отсутствие detail-полей в payload),
+  `ui/src/store/read-model.test.ts` (адаптеры, merge деталей, link facts),
+  `ui/src/store/BoardContext.read-model.test.tsx` (summary+все страницы,
+  detail on demand, preimage+undo), deep-link тест в
+  `CardDialog.test.tsx`; OpenAPI и CHANGELOG обновлены.
+- **Review hardening:** инверсия `UPDATE_CARD` теперь меняет только поля,
+  которые команда реально трогала (title-only rename на summary-карточке
+  больше не пишет пустое описание). Ответ `DELETE_LABEL` несёт
+  `preimage.labelAssignments`, снятый внутри транзакции под board-write
+  lock: инверсия `RESTORE_LABEL` восстанавливает все вложения
+  (1000-карточная доска, загружена первая страница), а параллельный
+  add/remove не может обогнать снимок. Undo/redo ждут ответ, прежде чем
+  снять шаг со стека (быстрый Ctrl+Z не отправляет неполный inverse), а
+  провалившийся delete сбрасывает отложенный undo, не трогая более старый
+  шаг; redo получает свежий снимок собственного удаления. Устаревший
+  `GET .../labels/:labelId/assignments` оставлен на один релиз для старого
+  UI при rolling deploy; новый UI дополнительно снимает его перед delete
+  как fallback для старого backend. Detail отдаёт и входящие строки связей
+  (`incomingLinks`), а reducer обновляет `readModel.linkCount/blocked` на
+  add/remove/archive, на delete card/column и restore — включая выживших
+  *источников* удалённой цели, — и сохраняет консервативный `blocked` у
+  summary-цели, пока возможен другой блокер или неблокирующая связь.
+  Fact-only изменение summary (тот же `updatedAt`) вливает свежие
+  count/blocked в закешированный detail, сохраняет `detailLoaded` (открытый
+  диалог не падает в loading-skeleton), убирает входящие строки и помечает
+  их stale; диалог и popover затем перечитывают detail. Full-aggregate
+  карточки (create/import/legacy, без `readModel`) сохраняют тело при
+  same/older summary и не откатываются в skeleton. Каждый detail-read
+  запоминает board `atSeq` (`factsAtSeq`): старая страница/summary больше
+  не перетирает эти факты при том же stamp, а same-count swap, видимый
+  только на новом revision, помечает входящие строки stale для ленивого
+  перечитывания. Detail с тем же stamp применяется, если изменился состав
+  входящих строк, и снимает stale-флаг даже при пустых входящих. Иностранные
+  checklist-команды по summary-карточке планируют тот же refresh. Reducer
+  также обновляет счётчики описания/чек-листа, сбрасывает факты у duplicate
+  и грузит preimage для duplicate column. Гидратация
+  страниц сверяет `atSeq`/`aggregateRevision` с summary и мержит только id,
+  ещё входящие в колонку/архив; `HYDRATE_CARDS` не воскрешает tombstone и не
+  перетирает более новую карточку. Ошибки страниц ретраятся, показывают
+  partial-маркер с кнопкой повтора; завершённая неизменённая доска не
+  перекачивает все страницы на каждый focus, но новый `atSeq`/revision
+  перечитывает страницы (правка на второй странице не теряется; это
+  осознанная плата за отсутствие page-level revision). `If-None-Match: *`
+  выполняет precheck существования карточки/колонки до `304` и не пропускает
+  валидацию cursor; частичный batch detail — all-or-nothing `404`. Запросы:
+  summary — одна страница на колонку + константа, batch preimage — одна
+  карточная выборка на 50 id (`board-read-model.spec.ts`). Popover
+  связанных карточек догружает detail summary-карточки и помечает
+  незагруженную цель «Not loaded», а не «Deleted card».
+- **Ограничение:** DoD «initial <2 МБ / <300 мс» и RSS для 10×1 000
+  карточек не измерялись — нужен прогон 200.1/200.15. Таблица/карточки без
+  detail показывают счётчики вместо текста описания/чек-листа (detail
+  приходит при открытии карточки); это осознанный lazy-контракт v1.
+
 ---
 
 ### 200.10 — Per-board aggregate cache по `aggregateRevision` (P2)

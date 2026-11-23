@@ -7,13 +7,16 @@
  * minimal — only the wire shapes the two sides must agree on.
  */
 
-import type { BoardAction } from "./store/board-reducer";
+import type { BoardAction, LabelAssignment } from "./store/board-reducer";
 import type {
   Board,
   BoardAgentPolicy,
   Card,
+  CardCover,
   CardPriority,
   CommentKind,
+  IncomingCardLink,
+  Label,
 } from "./types/kanban";
 import type {
   BoardWorkflow,
@@ -61,6 +64,13 @@ export interface CommandResponse {
   versions: EntityVersions;
   /** TASK-166.7: the agent run this command belongs to, when one was created. */
   runId?: string | null;
+  /**
+   * TASK-200.9: deletion snapshots captured in the same transaction as the
+   * command. A `DELETE_LABEL` response carries every assignment the delete
+   * removed, so the client inverse restores exactly that snapshot rather
+   * than racing a separate preimage read.
+   */
+  preimage?: { labelAssignments: LabelAssignment[] };
 }
 
 /**
@@ -749,6 +759,183 @@ export interface BoardSummary {
 /** Aggregate of `GET /boards/:id` — exactly the frontend `Board` model. */
 export type BoardAggregate = Board;
 
+/**
+ * TASK-200.9 read model v1.
+ *
+ * `GET /boards/:id/summary` + `GET /boards/:id/cards` + `GET
+ * /boards/:id/cards/:cardId` replace the full aggregate for the normal board
+ * view. The legacy `GET /boards/:id` stays available for old clients,
+ * admin/export and internal callers; a client that declares
+ * `X-Janosik-Read-Model: v1` must ask for it explicitly with
+ * `?projection=full`.
+ */
+export const BOARD_READ_MODEL_VERSION = "v1";
+
+/** Request/response header carrying the read-model capability. */
+export const BOARD_READ_MODEL_HEADER = "X-Janosik-Read-Model";
+
+/** Default per-column first page / cursor page size. */
+export const BOARD_CARD_PAGE_LIMIT_DEFAULT = 50;
+
+/** Hard upper bound for one summary/page response (`limit`). */
+export const BOARD_CARD_PAGE_LIMIT_MAX = 100;
+
+/** Hard upper bound on ids in one batch-detail request. */
+export const BOARD_CARD_DETAIL_BATCH_MAX = 50;
+
+/**
+ * One list-facing card: everything the board/table/calendar faces need, but
+ * no description body, checklists or link rows. Counts stand in for the
+ * detail-only content. `archived` cards use the same shape.
+ */
+export interface BoardCardSummaryDto {
+  id: string;
+  title: string;
+  columnId: string;
+  /** Stored ordering key within the column. */
+  position: number;
+  /** Card optimistic-concurrency version. */
+  version: number;
+  /** Stored description length; the text itself is never returned. */
+  descriptionChars: number;
+  checklistItemCount: number;
+  checklistDoneCount: number;
+  /** Live relations in both directions (the card-front link badge). */
+  linkCount: number;
+  /** A live, non-archived incoming `blocks` relation. */
+  blocked: boolean;
+  labelIds: string[];
+  dueDate?: number;
+  priority?: CardPriority;
+  assigneeId?: string;
+  claimedBy?: string;
+  claimedByTokenId?: string;
+  claimedBySessionId?: string;
+  leaseUntil?: number;
+  cover?: CardCover;
+  createdAt: number;
+  updatedAt: number;
+  lastActorId?: string;
+  attachmentCount?: number;
+  archivedAt?: number;
+  archivedFromColumnId?: string;
+}
+
+/** One column in the summary, including its complete ordered id list. */
+export interface BoardReadColumnDto {
+  id: string;
+  title: string;
+  /** Active (non-archived) cards in the column. */
+  count: number;
+  /** Archived cards whose stored column is this one. */
+  archivedCount: number;
+  wipLimit: number | null;
+  accent?: CardCover;
+  createdAt: number;
+  /**
+   * Every active card id in column order. The ids are cheap; the card
+   * summaries themselves arrive as pages. This is what keeps DnD absolute
+   * (a drop at the bottom of a 1 000-card column is not page-local) before
+   * every summary is loaded.
+   */
+  cardIds: string[];
+  /** First page of this column's cards. */
+  cards: BoardCardSummaryDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+/** Board metadata carried by the summary (everything except content). */
+export interface BoardReadMetaDto {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+  columnStyle?: Board["columnStyle"];
+  workflow?: BoardWorkflow;
+  workflowInvalid?: true;
+  agentPolicy?: BoardAgentPolicy;
+  agentsPausedAt?: number;
+  agentsPausedBy?: string;
+  agentsPauseReason?: string;
+  /** The caller's role, so a summary read is self-sufficient. */
+  role: BoardRole;
+}
+
+/**
+ * `GET /boards/:id/summary?limit=` — the initial board view. It carries
+ * columns with complete id order and counts, labels, archived ids and the
+ * first page per column; never descriptions, checklists or links.
+ */
+export interface BoardReadSummaryDto {
+  board: BoardReadMetaDto;
+  columns: BoardReadColumnDto[];
+  labels: Label[];
+  limits: { cardsPerColumn: number; columns: number };
+  /** Complete ordered archived card ids. */
+  archivedCardIds: string[];
+  /** First page of archived cards, newest archived first. */
+  archivedCards: BoardCardSummaryDto[];
+  archivedNextCursor: string | null;
+  firstPageLimit: number;
+  /** Command sequence this snapshot reflects (`atSeq` is the same value). */
+  seq: number;
+  atSeq: number;
+  /** Content revision (TASK-200.6); pages merge by seq + revision. */
+  aggregateRevision: number;
+  readModel: typeof BOARD_READ_MODEL_VERSION;
+}
+
+/**
+ * `GET /boards/:id/cards?columnId=&cursor=&limit=` or
+ * `?archived=1&cursor=&limit=` — one clipboard-sized page. The opaque cursor
+ * is bound to the board + column/archived scope.
+ */
+export interface BoardCardPageDto {
+  boardId: string;
+  columnId: string | null;
+  archived: boolean;
+  cards: BoardCardSummaryDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  /** Total cards in this scope (active in column, or all archived). */
+  total: number;
+  seq: number;
+  atSeq: number;
+  aggregateRevision: number;
+}
+
+/**
+ * `GET /boards/:id/cards/:cardId` — the only full-detail card read. `card`
+ * is the frontend `Card` model, including description, checklists and links.
+ */
+export interface BoardCardDetailDto {
+  boardId: string;
+  columnId: string;
+  card: Card;
+  version: number;
+  linkCount: number;
+  blocked: boolean;
+  /**
+   * Incoming relation rows for this card. A summary-only board has no rows
+   * for the source cards, so the detail read carries its own reverse side.
+   */
+  incomingLinks: IncomingCardLink[];
+  seq: number;
+  atSeq: number;
+  aggregateRevision: number;
+}
+
+/** `GET /boards/:id/cards?ids=…&detail=full` — bounded preimage batch. */
+export interface BoardCardDetailsDto {
+  boardId: string;
+  cards: BoardCardDetailDto[];
+  seq: number;
+  atSeq: number;
+  aggregateRevision: number;
+}
+
 /** Default number of ready cards returned by the ready/work endpoints. */
 export const READY_WORK_LIMIT_DEFAULT = 30;
 
@@ -1120,7 +1307,7 @@ interface WorkspaceSearchMatchBase {
   boardTitle: string;
   cardId: string;
   cardTitle: string;
-  /** Short snippet around the matched comment text or file name. */
+  /** Short snippet around the matched comment, file name, description or checklist item. */
   text?: string;
 }
 
@@ -1137,12 +1324,33 @@ export interface WorkspaceAttachmentSearchMatch extends WorkspaceSearchMatchBase
 }
 
 /**
- * One cross-board comment/attachment hit. Only text that is absent from the
- * board aggregate is returned: the palette matches titles, descriptions,
- * labels and checklists locally.
+ * A card-description hit from `GET /boards/search?q=` (TASK-200.9). The read
+ * model no longer ships description bodies, so the workspace palette cannot
+ * match them locally.
+ */
+export interface WorkspaceDescriptionSearchMatch extends WorkspaceSearchMatchBase {
+  matchIn: "description";
+  /** Snippet around the matched description text. */
+  text: string;
+}
+
+/** A checklist-item hit from `GET /boards/search?q=` (TASK-200.9). */
+export interface WorkspaceChecklistSearchMatch extends WorkspaceSearchMatchBase {
+  matchIn: "checklist";
+  /** Snippet around the matched item text. */
+  text: string;
+}
+
+/**
+ * One cross-board content hit. Comment, attachment, description and checklist
+ * text live outside the list-facing read model, so the server matches them in
+ * one request; titles and labels stay local.
  */
 export type WorkspaceSearchMatch =
-  WorkspaceCommentSearchMatch | WorkspaceAttachmentSearchMatch;
+  | WorkspaceCommentSearchMatch
+  | WorkspaceAttachmentSearchMatch
+  | WorkspaceDescriptionSearchMatch
+  | WorkspaceChecklistSearchMatch;
 
 /** `GET /boards/search?q=` — bounded to live memberships (TASK-177.13). */
 export interface WorkspaceSearchResult {

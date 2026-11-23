@@ -25,11 +25,17 @@ function renderCard(
   card: Card = baseCard,
   labels: Label[] = [],
   highlight?: string,
+  descriptionMatch?: boolean,
 ) {
   return render(
     <I18nProvider>
       <TooltipProvider>
-        <CardItem card={card} labels={labels} highlight={highlight} />
+        <CardItem
+          card={card}
+          labels={labels}
+          highlight={highlight}
+          descriptionMatch={descriptionMatch}
+        />
       </TooltipProvider>
     </I18nProvider>,
   );
@@ -234,6 +240,52 @@ describe("CardItem search highlight", () => {
     );
     expect(screen.getByTestId("card-description-badge")).not.toHaveAttribute(
       "data-highlight",
+    );
+  });
+
+  it("never claims a description-only match for a summary card", () => {
+    // The read model ships the counter, not the body: a server-filtered hit
+    // may name a checklist item or comment, so the face must not guess.
+    renderCard(
+      {
+        ...baseCard,
+        readModel: {
+          descriptionChars: 120,
+          checklistItemCount: 3,
+          checklistDoneCount: 0,
+          linkCount: 0,
+          blocked: false,
+          detailLoaded: false,
+        },
+      },
+      [],
+      "widget migration",
+    );
+    expect(screen.getByTestId("card-description-badge")).not.toHaveAttribute(
+      "data-highlight",
+    );
+  });
+
+  it("marks a summary card when the server proved a description match", () => {
+    renderCard(
+      {
+        ...baseCard,
+        readModel: {
+          descriptionChars: 120,
+          checklistItemCount: 3,
+          checklistDoneCount: 0,
+          linkCount: 0,
+          blocked: false,
+          detailLoaded: false,
+        },
+      },
+      [],
+      "sofa",
+      true,
+    );
+    expect(screen.getByTestId("card-description-badge")).toHaveAttribute(
+      "data-highlight",
+      "description",
     );
   });
 });

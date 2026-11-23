@@ -17,9 +17,9 @@ interface ArrowRightIconProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 const PATH_VARIANTS: Variants = {
-  normal: { d: "M5 12h14" },
+  normal: { translateX: 0 },
   animate: {
-    d: ["M5 12h14", "M5 12h9", "M5 12h14"],
+    translateX: [0, -3, 0],
     transition: {
       duration: 0.4,
     },
@@ -27,9 +27,8 @@ const PATH_VARIANTS: Variants = {
 };
 
 const SECONDARY_PATH_VARIANTS: Variants = {
-  normal: { d: "m12 5 7 7-7 7", translateX: 0 },
+  normal: { translateX: 0 },
   animate: {
-    d: "m12 5 7 7-7 7",
     translateX: [0, -3, 0],
     transition: {
       duration: 0.4,
