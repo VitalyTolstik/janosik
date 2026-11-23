@@ -1,13 +1,39 @@
-import type { User } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { UserAvatarColor } from "@janosik/shared";
 import type { AuthUser } from "./auth.types";
+
+/**
+ * The fields {@link toAuthUser} reads. PAT authentication selects exactly
+ * these instead of pulling the whole `User` row (including the password
+ * hash — still needed for `hasPassword`, but nothing else) into an agent
+ * request that runs dozens of times a second (TASK-200.4).
+ */
+export const AUTH_USER_SELECT = {
+  id: true,
+  email: true,
+  displayName: true,
+  avatarColor: true,
+  avatarPath: true,
+  passwordHash: true,
+  disabledAt: true,
+  emailVerifiedAt: true,
+  notifyDigest: true,
+  notifyAttention: true,
+  locale: true,
+  createdAt: true,
+} satisfies Prisma.UserSelect;
+
+/** A `User` row narrowed to the public projection's inputs. */
+export type AuthUserRow = Prisma.UserGetPayload<{
+  select: typeof AUTH_USER_SELECT;
+}>;
 
 /**
  * Public user projection (TASK-36.1). The single mapper from a `User` row to
  * the wire shape, so `AuthService`, `JwtStrategy` and `ApiTokenService` all
  * drop the password hash and keep `avatarColor`/`createdAt` in sync.
  */
-export function toAuthUser(user: User): AuthUser {
+export function toAuthUser(user: AuthUserRow): AuthUser {
   return {
     id: user.id,
     email: user.email,

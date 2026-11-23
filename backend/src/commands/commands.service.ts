@@ -29,11 +29,14 @@ import {
   hasLinkedPair,
   LIMITS,
   MAX_COMMAND_BYTES,
+  readBoardWorkflow,
   workflowReferenceError,
   wouldCloseBlocksCycle,
 } from "@janosik/shared";
 import type {
   AgentRunKind,
+  ApprovalPlan,
+  BoardAggregate,
   BoardRole,
   WorkflowConflictDetails,
   WorkflowDecision,
@@ -45,7 +48,10 @@ import {
   planFromPreparedCommands,
   type PlanRequirement,
 } from "@/approvals/approval-plan";
-import { loadBoardAggregate } from "@/boards/board-aggregate";
+import {
+  emptyBoardAggregate,
+  loadBoardAggregate,
+} from "@/boards/board-aggregate";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
@@ -253,6 +259,86 @@ function inverseTouch(action: BoardAction): string {
   return "command:inverse";
 }
 
+/** Commands whose plan-limit count depends on the board's current cards. */
+const CARD_CREATING_COMMANDS = new Set<string>([
+  "ADD_CARD",
+  "DUPLICATE_CARD",
+  "DUPLICATE_COLUMN",
+]);
+
+/**
+ * Commands that can change the column/workflow state a later command is
+ * classified against. A plan is a sequence: `SET_BOARD_WORKFLOW` can make a
+ * column Done and `UNARCHIVE_CARD`/`MOVE_CARD` after it must be judged on the
+ * changed workflow, even when the stored board has no done columns yet.
+ */
+const CLASSIFICATION_STRUCTURE_COMMANDS = new Set<string>([
+  "SET_BOARD_WORKFLOW",
+  "ADD_COLUMN",
+  "DELETE_COLUMN",
+  "DUPLICATE_COLUMN",
+  "MOVE_COLUMN",
+  "ARCHIVE_COLUMN_CARDS",
+  "RESTORE_COLUMN",
+  "RESTORE_COLUMN_CARDS",
+]);
+
+/**
+ * Does the plan-limit card count need the current board? `ADD_CARD`/copy
+ * commands can collide with existing ids, and a copied column depends on its
+ * source cards, so those read the aggregate before the lock. An edit-only
+ * plan counts zero creates on any board shape.
+ */
+function planCreatesCards(plan: ApprovalPlan): boolean {
+  return (plan.commands ?? []).some((command) =>
+    CARD_CREATING_COMMANDS.has(String(command.action.type)),
+  );
+}
+
+/**
+ * `classifyPlan` only reads the board for done-column transitions, but it
+ * replays the whole plan first. A workflow/column command can therefore make
+ * a later recovery or move a Done transition even when the *stored* workflow
+ * has no done columns. Force the real snapshot for those structure-changing
+ * plans; otherwise an edit/claim/delete plan can be classified on the
+ * content-free shell. `DUPLICATE_CARD` has no source column in the action, so
+ * it stays conservative (TASK-200.4).
+ */
+function planNeedsClassificationSnapshot(
+  plan: ApprovalPlan,
+  workflow: unknown,
+): boolean {
+  const commands = plan.commands ?? [];
+  if (commands.length === 0) return false;
+  if (
+    commands.some((command) =>
+      CLASSIFICATION_STRUCTURE_COMMANDS.has(String(command.action.type)),
+    )
+  ) {
+    return true;
+  }
+  const done = new Set(readBoardWorkflow(workflow)?.doneColumnIds ?? []);
+  if (done.size === 0) return false;
+  return commands.some((command) => {
+    const action = command.action as unknown as BoardAction;
+    switch (action.type) {
+      case "ADD_CARD":
+        return done.has(action.columnId);
+      case "MOVE_CARD":
+        return done.has(action.toColumnId);
+      case "UNARCHIVE_CARD":
+        // The reducer/classifier fall back to the board's first column when
+        // the target is unknown, and that column may be Done. Without the
+        // column list an explicit id is not provably safe.
+        return true;
+      case "DUPLICATE_CARD":
+        return true;
+      default:
+        return false;
+    }
+  });
+}
+
 /** One command plus whether this call wrote it or returned a stored replay. */
 export interface CommandApplyResult {
   response: CommandResponse;
@@ -442,22 +528,17 @@ export class CommandsService {
     let requirement: PlanRequirement | null = null;
     if (options.principal?.via === "pat") {
       try {
+        // TASK-200.4: one row read serves policy, workflow and (when needed)
+        // the aggregate loader. The full snapshot is loaded only if the
+        // classification touches a done column or the limit count creates
+        // cards; an ordinary field edit/claim needs neither.
         const boardRow = await this.prisma.board.findFirst({
           where: { id: boardId, deletedAt: null },
-          select: { agentPolicy: true },
         });
         if (boardRow === null) throw new NotFoundException("Board not found");
-        const aggregate = await loadBoardAggregate(this.prisma, boardId);
-        if (aggregate === null) throw new NotFoundException("Board not found");
         const policy = readBoardAgentPolicy(boardRow.agentPolicy);
-        requirement = classifyPlan(
-          plan,
-          aggregate,
-          policy,
-          options.principal.tokenIdentity?.trustedCi === true,
-        );
-        // Enforce the run limits even when an approval is supplied: an approval
-        // authorizes the action, not an oversized plan.
+        // Resolve commandIds before the snapshot: an exact replay must not
+        // pay for a board load or re-check run limits.
         const existing = await this.prisma.command.findMany({
           where: {
             id: { in: prepared.map((entry) => entry.dto.commandId) },
@@ -465,13 +546,40 @@ export class CommandsService {
           },
           select: { id: true },
         });
-        if (existing.length !== prepared.length) {
+        const hasFresh = existing.length !== prepared.length;
+        // TASK-200.4: card-creating plans always need the real board here,
+        // even when every command replays: the approval seam counts
+        // `maxCardsPerRun` against it, and a replay after the cards were
+        // soft-deleted must still see the creates. Plain edit/claim/delete
+        // replays stay snapshot-free.
+        const snapshotNeeded =
+          planNeedsClassificationSnapshot(plan, boardRow.workflow) ||
+          planCreatesCards(plan);
+        const aggregate = snapshotNeeded
+          ? await loadBoardAggregate(this.prisma, boardId, { board: boardRow })
+          : null;
+        if (snapshotNeeded && aggregate === null) {
+          throw new NotFoundException("Board not found");
+        }
+        // The shell is only used when classification and the approval seam
+        // have both been proven not to read board contents: no done target,
+        // no structure change, no card creates.
+        const classificationBoard = aggregate ?? emptyBoardAggregate(boardId);
+        requirement = classifyPlan(
+          plan,
+          classificationBoard,
+          policy,
+          options.principal.tokenIdentity?.trustedCi === true,
+        );
+        // Enforce the run limits even when an approval is supplied: an approval
+        // authorizes the action, not an oversized plan.
+        if (hasFresh) {
           await this.approvals.assertPlanLimitsForUser(
             plan,
             policy,
             actorId,
             boardId,
-            aggregate,
+            classificationBoard,
           );
         }
         if (approvalId === undefined) {
@@ -485,6 +593,10 @@ export class CommandsService {
             requirement,
             policy,
             prepared,
+            // Avoid a second aggregate load on the approval seam: the plan
+            // limits above already used this snapshot (or the content-free
+            // shell when it creates no cards). TASK-200.4.
+            board: classificationBoard,
           });
         }
       } catch (error) {
@@ -523,10 +635,10 @@ export class CommandsService {
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` checks below see each
-        // committed predecessor. We only need the board to exist.
+        // committed predecessor. We only need the board to exist; the full
+        // row doubles as the aggregate's board read below (TASK-200.4).
         const board = await tx.board.findFirst({
           where: { id: boardId, deletedAt: null },
-          select: { id: true, agentPolicy: true },
         });
         if (!board) {
           throw new NotFoundException("Board not found");
@@ -606,18 +718,23 @@ export class CommandsService {
         if (fresh.length > 0 && options.beforeApplyFresh !== undefined) {
           await options.beforeApplyFresh(tx);
         }
-        if (
-          fresh.length > 0 &&
-          (options.principal?.via === "pat" || options.enforcePlanLimits)
-        ) {
-          const aggregate = await loadBoardAggregate(tx, boardId);
-          if (aggregate === null)
+        // TASK-200.4: one aggregate load inside the transaction. It serves
+        // both the run-limit check and the running state every fresh command
+        // is applied to; an all-replay request loads nothing.
+        let running: BoardAggregate | null = null;
+        if (fresh.length > 0) {
+          const aggregate = await loadBoardAggregate(tx, boardId, { board });
+          if (aggregate === null) {
             throw new NotFoundException("Board not found");
-          this.approvals.assertPlanLimits(
-            plan,
-            readBoardAgentPolicy(board.agentPolicy),
-            aggregate,
-          );
+          }
+          running = aggregate;
+          if (options.principal?.via === "pat" || options.enforcePlanLimits) {
+            this.approvals.assertPlanLimits(
+              plan,
+              readBoardAgentPolicy(board.agentPolicy),
+              aggregate,
+            );
+          }
         }
         let applyAttribution = attribution;
         let runId: string | null = null;
@@ -732,11 +849,6 @@ export class CommandsService {
         }
         await this.assertIdsBelongToBoard(tx, boardId, [...referenced]);
 
-        let running = await loadBoardAggregate(tx, boardId);
-        if (!running) {
-          throw new NotFoundException("Board not found");
-        }
-
         const responses: CommandResponse[] = [];
         const events: InternalCommandEvent[] = [];
         for (const entry of prepared) {
@@ -749,6 +861,9 @@ export class CommandsService {
               ...(existing.runId !== null ? { runId: existing.runId } : {}),
             });
             continue;
+          }
+          if (running === null) {
+            throw new NotFoundException("Board not found");
           }
           // H2: parentage is positional, not batch-wide. An earlier command
           // may create the checklist/item a later duplicate derives ids from,
