@@ -457,10 +457,12 @@ scripts/perf/
   and for MCP uses the actual spawned process count (`--mcp-processes`), not
   the requested `--agents` label. The report also records the resolved board
   ids and the median/min/max of **all observed per-agent action intervals**
-  (not a median of per-agent averages). S1 also reports the per-agent idle
-  poll interval, so idle cadence is visible even without write actions.
-  `actualWorkStartedAt` is reported for S4 only; other scenarios report the
-  planned/measured window.
+  (not a median of per-agent averages). This is an intra-cycle action
+  interval: an S2/S4 cycle records claim, comment and move close together, so
+  do not read it as the configured cycle start-to-start cadence. S1 also
+  reports the per-agent idle poll interval, so idle cadence is visible even
+  without write actions. `actualWorkStartedAt` is reported for S4 only; other
+  scenarios report the planned/measured window.
 - For S5, `sse.maxConcurrent` is the peak open streams; opened/failed and the
   observed ramp/hold durations are reported separately.
 - `/proc` `VmHWM` (the `--api-pid` `API peak RSS*`) is the process **lifetime**

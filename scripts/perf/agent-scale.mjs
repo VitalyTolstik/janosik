@@ -684,11 +684,17 @@ async function attachCpuProfileToReport(cliValues) {
       `cpu profile unavailable: ${cpuProfile.reason ?? "no readable profile"}`,
     );
   }
+  const previousStatus =
+    typeof report.status === "string" ? report.status : null;
   report.cpuProfile = cpuProfile;
   report.cpuProfileAttachedAt = new Date().toISOString();
   report.instrumentationFailed = false;
   report.instrumentationError = null;
-  report.status = statusFromScenarios(report);
+  const nextStatus = statusFromScenarios(report, previousStatus);
+  report.status = nextStatus;
+  if (report.summary !== null && typeof report.summary === "object") {
+    report.summary.status = nextStatus;
+  }
   const jsonPath = cliValues.output
     ? path.resolve(cliValues.output)
     : reportPath;
@@ -699,11 +705,20 @@ async function attachCpuProfileToReport(cliValues) {
   console.log(`profile attached: ${jsonPath} · ${markdownPath}`);
 }
 
-function statusFromScenarios(report) {
-  if (report.interrupted === true) return "interrupted";
+function statusFromScenarios(report, previousStatus = null) {
+  // buildReport() serializes interruption in summary.interrupted, not as a
+  // top-level boolean. Preserve it (and the original interrupted status) so a
+  // preflight-only interrupted report does not turn into "failed" on attach.
+  if (
+    previousStatus === "interrupted" ||
+    report.interrupted === true ||
+    (report.summary?.interrupted ?? 0) > 0 ||
+    report.scenarios.some((scenario) => scenario.status === "interrupted")
+  ) {
+    return "interrupted";
+  }
   const statuses = report.scenarios.map((scenario) => scenario.status ?? "ok");
   if (statuses.includes("failed")) return "failed";
-  if (statuses.includes("interrupted")) return "interrupted";
   if (statuses.includes("partial")) return "partial";
   return report.scenarios.length === 0 ? "failed" : "ok";
 }

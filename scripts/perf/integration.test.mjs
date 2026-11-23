@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -587,6 +587,7 @@ test("a failed --api-inspect start still writes a failed report", async () => {
     assert.equal(recovered.instrumentationFailed, false);
     assert.equal(recovered.instrumentationError, null);
     assert.equal(recovered.status, recovered.scenarios[0].status);
+    assert.equal(recovered.summary.status, recovered.status);
     assert.equal(recovered.cpuProfile.available, true);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -672,6 +673,38 @@ test("--report-only attaches a static profile without rerunning the load", async
       /--api-inspect must not contain credentials/,
     );
 
+    const missingProfile = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      path.join(directory, "missing.cpuprofile"),
+    ]);
+    assert.equal(missingProfile.code, 1, missingProfile.stderr);
+    assert.match(missingProfile.stderr, /does not exist|unavailable/i);
+    assert.deepEqual(
+      JSON.parse(await readFile(output, "utf8")),
+      before,
+      "missing profile must not modify the report",
+    );
+
+    const emptyProfileDir = path.join(directory, "empty-profiles");
+    await mkdir(emptyProfileDir);
+    const unreadableProfile = await run(process.execPath, [
+      cli,
+      "--report-only",
+      output,
+      "--cpu-profile",
+      emptyProfileDir,
+    ]);
+    assert.equal(unreadableProfile.code, 1, unreadableProfile.stderr);
+    assert.match(unreadableProfile.stderr, /no \.cpuprofile|unavailable/i);
+    assert.deepEqual(
+      JSON.parse(await readFile(output, "utf8")),
+      before,
+      "unreadable profile must not modify the report",
+    );
+
     const attach = await run(process.execPath, [
       cli,
       "--report-only",
@@ -688,8 +721,58 @@ test("--report-only attaches a static profile without rerunning the load", async
     assert.equal(after.instrumentationFailed, false);
     assert.equal(after.instrumentationError, null);
     assert.equal(after.status, "ok");
+    assert.equal(after.summary.status, after.status);
     const markdown = await readFile(output.replace(/\.json$/, ".md"), "utf8");
     assert.match(markdown, /staticHot/);
+
+    const interruptedPath = path.join(directory, "interrupted.json");
+    const interrupted = {
+      ...after,
+      status: "interrupted",
+      summary: { ...after.summary, status: "interrupted", interrupted: 1 },
+    };
+    await writeFile(interruptedPath, JSON.stringify(interrupted), "utf8");
+    const interruptedAttach = await run(process.execPath, [
+      cli,
+      "--report-only",
+      interruptedPath,
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(interruptedAttach.code, 0, interruptedAttach.stderr);
+    const interruptedAfter = JSON.parse(
+      await readFile(interruptedPath, "utf8"),
+    );
+    assert.equal(interruptedAfter.status, "interrupted");
+    assert.equal(interruptedAfter.summary.status, "interrupted");
+
+    const preflightPath = path.join(directory, "preflight-interrupted.json");
+    const preflight = {
+      ...after,
+      status: "interrupted",
+      scenarios: [],
+      preflightError: "interrupted during health check",
+      summary: {
+        status: "interrupted",
+        scenarios: 0,
+        ok: 0,
+        partial: 0,
+        failed: 0,
+        interrupted: 1,
+      },
+    };
+    await writeFile(preflightPath, JSON.stringify(preflight), "utf8");
+    const preflightAttach = await run(process.execPath, [
+      cli,
+      "--report-only",
+      preflightPath,
+      "--cpu-profile",
+      profile,
+    ]);
+    assert.equal(preflightAttach.code, 0, preflightAttach.stderr);
+    const preflightAfter = JSON.parse(await readFile(preflightPath, "utf8"));
+    assert.equal(preflightAfter.status, "interrupted");
+    assert.equal(preflightAfter.summary.status, "interrupted");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
