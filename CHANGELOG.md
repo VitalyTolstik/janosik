@@ -37,22 +37,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a `DELETE_LABEL` response carries a `preimage.labelAssignments` snapshot
   read inside the board write transaction, so the inverse restores every
   assignment on unloaded cards of a 1 000-card board and a concurrent
-  add/remove cannot race it; detail carries reverse link rows and reducers
-  keep `linkCount`/`blocked`/incoming facts current on link, archive,
-  card-delete and column-delete commands (and keep a summary target's
-  `blocked` conservative while another blocker may exist), reset
-  duplicated-card facts, update description/checklist counters on edits and
-  preimage duplicate columns; page hydration rejects pages older than the
-  summary, only hydrates ids still in column/archive scope, re-reads pages
-  when the summary `atSeq`/`aggregateRevision` advanced even if every id is
-  present, retries failures and shows a partial marker while keeping
-  completed unchanged boards from re-downloading every page on focus;
-  `If-None-Match: *` runs the card/column existence precheck before a 304 and
-  cannot skip cursor validation; a partial detail batch is all-or-nothing
-  `404`; and the 50-card preimage batch is one query. Query budgets and the
-  remaining risks are documented in the task doc. Initial bytes/RSS targets
-  still need the 200.1/200.15 harness on a dedicated host; this change ships
-  the mechanism, not measured capacity.
+  add/remove cannot race it; undo/redo presses wait for that response before
+  popping the step, and a redo's fresh command snapshots its own inverse.
+  The deprecated `GET .../labels/:labelId/assignments` read remains for one
+  release so an older UI keeps full undo during a rolling deploy (deploy the
+  backend first; the new UI needs the response snapshot for unloaded cards).
+  Detail carries reverse link rows and reducers keep
+  `linkCount`/`blocked`/incoming facts current on link, archive,
+  card/column delete and restore — including surviving *sources* of a deleted
+  target — and keep a summary target's `blocked` conservative while another
+  blocker or a non-blocking relation may exist; a summary refresh replaces
+  cached detail whose link facts changed even when `updatedAt` did not, and
+  foreign checklist edits on summary cards schedule the same refresh.
+  Reducers also reset duplicated-card facts, update description/checklist
+  counters on edits and preimage duplicate columns; page hydration rejects
+  pages older than the summary, only hydrates ids still in column/archive
+  scope, re-reads pages when the summary `atSeq`/`aggregateRevision` advanced
+  even if every id is present, retries failures and shows a partial marker
+  with a retry action while keeping completed unchanged boards from
+  re-downloading every page on focus; `If-None-Match: *` runs the
+  card/column existence precheck before a 304 and cannot skip cursor
+  validation; a partial detail batch is all-or-nothing `404`; and the
+  50-card preimage batch is one query. Query budgets and the remaining risks
+  are documented in the task doc. Initial bytes/RSS targets still need the
+  200.1/200.15 harness on a dedicated host; this change ships the mechanism,
+  not measured capacity.
 
 - TASK-200.6 compressed, conditionally revalidated and bounded board reads.
   `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least

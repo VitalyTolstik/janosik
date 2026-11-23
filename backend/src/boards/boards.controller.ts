@@ -33,6 +33,7 @@ import type {
   BoardSummary,
   BoardsReadyDto,
   DeletedBoardItemsDto,
+  LabelAssignment,
   WorkspaceSearchResult,
 } from "@janosik/shared";
 import {
@@ -643,6 +644,22 @@ export class BoardsController {
       },
       projection: BOARD_READ_MODEL_VERSION,
     });
+  }
+
+  /**
+   * Deprecated TASK-200.9 compatibility: the previous UI read the label
+   * preimage here. New servers return it in the DELETE_LABEL response; this
+   * read stays for one release so an older UI keeps full undo during a
+   * rolling deploy.
+   */
+  @UseGuards(MembershipGuard)
+  @Get(":id/labels/:labelId/assignments")
+  @Header("Cache-Control", "no-store")
+  labelAssignments(
+    @Param("id") id: string,
+    @Param("labelId") labelId: string,
+  ): Promise<LabelAssignment[]> {
+    return this.readModel.labelAssignments(id, labelId);
   }
 
   /** TASK-200.9: one full card (description, checklists, links). */

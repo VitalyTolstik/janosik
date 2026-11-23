@@ -511,19 +511,16 @@ function build(before: Board, action: BoardAction): BoardAction | null {
       const label = before.labels[index];
       // Every card it was attached to, where in the list it sat, and the
       // card's own stamp before the delete — TASK-183.3 restores all three.
-      // The UI may supply the complete server preimage: a summary board has
-      // only a first page loaded, while DELETE_LABEL removes the rows from
-      // every card. Undoing from the loaded subset would silently drop label
-      // assignments from the rest (TASK-200.9).
-      const assignments =
-        action.preimageAssignments ??
-        Object.values(before.cards)
-          .map((card) => ({
-            cardId: card.id,
-            index: card.labelIds.indexOf(label.id),
-            updatedAt: card.updatedAt,
-          }))
-          .filter((entry) => entry.index !== -1);
+      // The optimistic list only knows loaded cards; the provider replaces
+      // it with the server's complete command-response snapshot before undo
+      // is allowed to pop this step (TASK-200.9).
+      const assignments = Object.values(before.cards)
+        .map((card) => ({
+          cardId: card.id,
+          index: card.labelIds.indexOf(label.id),
+          updatedAt: card.updatedAt,
+        }))
+        .filter((entry) => entry.index !== -1);
       return {
         ...head,
         type: "RESTORE_LABEL",

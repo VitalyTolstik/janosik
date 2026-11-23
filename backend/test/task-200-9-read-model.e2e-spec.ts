@@ -503,6 +503,19 @@ describe("Board read model v1 (e2e)", () => {
       });
     }
 
+    // The deprecated read route stays for an older UI during a rolling
+    // deploy; the current contract uses the command response below.
+    const legacyPreimage = await server()
+      .get(`/api/v1/boards/${labelBoard}/labels/deep-label/assignments`)
+      .set(auth(adminToken))
+      .expect(200)
+      .expect("Cache-Control", "no-store");
+    expect(
+      (legacyPreimage.body as Array<{ cardId: string }>)
+        .map((row) => row.cardId)
+        .sort(),
+    ).toEqual(["deep-a", "deep-b"]);
+
     // `deep-c` is labelled by an earlier command of the *same* transaction.
     // A preimage read outside the board write lock cannot see that row; the
     // snapshot must, because that is exactly the state DELETE_LABEL removes.

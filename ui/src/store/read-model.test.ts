@@ -309,6 +309,108 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(cardChecklistProgress(card)).toEqual({ done: 0, total: 0 });
   });
 
+  it("replaces cached detail when summary link facts changed", () => {
+    const detail: Card = {
+      id: "c-1",
+      title: "Cached detail",
+      description: "body",
+      labelIds: [],
+      createdAt: 10,
+      updatedAt: 20,
+      readModel: {
+        descriptionChars: 4,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 1,
+        blocked: false,
+        detailLoaded: true,
+      },
+    };
+    const previous: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": detail },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    // Same `updatedAt`: link rows do not stamp the target card.
+    const dto = summary({
+      columns: [
+        {
+          id: "col-1",
+          title: "Todo",
+          count: 1,
+          archivedCount: 0,
+          wipLimit: null,
+          createdAt: 1,
+          cardIds: ["c-1"],
+          cards: [
+            summaryCard("c-1", { updatedAt: 20, linkCount: 2, blocked: true }),
+          ],
+          nextCursor: null,
+          hasMore: false,
+        },
+      ],
+      archivedCardIds: [],
+      archivedCards: [],
+      archivedNextCursor: null,
+    });
+
+    const next = boardFromSummary(dto, previous);
+    expect(next.cards["c-1"].readModel).toMatchObject({
+      linkCount: 2,
+      blocked: true,
+      detailLoaded: false,
+    });
+    expect(next.cards["c-1"].description).toBeUndefined();
+  });
+
+  it("hydrate replaces stale detail on the same link-fact change", () => {
+    const detail: Card = {
+      id: "c-1",
+      title: "Cached detail",
+      description: "body",
+      labelIds: [],
+      createdAt: 10,
+      updatedAt: 20,
+      readModel: {
+        descriptionChars: 4,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 1,
+        blocked: false,
+        detailLoaded: true,
+      },
+    };
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": detail },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const incoming = cardFromSummary(
+      summaryCard("c-1", { updatedAt: 20, linkCount: 2, blocked: true }),
+    );
+    const after = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [incoming],
+    } as BoardAction)[0];
+    expect(after.cards["c-1"].readModel).toMatchObject({
+      linkCount: 2,
+      blocked: true,
+      detailLoaded: false,
+    });
+    expect(after.cards["c-1"].description).toBeUndefined();
+  });
+
   it("hydrates only ids still in the summary scope and keeps newer cards", () => {
     const newer: Card = {
       id: "a",
@@ -493,6 +595,162 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(after.cards.a.links).toBeUndefined();
   });
 
+  it("keeps reverse facts when the deleted card was a target", () => {
+    const target = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "d",
+        title: "d",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      version: 1,
+      linkCount: 1,
+      blocked: true,
+      incomingLinks: [
+        { id: "l-in", type: "blocks", fromCardId: "s", fromArchived: false },
+      ],
+      seq: 1,
+      atSeq: 1,
+      aggregateRevision: 1,
+    });
+    const source = cardFromDetail({
+      boardId: "b-1",
+      columnId: "col-1",
+      card: {
+        id: "s",
+        title: "s",
+        labelIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+        links: [{ id: "l-in", type: "blocks", targetCardId: "d" }],
+      },
+      version: 1,
+      linkCount: 1,
+      blocked: false,
+      incomingLinks: [],
+      seq: 1,
+      atSeq: 1,
+      aggregateRevision: 1,
+    });
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [
+        { id: "col-1", title: "Todo", cardIds: ["d", "s"], createdAt: 1 },
+      ],
+      cards: { d: target, s: source },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const deleted = boardReducer([board], {
+      type: "DELETE_CARD",
+      boardId: "b-1",
+      cardId: "d",
+      at: 30,
+    } as BoardAction)[0];
+    expect(deleted.cards.d).toBeUndefined();
+    expect(deleted.cards.s.readModel?.linkCount).toBe(0);
+    // The dangling row stays on the source until the user removes it.
+    expect(deleted.cards.s.links).toHaveLength(1);
+
+    const restored = boardReducer([deleted], {
+      type: "RESTORE_CARD",
+      boardId: "b-1",
+      card: target,
+      columnId: "col-1",
+      index: 0,
+      at: 40,
+    } as BoardAction)[0];
+    expect(restored.cards.s.readModel?.linkCount).toBe(1);
+  });
+
+  it("updates the surviving sources of a deleted column's targets", () => {
+    const incoming = (from: string, id: string) => ({
+      id,
+      type: "blocks" as const,
+      fromCardId: from,
+      fromArchived: false,
+    });
+    const target = (id: string, links: ReturnType<typeof incoming>[]) =>
+      cardFromDetail({
+        boardId: "b-1",
+        columnId: "col-1",
+        card: {
+          id,
+          title: id,
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        version: 1,
+        linkCount: links.length,
+        blocked: links.length > 0,
+        incomingLinks: links,
+        seq: 1,
+        atSeq: 1,
+        aggregateRevision: 1,
+      });
+    const source = (
+      id: string,
+      links: Array<{ id: string; targetCardId: string }>,
+    ) =>
+      cardFromDetail({
+        boardId: "b-1",
+        columnId: "col-2",
+        card: {
+          id,
+          title: id,
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+          links: links.map((link) => ({ ...link, type: "blocks" as const })),
+        },
+        version: 1,
+        linkCount: links.length,
+        blocked: false,
+        incomingLinks: [],
+        seq: 1,
+        atSeq: 1,
+        aggregateRevision: 1,
+      });
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [
+        { id: "col-1", title: "Todo", cardIds: ["d1", "d2"], createdAt: 1 },
+        { id: "col-2", title: "Doing", cardIds: ["s1", "s2"], createdAt: 1 },
+      ],
+      cards: {
+        d1: target("d1", [incoming("s1", "l-1")]),
+        d2: target("d2", [incoming("s1", "l-2"), incoming("s2", "l-3")]),
+        s1: source("s1", [
+          { id: "l-1", targetCardId: "d1" },
+          { id: "l-2", targetCardId: "d2" },
+        ]),
+        s2: source("s2", [{ id: "l-3", targetCardId: "d2" }]),
+      },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const deleted = boardReducer([board], {
+      type: "DELETE_COLUMN",
+      boardId: "b-1",
+      columnId: "col-1",
+      at: 30,
+    } as BoardAction)[0];
+    expect(deleted.cards.d1).toBeUndefined();
+    expect(deleted.cards.d2).toBeUndefined();
+    expect(deleted.cards.s1.readModel?.linkCount).toBe(0);
+    expect(deleted.cards.s2.readModel?.linkCount).toBe(0);
+  });
+
   it("keeps surviving targets' facts current across card delete and restore", () => {
     const source = cardFromDetail({
       boardId: "b-1",
@@ -672,6 +930,80 @@ describe("read-model adapters (TASK-200.9)", () => {
       at: 40,
     } as BoardAction)[0];
     expect(second.cards.b.readModel).toMatchObject({
+      linkCount: 0,
+      blocked: false,
+    });
+  });
+
+  it("keeps a summary target blocked by a mixed non-blocker relation", () => {
+    const link = (
+      source: string,
+      linkId: string,
+      type: "blocks" | "relates_to",
+    ): Card =>
+      cardFromDetail({
+        boardId: "b-1",
+        columnId: "col-1",
+        card: {
+          id: source,
+          title: source,
+          labelIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+          links: [{ id: linkId, type, targetCardId: "b" }],
+        },
+        version: 1,
+        linkCount: 1,
+        blocked: false,
+        incomingLinks: [],
+        seq: 1,
+        atSeq: 1,
+        aggregateRevision: 1,
+      });
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [
+        {
+          id: "col-1",
+          title: "Todo",
+          cardIds: ["blocker", "related", "b"],
+          createdAt: 1,
+        },
+      ],
+      cards: {
+        blocker: link("blocker", "l-1", "blocks"),
+        related: link("related", "l-2", "relates_to"),
+        b: cardFromSummary(summaryCard("b", { linkCount: 2, blocked: true })),
+      },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const withoutBlocker = boardReducer([board], {
+      type: "REMOVE_CARD_LINK",
+      boardId: "b-1",
+      cardId: "blocker",
+      linkId: "l-1",
+      targetCardId: "b",
+      linkType: "blocks",
+      at: 30,
+    } as BoardAction)[0];
+    expect(withoutBlocker.cards.b.readModel).toMatchObject({
+      linkCount: 1,
+      blocked: true,
+    });
+    const withoutLast = boardReducer([withoutBlocker], {
+      type: "REMOVE_CARD_LINK",
+      boardId: "b-1",
+      cardId: "related",
+      linkId: "l-2",
+      targetCardId: "b",
+      linkType: "relates_to",
+      at: 40,
+    } as BoardAction)[0];
+    expect(withoutLast.cards.b.readModel).toMatchObject({
       linkCount: 0,
       blocked: false,
     });

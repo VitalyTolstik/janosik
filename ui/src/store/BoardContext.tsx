@@ -270,6 +270,8 @@ interface BoardActionsValue {
     boardId: string,
     ids: readonly string[],
   ) => Promise<boolean>;
+  /** TASK-200.9: retry the read-model page stream after a partial load. */
+  retryReadModel: () => void;
   startArchiveBatch: (boardId: string, actions: BoardAction[]) => boolean;
   /**
    * The caller's role on a board, when the server said so — `ADMIN` for
@@ -1250,6 +1252,35 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // object would give `dispatch` (and with it the whole actions context) a
   // new identity on every state change and undo the render isolation of
   // TASK-21.4.
+  const labelPreimageGatesRef = useRef(new Map<string, Promise<void>>());
+  /**
+   * TASK-200.9: hold undo/redo presses until every in-flight DELETE_LABEL
+   * has answered and amended its inverse. A gate chains on the board's
+   * previous one, so two fast deletes still release in command order.
+   */
+  const beginLabelPreimageGate = useCallback((boardId: string) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const previous =
+      labelPreimageGatesRef.current.get(boardId) ?? Promise.resolve();
+    const chained = previous.then(() => gate);
+    labelPreimageGatesRef.current.set(boardId, chained);
+    return () => {
+      release();
+      void chained.finally(() => {
+        if (labelPreimageGatesRef.current.get(boardId) === chained) {
+          labelPreimageGatesRef.current.delete(boardId);
+        }
+      });
+    };
+  }, []);
+  const waitForLabelPreimage = useCallback(
+    (boardId: string) => labelPreimageGatesRef.current.get(boardId),
+    [],
+  );
+
   const {
     canUndo,
     canRedo,
@@ -1267,6 +1298,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     getActiveBoardId,
     hotkeysEnabled: board !== undefined && roles[board.id] !== "VIEWER",
     apply,
+    waitForPreimage: waitForLabelPreimage,
     ...(serverMode
       ? {
           send: sendUndoRedo,
@@ -1927,6 +1959,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     await refetchBoard(boardId);
   }, [serverMode, refetchBoard]);
 
+  // The partial banner's action: a summary refetch finds the missing page
+  // ids and re-runs the page stream.
+  const retryReadModel = useCallback(() => {
+    void refetchActiveBoard();
+  }, [refetchActiveBoard]);
+
   /**
    * Reconcile an uncertain command or a rollback that needs a snapshot
    * (U-4) once the board's queue is idle and the browser is online.
@@ -1993,6 +2031,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             (entry) => entry.id === action.columnId,
           );
           stale = column === undefined || column.cardIds.some(unknown);
+          break;
+        }
+        // A summary card has no checklist rows, so a foreign checklist
+        // command often cannot apply its delta. Re-read rather than leave
+        // the face's counters frozen (TASK-200.9 recheck).
+        case "ADD_CHECKLIST":
+        case "RENAME_CHECKLIST":
+        case "DELETE_CHECKLIST":
+        case "ADD_CHECKLIST_ITEM":
+        case "SET_CHECKLIST_ITEM_DONE":
+        case "RENAME_CHECKLIST_ITEM":
+        case "DELETE_CHECKLIST_ITEM": {
+          const card = board.cards[action.cardId];
+          stale = card?.readModel !== undefined && !card.readModel.detailLoaded;
           break;
         }
       }
@@ -2361,7 +2413,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      return sync.enqueue(boardId, scoped).then((outcome) => {
+      // Hold undo until a label-delete response has amended the step: a
+      // Ctrl+Z faster than the round-trip must not send the loaded subset.
+      const releasePreimageGate =
+        scoped.type === "DELETE_LABEL"
+          ? beginLabelPreimageGate(boardId)
+          : undefined;
+      const sent = sync.enqueue(boardId, scoped).then(async (outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
@@ -2372,7 +2430,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           mergeVersions(boardId, outcome.versions);
           // TASK-200.9: the lock-consistent DELETE_LABEL snapshot from the
           // command response replaces the optimistic (loaded-cards-only)
-          // inverse assignments, so undo restores unloaded cards too.
+          // inverse assignments, so undo restores unloaded cards too. An
+          // older server that lacks it cannot recover the pre-delete set
+          // after the fact; it is a documented deploy-together requirement.
           if (
             scoped.type === "DELETE_LABEL" &&
             outcome.preimage !== undefined
@@ -2427,6 +2487,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         }
         return false;
       });
+      return releasePreimageGate === undefined
+        ? sent
+        : sent.finally(releasePreimageGate);
     },
     [
       apply,
@@ -2442,6 +2505,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       scheduleRefetch,
       reconcileUncertainCommand,
       amendLabelPreimage,
+      beginLabelPreimageGate,
     ],
   );
 
@@ -2814,6 +2878,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       dispatch,
       loadCardDetail,
       loadCardDetails,
+      retryReadModel,
       startArchiveBatch,
       roleOf,
       // `dispatch` is a stable callback that reads refs when *called*; here
@@ -2838,6 +2903,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       dispatch,
       loadCardDetail,
       loadCardDetails,
+      retryReadModel,
       startArchiveBatch,
       roleOf,
       getActiveBoard,
@@ -3442,6 +3508,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     dispatch: noop,
     loadCardDetail: () => Promise.resolve(null),
     loadCardDetails: () => Promise.resolve(true),
+    retryReadModel: noop,
     startArchiveBatch: () => false,
     roleOf: () => "VIEWER",
     addColumn: noop,

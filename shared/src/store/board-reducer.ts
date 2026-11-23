@@ -434,12 +434,6 @@ export interface DeleteLabelAction {
    * cards.
    */
   cardStamps?: readonly LabelCardStamp[];
-  /**
-   * UI-only preimage (TASK-200.9): every assignment the server will remove,
-   * including cards whose summary/page has not loaded yet. `invert` prefers
-   * this list; the wire validator drops it from a fresh command.
-   */
-  preimageAssignments?: readonly LabelAssignment[];
 }
 
 export interface AddChecklistAction {
@@ -937,6 +931,7 @@ function deleteColumn(board: Board, action: DeleteColumnAction): Board {
   // whole column left the map, so a target inside it is skipped and a
   // detail-loaded target sees the exact surviving reverse rows.
   for (const source of sources) detachSourceLinks(source, cards);
+  for (const source of sources) detachIncomingLinks(source, cards);
   return {
     ...board,
     columns: board.columns.filter((c) => c.id !== action.columnId),
@@ -1074,6 +1069,7 @@ function deleteCard(board: Board, action: DeleteCardAction): Board {
   const cards = { ...board.cards };
   delete cards[action.cardId];
   detachSourceLinks(source, cards);
+  detachIncomingLinks(source, cards);
   const columns = board.columns.map((col) => ({
     ...col,
     cardIds: col.cardIds.filter((id) => id !== action.cardId),
@@ -1209,10 +1205,17 @@ function detachSourceLinks(source: Card, cards: Board["cards"]): void {
 }
 
 /** A restored card brings its outgoing relations back to the targets. */
-function attachSourceLinks(source: Card, cards: Board["cards"]): void {
+function attachSourceLinks(
+  board: Board,
+  source: Card,
+  cards: Board["cards"],
+): void {
   const fromArchived = source.archivedAt !== undefined;
   for (const link of source.links ?? []) {
     if (link.targetCardId === source.id) continue;
+    // A target restored in the same command already carries this row in its
+    // pre-delete counter; never double-count it.
+    if (board.cards[link.targetCardId] === undefined) continue;
     const target = cards[link.targetCardId];
     if (target?.readModel === undefined) continue;
     cards[target.id] = {
@@ -1236,6 +1239,49 @@ function attachSourceLinks(source: Card, cards: Board["cards"]): void {
             ],
           }
         : {}),
+    };
+  }
+}
+
+/**
+ * A deleted card can also be the *target* of surviving cards' relations.
+ * Their rows stay (the UI keeps a dangling row until the user removes it),
+ * but the server's degree drops, so each surviving source loses one count.
+ * Reverse rows only exist on a detail-loaded deleted card; own deletes load
+ * that preimage first, and a foreign delete of a summary card falls back to
+ * a snapshot refetch.
+ */
+function detachIncomingLinks(source: Card, cards: Board["cards"]): void {
+  for (const incoming of source.incomingLinks ?? []) {
+    const from = cards[incoming.fromCardId];
+    if (from?.readModel === undefined) continue;
+    cards[from.id] = {
+      ...from,
+      readModel: {
+        ...from.readModel,
+        linkCount: Math.max(0, from.readModel.linkCount - 1),
+      },
+    };
+  }
+}
+
+/** A restored target gives its surviving sources their degree back. */
+function attachIncomingLinks(
+  board: Board,
+  source: Card,
+  cards: Board["cards"],
+): void {
+  for (const incoming of source.incomingLinks ?? []) {
+    // A source restored with the same command keeps its pre-delete counter.
+    if (board.cards[incoming.fromCardId] === undefined) continue;
+    const from = cards[incoming.fromCardId];
+    if (from?.readModel === undefined) continue;
+    cards[from.id] = {
+      ...from,
+      readModel: {
+        ...from.readModel,
+        linkCount: from.readModel.linkCount + 1,
+      },
     };
   }
 }
@@ -2731,7 +2777,8 @@ function restoreCard(
   const cards = { ...board.cards, [card.id]: restoredCard };
   // The card row (and therefore its relations) survived the soft delete;
   // bring the degree — and, for a live card, the blocked fact — back.
-  attachSourceLinks(restoredCard, cards);
+  attachSourceLinks(board, restoredCard, cards);
+  attachIncomingLinks(board, restoredCard, cards);
   return {
     ...board,
     ...(board.archivedCardIds !== undefined
@@ -2791,7 +2838,8 @@ function restoreColumn(
   if (!action.cards.every((card) => listed.has(card.id))) return board;
   const cards = { ...board.cards };
   for (const card of action.cards) cards[card.id] = card;
-  for (const card of action.cards) attachSourceLinks(card, cards);
+  for (const card of action.cards) attachSourceLinks(board, card, cards);
+  for (const card of action.cards) attachIncomingLinks(board, card, cards);
   return {
     ...board,
     columns: insertAt(
@@ -3143,8 +3191,14 @@ function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
       existing.readModel.detailLoaded
     ) {
       // Never downgrade a full card to a summary unless the summary is newer
-      // and the detail may have changed under us.
-      if (card.updatedAt <= existing.updatedAt) continue;
+      // and the detail may have changed under us. Link facts are the
+      // exception: they can change without a card stamp, so a differing
+      // count/blocked must replace stale detail.
+      const factsChanged =
+        existing.readModel !== undefined &&
+        (existing.readModel.linkCount !== card.readModel?.linkCount ||
+          existing.readModel.blocked !== card.readModel?.blocked);
+      if (!factsChanged && card.updatedAt <= existing.updatedAt) continue;
       chosen = card;
     } else if (card.updatedAt >= existing.updatedAt) {
       chosen = card;

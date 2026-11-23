@@ -202,6 +202,21 @@ export class BoardHistory {
   }
 
   /**
+   * TASK-200.9: a redo re-sends DELETE_LABEL with a fresh command id, so the
+   * response snapshot is matched by position instead: the step was just
+   * moved back onto the past stack and its inverse must restore the rows the
+   * redo actually removed.
+   */
+  amendLastLabelAssignments(assignments: readonly LabelAssignment[]): boolean {
+    const entry = this.past[this.past.length - 1];
+    if (entry === undefined || entry.undo.type !== "RESTORE_LABEL") {
+      return false;
+    }
+    entry.undo = { ...entry.undo, assignments: [...assignments] };
+    return true;
+  }
+
+  /**
    * The command that undoes the last step, or `null` when there is none.
    * The caller dispatches it; if it turns out to change nothing (the entity
    * it touched is gone), `dropUndone()` throws the empty step away so the

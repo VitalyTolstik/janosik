@@ -100,6 +100,12 @@ interface Options {
   onUncertain?: (boardId: string, commandId: string) => void;
   /** Called when undo skipped steps a foreign change had overtaken. */
   onForeignSkipped?: () => void;
+  /**
+   * TASK-200.9: an undo/redo press must wait until an in-flight
+   * `DELETE_LABEL` response has amended its inverse with the complete
+   * server snapshot. `undefined` when nothing is pending.
+   */
+  waitForPreimage?: (boardId: string) => Promise<void> | undefined;
 }
 
 export function useUndoHistory({
@@ -111,6 +117,7 @@ export function useUndoHistory({
   onSendFailed,
   onUncertain,
   onForeignSkipped,
+  waitForPreimage,
 }: Options): UndoHistory {
   // One undo/redo stack per board; created lazily, dropped on remove/import.
   const historiesRef = useRef(new Map<string, BoardHistory>());
@@ -178,6 +185,12 @@ export function useUndoHistory({
     async (direction: "undo" | "redo"): Promise<void> => {
       const boardId = getActiveBoardId();
       if (!boardId) return;
+      // A label delete records its step optimistically but its inverse is
+      // only complete when the command response arrives. Waiting here makes
+      // a fast Ctrl+Z safe instead of restoring the loaded subset. Local
+      // mode has no gate and stays synchronous.
+      const gate = waitForPreimage?.(boardId);
+      if (gate !== undefined) await gate;
       const stack = historiesRef.current.get(boardId);
       if (!stack) return;
       for (;;) {
@@ -200,6 +213,9 @@ export function useUndoHistory({
           ...(direction === "undo" ? { at: Date.now() } : {}),
           commandId: createId(),
         } as BoardAction;
+        // The stored step still carries the original idempotency key; it is
+        // the stable handle for amending the redo inverse later.
+        const stepCommandId = (action as { commandId?: string }).commandId;
         // M16: wait for the server for the two inverse kinds that can be
         // refused by WIP. No optimistic apply = no rollback flicker, and the
         // stack entry is explicitly restored on every refusal.
@@ -253,6 +269,26 @@ export function useUndoHistory({
               sync();
               return;
             }
+            // A redo of DELETE_LABEL gets a fresh command id, so its inverse
+            // is matched by position and refreshed with the snapshot the
+            // redo actually removed.
+            if (
+              direction === "redo" &&
+              applied.type === "DELETE_LABEL" &&
+              outcome.preimage !== undefined
+            ) {
+              const amended =
+                stepCommandId !== undefined &&
+                stack.amendLabelAssignments(
+                  stepCommandId,
+                  outcome.preimage.labelAssignments,
+                );
+              if (!amended) {
+                stack.amendLastLabelAssignments(
+                  outcome.preimage.labelAssignments,
+                );
+              }
+            }
           }
           break;
         }
@@ -273,6 +309,7 @@ export function useUndoHistory({
       onSendFailed,
       onUncertain,
       onForeignSkipped,
+      waitForPreimage,
     ],
   );
 

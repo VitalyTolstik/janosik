@@ -59,7 +59,9 @@ function Probe() {
     dispatch,
     loadCardDetail,
     undo,
+    redo,
     readModelPartial,
+    retryReadModel,
     updateCard,
   } = useBoard();
   const card = board?.cards["card-99"];
@@ -75,6 +77,16 @@ function Probe() {
       </div>
       <div data-testid="can-undo">{String(canUndo)}</div>
       <div data-testid="readModelPartial">{String(readModelPartial)}</div>
+      <div data-testid="links">{String(card?.readModel?.linkCount ?? -1)}</div>
+      <div data-testid="blocked">
+        {String(card?.readModel?.blocked ?? false)}
+      </div>
+      <div data-testid="card0-done">
+        {String(board?.cards["card-0"]?.readModel?.checklistDoneCount ?? -1)}
+      </div>
+      <div data-testid="card0-total">
+        {String(board?.cards["card-0"]?.readModel?.checklistItemCount ?? -1)}
+      </div>
       <button
         type="button"
         data-testid="load-detail"
@@ -134,6 +146,12 @@ function Probe() {
         onClick={() => updateCard("card-0", { title: "Renamed" })}
       />
       <button type="button" data-testid="undo" onClick={() => undo()} />
+      <button type="button" data-testid="redo" onClick={() => redo()} />
+      <button
+        type="button"
+        data-testid="retry-read"
+        onClick={() => retryReadModel()}
+      />
     </div>
   );
 }
@@ -264,6 +282,125 @@ describe("BoardProvider read model (TASK-200.9)", () => {
     ).toBe(true);
   });
 
+  it("refreshes a detail target when a foreign delete removes a summary source", async () => {
+    const board = largeBoard(100);
+    board.cards["card-0"].links = [
+      { id: "l-0", type: "blocks", targetCardId: "card-99" },
+    ];
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("title").textContent).toBe("Card 99"),
+    );
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+    fireEvent.click(screen.getByTestId("load-detail"));
+    await waitFor(() =>
+      expect(screen.getByTestId("detail-loaded").textContent).toBe("true"),
+    );
+    expect(screen.getByTestId("links").textContent).toBe("1");
+    expect(screen.getByTestId("blocked").textContent).toBe("true");
+
+    const before = server.requests.length;
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "DELETE_CARD",
+        cardId: "card-0",
+        at: Date.now(),
+      });
+    });
+    // The deleted source was a summary: the reducer has no incoming rows to
+    // update the detail target, so the provider must refresh the summary.
+    await waitFor(() =>
+      expect(screen.getByTestId("links").textContent).toBe("0"),
+    );
+    expect(screen.getByTestId("blocked").textContent).toBe("false");
+    expect(screen.getByTestId("detail-loaded").textContent).toBe("false");
+    expect(
+      server.requests
+        .slice(before)
+        .some((entry) => entry.path.endsWith("/summary")),
+    ).toBe(true);
+  });
+
+  it("refreshes summary checklist counters after a foreign toggle", async () => {
+    const board = largeBoard(3);
+    board.cards["card-0"].checklists = [
+      {
+        id: "cl-0",
+        title: "Steps",
+        items: [{ id: "i-0", text: "one", done: false }],
+      },
+    ];
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("card0-done").textContent).toBe("0"),
+    );
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+
+    const before = server.requests.length;
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "SET_CHECKLIST_ITEM_DONE",
+        cardId: "card-0",
+        checklistId: "cl-0",
+        itemId: "i-0",
+        done: true,
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("card0-done").textContent).toBe("1"),
+    );
+    expect(
+      server.requests
+        .slice(before)
+        .some((entry) => entry.path.endsWith("/summary")),
+    ).toBe(true);
+
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "ADD_CHECKLIST_ITEM",
+        cardId: "card-0",
+        checklistId: "cl-0",
+        newItemId: "i-1",
+        text: "two",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("card0-total").textContent).toBe("2"),
+    );
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "DELETE_CHECKLIST_ITEM",
+        cardId: "card-0",
+        checklistId: "cl-0",
+        itemId: "i-1",
+        at: Date.now(),
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("card0-total").textContent).toBe("1"),
+    );
+  });
+
   it("falls back to the legacy aggregate when /summary is missing", async () => {
     const server = new FakeServer([largeBoard()]);
     vi.stubGlobal(
@@ -306,11 +443,15 @@ describe("BoardProvider read model (TASK-200.9)", () => {
     expect(screen.getByTestId("detail-loaded").textContent).toBe("true");
   });
 
-  it("loads every label assignment before deleting a label on a summary board", async () => {
-    const server = new FakeServer([largeBoard(1000)]);
-    // Simulate a failed page stream: card-99 never reaches the client, but
-    // the server still deletes the label from it. The assignment preimage
-    // endpoint is the only way its undo can be complete.
+  it("restores 1000 label assignments when undo races the delete response", async () => {
+    const board = largeBoard(1000);
+    for (const card of Object.values(board.cards)) {
+      card.labelIds = ["label-1"];
+    }
+    const server = new FakeServer([board]);
+    // Simulate a failed page stream: the later cards never reach the client,
+    // but the server still deletes the label from them. The response
+    // preimage is the only complete undo source.
     vi.stubGlobal(
       "fetch",
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -333,16 +474,124 @@ describe("BoardProvider read model (TASK-200.9)", () => {
       "label-1",
     ]);
 
+    // Hold the delete so the round-trip cannot beat the Ctrl+Z. The undo is
+    // gated on the response snapshot; without the gate it would send the
+    // loaded first-page subset and lose 950 assignments.
+    const release = server.holdNextCommand();
+    fireEvent.click(screen.getByTestId("delete-label"));
+    fireEvent.click(screen.getByTestId("undo"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      server.requests.some(
+        (entry) =>
+          (entry.body as { action?: { type?: string } } | undefined)?.action
+            ?.type === "RESTORE_LABEL",
+      ),
+    ).toBe(false);
+
+    release();
+    await waitFor(
+      () =>
+        expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([
+          "label-1",
+        ]),
+      { timeout: 3_000 },
+    );
+    expect(server.boards.get("b-1")?.cards["card-0"]?.labelIds).toEqual([
+      "label-1",
+    ]);
+    expect(server.boards.get("b-1")?.cards["card-999"]?.labelIds).toEqual([
+      "label-1",
+    ]);
+    const restore = server.requests.find(
+      (entry) =>
+        (entry.body as { action?: { type?: string } } | undefined)?.action
+          ?.type === "RESTORE_LABEL",
+    );
+    expect(
+      (restore?.body as { action?: { assignments?: unknown[] } } | undefined)
+        ?.action?.assignments,
+    ).toHaveLength(1000);
+  });
+
+  it("retries the page stream from the partial banner action", async () => {
+    const server = new FakeServer([largeBoard()]);
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards/b-1/cards" &&
+          url.searchParams.has("columnId")
+        ) {
+          return new Response(null, { status: 500 });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("readModelPartial").textContent).toBe("true"),
+    );
+
+    const before = server.requests.length;
+    fireEvent.click(screen.getByTestId("retry-read"));
+    await waitFor(() =>
+      expect(
+        server.requests
+          .slice(before)
+          .some((entry) => entry.path.endsWith("/summary")),
+      ).toBe(true),
+    );
+    // The pages still fail, so the honest partial marker stays.
+    await waitFor(() =>
+      expect(screen.getByTestId("readModelPartial").textContent).toBe("true"),
+    );
+  });
+
+  it("amends the redo inverse with the redo response snapshot", async () => {
+    const board = largeBoard(3);
+    board.cards["card-2"].labelIds = ["label-1"];
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("count").textContent).toBe("3"),
+    );
+
     fireEvent.click(screen.getByTestId("delete-label"));
     await waitFor(() =>
-      expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([]),
+      expect(server.boards.get("b-1")?.cards["card-2"]?.labelIds).toEqual([]),
     );
     fireEvent.click(screen.getByTestId("undo"));
     await waitFor(() =>
-      expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([
+      expect(server.boards.get("b-1")?.cards["card-2"]?.labelIds).toEqual([
         "label-1",
       ]),
     );
+
+    // A new assignment appears outside this client's history between undo
+    // and redo. The redo's response snapshot must include it so the next
+    // undo restores it too (the original optimistic inverse would not).
+    server.overwriteBoard("b-1", (current) => {
+      current.cards["card-0"].labelIds = ["label-1"];
+      return current;
+    });
+    fireEvent.click(screen.getByTestId("redo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-0"]?.labelIds).toEqual([]),
+    );
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-0"]?.labelIds).toEqual([
+        "label-1",
+      ]),
+    );
+    expect(server.boards.get("b-1")?.cards["card-2"]?.labelIds).toEqual([
+      "label-1",
+    ]);
   });
 
   it("undoes a summary-card rename without erasing its description", async () => {

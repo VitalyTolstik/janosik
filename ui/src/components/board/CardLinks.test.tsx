@@ -142,6 +142,10 @@ async function chooseRelation(dialog: HTMLElement, option: string) {
   await ensureLinkEditor(dialog);
   await userEvent.click(within(dialog).getByTestId("card-links-type"));
   await userEvent.click(await screen.findByTestId(`card-links-type-${option}`));
+  // The editor keeps the "picker just closed" guard for one frame so the
+  // Radix close click cannot collapse the whole editor. Let it expire before
+  // the next outside click assertion (the suite can starve rAF when loaded).
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 describe("CardLinks (TASK-46)", () => {

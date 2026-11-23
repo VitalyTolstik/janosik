@@ -753,6 +753,37 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "503": { $ref: "#/components/responses/BoardReadUnavailable" }
+  /boards/{boardId}/labels/{labelId}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - name: labelId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Boards]
+      operationId: listLabelAssignments
+      deprecated: true
+      summary: Read a label's card assignment preimage (compatibility)
+      description: |
+        Deprecated TASK-200.9. The current contract carries this snapshot in
+        the `DELETE_LABEL` command response, captured inside the board write
+        lock. This read remains for one release so an older UI keeps full undo
+        during a rolling deploy; new clients must not use it.
+      responses:
+        "200":
+          description: Assignment rows (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BoardLabelAssignment"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/cards/{cardId}:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -4662,6 +4693,13 @@ components:
         seq: { type: integer }
         atSeq: { type: integer }
         aggregateRevision: { type: integer }
+    BoardLabelAssignment:
+      type: object
+      required: [cardId, index, updatedAt]
+      properties:
+        cardId: { type: string }
+        index: { type: integer }
+        updatedAt: { type: integer }
     BoardIncomingCardLink:
       type: object
       required: [id, type, fromCardId, fromArchived]

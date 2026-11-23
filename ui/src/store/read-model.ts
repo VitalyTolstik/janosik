@@ -149,10 +149,18 @@ export function boardFromSummary(
       if (existing !== undefined) cards[id] = existing;
       continue;
     }
+    // Link facts live on the summary and, unlike the card's text, are not
+    // stamped onto the target card's `updatedAt`: a foreign link change can
+    // arrive with an identical stamp. Never let cached detail freeze them.
+    const factsChanged =
+      existing?.readModel !== undefined &&
+      (existing.readModel.linkCount !== incoming.linkCount ||
+        existing.readModel.blocked !== incoming.blocked);
     if (
       existing !== undefined &&
       hasCardDetail(existing) &&
-      existing.updatedAt >= incoming.updatedAt
+      existing.updatedAt >= incoming.updatedAt &&
+      !factsChanged
     ) {
       cards[id] = existing;
       continue;

@@ -129,7 +129,10 @@ export interface BoardReadRequest {
    * Optional subresource existence check for conditional requests. A
    * wildcard `If-None-Match: *` is a validator like any other; the cheap
    * board stamp alone must not answer 304 for a missing/foreign card or
-   * column (TASK-200.9 review).
+   * column (TASK-200.9 review). The check is one indexed primary-key
+   * lookup, deliberately outside the aggregate build budget/semaphore: it
+   * only proves existence and returns no user data, while the budgeted body
+   * build still runs under the normal read limits when the validator misses.
    */
   precheck?: () => Promise<void>;
 }

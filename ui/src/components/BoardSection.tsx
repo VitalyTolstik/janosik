@@ -95,6 +95,7 @@ export function BoardSection() {
     setBoardColumnStyle,
     loadCardDetail,
     readModelPartial,
+    retryReadModel,
   } = useBoard();
   const { user } = useAuth();
   // Undefined until the roster loads — never `[]` as "loaded": the saved-view
@@ -515,7 +516,15 @@ export function BoardSection() {
             data-testid="read-model-partial"
             className="mb-3 text-xs text-muted-foreground"
           >
-            {t("board.partialRead")}
+            {t("board.partialRead")}{" "}
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              data-testid="read-model-retry"
+              onClick={retryReadModel}
+            >
+              {t("board.retryRead")}
+            </button>
           </p>
         ) : null}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

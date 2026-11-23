@@ -22,6 +22,7 @@ import type {
   CardPriority,
   CoverColor,
   IncomingCardLink,
+  LabelAssignment,
   CoverGradient,
   LabelColor,
 } from "@janosik/shared";
@@ -551,6 +552,14 @@ export class BoardReadModelService {
     });
   }
 
+  /**
+   * Conditional-read prechecks (TASK-200.9): one primary-key existence
+   * lookup per requested subresource. They intentionally run before the
+   * budgeted aggregate build — they return no user data, bail out a stale
+   * `If-None-Match` before any page/detail query, and the HTTP request still
+   * carries the normal write/read limits. A conditional miss proceeds into
+   * `readTransaction`, so the heavy path stays under the semaphore/budget.
+   */
   /** Conditional-read precheck: a card must exist on this board. */
   async assertCardInBoard(boardId: string, cardId: string): Promise<void> {
     const card = await this.prisma.card.findFirst({
@@ -579,6 +588,41 @@ export class BoardReadModelService {
     if (rows.length !== unique.length) {
       throw new NotFoundException("Card not found");
     }
+  }
+
+  /**
+   * Deprecated TASK-200.9 compatibility read: the previous UI fetched the
+   * label-delete preimage here before the command. New servers return the
+   * same snapshot in the command response (inside the write lock); this route
+   * remains for one release so an older UI during a rolling deploy does not
+   * lose assignments on unloaded cards. It is not used by the current UI.
+   */
+  async labelAssignments(
+    boardId: string,
+    labelId: string,
+  ): Promise<LabelAssignment[]> {
+    const label = await this.prisma.label.findFirst({
+      where: { id: labelId, boardId, deletedAt: null },
+      select: { id: true },
+    });
+    if (label === null) throw new NotFoundException("Label not found");
+    const rows = await this.prisma.cardLabel.findMany({
+      where: {
+        labelId,
+        card: { column: { boardId }, deletedAt: null },
+      },
+      orderBy: [{ position: "asc" }, { cardId: "asc" }],
+      select: {
+        cardId: true,
+        position: true,
+        card: { select: { updatedAt: true } },
+      },
+    });
+    return rows.map((row) => ({
+      cardId: row.cardId,
+      index: row.position,
+      updatedAt: row.card.updatedAt.getTime(),
+    }));
   }
 
   async detail(
