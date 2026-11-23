@@ -649,6 +649,148 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorEnvelope"
+  /boards/{boardId}/cards/{cardId}/context:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/CardId"
+    get:
+      tags: [Commands, Cards]
+      operationId: getCardIntentContext
+      summary: Read one card's targeted context
+      description: |
+        TASK-200.7. Returns one card, its column and index, the column
+        id/title list, configured done columns, the workflow and current
+        `board:`/`card:`/`column:` versions. It never loads the board
+        aggregate: no other card payload, checklist or description is read.
+        An agent uses it for the Definition-of-Done check, a release guard or
+        a compare-and-set description edit before calling a card intent.
+      responses:
+        "200":
+          description: The card context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardContext"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /boards/{boardId}/cards/{cardId}:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/CardId"
+    patch:
+      tags: [Commands, Cards]
+      operationId: patchCardIntent
+      summary: Patch a card's title/description
+      description: |
+        TASK-200.7 targeted `UPDATE_CARD`: the server loads only this card and
+        the board shell. `ifMatchVersions` pins the card version the caller
+        saw; omitted, the server pins the version it read. A stale card answers
+        `409 version_conflict` with `versions` so the client retries only this
+        card. `expectedDescription` adds a compare-and-set on the text.
+        `expectedVersion`-style board-wide CAS is not needed here; use the
+        command endpoint for an explicit full-board read.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchCardIntentRequest"
+      responses:
+        "200":
+          description: The applied command and the updated card.
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardIntentResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
+  /boards/{boardId}/cards/{cardId}/claim:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/CardId"
+    post:
+      tags: [Commands, Cards]
+      operationId: claimCardIntent
+      summary: Claim or release a card lease
+      description: |
+        TASK-200.7. Takes a lease for the authenticated actor (the server
+        fills the holder, a body cannot impersonate one) or releases it with
+        `release: true`. The atomic "do not steal a live lease" guard and the
+        ADMIN/owner release rules are the same as `CLAIM_CARD`. Only the card
+        and its version are loaded; another agent's edit on another card never
+        conflicts. The response carries the fresh `card` and lease fields.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimCardIntentRequest"
+      responses:
+        "200":
+          description: The claimed/released card and command result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardClaimIntentResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
+  /boards/{boardId}/cards/{cardId}/move:
+    parameters:
+      - $ref: "#/components/parameters/BoardId"
+      - $ref: "#/components/parameters/CardId"
+    post:
+      tags: [Commands, Cards]
+      operationId: moveCardIntent
+      summary: Move or reorder a card
+      description: |
+        TASK-200.7. The server resolves the source column and both indexes
+        under the board lock, so a caller does not need a board read. The card
+        version is the only default precondition: another card's move in the
+        same column is not a conflict, a move of this card is. WIP, workflow,
+        agent policy, approval and the command log are unchanged. A stale
+        `409` carries `versions` for a targeted retry; the response names the
+        final column and index.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveCardIntentRequest"
+      responses:
+        "200":
+          description: The moved card and command result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardMoveIntentResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/CommandUnavailable" }
   /boards/{boardId}/export:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -3488,6 +3630,8 @@ components:
         limit (`limit_exceeded`), workflow (`workflow_conflict`), approval
         (`approval_required`/`approval_mismatch`/`approval_expired`/…), run
         state (`run_conflict`/`run_expired`), duplicate id or idempotency key.
+        A `version_conflict` carries the actual entity versions in `versions`
+        for a targeted retry.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
@@ -3701,6 +3845,14 @@ components:
         conflict:
           type: string
           enum: [version, wip, id, workflow]
+        versions:
+          type: object
+          additionalProperties:
+            type: integer
+          description: |
+            TASK-200.7 actual entity versions behind a version conflict
+            (`card:<id>`, `column:<id>`, `board:<id>`). A targeted client merges
+            them into `ifMatchVersions` instead of re-reading the board.
         columnId:
           type: string
           description: "Column whose WIP/absolute limit refused a `conflict: wip`."
@@ -4852,6 +5004,154 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CommandResponse"
+    CardIntentRequest:
+      type: object
+      description: |
+        TASK-200.7 common card-intent body. `commandId` is the idempotency key
+        (the server mints one when omitted, which is unsafe after a lost
+        response); `ifMatch` is the explicit full-board mode, while
+        `ifMatchVersions` pins only the entities the caller saw.
+      properties:
+        commandId:
+          type: string
+          maxLength: 64
+          pattern: "^[A-Za-z0-9_-]+$"
+        ifMatch:
+          type: integer
+          minimum: 0
+        ifMatchVersions:
+          type: object
+          additionalProperties:
+            type: integer
+    ClaimCardIntentRequest:
+      allOf:
+        - $ref: "#/components/schemas/CardIntentRequest"
+        - type: object
+          properties:
+            leaseMs:
+              type: integer
+              minimum: 1
+              description: Lease length; clamped to [1 min, 24 h].
+            release:
+              type: boolean
+              description: Release the caller's lease instead of acquiring one.
+    MoveCardIntentRequest:
+      allOf:
+        - $ref: "#/components/schemas/CardIntentRequest"
+        - type: object
+          properties:
+            toColumnId:
+              type: string
+              maxLength: 128
+              description: Destination column; omit for a same-column reorder.
+            position:
+              type: integer
+              minimum: 0
+              description: Zero-based destination slot; omit to append.
+    PatchCardIntentRequest:
+      allOf:
+        - $ref: "#/components/schemas/CardIntentRequest"
+        - type: object
+          properties:
+            title:
+              type: string
+              maxLength: 300
+            description:
+              type: string
+            expectedDescription:
+              type: string
+              description: Compare-and-set on the description the caller read.
+    CardContext:
+      type: object
+      required:
+        [
+          boardId,
+          card,
+          columnId,
+          cardIndex,
+          columns,
+          doneColumnIds,
+          seq,
+          versions,
+        ]
+      properties:
+        boardId:
+          type: string
+        card:
+          $ref: "#/components/schemas/Card"
+        columnId:
+          type: [string, "null"]
+        cardIndex:
+          type: [integer, "null"]
+        columns:
+          type: array
+          items:
+            type: object
+            required: [id, title]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+        doneColumnIds:
+          type: array
+          items:
+            type: string
+        workflow:
+          $ref: "#/components/schemas/BoardWorkflow"
+        seq:
+          type: integer
+          minimum: 0
+        versions:
+          type: object
+          additionalProperties:
+            type: integer
+    CardIntentResponse:
+      type: object
+      required: [seq, versions, card, columnId, results]
+      properties:
+        seq:
+          type: integer
+          minimum: 0
+        versions:
+          type: object
+          additionalProperties:
+            type: integer
+        runId:
+          type: [string, "null"]
+        card:
+          $ref: "#/components/schemas/Card"
+        columnId:
+          type: [string, "null"]
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommandResponse"
+    CardClaimIntentResponse:
+      allOf:
+        - $ref: "#/components/schemas/CardIntentResponse"
+        - type: object
+          required: [claimedBy, leaseUntil]
+          properties:
+            claimedBy:
+              type: [string, "null"]
+            leaseUntil:
+              type: [integer, "null"]
+    CardMoveIntentResponse:
+      allOf:
+        - $ref: "#/components/schemas/CardIntentResponse"
+        - type: object
+          required: [fromColumnId, toColumnId, toIndex, columnTitle]
+          properties:
+            fromColumnId:
+              type: string
+            toColumnId:
+              type: string
+            toIndex:
+              type: integer
+              minimum: 0
+            columnTitle:
+              type: string
     CommandDeltaEntry:
       type: object
       required: [seq, action, actorId, commandId, touches]

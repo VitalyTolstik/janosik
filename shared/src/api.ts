@@ -11,10 +11,15 @@ import type { BoardAction } from "./store/board-reducer";
 import type {
   Board,
   BoardAgentPolicy,
+  Card,
   CardPriority,
   CommentKind,
 } from "./types/kanban";
-import type { WorkflowCondition, WorkflowRole } from "./workflow";
+import type {
+  BoardWorkflow,
+  WorkflowCondition,
+  WorkflowRole,
+} from "./workflow";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
 import type { AnnouncementLocale } from "./announcements";
@@ -93,6 +98,94 @@ export interface CommandBatchResponse {
   results: CommandResponse[];
 }
 
+/* ------------------------------------------------------------------ *
+ * TASK-200.7 — targeted card intents
+ * ------------------------------------------------------------------ */
+
+/**
+ * Common body of a card intent. A targeted intent carries only the entity
+ * versions the caller actually saw; omitting them lets the server pin the
+ * card version it reads (so a concurrent move/update of the same card is a
+ * `409`, while edits to other cards never conflict). `ifMatch` stays for an
+ * explicit "I read the whole board" caller.
+ */
+export interface CardIntentRequest {
+  /** Idempotency key. Omitted = the server mints one. */
+  commandId?: string;
+  ifMatch?: number;
+  ifMatchVersions?: Record<string, number>;
+}
+
+/** Body of `POST /boards/:id/cards/:cardId/claim`. */
+export interface ClaimCardIntentRequest extends CardIntentRequest {
+  /** Lease length in ms; clamped to [1 min, 24 h]. */
+  leaseMs?: number;
+  /** Release the caller's lease instead of acquiring one. */
+  release?: boolean;
+}
+
+/** Body of `POST /boards/:id/cards/:cardId/move`. */
+export interface MoveCardIntentRequest extends CardIntentRequest {
+  /** Destination column; omit to reorder inside the current column. */
+  toColumnId?: string;
+  /** Zero-based destination slot; omit to append. */
+  position?: number;
+}
+
+/**
+ * Body of `PATCH /boards/:id/cards/:cardId`. Only the text fields owned by
+ * `UPDATE_CARD`; the server resolves the card and applies one command.
+ */
+export interface PatchCardIntentRequest extends CardIntentRequest {
+  title?: string;
+  description?: string;
+  /** Compare-and-set: refuse if the stored description differs. */
+  expectedDescription?: string;
+}
+
+/** A card's small agent-facing context (TASK-200.7), no full board read. */
+export interface CardContextDto {
+  boardId: string;
+  card: Card;
+  /** The column that currently holds the card, or null when archived. */
+  columnId: string | null;
+  /** Zero-based position in that column, or null when archived. */
+  cardIndex: number | null;
+  /** Columns with id/title only; enough to name and validate a destination. */
+  columns: Array<{ id: string; title: string }>;
+  /** Configured done columns, with the last-column fallback applied. */
+  doneColumnIds: string[];
+  /** The board workflow, when configured. */
+  workflow?: BoardWorkflow;
+  /** Current board command sequence (same value as `X-Board-Seq`). */
+  seq: number;
+  /** Actual `board:`/`card:`/`column:` versions right now. */
+  versions: EntityVersions;
+}
+
+/** `200` body of a single targeted card intent. */
+export interface CardIntentResponse extends CommandResponse {
+  /** The card after the command, in the aggregate shape. */
+  card: Card;
+  columnId: string | null;
+  /** Every command result; currently always one for these intents. */
+  results: CommandResponse[];
+}
+
+/** `200` body of a claim/release intent. */
+export interface CardClaimIntentResponse extends CardIntentResponse {
+  claimedBy: string | null;
+  leaseUntil: number | null;
+}
+
+/** `200` body of a move intent. */
+export interface CardMoveIntentResponse extends CardIntentResponse {
+  fromColumnId: string;
+  toColumnId: string;
+  toIndex: number;
+  columnTitle: string;
+}
+
 /**
  * Conflict categories a command can be refused with (§7.4):
  * - `version` — a precondition (`ifMatch`/`ifMatchVersions`) is stale;
@@ -121,6 +214,13 @@ export interface WorkflowConflictDetails {
 export interface ConflictError {
   conflict: CommandConflict;
   currentVersion: number;
+  /**
+   * TASK-200.7: actual versions of the entities this command pinned or
+   * touched. A targeted client merges them into `ifMatchVersions` and retries
+   * only that entity instead of re-reading the board. Present when at least
+   * one entity still exists.
+   */
+  versions?: EntityVersions;
   /** Only for `conflict: "wip"`: the column whose limit was reached. */
   columnId?: string;
   /** Only for `conflict: "workflow"`. */
@@ -244,6 +344,8 @@ export interface ApiErrorEnvelope {
   details?: Record<string, unknown>;
   /** Legacy conflict category — same value as the matching `*_conflict` code. */
   conflict?: CommandConflict;
+  /** TASK-200.7: actual entity versions behind a conflict. */
+  versions?: EntityVersions;
   /** Column whose WIP/absolute cap refused a `conflict: "wip"`. */
   columnId?: string;
   /** Only for a workflow conflict; unchanged from `ConflictError`. */

@@ -143,6 +143,7 @@ Refresh-токен никогда не появляется в теле отве
   "requestId": "3d0f2c7e-…",
   "currentVersion": 42,
   "conflict": "version",
+  "versions": { "card:clx-1": 7 },
   "statusCode": 409
 }
 ```
@@ -163,6 +164,9 @@ Refresh-токен никогда не появляется в теле отве
   контекст, `limit`/`current` описывают смысловой лимит. `conflict`
   (`version`, `wip`, `id`, `workflow`) и `workflow` сохранены для
   совместимости.
+- `versions` в конфликте версии содержит фактические версии
+  `card:`/`column:`/`board:`. Подставьте их в `ifMatchVersions` и повторите
+  точечный card intent — полное чтение доски не нужно.
 
 `ValidationPipe` работает с `whitelist: true` и `transform: true`. Неизвестное
 поле тела отбрасывается; проваленная проверка class-validator — это
@@ -229,11 +233,15 @@ stack trace. Текущий каталог кодов `ApiErrorCode` опубл�
 Записи в доску используют последовательность команд. `GET /boards/:id`
 возвращает `X-Board-Seq`; передайте это число в `CommandRequest.ifMatch`, а
 версии сущностей — в `ifMatchVersions`. Устаревшее значение даёт
-`409 version_conflict` с актуальным `seq` в `currentVersion`. Это
-precondition в теле: API **не** читает HTTP-заголовок `If-Match`, а
-`Board.version` (версия сущности для `ifMatchVersions`) не смешивается с
-`ifMatch`/`seq`. Политика доски использует собственный CAS-токен
-`agentPolicyVersion`.
+`409 version_conflict` с актуальным `seq` в `currentVersion` и фактическими
+версиями сущностей в `versions`. Точечные card intents
+(`/boards/:id/cards/:cardId/claim|move|context`, `PATCH
+/boards/:id/cards/:cardId`) используют `ifMatchVersions` для одной карточки
+и не требуют чтения доски; `ifMatch = seq` остаётся явным полнодосочным
+режимом. Это precondition в теле: API **не** читает HTTP-заголовок
+`If-Match`, а `Board.version` (версия сущности для `ifMatchVersions`) не
+смешивается с `ifMatch`/`seq`. Политика доски использует собственный
+CAS-токен `agentPolicyVersion`.
 
 ## Идемпотентность
 

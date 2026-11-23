@@ -345,6 +345,48 @@ and a share token does not open the revisions routes.
 
 Each write records an `Activity` row and publishes an `activity` SSE frame.
 
+## Targeted card intents
+
+TASK-200.7 adds agent-facing card intents that load one card and the board
+shell (columns, labels, workflow), never the whole aggregate. They are the
+preferred path for a swarm: unrelated cards cannot conflict, and a retry does
+not re-download the board.
+
+| Method  | Path                              | Request                  | Response                    |
+| ------- | --------------------------------- | ------------------------ | --------------------------- |
+| `GET`   | `/boards/:id/cards/:cardId/context` | none                   | `CardContext`               |
+| `POST`  | `/boards/:id/cards/:cardId/claim`   | `ClaimCardIntentRequest` | `CardClaimIntentResponse`  |
+| `POST`  | `/boards/:id/cards/:cardId/move`    | `MoveCardIntentRequest`  | `CardMoveIntentResponse`   |
+| `PATCH` | `/boards/:id/cards/:cardId`         | `PatchCardIntentRequest` | `CardIntentResponse`       |
+
+`CardContext` contains the card, its `columnId` and zero-based `cardIndex`, the
+column id/title list, `doneColumnIds` (with the last-column fallback),
+`workflow`, the current board `seq` and actual `board:`, `card:` and `column:`
+versions. Use it for a Definition-of-Done check, a release guard or a
+description compare-and-set without calling `GET /boards/:id`.
+
+Every intent body accepts `commandId` (the idempotency key; omitting it lets
+the server mint one, which is safe only when a lost response may create a
+second command), `ifMatchVersions` and `ifMatch`. `ifMatch` is the explicit
+full-board mode; a normal intent omits it. Without `ifMatchVersions`, the
+server pins the version of the card it read. `claim` takes `leaseMs` or
+`release: true`; the server fills the holder and applies the same live-lease
+guard and ADMIN/owner release rules as `CLAIM_CARD`. `move` takes an optional
+`toColumnId` and `position`; the server resolves the source column and both
+indexes under the board lock, so a move of another card in the same column is
+not a conflict. `PATCH` changes `title` and/or `description`, with an optional
+`expectedDescription` compare-and-set.
+
+Idempotency, approvals, agent policy, WIP/workflow, run pre-images, undo data
+and the SSE command log are the same as the command endpoint: each intent
+builds the normal `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD` action and applies it
+through `CommandsService` with a targeted board load. A stale precondition
+answers `409 version_conflict` with the board `seq` in `currentVersion` and
+the actual entity versions in `versions`; merge those into
+`ifMatchVersions` and retry the same call, or re-read only
+`/cards/:cardId/context`. Comments are already targeted
+(`POST /cards/:cardId/comments`) and need no board read either.
+
 ## Resource board context
 
 Each route resolves the board of an accessible resource and returns
@@ -1211,7 +1253,7 @@ names the cause.
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
 | `405`  | a write against the public share API                                                                                                                  |
 | `408`  | `code: "request_timeout"`: the command was aborted before it could be applied; nothing was applied; `X-RateLimit-Queued-Ms` reports the queue wait |
-| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
+| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card; a stale version precondition (`versions` carries the actual entity versions for a targeted retry) |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |

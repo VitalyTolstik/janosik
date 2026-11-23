@@ -136,6 +136,7 @@ Every REST error uses one machine-readable body (TASK-166.4):
   "requestId": "3d0f2c7e-…",
   "currentVersion": 42,
   "conflict": "version",
+  "versions": { "card:clx-1": 7 },
   "statusCode": 409
 }
 ```
@@ -154,6 +155,9 @@ Every REST error uses one machine-readable body (TASK-166.4):
 - `field` points at a rejected input, `details` carries extra context, and
   `limit`/`current` describe a semantic limit. `conflict` (`version`, `wip`,
   `id`, `workflow`) and `workflow` remain for compatibility.
+- `versions` on a `version` conflict holds the actual `card:`/`column:`/
+  `board:` versions. Merge them into `ifMatchVersions` and retry the targeted
+  card intent; no full board read is needed.
 
 `ValidationPipe` runs with `whitelist: true` and `transform: true`. An unknown
 body field is stripped; a failed class-validator constraint is
@@ -221,10 +225,15 @@ error codes. Breaking changes would ship as a new `/api/v2` prefix.
 Board writes use the command sequence for concurrency control. `GET
 /boards/:id` returns `X-Board-Seq`; pass that number as `CommandRequest.ifMatch`
 and optional per-entity versions as `ifMatchVersions`. A stale value answers
-`409 version_conflict` with the current `seq` in `currentVersion`. This is a
-body-level precondition: the API does **not** read the HTTP `If-Match` header,
-and `Board.version` (entity version for `ifMatchVersions`) is not mixed with
-`ifMatch`/`seq`. Board policy uses its own `agentPolicyVersion` CAS token.
+`409 version_conflict` with the current `seq` in `currentVersion` and the
+actual entity versions in `versions`. The targeted card intents
+(`/boards/:id/cards/:cardId/claim|move|context`, `PATCH
+/boards/:id/cards/:cardId`) use `ifMatchVersions` for the one card and never
+need a board read; `ifMatch = seq` remains the explicit full-board mode. This
+is a body-level precondition: the API does **not** read the HTTP `If-Match`
+header, and `Board.version` (entity version for `ifMatchVersions`) is not
+mixed with `ifMatch`/`seq`. Board policy uses its own `agentPolicyVersion` CAS
+token.
 
 ## Idempotency
 

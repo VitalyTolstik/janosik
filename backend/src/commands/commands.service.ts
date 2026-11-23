@@ -7,7 +7,11 @@ import {
   Optional,
 } from "@nestjs/common";
 import { Role } from "@prisma/client";
-import type { ApprovalRequest, Prisma } from "@prisma/client";
+import type {
+  ApprovalRequest,
+  Board as BoardRow,
+  Prisma,
+} from "@prisma/client";
 import type {
   ActorType,
   Board,
@@ -17,6 +21,7 @@ import type {
   CommandDeltaEntry,
   CommandResponse,
   ConflictError,
+  EntityVersions,
 } from "@janosik/shared";
 import {
   atWipLimit,
@@ -52,6 +57,11 @@ import {
   emptyBoardAggregate,
   loadBoardAggregate,
 } from "@/boards/board-aggregate";
+import {
+  loadTargetedBoardAggregate,
+  needsCardIndex,
+  targetedCardIds,
+} from "./targeted-board";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
@@ -403,6 +413,13 @@ export interface ApplyOptions {
     runId: string,
     results: CommandResponse[],
   ) => Promise<void>;
+  /**
+   * TASK-200.7: the caller is a card intent (claim/move/field patch), so the
+   * board snapshot may be the targeted one — the shell plus the named card(s)
+   * and, for a move, the active card order. Never set this for a normal
+   * command whose reducer may read an unrelated card.
+   */
+  targeted?: boolean;
 }
 
 @Injectable()
@@ -452,6 +469,29 @@ export class CommandsService {
       response: applied.results[0]!,
       applied: applied.freshCommandIds.includes(dto.commandId),
     };
+  }
+
+  /**
+   * TASK-200.7: choose the snapshot width for one command batch. A targeted
+   * card intent loads the shell and its card(s); a normal command keeps the
+   * full aggregate because its reducer may read an unrelated card.
+   */
+  private async loadCommandBoard(
+    client: Prisma.TransactionClient,
+    boardId: string,
+    board: BoardRow,
+    actions: BoardAction[],
+    targeted: boolean,
+  ): Promise<BoardAggregate | null> {
+    if (!targeted) {
+      return loadBoardAggregate(client, boardId, { board });
+    }
+    const loaded = await loadTargetedBoardAggregate(client, boardId, {
+      board,
+      cardIds: targetedCardIds(actions),
+      includeCardIndex: needsCardIndex(actions),
+    });
+    return loaded?.board ?? null;
   }
 
   /**
@@ -555,8 +595,18 @@ export class CommandsService {
         const snapshotNeeded =
           planNeedsClassificationSnapshot(plan, boardRow.workflow) ||
           planCreatesCards(plan);
+        // TASK-200.7: a card intent never needs every card. The shell,
+        // columns, workflow and its one card are enough for classification —
+        // even a move into a done column, where the source card is part of
+        // the decision.
         const aggregate = snapshotNeeded
-          ? await loadBoardAggregate(this.prisma, boardId, { board: boardRow })
+          ? await this.loadCommandBoard(
+              this.prisma,
+              boardId,
+              boardRow,
+              prepared.map((entry) => entry.action),
+              options.targeted === true,
+            )
           : null;
         if (snapshotNeeded && aggregate === null) {
           throw new NotFoundException("Board not found");
@@ -723,7 +773,13 @@ export class CommandsService {
         // is applied to; an all-replay request loads nothing.
         let running: BoardAggregate | null = null;
         if (fresh.length > 0) {
-          const aggregate = await loadBoardAggregate(tx, boardId, { board });
+          const aggregate = await this.loadCommandBoard(
+            tx,
+            boardId,
+            board,
+            fresh.map((entry) => entry.action),
+            options.targeted === true,
+          );
           if (aggregate === null) {
             throw new NotFoundException("Board not found");
           }
@@ -2407,6 +2463,19 @@ export class CommandsService {
       ids.set(match[2], expected);
     }
     const versions = await entityVersions(tx, boardId, wanted);
+    // TASK-200.7: answer with the versions this command pinned (and the board
+    // seq above), so a client can retry only the entity it touched instead of
+    // re-reading the whole board. A missing entity is left out: there is no
+    // version to retry with, and the normal reducer/no-change path explains
+    // the stale id.
+    const actualVersions: EntityVersions = {};
+    for (const [entity, expectations] of wanted) {
+      const actual = versions.get(entity);
+      for (const id of expectations.keys()) {
+        const value = actual?.get(id);
+        if (value !== undefined) actualVersions[`${entity}:${id}`] = value;
+      }
+    }
     for (const [entity, expectations] of wanted) {
       const actual = versions.get(entity);
       for (const [id, expected] of expectations) {
@@ -2415,6 +2484,9 @@ export class CommandsService {
           throw new ConflictException({
             conflict: "version",
             currentVersion,
+            ...(Object.keys(actualVersions).length > 0
+              ? { versions: actualVersions }
+              : {}),
           } satisfies ConflictError);
         }
       }
