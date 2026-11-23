@@ -204,8 +204,9 @@ tolerate an unknown code and fall back to the HTTP status.
 Approval, pause and run errors describe the next action: stop and ask a human,
 re-read the board, or do not retry the same request. They are intentionally
 `retryable: false`; only `rate_limited`, `request_timeout`,
-`board_write_timeout`, `service_unavailable` and `idempotency_in_progress` are
-safe to retry unchanged.
+`board_write_timeout`, `idempotency_in_progress` and `service_unavailable` are
+safe to retry unchanged. Retry `service_unavailable` with the same `commandId`
+or REST `Idempotency-Key`: a `502`/`504` can follow an unkeyed write.
 
 ## Versioning and concurrency
 

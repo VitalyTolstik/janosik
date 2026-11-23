@@ -955,7 +955,9 @@ Headers:
 | `X-Approval-Id` | commands/batch/plans/apply/lifecycle REST | approval id for the exact plan |
 | `Idempotency-Key` | create board/import/share/upload | REST idempotency, 24 h |
 | `X-Request-Id` | all responses | correlation id (already exists) |
-| `X-RateLimit-*`, `Retry-After` | all responses/429 | 166.10 |
+| `X-RateLimit-*`, `RateLimit-*` | agent responses | budget of the tightest bucket |
+| `X-RateLimit-Queued-Ms` | queued command/batch `200`, queued `503 rate_limited`, `408 request_timeout` | total per-board queue wait; `0` on an immediate cap rejection |
+| `Retry-After` | `429` and queued `503 rate_limited` | seconds until the next attempt |
 | `X-Board-Seq`, `X-Delta-Resync` | board read/delta | already exists |
 
 SSE `?session=<sessionId>` is optional; it is used for session pause (§9.3).
@@ -1337,7 +1339,7 @@ Every API error (new and changed in 166.4) returns:
 | `idempotency_conflict` | 409 | false | same key, different body | `key` |
 | `idempotency_in_progress` | 409 | true | first record is still running or its outcome is uncertain | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
-| `request_timeout` | 408 | true | the command was aborted before it could be applied; nothing was applied | `X-RateLimit-Queued-Ms` (elapsed queue wait, `0` if aborted before any wait; an immediate queue-cap rejection is the `503` path) |
+| `request_timeout` | 408 | true | the command was aborted before it could be applied; nothing was applied | response header `X-RateLimit-Queued-Ms` (elapsed queue wait, `0` if aborted before any wait; an immediate queue-cap rejection is the `503` path) — not an envelope field |
 | `rate_limited` | 429, 503 (queued command) | true | global/per-token/per-agent/board limit | `retryAfter`, `limit`, `scope` |
 | `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |
 | `not_found` | 404 | false | entity/board/approval/run not found | `resource` |

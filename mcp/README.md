@@ -118,8 +118,9 @@ seconds, where it uses 7.4 s plus up to 600 ms of jitter (each pause is thus
 Retry only `retryable: true`
 failures that still come back (`rate_limited`, `request_timeout`,
 `board_write_timeout`, `service_unavailable`, `idempotency_in_progress`);
-re-read the board on `version_conflict`, and stop on
-`approval_required`.
+retry `service_unavailable` only with the same `commandId` or REST
+`Idempotency-Key`, because a `502`/`504` can follow an unkeyed write. Re-read
+the board on `version_conflict`, and stop on `approval_required`.
 The REST-backed writes (`create_board`, `duplicate_card`, `add_comment`,
 `create_share`, `upload_attachment`) accept an optional `idempotencyKey` so a
 tool-call retry returns the first result instead of creating a second one.

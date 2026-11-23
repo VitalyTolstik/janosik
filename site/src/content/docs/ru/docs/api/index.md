@@ -213,7 +213,9 @@ stack trace. Текущий каталог кодов `ApiErrorCode` опубл�
 позвать человека, перечитать доску или не повторять тот же запрос. Они
 намеренно `retryable: false`; без изменений безопасно повторять только
 `rate_limited`, `request_timeout`, `board_write_timeout`,
-`service_unavailable` и `idempotency_in_progress`.
+`idempotency_in_progress` и `service_unavailable`. Повторяйте
+`service_unavailable` с тем же `commandId` или REST `Idempotency-Key`:
+`502`/`504` может прийти после записи без ключа.
 
 ## Версионирование и конкурентность
 
