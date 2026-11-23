@@ -253,9 +253,12 @@ describe("rate-limit retry policy (TASK-200.3)", () => {
     expect(parsed).toBeLessThanOrEqual(5);
   });
 
-  it("prefers Retry-After over the exponential floor", () => {
+  it("adds jitter on top of Retry-After instead of masking it", () => {
     const error = new ApiError(429, { code: "rate_limited" }, 2);
-    expect(rateLimitDelayMs(error, 1, () => 0)).toBe(2_000);
+    const delay = rateLimitDelayMs(error, 1, () => 0);
+    expect(delay).toBeGreaterThan(2_000);
+    expect(delay).toBeLessThanOrEqual(8_000);
+    expect(delay).toBe(2_050);
   });
 
   it("falls back to capped, jittered exponential backoff", () => {

@@ -415,10 +415,12 @@ describe("rate-limit retries (TASK-200.3)", () => {
     );
   });
 
-  it("retries the server's queued 503 rate_limited too", async () => {
+  it("retries the server's queued 503 rate_limited with the same body and commandId", async () => {
     let attempts = 0;
-    vi.stubGlobal("fetch", () => {
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", (_input: string, init?: RequestInit) => {
       attempts += 1;
+      bodies.push(String(init?.body));
       return Promise.resolve(
         attempts === 1
           ? rateLimited(503)
@@ -427,9 +429,42 @@ describe("rate-limit retries (TASK-200.3)", () => {
     });
     const client = new JanosikClient("http://api.test", "t");
     await expect(
-      client.command("b1", { type: "DELETE_CARD", cardId: "c1" }),
+      client.command(
+        "b1",
+        { type: "DELETE_CARD", cardId: "c1" },
+        { commandId: "cmd-queued-503" },
+      ),
     ).resolves.toMatchObject({ seq: 6 });
     expect(attempts).toBe(2);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(JSON.parse(bodies[1]!).commandId).toBe("cmd-queued-503");
+  });
+
+  it("keeps the Idempotency-Key and body on a rate-limited keyed write", async () => {
+    let attempts = 0;
+    const bodies: string[] = [];
+    const keys: Array<string | undefined> = [];
+    vi.stubGlobal("fetch", (_input: string, init?: RequestInit) => {
+      attempts += 1;
+      bodies.push(String(init?.body));
+      keys.push(
+        (init?.headers as Record<string, string> | undefined)?.[
+          "Idempotency-Key"
+        ],
+      );
+      return Promise.resolve(
+        attempts === 1
+          ? rateLimited(429, "0")
+          : json({ id: "b1", title: "Created" }, 201),
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await client.createBoard("Created", "idem-rate-limit");
+
+    expect(attempts).toBe(2);
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(keys[1]).toBe("idem-rate-limit");
+    expect(keys[1]).toBe(keys[0]);
   });
 
   it("stops after a bounded number of 429 attempts", async () => {

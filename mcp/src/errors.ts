@@ -51,9 +51,11 @@ export function isRateLimited(error: unknown): boolean {
 
 /**
  * Pause before the next rate-limit attempt: `Retry-After` when the server
- * named one, otherwise exponential backoff. The jitter spreads a swarm of
- * clients that were refused in the same millisecond. `random` is injectable so
- * tests can assert the bounds without sleeping.
+ * named one, otherwise exponential backoff, plus jitter in both cases. The
+ * jitter spreads a swarm of clients that were refused in the same
+ * millisecond; adding it on top of `Retry-After` (instead of taking the
+ * larger of the two) keeps that spread when the server names a pause.
+ * `random` is injectable so tests can assert the bounds without sleeping.
  */
 export function rateLimitDelayMs(
   error: unknown,
@@ -62,13 +64,13 @@ export function rateLimitDelayMs(
 ): number {
   const retryAfterMs =
     error instanceof ApiError && error.retryAfterSeconds !== undefined
-      ? error.retryAfterSeconds * 1_000
+      ? Math.max(0, error.retryAfterSeconds * 1_000)
       : 0;
   const exponential = RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
   const jittered = exponential * (0.5 + random());
   return Math.min(
     RATE_LIMIT_MAX_DELAY_MS,
-    Math.max(0, retryAfterMs, Math.round(jittered)),
+    Math.max(0, Math.round(retryAfterMs + jittered)),
   );
 }
 
