@@ -517,7 +517,25 @@ comfortably. Two knobs matter when you grow, and both have safe defaults:
   open, it logs the active connection count once a minute. Tune with `SSE_MAX_CONNECTIONS`
   (per instance, default `5000`), `SSE_MAX_PER_USER` (default `32`) and
   `SSE_MAX_PER_BOARD` (default `0` = unlimited — a swarm legitimately holds
-  many). `0` means unlimited for each.
+  many). `0` means unlimited for each. Board events are serialized once per
+  event and written to every stream as the same buffer; a reader that stops
+  draining is disconnected after the soft `SSE_MAX_BUFFER_BYTES` (default
+  `128 KiB`; the already-accepted in-flight frame is extra, and `0` means no
+  queue), `SSE_SLOW_CLOSE_MS` (default `60 s`; `0` disables only this timer)
+  or the 5 s burst guard for a batch burst, then resumes from `?since=`. The
+  hard guard is 16 MiB, or 2x the soft bound when it is above 8 MiB. Live and
+  replayed command frames are shared Buffers (command cache up to 32 MiB); the
+  guard bounds queue references, not per-subscriber copies. Catch-up first
+  runs a `LIMIT max+1` count and a 20-row logical `octet_length` sample
+  (bounded detoast, 1.25 variance factor), then rows are read in 10-row pages
+  under a process-wide 32 MiB / 6-slot budget held until the sequencer emitted
+  them; excess or oversized reconnects answer `resync` instead of replaying
+  forever.
+  `SSE_MAX_BUFFER_BYTES=0` affects only the blocked queue, not this catch-up
+  budget.
+  This pre-serialized path is for authenticated member streams; public share
+  SSE still uses Nest's per-subscriber writer. Both limits are forwarded by
+  the compose file.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC rather than the container OOM-killer, which would
   drop every open connection at once.

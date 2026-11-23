@@ -674,7 +674,7 @@ export class FakeAdminServer {
     jobs: {
       transcode: { pending: 0, done: 0, failed: 0 },
       demo: { running: false, boardId: null },
-      realtime: { boards: 0, clients: 0 },
+      realtime: { boards: 0, clients: 0, slowDrops: 0 },
       queues: [
         {
           name: "broadcast",

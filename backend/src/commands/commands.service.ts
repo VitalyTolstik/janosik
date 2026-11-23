@@ -6,12 +6,8 @@ import {
   NotFoundException,
   Optional,
 } from "@nestjs/common";
-import { Role } from "@prisma/client";
-import type {
-  ApprovalRequest,
-  Board as BoardRow,
-  Prisma,
-} from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
+import type { ApprovalRequest, Board as BoardRow } from "@prisma/client";
 import type {
   ActorType,
   Board,
@@ -85,6 +81,7 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { AttentionService } from "@/notifications/attention.service";
+import { CatchUpBudget, processCatchUpBudget } from "./catch-up-budget";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import {
   type EntityParentageLedger,
@@ -183,6 +180,24 @@ const RESTORE_ACTIONS = new Set<string>([
  * request can never materialize an unbounded history.
  */
 export const COMMAND_DELTA_MAX = 5_000;
+/** Sample window for the no-detoast preflight byte estimate. */
+export const CATCH_UP_SAMPLE_ROWS = 20;
+/** Rows loaded per catch-up page; bounds six concurrent page allocations. */
+export const CATCH_UP_PAGE_ROWS = 10;
+
+const DELTA_SELECT = {
+  id: true,
+  seq: true,
+  actorId: true,
+  actorType: true,
+  apiTokenId: true,
+  agentSessionId: true,
+  runId: true,
+  agentName: true,
+  payload: true,
+  touches: true,
+} as const;
+type DeltaRow = Prisma.CommandGetPayload<{ select: typeof DELTA_SELECT }>;
 
 /**
  * One page of the command delta (B-3). `resync` means the gap since the
@@ -193,6 +208,13 @@ export const COMMAND_DELTA_MAX = 5_000;
 export interface CommandDelta {
   entries: CommandDeltaEntry[];
   resync: boolean;
+  /**
+   * TASK-200.13: an SSE catch-up transfers its `CatchUpBudget` reservation
+   * to the caller. The sequencer calls this after it has emitted/closed the
+   * entry array, so the global bytes stay accounted while the objects are
+   * still alive. HTTP callers and resync responses have no release.
+   */
+  release?: () => void;
 }
 
 /**
@@ -462,6 +484,8 @@ export class CommandsService {
     private readonly realtime: RealtimeService,
     private readonly approvals: ApprovalsService,
     @Optional() private readonly attention?: AttentionService,
+    @Optional()
+    private readonly catchUpBudget: CatchUpBudget = processCatchUpBudget,
   ) {}
 
   /**
@@ -1628,6 +1652,11 @@ export class CommandsService {
    *   no longer in the log: the retention sweep trimmed it, and possibly
    *   commands after it.
    * Either way `resync: true` — the caller must re-read the board snapshot.
+   *
+   * TASK-200.13: an SSE catch-up also passes `maxBytes` (the same hard guard
+   * as the subscriber queue). A delta over that budget is unrepresentable
+   * for this stream — replaying it would drop the connection and make the
+   * client retry the same oversized page — so it becomes `resync` instead.
    */
   async deltaSince(
     boardId: string,
@@ -1639,6 +1668,7 @@ export class CommandsService {
       agentSessionId?: string;
     } = {},
     client: Prisma.TransactionClient = this.prisma,
+    maxBytes: number = Number.POSITIVE_INFINITY,
   ): Promise<CommandDelta> {
     if (since > 0) {
       const baseline = await client.command.findFirst({
@@ -1649,66 +1679,208 @@ export class CommandsService {
         return { entries: [], resync: true };
       }
     }
-    const rows = await client.command.findMany({
-      where: {
-        boardId,
-        ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
-        ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
-        ...(filters.apiTokenId !== undefined
-          ? { apiTokenId: filters.apiTokenId }
-          : {}),
-        ...(filters.agentSessionId !== undefined
-          ? { agentSessionId: filters.agentSessionId }
-          : {}),
-      },
-      orderBy: { seq: "asc" },
-      // One extra row tells "exactly max" apart from "more than max".
-      take: max + 1,
-      select: {
-        id: true,
-        seq: true,
-        actorId: true,
-        actorType: true,
-        apiTokenId: true,
-        agentSessionId: true,
-        runId: true,
-        agentName: true,
-        payload: true,
-        touches: true,
-      },
-    });
-    const details = await commandDetailMap(
-      client,
+    const where: Prisma.CommandWhereInput = {
       boardId,
-      rows.map((row) => row.id),
-    );
-    const truncated = rows.length > max;
-    return {
-      entries: (truncated ? rows.slice(0, max) : rows).map((row) => {
-        const detail = commandDetail(details.get(row.id) ?? null);
-        return {
-          seq: Number(row.seq),
-          // Rows written before ingress stamping may lack `boardId`; replay
-          // them scoped to the queried board so the UI's realtime bridge keeps
-          // them.
-          action: {
-            ...(row.payload as Record<string, unknown>),
+      ...(since > 0 ? { seq: { gt: BigInt(since) } } : {}),
+      ...(filters.runId !== undefined ? { runId: filters.runId } : {}),
+      ...(filters.apiTokenId !== undefined
+        ? { apiTokenId: filters.apiTokenId }
+        : {}),
+      ...(filters.agentSessionId !== undefined
+        ? { agentSessionId: filters.agentSessionId }
+        : {}),
+    };
+
+    if (!Number.isFinite(maxBytes)) {
+      const rows = await client.command.findMany({
+        where,
+        orderBy: { seq: "asc" },
+        // One extra row tells "exactly max" apart from "more than max".
+        take: max + 1,
+        select: DELTA_SELECT,
+      });
+      const truncated = rows.length > max;
+      const page = truncated ? rows.slice(0, max) : rows;
+      const details = await commandDetailMap(
+        client,
+        boardId,
+        page.map((row) => row.id),
+      );
+      return {
+        entries: page.map((row) =>
+          this.deltaEntry(
             boardId,
-          } as BoardAction,
-          actorId: row.actorId,
-          actorType: row.actorType as ActorType,
-          commandId: row.id,
-          touches: row.touches,
-          ...(detail === undefined ? {} : { detail }),
-          ...attributionFields({
-            apiTokenId: row.apiTokenId,
-            agentSessionId: row.agentSessionId,
-            runId: row.runId,
-            agentName: row.agentName,
-          }),
-        };
+            row,
+            commandDetail(details.get(row.id) ?? null),
+          ),
+        ),
+        resync: truncated,
+      };
+    }
+
+    const releaseAttempt = this.catchUpBudget.tryBegin();
+    if (releaseAttempt === null) return { entries: [], resync: true };
+    let releaseBytes: (() => void) | null = null;
+    let handedOff = false;
+    const extraReleases: Array<() => void> = [];
+    try {
+      // Cheap preflight: no row/JSON materialisation in Node. `payload` and
+      // `details` are detoasted only inside PostgreSQL for this aggregate.
+      const conditions: Prisma.Sql[] = [Prisma.sql`"boardId" = ${boardId}`];
+      if (since > 0) conditions.push(Prisma.sql`"seq" > ${BigInt(since)}`);
+      if (filters.runId !== undefined) {
+        conditions.push(Prisma.sql`"runId" = ${filters.runId}`);
+      }
+      if (filters.apiTokenId !== undefined) {
+        conditions.push(Prisma.sql`"apiTokenId" = ${filters.apiTokenId}`);
+      }
+      if (filters.agentSessionId !== undefined) {
+        conditions.push(
+          Prisma.sql`"agentSessionId" = ${filters.agentSessionId}`,
+        );
+      }
+      const whereSql = Prisma.join(conditions, " AND ");
+      // Count only a bounded window. `since=0` on a large board must not scan
+      // the full history just to discover it is too large to replay.
+      const [countRow] = await client.$queryRaw<Array<{ count: bigint }>>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS "count" FROM (
+          SELECT 1 FROM "Command" WHERE ${whereSql} LIMIT ${max + 1}
+        ) AS "bounded"`,
+      );
+      const count = countRow?.count ?? 0n;
+      if (count > BigInt(max)) return { entries: [], resync: true };
+      const countNumber = Number(count);
+      // Logical bytes, not compressed `pg_column_size`: repeated 64 KiB text
+      // must not look tiny. Detoasting is bounded to the sample window only,
+      // and a 1.25 variance factor covers later rows that are larger. The
+      // display detail lives in `CommandDetail` (TASK-200.11); the correlated
+      // subquery reads at most one row so a moved/duplicated id cannot inflate
+      // the sample.
+      const [sample] = await client.$queryRaw<
+        Array<{ sampled: bigint; bytes: bigint }>
+      >(
+        Prisma.sql`SELECT COUNT(*)::bigint AS "sampled",
+            COALESCE(SUM(
+              octet_length("payload"::text) +
+              COALESCE(octet_length("detail"::text), 0) +
+              COALESCE(octet_length(array_to_string("touches", ',')), 0)
+            ), 0)::bigint AS "bytes"
+          FROM (
+            SELECT c."payload", c."touches",
+              (
+                SELECT d."data" FROM "CommandDetail" d
+                WHERE d."commandId" = c."id"
+                  AND d."createdAt" = c."createdAt"
+                LIMIT 1
+              ) AS "detail"
+            FROM "Command" c WHERE ${whereSql}
+            ORDER BY c."seq" ASC LIMIT ${CATCH_UP_SAMPLE_ROWS}
+          ) AS "sample"`,
+      );
+      const sampled = Number(sample?.sampled ?? 0n);
+      const sampleBytes = Number(sample?.bytes ?? 0n);
+      const estimatedBytes =
+        (sampled > 0
+          ? Math.ceil((sampleBytes / sampled) * countNumber * 1.25)
+          : 0) +
+        countNumber * 256;
+      if (estimatedBytes > maxBytes) return { entries: [], resync: true };
+      releaseBytes = this.catchUpBudget.tryReserve(estimatedBytes);
+      if (releaseBytes === null) return { entries: [], resync: true };
+      let reservedBytes = estimatedBytes;
+
+      // Fetch in small pages: never hold more than one page of row objects
+      // while replaying, and abort to resync if the actual JSON exceeds the
+      // reservation or the local byte guard.
+      const entries: CommandDeltaEntry[] = [];
+      let usedBytes = 0;
+      let fetched = 0;
+      let lastSeq = since;
+      while (fetched < countNumber) {
+        const take = Math.min(CATCH_UP_PAGE_ROWS, countNumber - fetched);
+        const rows = await client.command.findMany({
+          where: { ...where, seq: { gt: BigInt(lastSeq) } },
+          orderBy: { seq: "asc" },
+          take,
+          select: DELTA_SELECT,
+        });
+        // The log changed under the estimate (e.g. retention ran): losing a
+        // row silently is worse than a resync.
+        if (rows.length === 0) return { entries: [], resync: true };
+        const details = await commandDetailMap(
+          client,
+          boardId,
+          rows.map((row) => row.id),
+        );
+        for (const row of rows) {
+          const entry = this.deltaEntry(
+            boardId,
+            row,
+            commandDetail(details.get(row.id) ?? null),
+          );
+          usedBytes += Buffer.byteLength(JSON.stringify(entry), "utf8") + 64;
+          if (usedBytes > maxBytes) return { entries: [], resync: true };
+          if (usedBytes > reservedBytes) {
+            // The SQL estimate was low for this entry. Grow the process-wide
+            // reservation before keeping the bytes; otherwise another
+            // catch-up could already be using that headroom.
+            const releaseExtra = this.catchUpBudget.tryReserve(
+              usedBytes - reservedBytes,
+            );
+            if (releaseExtra === null) {
+              return { entries: [], resync: true };
+            }
+            extraReleases.push(releaseExtra);
+            reservedBytes = usedBytes;
+          }
+          entries.push(entry);
+          lastSeq = Number(row.seq);
+        }
+        fetched += rows.length;
+      }
+      handedOff = true;
+      return {
+        entries,
+        resync: false,
+        release: () => {
+          for (const release of extraReleases) release();
+          releaseBytes?.();
+          releaseAttempt();
+        },
+      };
+    } finally {
+      if (!handedOff) {
+        for (const release of extraReleases) release();
+        releaseBytes?.();
+        releaseAttempt();
+      }
+    }
+  }
+
+  private deltaEntry(
+    boardId: string,
+    row: DeltaRow,
+    detail: string | undefined,
+  ): CommandDeltaEntry {
+    return {
+      seq: Number(row.seq),
+      // Rows written before ingress stamping may lack `boardId`; replay them
+      // scoped to the queried board so the UI's realtime bridge keeps them.
+      action: {
+        ...(row.payload as Record<string, unknown>),
+        boardId,
+      } as BoardAction,
+      actorId: row.actorId,
+      actorType: row.actorType as ActorType,
+      commandId: row.id,
+      touches: row.touches,
+      ...(detail === undefined ? {} : { detail }),
+      ...attributionFields({
+        apiTokenId: row.apiTokenId,
+        agentSessionId: row.agentSessionId,
+        runId: row.runId,
+        agentName: row.agentName,
       }),
-      resync: truncated,
     };
   }
 

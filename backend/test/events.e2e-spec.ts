@@ -9,6 +9,8 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { SseFrameStore } from "@/realtime/sse-frames";
+import { sseTiming } from "@/realtime/sse-timing";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "events-owner@example.com";
@@ -186,6 +188,33 @@ describe("Board events SSE (e2e)", () => {
     return res.body.seq as number;
   }
 
+  /** Commit `count` 64 KiB `UPDATE_CARD` commands in one batch. */
+  async function updateBatch(
+    tag: string,
+    cardId: string,
+    count = 100,
+  ): Promise<void> {
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands/batch`)
+      .set(auth(ownerToken))
+      .send({
+        commands: Array.from({ length: count }, (_, index) => {
+          const prefix = `${tag}-${index}-`;
+          return {
+            commandId: `evt-${tag}-${index}`,
+            action: {
+              type: "UPDATE_CARD",
+              cardId,
+              // LIMITS.description is exactly 64 000 characters.
+              description: prefix + "x".repeat(64_000 - prefix.length),
+              at: Date.now() + index,
+            },
+          };
+        }),
+      })
+      .expect(200);
+  }
+
   async function openStream(
     token: string | null,
     since: number,
@@ -201,6 +230,63 @@ describe("Board events SSE (e2e)", () => {
         },
       },
     );
+  }
+
+  /**
+   * An agent-shaped stream: no presence roster and no presence frames, so the
+   * first block on the wire is the event under test.
+   */
+  function openQuietStream(token: string, since: number): Promise<Response> {
+    return fetch(
+      `${baseUrl}/boards/${boardId}/events?since=${since}&presence=0`,
+      {
+        headers: {
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+  }
+
+  /** Raw blocks (headers included) for byte-for-byte fan-out assertions. */
+  function openRawReader(response: Response) {
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No response body");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let closed = false;
+
+    const next = async (
+      predicate: (block: string) => boolean,
+      timeoutMs = 12_000,
+    ): Promise<string> => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        for (;;) {
+          const separator = buffer.indexOf("\n\n");
+          if (separator === -1) break;
+          const block = buffer.slice(0, separator);
+          buffer = buffer.slice(separator + 2);
+          if (predicate(block)) return block;
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          throw new Error(`Timed out waiting for an SSE block (${buffer})`);
+        }
+        const chunk = await readWithTimeout(reader, remaining);
+        if (chunk.done) throw new Error("Stream ended before the SSE block");
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+    };
+
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      await reader.cancel().catch(() => undefined);
+      await response.body?.cancel().catch(() => undefined);
+    };
+
+    return { next, close };
   }
 
   /** An SSE reader that survives several `next()` calls (presence tests). */
@@ -303,6 +389,19 @@ describe("Board events SSE (e2e)", () => {
     }
   }
 
+  async function waitFor(
+    predicate: () => boolean,
+    timeoutMs = 5_000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+      if (Date.now() > deadline) {
+        throw new Error("Timed out waiting for a condition");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   function readWithTimeout(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     ms: number,
@@ -386,6 +485,412 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[0].touches).toContain(`card:card-live`);
     expect(frames[0].touches).toContain(`board:${boardId}`);
     expect(frames[1].touches).toContain(`column:col-live`);
+  }, 20_000);
+
+  it("builds a published frame once and writes identical bytes to every subscriber", async () => {
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "col-fanout",
+        title: "Fan-out",
+        at: Date.now(),
+      },
+      "evt-fanout-col",
+    );
+    const baseline = await boardSeq(ownerToken);
+    const frames = app.get(SseFrameStore);
+    const realtime = app.get(RealtimeService);
+    const subscribersBefore = realtime.subscriberCount;
+
+    const [ownerStream, memberStream] = await Promise.all([
+      openQuietStream(ownerToken, baseline),
+      openQuietStream(memberToken, baseline),
+    ]);
+    expect(ownerStream.status).toBe(200);
+    expect(memberStream.status).toBe(200);
+    // `fetch` resolves once the headers are out, but wait for both admissions
+    // so a setup frame cannot move `builtCount` inside the measurement.
+    await waitFor(
+      () => realtime.subscriberCount === subscribersBefore + 2,
+      5_000,
+    );
+    let ownerReader: ReturnType<typeof openRawReader> | undefined;
+    let memberReader: ReturnType<typeof openRawReader> | undefined;
+    try {
+      ownerReader = openRawReader(ownerStream);
+      memberReader = openRawReader(memberStream);
+      const owner = ownerReader;
+      const member = memberReader;
+      const isCommand = (block: string): boolean =>
+        block.includes("data:") && !block.includes('"type":"keepalive"');
+      const seqOf = (block: string): number =>
+        (
+          JSON.parse(
+            block
+              .split("\n")
+              .find((line) => line.startsWith("data:"))
+              ?.slice(5)
+              .trim() ?? "null",
+          ) as { seq: number }
+        ).seq;
+
+      // Ready handshake: both subscribers must deliver a live frame before
+      // the build counter becomes the measurement.
+      const warmSeq = await command(
+        ownerToken,
+        {
+          type: "RENAME_COLUMN",
+          columnId: "col-fanout",
+          title: "Fan-out warm",
+          at: Date.now(),
+        },
+        "evt-fanout-warm",
+      );
+      const [warmOwner, warmMember] = await Promise.all([
+        owner.next(isCommand),
+        member.next(isCommand),
+      ]);
+      expect(seqOf(warmOwner)).toBe(warmSeq);
+      expect(seqOf(warmMember)).toBe(warmSeq);
+      const buildsBefore = frames.builtCount;
+
+      const firstSeq = await command(
+        ownerToken,
+        {
+          type: "ADD_CARD",
+          newCardId: "card-fanout",
+          columnId: "col-fanout",
+          title: "Fan-out card",
+          at: Date.now(),
+        },
+        "evt-fanout-card",
+      );
+      const secondSeq = await command(
+        ownerToken,
+        {
+          type: "RENAME_COLUMN",
+          columnId: "col-fanout",
+          title: "Fan-out renamed",
+          at: Date.now(),
+        },
+        "evt-fanout-rename",
+      );
+
+      const readTwo = async (
+        reader: ReturnType<typeof openRawReader>,
+      ): Promise<string[]> => [
+        await reader.next(isCommand),
+        await reader.next(isCommand),
+      ];
+      const [ownerBlocks, memberBlocks] = await Promise.all([
+        readTwo(owner),
+        readTwo(member),
+      ]);
+
+      // Same bytes, same ids, same order: one Buffer was written to both.
+      expect(ownerBlocks).toEqual(memberBlocks);
+      const payloads = ownerBlocks.map(
+        (block) =>
+          JSON.parse(
+            block
+              .split("\n")
+              .find((line) => line.startsWith("data:"))
+              ?.slice(5)
+              .trim() ?? "null",
+          ) as { type: string; seq: number },
+      );
+      expect(payloads.map((frame) => frame.seq)).toEqual([firstSeq, secondSeq]);
+      // Two published commands, two frames built — not one per subscriber.
+      expect(frames.builtCount - buildsBefore).toBe(2);
+    } finally {
+      await ownerReader?.close();
+      await memberReader?.close();
+    }
+  }, 20_000);
+
+  it("shares one 10-frame large catch-up across three subscribers", async () => {
+    const columnId = "col-catchup";
+    const cardId = "card-catchup";
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Catch-up",
+        at: Date.now(),
+      },
+      "evt-catchup-col",
+    );
+    await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Catch-up card",
+        at: Date.now(),
+      },
+      "evt-catchup-card",
+    );
+    const baseline = await boardSeq(ownerToken);
+    // Ten 64 KiB updates fit the process-wide 32 MiB catch-up budget across
+    // three simultaneous subscribers; 100 would (correctly) resync two of
+    // them, which the unit budget test covers.
+    await updateBatch("catchup", cardId, 10);
+    const frames = app.get(SseFrameStore);
+    const buildsBefore = frames.builtCount;
+
+    const [first, second, third] = await Promise.all([
+      openQuietStream(ownerToken, baseline),
+      openQuietStream(memberToken, baseline),
+      openQuietStream(viewerToken, baseline),
+    ]);
+    const readers: Array<ReturnType<typeof openRawReader>> = [];
+    try {
+      readers.push(
+        openRawReader(first),
+        openRawReader(second),
+        openRawReader(third),
+      );
+      const isCommand = (block: string): boolean =>
+        block.includes("data:") && !block.includes('"type":"keepalive"');
+      const readPage = async (
+        reader: ReturnType<typeof openRawReader>,
+      ): Promise<string[]> => {
+        const blocks: string[] = [];
+        for (let index = 0; index < 10; index += 1) {
+          blocks.push(await reader.next(isCommand, 30_000));
+        }
+        return blocks;
+      };
+      const [a, b, c] = await Promise.all(readers.map(readPage));
+
+      // Three independent delta queries, one build per command seq and the
+      // same Buffers for all three subscribers.
+      expect(a).toEqual(b);
+      expect(b).toEqual(c);
+      expect(frames.builtCount - buildsBefore).toBe(10);
+    } finally {
+      await Promise.all(readers.map((reader) => reader.close()));
+      // Reclaim the board column slot; the suite has a fixed column budget
+      // and later cases create their own.
+      await command(
+        ownerToken,
+        { type: "DELETE_COLUMN", columnId, at: Date.now() },
+        "evt-catchup-cleanup",
+      ).catch(() => undefined);
+    }
+  }, 90_000);
+
+  it("resyncs a catch-up delta above the hard byte guard", async () => {
+    const columnId = "col-oversize";
+    const cardId = "card-oversize";
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Oversize",
+        at: Date.now(),
+      },
+      "evt-oversize-col",
+    );
+    await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Oversize card",
+        at: Date.now(),
+      },
+      "evt-oversize-card",
+    );
+    const baseline = await boardSeq(ownerToken);
+    // 300 x 64 KiB is ~19.2 MiB: above the 16 MiB catch-up guard but below
+    // the 5 000-command count cap, so only the byte bound can resync it.
+    await updateBatch("oversize-a", cardId);
+    await updateBatch("oversize-b", cardId);
+    await updateBatch("oversize-c", cardId);
+
+    // The REST delta catch-up uses the same guard/budget and returns the
+    // existing resync signal instead of loading the 19 MiB page.
+    const delta = await server()
+      .get(`/api/v1/boards/${boardId}/commands?since=${baseline}`)
+      .set(auth(ownerToken))
+      .expect(200);
+    expect(delta.headers["x-delta-resync"]).toBe("1");
+    expect(delta.body).toEqual([]);
+
+    const pageLoad = jest.spyOn(prisma.command, "findMany");
+    const stream = openReader(await openQuietStream(memberToken, baseline));
+    try {
+      const [frame] = await stream.next(1, "resync", 30_000);
+      expect(frame.type).toBe("resync");
+      // The logical-byte sample rejected 300 x 64 KiB before any 10-row page.
+      expect(
+        pageLoad.mock.calls.filter(
+          ([args]) =>
+            (args as { take?: number; where?: { boardId?: string } }).take ===
+              10 &&
+            (args as { where?: { boardId?: string } }).where?.boardId ===
+              boardId,
+        ),
+      ).toHaveLength(0);
+    } finally {
+      pageLoad.mockRestore();
+      await stream.close();
+      await command(
+        ownerToken,
+        { type: "DELETE_COLUMN", columnId, at: Date.now() },
+        "evt-oversize-cleanup",
+      ).catch(() => undefined);
+    }
+  }, 120_000);
+
+  it.each([10, 100])(
+    "survives a healthy live %i-command burst of 64 KiB descriptions",
+    async (count) => {
+      const columnId = `col-burst-${count}`;
+      const cardId = `card-burst-${count}`;
+      await command(
+        ownerToken,
+        {
+          type: "ADD_COLUMN",
+          newColumnId: columnId,
+          title: `Burst ${count}`,
+          at: Date.now(),
+        },
+        `evt-burst-col-${count}`,
+      );
+      await command(
+        ownerToken,
+        {
+          type: "ADD_CARD",
+          newCardId: cardId,
+          columnId,
+          title: "Burst card",
+          at: Date.now(),
+        },
+        `evt-burst-card-${count}`,
+      );
+      const baseline = await boardSeq(ownerToken);
+      const stream = openReader(await openQuietStream(memberToken, baseline));
+      let reading: Promise<SseFrame[]> | undefined;
+      try {
+        // A healthy reader is already draining while the batch publishes; the
+        // server may queue the burst but must not drop this subscriber.
+        reading = stream.next(
+          count,
+          "command",
+          count === 100 ? 60_000 : 30_000,
+        );
+        const response = await server()
+          .post(`/api/v1/boards/${boardId}/commands/batch`)
+          .set(auth(ownerToken))
+          .send({
+            commands: Array.from({ length: count }, (_, index) => {
+              const prefix = `burst-${count}-${index}-`;
+              return {
+                commandId: `evt-burst-${count}-${index}`,
+                action: {
+                  type: "UPDATE_CARD",
+                  cardId,
+                  // LIMITS.description is exactly 64 000 characters.
+                  description: prefix + "x".repeat(64_000 - prefix.length),
+                  at: Date.now() + index,
+                },
+              };
+            }),
+          })
+          .expect(200);
+        const frames = await reading;
+        const expected = (
+          response.body as { results: Array<{ seq: number }> }
+        ).results.map((result) => result.seq);
+        expect(frames.map((frame) => frame.seq)).toEqual(expected);
+        expect(frames).toHaveLength(count);
+      } finally {
+        // Close before awaiting a failed read: otherwise the pending reader
+        // rejects after the test has already moved on.
+        await reading?.catch(() => undefined);
+        await stream.close();
+      }
+    },
+    90_000,
+  );
+
+  it("resumes a dropped quiet stream from its last applied seq", async () => {
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "col-reconnect",
+        title: "Reconnect",
+        at: Date.now(),
+      },
+      "evt-reconnect-col",
+    );
+    const baseline = await boardSeq(ownerToken);
+    const first = openReader(await openQuietStream(ownerToken, baseline));
+    const firstSeq = await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: "card-reconnect",
+        columnId: "col-reconnect",
+        title: "Before drop",
+        at: Date.now(),
+      },
+      "evt-reconnect-before",
+    );
+    const [applied] = await first.next(1, "command");
+    expect(applied.seq).toBe(firstSeq);
+    // Simulate the disconnect a slow-consumer drop produces.
+    await first.close();
+
+    const missedSeq = await command(
+      ownerToken,
+      {
+        type: "RENAME_COLUMN",
+        columnId: "col-reconnect",
+        title: "While away",
+        at: Date.now(),
+      },
+      "evt-reconnect-missed",
+    );
+    const resumed = openReader(
+      await openQuietStream(ownerToken, applied.seq as number),
+    );
+    try {
+      const [missed] = await resumed.next(1, "command");
+      expect(missed.seq).toBe(missedSeq);
+      expect(missed.action?.type).toBe("RENAME_COLUMN");
+    } finally {
+      await resumed.close();
+    }
+  }, 20_000);
+
+  it("keeps an idle quiet stream alive through the shared writer", async () => {
+    const previous = sseTiming.keepAliveMs;
+    let reader: ReturnType<typeof openRawReader> | undefined;
+    try {
+      sseTiming.keepAliveMs = 100;
+      const response = await openQuietStream(
+        ownerToken,
+        await boardSeq(ownerToken),
+      );
+      reader = openRawReader(response);
+      const block = await reader.next((frame) =>
+        frame.includes('"type":"keepalive"'),
+      );
+      expect(block).toContain("data:");
+      expect(block).toContain('"type":"keepalive"');
+    } finally {
+      sseTiming.keepAliveMs = previous;
+      await reader?.close();
+    }
   }, 20_000);
 
   it("scopes live events by the route board when a REST caller omits boardId", async () => {

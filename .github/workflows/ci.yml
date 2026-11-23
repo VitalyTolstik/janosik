@@ -24,7 +24,10 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # TASK-200.13: the suite reached 14m56s on main and now runs ~17m on a
+    # merged branch (backend e2e is ~5m of it). Keep headroom so lint/format
+    # are not cut off by runner variance.
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -253,10 +256,11 @@ jobs:
 
   browser-e2e:
     runs-on: ubuntu-latest
-    # The app/site/docs suite alone takes ~23 min on a loaded runner, then the
-    # email-disabled pass reuses a fresh stack. 30 min left no headroom and the
-    # job was cancelled during cleanup after every test had passed.
-    timeout-minutes: 40
+    # The app/site/docs suite alone takes ~32 min on a loaded runner, then the
+    # email-disabled pass reuses a fresh stack. 40 min left no headroom and the
+    # job was cancelled during cleanup after every test had passed; a retried
+    # test or a slower runner pushes it over. Keep 50 for headroom.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

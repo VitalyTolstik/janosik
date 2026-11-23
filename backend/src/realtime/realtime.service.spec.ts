@@ -70,6 +70,49 @@ describe("RealtimeService.reserveSubscriber", () => {
   });
 });
 
+/** TASK-200.13: a slow-subscriber drop is a metric and an aggregated log. */
+describe("RealtimeService slow SSE subscribers", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  it("counts every drop but logs at most once a minute", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));
+    const warn = jest
+      .spyOn(Logger.prototype, "warn")
+      .mockImplementation(() => undefined);
+    const realtime = new RealtimeService();
+
+    realtime.noteSlowSubscriber("b1", {
+      reason: "buffer",
+      queuedBytes: 200_000,
+      queuedFrames: 12,
+    });
+    realtime.noteSlowSubscriber("b2", {
+      reason: "timeout",
+      queuedBytes: 0,
+      queuedFrames: 0,
+    });
+
+    expect(realtime.slowSubscriberDrops).toBe(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("SSE slow subscriber dropped (buffer"),
+    );
+
+    jest.advanceTimersByTime(60_000);
+    realtime.noteSlowSubscriber("b1", {
+      reason: "timeout",
+      queuedBytes: 0,
+      queuedFrames: 0,
+    });
+    expect(realtime.slowSubscriberDrops).toBe(3);
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+});
+
 /** TASK-140: the live-stream count and refusals are visible in the logs. */
 describe("RealtimeService connection logging", () => {
   afterEach(() => {
