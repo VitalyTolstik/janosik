@@ -50,7 +50,8 @@ export async function startMockServer({
 
   const server = createServer((request, response) => {
     handle(request, response).catch((error) => {
-      send(response, 500, { message: String(error) });
+      console.error("mock API error:", error);
+      send(response, 500, { message: "internal mock error" });
     });
   });
 

@@ -559,7 +559,6 @@ export function escapeInline(value) {
 /** Bare text in headings/list items. */
 export function escapeText(value) {
   return String(value ?? "")
-    .replaceAll("\\", "\\\\")
-    .replace(/([`*_[\]<>#|])/g, "\\$1")
+    .replace(/[\\`*_[\]<>#|]/g, (character) => `\\${character}`)
     .replace(/\r?\n/g, " ");
 }
