@@ -18,14 +18,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session cannot starve a board. A batch is charged by `commands.length` on the
   board, token **and session** budgets; a malformed body costs one unit.
   Pinned budgets are 0 (auto) or at least 100, so a valid 100-command batch can
-  fit. Command writes over the board ceiling wait in a per-board FIFO (64
-  commands / 32 MiB, max 30 000 ms) and then answer `503 rate_limited` with
+  fit. **Upgrade note:** existing `AGENT_SESSION_RATE_LIMIT`,
+  `AGENT_TOKEN_RATE_LIMIT` or `BOARD_RATE_LIMIT` values from 1 to 99 now fail
+  startup; use 0 (auto) or at least 100. A per-key `rateLimitPerMinute` of
+  1–99 remains valid but cannot submit a 100-command batch, since a batch
+  spends its command count against the token budget. Command writes over the
+  board ceiling wait in a per-board FIFO (64 commands / 32 MiB of decompressed
+  JSON, max 30 000 ms) and then answer `503 rate_limited` with
   `Retry-After` and `X-RateLimit-Queued-Ms` (`0` when the queue cap rejects
   immediately) instead of an instant `429`; reads keep the immediate `429`.
   The MCP client retries `429` and the queued `503` up to four attempts,
-  honouring `Retry-After` with jittered exponential backoff (each pause ≤8 s,
-  including 7.4 s + up to 600 ms jitter above the cap) and reusing the same
-  `Idempotency-Key`/`commandId`; an exhausted retry still returns the
+  honouring `Retry-After` (never earlier than requested up to 8 s; above 8 s
+  it uses 7.4 s + up to 600 ms jitter) with bounded backoff and reusing the
+  same `Idempotency-Key`/`commandId`; an exhausted retry still returns the
   actionable error instead of hanging. Docs EN/RU, OpenAPI, self-hosting env
   reference, MCP README, `.env.example` and focused unit/e2e coverage are
   updated.

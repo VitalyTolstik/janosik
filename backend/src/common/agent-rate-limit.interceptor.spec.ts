@@ -323,8 +323,9 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
     expect(readDenied.getStatus()).toBe(429);
   });
 
-  it("sets X-RateLimit-Queued-Ms to zero when the queue is already full", async () => {
+  it("sets X-RateLimit-Queued-Ms to zero and samples a full-queue log", async () => {
     const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation();
+    const debug = jest.spyOn(Logger.prototype, "debug").mockImplementation();
     setBoardRateLimit(1);
     setAgentCommandQueueMs(0);
     const first = context({
@@ -342,6 +343,10 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
     const waiters = Array.from({ length: 64 }, () =>
       enqueueBoardCommand("b1", () => gate),
     );
+    // Reuse one interceptor so the 10 s sampling window is exercised.
+    const interceptor = new AgentRateLimitInterceptor();
+    const runShared = async (ctx: ExecutionContext) =>
+      lastValueFrom(await interceptor.intercept(ctx, next));
     const full = context({
       auth: { via: "pat", apiTokenId: "full-token" },
       method: "POST",
@@ -349,14 +354,26 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       params: { id: "b1" },
     });
     const error = asHttpException(
-      await run(full.context).catch((reason) => reason),
+      await runShared(full.context).catch((reason) => reason),
     );
     expect(error.getStatus()).toBe(503);
     expect(full.headers.get("X-RateLimit-Queued-Ms")).toBe(0);
+    const secondFull = context({
+      auth: { via: "pat", apiTokenId: "full-token" },
+      method: "POST",
+      originalUrl: "/api/v1/boards/b1/commands",
+      params: { id: "b1" },
+    });
+    await expect(runShared(secondFull.context)).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("command queue full (depth)"),
     );
     warn.mockRestore();
+    debug.mockRestore();
     release();
     await Promise.all(waiters);
     await new Promise((resolve) => setImmediate(resolve));

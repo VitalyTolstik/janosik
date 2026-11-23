@@ -324,13 +324,15 @@ behaviour.
 
 A response carries the budget that counted the request:
 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`,
-`X-RateLimit-Scope` (`token`, `session` or `board`), the IETF-style
+`X-RateLimit-Scope` (`token`, `session` or `board`),
+`X-RateLimit-Queued-Ms` on a queued command/batch, the IETF-style
 `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Reset` and, on `429` or a
 queued `503`, `Retry-After`. `X-RateLimit-Reset` is Unix seconds when the
 bucket is whole again (the fixed-window end, or a full board bucket);
-`RateLimit-Reset` is seconds until the next admission (`0` while a board
-token is available, otherwise the next token for the board bucket, and the
-window end for fixed buckets). When several buckets exist, the headers name
+`RateLimit-Reset` is seconds until the next admission for **this request's
+weighted cost** (a 100-command batch waits for 100 tokens, not the next single
+token; `0` while a board token is available, and the window end for fixed
+buckets). When several buckets exist, the headers name
 the tightest one, so a client that respects them will not be rejected by the
 global window first. The `RateLimit-*` headers are bucket counters, not a
 forecast of weighted work or a count of applied commands: a weighted agent
@@ -637,7 +639,9 @@ credential.
 A personal API token can be scoped when created: `boardId` limits
 it to one board, `readOnly: true` refuses content writes (`403 pat_read_only`),
 and `rateLimitPerMinute` gives it its own weighted-unit budget, capped at the
-derived per-token share (over the budget answers `429`).
+derived per-token share (over the budget answers `429`). Values are `1` to
+`100000`; a value below `100` cannot admit a 100-command batch, because a batch
+spends its command count against the token budget.
 
 | Method   | Path                    | Returns                   |
 | -------- | ----------------------- | ------------------------- |

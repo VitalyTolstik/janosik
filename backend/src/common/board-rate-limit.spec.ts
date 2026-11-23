@@ -11,12 +11,14 @@ import {
   BOARD_RATE_WAIT_MAX_STEPS,
   BoardCommandQueueAbortedError,
   BoardCommandQueueFullError,
+  boardCommandQueueFullCount,
   boardCommandQueueStats,
   enqueueBoardCommand,
   resetBoardCommandQueues,
   trackedBoardCommandQueues,
   waitForBoardRateLimit,
 } from "./board-rate-limit";
+import { commandBodyBytes } from "./command-cost";
 
 /**
  * TASK-200.3: the board bucket refills continuously, so a burst can wait for
@@ -371,11 +373,19 @@ describe("enqueueBoardCommand", () => {
     }).catch((reason) => reason);
     expect(error).toBeInstanceOf(BoardCommandQueueFullError);
     expect(error).toMatchObject({ reason: "bytes", depth: 1, bytes: 8 });
-    expect(boardCommandQueueStats("b1")).toEqual({ depth: 1, bytes: 8 });
+    expect(boardCommandQueueStats("b1")).toEqual({
+      depth: 1,
+      bytes: 8,
+      links: 1,
+    });
     release();
     await first;
     await new Promise((resolve) => setImmediate(resolve));
-    expect(boardCommandQueueStats("b1")).toEqual({ depth: 0, bytes: 0 });
+    expect(boardCommandQueueStats("b1")).toEqual({
+      depth: 0,
+      bytes: 0,
+      links: 0,
+    });
   });
 
   it("accounts queued bytes and resets them when the queue drains", async () => {
@@ -385,12 +395,100 @@ describe("enqueueBoardCommand", () => {
     });
     const first = enqueueBoardCommand("b1", () => gate, { bytes: 4 });
     const second = enqueueBoardCommand("b1", async () => "ok", { bytes: 6 });
-    expect(boardCommandQueueStats("b1")).toEqual({ depth: 2, bytes: 10 });
+    expect(boardCommandQueueStats("b1")).toEqual({
+      depth: 2,
+      bytes: 10,
+      links: 2,
+    });
     expect(BOARD_COMMAND_QUEUE_MAX_BYTES).toBeGreaterThan(0);
     release();
     await Promise.all([first, second]);
     await new Promise((resolve) => setImmediate(resolve));
-    expect(boardCommandQueueStats("b1")).toEqual({ depth: 0, bytes: 0 });
+    expect(boardCommandQueueStats("b1")).toEqual({
+      depth: 0,
+      bytes: 0,
+      links: 0,
+    });
+  });
+
+  it("enforces the byte cap on a compressed 100-command body", async () => {
+    const body = {
+      commands: Array.from({ length: 100 }, (_, index) => ({
+        commandId: `cmd-${index}`,
+        action: { type: "UPDATE_CARD", description: "x".repeat(1_024) },
+      })),
+    };
+    const measured = commandBodyBytes({
+      headers: { "content-encoding": "gzip", "content-length": "64" },
+      body,
+    });
+    expect(measured).toBeGreaterThan(64);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const maxBytes = measured + 10;
+    const first = enqueueBoardCommand("b1", () => gate, {
+      maxDepth: 4,
+      bytes: measured,
+      maxBytes,
+    });
+    const error = await enqueueBoardCommand("b1", async () => "never", {
+      maxDepth: 4,
+      bytes: measured,
+      maxBytes,
+    }).catch((reason) => reason);
+    expect(error).toBeInstanceOf(BoardCommandQueueFullError);
+    expect(error).toMatchObject({ reason: "bytes" });
+    release();
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+  });
+
+  it("bounds chained aborted nodes behind a gated head", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const head = enqueueBoardCommand("b1", () => gate, {
+      maxDepth: 2,
+      maxChain: 3,
+    });
+    let abortedCount = 0;
+    let chainRejects = 0;
+    for (let index = 0; index < 5; index += 1) {
+      const controller = new AbortController();
+      const waiter = enqueueBoardCommand("b1", async () => "never", {
+        signal: controller.signal,
+        maxDepth: 2,
+        maxChain: 3,
+      });
+      controller.abort();
+      const reason = await waiter.catch((error) => error);
+      if (reason instanceof BoardCommandQueueAbortedError) abortedCount += 1;
+      if (reason instanceof BoardCommandQueueFullError) chainRejects += 1;
+    }
+    expect(abortedCount).toBe(2);
+    expect(chainRejects).toBe(3);
+    expect(boardCommandQueueStats("b1")).toMatchObject({
+      depth: 1,
+      links: 3,
+    });
+    const full = await enqueueBoardCommand("b1", async () => "never", {
+      maxDepth: 2,
+      maxChain: 3,
+    }).catch((reason) => reason);
+    expect(full).toBeInstanceOf(BoardCommandQueueFullError);
+    expect(full).toMatchObject({ reason: "chain" });
+    expect(boardCommandQueueFullCount()).toBeGreaterThan(0);
+    release();
+    await head;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(boardCommandQueueStats("b1")).toEqual({
+      depth: 0,
+      bytes: 0,
+      links: 0,
+    });
   });
 
   it("releases an aborted waiter's slot, so a later command is accepted", async () => {
@@ -406,7 +504,11 @@ describe("enqueueBoardCommand", () => {
     });
     controller.abort();
     await expect(aborted).rejects.toBeInstanceOf(BoardCommandQueueAbortedError);
-    expect(boardCommandQueueStats("b1")).toEqual({ depth: 0, bytes: 0 });
+    expect(boardCommandQueueStats("b1")).toEqual({
+      depth: 0,
+      bytes: 0,
+      links: 1,
+    });
 
     // The aborted waiter's chained task is still behind the gate, but it is
     // released and must not reserve the slot or run its command.

@@ -59,9 +59,10 @@ export function isRateLimited(error: unknown): boolean {
  * Pause before the next rate-limit attempt: `Retry-After` when the server
  * named one, otherwise exponential backoff, plus jitter in both cases. The
  * jitter spreads a swarm of clients that were refused in the same
- * millisecond; adding it on top of `Retry-After` (instead of taking the
- * larger of the two) keeps that spread when the server names a pause.
- * `random` is injectable so tests can assert the bounds without sleeping.
+ * millisecond. For `Retry-After` up to the cap we never wake earlier than the
+ * server asked and spend the jitter in the remaining headroom; above the cap
+ * we use a jittered 7.4–8 s window. `random` is injectable so tests can
+ * assert the bounds without sleeping.
  */
 export function rateLimitDelayMs(
   error: unknown,
@@ -72,23 +73,26 @@ export function rateLimitDelayMs(
     error instanceof ApiError && error.retryAfterSeconds !== undefined
       ? Math.max(0, error.retryAfterSeconds * 1_000)
       : 0;
-  // A long Retry-After used to collapse to exactly 8 000 ms, which
-  // synchronised a whole swarm. Keep the cap but jitter inside it.
-  if (retryAfterMs >= RATE_LIMIT_CAP_BASE_MS) {
-    return Math.min(
-      RATE_LIMIT_MAX_DELAY_MS,
-      RATE_LIMIT_CAP_BASE_MS +
-        Math.floor(
-          Math.min(1, Math.max(0, random())) * RATE_LIMIT_CAP_JITTER_MS,
-        ),
+  const r = Math.min(1, Math.max(0, random()));
+  if (retryAfterMs > RATE_LIMIT_MAX_DELAY_MS) {
+    // The server asks for longer than we will wait: use the cap window with
+    // 0–600 ms of jitter, never a fixed 8 000 ms that synchronises a swarm.
+    return RATE_LIMIT_CAP_BASE_MS + Math.floor(r * RATE_LIMIT_CAP_JITTER_MS);
+  }
+  if (retryAfterMs > 0) {
+    // Wait at least what the server asked for, then place the jitter inside
+    // the remaining headroom: 7.5 s → 7.5–8.0 s.
+    const exponential =
+      RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
+    const jitter = Math.max(
+      Math.round(exponential * (0.5 + r)),
+      Math.floor(r * RATE_LIMIT_CAP_JITTER_MS),
     );
+    return Math.min(RATE_LIMIT_MAX_DELAY_MS, Math.round(retryAfterMs + jitter));
   }
   const exponential = RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
-  const jittered = exponential * (0.5 + random());
-  return Math.min(
-    RATE_LIMIT_MAX_DELAY_MS,
-    Math.max(0, Math.round(retryAfterMs + jittered)),
-  );
+  const jittered = exponential * (0.5 + r);
+  return Math.min(RATE_LIMIT_MAX_DELAY_MS, Math.max(0, Math.round(jittered)));
 }
 
 /** Read `retryAfter` from the error envelope, when it is a number. */

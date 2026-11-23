@@ -1031,6 +1031,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -1076,6 +1077,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "408": { $ref: "#/components/responses/RequestTimeout" }
         "409": { $ref: "#/components/responses/Conflict" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -3230,6 +3232,15 @@ components:
       description: Reset time as Unix seconds.
       schema:
         type: integer
+    RateLimit-Reset:
+      description: |
+        Seconds until this request's weighted cost can be admitted. For the
+        board bucket a 100-command batch waits for 100 tokens, not the next
+        single token; an allowed board request reports `0`. Fixed request-count
+        buckets report the window end.
+      schema:
+        type: integer
+        minimum: 0
     X-RateLimit-Scope:
       description: Which bucket counted the request.
       schema:
@@ -3257,6 +3268,20 @@ components:
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    RequestTimeout:
+      description: |
+        The client disconnected while a command or batch waited in the
+        per-board queue (`408 request_timeout`, retryable). Nothing was
+        applied; resend the same `commandId` when reconnecting.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        X-RateLimit-Queued-Ms:
+          $ref: "#/components/headers/X-RateLimit-Queued-Ms"
       content:
         application/json:
           schema:
@@ -3346,6 +3371,8 @@ components:
           $ref: "#/components/headers/X-RateLimit-Remaining"
         X-RateLimit-Reset:
           $ref: "#/components/headers/X-RateLimit-Reset"
+        RateLimit-Reset:
+          $ref: "#/components/headers/RateLimit-Reset"
         X-RateLimit-Scope:
           $ref: "#/components/headers/X-RateLimit-Scope"
         Retry-After:
@@ -3388,7 +3415,8 @@ components:
 
         - `rate_limited`: insufficient board tokens after waiting up to
           `AGENT_COMMAND_QUEUE_MS`, or the per-board command queue is full by
-          depth or retained bytes. Nothing was applied; `Retry-After` is set,
+          depth or retained bytes (64 commands / 32 MiB of decompressed JSON).
+          Nothing was applied; `Retry-After` is set,
           the envelope carries `scope: "board"`, and `X-RateLimit-Queued-Ms`
           reports the total queue wait (`0` for an immediate queue-cap
           rejection). Retry the same `commandId`.
@@ -3403,6 +3431,8 @@ components:
           $ref: "#/components/headers/X-RateLimit-Remaining"
         X-RateLimit-Reset:
           $ref: "#/components/headers/X-RateLimit-Reset"
+        RateLimit-Reset:
+          $ref: "#/components/headers/RateLimit-Reset"
         X-RateLimit-Scope:
           $ref: "#/components/headers/X-RateLimit-Scope"
         X-RateLimit-Queued-Ms:
@@ -6744,6 +6774,10 @@ components:
           type: [integer, "null"]
           minimum: 1
           maximum: 100000
+          description: |
+            Weighted units per minute for this key, capped by the derived
+            per-token share. A value below 100 cannot admit a 100-command
+            batch, because a batch spends its command count against the budget.
         scopePreset:
           $ref: "#/components/schemas/ScopePreset"
         trustedCi:
@@ -6761,6 +6795,9 @@ components:
           type: [integer, "null"]
           minimum: 1
           maximum: 100000
+          description: |
+            Weighted units per minute, capped by the derived per-token share.
+            A value below 100 cannot admit a 100-command batch.
         readOnly:
           type: boolean
         scopePreset:

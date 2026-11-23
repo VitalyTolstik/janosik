@@ -52,9 +52,10 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
       { commands: batch(COMMAND_BATCH_MAX + 1) },
       { commands: [] },
       { commands: "not-an-array" },
-      { commands: [{ commandId: "", action: {} }] },
+      { commands: [{ commandId: "", action: { type: "RENAME_BOARD" } }] },
       { commands: [{ commandId: "cmd-1" }] },
       { commands: [{ commandId: "cmd-1", action: null }] },
+      { commands: [{ commandId: "cmd-1", action: { type: "BOGUS" } }] },
       undefined,
     ]) {
       expect(
@@ -65,6 +66,28 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
         }),
       ).toBe(1);
     }
+  });
+
+  it("knows every real action type and rejects an unknown one cheaply", () => {
+    expect(
+      commandRateLimitCost({
+        method: "POST",
+        originalUrl: "/api/v1/boards/b1/commands/batch",
+        body: { commands: batch(100) },
+      }),
+    ).toBe(100);
+    expect(
+      commandRateLimitCost({
+        method: "POST",
+        originalUrl: "/api/v1/boards/b1/commands/batch",
+        body: {
+          commands: [
+            { commandId: "cmd-1", action: { type: "RENAME_BOARD" } },
+            { commandId: "cmd-2", action: { type: "NOT_A_COMMAND" } },
+          ],
+        },
+      }),
+    ).toBe(1);
   });
 
   it("ignores reads and unrelated writes", () => {
@@ -98,5 +121,28 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
     ).toBe(12);
     expect(commandBodyBytes({ body: "abc" })).toBe(5);
     expect(commandBodyBytes({})).toBe(0);
+  });
+
+  it("measures the decompressed body when Content-Encoding is compressed", () => {
+    const body = { commands: batch(100) };
+    const decompressed = Buffer.byteLength(JSON.stringify(body));
+    for (const encoding of ["gzip", "br", "deflate", "zstd"]) {
+      expect(
+        commandBodyBytes({
+          headers: {
+            "content-encoding": encoding,
+            "content-length": "64",
+          },
+          body,
+        }),
+      ).toBe(decompressed);
+    }
+    // An identity body may keep the exact wire length.
+    expect(
+      commandBodyBytes({
+        headers: { "content-encoding": "identity", "content-length": "64" },
+        body,
+      }),
+    ).toBe(64);
   });
 });

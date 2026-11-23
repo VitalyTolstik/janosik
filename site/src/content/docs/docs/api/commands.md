@@ -221,6 +221,7 @@ conflict: "id" }` and writes nothing.
 | `404`  | board not found                                                                |
 | `409`  | a conflict (see above), or `commandId` used on another board                   |
 | `409`  | `commandId` reused with a different action; `field: "commandId"`               |
+| `408`  | `code: "request_timeout"`: the client disconnected while the command waited in the board queue; nothing was applied |
 | `413`  | the serialized `action` exceeds `MAX_COMMAND_BYTES` (2 MB)                     |
 | `503`  | `code: "rate_limited"`: insufficient board tokens or a full per-board queue; retry after `Retry-After` with the same `commandId` |
 | `503`  | `code: "board_write_timeout"`: the board write timed out under load            |

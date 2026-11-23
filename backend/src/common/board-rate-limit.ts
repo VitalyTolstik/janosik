@@ -31,6 +31,8 @@ import {
 
 /** Maximum commands waiting (running or queued) per board. */
 export const BOARD_COMMAND_QUEUE_MAX = 64;
+/** Chained promise nodes allowed per board before a waiter is refused. */
+export const BOARD_COMMAND_QUEUE_CHAIN_FACTOR = 2;
 /**
  * Maximum bytes held by one board's command queue (running + waiting). The
  * command body limit is 10 MB, so this admits a few large batches while
@@ -40,7 +42,7 @@ export const BOARD_COMMAND_QUEUE_MAX_BYTES = 32 * 1024 * 1024;
 /** Safety stop for a frozen injected clock; the real clock advances itself. */
 export const BOARD_RATE_WAIT_MAX_STEPS = 10_000;
 
-export type BoardCommandQueueFullReason = "depth" | "bytes";
+export type BoardCommandQueueFullReason = "depth" | "bytes" | "chain";
 
 export class BoardCommandQueueFullError extends Error {
   constructor(
@@ -92,6 +94,8 @@ export interface BoardCommandQueueOptions {
   signal?: AbortSignal;
   /** Test/embedder override for {@link BOARD_COMMAND_QUEUE_MAX}. */
   maxDepth?: number;
+  /** Test/embedder override for the chained-node bound (default 2× depth). */
+  maxChain?: number;
   /** Approximate size of the request body this waiter retains. */
   bytes?: number;
   /** Test/embedder override for {@link BOARD_COMMAND_QUEUE_MAX_BYTES}. */
@@ -246,9 +250,23 @@ interface BoardCommandQueue {
   depth: number;
   /** Approximate request-body bytes retained by the running/queued commands. */
   bytes: number;
+  /** Promise-chain nodes not settled yet (including released aborted ones). */
+  links: number;
 }
 
 const queues = new Map<string, BoardCommandQueue>();
+let queueFullCount = 0;
+
+function rejectFull(
+  boardId: string,
+  reason: BoardCommandQueueFullReason,
+  queue: BoardCommandQueue,
+): Promise<never> {
+  queueFullCount += 1;
+  return Promise.reject(
+    new BoardCommandQueueFullError(boardId, reason, queue.depth, queue.bytes),
+  );
+}
 
 /**
  * Run `task` after every earlier queued command for the same board settles.
@@ -275,42 +293,42 @@ export function enqueueBoardCommand<T>(
   );
   let queue = queues.get(boardId);
   if (queue === undefined) {
-    queue = { tail: Promise.resolve(), depth: 0, bytes: 0 };
+    queue = { tail: Promise.resolve(), depth: 0, bytes: 0, links: 0 };
     queues.set(boardId, queue);
   }
+  const maxChain = Math.max(
+    maxDepth,
+    Math.floor(options.maxChain ?? maxDepth * BOARD_COMMAND_QUEUE_CHAIN_FACTOR),
+  );
   if (queue.depth >= maxDepth) {
-    return Promise.reject(
-      new BoardCommandQueueFullError(
-        boardId,
-        "depth",
-        queue.depth,
-        queue.bytes,
-      ),
-    );
+    return rejectFull(boardId, "depth", queue);
   }
   if (maxBytes > 0 && queue.bytes + bytes > maxBytes) {
-    return Promise.reject(
-      new BoardCommandQueueFullError(
-        boardId,
-        "bytes",
-        queue.depth,
-        queue.bytes,
-      ),
-    );
+    return rejectFull(boardId, "bytes", queue);
+  }
+  // Aborted waiters release depth/bytes immediately but their settlement node
+  // remains chained behind the head. Bound those nodes too, otherwise a flood
+  // of enqueue/abort cycles grows the promise chain without limit.
+  if (queue.links >= maxChain) {
+    return rejectFull(boardId, "chain", queue);
   }
   queue.depth += 1;
   queue.bytes += bytes;
+  queue.links += 1;
 
   let released = false;
+  const maybeDrop = (): void => {
+    if (queue.depth <= 0) queue.bytes = 0;
+    if (queue.depth <= 0 && queue.links <= 0 && queues.get(boardId) === queue) {
+      queues.delete(boardId);
+    }
+  };
   const release = (): void => {
     if (released) return;
     released = true;
     queue.depth -= 1;
     queue.bytes = Math.max(0, queue.bytes - bytes);
-    if (queue.depth <= 0) {
-      queue.bytes = 0;
-      if (queues.get(boardId) === queue) queues.delete(boardId);
-    }
+    maybeDrop();
   };
 
   const run = async (): Promise<T> => {
@@ -324,7 +342,12 @@ export function enqueueBoardCommand<T>(
     () => undefined,
     () => undefined,
   );
-  void queue.tail.then(release, release);
+  const settle = (): void => {
+    queue.links = Math.max(0, queue.links - 1);
+    release();
+    maybeDrop();
+  };
+  void queue.tail.then(settle, settle);
 
   if (signal === undefined) return chained;
   // Reject as soon as the client goes away instead of holding its slot until
@@ -344,15 +367,21 @@ export function enqueueBoardCommand<T>(
   return Promise.race([chained, aborted]);
 }
 
-/** Current depth and retained bytes for one board's command queue. */
+/** Current depth, retained bytes and chained nodes for one board's queue. */
 export function boardCommandQueueStats(boardId: string): {
   depth: number;
   bytes: number;
+  links: number;
 } {
   const queue = queues.get(boardId);
   return queue === undefined
-    ? { depth: 0, bytes: 0 }
-    : { depth: queue.depth, bytes: queue.bytes };
+    ? { depth: 0, bytes: 0, links: 0 }
+    : { depth: queue.depth, bytes: queue.bytes, links: queue.links };
+}
+
+/** Queue-cap rejections since process start (in-process metric/tests). */
+export function boardCommandQueueFullCount(): number {
+  return queueFullCount;
 }
 
 /** Boards with a command waiter right now (observability/tests). */

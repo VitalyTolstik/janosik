@@ -29,6 +29,7 @@ import {
 import {
   BoardCommandQueueAbortedError,
   BoardCommandQueueFullError,
+  boardCommandQueueFullCount,
   enqueueBoardCommand,
   waitForBoardRateLimit,
   type BoardRateLimitWait,
@@ -42,6 +43,9 @@ interface LimitedRequest extends Request, RateLimitedRequest {
   rateLimitSessionId?: string;
   boardMembership?: { boardId?: string };
 }
+
+/** A queue-full storm must not write one warn line per rejected command. */
+const QUEUE_FULL_WARN_INTERVAL_MS = 10_000;
 
 /**
  * TASK-166.10: agent-facing rate limits beyond the global per-principal
@@ -71,6 +75,7 @@ interface LimitedRequest extends Request, RateLimitedRequest {
 @Injectable()
 export class AgentRateLimitInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AgentRateLimitInterceptor.name);
+  private lastQueueFullWarnAt = 0;
 
   async intercept(
     context: ExecutionContext,
@@ -192,10 +197,17 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
           );
         } catch (error) {
           if (error instanceof BoardCommandQueueFullError) {
-            this.logger.warn(
+            const message =
               `board ${boardId}: command queue full (${error.reason}); ` +
-                `depth ${error.depth}, bytes ${error.bytes}`,
-            );
+              `depth ${error.depth}, bytes ${error.bytes}, ` +
+              `rejections ${boardCommandQueueFullCount()}`;
+            const now = Date.now();
+            if (now - this.lastQueueFullWarnAt >= QUEUE_FULL_WARN_INTERVAL_MS) {
+              this.lastQueueFullWarnAt = now;
+              this.logger.warn(message);
+            } else {
+              this.logger.debug(message);
+            }
             request.rateLimited = true;
             request.rateLimit = decision;
             // The request never waited: the header is present on every
