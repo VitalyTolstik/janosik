@@ -398,12 +398,12 @@ export function registerCardTools(
         ...(title !== undefined ? { title } : {}),
         ...(description !== undefined ? { description } : {}),
       };
-      // Explicit `expectedVersion` is the full-board mode: the caller read
-      // the board and wants the write pinned to that seq.
-      if (expectedVersion !== undefined) {
+      // Full-board update path: explicit `expectedVersion`, or the fallback
+      // for a pre-200.7 server without the one-card context route.
+      const updateWithBoard = async (boardVersion?: number) => {
         if (expectedDescription === undefined) {
           const response = await client.command(boardId, patch, {
-            ifMatch: expectedVersion,
+            ifMatch: boardVersion,
           });
           return textOnly(`Updated card ${cardId}.`, commandFields(response));
         }
@@ -420,7 +420,7 @@ export function registerCardTools(
             return { action: patch, result: "ok" };
           },
           3,
-          expectedVersion,
+          boardVersion,
         );
         if (outcome === null) return cardNotFound(cardId, boardId);
         if (outcome.result === "stale") {
@@ -433,7 +433,9 @@ export function registerCardTools(
           `Updated card ${cardId}.`,
           commandFields(outcome.response),
         );
-      }
+      };
+      if (expectedVersion !== undefined)
+        return updateWithBoard(expectedVersion);
 
       // TASK-200.7: read one card, not the board, and pin only that card's
       // version. A concurrent edit of another card cannot conflict; a
@@ -445,7 +447,9 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
-            return cardNotFound(cardId, boardId);
+            // A pre-200.7 server has no context route. A missing card also
+            // answers 404; the legacy path then reports it consistently.
+            return updateWithBoard(undefined);
           }
           throw error;
         }
@@ -526,9 +530,9 @@ export function registerCardTools(
       // is checked here before this tool moves it. Other clients can still
       // move it because the command API does not enforce this convention.
 
-      // Explicit `expectedVersion` keeps the full-board mode: the caller
-      // read the board and wants the move pinned to that seq.
-      if (expectedVersion !== undefined) {
+      // Full-board move: explicit `expectedVersion`, or the fallback for a
+      // pre-200.7 server without the one-card context route.
+      const moveWithBoard = async (boardVersion?: number) => {
         const { board: before, seq } = await client.getBoardWithSeq(boardId);
         let missingColumn: string | null = null;
         const moved = await client.commandOnFreshBoard(
@@ -573,7 +577,7 @@ export function registerCardTools(
             };
           },
           3,
-          expectedVersion,
+          boardVersion,
           { board: before, seq },
         );
         if (missingColumn !== null) {
@@ -587,6 +591,9 @@ export function registerCardTools(
           `Moved card ${cardId} to ${moved.result.title} at position ${moved.result.toIndex}.`,
           commandFields(moved.response),
         );
+      };
+      if (expectedVersion !== undefined) {
+        return moveWithBoard(expectedVersion);
       }
 
       // TASK-200.7: targeted mode reads only the card, its column and the
@@ -600,14 +607,18 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
-            return cardNotFound(cardId, boardId);
+            // A pre-200.7 server has no context route. A genuinely missing
+            // card is reported by the legacy board read.
+            return moveWithBoard(undefined);
           }
           throw error;
         }
         const destinationId = toColumnId ?? context.columnId;
         if (destinationId === null) {
           return errorResult(
-            `Error: card ${cardId} is archived and cannot be moved.`,
+            context.card.archivedAt !== undefined
+              ? `Error: card ${cardId} is archived and cannot be moved.`
+              : `Error: card ${cardId} is not in a live column and cannot be moved.`,
           );
         }
         const destination = context.columns.find(
@@ -826,8 +837,9 @@ export function registerCardTools(
         Math.max(leaseMs ?? CLAIM_LEASE_DEFAULT_MS, CLAIM_LEASE_MIN_MS),
         CLAIM_LEASE_MAX_MS,
       );
-      // Explicit `expectedVersion` is the full-board mode, unchanged.
-      if (expectedVersion !== undefined) {
+      // Command-log claim: explicit `expectedVersion`, or the fallback for a
+      // pre-200.7 server without the card context route.
+      const claimWithCommand = async (boardVersion?: number) => {
         const user = await client.whoami();
         const leaseUntil = Date.now() + duration;
         const response = await client.command(
@@ -838,12 +850,15 @@ export function registerCardTools(
             claimedBy: user.id,
             leaseUntil,
           },
-          { ifMatch: expectedVersion },
+          { ifMatch: boardVersion },
         );
         return textOnly(
           `Claimed card ${cardId} until ${new Date(leaseUntil).toISOString()}.`,
           commandFields(response),
         );
+      };
+      if (expectedVersion !== undefined) {
+        return claimWithCommand(expectedVersion);
       }
 
       // Targeted: the server sets the holder from the authenticated actor;
@@ -856,7 +871,8 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
-            return cardNotFound(cardId, boardId);
+            // Pre-200.7 fallback: the command API needs no card context.
+            return claimWithCommand();
           }
           throw error;
         }
@@ -898,9 +914,10 @@ export function registerCardTools(
       annotations: WRITE,
     },
     async ({ boardId, cardId, expectedVersion }) => {
-      // Explicit full-board mode keeps the pre-check and board-seq CAS.
-      if (expectedVersion !== undefined) {
-        const user = await client.whoami();
+      // Full-board release: explicit `expectedVersion`, or the fallback for a
+      // pre-200.7 server without the card context route.
+      const user = await client.whoami();
+      const releaseWithBoard = async (boardVersion?: number) => {
         const outcome = await client.commandOnFreshBoard(
           boardId,
           (board) => {
@@ -926,7 +943,7 @@ export function registerCardTools(
             };
           },
           3,
-          expectedVersion,
+          boardVersion,
         );
         if (outcome === null) return cardNotFound(cardId, boardId);
         if (outcome.result === "held") {
@@ -939,11 +956,13 @@ export function registerCardTools(
           `Released card ${cardId}.`,
           commandFields(outcome.response),
         );
+      };
+      if (expectedVersion !== undefined) {
+        return releaseWithBoard(expectedVersion);
       }
 
       // Targeted release: one card context, then the server's atomic claim
       // guard. Only this card's version is pinned.
-      const user = await client.whoami();
       const effectiveCommandId = newCommandId();
       for (let attempt = 1; ; attempt += 1) {
         let context: CardContextDto;
@@ -951,7 +970,8 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
-            return cardNotFound(cardId, boardId);
+            // Pre-200.7 fallback; a missing card is reported by the board read.
+            return releaseWithBoard();
           }
           throw error;
         }

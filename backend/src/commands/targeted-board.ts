@@ -11,7 +11,7 @@ export interface TargetedBoard {
   board: BoardAggregate;
   /** The requested cards that exist on this board, with relations. */
   cards: CardWithRelations[];
-  /** Active card ids per column, only when a positioning action needs them. */
+  /** Active card ids per column that the caller asked to index. */
   cardIdsByColumn: Map<string, string[]>;
   /** Versions of the board shell and every loaded card/column row. */
   versions: EntityVersions;
@@ -23,11 +23,12 @@ export interface TargetedBoard {
  * The board shell (columns, labels, workflow, policy) is small and is shared
  * by every command on the board. Cards are the expensive part — descriptions,
  * checklists, links — so only the card(s) named by the intent are loaded in
- * full. A positioning command (`MOVE_CARD`) additionally needs the active card
- * id order of the affected columns; that is one index query of `id + columnId`
- * rows, never the card payload. The resulting `Board` has the same column
- * card-id lists as `loadBoardAggregate`, so the reducer, WIP/workflow checks,
- * activity details and position writers see the state they expect.
+ * full. A positioning command additionally needs the active card-id order of
+ * the source/destination columns only; that is one index query of
+ * `id + columnId` rows for those columns, never a board-wide scan and never
+ * the card payload. The resulting `Board` has the same card-id lists for the
+ * affected columns as `loadBoardAggregate`, so the reducer, WIP/workflow
+ * checks, activity details and position writers see the state they expect.
  */
 export async function loadTargetedBoardAggregate(
   db: Prisma.TransactionClient,
@@ -37,8 +38,13 @@ export async function loadTargetedBoardAggregate(
     board?: BoardRow;
     /** Cards whose full payload the intent needs. */
     cardIds: readonly string[];
-    /** Load the active card-id order for every column (a move needs it). */
-    includeCardIndex?: boolean;
+    /** Load the active card-id order for these columns only. */
+    indexColumnIds?: readonly string[];
+    /**
+     * Add the target card's current column to the index set (context/move
+     * preflight: the source column is only known from the card row).
+     */
+    includeTargetColumn?: boolean;
   },
 ): Promise<TargetedBoard | null> {
   const board =
@@ -49,7 +55,7 @@ export async function loadTargetedBoardAggregate(
   if (!board) return null;
 
   const cardIds = [...new Set(options.cardIds)];
-  const [columns, labels, cards, links, indexRows] = await Promise.all([
+  const [columns, labels, cards, links] = await Promise.all([
     db.column.findMany({
       where: { boardId, deletedAt: null },
       orderBy: { position: "asc" },
@@ -90,35 +96,43 @@ export async function loadTargetedBoardAggregate(
           },
           orderBy: [{ position: "asc" }, { id: "asc" }],
         }),
-    options.includeCardIndex === true
-      ? db.card.findMany({
+  ]);
+
+  const indexColumns = new Set(options.indexColumnIds ?? []);
+  if (options.includeTargetColumn === true && cards[0]?.columnId) {
+    indexColumns.add(cards[0].columnId);
+  }
+  const indexRows =
+    indexColumns.size === 0
+      ? []
+      : await db.card.findMany({
           where: {
-            column: { boardId },
+            columnId: { in: [...indexColumns] },
             deletedAt: null,
             archivedAt: null,
           },
           orderBy: [{ columnId: "asc" }, { position: "asc" }],
           select: { id: true, columnId: true },
-        })
-      : Promise.resolve([] as Array<{ id: string; columnId: string }>),
-  ]);
+        });
 
   const boardAggregate = toBoardAggregate(board, columns, cards, labels, links);
 
   const cardIdsByColumn = new Map<string, string[]>();
-  if (options.includeCardIndex === true) {
-    for (const column of boardAggregate.columns) {
-      cardIdsByColumn.set(column.id, []);
-    }
-    for (const row of indexRows) {
-      const list = cardIdsByColumn.get(row.columnId);
-      if (list !== undefined) list.push(row.id);
-    }
-    boardAggregate.columns = boardAggregate.columns.map((column) => ({
-      ...column,
-      cardIds: cardIdsByColumn.get(column.id) ?? [],
-    }));
+  for (const column of boardAggregate.columns) {
+    cardIdsByColumn.set(column.id, [...column.cardIds]);
   }
+  for (const columnId of indexColumns) {
+    cardIdsByColumn.set(columnId, []);
+  }
+  for (const row of indexRows) {
+    if (!indexColumns.has(row.columnId)) continue;
+    const list = cardIdsByColumn.get(row.columnId);
+    if (list !== undefined) list.push(row.id);
+  }
+  boardAggregate.columns = boardAggregate.columns.map((column) => ({
+    ...column,
+    cardIds: cardIdsByColumn.get(column.id) ?? [],
+  }));
 
   const versions: EntityVersions = { [`board:${boardId}`]: board.version };
   for (const column of columns) {
@@ -131,11 +145,20 @@ export async function loadTargetedBoardAggregate(
   return { board: boardAggregate, cards, cardIdsByColumn, versions };
 }
 
-/** Does any of these actions need the cross-column card order? */
-export function needsCardIndex(
-  actions: ReadonlyArray<{ type: string }>,
-): boolean {
-  return actions.some((action) => action.type === "MOVE_CARD");
+/** Columns whose active card order a command action needs. */
+export function targetedIndexColumnIds(
+  actions: ReadonlyArray<object>,
+): string[] {
+  const ids = new Set<string>();
+  for (const action of actions) {
+    const record = action as Record<string, unknown>;
+    if (record.type !== "MOVE_CARD") continue;
+    for (const key of ["fromColumnId", "toColumnId"]) {
+      const value = record[key];
+      if (typeof value === "string" && value !== "") ids.add(value);
+    }
+  }
+  return [...ids];
 }
 
 /** Card ids an action needs the full payload for. */

@@ -264,9 +264,10 @@ export function describeError(error: unknown): string {
   }
   if (error instanceof NoChangeError) {
     return (
-      `Error: nothing changed (${error.actionType}). An id may not exist on ` +
-      "this board, or the value was already set. Re-read the board with " +
-      "janosik_get_board and check the ids."
+      `Error: nothing changed (${error.actionType}). The card id may not ` +
+      "exist on this board, or the value/position was already set. Re-read " +
+      "only the card with janosik_get_card and check the id; a targeted " +
+      "claim/move/update does not need a full board read."
     );
   }
   if (error instanceof Error) {

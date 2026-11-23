@@ -11,26 +11,35 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "entity-cas@example.com";
+const MEMBER_EMAIL = "entity-cas-member@example.com";
 const PASSWORD = "correct horse battery";
+
+interface BoardFixture {
+  boardId: string;
+  todoId: string;
+  doingId: string;
+  pat: string;
+}
 
 /**
  * TASK-200.7: targeted card intents and per-entity CAS.
  *
- * - Two agents editing/moving different cards never conflict even when they
- *   share a board and a column.
- * - The same card still conflicts, and the `409` carries the current
- *   `card:`/`column:` versions so the retry can stay targeted.
- * - The intent endpoint does not load the full board aggregate; WIP, workflow
- *   and command idempotency remain on the same path.
+ * Every test gets a fresh board (and its own PAT), so WIP, workflow, policy
+ * and claim state cannot leak between cases. Setup writes use the human
+ * session: a workflow/policy change must not itself be classified as an agent
+ * action or require an approval.
+ *
+ * The suite covers the two hard guarantees — different cards never conflict,
+ * the same card does — plus exact-retry replay, WIP/workflow/approval,
+ * observer/pause/cross-board access, archived/ownership handling and the
+ * explicit `ifMatch = seq` mode.
  */
 describe("Card entity CAS and targeted intents (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let session: string;
-  let pat: string;
-  let boardId: string;
-  let todoId: string;
-  let doingId: string;
+  let memberSession: string;
+  const todoColumns = new Map<string, string>();
 
   const load = jest.spyOn(boardAggregate, "loadBoardAggregate");
 
@@ -44,38 +53,8 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     prisma = app.get(PrismaService);
     await wipeAll(prisma);
 
-    session = await server()
-      .post("/api/v1/auth/register")
-      .send({ email: OWNER_EMAIL, password: PASSWORD, displayName: "Owner" })
-      .expect(201)
-      .then((res) => res.body.accessToken as string);
-
-    boardId = await server()
-      .post("/api/v1/boards")
-      .set(auth(session))
-      .send({ title: "Entity CAS" })
-      .expect(201)
-      .then((res) => res.body.id as string);
-
-    todoId = "col-todo";
-    doingId = "col-doing";
-    await command(session, {
-      type: "ADD_COLUMN",
-      newColumnId: todoId,
-      title: "Todo",
-    }).expect(200);
-    await command(session, {
-      type: "ADD_COLUMN",
-      newColumnId: doingId,
-      title: "Doing",
-    }).expect(200);
-
-    pat = await server()
-      .post("/api/v1/users/me/tokens")
-      .set(auth(session))
-      .send({ name: "entity-cas", boardId, scopePreset: "admin" })
-      .expect(201)
-      .then((res) => res.body.token as string);
+    session = await register(OWNER_EMAIL, "Owner");
+    memberSession = await register(MEMBER_EMAIL, "Member");
   }, 60_000);
 
   afterAll(async () => {
@@ -89,9 +68,42 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
   const server = () => request(app.getHttpServer());
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+  async function register(email: string, displayName: string): Promise<string> {
+    return server()
+      .post("/api/v1/auth/register")
+      .send({ email, password: PASSWORD, displayName })
+      .expect(201)
+      .then((res) => res.body.accessToken as string);
+  }
+
+  async function newBoard(title: string): Promise<BoardFixture> {
+    const boardId = await server()
+      .post("/api/v1/boards")
+      .set(auth(session))
+      .send({ title })
+      .expect(201)
+      .then((res) => res.body.id as string);
+    const todoId = randomUUID();
+    const doingId = randomUUID();
+    todoColumns.set(boardId, todoId);
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: todoId,
+      title: "Todo",
+    }).expect(200);
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: doingId,
+      title: "Doing",
+    }).expect(200);
+    const pat = await createPat(boardId);
+    return { boardId, todoId, doingId, pat };
+  }
+
   function command(
-    token: string,
+    boardId: string,
     action: Record<string, unknown>,
+    token = session,
     extra: {
       commandId?: string;
       ifMatchVersions?: Record<string, number>;
@@ -109,131 +121,166 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       });
   }
 
-  async function card(title: string): Promise<string> {
+  async function card(boardId: string, title: string): Promise<string> {
     const cardId = randomUUID();
-    await command(pat, {
+    await command(boardId, {
       type: "ADD_CARD",
       newCardId: cardId,
-      columnId: todoId,
+      columnId: todoColumns.get(boardId),
       title,
     }).expect(200);
     return cardId;
   }
 
-  async function context(cardId: string) {
+  async function createPat(
+    boardId: string,
+    scopePreset: "worker" | "reviewer" | "admin" | "observer" = "admin",
+    token = session,
+  ): Promise<string> {
+    return server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(token))
+      .send({ name: `entity-cas-${randomUUID()}`, boardId, scopePreset })
+      .expect(201)
+      .then((res) => res.body.token as string);
+  }
+
+  async function joinBoard(boardId: string): Promise<void> {
+    await server()
+      .post(`/api/v1/boards/${boardId}/members`)
+      .set(auth(session))
+      .send({ email: MEMBER_EMAIL, role: "MEMBER" })
+      .expect(201);
+    const invitations = await server()
+      .get("/api/v1/invitations")
+      .set(auth(memberSession))
+      .expect(200);
+    const invitation = invitations.body.find(
+      (row: { boardId: string }) => row.boardId === boardId,
+    );
+    await server()
+      .post(`/api/v1/invitations/${invitation.id}/accept`)
+      .set(auth(memberSession))
+      .expect(200);
+  }
+
+  async function context(boardId: string, cardId: string, token: string) {
     return server()
       .get(`/api/v1/boards/${boardId}/cards/${cardId}/context`)
-      .set(auth(pat))
+      .set(auth(token))
       .expect(200)
       .then(
         (res) =>
           res.body as {
-            card: { id: string; description?: string };
+            card: {
+              id: string;
+              description?: string;
+              claimedBy?: string;
+              leaseUntil?: number;
+            };
             columnId: string;
             cardIndex: number;
+            doneColumnIds: string[];
+            seq: number;
             versions: Record<string, number>;
           },
       );
   }
 
   function patch(
+    boardId: string,
     cardId: string,
     body: Record<string, unknown>,
+    token: string,
     commandId = randomUUID(),
   ) {
     return server()
       .patch(`/api/v1/boards/${boardId}/cards/${cardId}`)
-      .set(auth(pat))
+      .set(auth(token))
       .send({ commandId, ...body });
   }
 
   function move(
+    boardId: string,
     cardId: string,
     body: Record<string, unknown>,
+    token: string,
     commandId = randomUUID(),
+    approvalId?: string,
   ) {
     return server()
       .post(`/api/v1/boards/${boardId}/cards/${cardId}/move`)
-      .set(auth(pat))
+      .set(auth(token))
+      .set(approvalId !== undefined ? { "X-Approval-Id": approvalId } : {})
       .send({ commandId, ...body });
   }
 
-  it("lets different cards be updated concurrently with per-card CAS", async () => {
-    const a = await card("A");
-    const b = await card("B");
-    const before = await Promise.all([context(a), context(b)]);
+  function claim(
+    boardId: string,
+    cardId: string,
+    body: Record<string, unknown>,
+    token: string,
+    commandId = randomUUID(),
+  ) {
+    return server()
+      .post(`/api/v1/boards/${boardId}/cards/${cardId}/claim`)
+      .set(auth(token))
+      .send({ commandId, ...body });
+  }
+
+  it("lets different cards update concurrently and keeps the same-card conflict targeted", async () => {
+    const { boardId, pat } = await newBoard("Concurrent updates");
+    const a = await card(boardId, "A");
+    const b = await card(boardId, "B");
+    const before = await Promise.all([
+      context(boardId, a, pat),
+      context(boardId, b, pat),
+    ]);
 
     load.mockClear();
-    const results = await Promise.all([
-      patch(a, {
-        description: "A edited",
-        ifMatchVersions: { [`card:${a}`]: before[0]!.versions[`card:${a}`]! },
-      }),
-      patch(b, {
-        description: "B edited",
-        ifMatchVersions: { [`card:${b}`]: before[1]!.versions[`card:${b}`]! },
-      }),
+    const different = await Promise.all([
+      patch(
+        boardId,
+        a,
+        {
+          description: "A edited",
+          ifMatchVersions: { [`card:${a}`]: before[0]!.versions[`card:${a}`]! },
+        },
+        pat,
+      ),
+      patch(
+        boardId,
+        b,
+        {
+          description: "B edited",
+          ifMatchVersions: { [`card:${b}`]: before[1]!.versions[`card:${b}`]! },
+        },
+        pat,
+      ),
     ]);
-
-    expect(results.map((res) => res.status)).toEqual([200, 200]);
-    expect(load).not.toHaveBeenCalled();
-    expect((await context(a)).card.description).toBe("A edited");
-    expect((await context(b)).card.description).toBe("B edited");
-  });
-
-  it("keeps a same-card update conflict and returns the current versions", async () => {
-    const cardId = await card("Same card update");
-    const version = (await context(cardId)).versions[`card:${cardId}`]!;
-
-    const [first, second] = await Promise.all([
-      patch(cardId, {
-        description: "first",
-        ifMatchVersions: { [`card:${cardId}`]: version },
-      }),
-      patch(cardId, {
-        description: "second",
-        ifMatchVersions: { [`card:${cardId}`]: version },
-      }),
-    ]);
-    const statuses = [first.status, second.status].sort();
-    expect(statuses).toEqual([200, 409]);
-    const conflict = first.status === 409 ? first : second;
-    expect(conflict.body).toMatchObject({
-      conflict: "version",
-      versions: { [`card:${cardId}`]: expect.any(Number) },
-    });
-
-    // The conflict body is enough to retry without a board read.
-    const fresh = conflict.body.versions[`card:${cardId}`] as number;
-    await patch(cardId, {
-      description: "retried",
-      ifMatchVersions: { [`card:${cardId}`]: fresh },
-    }).expect(200);
-    expect((await context(cardId)).card.description).toBe("retried");
-  });
-
-  it("lets different cards move concurrently and targets a same-card move conflict", async () => {
-    const a = await card("Move A");
-    const b = await card("Move B");
-    const before = await Promise.all([context(a), context(b)]);
-    load.mockClear();
-
-    const moved = await Promise.all([
-      move(a, {
-        toColumnId: doingId,
-        ifMatchVersions: { [`card:${a}`]: before[0]!.versions[`card:${a}`]! },
-      }),
-      move(b, {
-        toColumnId: doingId,
-        ifMatchVersions: { [`card:${b}`]: before[1]!.versions[`card:${b}`]! },
-      }),
-    ]);
-    expect(moved.map((res) => res.status)).toEqual([200, 200]);
+    expect(different.map((res) => res.status)).toEqual([200, 200]);
     expect(load).not.toHaveBeenCalled();
 
+    const version = (await context(boardId, a, pat)).versions[`card:${a}`]!;
     const same = await Promise.all([
-      move(a, { toColumnId: todoId }),
-      move(a, { toColumnId: todoId }),
+      patch(
+        boardId,
+        a,
+        {
+          description: "first",
+          ifMatchVersions: { [`card:${a}`]: version },
+        },
+        pat,
+      ),
+      patch(
+        boardId,
+        a,
+        {
+          description: "second",
+          ifMatchVersions: { [`card:${a}`]: version },
+        },
+        pat,
+      ),
     ]);
     expect(same.map((res) => res.status).sort()).toEqual([200, 409]);
     const conflict = same.find((res) => res.status === 409)!;
@@ -241,44 +288,183 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       conflict: "version",
       versions: { [`card:${a}`]: expect.any(Number) },
     });
+    const fresh = conflict.body.versions[`card:${a}`] as number;
+    await patch(
+      boardId,
+      a,
+      {
+        description: "retried",
+        ifMatchVersions: { [`card:${a}`]: fresh },
+      },
+      pat,
+    ).expect(200);
+    expect((await context(boardId, a, pat)).card.description).toBe("retried");
   });
 
-  it("replays a targeted patch idempotently", async () => {
-    const cardId = await card("Replay");
-    const commandId = randomUUID();
-    const first = await patch(
-      cardId,
-      { title: "Replay one" },
-      commandId,
-    ).expect(200);
-    const before = await prisma.command.count({ where: { boardId } });
-    const replay = await patch(
-      cardId,
-      { title: "Replay one" },
-      commandId,
-    ).expect(200);
+  it("lets different cards move concurrently, conflicts on one card and logs one command each", async () => {
+    const { boardId, todoId, doingId, pat } =
+      await newBoard("Concurrent moves");
+    const a = await card(boardId, "Move A");
+    const b = await card(boardId, "Move B");
+    const before = await Promise.all([
+      context(boardId, a, pat),
+      context(boardId, b, pat),
+    ]);
+    load.mockClear();
 
-    expect(replay.body.seq).toBe(first.body.seq);
-    expect(replay.body.versions).toEqual(first.body.versions);
-    expect(await prisma.command.count({ where: { boardId } })).toBe(before);
+    const moved = await Promise.all([
+      move(
+        boardId,
+        a,
+        {
+          toColumnId: doingId,
+          ifMatchVersions: { [`card:${a}`]: before[0]!.versions[`card:${a}`]! },
+        },
+        pat,
+      ),
+      move(
+        boardId,
+        b,
+        {
+          toColumnId: doingId,
+          ifMatchVersions: { [`card:${b}`]: before[1]!.versions[`card:${b}`]! },
+        },
+        pat,
+      ),
+    ]);
+    expect(moved.map((res) => res.status)).toEqual([200, 200]);
+    expect(load).not.toHaveBeenCalled();
+
+    const version = (await context(boardId, a, pat)).versions[`card:${a}`]!;
+    const same = await Promise.all([
+      move(
+        boardId,
+        a,
+        { toColumnId: todoId, ifMatchVersions: { [`card:${a}`]: version } },
+        pat,
+      ),
+      move(
+        boardId,
+        a,
+        { toColumnId: todoId, ifMatchVersions: { [`card:${a}`]: version } },
+        pat,
+      ),
+    ]);
+    expect(same.map((res) => res.status).sort()).toEqual([200, 409]);
+    const conflict = same.find((res) => res.status === 409)!;
+    expect(conflict.body).toMatchObject({
+      conflict: "version",
+      versions: { [`card:${a}`]: expect.any(Number) },
+    });
+
+    const log = await server()
+      .get(`/api/v1/boards/${boardId}/commands?since=0`)
+      .set(auth(pat))
+      .expect(200);
+    const moves = (
+      log.body as Array<{ action: { type: string }; touches: string[] }>
+    ).filter((entry) => entry.action.type === "MOVE_CARD");
+    expect(moves).toHaveLength(3);
+    expect(moves.at(-1)!.touches).toEqual(
+      expect.arrayContaining([
+        `card:${a}`,
+        `column:${todoId}`,
+        `column:${doingId}`,
+      ]),
+    );
   });
 
-  it("enforces WIP on the targeted move path", async () => {
-    await command(pat, {
+  it("replays exact claim, move and expectedDescription retries", async () => {
+    const { boardId, doingId, pat } = await newBoard("Exact replay");
+    const cardId = await card(boardId, "Replay card");
+
+    const claimId = randomUUID();
+    const firstClaim = await claim(
+      boardId,
+      cardId,
+      { leaseMs: 60_000 },
+      pat,
+      claimId,
+    ).expect(200);
+    const replayClaim = await claim(
+      boardId,
+      cardId,
+      { leaseMs: 60_000 },
+      pat,
+      claimId,
+    ).expect(200);
+    expect(replayClaim.body.seq).toBe(firstClaim.body.seq);
+    expect(replayClaim.body.versions).toEqual(firstClaim.body.versions);
+    expect(replayClaim.body.leaseUntil).toBe(firstClaim.body.leaseUntil);
+
+    const moveId = randomUUID();
+    const firstMove = await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId, position: 0 },
+      pat,
+      moveId,
+    ).expect(200);
+    const replayMove = await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId, position: 0 },
+      pat,
+      moveId,
+    ).expect(200);
+    expect(replayMove.body.seq).toBe(firstMove.body.seq);
+    expect(replayMove.body.versions).toEqual(firstMove.body.versions);
+
+    const patchId = randomUUID();
+    const firstPatch = await patch(
+      boardId,
+      cardId,
+      { description: "mine", expectedDescription: "" },
+      pat,
+      patchId,
+    ).expect(200);
+    // A foreign edit after the first patch must not turn the exact retry into
+    // a version conflict: the stored command wins.
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId,
+      description: "foreign",
+    }).expect(200);
+    const replayPatch = await patch(
+      boardId,
+      cardId,
+      { description: "mine", expectedDescription: "" },
+      pat,
+      patchId,
+    ).expect(200);
+    expect(replayPatch.body.seq).toBe(firstPatch.body.seq);
+    expect(replayPatch.body.versions).toEqual(firstPatch.body.versions);
+  });
+
+  it("enforces WIP and workflow on targeted moves", async () => {
+    const { boardId, todoId, doingId, pat } =
+      await newBoard("WIP and workflow");
+    const full = await card(boardId, "Full");
+    await command(boardId, {
       type: "SET_COLUMN_WIP_LIMIT",
       columnId: doingId,
       wipLimit: 1,
     }).expect(200);
-    const full = await card("WIP full");
-    await move(full, { toColumnId: doingId }).expect(200);
+    await move(boardId, full, { toColumnId: doingId }, pat).expect(200);
+    const extra = await card(boardId, "Extra");
+    const wip = await move(boardId, extra, { toColumnId: doingId }, pat).expect(
+      409,
+    );
+    expect(wip.body).toMatchObject({ conflict: "wip", columnId: doingId });
 
-    const extra = await card("WIP extra");
-    const conflict = await move(extra, { toColumnId: doingId }).expect(409);
-    expect(conflict.body).toMatchObject({ conflict: "wip", columnId: doingId });
-  });
-
-  it("enforces the workflow on the targeted move path", async () => {
-    await command(pat, {
+    // Human session setup: clearing WIP and enabling a workflow is not an
+    // agent move and must not need an approval of its own.
+    await command(boardId, {
+      type: "SET_COLUMN_WIP_LIMIT",
+      columnId: doingId,
+      wipLimit: null,
+    }).expect(200);
+    await command(boardId, {
       type: "SET_BOARD_WORKFLOW",
       workflow: {
         schemaVersion: 1,
@@ -294,16 +480,37 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
         ],
       },
     }).expect(200);
-    const blocked = await card("Workflow blocked");
-    await move(blocked, { toColumnId: doingId }).expect(200);
-    const conflict = await move(blocked, { toColumnId: todoId }).expect(409);
-    expect(conflict.body).toMatchObject({
+    await move(boardId, extra, { toColumnId: doingId }, pat).expect(200);
+    const workflow = await move(
+      boardId,
+      extra,
+      { toColumnId: todoId },
+      pat,
+    ).expect(409);
+    expect(workflow.body).toMatchObject({
       conflict: "workflow",
       workflow: { code: "transition_not_allowed" },
     });
   });
 
-  it("keeps the move-to-done approval gate on the targeted path", async () => {
+  it("keeps the move-to-done approval gate and records the run preimage", async () => {
+    const { boardId, todoId, doingId } = await newBoard("Approval gate");
+    await command(boardId, {
+      type: "SET_BOARD_WORKFLOW",
+      workflow: {
+        schemaVersion: 1,
+        enabled: true,
+        doneColumnIds: [doingId],
+        transitions: [
+          {
+            id: randomUUID(),
+            fromColumnId: todoId,
+            toColumnId: doingId,
+            allowedRoles: ["ADMIN", "MEMBER"],
+          },
+        ],
+      },
+    }).expect(200);
     await prisma.board.update({
       where: { id: boardId },
       data: {
@@ -313,41 +520,171 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
         } as never,
       },
     });
-    const cardId = await card("Needs approval");
-    const refused = await move(cardId, { toColumnId: doingId }).expect(409);
+    // The PAT is created after the human setup; it is the agent under test.
+    const pat = await createPat(boardId);
+    const cardId = await card(boardId, "Needs approval");
+    const commandId = randomUUID();
+    const refused = await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId },
+      pat,
+      commandId,
+    ).expect(409);
     expect(refused.body).toMatchObject({
       code: "approval_required",
       approvalId: expect.any(String),
+      planHash: expect.any(String),
     });
+    await server()
+      .post(
+        `/api/v1/boards/${boardId}/approvals/${refused.body.approvalId}/decision`,
+      )
+      .set(auth(session))
+      .send({ decision: "approve", planHash: refused.body.planHash })
+      .expect(200);
+
+    const applied = await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId },
+      pat,
+      commandId,
+      refused.body.approvalId,
+    ).expect(200);
+    expect(applied.body.columnId).toBe(doingId);
+    const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+      where: { commandId },
+    });
+    expect(preimage.runId).not.toBeNull();
     expect(
-      await prisma.approvalRequest.count({
-        where: { boardId, cardId },
-      }),
+      await prisma.agentRun.count({ where: { id: preimage.runId! } }),
     ).toBe(1);
-    await prisma.board.update({
-      where: { id: boardId },
-      data: { agentPolicy: null as never },
-    });
   });
 
-  it("claims and releases through the intent without a board read", async () => {
-    const cardId = await card("Claim me");
-    load.mockClear();
-    const claimed = await server()
-      .post(`/api/v1/boards/${boardId}/cards/${cardId}/claim`)
-      .set(auth(pat))
-      .send({ leaseMs: 60_000 })
-      .expect(200);
-    expect(claimed.body.claimedBy).toEqual(expect.any(String));
-    expect(claimed.body.leaseUntil).toBeGreaterThan(Date.now());
-    expect(load).not.toHaveBeenCalled();
+  it("refuses observers, honours board pause and isolates another board's card", async () => {
+    const first = await newBoard("Access board");
+    const cardId = await card(first.boardId, "Access card");
+    const observer = await createPat(first.boardId, "observer");
+    const observerMove = await move(
+      first.boardId,
+      cardId,
+      { toColumnId: first.doingId },
+      observer,
+    ).expect(403);
+    expect(observerMove.body).toMatchObject({
+      code: "scope_denied",
+      effectiveTokenScope: "observer",
+    });
 
-    const released = await server()
-      .post(`/api/v1/boards/${boardId}/cards/${cardId}/claim`)
-      .set(auth(pat))
-      .send({ release: true })
-      .expect(200);
-    expect(released.body.claimedBy).toBeNull();
-    expect(released.body.leaseUntil).toBeNull();
+    const other = await newBoard("Other board");
+    const otherCard = await card(other.boardId, "Other card");
+    await move(
+      first.boardId,
+      otherCard,
+      { toColumnId: first.doingId },
+      first.pat,
+    ).expect(404);
+
+    await prisma.board.update({
+      where: { id: first.boardId },
+      data: {
+        agentsPausedAt: new Date(),
+        agentsPausedBy: "test",
+        agentsPauseReason: "review pause",
+      },
+    });
+    try {
+      const paused = await move(
+        first.boardId,
+        cardId,
+        { toColumnId: first.doingId },
+        first.pat,
+      ).expect(403);
+      expect(paused.body).toMatchObject({ code: "agent_paused" });
+    } finally {
+      await prisma.board.update({
+        where: { id: first.boardId },
+        data: {
+          agentsPausedAt: null,
+          agentsPausedBy: null,
+          agentsPauseReason: null,
+        },
+      });
+    }
+  });
+
+  it("refuses archived moves and another member's live release", async () => {
+    const { boardId, doingId, pat } = await newBoard("Archived and release");
+    const archived = await card(boardId, "Archived");
+    await command(boardId, { type: "ARCHIVE_CARD", cardId: archived }).expect(
+      200,
+    );
+    const archivedMove = await move(
+      boardId,
+      archived,
+      { toColumnId: doingId },
+      pat,
+    ).expect(400);
+    expect(archivedMove.body.message).toMatch(/archived/i);
+
+    await joinBoard(boardId);
+    const memberPat = await createPat(boardId, "worker", memberSession);
+    const claimed = await card(boardId, "Owned claim");
+    await claim(boardId, claimed, { leaseMs: 60_000 }, pat).expect(200);
+    const release = await claim(
+      boardId,
+      claimed,
+      { release: true },
+      memberPat,
+    ).expect(400);
+    expect(release.body.message).toMatch(/claimed by another member/i);
+
+    await claim(boardId, claimed, { release: true }, pat).expect(200);
+    await claim(boardId, claimed, { leaseMs: 60_000 }, memberPat).expect(200);
+    await claim(boardId, claimed, { release: true }, memberPat).expect(200);
+  });
+
+  it("keeps explicit ifMatch = seq mode and rejects nulls as validation errors", async () => {
+    const { boardId, doingId, pat } = await newBoard("Explicit mode");
+    const cardId = await card(boardId, "Sequenced");
+    const snapshot = await context(boardId, cardId, pat);
+
+    await patch(
+      boardId,
+      cardId,
+      {
+        description: "pinned",
+        ifMatch: snapshot.seq,
+      },
+      pat,
+    ).expect(200);
+    const stale = await patch(
+      boardId,
+      cardId,
+      { description: "stale", ifMatch: 0 },
+      pat,
+    ).expect(409);
+    expect(stale.body).toMatchObject({ conflict: "version" });
+
+    await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId, position: null },
+      pat,
+    ).expect(400);
+    await patch(
+      boardId,
+      cardId,
+      { description: "x", expectedDescription: null },
+      pat,
+    ).expect(400);
+    await patch(
+      boardId,
+      cardId,
+      { description: "x", ifMatch: null },
+      pat,
+    ).expect(400);
+    await claim(boardId, cardId, { leaseMs: null }, pat).expect(400);
   });
 });

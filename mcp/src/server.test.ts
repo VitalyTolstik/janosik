@@ -46,6 +46,8 @@ let approvalStatus:
 let approvalRequiredFor: string | null;
 /** Older-server simulation: the ready endpoints answer 404. */
 let readyEndpointMissing: boolean;
+/** Pre-200.7 server simulation: card context/intent routes answer 404. */
+let intentEndpointMissing: boolean;
 /** Transient fetch failures before the next ready request succeeds. */
 let readyNetworkFailures: number;
 /** 503 ready_poll_capacity answers before the next ready request succeeds. */
@@ -479,11 +481,19 @@ async function fakeApi(
   }
   const contextMatch = /^\/boards\/b1\/cards\/([^/]+)\/context$/.exec(path);
   if (contextMatch && method === "GET") {
+    if (intentEndpointMissing) return respond({ message: "not found" }, 404);
     return respond(cardContext(contextMatch[1]!));
   }
   const intentMatch = /^\/boards\/b1\/cards\/([^/]+)(?:\/(claim|move))?$/.exec(
     path,
   );
+  if (
+    intentMatch &&
+    (method === "POST" || method === "PATCH") &&
+    intentEndpointMissing
+  ) {
+    return respond({ message: "not found" }, 404);
+  }
   if (intentMatch && (method === "POST" || method === "PATCH")) {
     const [, cardId, intent] = intentMatch;
     const request = body as {
@@ -994,6 +1004,7 @@ beforeEach(() => {
   approvalStatus = "pending";
   approvalRequiredFor = null;
   readyEndpointMissing = false;
+  intentEndpointMissing = false;
   readyNetworkFailures = 0;
   readyCapacityFailures = 0;
   readyRateLimitFailures = 0;
@@ -1739,6 +1750,37 @@ describe("janosik MCP server", () => {
       ifMatchVersions: { "card:k1": expect.any(Number) },
     });
     expect((claim?.body as { ifMatch?: number }).ifMatch).toBeUndefined();
+    await client.close();
+  });
+
+  it("falls back to the command API on a pre-200.7 server", async () => {
+    intentEndpointMissing = true;
+    const client = await connect();
+    for (const [name, arguments_] of [
+      ["janosik_claim_card", { cardId: "k1", leaseMs: 60_000 }],
+      ["janosik_move_card", { cardId: "k1", position: 1 }],
+      ["janosik_update_card", { cardId: "k1", title: "Legacy" }],
+      [
+        "janosik_update_card",
+        {
+          cardId: "k1",
+          description: "Legacy text",
+          expectedDescription: "original",
+        },
+      ],
+      ["janosik_release_card", { cardId: "k1" }],
+    ] as const) {
+      const result = await client.callTool({
+        name,
+        arguments: { boardId: "b1", ...arguments_ },
+      });
+      expect(result.isError).toBeFalsy();
+    }
+    expect(
+      calls.filter(
+        (call) => call.path === "/boards/b1/commands" && call.method === "POST",
+      ).length,
+    ).toBeGreaterThanOrEqual(5);
     await client.close();
   });
 

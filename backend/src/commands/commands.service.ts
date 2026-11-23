@@ -59,8 +59,8 @@ import {
 } from "@/boards/board-aggregate";
 import {
   loadTargetedBoardAggregate,
-  needsCardIndex,
   targetedCardIds,
+  targetedIndexColumnIds,
 } from "./targeted-board";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { BoardWriteService } from "@/common/board-write.service";
@@ -489,7 +489,7 @@ export class CommandsService {
     const loaded = await loadTargetedBoardAggregate(client, boardId, {
       board,
       cardIds: targetedCardIds(actions),
-      includeCardIndex: needsCardIndex(actions),
+      indexColumnIds: targetedIndexColumnIds(actions),
     });
     return loaded?.board ?? null;
   }

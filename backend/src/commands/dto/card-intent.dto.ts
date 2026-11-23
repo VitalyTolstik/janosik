@@ -2,11 +2,11 @@ import {
   IsBoolean,
   IsInt,
   IsObject,
-  IsOptional,
   IsString,
   Matches,
   MaxLength,
   Min,
+  ValidateIf,
 } from "class-validator";
 import { LIMITS } from "@janosik/shared";
 
@@ -16,20 +16,20 @@ import { LIMITS } from "@janosik/shared";
  * a lost response creating a second command, so agents should always send it).
  */
 export class CardIntentBaseDto {
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MaxLength(64)
   @Matches(/^[A-Za-z0-9_-]+$/)
   commandId?: string;
 
   /** Explicit full-board mode; a targeted intent normally omits this. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(0)
   ifMatch?: number;
 
   /** Per-entity preconditions, e.g. `{ "card:<id>": 7 }`. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsObject()
   ifMatchVersions?: Record<string, number>;
 }
@@ -37,13 +37,13 @@ export class CardIntentBaseDto {
 /** Body of `POST /boards/:id/cards/:cardId/claim`. */
 export class ClaimCardIntentDto extends CardIntentBaseDto {
   /** Lease length; clamped server-side to [1 min, 24 h]. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(1)
   leaseMs?: number;
 
   /** Release the caller's lease instead of acquiring one. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsBoolean()
   release?: boolean;
 }
@@ -51,13 +51,13 @@ export class ClaimCardIntentDto extends CardIntentBaseDto {
 /** Body of `POST /boards/:id/cards/:cardId/move`. */
 export class MoveCardIntentDto extends CardIntentBaseDto {
   /** Destination column; omit to reorder inside the current column. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MaxLength(128)
   toColumnId?: string;
 
   /** Zero-based destination slot; omit to append. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(0)
   position?: number;
@@ -69,18 +69,18 @@ export class MoveCardIntentDto extends CardIntentBaseDto {
  * cover, task spec) keep their command actions; they do not need a board read.
  */
 export class PatchCardIntentDto extends CardIntentBaseDto {
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MaxLength(LIMITS.cardTitle)
   title?: string;
 
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MaxLength(LIMITS.description)
   description?: string;
 
   /** Compare-and-set on the description text the caller last read. */
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MaxLength(LIMITS.description)
   expectedDescription?: string;
