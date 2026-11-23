@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.5 bounded hot-path caches and quiet agent SSE. PAT resolution
+  (`AUTH_CACHE_TTL_MS`, default 15 s, keyed by sha256), board membership
+  (`MEMBERSHIP_CACHE_TTL_MS`, default 30 s) and feature-flag rows
+  (`FEATURE_FLAG_CACHE_MS`, default 30 s) are served from one process-wide,
+  LRU-bounded cache (5000 PAT / 10000 membership / 64 flag entries). All
+  writes and SSE connects bypass the PAT/membership cache, `expiresAt` is
+  re-checked on every read, and a PAT that would expire inside the window is
+  not cached. Revoke, token edit/pause/resume/pause-all, role or membership
+  changes, board pause/resume, owner transfer and flag updates invalidate
+  synchronously on the writer and across replicas through a new
+  `janosik:cache-invalidate` control channel on the existing realtime bus;
+  a missed frame is bounded by the TTL. Membership events now double as
+  invalidation, so boards, invitations, admin membership edits and profile
+  updates need no cache plumbing. Agent (PAT) SSE streams default to
+  `presence=0` (browsers keep presence; `?presence=1` opts an agent back
+  in), PAT keep-alive is 60 s while human streams stay at 25 s, both carry
+  jitter, a slow tick is skipped instead of stacking, one scheduler owns each
+  stream and module shutdown stops every timer. The SSE keep-alive reuses a
+  30 s joined-membership snapshot while token active/pause, JWT
+  expiry/stamp/family and log-head checks stay fresh. `.env.example`,
+  EN/RU self-hosting docs, TASK-200 evidence, unit/e2e coverage and the
+  CHANGELOG are updated.
+
 - TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
   bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
   `max(12000, 2 × THROTTLE_LIMIT)`) with continuous refill, backed by a
