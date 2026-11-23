@@ -3,6 +3,8 @@ import type {
   CommandSseEvent,
   ResyncSseEvent,
 } from "@janosik/shared";
+import { env } from "@/config/env";
+import { sseHardLimitBytes } from "@/realtime/sse-frames";
 import type { InternalCommandEvent } from "@/realtime/realtime.service";
 import type { CommandsService } from "./commands.service";
 
@@ -48,6 +50,14 @@ export class CommandStreamSequencer {
     since: number,
     private readonly emit: (event: BoardSseEvent) => void,
     private readonly fail: (error: unknown) => void,
+    /**
+     * TASK-200.13: keep one catch-up page within the same hard byte guard as
+     * the queue. A larger page becomes `resync`; otherwise a reconnect would
+     * be killed mid-replay and repeat the same page forever.
+     */
+    private readonly maxDeltaBytes: number = sseHardLimitBytes(
+      env.SSE_MAX_BUFFER_BYTES,
+    ),
   ) {
     this.lastSeq = since;
   }
@@ -117,19 +127,29 @@ export class CommandStreamSequencer {
         const delta = await this.commands.deltaSince(
           this.boardId,
           this.lastSeq,
+          undefined,
+          undefined,
+          undefined,
+          this.maxDeltaBytes,
         );
-        if (this.closed) return;
-        if (delta.resync) {
-          const head = await this.commands.latestSeq(this.boardId);
+        try {
           if (this.closed) return;
-          this.lastSeq = Math.max(this.lastSeq, head);
-          this.emit({ type: "resync" } satisfies ResyncSseEvent);
-        } else {
-          for (const entry of delta.entries) {
-            if (entry.seq > this.lastSeq) {
-              this.deliver({ type: "command", ...entry });
+          if (delta.resync) {
+            const head = await this.commands.latestSeq(this.boardId);
+            if (this.closed) return;
+            this.lastSeq = Math.max(this.lastSeq, head);
+            this.emit({ type: "resync" } satisfies ResyncSseEvent);
+          } else {
+            for (const entry of delta.entries) {
+              if (entry.seq > this.lastSeq) {
+                this.deliver({ type: "command", ...entry });
+              }
             }
           }
+        } finally {
+          // The catch-up budget owns the row/entry memory until every frame
+          // has been handed to the writer.
+          delta.release?.();
         }
       } while (this.pullAgain && !this.closed);
       this.ready = true;
@@ -160,9 +180,20 @@ export class CommandStreamSequencer {
   }
 }
 
+/**
+ * TASK-200.13: the same committed event reaches every subscriber's sequencer
+ * (the bus fans out one object), so its wire projection is built once too.
+ * The SSE frame store keys pre-serialized bytes by object identity; without
+ * this cache each subscriber would hand it a fresh object and stringify the
+ * command again.
+ */
+const wireFrames = new WeakMap<InternalCommandEvent, CommandSseEvent>();
+
 /** The wire frame: exactly the shared `CommandSseEvent`, no internals. */
 function toWire(event: InternalCommandEvent): CommandSseEvent {
-  return {
+  const cached = wireFrames.get(event);
+  if (cached !== undefined) return cached;
+  const wire: CommandSseEvent = {
     type: "command",
     seq: event.seq,
     action: event.action,
@@ -177,4 +208,6 @@ function toWire(event: InternalCommandEvent): CommandSseEvent {
     ...(event.runId !== undefined ? { runId: event.runId } : {}),
     ...(event.agentName !== undefined ? { agentName: event.agentName } : {}),
   };
+  wireFrames.set(event, wire);
+  return wire;
 }

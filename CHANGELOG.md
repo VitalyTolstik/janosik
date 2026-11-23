@@ -8,6 +8,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.13 pre-serialized SSE frames and bounded slow subscribers. The
+  member event stream no longer goes through Nest's `@Sse` writer: each
+  published event is serialized once into one complete `id:`/`data:` frame
+  (`SseFrameStore`, identity-keyed `WeakMap` plus a bounded 32 MiB
+  command-frame cache keyed by the immutable global `Command.seq`) and the
+  same `Buffer` is written to every subscriber. Live command wire objects are
+  memoized by the bus event; catch-up replay creates fresh objects but reuses
+  one frame per seq, so three 100 × 64 KiB reconnects build 100 Buffers, not
+  300. `?since=`, event order, `resync`, presence and keep-alive frames keep
+  their existing contract. A subscriber whose socket stops draining queues
+  shared buffers against a soft `SSE_MAX_BUFFER_BYTES` (128 KiB) bound; the
+  frame already accepted by the socket is not counted, so the real worst case
+  is the bound plus that frame (and `0` means “no queue”). A synchronous batch
+  burst may exceed the soft bound for `SSE_BURST_GRACE_MS` (5 s; armed after
+  the current publish turn) up to a hard guard of 16 MiB, or 2× the soft bound
+  when that is above 8 MiB, so a legitimate 10–100 × 64 KiB batch (~6.4 MiB)
+  survives and drains. The queue holds references, not per-subscriber copies.
+  A real slow reader is disconnected by the grace, the hard guard or
+  `SSE_SLOW_CLOSE_MS` (60 s; `0` disables only this timer) and resumes from its
+  last applied `?since=`. Catch-up deltas are byte-bounded by the same guard;
+  a `LIMIT max+1` SQL count runs first, then logical
+  `octet_length(payload::text/details/touches)` over a 20-row sample (bounded
+  detoast) with a 1.25 variance factor estimates the page; 300 × 64 KiB is
+  rejected before any page `findMany`. Accepted deltas are fetched in
+  10-row pages
+  with a 32 MiB / 6-slot process-wide `CatchUpBudget`; the reservation is
+  topped up (or the stream resyncs) as actual JSON bytes accumulate, and it
+  stays held until the sequencer emitted the entries. Excess reconnects
+  cannot multiply transient row memory. A
+  larger page becomes `resync`, so an offline client cannot loop on the same
+  oversized replay. `RealtimeService.slowSubscriberDrops` is exposed in
+  `/admin/observability` (`jobs.realtime.slowDrops`) and its warning is
+  aggregated to one line per minute. The 200 response is committed only after
+  synchronous stream setup, so a `client_id_taken` race still answers `409`
+  rather than an empty 200 SSE stream. SSE `id:` values are process frame ids,
+  not per-connection cursors (`?since=` is the resume point). The 200.5
+  keep-alive jitter/overlap guard is unchanged. `SSE_MAX_BUFFER_BYTES` and
+  `SSE_SLOW_CLOSE_MS` are forwarded by `docker-compose.yml`. Focused unit/e2e
+  coverage includes one build across 64 subscribers, 3×100×64 KiB frame-store
+  sharing and a 3×10×64 KiB e2e catch-up inside the 32 MiB budget,
+  byte-identical fan-out, a batch burst inside the grace, the hard/grace
+  bounds, catch-up preflight/pagination and global-budget exhaustion →
+  `resync`, 32 MiB frame-cache eviction, an oversized delta → `resync`,
+  reconnect catch-up and keep-alive timing. The 3 000-connection CPU/p95 targets were **not**
+  measured in this task, and the public share stream still uses Nest `@Sse`
+  (separate projection surface, documented in the runbooks).
 - TASK-200.8 shared MCP Streamable HTTP gateway. `@janosik/mcp` now ships a
   separate `janosik-mcp-http` binary and `ghcr.io/vitalytolstik/janosik-mcp`
   image that serve many MCP sessions from one Node process instead of one

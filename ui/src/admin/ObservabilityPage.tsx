@@ -190,7 +190,7 @@ export function ObservabilityPage() {
           />
           <Field
             label={t("admin.observability.jobs.realtime")}
-            value={`${data.jobs.realtime.boards} / ${data.jobs.realtime.clients}`}
+            value={`${data.jobs.realtime.boards} / ${data.jobs.realtime.clients} / ${data.jobs.realtime.slowDrops}`}
           />
           <Field
             label={t("admin.observability.jobs.demo")}

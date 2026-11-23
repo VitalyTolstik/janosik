@@ -59,6 +59,55 @@ describe("CommandStreamSequencer (B-3/B-4)", () => {
     expect(last).not.toHaveProperty("prevSeq");
   });
 
+  it("holds the catch-up budget until every entry is emitted", async () => {
+    const emitted: BoardSseEvent[] = [];
+    const release = jest.fn(() => {
+      expect(emitted).toHaveLength(2);
+    });
+    const commands = {
+      deltaSince: jest.fn(async () => ({
+        entries: [entry(5), entry(6)],
+        resync: false,
+        release,
+      })),
+      latestSeq: jest.fn(async () => 6),
+    };
+    const sequencer = new CommandStreamSequencer(
+      commands as never,
+      "b1",
+      0,
+      (event) => emitted.push(event),
+      (error) => {
+        throw error;
+      },
+    );
+    sequencer.start();
+    await flush();
+
+    expect(
+      emitted.map((event) => (event.type === "command" ? event.seq : 0)),
+    ).toEqual([5, 6]);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("builds one wire object for the same live frame across subscribers", async () => {
+    // TASK-200.13: all subscribers receive the same bus object. The SSE frame
+    // store keys serialized bytes by object identity, so the sequencers must
+    // not create a fresh wire object each.
+    const a = harness([], 0);
+    const b = harness([], 0);
+    a.sequencer.start();
+    b.sequencer.start();
+    await flush();
+    const shared = live(5, 0);
+    a.sequencer.offer(shared);
+    b.sequencer.offer(shared);
+
+    expect(a.emitted).toHaveLength(1);
+    expect(a.emitted[0]).toBe(b.emitted[0]);
+    expect(a.emitted[0]).not.toHaveProperty("prevSeq");
+  });
+
   it("deduplicates a frame that arrived during the catch-up", async () => {
     const log = [10, 20];
     const h = harness(log, 0);
@@ -81,7 +130,14 @@ describe("CommandStreamSequencer (B-3/B-4)", () => {
     h.sequencer.offer(live(20, 10)); // the late one: already delivered
     await flush();
     expect(h.seqs()).toEqual([20, 30]);
-    expect(h.commands.deltaSince).toHaveBeenLastCalledWith("b1", 10);
+    expect(h.commands.deltaSince).toHaveBeenLastCalledWith(
+      "b1",
+      10,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(Number),
+    );
   });
 
   it("emits resync when the catch-up is truncated, then continues from the head", async () => {

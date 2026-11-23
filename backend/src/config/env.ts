@@ -494,6 +494,29 @@ export const env = cleanEnv(process.env, {
     default: 0,
     example: "0",
   }),
+  // TASK-200.13: a subscriber that stops reading must not grow the heap.
+  // Frames are pre-serialized; live fan-out and command replay both share
+  // their Buffers, while a blocked queue holds references. One frame already
+  // accepted by the socket is not counted, so the effective worst case is
+  // this soft bound plus that frame; a synchronous batch burst may use up to
+  // the hard guard for 5 s while `drain` is pending. The hard guard is 16 MiB,
+  // or 2x this soft bound when it is above 8 MiB. Past that the connection is
+  // dropped and the client resumes from ?since=.
+  // 0 = no queue: the frame after the first backpressure is dropped; this
+  // does not disable the catch-up preflight/global byte budget.
+  SSE_MAX_BUFFER_BYTES: nonNegativeInt({
+    desc: "Soft byte bound on queued frames per slow SSE subscriber (0 = drop the first frame after backpressure)",
+    default: 131_072,
+    example: "131072",
+  }),
+  // A blocked socket that never drains is presumed dead after this window.
+  // 0 disables this timer: the byte guards still apply, but a blocked stream
+  // below the soft bound may stay open indefinitely (bounded memory).
+  SSE_SLOW_CLOSE_MS: nonNegativeInt({
+    desc: "Close an SSE connection blocked on backpressure for this many ms (0 = no time-based close; byte guards only)",
+    default: 60_000,
+    example: "60000",
+  }),
   // Attachment uploads per minute per user (TASK-146). 0 = unlimited.
   UPLOAD_RATE_LIMIT: num({
     desc: "Attachment uploads per minute per user (0 = unlimited)",
