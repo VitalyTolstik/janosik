@@ -472,6 +472,7 @@ test("evaluateScenarioStatus distinguishes ok/partial/failed/interrupted", () =>
     "partial",
   );
   assert.equal(evaluate({ summary: { orphans: 1 } }).status, "partial");
+  assert.equal(evaluate({ summary: { cleanupFailed: 1 } }).status, "partial");
   assert.equal(
     evaluate({
       summary: {

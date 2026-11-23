@@ -138,6 +138,11 @@ export function evaluateScenarioStatus({
       `${summary.orphans} claim(s) could not be released (orphan lease)`,
     );
   }
+  if ((summary.cleanupFailed ?? 0) > 0) {
+    reasons.push(
+      `${summary.cleanupFailed} claim cleanup(s) got no response (unresolved lease)`,
+    );
+  }
   if (
     overThreshold({
       count: summary.errors?.server5xx ?? 0,

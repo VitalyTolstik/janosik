@@ -295,13 +295,21 @@ export async function performAgentCycle({
           cardId: work.cardId,
         });
         const tolerated = cleanup.status === 400 || cleanup.status === 409;
-        const harnessAbort =
-          statusOf(error) === -1 &&
-          (cleanup.status === 0 || cleanup.status === -1);
+        // Only a cleanup cancelled by the harness deadline (-1) is exempt:
+        // the scenario is over and the process is stopping. A status 0 means
+        // the cleanup got no response at all; the lease may still be live, so
+        // it is an unresolved cleanup failure, not a deadline cancellation.
+        const cleanupAborted = cleanup.status === -1;
+        const cleanupFailed = cleanup.status === 0;
         const wrapped =
           error instanceof Error ? error : new Error(String(error));
-        wrapped.cleanupAborted = harnessAbort;
-        wrapped.orphan = !cleanup.released && !tolerated && !harnessAbort;
+        wrapped.cleanupAborted = cleanupAborted;
+        wrapped.cleanupFailed = cleanupFailed && !tolerated;
+        wrapped.orphan =
+          !cleanup.released &&
+          !tolerated &&
+          !cleanupAborted &&
+          !wrapped.cleanupFailed;
         throw wrapped;
       }
       throw error;
@@ -559,6 +567,7 @@ export async function runAgentLoop({
               fatal,
               orphan: result.orphan === true,
               cleanupAborted: result.cleanupAborted === true,
+              cleanupFailed: result.cleanupFailed === true,
             });
             if (fatal) return;
           }
@@ -574,6 +583,7 @@ export async function runAgentLoop({
         fatal,
         orphan: error?.orphan === true,
         cleanupAborted: error?.cleanupAborted === true,
+        cleanupFailed: error?.cleanupFailed === true,
       });
       if (fatal) return;
     }
@@ -648,6 +658,7 @@ export async function runMixedAgentLoop({
               fatal,
               orphan: result.orphan === true,
               cleanupAborted: result.cleanupAborted === true,
+              cleanupFailed: result.cleanupFailed === true,
             });
             if (fatal) return;
           }

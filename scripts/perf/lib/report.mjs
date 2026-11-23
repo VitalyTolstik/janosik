@@ -174,11 +174,13 @@ export function renderMarkdown(report) {
       const planned =
         scenario.workWindow.plannedWorkStartedAt ??
         scenario.workWindow.workStartedAt;
-      const actual =
-        scenario.workWindow.actualWorkStartedAt ??
-        scenario.workWindow.workStartedAt;
+      const actual = scenario.workWindow.actualWorkStartedAt;
+      const actualLine =
+        actual !== null && actual !== undefined
+          ? `, actual first request ${new Date(actual).toISOString()}`
+          : "";
       lines.push(
-        `Work window: ${formatDuration(scenario.workWindow.workDurationMs)} (planned start ${new Date(planned).toISOString()}, actual start ${new Date(actual).toISOString()}, measured to ${new Date(scenario.workWindow.workEndedAt).toISOString()})`,
+        `Work window: ${formatDuration(scenario.workWindow.workDurationMs)} (planned start ${new Date(planned).toISOString()}${actualLine}, measured to ${new Date(scenario.workWindow.workEndedAt).toISOString()})`,
       );
     }
     if (scenario.recycle?.requests > 0) {
@@ -201,6 +203,11 @@ export function renderMarkdown(report) {
     if ((scenario.summary.cleanupAborted ?? 0) > 0) {
       lines.push(
         `Harness-aborted claim cleanup: ${formatInteger(scenario.summary.cleanupAborted)} (not counted as orphan lease).`,
+      );
+    }
+    if ((scenario.summary.cleanupFailed ?? 0) > 0) {
+      lines.push(
+        `Failed claim cleanup: ${formatInteger(scenario.summary.cleanupFailed)} (no response; unresolved lease).`,
       );
     }
     const probeErrors = scenario.api?.errors ?? [];
@@ -229,7 +236,7 @@ export function renderMarkdown(report) {
     const cadence = scenario.summary.agentCadence;
     if (cadence !== undefined && cadence.agentsMeasured > 0) {
       lines.push(
-        `Per-agent action cadence: median ${formatMs(cadence.medianMs)} (min ${formatMs(cadence.minMs)}, max ${formatMs(cadence.maxMs)}) across ${formatInteger(cadence.agentsMeasured)} agent(s), ${formatDecimal(cadence.actionsPerAgentPerMinute)} actions/agent/min.`,
+        `Per-agent action interval: median ${formatMs(cadence.medianMs)} (min ${formatMs(cadence.minMs)}, max ${formatMs(cadence.maxMs)}) across ${formatInteger(cadence.agentsMeasured)} agent(s), ${formatDecimal(cadence.actionsPerAgentPerMinute)} actions/agent/min.`,
       );
     }
     const tools = Object.entries(scenario.summary.tools ?? {});
@@ -265,7 +272,7 @@ export function renderMarkdown(report) {
       lines.push("");
       for (const error of scenario.errors) {
         lines.push(
-          `- ${escapeText(error.message)}${error.orphan ? " _(claim release failed)_" : ""}${error.cleanupAborted ? " _(cleanup aborted by harness deadline)_" : ""}`,
+          `- ${escapeText(error.message)}${error.orphan ? " _(claim release failed)_" : ""}${error.cleanupAborted ? " _(cleanup aborted by harness deadline)_" : ""}${error.cleanupFailed ? " _(cleanup got no response; unresolved lease)_" : ""}`,
         );
       }
     }

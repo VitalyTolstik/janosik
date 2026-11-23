@@ -479,6 +479,38 @@ test("a deadline-aborted claim whose cleanup also fails is not an orphan", async
   );
 });
 
+test("cleanup status 0 is an unresolved lease, not a deadline abort", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim() {
+      const error = new Error("aborted by scenario deadline");
+      error.status = -1;
+      throw error;
+    },
+  };
+  const cleanupClient = {
+    async claim() {
+      return { status: 0 };
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      cleanupClient,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
+    (error) =>
+      error.cleanupAborted === false &&
+      error.cleanupFailed === true &&
+      error.orphan === false,
+  );
+});
+
 test("a network failure during the move releases the claim", async () => {
   let released = false;
   const client = {
