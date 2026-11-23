@@ -336,6 +336,9 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
     rampObservedMs: 10,
     holdObservedMs: 20,
   };
+  report.scenarios[0].timedOut = true;
+  report.scenarios[0].summary.cleanupAborted = 2;
+  report.config.requireOk = true;
   report.scenarios[0].api.errors = [
     { source: "api-preload", message: "probe file disappeared" },
   ];
@@ -345,6 +348,9 @@ test("renderMarkdown surfaces S5 failures and probe errors", () => {
     /SSE opened 1, closed 1, failed 2, closed early 1, read errors 1/,
   );
   assert.match(markdown, /live at hold start\/end 1\/0/);
+  assert.match(markdown, /scenario timer cut the run/);
+  assert.match(markdown, /Harness-aborted claim cleanup: 2/);
+  assert.match(markdown, /--require-ok.*exits 1/);
   assert.match(markdown, /Probe errors: api-preload: probe file disappeared/);
 });
 

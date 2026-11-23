@@ -92,6 +92,9 @@ export function renderMarkdown(report) {
   lines.push(
     `**Scenarios** ${report.scenarios.map((scenario) => scenario.id).join(", ")} · **Boards** ${(report.config.resolvedBoards ?? []).map((id) => escapeInline(id)).join(", ") || "—"} · **Tokens** ${report.config.tokenCount} · **Labels** S1–S6 from docs/PERF-AGENT-SCALE.md §7.1`,
   );
+  if (report.config.requireOk === true) {
+    lines.push("**Gate** `--require-ok`: any partial scenario exits 1");
+  }
   lines.push("");
   lines.push("## Status");
   lines.push("");
@@ -158,6 +161,11 @@ export function renderMarkdown(report) {
     lines.push(
       `Status: \`${scenario.status ?? "ok"}\`${scenario.statusReason ? ` — ${escapeText(scenario.statusReason)}` : ""}`,
     );
+    if (scenario.timedOut === true || scenario.summary.timedOut === true) {
+      lines.push(
+        "Deadline: the scenario timer cut the run before the ramp/hold drained.",
+      );
+    }
     lines.push("");
     lines.push(
       `Config: ${scenarioConfigLine(scenario.config)} · requests ${formatInteger(scenario.summary.requests)} · tool calls ${formatInteger(scenario.summary.toolCalls)} · bytes/request ${formatBytes(scenario.summary.bytesPerRequest)}`,
@@ -188,6 +196,11 @@ export function renderMarkdown(report) {
       const sse = scenario.summary.sse;
       lines.push(
         `SSE opened ${formatInteger(sse.opened)}, closed ${formatInteger(sse.closed)}, failed ${formatInteger(sse.failed)}, closed early ${formatInteger(sse.closedEarly)}, read errors ${formatInteger(sse.readErrors)}, live at hold start/end ${formatInteger(sse.liveAtHoldStart)}/${formatInteger(sse.liveAtHoldEnd)}, max concurrent ${formatInteger(sse.maxConcurrent)}, observed ramp ${formatDuration(sse.rampObservedMs)}, observed hold ${formatDuration(sse.holdObservedMs)}.`,
+      );
+    }
+    if ((scenario.summary.cleanupAborted ?? 0) > 0) {
+      lines.push(
+        `Harness-aborted claim cleanup: ${formatInteger(scenario.summary.cleanupAborted)} (not counted as orphan lease).`,
       );
     }
     const probeErrors = scenario.api?.errors ?? [];
@@ -252,7 +265,7 @@ export function renderMarkdown(report) {
       lines.push("");
       for (const error of scenario.errors) {
         lines.push(
-          `- ${escapeText(error.message)}${error.orphan ? " _(claim release failed)_" : ""}`,
+          `- ${escapeText(error.message)}${error.orphan ? " _(claim release failed)_" : ""}${error.cleanupAborted ? " _(cleanup aborted by harness deadline)_" : ""}`,
         );
       }
     }

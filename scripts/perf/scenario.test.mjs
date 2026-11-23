@@ -26,6 +26,7 @@ function statusOf(result, config, metrics) {
     durationMs: Math.max(1, result.durationMs),
     agents: result.scenario.agents ?? 0,
   });
+  summary.timedOut = result.timedOut === true;
   return {
     summary,
     ...evaluateScenarioStatus({
@@ -111,7 +112,84 @@ test("S5 hold starts after the observed ramp and is reported", async (t) => {
   assert.equal(metrics.sse.opened, 3);
   assert.equal(metrics.sse.holdObservedMs >= 250, true);
   assert.equal(metrics.sse.rampObservedMs >= 150, true);
+  assert.equal(result.timedOut, false);
   assert.equal(statusOf(result, config, metrics).status, "ok");
+});
+
+test("S5 overall deadline cuts the hold and reports partial", async (t) => {
+  const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 4 });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S5",
+      "--sse",
+      "3",
+      "--ramp",
+      "10ms",
+      "--hold",
+      "500ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S5");
+  const result = await runScenario({
+    id: "S5",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+    sseOverallGraceMs: -400,
+  });
+  const status = statusOf(result, config, metrics);
+  assert.equal(result.timedOut, true);
+  assert.equal(metrics.sse.liveAtHoldStart, 3);
+  assert.equal(status.status, "partial");
+  assert.match(status.reason, /scenario deadline truncated/);
+});
+
+test("S3 deadline cut after a live hold is partial, not ok", async (t) => {
+  const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 4 });
+  t.after(() => mock.close());
+  const config = resolveConfig(
+    parseCli([
+      "--mock",
+      "--scenario",
+      "S3",
+      "--agents",
+      "1",
+      "--humans",
+      "0",
+      "--sse",
+      "2",
+      "--mix",
+      "100/0/0",
+      "--duration",
+      "300ms",
+      "--cadence",
+      "50ms",
+    ]),
+    {},
+  );
+  const users = await usersFor(mock, config.tokens);
+  const metrics = new RunMetrics("S3");
+  const result = await runScenario({
+    id: "S3",
+    config: { ...config, baseUrl: mock.baseUrl },
+    users,
+    boards: ["board-1"],
+    metrics,
+    signal: new AbortController().signal,
+    sseCloseGraceMs: -1,
+  });
+  const status = statusOf(result, config, metrics);
+  assert.equal(result.timedOut, true);
+  assert.equal(metrics.sse.liveAtHoldStart, 2);
+  assert.equal(status.status, "partial");
+  assert.match(status.reason, /scenario deadline truncated/);
 });
 
 test("S2 reports a drained board as partial, not as a green baseline", async (t) => {

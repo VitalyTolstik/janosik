@@ -64,6 +64,14 @@ export function evaluateScenarioStatus({
       reason: "authentication or authorization failed",
     };
   }
+  const timedOut = summary.timedOut === true;
+  const sseScenario = id === "S5" || (id === "S3" && (scenario.sse ?? 0) > 0);
+  if (timedOut && sseScenario && (summary.sse?.liveAtHoldStart ?? 0) === 0) {
+    return {
+      status: "failed",
+      reason: "scenario deadline expired before any live SSE hold started",
+    };
+  }
   if (id === "S5") {
     if ((summary.sse?.opened ?? 0) === 0) {
       return { status: "failed", reason: "no SSE stream opened" };
@@ -74,7 +82,9 @@ export function evaluateScenarioStatus({
         reason: "no live SSE stream when the hold started",
       };
     }
-    if ((summary.sse?.liveAtHoldEnd ?? 0) === 0) {
+    // A hold cut by the scenario deadline is reported as partial below, not
+    // failed: there were real live streams, just not for the full window.
+    if (!timedOut && (summary.sse?.liveAtHoldEnd ?? 0) === 0) {
       return {
         status: "failed",
         reason: "no live SSE stream at the end of the hold",
@@ -86,7 +96,7 @@ export function evaluateScenarioStatus({
     (scenario.sse ?? 0) > 0 &&
     ((summary.sse?.opened ?? 0) === 0 ||
       (summary.sse?.liveAtHoldStart ?? 0) === 0 ||
-      (summary.sse?.liveAtHoldEnd ?? 0) === 0)
+      (!timedOut && (summary.sse?.liveAtHoldEnd ?? 0) === 0))
   ) {
     return { status: "failed", reason: "S3 opened or held no live SSE stream" };
   }
@@ -107,6 +117,11 @@ export function evaluateScenarioStatus({
   }
 
   const reasons = [];
+  if (timedOut) {
+    reasons.push(
+      "scenario deadline truncated the run before the ramp/hold drained",
+    );
+  }
   if ((summary.sse?.failed ?? 0) > 0) {
     reasons.push(
       `${summary.sse.failed} SSE stream(s) failed to open (${summary.sse.opened ?? 0} opened)`,

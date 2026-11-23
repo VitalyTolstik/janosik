@@ -49,6 +49,7 @@ function errorRecorder(config) {
         boardId: entry.boardId ?? null,
         fatal: entry.fatal === true,
         orphan: entry.orphan === true,
+        cleanupAborted: entry.cleanupAborted === true,
         status: Number.isInteger(entry.error?.status)
           ? entry.error.status
           : null,
@@ -148,6 +149,8 @@ export async function runScenario({
   metrics,
   signal,
   log = () => {},
+  sseOverallGraceMs = S5_OVERALL_GRACE_MS,
+  sseCloseGraceMs: s3CloseGraceMs = 250,
 }) {
   const scenario = validateScenarioConfig(config, id);
   const errors = errorRecorder(config);
@@ -171,6 +174,7 @@ export async function runScenario({
   const onError = (entry) => {
     errors.push(entry);
     if (entry.orphan === true) metrics.recordOrphan();
+    if (entry.cleanupAborted === true) metrics.recordCleanupAborted();
     if (entry.fatal === true) {
       fatal = true;
       captureMeasurement();
@@ -238,7 +242,7 @@ export async function runScenario({
           startedAt +
             (scenario.rampMs ?? 0) +
             (scenario.holdMs ?? 0) +
-            S5_OVERALL_GRACE_MS -
+            sseOverallGraceMs -
             Date.now(),
         ),
       );
@@ -265,6 +269,7 @@ export async function runScenario({
         metrics,
         recycler,
         mcp: null,
+        timedOut,
       });
     }
 
@@ -287,6 +292,7 @@ export async function runScenario({
         metrics,
         recycler,
         mcp: null,
+        timedOut,
       });
     }
 
@@ -297,7 +303,8 @@ export async function runScenario({
     // S3's SSE hold ends at workEnd. Give the hold a moment to record the
     // still-open stream count and close cleanly before the scenario timer
     // aborts every client at the same instant.
-    const sseCloseGraceMs = id === "S3" && (scenario.sse ?? 0) > 0 ? 250 : 0;
+    const sseCloseGraceMs =
+      id === "S3" && (scenario.sse ?? 0) > 0 ? s3CloseGraceMs : 0;
     timer = setTimeout(
       () => {
         timedOut = true;
@@ -444,6 +451,7 @@ export async function runScenario({
       errors: errors.list(),
       fatalAuth: fatal,
       interrupted,
+      timedOut,
       recycled: metrics.recycled,
       recycle: recycler.metrics
         ? {
@@ -475,6 +483,7 @@ function finish({
   metrics,
   recycler,
   mcp,
+  timedOut = false,
 }) {
   const endedAt = Date.now();
   const measuredEnd = measurementEndedAt ?? endedAt;
@@ -493,6 +502,12 @@ function finish({
     errors: errors.list(),
     fatalAuth: fatal,
     interrupted,
+    // For S1/S2/S4/S6 the timer is the planned stop, not a truncation. Only
+    // the S5 overall timer and the S3 SSE-hold grace indicate a cut run.
+    timedOut:
+      timedOut === true &&
+      (scenario.id === "S5" ||
+        (scenario.id === "S3" && (scenario.sse ?? 0) > 0)),
     recycled: metrics.recycled,
     recycle: recycler.metrics
       ? {
@@ -620,8 +635,15 @@ async function runSseRamp({ scenario, clients, boards, metrics, signal, log }) {
   log(
     `  SSE ramp observed ${formatDuration(metrics.sse.rampObservedMs)}; holding ${formatDuration(scenario.holdMs ?? 0)} from now`,
   );
-  await delayUntil(holdDeadline, signal);
-  metrics.recordSseHoldEnd();
+  try {
+    await delayUntil(holdDeadline, signal);
+  } catch (error) {
+    // The overall deadline can cut the hold. Record what was still live and
+    // let the caller mark the scenario partial with an explicit reason.
+    if (!signal.aborted) throw error;
+  } finally {
+    metrics.recordSseHoldEnd();
+  }
   const holdEndedAt = await closeSseHandles(handles, metrics, rampEndedAt);
   return { rampEndedAt, holdEndedAt, opened: handles.length };
 }

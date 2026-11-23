@@ -406,6 +406,58 @@ test("evaluateScenarioStatus distinguishes ok/partial/failed/interrupted", () =>
   );
   assert.equal(
     evaluate({
+      id: "S5",
+      scenario: { sse: 3 },
+      summary: {
+        timedOut: true,
+        sse: {
+          opened: 3,
+          failed: 0,
+          liveAtHoldStart: 3,
+          liveAtHoldEnd: 0,
+          maxConcurrent: 3,
+        },
+      },
+    }).status,
+    "partial",
+  );
+  assert.equal(
+    evaluate({
+      id: "S5",
+      scenario: { sse: 3 },
+      summary: {
+        timedOut: true,
+        sse: {
+          opened: 3,
+          failed: 0,
+          liveAtHoldStart: 0,
+          liveAtHoldEnd: 0,
+          maxConcurrent: 0,
+        },
+      },
+    }).status,
+    "failed",
+  );
+  assert.equal(
+    evaluate({
+      id: "S3",
+      scenario: { agents: 2, sse: 2 },
+      summary: {
+        timedOut: true,
+        cycles: 1,
+        sse: {
+          opened: 2,
+          failed: 0,
+          liveAtHoldStart: 2,
+          liveAtHoldEnd: 0,
+          maxConcurrent: 2,
+        },
+      },
+    }).status,
+    "partial",
+  );
+  assert.equal(
+    evaluate({
       summary: {
         sse: {
           opened: 2,
