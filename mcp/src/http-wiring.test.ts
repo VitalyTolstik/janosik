@@ -36,6 +36,9 @@ describe("MCP gateway container wiring", () => {
     expect(block).toContain("JANOSIK_MCP_HTTP_HOST: 0.0.0.0");
     expect(block).toContain('JANOSIK_MCP_HTTP_PORT: "8080"');
     expect(block).toContain("JANOSIK_MCP_HTTP_MAX_SESSIONS");
+    expect(block).toContain("JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN:");
+    expect(block).toContain("JANOSIK_MCP_HTTP_INIT_RATE_LIMIT:");
+    expect(block).toContain("JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS:");
     expect(block).toContain("JANOSIK_MCP_HTTP_SESSION_IDLE_MS");
     expect(block).toContain("JANOSIK_MCP_HTTP_AUTH_URL");
     expect(block).toContain("JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS");

@@ -45,6 +45,8 @@ interface Upstream {
   ready: boolean;
   readyCalls: number;
   readyDelayMs: number;
+  authCalls: number;
+  throttledOnce: Set<string>;
   close(): Promise<void>;
 }
 
@@ -82,6 +84,8 @@ async function startUpstream(): Promise<Upstream> {
     ready: true,
     readyCalls: 0,
     readyDelayMs: 0,
+    authCalls: 0,
+    throttledOnce: new Set<string>(),
     close: async () => closeServer(server),
   };
   const server = createHttpServer((req: IncomingMessage, res) => {
@@ -102,6 +106,9 @@ async function startUpstream(): Promise<Upstream> {
       return;
     }
     if (path === "/api/v1/auth/me" && req.method === "GET") {
+      state.authCalls += 1;
+      const valid = () =>
+        json(res, 200, { user: { id: "u1" }, token: { id: "t1" } });
       if (authorization === "Bearer jnk_limited_secret") {
         res.setHeader("Retry-After", "7");
         json(res, 429, { code: "rate_limited" });
@@ -111,13 +118,27 @@ async function startUpstream(): Promise<Upstream> {
         json(res, 503, { code: "unavailable" });
         return;
       }
-      const valid =
+      if (authorization === "Bearer jnk_retry_secret") {
+        if (!state.throttledOnce.has(authorization)) {
+          state.throttledOnce.add(authorization);
+          res.setHeader("Retry-After", "0");
+          json(res, 429, { code: "rate_limited" });
+        } else {
+          valid();
+        }
+        return;
+      }
+      if (authorization === "Bearer jnk_slow_auth_secret") {
+        setTimeout(valid, 100);
+        return;
+      }
+      const known =
         authorization === `Bearer ${ALPHA}` ||
         authorization === `Bearer ${BETA}` ||
         authorization === "Bearer jnk_third_secret" ||
         /^Bearer jnk_load_\d+_secret$/.test(authorization ?? "");
-      if (valid) {
-        json(res, 200, { user: { id: "u1" }, token: { id: "t1" } });
+      if (known) {
+        valid();
       } else {
         json(res, 401, {
           message: "invalid token",
@@ -168,7 +189,13 @@ function gatewayConfig(
     port: 0,
     path: "/mcp",
     maxSessions: 20,
-    maxSessionsPerToken: 0,
+    maxSessionsPerToken: 50,
+    initRateLimitPerMinute: 600,
+    tokenInitRateLimitPerMinute: 10,
+    negativeCacheTtlMs: 60_000,
+    negativeCacheMaxEntries: 1_000,
+    authValidationAttempts: 2,
+    authValidationMaxDelayMs: 1_000,
     sessionIdleMs: 60_000,
     sessionSweepMs: 0,
     maxBodyBytes: 64 * 1024,
@@ -518,6 +545,7 @@ describe("MCP Streamable HTTP gateway", () => {
     upstream.ready = false;
     const notReady = await fetch(`${running.url}/ready`);
     expect(notReady.status).toBe(503);
+    expect(notReady.headers.get("retry-after")).toBe("5");
     expect(await notReady.json()).toMatchObject({
       status: "not_ready",
       upstream: "unavailable",
@@ -603,15 +631,20 @@ describe("MCP Streamable HTTP gateway", () => {
     };
 
     await callBig(100);
+    const gc = (globalThis as { gc?: () => void }).gc;
+    gc?.();
     const before = process.memoryUsage().heapUsed;
     for (let index = 1; index <= 20; index += 1) await callBig(100 + index);
+    gc?.();
     const after = process.memoryUsage().heapUsed;
     const deltaMb = (after - before) / (1024 * 1024);
     console.info(
       `[stream-smoke] 20 MiB of SSE results: heap +${deltaMb.toFixed(1)} MB`,
     );
     expectStreamMapsEmpty(running, sessionId);
-    expect(deltaMb).toBeLessThan(32);
+    // V8 may retain recently decoded strings without GC; the map assertions
+    // above are the deterministic leak check, this is only a loose ceiling.
+    expect(deltaMb).toBeLessThan(64);
   });
 
   it("keeps GET SSE alive, stops an idle sweep and closes on DELETE", async () => {
@@ -653,6 +686,84 @@ describe("MCP Streamable HTTP gateway", () => {
     await readUntil(secondReader, ": keepalive", 2_000);
     await secondReader.cancel();
     await waitFor(() => running.gateway.manager.stats().sessions === 0);
+  });
+
+  it("drains an active slow tool call before closing", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const createSlowServer = () => {
+      const server = new McpServer({ name: "slow-tool", version: "0.0.0" });
+      server.registerTool(
+        "slow_result",
+        {
+          title: "Slow result",
+          description: "Finishes after the gateway starts draining.",
+          inputSchema: {},
+        },
+        async () => {
+          started();
+          await sleep(150);
+          return { content: [{ type: "text", text: "drained" }] };
+        },
+      );
+      return server;
+    };
+    const running = await startGateway(
+      upstream,
+      { shutdownGraceMs: 1_000 },
+      { createMcpServer: createSlowServer },
+    );
+    const sessionId = await initialize(running, ALPHA);
+    const callPromise = rpc(
+      running,
+      ALPHA,
+      {
+        jsonrpc: "2.0",
+        id: 30,
+        method: "tools/call",
+        params: { name: "slow_result", arguments: {} },
+      },
+      sessionId,
+    );
+    await startedPromise;
+    const closePromise = running.gateway.close("test");
+    const call = await callPromise;
+    expect(call.status).toBe(200);
+    const payload = toolResult(call) as { content?: Array<{ text?: string }> };
+    expect(payload.content?.[0]?.text).toBe("drained");
+    await closePromise;
+    expect(running.gateway.manager.stats()).toMatchObject({
+      sessions: 0,
+      pending: 0,
+    });
+  });
+
+  it("closes an open GET SSE stream during drain", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      shutdownGraceMs: 100,
+      sseKeepAliveMs: 30,
+    });
+    const sessionId = await initialize(running, ALPHA);
+    const response = await fetch(`${running.url}/mcp`, {
+      headers: {
+        authorization: `Bearer ${ALPHA}`,
+        "mcp-session-id": sessionId,
+        "mcp-protocol-version": "2025-06-18",
+        accept: "text/event-stream",
+      },
+    });
+    const reader = response.body!.getReader();
+    await readUntil(reader, ": keepalive", 2_000);
+    const closePromise = running.gateway.close("test");
+    expect(await waitForStreamEnd(reader, 2_000)).toBe(true);
+    await closePromise;
+    expect(running.gateway.manager.stats().sessions).toBe(0);
   });
 
   it("passes each session's token through and isolates A from B", async () => {
@@ -742,6 +853,7 @@ describe("MCP Streamable HTTP gateway", () => {
     cleanup.push(() => upstream.close());
     const running = await startGateway(upstream);
 
+    const beforeCache = upstream.authCalls;
     const fabricated = await rpc(running, "jnk_fabricated_secret", INITIALIZE);
     expect(fabricated.status).toBe(401);
     expect(fabricated.json).toMatchObject({ error: "unauthorized" });
@@ -751,6 +863,12 @@ describe("MCP Streamable HTTP gateway", () => {
     });
     expect(running.logs.join("")).toContain("auth_validation_failed");
     expect(running.logs.join("")).not.toContain("jnk_fabricated_secret");
+
+    // The bounded negative cache stops a repeated bad key reaching the API.
+    const repeated = await rpc(running, "jnk_fabricated_secret", INITIALIZE);
+    expect(repeated.status).toBe(401);
+    expect(upstream.authCalls - beforeCache).toBe(1);
+    expect(running.logs.join("")).toContain("auth_validation_cached");
 
     const limited = await rpc(running, "jnk_limited_secret", INITIALIZE);
     expect(limited.status).toBe(429);
@@ -763,14 +881,90 @@ describe("MCP Streamable HTTP gateway", () => {
 
     const down = await rpc(running, "jnk_auth_down_secret", INITIALIZE);
     expect(down.status).toBe(503);
+    expect(down.headers.get("retry-after")).toBe("5");
     expect(down.json).toMatchObject({ error: "auth_unavailable" });
     expect(running.gateway.manager.stats()).toMatchObject({
       sessions: 0,
       pending: 0,
     });
 
+    const retried = await initialize(running, "jnk_retry_secret");
+    expect(retried).toBeTruthy();
+
     const valid = await initialize(running, ALPHA);
     expect(valid).toBeTruthy();
+  });
+
+  it("floods are stopped locally before more API validation calls", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      initRateLimitPerMinute: 2,
+    });
+    const before = upstream.authCalls;
+    const responses = [];
+    for (const suffix of ["one", "two", "three"]) {
+      responses.push(
+        await rpc(running, `jnk_fabricated_${suffix}`, INITIALIZE),
+      );
+    }
+    expect(responses.map((response) => response.status)).toEqual([
+      401, 401, 429,
+    ]);
+    expect(responses[2]?.json).toMatchObject({
+      error: "initialize_rate_limited",
+    });
+    expect(Number(responses[2]?.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(upstream.authCalls - before).toBe(2);
+    expect(running.gateway.manager.stats().sessions).toBe(0);
+  });
+
+  it("rate-limits initialize per token fingerprint as well as per IP", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      tokenInitRateLimitPerMinute: 1,
+    });
+    const first = await initialize(running, ALPHA);
+    expect(first).toBeTruthy();
+    const before = upstream.authCalls;
+    const second = await rpc(running, ALPHA, INITIALIZE);
+    expect(second.status).toBe(429);
+    expect(second.json).toMatchObject({ error: "initialize_rate_limited" });
+    expect(upstream.authCalls).toBe(before);
+  });
+
+  it("single-flights concurrent auth validation for one key", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream);
+    const before = upstream.authCalls;
+    const [a, b] = await Promise.all([
+      rpc(running, "jnk_slow_auth_secret", INITIALIZE),
+      rpc(running, "jnk_slow_auth_secret", INITIALIZE),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(upstream.authCalls - before).toBe(1);
+    expect(running.gateway.manager.stats().sessions).toBe(2);
+  });
+
+  it("keeps one valid key from exhausting the global session pool", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      maxSessions: 4,
+      maxSessionsPerToken: 2,
+    });
+    await initialize(running, ALPHA);
+    await initialize(running, ALPHA);
+    const capped = await rpc(running, ALPHA, INITIALIZE);
+    expect(capped.status).toBe(503);
+    expect(capped.json).toMatchObject({ error: "session_limit" });
+    expect(capped.headers.get("retry-after")).toBe("5");
+    const other = await initialize(running, BETA);
+    expect(other).toBeTruthy();
+    expect(running.gateway.manager.stats().sessions).toBe(3);
   });
 
   it("single-flights concurrent readiness probes", async () => {

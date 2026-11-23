@@ -24,7 +24,13 @@ describe("loadGatewayConfig", () => {
       port: 8080,
       path: "/mcp",
       maxSessions: 500,
-      maxSessionsPerToken: 0,
+      maxSessionsPerToken: 50,
+      initRateLimitPerMinute: 600,
+      tokenInitRateLimitPerMinute: 10,
+      negativeCacheTtlMs: 60_000,
+      negativeCacheMaxEntries: 1_000,
+      authValidationAttempts: 2,
+      authValidationMaxDelayMs: 1_000,
       sessionIdleMs: 300_000,
       sessionSweepMs: 30_000,
       maxBodyBytes: 16 * 1024 * 1024,
@@ -54,6 +60,12 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_PATH: "/agents/mcp/",
       JANOSIK_MCP_HTTP_MAX_SESSIONS: "1000",
       JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN: "25",
+      JANOSIK_MCP_HTTP_INIT_RATE_LIMIT: "300",
+      JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN: "5",
+      JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS: "0",
+      JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "50",
+      JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "3",
+      JANOSIK_MCP_HTTP_AUTH_RETRY_MAX_DELAY_MS: "0",
       JANOSIK_MCP_HTTP_SESSION_IDLE_MS: "60000",
       JANOSIK_MCP_HTTP_SESSION_SWEEP_MS: "5000",
       JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
@@ -81,6 +93,12 @@ describe("loadGatewayConfig", () => {
       path: "/agents/mcp",
       maxSessions: 1000,
       maxSessionsPerToken: 25,
+      initRateLimitPerMinute: 300,
+      tokenInitRateLimitPerMinute: 5,
+      negativeCacheTtlMs: 0,
+      negativeCacheMaxEntries: 50,
+      authValidationAttempts: 3,
+      authValidationMaxDelayMs: 0,
       sessionIdleMs: 60_000,
       sessionSweepMs: 5_000,
       maxBodyBytes: 1024,
@@ -134,6 +152,9 @@ describe("loadGatewayConfig", () => {
     bad({ JANOSIK_MCP_HTTP_AUTH_URL: "file:///etc/passwd" });
     bad({ JANOSIK_MCP_HTTP_SESSION_IDLE_MS: "2147483648" });
     bad({ JANOSIK_MCP_HTTP_READY_TIMEOUT_MS: "2147483648" });
+    bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "0" });
+    bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "6" });
+    bad({ JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "0" });
     bad({ JANOSIK_MCP_HTTP_LOG_LEVEL: "verbose" });
     bad({ JANOSIK_MCP_HTTP_HOST: "has space" });
   });
