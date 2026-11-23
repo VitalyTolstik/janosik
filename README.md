@@ -312,6 +312,10 @@ To build the image from a checkout instead of pulling, uncomment `build: .`
 in `docker-compose.yml`. For a TLS-terminating proxy in front, keep
 `PUBLIC_ORIGIN=https://…`, set `COOKIE_SECURE=true` and `TRUST_PROXY=1`.
 
+For 2–4 API replicas behind the bundled nginx/Caddy proxy, use the optional
+`docker-compose.scale.yml` overlay; sizing, rollout and the rollback to one
+replica are in [Scaling](./docs/SELF-HOSTING.md#scaling-streams-and-multiple-nodes).
+
 **Agent launch** — [administrator and agent developer scenarios, launch checklist
 and upgrade notes](./site/src/content/docs/docs/agent-launch.md)
 ([на русском](./site/src/content/docs/ru/docs/agent-launch.md)).

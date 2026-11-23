@@ -600,6 +600,25 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `docker-compose*.yml`, `Dockerfile`, `deploy/*`, docs
 self-hosting.
 
+**Статус:** реализовано в `feat/TASK-200.12-api-replicas`.
+`docker-compose.scale.yml` — overlay на обычный стек: 2–4 реплики `app` за
+одним nginx (по умолчанию) или Caddy, одноразовый `migrate`-сервис
+(`MIGRATE_ON_BOOT=false` у реплик), `ulimits.nofile`, memory/CPU limits,
+`DB_CONNECTION_LIMIT` на реплику, `TRUST_PROXY=1`, `stop_grace_period` и
+health-gated зависимость прокси. Прокси: gzip, `proxy_buffering off` /
+`flush_interval -1` для SSE, таймауты 3600 с, upload-маршруты без
+request-buffering, статика с сохранением кэш-заголовков, `/healthz`.
+Sticky не нужен: клиент переподключается с `?since=`. Redis остаётся
+опциональным для одной реплики; при нескольких — общие счётчики throttler,
+SSE fan-out и инвалидации, а правка `THROTTLE_LIMIT` из панели теперь
+доставляется на все реплики через control-канал (раньше — только после
+рестарта). Известные ограничения: presence, агентские бюджеты 200.3 и очередь
+команд — на процесс; SSE-лимиты — на реплику; uploads требуют общего FS на
+нескольких хостах; Compose не zero-downtime. Sizing и rollback — в
+self-hosting EN/RU. Проверки: `scripts/deploy/scale.test.mjs` (compose 1/3
+реплики, порты/имена/health, nginx -t, caddy validate), unit-тесты общего
+throttler и SSE между репликами, `npm run deploy:test`.
+
 ---
 
 ### 200.13 — Pre-serialized SSE frames и keep-alive (P2)

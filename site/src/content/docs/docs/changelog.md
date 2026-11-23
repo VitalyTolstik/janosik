@@ -15,6 +15,15 @@ specific release, set `JANOSIK_TAG` in `.env` (see
 
 ## Unreleased
 
+- Self-hosting can scale the API horizontally: the optional
+  `docker-compose.scale.yml` overlay runs 2–4 replicas behind nginx or Caddy,
+  with a shared uploads volume, one-shot migrations, health-gated rollout and a
+  documented rollback to one replica or back to the single-container stack.
+  The proxy adds gzip, keeps SSE unbuffered (`?since=` reconnect, no sticky
+  sessions), passes uploads through, and the shared Redis contour keeps
+  throttler counters and master-panel limit edits consistent across replicas.
+  Per-replica presence, agent budgets and SSE caps remain local; see
+  [Self-hosting](/docs/self-hosting/).
 - Admins can open the same read-only edit history from a card, a user's
   comments or the comments table; deleted rows hide the link and return no
   revision count. A comment keeps its newest 50 revisions, and a comment
