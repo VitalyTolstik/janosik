@@ -1,0 +1,106 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  RunMetrics,
+  actionsPerSecond,
+  percentile,
+  requestsPerAgentPerMinute,
+  statusCounts,
+  summarizeNumbers,
+} from "./lib/metrics.mjs";
+
+test("percentile interpolates and handles empty sets", () => {
+  assert.equal(percentile([], 95), null);
+  assert.equal(percentile([42], 99), 42);
+  assert.equal(percentile([1, 2, 3, 4], 50), 2.5);
+  assert.equal(percentile([1, 2, 3, 4], 0), 1);
+  assert.equal(percentile([1, 2, 3, 4], 100), 4);
+  assert.equal(Math.round(percentile([1, 2, 3, 4], 95) * 100) / 100, 3.85);
+});
+
+test("summarizeNumbers reports p50/p95/p99 without mutating input", () => {
+  const values = [4, 1, 3, 2];
+  const stats = summarizeNumbers(values);
+  assert.deepEqual(values, [4, 1, 3, 2]);
+  assert.equal(stats.count, 4);
+  assert.equal(stats.min, 1);
+  assert.equal(stats.max, 4);
+  assert.equal(stats.avg, 2.5);
+  assert.equal(stats.p50, 2.5);
+  assert.deepEqual(summarizeNumbers([]), {
+    count: 0,
+    min: null,
+    avg: null,
+    max: null,
+    p50: null,
+    p95: null,
+    p99: null,
+  });
+});
+
+test("rate helpers handle zero agents and zero duration", () => {
+  assert.equal(actionsPerSecond(10, 2_000), 5);
+  assert.equal(actionsPerSecond(10, 0), null);
+  assert.equal(requestsPerAgentPerMinute(600, 10, 60_000), 60);
+  assert.equal(requestsPerAgentPerMinute(600, 0, 60_000), null);
+  assert.equal(requestsPerAgentPerMinute(600, 10, 0), null);
+});
+
+test("statusCounts separates 4xx, 5xx and network failures", () => {
+  assert.deepEqual(statusCounts({ 200: 5, 409: 2, 429: 1, 500: 3, 0: 4 }), {
+    client4xx: 3,
+    server5xx: 3,
+    network: 4,
+  });
+});
+
+test("RunMetrics snapshots requests, actions, errors, bytes and SSE", () => {
+  const metrics = new RunMetrics("S2");
+  metrics.recordRequest("board.read", 10, 200, 1_000);
+  metrics.recordRequest("command.claim", 20, 409, 100);
+  metrics.recordRequest("command.claim", 30, 200, 100);
+  metrics.recordRequest("comment.create", 40, 201, 50);
+  metrics.recordRequest("command.move", 50, 429, 80);
+  metrics.recordRequest("board.read", 5, 0, 0);
+  metrics.recordAction(3);
+  metrics.recordCycle();
+  metrics.recordSseOpen(2, 200);
+  metrics.recordSseOpen(3, 200);
+  metrics.recordSseOpen(1, 503);
+  metrics.recordSseBytes(1_024);
+  metrics.recordSseFrame(0);
+  metrics.recordSseClose();
+
+  const snapshot = metrics.snapshot({ durationMs: 60_000, agents: 10 });
+  assert.equal(snapshot.requests, 9);
+  assert.equal(snapshot.actions, 3);
+  assert.equal(snapshot.cycles, 1);
+  assert.equal(snapshot.bytes, 1_330);
+  assert.equal(snapshot.errors.total, 4);
+  assert.equal(snapshot.errors.client4xx, 2);
+  assert.equal(snapshot.errors.server5xx, 1);
+  assert.equal(snapshot.errors.network, 1);
+  assert.equal(snapshot.errors.conflict409, 1);
+  assert.equal(snapshot.errors.rateLimited429, 1);
+  assert.equal(snapshot.requestsPerAgentPerMinute, 0.9);
+  assert.equal(snapshot.actionsPerSecond, 0.05);
+  assert.equal(snapshot.operations["command.claim"].requests, 2);
+  assert.equal(snapshot.operations["command.claim"].statuses["409"], 1);
+  assert.equal(snapshot.sse.opened, 2);
+  assert.equal(snapshot.sse.failed, 1);
+  assert.equal(snapshot.sse.current, 1);
+  assert.equal(snapshot.sse.maxConcurrent, 2);
+  assert.equal(snapshot.sse.frames, 1);
+  assert.equal(snapshot.sse.bytes, 1_024);
+});
+
+test("empty RunMetrics snapshot is JSON-safe", () => {
+  const snapshot = new RunMetrics("S1").snapshot({
+    durationMs: 1_000,
+    agents: 1,
+  });
+  assert.equal(snapshot.latency.p95, null);
+  assert.equal(snapshot.bytesPerRequest, null);
+  assert.equal(snapshot.errors.rate, 0);
+  assert.equal(snapshot.requestsPerAgentPerMinute, 0);
+});
