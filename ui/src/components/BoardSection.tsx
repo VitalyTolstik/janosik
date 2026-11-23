@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -112,9 +113,12 @@ export function BoardSection() {
   // (or a facet pick followed by typing) would otherwise compute from the
   // same old prop and the later write would silently drop the earlier facet.
   // This ref holds the last filter written or observed, so every update
-  // composes on top of it.
+  // composes on top of it. A layout effect, not a passive one: the router
+  // applies URL writes in a transition, and a delayed passive effect from an
+  // older URL render would otherwise overwrite the optimistic ref, making the
+  // next facet pick silently drop the newer facet.
   const filterRef = useRef(filter);
-  useEffect(() => {
+  useLayoutEffect(() => {
     filterRef.current = filter;
   }, [filter]);
   const setFilter = useCallback(
