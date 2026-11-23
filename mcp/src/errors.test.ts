@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError, describeError, errorStructuredContent } from "./errors.js";
+import {
+  ApiError,
+  describeError,
+  errorStructuredContent,
+  isRateLimited,
+  parseRetryAfter,
+  rateLimitDelayMs,
+} from "./errors.js";
 
 describe("describeError", () => {
   it("points at the field of a 400 validation error", () => {
@@ -231,6 +238,64 @@ describe("describeError", () => {
     );
     expect(message).toContain("apr-1");
     expect(message).toMatch(/janosik_wait_for_decision/i);
+  });
+});
+
+describe("rate-limit retry policy (TASK-200.3)", () => {
+  it("parses delta-seconds and HTTP-date Retry-After values", () => {
+    expect(parseRetryAfter("2")).toBe(2);
+    expect(parseRetryAfter("0")).toBe(0);
+    expect(parseRetryAfter(null)).toBeUndefined();
+    expect(parseRetryAfter("soon")).toBeUndefined();
+    const at = new Date(Date.now() + 5_000).toUTCString();
+    const parsed = parseRetryAfter(at);
+    expect(parsed).toBeGreaterThanOrEqual(3);
+    expect(parsed).toBeLessThanOrEqual(5);
+  });
+
+  it("prefers Retry-After over the exponential floor", () => {
+    const error = new ApiError(429, { code: "rate_limited" }, 2);
+    expect(rateLimitDelayMs(error, 1, () => 0)).toBe(2_000);
+  });
+
+  it("falls back to capped, jittered exponential backoff", () => {
+    const error = new ApiError(429, { code: "rate_limited" });
+    expect(rateLimitDelayMs(error, 1, () => 0)).toBe(50);
+    expect(rateLimitDelayMs(error, 2, () => 0)).toBe(100);
+    expect(rateLimitDelayMs(error, 3, () => 1)).toBe(600);
+    // The cap keeps a runaway delayed Retry-After from starving a tool call.
+    expect(
+      rateLimitDelayMs(new ApiError(429, { code: "rate_limited" }, 600), 1),
+    ).toBe(8_000);
+  });
+
+  it("treats the queued 503 as rate limiting, not a generic outage", () => {
+    expect(isRateLimited(new ApiError(429, { code: "rate_limited" }))).toBe(
+      true,
+    );
+    expect(isRateLimited(new ApiError(503, { code: "rate_limited" }))).toBe(
+      true,
+    );
+    expect(
+      isRateLimited(new ApiError(503, { code: "board_write_timeout" })),
+    ).toBe(false);
+    expect(isRateLimited(new Error("fetch failed"))).toBe(false);
+  });
+
+  it("explains the exhausted automatic retry without inviting a spin", () => {
+    const message = describeError(
+      new ApiError(429, { code: "rate_limited", retryAfter: 2 }),
+    );
+    expect(message).toMatch(/retried automatically/i);
+    expect(message).toMatch(/2s/);
+    expect(message).toMatch(/reduce the cadence/i);
+
+    const queued = describeError(
+      new ApiError(503, { code: "rate_limited", retryAfter: 3 }),
+    );
+    expect(queued).toMatch(/retried automatically/i);
+    expect(queued).toMatch(/3s/);
+    expect(queued).not.toMatch(/instance is unavailable/i);
   });
 });
 

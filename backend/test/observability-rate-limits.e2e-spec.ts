@@ -11,7 +11,9 @@ import { resetRateLimits } from "@/common/rate-limit";
 import { TrafficService } from "@/common/traffic.service";
 import { recentQueueJobs, resetQueueJobLog } from "@/ops/queue-core";
 import {
+  setAgentCommandQueueMs,
   setAgentSessionRateLimit,
+  setAgentTokenRateLimit,
   setBoardRateLimit,
 } from "@/config/rate-limit";
 import { wipeAll } from "./support/wipe";
@@ -79,6 +81,8 @@ describe("Observability and agent rate limits (e2e)", () => {
   afterAll(async () => {
     setBoardRateLimit(null);
     setAgentSessionRateLimit(null);
+    setAgentTokenRateLimit(null);
+    setAgentCommandQueueMs(null);
     resetRateLimits();
     await wipeAll(prisma);
     await app.close();
@@ -87,6 +91,8 @@ describe("Observability and agent rate limits (e2e)", () => {
   beforeEach(() => {
     setBoardRateLimit(null);
     setAgentSessionRateLimit(null);
+    setAgentTokenRateLimit(null);
+    setAgentCommandQueueMs(null);
     resetRateLimits();
   });
 
@@ -188,6 +194,74 @@ describe("Observability and agent rate limits (e2e)", () => {
     expect(denied.headers["x-ratelimit-scope"]).toBe("session");
 
     await heartbeat(second).expect(200);
+  });
+
+  it("keeps a noisy token from starving the board", async () => {
+    setBoardRateLimit(100);
+    setAgentTokenRateLimit(2);
+    const noisy = await createToken("noisy-token");
+    const quiet = await createToken("quiet-token");
+
+    await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(noisy))
+      .expect(200);
+    await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(noisy))
+      .expect(200);
+    const limited = await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(noisy))
+      .expect(429);
+    expect(limited.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "token",
+    });
+    expect(limited.headers["x-ratelimit-scope"]).toBe("token");
+
+    // The board still has room for an unrelated agent.
+    await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(quiet))
+      .expect(200);
+  });
+
+  it("answers a burst command with 503 Retry-After instead of an instant 429", async () => {
+    setBoardRateLimit(1);
+    setAgentCommandQueueMs(0);
+    const pat = await createToken("command-burst");
+    const commandId = randomUUID();
+    const send = (title: string) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands`)
+        .set(auth(pat))
+        .send({
+          commandId,
+          action: {
+            boardId,
+            at: Date.now(),
+            type: "RENAME_BOARD",
+            title,
+          },
+        });
+
+    await send("One rename").expect(200);
+    const denied = await send("One rename").expect(503);
+    expect(denied.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "board",
+      retryAfter: Number(denied.headers["retry-after"]),
+    });
+    expect(denied.headers["retry-after"]).toBeDefined();
+    expect(denied.headers["x-ratelimit-scope"]).toBe("board");
+
+    // The write was refused before the handler, so the same command is still
+    // safe to send after the budget refills.
+    resetRateLimits("board");
+    await send("One rename").expect(200);
   });
 
   it("does not charge an owner's session for a foreign token's lifecycle requests", async () => {

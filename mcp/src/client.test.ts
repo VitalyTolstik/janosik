@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Board } from "@janosik/shared";
 
 import { JanosikClient, apiPath } from "./client.js";
-import { ApiError, NoChangeError, describeError } from "./errors.js";
+import {
+  ApiError,
+  NoChangeError,
+  RATE_LIMIT_MAX_ATTEMPTS,
+  describeError,
+} from "./errors.js";
 
 interface Call {
   url: string;
@@ -365,6 +370,94 @@ describe("JanosikClient.command outcomes", () => {
       boardId: "other",
     } as never);
     expect(JSON.parse(String(calls[0]!.init.body)).action.boardId).toBe("b1");
+  });
+});
+
+describe("rate-limit retries (TASK-200.3)", () => {
+  function rateLimited(status = 429, retryAfter = "0"): Response {
+    return new Response(
+      JSON.stringify({
+        code: "rate_limited",
+        message: "slow down",
+        retryable: true,
+        retryAfter: Number(retryAfter),
+      }),
+      {
+        status,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": retryAfter,
+        },
+      },
+    );
+  }
+
+  it("retries a 429 with the same commandId instead of failing the tool", async () => {
+    let attempts = 0;
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", (_input: string, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      attempts += 1;
+      return Promise.resolve(
+        attempts === 1
+          ? rateLimited()
+          : json({ seq: 5, versions: { "board:b1": 1 } }),
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+
+    await expect(
+      client.command("b1", { type: "DELETE_CARD", cardId: "c1" }),
+    ).resolves.toMatchObject({ seq: 5 });
+    expect(attempts).toBe(2);
+    expect(JSON.parse(bodies[0]!).commandId).toBe(
+      JSON.parse(bodies[1]!).commandId,
+    );
+  });
+
+  it("retries the server's queued 503 rate_limited too", async () => {
+    let attempts = 0;
+    vi.stubGlobal("fetch", () => {
+      attempts += 1;
+      return Promise.resolve(
+        attempts === 1
+          ? rateLimited(503)
+          : json({ seq: 6, versions: { "board:b1": 1 } }),
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await expect(
+      client.command("b1", { type: "DELETE_CARD", cardId: "c1" }),
+    ).resolves.toMatchObject({ seq: 6 });
+    expect(attempts).toBe(2);
+  });
+
+  it("stops after a bounded number of 429 attempts", async () => {
+    let attempts = 0;
+    vi.stubGlobal("fetch", () => {
+      attempts += 1;
+      return Promise.resolve(rateLimited());
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await expect(
+      client.command("b1", { type: "DELETE_CARD", cardId: "c1" }),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(attempts).toBe(RATE_LIMIT_MAX_ATTEMPTS);
+  });
+
+  it("retries a throttled read with the same request", async () => {
+    let attempts = 0;
+    vi.stubGlobal("fetch", () => {
+      attempts += 1;
+      return Promise.resolve(
+        attempts === 1
+          ? rateLimited()
+          : json({ id: "b1", columns: [], cards: {}, labels: [] }),
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await expect(client.getBoard("b1")).resolves.toMatchObject({ id: "b1" });
+    expect(attempts).toBe(2);
   });
 });
 
