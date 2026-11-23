@@ -78,8 +78,9 @@ Required token/board profile:
   `--agents` label. S3 always uses the HTTP driver. Use `--shared-identity`
   only when the run intentionally models several agents behind one identity.
 
-Token precedence is `--token` > `JANOSIK_PERF_TOKEN` > `PERF_TOKEN`; the pool
-is deduplicated and only `tokenCount` reaches the report.
+Token precedence is `--token-file` > `JANOSIK_PERF_TOKEN` > `PERF_TOKEN`; the
+pool is deduplicated and only `tokenCount` reaches the report. `--token` is
+rejected because argv is visible through `/proc/<pid>/cmdline`.
 
 Default output: `scripts/perf/results/<YYYY-MM-DD>-<sha>/<mode>-<scenarios>-<driver>-<HHMMSS>.json`
 and `.md` beside it. New result directories are gitignored. Use `--output` to
@@ -119,30 +120,35 @@ because it completes no write cycles.
 `--duration` is the work window **after** the ramp. With `--burst` (the
 default) all workers synchronise at the end of the ramp at an absolute start
 time and start together; `--no-burst` staggers them across the ramp. The
-report contains the observed work window, so a ramp overrun or an early abort
-is visible.
+report contains the observed work window (`plannedWorkStartedAt` vs the min
+first-request `actualWorkStartedAt`), so a ramp overrun or an early abort is
+visible.
 
 ### S5 hold semantics
 
 The hold starts when the ramp **actually completes**, not at the planned
-boundary. The report shows opened/failed/max streams and the observed ramp and
+boundary. Each open has a 10 s header timeout and the whole scenario has a
+bounded ramp+hold deadline. The report shows opened/closed/failed/early
+closes/read errors, live streams at hold start/end, and the observed ramp and
 hold durations. No live stream is `failed`; one opened stream with thousands of
-failures is at least `partial`.
+failures is at least `partial`. S3 checks its own SSE hold the same way.
 
 ### Board recycling
 
 ```bash
+export JANOSIK_PERF_RECYCLE_TOKEN="jnk_admin_…"   # board ADMIN; or --recycle-token-file
 npm run perf:agents -- --scenario S2 --board "$BOARD" --agents 100 --duration 5m \
-  --recycle --recycle-token "$JANOSIK_PERF_RECYCLE_TOKEN"
+  --recycle
 ```
 
 `--recycle` moves Done cards back to the first column when an agent finds no
-work. It needs a **dedicated board ADMIN PAT** (`--recycle-token` or
-`JANOSIK_PERF_RECYCLE_TOKEN`); its requests are measured in a separate
+work. It needs a **dedicated board ADMIN PAT** (`JANOSIK_PERF_RECYCLE_TOKEN`
+or `--recycle-token-file`); its requests are measured in a separate
 `recycle` block and are excluded from agent action counts. There is no
 implicit fallback to an agent token in real mode. Recycling is limited to the
-first board. A release answered with 400/409 is an orphan: the card is not
-moved or counted, and the orphan is surfaced in the scenario status/report.
+selected boards, each with its own recycler. A release answered with 400/409
+is a tolerated no-holder case; other failures are surfaced as orphans in the
+scenario status/report.
 
 ## Commands
 
@@ -166,7 +172,10 @@ npm run perf:agents -- --scenario S4 --board "$BOARD" \
   --agents 1000 --ramp 30s --duration 30s --api-pid "$API_PID"
 
 # E — SSE ramp, no agents (hold starts after the real ramp)
-npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid "$API_PID"
+# One PAT opening 5,000 streams hits the default per-user cap: set
+# SSE_MAX_PER_USER=0 (and SSE_MAX_CONNECTIONS>=5000) on the API host.
+SSE_MAX_PER_USER=0 SSE_MAX_CONNECTIONS=5000 \
+  npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid "$API_PID"
 
 # F — read burst
 npm run perf:agents -- --scenario S6 --board "$BOARD" --concurrency 500 --api-pid "$API_PID"
@@ -203,7 +212,8 @@ Markdown; the report has an overall status and counts.
 conflicts; the report shows their separate counts and rates. Exit codes: `0`
 ok/partial, `1` failed or
 zero-work, `2` config/preflight (including 401/403 and a board that is
-missing/archived), `130` interrupted. The first Ctrl-C cancels in-flight HTTP
+missing/archived), `130` interrupted. `--require-ok` turns `partial` into exit
+`1`; `perf:smoke` and `perf:mcp-smoke` use it. The first Ctrl-C cancels in-flight HTTP
 and psql, writes a partial report (including a minimal preflight report if the
 load has not started) and exits `130`; a second Ctrl-C exits `130` immediately
 without waiting.
@@ -234,8 +244,26 @@ reasonably synchronized clocks. On separate hosts use NTP or prefer
 
 ### CPU profile (Top-10 self time)
 
+**Live inspector (recommended while the API keeps running):**
+
+```bash
+node --inspect=127.0.0.1:9229 backend/dist/main.js
+# read the websocketDebuggerUrl from:
+curl -s http://127.0.0.1:9229/json/list
+npm run perf:agents -- --scenario S2 … \
+  --api-inspect ws://127.0.0.1:9229/<uuid> \
+  --cpu-profile /tmp/api.cpuprofile
+```
+
+The harness starts `Profiler.start` before the scenarios and stops/writes the
+profile afterwards; a missing, stale or failed live profile makes the run
+`failed` and names the reason.
+
+**Two-step static profile:** `node --cpu-prof` writes only when the API exits:
+
 ```bash
 node --cpu-prof --cpu-prof-dir /tmp/janosik-cpu backend/dist/main.js
+# run the load, stop the API, then read the profile:
 npm run perf:agents -- --scenario S2 … --cpu-profile /tmp/janosik-cpu
 ```
 
@@ -268,7 +296,9 @@ The harness shells out to `psql` (no npm dependency). It takes a
 `pg_stat_statements` snapshot (up to 1,000 queryids) before and after every
 scenario, computes deltas by `queryid` scoped to `current_database()` — new
 after-only queryids included — and reports **Top-20 by calls and Top-20 by
-total_exec_time**. Internal `pg_stat_*` sampler queries are excluded.
+total_exec_time**, total calls, total exec time and `queries/command` (query
+statements per successful agent action). Internal `pg_stat_*` sampler queries
+are excluded.
 `--pg-activity` samples `pg_stat_activity` states and wait events (peak per
 state) for the current database; it warns and skips if `--pg-url` is missing.
 If `psql` or the extension is missing, the report says so instead of failing
@@ -306,10 +336,11 @@ status (`2xx`, 409/429/5xx, network `0`, abort `-1`) and per-tool latency, so
 `requests/agent/min`, error rates and cycles are populated like the HTTP path.
 Child sampled RSS peak and `/proc` lifetime VmHWM peak come from
 `/proc/<pid>/status`. The same scenarios,
-statuses and report are used. **S3 is rejected with `--driver mcp`** because
-the mixed 60/30/10 loop is not implemented for MCP; run S3 with `--driver
-http`. S1/S2/S4 use MCP workers for the agents; S5/S6 remain HTTP-only because
-they measure connections and raw board reads. Smoke mode caps the process
+statuses and report are used. S1 uses `janosik_wait_for_work`; work cycles use
+`evidence` comments so DoD-contract boards can move. **S3, S5 and S6 are
+rejected with `--driver
+mcp`** (the mixed loop and SSE/read probes are HTTP-only; use `--driver http`).
+S1/S2/S4 use MCP workers for the agents. Smoke mode caps the process
 count at 2; a large MCP swarm is a dedicated-host capacity experiment. The
 connect/handshake timeout is 15 s and is also cancelled by the scenario signal;
 a failed or hung handshake closes the transport and kills the child. Normal
@@ -373,11 +404,14 @@ scripts/perf/
 - `actions/s` counts successful writes (claim + comment + move = 3 per S2/S4
   cycle), not cycles. `cycles` counts completed write sequences. `no work`
   counts cycles that found no unleased card. An orphaned release is partial.
-  A lost claim response (timeout/reset) triggers a release attempt before the
-  next cycle; a failed release is surfaced as an orphan.
+  A lost claim response (timeout/reset) triggers a release attempt through a
+  separate short-timeout cleanup client before the next cycle; a failed release
+  is surfaced as an orphan, while a deadline-aborted cleanup is not counted as
+  a false orphan.
 - `requests/agent/min` uses the measured window, independent of worker drain,
   and for MCP uses the actual spawned process count (`--mcp-processes`), not
-  the requested `--agents` label.
+  the requested `--agents` label. The report also records the resolved board
+  ids and observed per-agent action-cadence median/min/max.
 - For S5, `sse.maxConcurrent` is the peak open streams; opened/failed and the
   observed ramp/hold durations are reported separately.
 - `/proc` `VmHWM` (the `--api-pid` `API peak RSS*`) is the process **lifetime**
