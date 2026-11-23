@@ -89,7 +89,7 @@ const SAVED_VIEWS_FALLBACK = (
  * duplicated here.
  */
 export function BoardSection() {
-  const { board, roleOf, setBoardColumnStyle } = useBoard();
+  const { board, roleOf, setBoardColumnStyle, loadCardDetail } = useBoard();
   const { user } = useAuth();
   // Undefined until the roster loads — never `[]` as "loaded": the saved-view
   // drift pass would otherwise treat every assignee as deleted.
@@ -270,6 +270,9 @@ export function BoardSection() {
   // The dead card id already reported, so StrictMode's double effect never
   // toasts the same miss twice.
   const missingCardRef = useRef<string | null>(null);
+  // A card that belongs to the board (e.g. an archived card listed by the
+  // summary) but whose summary/detail has not loaded yet.
+  const resolvingCardRef = useRef<string | null>(null);
   useEffect(() => {
     const cardParam = searchParams.get("card");
     const cardExists = board !== undefined && hasCard(board, cardParam);
@@ -283,16 +286,76 @@ export function BoardSection() {
       // one render before the param cleanup settles. Only a card that was
       // not just closed with the dialog still reports.
       const justClosed = closedCardRef.current === cardParam;
+      const strip = () => {
+        const next = copySearchParamsWithoutLanguageHandoff(searchParams);
+        // The row params only ever accompany a live card deep link.
+        next.delete("card");
+        next.delete("comment");
+        next.delete("attachment");
+        setSearchParams(next, { replace: true });
+      };
+      // TASK-200.9: the read model loads only the first page per column, so
+      // a deep link can name a card whose summary has not arrived yet. Ask
+      // for that one card's detail before declaring it missing; the detail
+      // read also proves it belongs to this board.
+      if (serverMode && !justClosed && missingCardRef.current !== cardParam) {
+        missingCardRef.current = cardParam;
+        void loadCardDetail(board.id, cardParam)
+          .then((card) => {
+            if (card !== null) {
+              setOpenCardId(cardParam);
+              return;
+            }
+            if (missingCardRef.current === cardParam) {
+              toast.error(t("card.notFound"));
+            }
+            strip();
+          })
+          .catch(() => {
+            // A transient failure keeps the deep link in the address bar so
+            // a later load can still resolve it (and retry the detail read).
+            missingCardRef.current = null;
+          });
+        return;
+      }
       if (!justClosed && missingCardRef.current !== cardParam) {
         missingCardRef.current = cardParam;
         toast.error(t("card.notFound"));
       }
-      const next = copySearchParamsWithoutLanguageHandoff(searchParams);
-      // The row params only ever accompany a live card deep link.
-      next.delete("card");
-      next.delete("comment");
-      next.delete("attachment");
-      setSearchParams(next, { replace: true });
+      strip();
+      return;
+    }
+    if (
+      cardParam &&
+      board &&
+      cardExists &&
+      board.cards[cardParam] === undefined
+    ) {
+      // The id is proven to belong to the board (archived ids are complete in
+      // the summary) but its detail has not streamed in. Open only after the
+      // detail read lands; the dialog never mounts with a half card.
+      if (resolvingCardRef.current !== cardParam) {
+        resolvingCardRef.current = cardParam;
+        void loadCardDetail(board.id, cardParam)
+          .then((card) => {
+            if (card !== null) {
+              setOpenCardId(cardParam);
+              return;
+            }
+            if (missingCardRef.current !== cardParam) {
+              missingCardRef.current = cardParam;
+              toast.error(t("card.notFound"));
+            }
+            const next = copySearchParamsWithoutLanguageHandoff(searchParams);
+            next.delete("card");
+            next.delete("comment");
+            next.delete("attachment");
+            setSearchParams(next, { replace: true });
+          })
+          .catch(() => {
+            resolvingCardRef.current = null;
+          });
+      }
       return;
     }
     if (cardParam && cardExists) {
@@ -315,9 +378,18 @@ export function BoardSection() {
     if (!cardParam) {
       closedCardRef.current = null;
       missingCardRef.current = null;
+      resolvingCardRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reacts to URL changes only; including openCardId would reopen the dialog right after the user closes it (the close handler clears the param asynchronously)
-  }, [searchParams, board]);
+  }, [
+    searchParams,
+    board,
+    serverMode,
+    loadCardDetail,
+    setSearchParams,
+    t,
+    toast,
+  ]);
   const handleCardClick = useCallback(
     (cardId: string) => {
       setOpenCardId(cardId);

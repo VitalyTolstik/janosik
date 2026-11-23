@@ -96,6 +96,20 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
     return draft;
   };
 
+  // TASK-200.9 summary cards carry the server's complete relation count and
+  // blocked flag instead of their link rows. Seed those, then still collect
+  // every row a fully loaded card contributes — the count is not summed from
+  // the partial rows.
+  const readModelCards = new Set<string>();
+  for (const card of Object.values(cards)) {
+    const readModel = card.readModel;
+    if (readModel === undefined) continue;
+    readModelCards.add(card.id);
+    const draft = draftOf(card.id);
+    draft.liveOutgoing = readModel.linkCount;
+    draft.blocked = readModel.blocked;
+  }
+
   for (const card of Object.values(cards)) {
     for (const link of card.links ?? []) {
       // The outgoing side is stored on the card itself — kept whether or
@@ -117,7 +131,9 @@ export function cardLinkIndex(cards: Board["cards"]): CardLinkIndex {
     facts.set(cardId, {
       outgoing: draft.outgoing,
       incoming: draft.incoming,
-      degree: draft.liveOutgoing + draft.incoming.length,
+      degree: readModelCards.has(cardId)
+        ? draft.liveOutgoing
+        : draft.liveOutgoing + draft.incoming.length,
       blocked: draft.blocked,
     });
   }
@@ -151,6 +167,9 @@ export function linkSignature(cards: Board["cards"]): string {
   for (const id of Object.keys(cards).sort()) {
     const card = cards[id];
     signature += `${id}${card.archivedAt !== undefined ? "!" : ""}`;
+    if (card.readModel !== undefined) {
+      signature += `#${card.readModel.linkCount}:${card.readModel.blocked ? 1 : 0}`;
+    }
     for (const link of card.links ?? []) {
       signature += `|${link.id}:${link.type}:${link.targetCardId}`;
     }

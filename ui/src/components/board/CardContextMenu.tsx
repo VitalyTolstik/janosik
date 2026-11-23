@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -81,6 +82,7 @@ import {
   useBoardState,
 } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
+import { hasCardDetail } from "@/store/read-model";
 import { moveTargetBlockReason } from "@/utils/workflow";
 import { WorkflowRulesDialog } from "@/components/board/WorkflowRulesDialog";
 import { userLabel } from "@/utils/avatar";
@@ -198,6 +200,7 @@ function CardContextMenuBody({
     addChecklistItem,
     toggleChecklistItem,
     moveCard,
+    loadCardDetail,
   } = useBoardActions();
 
   const [linkQuery, setLinkQuery] = useState("");
@@ -215,11 +218,18 @@ function CardContextMenuBody({
       .then(() => toast.success(t("card.linkCopied")));
   }, [board, cardId, toast, t]);
 
-  if (!board) return null;
-  const card = board.cards[cardId];
-  if (!card) return null;
+  const card = board?.cards[cardId];
+  const boardId = board?.id;
+  const detailReady = hasCardDetail(card);
+  // Link cycle checks and checklist rows need the full card. The menu opens
+  // instantly on the summary and loads the detail in place (TASK-200.9); the
+  // destructive items below ensure it again in the store dispatcher.
+  useEffect(() => {
+    if (!boardId || detailReady) return;
+    void loadCardDetail(boardId, cardId).catch(() => undefined);
+  }, [boardId, cardId, detailReady, loadCardDetail]);
 
-  const boardId = board.id;
+  if (!board || !card || boardId === undefined) return null;
 
   const linkPick = (target: Card) => {
     const option = linkOption ?? LINK_TYPE_OPTIONS[0];
@@ -227,7 +237,10 @@ function CardContextMenuBody({
     // cycle check) is the target, mirroring CardLinks (TASK-46).
     const [holderId, otherId] =
       option.holder === "source" ? [cardId, target.id] : [target.id, cardId];
-    if ((card.links?.length ?? 0) >= LIMITS.linksPerCard) {
+    if (
+      (card.links?.length ?? card.readModel?.linkCount ?? 0) >=
+      LIMITS.linksPerCard
+    ) {
       toast.error(t("limits.maxLinksOnCard", { limit: LIMITS.linksPerCard }));
       return;
     }
@@ -300,7 +313,12 @@ function CardContextMenuBody({
             assigneeId={card.assigneeId}
             onPick={(userId) => setCardAssign(cardId, userId)}
           />
-          <ContextMenuSub>
+          {!detailReady ? (
+            <ContextMenuLabel data-testid="ctx-detail-loading">
+              {t("card.loading")}
+            </ContextMenuLabel>
+          ) : null}
+          <ContextMenuSub disabled={!detailReady}>
             <ContextMenuSubTrigger data-testid="ctx-link-trigger">
               <Link2 />
               {t("card.menu.linkCard")}
@@ -369,7 +387,8 @@ function CardContextMenuBody({
             onRemove={() => setCardCover(cardId, undefined)}
           />
           <ChecklistSub
-            checklists={card.checklists ?? []}
+            checklists={detailReady ? (card.checklists ?? []) : []}
+            disabled={!detailReady}
             onAddChecklist={(title) => addChecklist(cardId, title)}
             onAddItem={(checklistId, text) =>
               addChecklistItem(cardId, checklistId, text)
@@ -912,18 +931,20 @@ function CoverSub({
 
 function ChecklistSub({
   checklists,
+  disabled = false,
   onAddChecklist,
   onAddItem,
   onToggleItem,
 }: {
   checklists: NonNullable<Card["checklists"]>;
+  disabled?: boolean;
   onAddChecklist: (title: string) => void;
   onAddItem: (checklistId: string, text: string) => void;
   onToggleItem: (checklistId: string, itemId: string) => void;
 }) {
   const { t } = useI18n();
   return (
-    <ContextMenuSub>
+    <ContextMenuSub disabled={disabled}>
       <ContextMenuSubTrigger data-testid="ctx-checklist-trigger">
         <ListChecks />
         {t("checklist.sectionLabel")}

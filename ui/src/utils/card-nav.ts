@@ -31,11 +31,13 @@ import { appPath } from "./app-path";
  * a prototype member.
  */
 export function hasCard(
-  board: Pick<Board, "cards">,
+  board: Pick<Board, "cards"> & Pick<Partial<Board>, "archivedCardIds">,
   cardId: string | null,
 ): boolean {
   return (
-    cardId !== null && Object.prototype.hasOwnProperty.call(board.cards, cardId)
+    cardId !== null &&
+    (Object.prototype.hasOwnProperty.call(board.cards, cardId) ||
+      board.archivedCardIds?.includes(cardId) === true)
   );
 }
 

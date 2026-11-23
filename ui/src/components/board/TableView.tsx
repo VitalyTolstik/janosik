@@ -1273,7 +1273,11 @@ function TableRowBody({
           ) : null}
           {visibleColumns.includes("description") ? (
             <td className="hidden px-3 py-2 lg:table-cell">
-              {card.description ? (
+              {(
+                card.readModel !== undefined
+                  ? card.readModel.descriptionChars > 0
+                  : Boolean(card.description)
+              ) ? (
                 <AlignLeft
                   data-testid="table-description"
                   className="h-3.5 w-3.5 text-muted-foreground"

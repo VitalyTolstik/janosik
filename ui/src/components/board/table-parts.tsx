@@ -9,6 +9,12 @@ import { priorityRank } from "@/utils/priority";
  */
 
 export function checklistProgress(card: Card): { done: number; total: number } {
+  if (card.readModel !== undefined) {
+    return {
+      done: card.readModel.checklistDoneCount,
+      total: card.readModel.checklistItemCount,
+    };
+  }
   const items = (card.checklists ?? []).flatMap((c) => c.items);
   return { done: items.filter((i) => i.done).length, total: items.length };
 }

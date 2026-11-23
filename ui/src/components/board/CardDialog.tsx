@@ -86,6 +86,7 @@ import {
 } from "@/utils/embedAttachments";
 import type { DescriptionEditorHandle } from "@/components/editor/DescriptionEditor";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import { hasCardDetail } from "@/store/read-model";
 import {
   boardMoveBlockReason,
   moveTargetBlockReason,
@@ -196,6 +197,7 @@ export function CardDialog({
     deleteCard,
     duplicateCard,
     registerDraftFlush,
+    loadCardDetail,
   } = useBoard();
   const { role } = useBoardAccess();
   const { user } = useAuth();
@@ -896,6 +898,23 @@ export function CardDialog({
     return { ok: true };
   };
 
+  // TASK-200.9: a card opened from a summary/page has title and list fields
+  // only. Fetch its description/checklists/links before mounting the editor:
+  // the description editor is uncontrolled and reads its value once.
+  useEffect(() => {
+    if (!open || !boardId || !cardId) return;
+    if (hasCardDetail(board?.cards[cardId])) return;
+    let cancelled = false;
+    void loadCardDetail(boardId, cardId).catch(() => {
+      if (!cancelled) toast.error(t("sync.loadFailed"));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `updatedAt` re-runs the check after a refetch replaced the summary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, boardId, cardId, card?.updatedAt, loadCardDetail, t, toast]);
+
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.
     return (
@@ -919,6 +938,32 @@ export function CardDialog({
             <DialogTitle>{t("card.notFoundTitle")}</DialogTitle>
             <DialogDescription>{t("card.deletedDesc")}</DialogDescription>
           </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // The summary is enough to frame the dialog (title/close), but every
+  // editor below expects its own fields. Keep the sections out until the
+  // single detail read lands so an empty uncontrolled editor can never
+  // overwrite a description that was only not loaded yet.
+  if (!hasCardDetail(card)) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className="card-details-dialog h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] gap-0 overflow-hidden sm:max-w-5xl"
+          closeClassName="right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center md:h-11 md:w-11 lg:h-8 lg:w-8"
+        >
+          <DialogHeader className="shrink-0 pr-16 text-left">
+            <DialogTitle className="truncate">{card.title}</DialogTitle>
+            <DialogDescription>{t("card.loading")}</DialogDescription>
+          </DialogHeader>
+          <div
+            className="min-h-0 flex-1 px-4 py-4"
+            data-testid="card-detail-loading"
+          >
+            <CardDescriptionSkeleton />
+          </div>
         </DialogContent>
       </Dialog>
     );

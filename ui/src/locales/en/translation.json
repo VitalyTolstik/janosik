@@ -985,6 +985,7 @@
   "card.descriptionConflict": "Someone else changed this description while you were editing.",
   "card.descriptionConflictKeep": "Keep mine",
   "card.descriptionConflictReload": "Reload",
+  "card.loading": "Loading card details…",
   "card.descriptionLabel": "Description",
   "card.descriptionPlaceholder": "Add a more detailed description…",
   "card.detailsSubtitle": "Edit the title, set a label or move the card.",

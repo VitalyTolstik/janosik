@@ -1025,6 +1025,7 @@
   "card.descriptionConflict": "Пока вы редактировали, описание изменил кто-то другой.",
   "card.descriptionConflictKeep": "Оставить моё",
   "card.descriptionConflictReload": "Загрузить",
+  "card.loading": "Загружаем карточку…",
   "card.descriptionLabel": "Описание",
   "card.descriptionPlaceholder": "Добавьте более подробное описание…",
   "card.detailsSubtitle": "Измените текст, задайте метку или переместите карточку.",

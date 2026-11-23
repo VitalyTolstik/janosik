@@ -199,11 +199,17 @@ function CardItemView({
   // Archive uses the board-archive two-step: first click arms the
   // confirmation (✓ / ✗), so a brushed click never archives silently.
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const hasDescription = Boolean(card.description?.trim());
-  // Checklist progress summed across all of the card's checklists.
+  // TASK-200.9: summary cards carry counts instead of the description body
+  // and checklist rows; full cards keep using the loaded fields.
+  const hasDescription =
+    card.readModel !== undefined
+      ? card.readModel.descriptionChars > 0
+      : Boolean(card.description?.trim());
   const items = (card.checklists ?? []).flatMap((c) => c.items);
-  const done = items.filter((item) => item.done).length;
-  const total = items.length;
+  const done =
+    card.readModel?.checklistDoneCount ??
+    items.filter((item) => item.done).length;
+  const total = card.readModel?.checklistItemCount ?? items.length;
 
   // Where the highlight query matched: the title renders <mark>s inline;
   // a description-only match lights up the description badge instead
