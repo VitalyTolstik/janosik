@@ -29,13 +29,19 @@ export class ApiError extends Error {
  * TASK-200.3: a bounded 429/`503 rate_limited` retry policy.
  *
  * The server refills the board budget continuously, so most refusals clear in
- * milliseconds. `Retry-After` wins over the exponential floor, but the total
- * pause is capped: a tool call must not hang for a minute because a board is
- * shedding load. Four attempts in total keep a retry storm bounded.
+ * milliseconds. `Retry-After` wins over the exponential floor, but each pause
+ * is capped: a tool call must not hang for a minute because a board is shedding
+ * load. Four attempts in total keep a retry storm bounded.
  */
 export const RATE_LIMIT_MAX_ATTEMPTS = 4;
 export const RATE_LIMIT_BASE_DELAY_MS = 100;
 export const RATE_LIMIT_MAX_DELAY_MS = 8_000;
+/**
+ * At the cap the jitter still has to exist: a server asking for 10 s or more
+ * gets 7.4 s + 0–600 ms instead of an identical 8 000 ms for every client.
+ */
+export const RATE_LIMIT_CAP_BASE_MS = 7_400;
+export const RATE_LIMIT_CAP_JITTER_MS = 600;
 
 /**
  * `429 rate_limited`, or the server's queued `503 rate_limited` (TASK-200.3):
@@ -66,6 +72,17 @@ export function rateLimitDelayMs(
     error instanceof ApiError && error.retryAfterSeconds !== undefined
       ? Math.max(0, error.retryAfterSeconds * 1_000)
       : 0;
+  // A long Retry-After used to collapse to exactly 8 000 ms, which
+  // synchronised a whole swarm. Keep the cap but jitter inside it.
+  if (retryAfterMs >= RATE_LIMIT_CAP_BASE_MS) {
+    return Math.min(
+      RATE_LIMIT_MAX_DELAY_MS,
+      RATE_LIMIT_CAP_BASE_MS +
+        Math.floor(
+          Math.min(1, Math.max(0, random())) * RATE_LIMIT_CAP_JITTER_MS,
+        ),
+    );
+  }
   const exponential = RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
   const jittered = exponential * (0.5 + random());
   return Math.min(

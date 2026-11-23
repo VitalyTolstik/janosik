@@ -7,8 +7,11 @@ import {
   type RateLimitHeaderSink,
 } from "./rate-limit";
 import {
+  BOARD_COMMAND_QUEUE_MAX_BYTES,
+  BOARD_RATE_WAIT_MAX_STEPS,
   BoardCommandQueueAbortedError,
   BoardCommandQueueFullError,
+  boardCommandQueueStats,
   enqueueBoardCommand,
   resetBoardCommandQueues,
   trackedBoardCommandQueues,
@@ -141,6 +144,29 @@ describe("waitForBoardRateLimit", () => {
     };
   }
 
+  it("stops a frozen injected clock with a bounded wait, not a spin", async () => {
+    for (let i = 0; i < 60; i += 1) {
+      consumeBoardRateLimit("b1", 60, 60_000, T0);
+    }
+    let sleeps = 0;
+    const outcome = await waitForBoardRateLimit("b1", {
+      limit: 60,
+      deadline: T0 + 1_500,
+      now: () => T0,
+      sleep: async () => {
+        sleeps += 1;
+      },
+    });
+    expect(outcome.decision.allowed).toBe(false);
+    expect(outcome.decision.remaining).toBe(0);
+    expect(sleeps).toBe(BOARD_RATE_WAIT_MAX_STEPS);
+    // The frozen clock did not spend the token that will be available when a
+    // real clock advances.
+    expect(consumeBoardRateLimit("b1", 60, 60_000, T0 + 1_000).allowed).toBe(
+      true,
+    );
+  });
+
   it("queues until the next token and reports the wait", async () => {
     for (let i = 0; i < 60; i += 1) {
       consumeBoardRateLimit("b1", 60, 60_000, T0);
@@ -169,6 +195,7 @@ describe("waitForBoardRateLimit", () => {
       sleep: clock.sleep,
     });
     expect(outcome.decision.allowed).toBe(false);
+    expect(outcome.decision.remaining).toBe(0);
     expect(outcome.waitedMs).toBe(500);
     const exception = rateLimitQueueException(
       outcome.decision,
@@ -325,6 +352,76 @@ describe("enqueueBoardCommand", () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(ran).toBe(false);
     expect(trackedBoardCommandQueues()).toBe(0);
+  });
+
+  it("rejects an oversized queued body even when depth has room", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = enqueueBoardCommand("b1", () => gate, {
+      maxDepth: 4,
+      bytes: 8,
+      maxBytes: 10,
+    });
+    const error = await enqueueBoardCommand("b1", async () => "never", {
+      maxDepth: 4,
+      bytes: 5,
+      maxBytes: 10,
+    }).catch((reason) => reason);
+    expect(error).toBeInstanceOf(BoardCommandQueueFullError);
+    expect(error).toMatchObject({ reason: "bytes", depth: 1, bytes: 8 });
+    expect(boardCommandQueueStats("b1")).toEqual({ depth: 1, bytes: 8 });
+    release();
+    await first;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(boardCommandQueueStats("b1")).toEqual({ depth: 0, bytes: 0 });
+  });
+
+  it("accounts queued bytes and resets them when the queue drains", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = enqueueBoardCommand("b1", () => gate, { bytes: 4 });
+    const second = enqueueBoardCommand("b1", async () => "ok", { bytes: 6 });
+    expect(boardCommandQueueStats("b1")).toEqual({ depth: 2, bytes: 10 });
+    expect(BOARD_COMMAND_QUEUE_MAX_BYTES).toBeGreaterThan(0);
+    release();
+    await Promise.all([first, second]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(boardCommandQueueStats("b1")).toEqual({ depth: 0, bytes: 0 });
+  });
+
+  it("releases an aborted waiter's slot, so a later command is accepted", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const controller = new AbortController();
+    // maxDepth 1: while this waiter is alive the queue has no room.
+    const aborted = enqueueBoardCommand("b1", () => gate, {
+      signal: controller.signal,
+      maxDepth: 1,
+    });
+    controller.abort();
+    await expect(aborted).rejects.toBeInstanceOf(BoardCommandQueueAbortedError);
+    expect(boardCommandQueueStats("b1")).toEqual({ depth: 0, bytes: 0 });
+
+    // The aborted waiter's chained task is still behind the gate, but it is
+    // released and must not reserve the slot or run its command.
+    let ran = false;
+    const later = enqueueBoardCommand(
+      "b1",
+      async () => {
+        ran = true;
+        return "ok";
+      },
+      { maxDepth: 1 },
+    );
+    release();
+    await expect(later).resolves.toBe("ok");
+    expect(ran).toBe(true);
   });
 
   it("rejects an already-aborted waiter before it enters the queue", async () => {

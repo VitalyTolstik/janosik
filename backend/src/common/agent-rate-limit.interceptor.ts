@@ -2,6 +2,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
@@ -32,7 +33,7 @@ import {
   waitForBoardRateLimit,
   type BoardRateLimitWait,
 } from "./board-rate-limit";
-import { commandRateLimitCost } from "./command-cost";
+import { commandBodyBytes, commandRateLimitCost } from "./command-cost";
 
 /** The request bits this interceptor reads after the guards have run. */
 interface LimitedRequest extends Request, RateLimitedRequest {
@@ -69,6 +70,8 @@ interface LimitedRequest extends Request, RateLimitedRequest {
  */
 @Injectable()
 export class AgentRateLimitInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(AgentRateLimitInterceptor.name);
+
   async intercept(
     context: ExecutionContext,
     next: CallHandler,
@@ -105,6 +108,7 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
       );
       request.rateLimit = decision;
       if (!decision.allowed) {
+        request.rateLimited = true;
         applyRateLimitHeaders(response, decision);
         throw rateLimitException(decision, message);
       }
@@ -135,6 +139,7 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
         sessionId,
         agentSessionRateLimit(),
         "Too many requests for this agent session",
+        cost,
       );
     }
     const boardId = boardIdOf(request);
@@ -180,11 +185,22 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
                 cost,
                 signal: abort.signal,
               }),
-            { signal: abort.signal },
+            {
+              signal: abort.signal,
+              bytes: commandBodyBytes(request),
+            },
           );
         } catch (error) {
           if (error instanceof BoardCommandQueueFullError) {
+            this.logger.warn(
+              `board ${boardId}: command queue full (${error.reason}); ` +
+                `depth ${error.depth}, bytes ${error.bytes}`,
+            );
             request.rateLimited = true;
+            request.rateLimit = decision;
+            // The request never waited: the header is present on every
+            // command 503 so a client sees an explicit zero.
+            response.setHeader("X-RateLimit-Queued-Ms", 0);
             applyRateLimitHeaders(response, decision);
             throw rateLimitQueueException(
               decision,
@@ -204,11 +220,10 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
         }
         request.rateLimit = outcome.decision;
         // TASK-200.3: report the whole queue-chain wait, not just the time
-        // this waiter spent after the earlier commands settled.
-        const queuedMs = Date.now() - queuedAt;
-        if (queuedMs >= 1) {
-          response.setHeader("X-RateLimit-Queued-Ms", Math.round(queuedMs));
-        }
+        // this waiter spent after the earlier commands settled. A deadline or
+        // budget failure still reports the time spent, including 0.
+        const queuedMs = Math.max(0, Date.now() - queuedAt);
+        response.setHeader("X-RateLimit-Queued-Ms", Math.round(queuedMs));
         if (!outcome.decision.allowed) {
           request.rateLimited = true;
           applyRateLimitHeaders(response, outcome.decision);
@@ -225,6 +240,7 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
         }
       } else {
         request.rateLimit = decision;
+        request.rateLimited = true;
         applyRateLimitHeaders(response, decision);
         throw rateLimitException(decision, "Too many requests for this board");
       }

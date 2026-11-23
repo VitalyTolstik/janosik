@@ -158,6 +158,7 @@ export const API_ERROR_CODES = [
   "idempotency_in_progress",
   "payload_too_large",
   "rate_limited",
+  "request_timeout",
   "login_backoff",
   "current_password_invalid",
   "oauth_proof_required",

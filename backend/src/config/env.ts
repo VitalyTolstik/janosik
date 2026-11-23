@@ -135,10 +135,29 @@ export function parseBoundedNonNegativeInt(v: string, maximum: number): number {
 const budgetInt = (maximum: number) =>
   makeValidator((v: string) => parseBoundedNonNegativeInt(v, maximum));
 
-/** Upper bounds for the TASK-200.3 agent budgets (requests per minute). */
+/** Upper bounds for the TASK-200.3 agent budgets (weighted units per minute). */
 export const AGENT_BUDGET_MAX = 1_000_000;
+/**
+ * A pinned agent budget is either 0 (derive automatically) or high enough to
+ * fit the largest valid batch (100 commands). A smaller positive value could
+ * never admit a valid batch at all.
+ */
+export const AGENT_BUDGET_MIN = 100;
 /** A command may queue for at most 30 seconds. */
 export const AGENT_COMMAND_QUEUE_MS_MAX = 30_000;
+
+/** Parse an agent budget: 0 = auto, otherwise 100…1,000,000 units/minute. */
+export function parseAgentBudget(v: string): number {
+  const parsed = parseBoundedNonNegativeInt(v, AGENT_BUDGET_MAX);
+  if (parsed !== 0 && parsed < AGENT_BUDGET_MIN) {
+    throw new Error(
+      `must be 0 (auto) or a non-negative integer between ${AGENT_BUDGET_MIN} and ${AGENT_BUDGET_MAX}`,
+    );
+  }
+  return parsed;
+}
+
+const agentBudgetInt = makeValidator(parseAgentBudget);
 
 /** A whole number strictly above zero (durations, retention windows, …). */
 export function parsePositiveInt(v: string): number {
@@ -208,28 +227,32 @@ export const env = cleanEnv(process.env, {
     example: "300",
   }),
   // TASK-166.10 agent buckets, resized by TASK-200.3 for swarms. 0 = derive
-  // from the live global limit: session = max(600, THROTTLE_LIMIT), token =
-  // max(600, THROTTLE_LIMIT/4), board = max(12000, 2 × THROTTLE_LIMIT). Set
-  // positive values to pin them independently. Browser sessions are unaffected.
-  AGENT_SESSION_RATE_LIMIT: budgetInt(AGENT_BUDGET_MAX)({
-    desc: "Per-agent-session request budget per minute; 0 = max(600, THROTTLE_LIMIT)",
+  // from the live global limit: session = max(600, THROTTLE_LIMIT) weighted
+  // units, token = max(600, ceil(THROTTLE_LIMIT/4)), board =
+  // max(12000, 2 × THROTTLE_LIMIT). Pinned values are 0 (auto) or at least
+  // 100, so a valid 100-command batch can always fit. A batch spends its
+  // command count against the board, token AND session budgets. Browser
+  // sessions are unaffected.
+  AGENT_SESSION_RATE_LIMIT: agentBudgetInt({
+    desc: "Per-agent-session weighted units per minute (a batch costs its command count); 0 = max(600, THROTTLE_LIMIT)",
     default: 0,
     example: "600",
   }),
-  AGENT_TOKEN_RATE_LIMIT: budgetInt(AGENT_BUDGET_MAX)({
-    desc: "Per-token agent request budget per minute for keys without their own limit; 0 = max(600, ceil(THROTTLE_LIMIT/4))",
+  AGENT_TOKEN_RATE_LIMIT: agentBudgetInt({
+    desc: "Per-token agent weighted units per minute for keys without their own limit; 0 = max(600, ceil(THROTTLE_LIMIT/4))",
     default: 0,
     example: "1500",
   }),
-  BOARD_RATE_LIMIT: budgetInt(AGENT_BUDGET_MAX)({
-    desc: "Per-board agent request budget per minute (safety ceiling); 0 = max(12000, 2 × THROTTLE_LIMIT)",
+  BOARD_RATE_LIMIT: agentBudgetInt({
+    desc: "Per-board agent weighted units per minute (safety ceiling); 0 = max(12000, 2 × THROTTLE_LIMIT)",
     default: 0,
     example: "24000",
   }),
   // TASK-200.3: a command over the board budget waits this long for a refill
-  // instead of failing at once. 0 = answer 503 with Retry-After immediately.
+  // instead of failing at once. 0 = answer 503 with Retry-After immediately;
+  // the maximum is 30 seconds.
   AGENT_COMMAND_QUEUE_MS: budgetInt(AGENT_COMMAND_QUEUE_MS_MAX)({
-    desc: "Max time a command waits for the board agent budget before 503 Retry-After",
+    desc: "Max time a command waits for the board agent budget before 503 Retry-After (max 30000)",
     default: 1500,
     example: "1500",
   }),

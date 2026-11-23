@@ -1381,7 +1381,7 @@ Both the per-token limit and the global limit apply.
 **Implementation (166.10, resized by 200.3).** The global per-principal
 `@nestjs/throttler` window is unchanged. On top of it, PAT traffic gets a
 per-session bucket (`AGENT_SESSION_RATE_LIMIT`, default
-`max(600, THROTTLE_LIMIT)`), a per-token fairness bucket
+`max(600, THROTTLE_LIMIT)` weighted units), a per-token fairness bucket
 (`AGENT_TOKEN_RATE_LIMIT`, default `max(600, ceil(THROTTLE_LIMIT / 4))`; an
 explicit `rateLimitPerMinute` is capped by it) and a per-board safety ceiling
 (`BOARD_RATE_LIMIT`, default `max(12000, 2 × THROTTLE_LIMIT)`). Browser
@@ -1389,10 +1389,11 @@ sessions do not get the new buckets. `X-RateLimit-*` names the tightest bucket
 that counted the request (with `X-RateLimit-Scope`), and the same budget
 appears in the envelope (`rate_limited`, `retryable`, `retryAfter`, `limit`,
 `scope`, `requestId`). A batch or plan apply spends `commands.length` from the
-token and board budgets. Commands over the board ceiling wait up to
-`AGENT_COMMAND_QUEUE_MS` (default `1500`, max `30000`) and then answer `503
-rate_limited`; other routes answer `429` immediately (including
-`plans/apply`).
+board, token and session budgets. Commands over the board ceiling wait up to
+`AGENT_COMMAND_QUEUE_MS` (default `1500`, max `30000`) in a per-board queue
+(64 commands / 32 MiB), then answer `503 rate_limited` with
+`X-RateLimit-Queued-Ms` (`0` on an immediate queue-cap rejection); other routes
+answer `429` immediately (including `plans/apply`).
 
 The request log is one JSON line per finished API response with
 `requestId`, method/path/status/duration, `actorType`/`actorId`, `boardId`,

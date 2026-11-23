@@ -150,6 +150,9 @@ export function buildRequestLogEntry(
     };
   }
   if (request.rateLimited === true) entry.rateLimited = true;
+  // A 429 is always a rate-limit refusal, including the global throttler,
+  // which throws before the agent interceptor can set the flag.
+  if (response.statusCode === 429) entry.rateLimited = true;
   return entry;
 }
 

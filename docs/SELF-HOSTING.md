@@ -263,10 +263,10 @@ that matter most:
 | `ALLOW_BOOTSTRAP_USER` | `false` | One-time bootstrap without SMTP: allows exactly the first account and auto-verifies it. Inert once a user exists; set `false` after setup. The local installer enables it. |
 | `TRUST_PROXY` | `0` | Number of trusted proxy hops. Set `1` behind one reverse proxy. |
 | `THROTTLE_LIMIT` | `300` | Global requests per minute per principal (user, API key or anonymous IP). Raise it for a large swarm, then size the agent buckets below. |
-| `AGENT_SESSION_RATE_LIMIT` | `0` (auto) | Per-agent-session requests per minute. `0` = `max(600, THROTTLE_LIMIT)`. |
-| `AGENT_TOKEN_RATE_LIMIT` | `0` (auto) | Per-API-key agent requests per minute. `0` = `max(600, ceil(THROTTLE_LIMIT / 4))`; an explicit token `rateLimitPerMinute` is capped at this share (`min(explicit, derived)`). |
-| `BOARD_RATE_LIMIT` | `0` (auto) | Per-board safety ceiling shared by every agent on the board. `0` = `max(12000, 2 × THROTTLE_LIMIT)` (200 req/s at the default global limit). Raise it only with measured headroom; token and session buckets provide fairness. |
-| `AGENT_COMMAND_QUEUE_MS` | `1500` | A command over the board ceiling waits this long for a refill, then answers `503 rate_limited` + `Retry-After`; `X-RateLimit-Queued-Ms` reports the total wait. Maximum `30000`. `0` answers immediately. |
+| `AGENT_SESSION_RATE_LIMIT` | `0` (auto) | Per-agent-session weighted units per minute (a batch costs its command count). `0` = `max(600, THROTTLE_LIMIT)`; pinned values are at least `100`. |
+| `AGENT_TOKEN_RATE_LIMIT` | `0` (auto) | Per-API-key agent weighted units per minute. `0` = `max(600, ceil(THROTTLE_LIMIT / 4))`; an explicit token `rateLimitPerMinute` is capped at this share (`min(explicit, derived)`). Pinned values are at least `100`. |
+| `BOARD_RATE_LIMIT` | `0` (auto) | Per-board weighted-units safety ceiling shared by every agent on the board. `0` = `max(12000, 2 × THROTTLE_LIMIT)`. Raise it only with measured headroom; token and session buckets provide fairness. Pinned values are at least `100`. |
+| `AGENT_COMMAND_QUEUE_MS` | `1500` | A command over the board ceiling waits this long for enough tokens/queue capacity, then answers `503 rate_limited` + `Retry-After`; `X-RateLimit-Queued-Ms` reports the total wait (`0` if the 64-command/32-MiB cap rejects immediately). Maximum `30000`; `0` answers immediately. |
 | `PORT` | `3000` | Host port to publish (container always listens on 3000). |
 | `JANOSIK_TAG` | `latest` | Image tag to run (e.g. `v0.2.0`). |
 | `SMTP_HOST` … `SMTP_PASS` | unset | Outgoing email. Password registration requires email delivery; production logs omit message contents. |

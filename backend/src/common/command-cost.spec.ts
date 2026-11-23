@@ -1,4 +1,12 @@
-import { commandRateLimitCost } from "./command-cost";
+import { commandBodyBytes, commandRateLimitCost } from "./command-cost";
+import { COMMAND_BATCH_MAX } from "@janosik/shared";
+
+function batch(count: number): unknown[] {
+  return Array.from({ length: count }, (_, index) => ({
+    commandId: `cmd-${index}`,
+    action: { type: "RENAME_BOARD" },
+  }));
+}
 
 describe("commandRateLimitCost (TASK-200.3)", () => {
   it("charges a single command as one unit", () => {
@@ -16,9 +24,16 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
       commandRateLimitCost({
         method: "POST",
         originalUrl: "/api/v1/boards/b1/commands/batch",
-        body: { commands: [{}, {}, {}] },
+        body: { commands: batch(3) },
       }),
     ).toBe(3);
+    expect(
+      commandRateLimitCost({
+        method: "POST",
+        originalUrl: "/api/v1/boards/b1/commands/batch",
+        body: { commands: batch(COMMAND_BATCH_MAX) },
+      }),
+    ).toBe(COMMAND_BATCH_MAX);
   });
 
   it("charges a plan apply by its command count too", () => {
@@ -26,33 +41,30 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
       commandRateLimitCost({
         method: "POST",
         originalUrl: "/api/v1/boards/b1/plans/apply?dryRun=0",
-        body: { commands: [{}, {}] },
+        body: { commands: batch(2) },
       }),
     ).toBe(2);
   });
 
-  it("clamps malformed or oversized bodies to the published batch bound", () => {
-    expect(
-      commandRateLimitCost({
-        method: "POST",
-        originalUrl: "/api/v1/boards/b1/commands/batch",
-        body: { commands: Array.from({ length: 500 }, () => ({})) },
-      }),
-    ).toBe(100);
-    expect(
-      commandRateLimitCost({
-        method: "POST",
-        originalUrl: "/api/v1/boards/b1/commands/batch",
-        body: { commands: [] },
-      }),
-    ).toBe(1);
-    expect(
-      commandRateLimitCost({
-        method: "POST",
-        originalUrl: "/api/v1/boards/b1/commands/batch",
-        body: undefined,
-      }),
-    ).toBe(1);
+  it("charges malformed or oversized bodies as one unit, never the length", () => {
+    for (const body of [
+      { commands: Array.from({ length: 500 }, () => ({})) },
+      { commands: batch(COMMAND_BATCH_MAX + 1) },
+      { commands: [] },
+      { commands: "not-an-array" },
+      { commands: [{ commandId: "", action: {} }] },
+      { commands: [{ commandId: "cmd-1" }] },
+      { commands: [{ commandId: "cmd-1", action: null }] },
+      undefined,
+    ]) {
+      expect(
+        commandRateLimitCost({
+          method: "POST",
+          originalUrl: "/api/v1/boards/b1/commands/batch",
+          body,
+        }),
+      ).toBe(1);
+    }
   });
 
   it("ignores reads and unrelated writes", () => {
@@ -66,8 +78,25 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
       commandRateLimitCost({
         method: "POST",
         originalUrl: "/api/v1/boards/b1/cards",
-        body: { commands: [{}, {}] },
+        body: { commands: batch(2) },
       }),
     ).toBe(1);
+  });
+
+  it("measures the retained body by Content-Length or serialized JSON", () => {
+    expect(
+      commandBodyBytes({
+        headers: { "content-length": "2048" },
+        body: { commands: batch(2) },
+      }),
+    ).toBe(2_048);
+    expect(
+      commandBodyBytes({
+        headers: { "content-length": ["12", "12"] },
+        body: { commands: batch(2) },
+      }),
+    ).toBe(12);
+    expect(commandBodyBytes({ body: "abc" })).toBe(5);
+    expect(commandBodyBytes({})).toBe(0);
   });
 });

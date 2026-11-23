@@ -187,11 +187,12 @@ it. `statusCode` is kept as a compatibility mirror.
 | `409` | `run_conflict` / `run_expired` | the run is already reverted/being reverted, or its pre-images were swept |
 | `409` | `idempotency_conflict` | the same `Idempotency-Key` was used with another body |
 | `409` | `idempotency_in_progress` | the first request is running or its outcome is uncertain |
+| `408` | `request_timeout` | the client disconnected while a command waited in the queue; nothing was applied |
 | `413` | `payload_too_large` | body/file over the route limit; see `limit` |
 | `416` | `range_not_satisfiable` | an unsatisfiable `Range` on an attachment |
 | `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
 | `429` | `login_backoff` | too many failed sign-ins; wait `retryAfter` seconds |
-| `503` | `rate_limited` | the command exhausted its board queue wait; `Retry-After` is set, retry the same `commandId` |
+| `503` | `rate_limited` | insufficient board tokens or a full queue; `Retry-After` is set, retry the same `commandId` |
 | `503` | `board_write_timeout` | the board write lock timed out; safe to retry |
 | `503` | `service_unavailable` | maintenance or a transient outage; retry later |
 
@@ -291,31 +292,35 @@ Personal API tokens get three additional buckets on top of the global
 principal window. Browser sessions keep exactly the legacy per-user/IP
 behaviour.
 
-- **Per-agent-session** — `AGENT_SESSION_RATE_LIMIT` requests per minute
-  (default: `max(600, live global limit)`) per `agentSessionId`. It applies
-  when the request carries `X-Agent-Session`, a session id in the path or
-  `?session=` on an SSE stream.
-- **Per-token agent** — `AGENT_TOKEN_RATE_LIMIT` requests per minute
-  (default: `max(600, ceil(live global limit / 4))`) per API key. A key's own
-  `rateLimitPerMinute` is a ceiling, not an exemption: the effective budget is
+- **Per-agent-session** — `AGENT_SESSION_RATE_LIMIT` **weighted units** per
+  minute (default: `max(600, live global limit)`) per `agentSessionId`. It
+  applies when the request carries `X-Agent-Session`, a session id in the path
+  or `?session=` on an SSE stream. A batch spends its command count here too,
+  so this is a work budget, not a request count.
+- **Per-token agent** — `AGENT_TOKEN_RATE_LIMIT` weighted units per minute
+  (default: `max(600, ceil(live global limit / 4))`) per API key, likewise
+  charged by a batch's command count. A key's own `rateLimitPerMinute` is a
+  ceiling, not an exemption: the effective budget is
   `min(rateLimitPerMinute, derived share)`. Raising `THROTTLE_LIMIT` for a
   swarm therefore does not let a 100k/min key consume the whole board, while
   a lower explicit limit still tightens it.
-- **Per-board** — `BOARD_RATE_LIMIT` requests per minute (default:
+- **Per-board** — `BOARD_RATE_LIMIT` weighted units per minute (default:
   `max(12000, 2 × live global limit)`) per board, shared by every PAT working
   on that board. It is a safety ceiling, not the per-agent budget. The bucket
   refills continuously rather than at a window boundary. `POST
   /boards/:id/commands` and its batch route wait up to
-  `AGENT_COMMAND_QUEUE_MS` (default `1500`) for enough free slots and then
-  answer `503` with `code: "rate_limited"`, `Retry-After` and
-  `X-RateLimit-Queued-Ms` (total time spent in the per-board queue, including
-  the wait behind earlier commands); reads and other routes answer `429`.
-  `POST /boards/:id/plans/apply` is not queued and answers `429` immediately,
-  but still spends its command count. A command refused this way was not
-  applied, so retrying it with the same `commandId` stays idempotent.
-- A batch or plan apply is charged by `commands.length` on the board and token
-  budgets (clamped to the 100-command batch bound), so one request cannot
-  spend a whole window for a hundred commands.
+  `AGENT_COMMAND_QUEUE_MS` (default `1500`, maximum `30000`) for enough board
+  tokens and queue capacity, then answer `503` with
+  `code: "rate_limited"`, `Retry-After` and `X-RateLimit-Queued-Ms` (total time
+  spent in the per-board queue, including the wait behind earlier commands;
+  `0` when the depth/byte cap rejects immediately). Reads and other routes
+  answer `429`. `POST /boards/:id/plans/apply` is not queued and answers `429`
+  immediately, but still spends its command count. A command refused this way
+  was not applied, so retrying it with the same `commandId` stays idempotent.
+- A batch or plan apply is charged by `commands.length` on the board, token
+  **and session** budgets. The queue keeps at most 64 commands and 32 MiB of
+  request bodies per board. A pinned `AGENT_*` budget is either `0` (auto) or
+  at least `100`, so a valid 100-command batch can always fit.
 
 A response carries the budget that counted the request:
 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`,
@@ -327,7 +332,9 @@ bucket is whole again (the fixed-window end, or a full board bucket);
 token is available, otherwise the next token for the board bucket, and the
 window end for fixed buckets). When several buckets exist, the headers name
 the tightest one, so a client that respects them will not be rejected by the
-global window first.
+global window first. The `RateLimit-*` headers are bucket counters, not a
+forecast of weighted work or a count of applied commands: a weighted agent
+bucket reports its remaining units, and one batch can spend several at once.
 
 A rejection uses the shared error envelope:
 
@@ -629,8 +636,8 @@ credential.
 
 A personal API token can be scoped when created: `boardId` limits
 it to one board, `readOnly: true` refuses content writes (`403 pat_read_only`),
-and `rateLimitPerMinute` gives it its own request budget (over the budget
-answers `429`).
+and `rateLimitPerMinute` gives it its own weighted-unit budget, capped at the
+derived per-token share (over the budget answers `429`).
 
 | Method   | Path                    | Returns                   |
 | -------- | ----------------------- | ------------------------- |

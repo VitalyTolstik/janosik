@@ -12,18 +12,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
   `max(12000, 2 × THROTTLE_LIMIT)`) with continuous refill, backed by a
   per-token agent bucket (`AGENT_TOKEN_RATE_LIMIT`, default
-  `max(600, THROTTLE_LIMIT / 4)` for keys without their own explicit limit)
-  and a raised per-session floor (600), so one
-  abusive key or runaway session cannot starve a board. Command writes over
-  the board ceiling wait in a per-board FIFO for up to
-  `AGENT_COMMAND_QUEUE_MS` (default 1500 ms) and then answer
-  `503 rate_limited` with `Retry-After` instead of an instant `429`; reads keep
-  the immediate `429`. Every budget remains validated as a non-negative
-  integer. The MCP client retries `429` and the queued `503` up to four
-  attempts, honouring `Retry-After` with capped jittered exponential backoff
-  and reusing the same `Idempotency-Key`/`commandId`; an exhausted retry still
-  returns the actionable error instead of hanging. Docs EN/RU, self-hosting
-  env reference, MCP README, `.env.example` and focused unit/e2e coverage are
+  `max(600, ceil(THROTTLE_LIMIT / 4))` for keys without their own explicit
+  limit; an explicit key limit is capped at that derived share) and a raised
+  per-session floor (600 weighted units), so one abusive key or runaway
+  session cannot starve a board. A batch is charged by `commands.length` on the
+  board, token **and session** budgets; a malformed body costs one unit.
+  Pinned budgets are 0 (auto) or at least 100, so a valid 100-command batch can
+  fit. Command writes over the board ceiling wait in a per-board FIFO (64
+  commands / 32 MiB, max 30 000 ms) and then answer `503 rate_limited` with
+  `Retry-After` and `X-RateLimit-Queued-Ms` (`0` when the queue cap rejects
+  immediately) instead of an instant `429`; reads keep the immediate `429`.
+  The MCP client retries `429` and the queued `503` up to four attempts,
+  honouring `Retry-After` with jittered exponential backoff (each pause ≤8 s,
+  including 7.4 s + up to 600 ms jitter above the cap) and reusing the same
+  `Idempotency-Key`/`commandId`; an exhausted retry still returns the
+  actionable error instead of hanging. Docs EN/RU, OpenAPI, self-hosting env
+  reference, MCP README, `.env.example` and focused unit/e2e coverage are
   updated.
 
 - TASK-177.20.3a/3b assignment notifications and due-mail links. A committed

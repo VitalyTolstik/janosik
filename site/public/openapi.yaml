@@ -1002,9 +1002,9 @@ paths:
         retrieve the committed result if the first request was applied.
         `Idempotency-Key` is additionally honoured for `DUPLICATE_CARD`.
         Over the shared board budget the command waits up to
-        `AGENT_COMMAND_QUEUE_MS` for a token and then answers `503
-        rate_limited` with `Retry-After`; the board and token budgets are
-        charged by the command count.
+        `AGENT_COMMAND_QUEUE_MS` (at most 30 seconds) for enough tokens and
+        then answers `503 rate_limited` with `Retry-After`. A batch is charged
+        by its command count on the board, token and session budgets.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -1021,6 +1021,8 @@ paths:
           headers:
             X-Run-Id:
               $ref: "#/components/headers/X-Run-Id"
+            X-RateLimit-Queued-Ms:
+              $ref: "#/components/headers/X-RateLimit-Queued-Ms"
           content:
             application/json:
               schema:
@@ -1045,9 +1047,10 @@ paths:
         in command order. At most 100 commands. A PAT batch creates exactly
         one `AgentRun` (kind `batch`) and sets `X-Run-Id`. If any action is
         destructive, the whole batch needs one approval. `clientRunId` keys
-        that run. The batch is charged by `commands.length` on the board and
-        token budgets, waits up to `AGENT_COMMAND_QUEUE_MS` for the whole
-        cost, and then answers either `200` or `503 rate_limited`.
+        that run. The batch is charged by `commands.length` on the board,
+        token and session budgets, waits up to `AGENT_COMMAND_QUEUE_MS` (at
+        most 30 seconds) for the whole cost and queue capacity, and then
+        answers either `200` or `503 rate_limited`.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -1063,6 +1066,8 @@ paths:
           headers:
             X-Run-Id:
               $ref: "#/components/headers/X-Run-Id"
+            X-RateLimit-Queued-Ms:
+              $ref: "#/components/headers/X-RateLimit-Queued-Ms"
           content:
             application/json:
               schema:
@@ -1123,8 +1128,9 @@ paths:
         creates an approval and applies nothing. A PAT apply creates one
         `AgentRun` (kind `plan`) and sets `X-Run-Id`; a browser apply creates
         no run. Atomic and idempotent like a batch. The plan is charged by its
-        command count, but this route is deliberately not queued: over the
-        agent budget it answers `429` immediately.
+        command count on the board, token and session budgets, but this route
+        is deliberately not queued: over the agent budget it answers `429`
+        immediately.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/AgentSession"
@@ -3207,11 +3213,17 @@ components:
       schema:
         type: string
     X-RateLimit-Limit:
-      description: Ceiling of the tightest bucket that counted the request.
+      description: |
+        Ceiling of the tightest bucket that counted the request. Agent buckets
+        are charged in weighted units (a batch costs its command count); the
+        headers are bucket counters, not a forecast of how many commands fit.
       schema:
         type: integer
     X-RateLimit-Remaining:
-      description: Remaining budget in that bucket.
+      description: |
+        Remaining budget in that bucket. Agent buckets report weighted units;
+        the headers describe bucket counters, not how many commands fit, and a
+        batch may consume several units at once.
       schema:
         type: integer
     X-RateLimit-Reset:
@@ -3227,7 +3239,8 @@ components:
       description: |
         Total time a command spent in the per-board queue, including the wait
         behind earlier commands and the wait for enough board tokens. Present
-        only on a command or batch request that had to queue.
+        on a command or batch `200`/`503` that entered the queue; `0` when the
+        queue depth or byte cap rejected it immediately.
       schema:
         type: integer
         minimum: 0
@@ -3373,11 +3386,12 @@ components:
       description: |
         One of two safe-to-retry refusals for a command or batch:
 
-        - `rate_limited`: the command waited up to `AGENT_COMMAND_QUEUE_MS`
-          for enough board tokens and the per-board queue is still full.
-          Nothing was applied; `Retry-After` is set, the envelope carries
-          `scope: "board"`, and `X-RateLimit-Queued-Ms` reports the total
-          queue wait. Retry the same `commandId`.
+        - `rate_limited`: insufficient board tokens after waiting up to
+          `AGENT_COMMAND_QUEUE_MS`, or the per-board command queue is full by
+          depth or retained bytes. Nothing was applied; `Retry-After` is set,
+          the envelope carries `scope: "board"`, and `X-RateLimit-Queued-Ms`
+          reports the total queue wait (`0` for an immediate queue-cap
+          rejection). Retry the same `commandId`.
         - `board_write_timeout`: the transaction holding the board write lock
           timed out and rolled back. Retry the same `commandId`.
       headers:
@@ -3607,6 +3621,7 @@ components:
         - idempotency_in_progress
         - payload_too_large
         - rate_limited
+        - request_timeout
         - login_backoff
         - current_password_invalid
         - oauth_proof_required

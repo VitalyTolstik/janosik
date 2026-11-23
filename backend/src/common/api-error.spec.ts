@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   HttpStatus,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -104,6 +105,23 @@ describe("apiErrorEnvelope", () => {
       limit: 1024,
       currentVersion: null,
       statusCode: 413,
+    });
+  });
+
+  it("maps an aborted request to a retryable 408 request_timeout", () => {
+    const { status, body } = translateException(
+      new HttpException(
+        "The request was aborted before its command was queued",
+        HttpStatus.REQUEST_TIMEOUT,
+      ),
+      "req-408",
+    );
+    expect(status).toBe(408);
+    expect(body).toMatchObject({
+      code: "request_timeout",
+      retryable: true,
+      requestId: "req-408",
+      statusCode: 408,
     });
   });
 

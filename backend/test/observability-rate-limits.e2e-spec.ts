@@ -320,14 +320,46 @@ describe("Observability and agent rate limits (e2e)", () => {
       .expect(200);
   });
 
-  it("queues a command until the next board token and reports the wait", async () => {
+  it("charges a batch to the session budget too", async () => {
     setBoardRateLimit(1_000);
+    setAgentTokenRateLimit(1_000);
+    setAgentSessionRateLimit(3);
+    const pat = await createToken("batch-session-cost");
+    const sessionId = await startSession(pat);
+    const batch = () =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands/batch`)
+        .set(auth(pat))
+        .set("X-Agent-Session", sessionId)
+        .send({
+          commands: [1, 2].map((index) => ({
+            commandId: randomUUID(),
+            action: {
+              boardId,
+              at: Date.now(),
+              type: "RENAME_BOARD",
+              title: `Session batch ${index}`,
+            },
+          })),
+        });
+
+    await batch().expect(200);
+    const denied = await batch().expect(429);
+    expect(denied.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "session",
+    });
+  });
+
+  it("queues a command until the next board token and reports the wait", async () => {
+    setBoardRateLimit(60);
     setAgentCommandQueueMs(1_500);
     const pat = await createToken("queue-succeed");
-    // Drain the shared token bucket; 60 req/s refills the next token in
-    // ~17 ms, inside the queue budget.
-    for (let i = 0; i < 1_000; i += 1) {
-      consumeBoardRateLimit(boardId, 1_000);
+    // 60/min refills exactly one token per second. Drain the bucket; the
+    // command then waits ~1 s, inside the queue budget.
+    for (let i = 0; i < 60; i += 1) {
+      consumeBoardRateLimit(boardId, 60);
     }
 
     const response = await server()
@@ -343,9 +375,9 @@ describe("Observability and agent rate limits (e2e)", () => {
         },
       })
       .expect(200);
-    expect(
-      Number(response.headers["x-ratelimit-queued-ms"]),
-    ).toBeGreaterThanOrEqual(1);
+    expect(Number(response.headers["x-ratelimit-queued-ms"])).toBeGreaterThan(
+      500,
+    );
   });
 
   it("answers a burst command with 503 Retry-After instead of an instant 429", async () => {

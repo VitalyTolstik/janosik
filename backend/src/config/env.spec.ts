@@ -1,4 +1,7 @@
 import {
+  AGENT_BUDGET_MAX,
+  AGENT_BUDGET_MIN,
+  parseAgentBudget,
   parseBoundedNonNegativeInt,
   parseNonNegativeInt,
   parsePositiveInt,
@@ -49,5 +52,22 @@ describe("parseBoundedNonNegativeInt", () => {
     expect(() => parseBoundedNonNegativeInt("30001", 30_000)).toThrow(
       /no greater than 30000/,
     );
+  });
+});
+
+/** TASK-200.3: a pinned budget must fit at least one 100-command batch. */
+describe("parseAgentBudget", () => {
+  it("accepts auto (0) and a budget that can fit the largest batch", () => {
+    expect(parseAgentBudget("0")).toBe(0);
+    expect(parseAgentBudget(String(AGENT_BUDGET_MIN))).toBe(AGENT_BUDGET_MIN);
+    expect(parseAgentBudget(String(AGENT_BUDGET_MAX))).toBe(AGENT_BUDGET_MAX);
+  });
+
+  it("rejects 1…99 because a valid batch could never fit", () => {
+    expect(AGENT_BUDGET_MIN).toBe(100);
+    for (const value of ["1", "60", "99", "-1", "1.5", "abc"]) {
+      expect(() => parseAgentBudget(value)).toThrow();
+    }
+    expect(() => parseAgentBudget(String(AGENT_BUDGET_MAX + 1))).toThrow();
   });
 });

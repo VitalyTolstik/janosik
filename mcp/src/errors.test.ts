@@ -266,10 +266,22 @@ describe("rate-limit retry policy (TASK-200.3)", () => {
     expect(rateLimitDelayMs(error, 1, () => 0)).toBe(50);
     expect(rateLimitDelayMs(error, 2, () => 0)).toBe(100);
     expect(rateLimitDelayMs(error, 3, () => 1)).toBe(600);
-    // The cap keeps a runaway delayed Retry-After from starving a tool call.
+  });
+
+  it("keeps jitter when Retry-After is at or above the cap", () => {
+    const tenSeconds = new ApiError(429, { code: "rate_limited" }, 10);
+    const low = rateLimitDelayMs(tenSeconds, 1, () => 0);
+    const high = rateLimitDelayMs(tenSeconds, 1, () => 0.999);
+    expect(low).toBe(7_400);
+    expect(high).toBeGreaterThan(low);
+    expect(high).toBeLessThanOrEqual(8_000);
+    expect(low).not.toBe(8_000);
+    expect(high).not.toBe(8_000);
+    // A fixed random inside the band is deterministic and still bounded.
+    expect(rateLimitDelayMs(tenSeconds, 1, () => 0.5)).toBe(7_700);
     expect(
-      rateLimitDelayMs(new ApiError(429, { code: "rate_limited" }, 600), 1),
-    ).toBe(8_000);
+      rateLimitDelayMs(new ApiError(429, { code: "rate_limited" }, 600), 1), //
+    ).toBeLessThanOrEqual(8_000);
   });
 
   it("treats the queued 503 as rate limiting, not a generic outage", () => {

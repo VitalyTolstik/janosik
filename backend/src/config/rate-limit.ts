@@ -14,16 +14,17 @@ import { throttleLimit } from "./throttle";
  * The formulas are exported as pure functions so the sizing is testable and
  * the docs can state exact numbers:
  *
- * - session: `max(600, THROTTLE_LIMIT)` — one runaway agent session;
- * - token:   `max(600, ceil(THROTTLE_LIMIT / 4))` — one abusive key cannot
- *   consume a board; a token is usually shared by one agent/run. An explicit
- *   token `rateLimitPerMinute` is a ceiling too: the effective budget is
- *   `min(explicit, derived)`, so a 100k/min PAT cannot bypass the share when
- *   `THROTTLE_LIMIT` is raised;
- * - board:   `max(12000, 2 × THROTTLE_LIMIT)` — a high safety ceiling for
- *   every agent on that board together;
- * - command queue: 1500 ms — a burst waits briefly for the board bucket to
- *   refill instead of failing immediately.
+ * - session: `max(600, THROTTLE_LIMIT)` weighted units — one runaway agent
+ *   session; a batch spends its command count here too;
+ * - token:   `max(600, ceil(THROTTLE_LIMIT / 4))` weighted units — one abusive
+ *   key cannot consume a board; a token is usually shared by one agent/run. An
+ *   explicit token `rateLimitPerMinute` is a ceiling too: the effective budget
+ *   is `min(explicit, derived)`, so a 100k/min PAT cannot bypass the share
+ *   when `THROTTLE_LIMIT` is raised;
+ * - board:   `max(12000, 2 × THROTTLE_LIMIT)` weighted units — a high safety
+ *   ceiling for every agent on that board together;
+ * - command queue: 1500 ms (maximum 30 000 ms) — a burst waits briefly for the
+ *   board bucket to refill instead of failing immediately.
  */
 export const AGENT_SESSION_RATE_LIMIT_MIN = 600;
 export const AGENT_TOKEN_RATE_LIMIT_MIN = 600;

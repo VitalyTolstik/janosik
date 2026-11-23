@@ -281,8 +281,10 @@ highest sequence from its results and the batch run ID. Use `seq` as
 - `approval_required` — stop and wait for a human; nothing was applied.
 - `idempotency_conflict` — the key was reused with another body; send the new
   intent under a fresh key.
-- `rate_limited` / `board_write_timeout` — wait `retryAfter` or a moment and
-  retry the identical request; the server marks these `retryable: true`.
+- `rate_limited` / `board_write_timeout` — the MCP server already retried a
+  `429`/queued `503` automatically up to four times with jitter; if one still
+  comes back, wait `retryAfter` or a moment and retry the identical request;
+  the server marks these `retryable: true`.
 
 ## The skill: teach the agent how to work
 

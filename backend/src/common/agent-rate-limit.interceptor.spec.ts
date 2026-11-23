@@ -1,5 +1,6 @@
 import {
   HttpException,
+  Logger,
   type CallHandler,
   type ExecutionContext,
 } from "@nestjs/common";
@@ -13,6 +14,7 @@ import {
   setBoardRateLimit,
 } from "@/config/rate-limit";
 import {
+  enqueueBoardCommand,
   resetBoardCommandQueues,
   trackedBoardCommandQueues,
 } from "./board-rate-limit";
@@ -61,6 +63,13 @@ function asHttpException(value: unknown): HttpException {
 
 const next: CallHandler = { handle: () => of({ ok: true }) };
 
+function batchCommands(count: number): unknown[] {
+  return Array.from({ length: count }, (_, index) => ({
+    commandId: `cmd-${index}`,
+    action: { type: "RENAME_BOARD" },
+  }));
+}
+
 describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
   beforeEach(() => {
     resetRateLimits();
@@ -101,8 +110,8 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       params: { id: "b1" },
     });
     await run(ctx);
-    // The token bucket's remaining (599) is looser than the board's, so the
-    // response names the board.
+    // The derived token bucket is looser than the board's, so the response
+    // names the board.
     expect(headers.get("X-RateLimit-Limit")).toBe(2);
     expect(headers.get("X-RateLimit-Remaining")).toBe(1);
     expect(headers.get("X-RateLimit-Scope")).toBe("board");
@@ -195,7 +204,7 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
         method: "POST",
         originalUrl: "/api/v1/boards/b1/commands/batch",
         params: { id: "b1" },
-        body: { commands: Array.from({ length: commandCount }, () => ({})) },
+        body: { commands: batchCommands(commandCount) },
       });
 
     const first = batch(2);
@@ -234,13 +243,35 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
     expect(tokenDenied.getStatus()).toBe(429);
     expect(tokenDenied.getResponse()).toMatchObject({ scope: "token" });
 
+    // The batch's weight also applies to its session budget.
+    resetRateLimits();
+    setBoardRateLimit(1_000);
+    setAgentTokenRateLimit(100);
+    setAgentSessionRateLimit(3);
+    const sessionBatch = (commandCount: number) =>
+      context({
+        auth: { via: "pat", apiTokenId: "session-batch-token" },
+        agentSession: { id: "session-batch" },
+        method: "POST",
+        originalUrl: "/api/v1/boards/b1/commands/batch",
+        params: { id: "b1" },
+        body: { commands: batchCommands(commandCount) },
+      });
+    await expect(run(sessionBatch(2).context)).resolves.toEqual({ ok: true });
+    const sessionDenied = asHttpException(
+      await run(sessionBatch(2).context).catch((error) => error),
+    );
+    expect(sessionDenied.getStatus()).toBe(429);
+    expect(sessionDenied.getResponse()).toMatchObject({ scope: "session" });
+
     // A parallel quiet token still fits on the same board.
+    setAgentSessionRateLimit(null);
     const quiet = context({
       auth: { via: "pat", apiTokenId: "quiet-batch-token" },
       method: "POST",
       originalUrl: "/api/v1/boards/b1/commands/batch",
       params: { id: "b1" },
-      body: { commands: [{}] },
+      body: { commands: batchCommands(1) },
     });
     await expect(run(quiet.context)).resolves.toEqual({ ok: true });
   });
@@ -271,6 +302,9 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       retryable: true,
       scope: "board",
     });
+    expect(Number(second.headers.get("X-RateLimit-Queued-Ms"))).toBeLessThan(
+      100,
+    );
     expect(second.headers.get("Retry-After")).toBeGreaterThanOrEqual(1);
     expect(denied.getResponse()).toMatchObject({
       retryAfter: second.headers.get("Retry-After"),
@@ -287,6 +321,45 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       await run(read.context).catch((error) => error),
     );
     expect(readDenied.getStatus()).toBe(429);
+  });
+
+  it("sets X-RateLimit-Queued-Ms to zero when the queue is already full", async () => {
+    const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation();
+    setBoardRateLimit(1);
+    setAgentCommandQueueMs(0);
+    const first = context({
+      auth: { via: "pat", apiTokenId: "full-token" },
+      method: "POST",
+      originalUrl: "/api/v1/boards/b1/commands",
+      params: { id: "b1" },
+    });
+    await expect(run(first.context)).resolves.toEqual({ ok: true });
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const waiters = Array.from({ length: 64 }, () =>
+      enqueueBoardCommand("b1", () => gate),
+    );
+    const full = context({
+      auth: { via: "pat", apiTokenId: "full-token" },
+      method: "POST",
+      originalUrl: "/api/v1/boards/b1/commands",
+      params: { id: "b1" },
+    });
+    const error = asHttpException(
+      await run(full.context).catch((reason) => reason),
+    );
+    expect(error.getStatus()).toBe(503);
+    expect(full.headers.get("X-RateLimit-Queued-Ms")).toBe(0);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("command queue full (depth)"),
+    );
+    warn.mockRestore();
+    release();
+    await Promise.all(waiters);
+    await new Promise((resolve) => setImmediate(resolve));
   });
 
   it("drops a queued command when the client aborts the request", async () => {
