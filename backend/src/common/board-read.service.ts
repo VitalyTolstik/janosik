@@ -21,14 +21,17 @@
  * snapshot can issue one more read after the coalesced one completes. Only
  * in-flight work is shared, so a later read never reuses a settled snapshot.
  *
- * `BOARD_READ_TIMEOUT_MS` bounds the HTTP response and is also handed to the
- * read transaction as its Prisma `timeout` (with a small encode margin);
- * `maxWait` is `BOARD_READ_WAIT_MS`. P2028/P2024 therefore surface as
- * `503 board_read_timeout`/`board_read_busy`, not `500`. Prisma still has no
- * cancellation token for a query already sent: the transaction expires by
- * its own budget and then releases the semaphore slot. The semaphore wait,
- * build and encode are all inside the single-flight group; a timed-out caller
- * never blocks a later one.
+ * `BOARD_READ_TIMEOUT_MS` is one deadline for the whole response: the
+ * conditional stamp, semaphore/single-flight wait, Prisma transaction and
+ * encoding each receive only the remaining budget, never a fresh full one.
+ * The transaction gets a `timeout` slightly below that remaining budget (the
+ * encode margin) and `maxWait` capped by `BOARD_READ_WAIT_MS`; with WAIT_MS=0
+ * the pool uses the remaining response budget rather than a 1 ms floor.
+ * P2028/P2024 therefore surface as `503 board_read_timeout`/
+ * `board_read_busy`, not `500`. Prisma still has no cancellation token for a
+ * query already sent: the transaction expires by its own budget and then
+ * releases the semaphore slot. A timed-out caller never blocks a later one.
+ * `BOARD_READ_TIMEOUT_MS` below 300 ms is refused at construction.
  */
 import {
   Inject,
@@ -54,6 +57,13 @@ export const BOARD_FULL_PROJECTION = "board-full:v1";
 
 /** Route string used in the ETag material (not user input). */
 export const BOARD_READ_ROUTE = "GET /boards/:id";
+
+/**
+ * Below this a single Prisma round-trip plus compression cannot fit; the
+ * service refuses to start instead of silently letting `timeout - margin`
+ * become negative.
+ */
+export const MIN_BOARD_READ_TIMEOUT_MS = 300;
 
 export const BOARD_READ_LIMITS = Symbol("BOARD_READ_LIMITS");
 
@@ -169,6 +179,8 @@ export function boardReadKey(input: {
 @Injectable()
 export class BoardReadService implements OnModuleDestroy {
   private readonly singleFlight = new SingleFlight<BoardReadResponse>();
+  /** Cheap board stamps coalesce separately from full aggregate builds. */
+  private readonly stampFlight = new SingleFlight<BoardReadStamp | null>();
   private readonly semaphore: ReadSemaphore;
   private fullReads = 0;
   private coalesced = 0;
@@ -184,6 +196,11 @@ export class BoardReadService implements OnModuleDestroy {
     if (limits.timeoutMs <= limits.waitMs) {
       throw new Error(
         "BOARD_READ_TIMEOUT_MS must be greater than BOARD_READ_WAIT_MS",
+      );
+    }
+    if (limits.timeoutMs < MIN_BOARD_READ_TIMEOUT_MS) {
+      throw new Error(
+        `BOARD_READ_TIMEOUT_MS must be at least ${MIN_BOARD_READ_TIMEOUT_MS}`,
       );
     }
     this.semaphore = new ReadSemaphore({
@@ -219,14 +236,25 @@ export class BoardReadService implements OnModuleDestroy {
     request: BoardReadRequest,
     deps: BoardReadDeps,
   ): Promise<BoardReadResponse> {
+    // One deadline for the whole response. Stamp, queue, transaction and
+    // encoding all consume the same budget, so a conditional miss can no
+    // longer take WAIT_MS + TIMEOUT_MS sequentially.
+    const deadline = Date.now() + this.limits.timeoutMs;
     try {
       // The stamp is only a conditional-request optimisation. An
       // unconditional read goes straight to the build, so the common path
-      // keeps exactly the queries it had before TASK-200.6. It still gets a
-      // deadline: a saturated pool must not hang the response before the
-      // semaphore is even involved.
+      // keeps exactly the queries it had before TASK-200.6. It still gets the
+      // shared deadline: a saturated pool must not hang the response before
+      // the semaphore is even involved. Identical conditional bursts share
+      // one cheap stamp per board.
       if (request.ifNoneMatch !== undefined) {
-        const stamp = await this.stampWithDeadline(deps.stamp);
+        const stampBudget = this.remainingMs(deadline);
+        if (stampBudget <= 0) {
+          throw new SingleFlightTimeoutError(this.limits.timeoutMs);
+        }
+        const stamp = await this.stampFlight.run(request.boardId, deps.stamp, {
+          timeoutMs: stampBudget,
+        });
         if (stamp === null) throw new NotFoundException("Board not found");
         const current = boardReadEtag({
           boardId: request.boardId,
@@ -249,6 +277,10 @@ export class BoardReadService implements OnModuleDestroy {
         }
       }
 
+      const buildBudget = this.remainingMs(deadline);
+      if (buildBudget <= 0) {
+        throw new SingleFlightTimeoutError(this.limits.timeoutMs);
+      }
       const negotiated = negotiateContentEncoding(request.acceptEncoding);
       const key = boardReadKey({
         boardId: request.boardId,
@@ -258,9 +290,9 @@ export class BoardReadService implements OnModuleDestroy {
       });
       return await this.singleFlight.run(
         key,
-        () => this.build(request, negotiated, deps),
+        () => this.build(request, negotiated, deps, deadline),
         {
-          timeoutMs: this.limits.timeoutMs,
+          timeoutMs: buildBudget,
           onJoin: () => {
             this.coalesced += 1;
           },
@@ -271,27 +303,8 @@ export class BoardReadService implements OnModuleDestroy {
     }
   }
 
-  /** Bound the cheap conditional stamp by the queue budget. */
-  private stampWithDeadline(
-    stamp: () => Promise<BoardReadStamp | null>,
-  ): Promise<BoardReadStamp | null> {
-    const timeoutMs = Math.max(1, this.limits.waitMs);
-    return new Promise<BoardReadStamp | null>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new SingleFlightTimeoutError(timeoutMs));
-      }, timeoutMs);
-      timer.unref?.();
-      stamp().then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (error: unknown) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      );
-    });
+  private remainingMs(deadline: number): number {
+    return Math.max(0, deadline - Date.now());
   }
 
   /** Translate backpressure/P2028/P2024 into the public 503 contract. */
@@ -347,15 +360,36 @@ export class BoardReadService implements OnModuleDestroy {
     request: BoardReadRequest,
     encoding: ContentEncoding,
     deps: BoardReadDeps,
+    deadline: number,
   ): Promise<BoardReadResponse> {
-    const release = await this.semaphore.acquire();
+    // The semaphore wait is also charged to the shared deadline. WAIT_MS=0
+    // keeps its meaning (no queueing) without starving the conditional stamp;
+    // the pool budget below falls back to the remaining response budget.
+    const queueWaitMs =
+      this.limits.waitMs > 0
+        ? Math.min(this.limits.waitMs, this.remainingMs(deadline))
+        : 0;
+    const release = await this.semaphore.acquire(queueWaitMs);
     try {
       this.fullReads += 1;
-      // Leave a small encode/compression margin before the outer response
-      // deadline; Prisma gets to raise P2028 first and map it to 503.
-      const dbTimeoutMs = Math.max(1, this.limits.timeoutMs - 250);
+      const remaining = this.remainingMs(deadline);
+      if (remaining <= 1) {
+        throw new SingleFlightTimeoutError(this.limits.timeoutMs);
+      }
+      // Leave an encode/compression margin before the outer response deadline;
+      // Prisma gets to raise P2028 first and map it to 503. The margin scales
+      // down for small configured timeouts instead of going negative.
+      const margin = Math.min(250, Math.max(1, Math.floor(remaining / 2)));
+      const dbTimeoutMs = Math.max(1, remaining - margin);
+      // WAIT_MS caps the pool wait when set. With WAIT_MS=0 (no semaphore
+      // queue) the pool still gets the shared remaining budget instead of a
+      // pathological 1 ms floor.
+      const dbMaxWaitMs =
+        this.limits.waitMs > 0
+          ? Math.min(this.limits.waitMs, dbTimeoutMs)
+          : dbTimeoutMs;
       const snapshot = await deps.build({
-        maxWaitMs: Math.max(1, Math.min(this.limits.waitMs, dbTimeoutMs)),
+        maxWaitMs: dbMaxWaitMs,
         timeoutMs: dbTimeoutMs,
       });
       const json = Buffer.from(JSON.stringify(snapshot.board), "utf8");

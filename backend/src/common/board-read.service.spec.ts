@@ -67,6 +67,9 @@ describe("BoardReadService", () => {
     expect(() => service({ waitMs: 50, timeoutMs: 10 })).toThrow(
       /BOARD_READ_TIMEOUT_MS must be greater/,
     );
+    expect(() => service({ waitMs: 10, timeoutMs: 299 })).toThrow(
+      /must be at least 300/,
+    );
   });
 
   it("answers 304 from the cheap stamp without building", async () => {
@@ -132,7 +135,71 @@ describe("BoardReadService", () => {
       stamp: () => Promise.resolve({ revision: 3n, seq: 3 }),
       build,
     });
-    expect(build).toHaveBeenCalledWith({ maxWaitMs: 100, timeoutMs: 750 });
+    const budget = build.mock.calls[0]![0] as {
+      maxWaitMs: number;
+      timeoutMs: number;
+    };
+    expect(budget.maxWaitMs).toBe(100);
+    expect(budget.timeoutMs).toBeLessThanOrEqual(750);
+    expect(budget.timeoutMs).toBeGreaterThan(650);
+  });
+
+  it("shares one deadline between the conditional stamp and the build", async () => {
+    const read = service({ waitMs: 100, timeoutMs: 300 });
+    const started = Date.now();
+    let refusal: unknown;
+    try {
+      await read.read(request({ ifNoneMatch: 'W/"old"' }), {
+        stamp: () =>
+          new Promise((resolve) =>
+            setTimeout(() => resolve({ revision: 1n, seq: 1 }), 90),
+          ),
+        build: () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () => resolve({ board: BOARD, seq: 1, revision: 1n }),
+              250,
+            ),
+          ),
+      });
+    } catch (caught) {
+      refusal = caught;
+    }
+    expect(refusal).toBeInstanceOf(ServiceUnavailableException);
+    expect(
+      (refusal as ServiceUnavailableException).getResponse(),
+    ).toMatchObject({ code: "board_read_timeout" });
+    expect(Date.now() - started).toBeLessThan(700);
+  });
+
+  it("gives a conditional stamp the shared budget when WAIT_MS=0", async () => {
+    const read = service({ waitMs: 0, timeoutMs: 300 });
+    const etag = boardReadEtag({ ...request(), revision: 2n });
+    const result = await read.read(request({ ifNoneMatch: etag }), {
+      stamp: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ revision: 2n, seq: 0 }), 30),
+        ),
+      build: jest.fn(),
+    });
+    expect(result).toMatchObject({ status: 304, seq: 0 });
+  });
+
+  it("coalesces a conditional-stamp burst into one query", async () => {
+    const read = service();
+    const gate = deferred<{ revision: bigint; seq: number }>();
+    const stamp = jest.fn(() => gate.promise);
+    const build = jest.fn();
+    const etag = boardReadEtag({ ...request(), revision: 3n });
+    const requests = Array.from({ length: 20 }, () =>
+      read.read(request({ ifNoneMatch: etag }), { stamp, build }),
+    );
+    await delay(5);
+    expect(stamp).toHaveBeenCalledTimes(1);
+    gate.resolve({ revision: 3n, seq: 3 });
+    const results = await Promise.all(requests);
+    expect(results.every((result) => result.status === 304)).toBe(true);
+    expect(build).not.toHaveBeenCalled();
   });
 
   it("maps P2028/P2024 transaction and pool failures to 503", async () => {
@@ -177,7 +244,7 @@ describe("BoardReadService", () => {
   });
 
   it("bounds a hanging conditional stamp and answers 503", async () => {
-    const read = service({ waitMs: 10, timeoutMs: 50 });
+    const read = service({ waitMs: 10, timeoutMs: 300 });
     let refusal: unknown;
     try {
       await read.read(request({ ifNoneMatch: 'W/"stale"' }), {
@@ -321,7 +388,7 @@ describe("BoardReadService", () => {
       maxConcurrent: 1,
       queueMax: 1,
       waitMs: 10,
-      timeoutMs: 50,
+      timeoutMs: 300,
     });
     const gate = deferred<{
       board: BoardAggregate;

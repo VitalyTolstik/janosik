@@ -22,7 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   delete/restore, and account deletion would otherwise bypass Card. Trigger
   cost is one Board row update per affected SQL statement, not per row: the
   position writer chunks at 1 000, so a 5 000-card rewrite costs 5 bumps, not
-  one. The weak `ETag` is derived from board id + `aggregateRevision` + route +
+  one. Loops that write one row per entity (duplicate column/cards, checklist
+  item upserts, one-by-one label restores) pay one bump per iteration; this is
+  the documented amplification, not a per-row trigger. The weak `ETag` is derived from board id + `aggregateRevision` + route +
   role + projection; a matching `If-None-Match` answers `304` with no body
   before any aggregate load while still carrying the separate `X-Board-Seq`.
   `Cache-Control: private, no-store` keeps board JSON out of browser/shared
@@ -32,17 +34,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   database snapshot, so coalescing is not read-your-writes. A per-process
   counting semaphore caps builds (`BOARD_READ_CAP`, default 16) with a bounded
   waiting room (`BOARD_READ_QUEUE_MAX`, default 256, `BOARD_READ_WAIT_MS`,
-  default 10 s) and a total response bound (`BOARD_READ_TIMEOUT_MS`, default
-  20 s, must exceed the wait). The read transaction gets `maxWait =
-  BOARD_READ_WAIT_MS` and `timeout = BOARD_READ_TIMEOUT_MS − 250`, so P2024/
-  P2028 pool waits and transaction expiry answer `503 board_read_busy`/
-  `board_read_timeout` with `Retry-After`, never `500`. The conditional stamp is
-  also deadline-bounded. The cap may exceed `DB_CONNECTION_LIMIT` (default 10):
-  extra builds wait on the pool up to the wait budget; set cap ≤ pool to avoid
-  pool waits. The codes are in the shared catalog and are contract-retryable;
-  MCP treats both as transient, while the UI retries idempotent writes once
-  without sleeping `Retry-After` and shows reads as busy (documented bounded
-  mismatch). Queued reads are rejected on shutdown. Single-flight entries are
+  default 10 s) and **one shared response deadline** (`BOARD_READ_TIMEOUT_MS`,
+  default 20 s, must exceed the wait and be at least 300 ms). The conditional
+  stamp, semaphore/single-flight wait, read transaction and encoding each get
+  only the remaining budget; a conditional miss cannot take WAIT_MS +
+  TIMEOUT_MS. Conditional stamps coalesce per board. The read transaction gets
+  `timeout` = remaining minus a scaled encode margin and `maxWait` =
+  min(`BOARD_READ_WAIT_MS`, budget); with `WAIT_MS=0` the pool uses the
+  remaining shared budget instead of a 1 ms floor. P2024/P2028 pool waits and
+  transaction expiry answer `503 board_read_busy`/`board_read_timeout` with
+  `Retry-After`, never `500`. The cap may exceed `DB_CONNECTION_LIMIT`
+  (default 10): extra builds wait on the pool up to the wait budget; set cap ≤
+  pool to avoid pool waits. The codes are in the shared catalog and are
+  contract-retryable; MCP treats both as transient. The UI background
+  hydration retries other-board reads up to four times with 1/2/4 s backoff
+  but does not sleep `Retry-After`; explicit refetches are not retried and
+  idempotent writes retry once immediately (documented bounded mismatch). Queued reads are rejected on shutdown. Single-flight entries are
   never retained after settlement, so CAS writes and retries always see the
   database. Board-read 503s are classified as read backpressure in the request
   log/traffic (`rateLimited.read`) and are not counted as server errors. No

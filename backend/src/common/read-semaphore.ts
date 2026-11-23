@@ -92,8 +92,12 @@ export class ReadSemaphore {
   /**
    * Take a slot. The returned release function is idempotent: `finally` can
    * call it even after an error without double-releasing a slot.
+   *
+   * `waitMsOverride` lets a caller pass its remaining shared deadline; the
+   * configured wait is still an upper bound, so a per-request budget can only
+   * shorten the wait. Omitting it keeps the configured wait.
    */
-  acquire(): Promise<() => void> {
+  acquire(waitMsOverride?: number): Promise<() => void> {
     if (this.draining) {
       return Promise.reject(this.refuse("draining"));
     }
@@ -105,7 +109,11 @@ export class ReadSemaphore {
     if (this.waiters.length >= this.options.maxQueue) {
       return Promise.reject(this.refuse("queue_full"));
     }
-    if (this.options.waitMs <= 0) {
+    const waitMs =
+      waitMsOverride === undefined
+        ? this.options.waitMs
+        : Math.max(0, Math.min(this.options.waitMs, waitMsOverride));
+    if (waitMs <= 0) {
       return Promise.reject(this.refuse("wait_timeout"));
     }
     return new Promise<() => void>((resolve, reject) => {
@@ -117,7 +125,7 @@ export class ReadSemaphore {
           if (index === -1) return;
           this.waiters.splice(index, 1);
           reject(this.refuse("wait_timeout"));
-        }, this.options.waitMs),
+        }, waitMs),
       };
       waiter.timer.unref?.();
       this.waiters.push(waiter);

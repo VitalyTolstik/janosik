@@ -281,7 +281,9 @@ workflow, create, смена workflow планом) добавляют один 
   Стоимость — один UPDATE строки `Board` на SQL statement на затронутую доску,
   не на строку; при этом writer позиций чанкует по 1 000, поэтому перестановка
   5 000 карточек — это 5 Card-стейтментов → 5 bump'ов (плюс Board-bump самой
-  команды), а не один. `X-Board-Seq` остаётся отдельным SSE-значением и может
+  команды), а не один. Циклы, пишущие по одной строке на entity (duplicate
+  column/cards, checklist item upserts, label restore по одному), платят один
+  bump на итерацию; это задокументированная амплификация, а не per-row trigger. `X-Board-Seq` остаётся отдельным SSE-значением и может
   уменьшиться после sweep команд, не меняя ETag. `304` берёт seq из той же
   одно-запросной метки, чтобы клиент не перепрыгнул команду, отсутствующую в
   кешированном теле.
@@ -307,24 +309,32 @@ workflow, create, смена workflow планом) добавляют один 
 - Семафор (`backend/src/common/read-semaphore.ts`) ограничивает полные
   сборки **на процесс**: `BOARD_READ_CAP=16`, `BOARD_READ_QUEUE_MAX=256`,
   `BOARD_READ_WAIT_MS=10000`, `BOARD_READ_TIMEOUT_MS=20000` (обязан быть больше
-  wait), `BOARD_READ_RETRY_AFTER_SECONDS=2`. Cap может быть выше
+  wait и не меньше 300 мс), `BOARD_READ_RETRY_AFTER_SECONDS=2`. На старте
+  `read()` считается **один** deadline; remainder передаётся условному stamp,
+  semaphore/singleflight wait, Prisma `maxWait`/`timeout` и кодированию, поэтому
+  conditional miss не складывает `WAIT_MS + TIMEOUT_MS`. Stamp по-прежнему идёт
+  мимо semaphore (это один дешёвый indexed-запрос), но coalesce'ится per board:
+  burst из 500 conditional reads даёт один stamp-запрос на доску и затем общий
+  304. Если stamp исчерпал deadline, build уже не стартует. Cap может быть выше
   `DB_CONNECTION_LIMIT=10`: лишние сборки ждут в Prisma pool не дольше
   `BOARD_READ_WAIT_MS` и получают `503 board_read_busy`; для нулевого pool-wait
-  задайте cap ≤ pool. Условная `getReadStamp` тоже ограничена wait-deadline.
+  задайте cap ≤ pool. При `WAIT_MS=0` semaphore не держит очередь, но stamp
+  получает общий deadline, а pool `maxWait` — остаток общего бюджета, а не 1 мс.
   Переполнение очереди/ожидания, P2024, P2028-start и P2028-expired отвечают
   `503 board_read_busy`/`board_read_timeout` + `Retry-After`; коды добавлены в
   `API_ERROR_CODES`, OpenAPI enum и `RETRYABLE_CODES`. Read-транзакция получает
-  Prisma `maxWait = BOARD_READ_WAIT_MS` и `timeout = BOARD_READ_TIMEOUT_MS − 250`
-  (запас на кодирование), поэтому pool-wait/transaction-timeout не становятся
-  `500`. Уже отправленный запрос не отменяется, но истекает по этому budget и
-  освобождает слот. `onModuleDestroy` отклоняет очередь и ждёт активные чтения
-  (bounded). Порядок «auth → membership → role/pause → ETag» задаёт
-  `MembershipGuard`; чужой не получает 304.
-- UI не ретраит GET доски; idempotent POST ретраит `503` один раз сразу, не
-  выдерживая `Retry-After`. Для `board_read_busy`/`board_read_timeout` UI
-  показывает busy и ограничивает расхождение одним повтором; полноценный
-  Retry-After-aware retry чтения остаётся будущему клиенту. MCP считает оба
-  кода transient и повторяет GET в своём bounded network-budget.
+  `timeout` = остаток минус encode-margin (не более 250 мс) и `maxWait` =
+  min(`BOARD_READ_WAIT_MS`, budget), поэтому pool-wait/transaction-timeout не
+  становятся `500`. Уже отправленный запрос не отменяется, но истекает по
+  этому budget и освобождает слот. `onModuleDestroy` отклоняет очередь и ждёт
+  активные чтения (bounded). Порядок «auth → membership → role/pause → ETag»
+  задаёт `MembershipGuard`; чужой не получает 304.
+- UI: фоновая гидратация остальных досок ретраит GET доски до 4 попыток с
+  backoff 1/2/4 с, но пока не выдерживает `Retry-After`; явный refetch после
+  `503 board_read_busy`/`board_read_timeout` не ретраится, а idempotent POST
+  делает один немедленный повтор. Расхождение ограничено этими бюджетами и
+  задокументировано; Retry-After-aware retry чтения остаётся будущему клиенту.
+  MCP считает оба кода transient и повторяет GET в своём bounded network-budget.
 - Метрики процесса — `BoardReadService.metrics` (fullReads, coalesced,
   notModified, compressed, identity, rejected, timeouts, inFlight,
   active/waiting); Prometheus-экспорта в проекте нет. Request-log/traffic
@@ -332,8 +342,9 @@ workflow, create, смена workflow планом) добавляют один 
   как 5xx, через маркер ответа из exception filter; в `throttledLastMinute`
   (429 ring) они не попадают, поэтому двойного счёта нет.
 - Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation с
-  identity/q=0 и fallback, ETag, сервис, stamp-deadline, P2028/P2024→503,
-  timeout/backpressure) и `backend/test/board-read.e2e-spec.ts` (gzip/br +
+  identity/q=0 и fallback, ETag, сервис, общий stamp+build deadline, stamp burst
+  coalescing, WAIT_MS=0, P2028/P2024→503, timeout/backpressure) и
+  `backend/test/board-read.e2e-spec.ts` (gzip/br +
   Content-Length + Vary, tiny/304 + Cache-Control, role/tenant/role-change,
   CAS rename, non-seq policy, attachment add/delete, comment, claim
   release/expiry, direct admin edit, command-log sweep, прямые мутации

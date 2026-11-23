@@ -6,8 +6,11 @@
 -- These are AFTER STATEMENT triggers with transition tables: one Board UPDATE
 -- per affected board per SQL statement, not per row. A demo purge that deletes
 -- 10 000 checklist items in one statement still takes one Board row lock per
--- distinct board; chunked writers pay one bump per chunk. That is the cost we
--- document; it is deliberately not a per-row trigger.
+-- distinct board; chunked writers pay one bump per chunk. A command/import
+-- loop that issues one INSERT/UPDATE per label, checklist item or duplicate
+-- pays one bump per statement (e.g. duplicating a column with N cards writes
+-- one Card/Checklist statement per copied entity). That is the documented
+-- amplification; it is deliberately not a per-row trigger.
 --
 -- Board resolution:
 --   * Label / Column / CardLink carry boardId directly;

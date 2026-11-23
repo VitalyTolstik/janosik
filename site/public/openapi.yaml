@@ -3550,13 +3550,15 @@ components:
           which case extra builds wait on the pool for up to the wait budget.
           Identical reads already share one build, so only distinct
           board/role/projection/coding groups compete.
-        - `board_read_timeout`: one response exceeded
-          `BOARD_READ_TIMEOUT_MS` (which must exceed `BOARD_READ_WAIT_MS`)
-          while waiting, building or encoding, or the read transaction
-          expired (P2028). The transaction receives `maxWait=WAIT_MS` and
-          `timeout=TIMEOUT_MS−250`; a query already sent is not cancelled but
-          expires by that budget. The conditional stamp is deadline-bounded
-          before the aggregate load.
+        - `board_read_timeout`: one response exceeded the single shared
+          `BOARD_READ_TIMEOUT_MS` deadline (must exceed `BOARD_READ_WAIT_MS`
+          and be at least 300 ms) while stamping, waiting, building or
+          encoding, or the read transaction expired (P2028). The stamp, queue,
+          transaction and encoder each get only the remaining budget, so a
+          conditional miss cannot take WAIT+TIMEOUT. The transaction receives
+          `maxWait=min(WAIT_MS,budget)` and `timeout=remaining−encode margin`;
+          a query already sent is not cancelled but expires by that budget.
+          Conditional stamps coalesce per board.
 
         Both set `Retry-After` and `retryable: true`; no board data is included.
       headers:

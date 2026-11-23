@@ -55,6 +55,14 @@ describe("ReadSemaphore", () => {
     (await waiting)();
   });
 
+  it("honours a per-call wait shorter than the configured wait", async () => {
+    const gate = semaphore({ limit: 1, maxQueue: 1, waitMs: 1_000 });
+    const release = await gate.acquire();
+    const timedOut = gate.acquire(10);
+    await expect(timedOut).rejects.toMatchObject({ reason: "wait_timeout" });
+    release();
+  });
+
   it("times out a waiter, then admits a later caller", async () => {
     const gate = semaphore({ limit: 1, maxQueue: 1, waitMs: 10 });
     const release = await gate.acquire();
