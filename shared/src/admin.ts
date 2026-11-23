@@ -1288,6 +1288,8 @@ export interface AdminTrafficTelemetryDto {
     token: number;
     session: number;
     board: number;
+    /** TASK-200.6 full-board-read backpressure (`503 board_read_*`). */
+    read: number;
   };
   operations: {
     approvalsCreated: number;

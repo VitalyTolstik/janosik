@@ -7,6 +7,7 @@ import {
   toRequestLogLine,
   type LoggedRequest,
 } from "./request-log";
+import { markBackpressure } from "./traffic.service";
 
 function response(
   status = 200,
@@ -209,6 +210,18 @@ describe("buildRequestLogEntry", () => {
       Date.now(),
     );
     expect(explicit.rateLimited).toBe(true);
+  });
+
+  it("marks a board-read 503 as read backpressure", () => {
+    const response503 = response(503);
+    markBackpressure(response503, "board_read");
+    const entry = buildRequestLogEntry(
+      request({ originalUrl: "/api/v1/boards/board-1" }),
+      response503,
+      Date.now(),
+    );
+    expect(entry.backpressure).toBe("board_read");
+    expect(entry.rateLimited).toBeUndefined();
   });
 
   it("marks admin and anonymous callers without inventing ids", () => {
