@@ -374,6 +374,12 @@ export class ApprovalsService {
     requirement: PlanRequirement;
     policy: BoardAgentPolicy;
     prepared: PreparedCommand[];
+    /**
+     * A board snapshot the caller already loaded for classification/limits
+     * (TASK-200.4). Without it this seam would load the aggregate a second
+     * time just to count plan card creates.
+     */
+    board?: Board;
   }): Promise<void> {
     const { boardId, principal, plan, requirement, policy } = params;
     if (principal?.via !== "pat") return;
@@ -423,7 +429,13 @@ export class ApprovalsService {
         throw this.approvalRequired(existing);
       }
     }
-    await this.assertPlanLimitsForUser(plan, policy, params.userId, boardId);
+    await this.assertPlanLimitsForUser(
+      plan,
+      policy,
+      params.userId,
+      boardId,
+      params.board,
+    );
     const row = await this.createRow({
       boardId,
       userId: params.userId,
