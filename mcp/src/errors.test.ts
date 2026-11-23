@@ -5,6 +5,7 @@ import {
   describeError,
   errorStructuredContent,
   isRateLimited,
+  isTransientNetworkError,
   parseRetryAfter,
   rateLimitDelayMs,
 } from "./errors.js";
@@ -322,6 +323,28 @@ describe("rate-limit retry policy (TASK-200.3)", () => {
       ),
     ).toBe(true);
     expect(isRateLimited(new Error("fetch failed"))).toBe(false);
+  });
+
+  it("treats board-read backpressure as transient", () => {
+    expect(
+      isTransientNetworkError(
+        new ApiError(503, {
+          code: "board_read_busy",
+          retryable: true,
+          retryAfter: 2,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientNetworkError(
+        new ApiError(503, { code: "board_read_timeout", retryable: true }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientNetworkError(
+        new ApiError(503, { code: "board_write_timeout" }),
+      ),
+    ).toBe(true);
   });
 
   it("explains the exhausted automatic retry without inviting a spin", () => {

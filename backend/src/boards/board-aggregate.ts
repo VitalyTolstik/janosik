@@ -65,6 +65,22 @@ export async function loadBoardAggregate(
     board?: BoardRow;
   } = {},
 ): Promise<BoardAggregate | null> {
+  const loaded = await loadBoardAggregateWithRevision(db, boardId, options);
+  return loaded === null ? null : loaded.board;
+}
+
+/**
+ * TASK-200.6: the aggregate together with the `Board.aggregateRevision` it
+ * was built from. The read path needs both in the same REPEATABLE READ
+ * snapshot; returning them from one load avoids a second Board SELECT.
+ */
+export async function loadBoardAggregateWithRevision(
+  db: Prisma.TransactionClient,
+  boardId: string,
+  options: {
+    board?: BoardRow;
+  } = {},
+): Promise<{ board: BoardAggregate; revision: bigint } | null> {
   const board =
     options.board ??
     (await db.board.findFirst({
@@ -110,7 +126,10 @@ export async function loadBoardAggregate(
     }),
   ]);
 
-  return toBoardAggregate(board, columns, cards, labels, links);
+  return {
+    board: toBoardAggregate(board, columns, cards, labels, links),
+    revision: board.aggregateRevision,
+  };
 }
 
 /**

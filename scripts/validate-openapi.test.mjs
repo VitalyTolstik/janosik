@@ -44,6 +44,28 @@ test("publishes the same error codes as the shared contract and describes token 
   );
 });
 
+test("publishes board-read backpressure as retryable with Retry-After", async () => {
+  const { spec } = await validateOpenApi();
+  const { ApiErrorCode } = spec.components.schemas;
+  assert.ok(ApiErrorCode.enum.includes("board_read_busy"));
+  assert.ok(ApiErrorCode.enum.includes("board_read_timeout"));
+  assert.match(
+    spec.components.headers["Retry-After"].description,
+    /board_read_busy.*board_read_timeout/,
+  );
+  const unavailable = spec.components.responses.BoardReadUnavailable;
+  assert.ok(unavailable.headers["Retry-After"]);
+  assert.match(unavailable.description, /board_read_busy/);
+  assert.match(unavailable.description, /board_read_timeout/);
+  const getBoard = spec.paths["/boards/{boardId}"].get;
+  assert.ok(getBoard.responses["304"]);
+  assert.ok(getBoard.responses["503"]);
+  assert.match(
+    getBoard.responses["304"].headers["Cache-Control"]["$ref"],
+    /PrivateNoStore/,
+  );
+});
+
 test("keeps the attention type enum in sync with the shared contract", async () => {
   const { spec } = await validateOpenApi();
   const { AttentionNotification } = spec.components.schemas;

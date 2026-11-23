@@ -51,6 +51,11 @@ import { TokenScope } from "@/auth/token-scope.decorator";
 import { CurrentUser } from "@/auth/current-user.decorator";
 import { JwtAuthGuard } from "@/auth/jwt-auth.guard";
 import { BoardRoles } from "@/common/board-roles.decorator";
+import {
+  BOARD_FULL_PROJECTION,
+  BOARD_READ_ROUTE,
+  BoardReadService,
+} from "@/common/board-read.service";
 import { CurrentMembership } from "@/common/current-membership.decorator";
 import {
   hashIdempotentRequest,
@@ -138,6 +143,7 @@ export class BoardsController {
     private readonly approvals: ApprovalsService,
     private readonly idempotency: IdempotencyService,
     private readonly commands: CommandsService,
+    private readonly boardRead: BoardReadService,
     private readonly ready: ReadyService,
   ) {}
 
@@ -399,17 +405,58 @@ export class BoardsController {
     }
   }
 
+  /**
+   * Full board aggregate with the TASK-200.6 read path: conditional `304`,
+   * single-flight, a bounded semaphore and negotiated gzip/Brotli.
+   *
+   * Ordering is deliberate: `MembershipGuard` has already answered 401/404/403
+   * and resolved the role before any validator is compared, so a foreign
+   * caller cannot get a 304 (or any board metadata) by presenting an ETag.
+   * `X-Board-Seq` stays on both 200 and 304, so a client that revalidates can
+   * still advance its SSE resume baseline.
+   */
+
   @UseGuards(MembershipGuard)
   @Get(":id")
   async get(
     @Param("id") id: string,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<BoardAggregate> {
-    const { board, seq } = await this.boards.getAggregateWithSeq(id);
-    // The client needs the seq this aggregate reflects to resume the SSE
-    // stream exactly after it (TASK-30); the body stays the plain aggregate.
-    res.setHeader("X-Board-Seq", String(seq));
-    return board;
+    @CurrentMembership() membership: BoardMember,
+    @Headers("accept-encoding") acceptEncoding: string | undefined,
+    @Headers("if-none-match") ifNoneMatch: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const result = await this.boardRead.read(
+      {
+        boardId: id,
+        role: membership.role,
+        projection: BOARD_FULL_PROJECTION,
+        route: BOARD_READ_ROUTE,
+        acceptEncoding,
+        ifNoneMatch,
+      },
+      {
+        stamp: (budget) => this.boards.getReadStamp(id, budget),
+        build: (budget) =>
+          this.boards.getAggregateWithSeq(id, undefined, budget),
+      },
+    );
+    // Board JSON is private and must not be stored by a browser or shared
+    // cache. Clients still send If-None-Match explicitly; `no-store` only
+    // stops an automatic cache from replaying another principal's body.
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Accept-Encoding");
+    res.setHeader("ETag", result.etag);
+    res.setHeader("X-Board-Seq", String(result.seq));
+    if (result.status === 304) {
+      res.status(304).end();
+      return;
+    }
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    if (result.encoding !== "identity") {
+      res.setHeader("Content-Encoding", result.encoding);
+    }
+    res.setHeader("Content-Length", String(result.body.byteLength));
+    res.status(200).end(result.body);
   }
 
   @UseGuards(MembershipGuard)

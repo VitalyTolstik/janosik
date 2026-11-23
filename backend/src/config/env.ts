@@ -261,6 +261,52 @@ export const env = cleanEnv(process.env, {
     default: 1500,
     example: "1500",
   }),
+  // TASK-200.6: bound concurrent full board reads. They are the largest
+  // transient allocation on the read path; a 500-reader burst must queue or
+  // receive a polite 503 instead of building 500 aggregates at once.
+  // Single-flight runs before the semaphore, so identical requests share one
+  // slot. `BOARD_READ_TIMEOUT_MS` is one shared deadline for stamp + queue +
+  // Prisma transaction + encode (minimum 300 ms); each stage gets only the
+  // remaining budget, never a fresh full one. `BOARD_READ_WAIT_MS` caps the
+  // semaphore wait and Prisma `maxWait`; with WAIT_MS=0 there is no queue or
+  // pool wait, while stamp/transaction still use the shared deadline.
+  // `maxWait + transaction timeout` stay within that deadline. P2028/P2024 maps to `503 board_read_timeout`/`board_read_busy`
+  // with `Retry-After`, never an unhandled 500.
+  //
+  // The cap is per process, not cluster-wide. The default 16 may exceed the
+  // default `DB_CONNECTION_LIMIT=10`: extra builds then wait in Prisma's pool
+  // for at most WAIT_MS and answer `503 board_read_busy`. Set CAP at or below
+  // the pool if you want the semaphore to keep pool waits at zero.
+  BOARD_READ_CAP: positiveInt({
+    desc: "Full board aggregates built concurrently per process (TASK-200.6; per-process cap, not cluster-wide; may exceed DB_CONNECTION_LIMIT)",
+    default: 16,
+    example: "16",
+  }),
+  BOARD_READ_QUEUE_MAX: nonNegativeInt({
+    desc: "Board reads allowed to wait for a slot; beyond this the answer is 503 Retry-After",
+    default: 256,
+    example: "256",
+  }),
+  BOARD_READ_WAIT_MS: nonNegativeInt({
+    desc: "Max time a board read waits for a concurrency slot before 503 Retry-After",
+    default: 10_000,
+    example: "10000",
+  }),
+  BOARD_READ_TIMEOUT_MS: positiveInt({
+    desc: "Shared deadline for one full board read (stamp + slot + build + encode, min 300); caps the Prisma transaction before 503",
+    default: 20_000,
+    example: "20000",
+  }),
+  BOARD_READ_RETRY_AFTER_SECONDS: positiveInt({
+    desc: "Retry-After seconds advertised by board-read backpressure (TASK-200.6)",
+    default: 2,
+    example: "2",
+  }),
+  BOARD_READ_COMPRESS_MIN_BYTES: nonNegativeInt({
+    desc: "Bodies smaller than this stay uncompressed on GET /boards/:id",
+    default: 1024,
+    example: "1024",
+  }),
   // Reverse-proxy hops in front of the API (TASK-91). 0 (default) trusts no
   // proxy, so `req.ip` is the socket address. Behind one nginx set it to the
   // exact hop count: the throttler, the admin IP allowlist and the session

@@ -371,6 +371,27 @@ describe("JanosikClient.command outcomes", () => {
     );
   });
 
+  it("retries full-read backpressure (503 board_read_busy) as transient", async () => {
+    let attempt = 0;
+    vi.stubGlobal("fetch", () => {
+      attempt += 1;
+      return Promise.resolve(
+        attempt === 1
+          ? json({ code: "board_read_busy", retryable: true }, 503)
+          : json({
+              id: "b1",
+              title: "Board",
+              columns: [],
+              cards: {},
+              labels: [],
+            }),
+      );
+    });
+    const client = new JanosikClient("http://api.test", "t");
+    await client.getBoard("b1");
+    expect(attempt).toBe(2);
+  });
+
   it("retries a busy board (503 board_write_timeout)", async () => {
     let attempt = 0;
     vi.stubGlobal("fetch", () => {
