@@ -264,6 +264,11 @@ JANOSIK_PROXY_IMAGE=caddy:2-alpine \
   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --wait
 ```
 
+Caddy по умолчанию работает по HTTP на `PORT`. Чтобы завершать TLS в Caddy,
+замените `:8080` в `deploy/scale/Caddyfile` на домен, уберите `auto_https off`,
+смените маппинг портов прокси на `80:80` и `443:443` и оставьте
+`PUBLIC_ORIGIN=https://…`.
+
 Переопределить число реплик (по умолчанию 3) на один запуск:
 
 ```bash
@@ -279,6 +284,14 @@ docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d \
 | --- | --- | --- | --- | --- | --- |
 | 4 vCPU / 8 ГБ | 3 | 1.0 / 1536 МБ | 768 МБ | 10 (всего 30) | 2000 (всего 6000) |
 | 16 vCPU / 32 ГБ | 4 | 3.0 / 5 ГБ | 3.5 ГБ | 15 (всего 60) | 5000 (всего 20000) |
+
+Прокси входит в бюджет хоста: `PROXY_CPUS=0.5` / `PROXY_MEMORY_LIMIT=512M` на
+4 vCPU/8 ГБ и `1.0` / `1G` на 16 vCPU/32 ГБ, `PROXY_NOFILE=131072`.
+`deploy/scale/nginx-main.conf` поднимает nginx до `worker_connections 65536` и
+`worker_rlimit_nofile 131072`; стандартных 1024 соединений мало для
+документированных 6k/20k потоков. В production — 2–4 реплики; одна только для
+отката. Это отправные точки: живой горизонтальный прогон S2/S3 для этого
+изменения не выполнялся; гейт ёмкости остаётся за TASK-200.14.
 
 Держите `реплики × DB_CONNECTION_LIMIT + ~10 < POSTGRES_MAX_CONNECTIONS` с
 запасом на миграции и admin CLI. На большом хосте увеличьте
@@ -312,21 +325,30 @@ SSE-рассылка по доскам, инвалидация кэшей и з�
 недоступен, readiness отвечает `503`, ограничитель переходит на счётчики
 каждой реплики, а межреплиционная SSE-рассылка останавливается до восстановления.
 
-Известное состояние на реплику: **presence** (кто находится на доске) хранится
-в процессе, а агентские бюджеты TASK-200.3 (сессия/доска) и ограниченная
-очередь команд доски тоже локальны. При N репликах их эффективный потолок —
-N× от настроенного; держите значения консервативными и полагайтесь на общий
-`THROTTLE_LIMIT` на принципала как на основной предохранитель.
+Redis делает кластерными **не все** ограничители. В кластере общие: счётчики
+глобального throttler на принципала и живые правки `THROTTLE_LIMIT`. Общие через
+Redis, пока он доступен, с локальным fallback: login backoff. На реплику
+(эффективный потолок N×): `BOARD_READ_CAP`, пер-пользовательский лимит из
+панели, явные и стандартные лимиты API-токенов, агентские бюджеты TASK-200.3
+(сессия/доска) и очередь команд доски, лимиты публичных share-токенов и OG,
+SSE-лимиты instance/user/board (анонимные share-потоки ограничены на instance и
+доску), presence и TTL-кэши (инвалидация между репликами, fallback по TTL).
+Держите значения консервативными и полагайтесь на общий `THROTTLE_LIMIT` на
+принципала как на основной предохранитель.
 
 ### Прокси, раскатка и откат
 
-Конфиги лежат в `deploy/scale/nginx.conf` и `deploy/scale/Caddyfile`: gzip для
-несжатого текста/JSON, отсутствие буферизации SSE (`proxy_buffering off` /
-`flush_interval -1`), таймауты 3600 с, загрузки до 30 МБ, отключённая
-буферизация запросов для upload-маршрутов и `/healthz`. nginx также кэширует
-контентно-хэшированные `/_astro/` и `/app/assets/` на 7 дней; Caddy
-проксирует статику без дополнительного кэша. Проверка без запуска контейнеров:
-`npm run deploy:test`. Живая проверка SSE между репликами на Linux-хосте:
+Конфиги лежат в `deploy/scale/nginx-main.conf`, `deploy/scale/nginx.conf` и
+`deploy/scale/Caddyfile`. Главный конфиг nginx поднимает
+`worker_connections` до 65 536 и `worker_rlimit_nofile` до 131 072 (стандартных
+1024 мало для документированных потоков); оба прокси используют retry и
+пассивную проверку отказов. SSE-маршруты — 3600 с без буферизации, обычные
+API-запросы — 90 с (с запасом на 60-секундный ready long-poll), загрузки/
+скачивания — длинный таймаут. nginx кэширует
+контентно-хэшированные `/_astro/` и `/app/assets/` на 7 дней; Caddy проксирует
+статику без дополнительного кэша. `/healthz` на обоих проверяет readiness API.
+Проверка без запуска контейнеров: `npm run deploy:test`. Живая проверка SSE
+между репликами на Linux-хосте:
 `JANOSIK_TOKEN=… JANOSIK_BOARD_ID=… node deploy/scale/smoke-sse.mjs`;
 unit-smoke входит в обычный backend-набор.
 
@@ -336,15 +358,17 @@ COMPOSE="docker compose -f docker-compose.yml -f docker-compose.scale.yml"
 # Та же последовательность есть в deploy/scale/rollout.sh.
 $COMPOSE pull
 $COMPOSE run --rm migrate                 # только если релиз меняет схему
-$COMPOSE up -d --no-deps --scale app=3 app --wait
+$COMPOSE up -d --no-deps app --wait       # число реплик из API_REPLICAS/.env
 $COMPOSE exec -T proxy nginx -s reload    # для Caddy: caddy reload
 curl -fsS http://localhost:3000/api/v1/health/ready
 ```
 
-Compose не является zero-downtime оркестратором: реплики пересоздаются по
-очереди, прокси повторяет запрос на другую реплику при ошибке соединения, а
-SSE переподключается с `?since=`. Если потеря запросов недопустима, используйте
-Swarm или Kubernetes.
+Обычный Compose пересоздаёт сервис API целиком, поэтому возможен короткий
+интервал без готовой реплики. Прокси повторяет запрос на другой upstream, SSE
+переподключается с `?since=`; это не zero-downtime раскатка. Если потеря
+запросов недопустима, используйте Swarm или Kubernetes.
+`deploy/scale/rollout.sh` выполняет ту же последовательность и никогда не
+передаёт устаревший `--scale`.
 
 Откат к **одной реплике за тем же прокси**:
 
@@ -458,7 +482,7 @@ Yandex и Mail.ru нужен пароль приложения при включ
 | `BOARD_READ_WAIT_MS` / `BOARD_READ_TIMEOUT_MS` | `10000` / `20000` | Максимальное ожидание semaphore/pool / **один общий deadline ответа** (stamp + wait + build + encode) до `503 board_read_busy`/`board_read_timeout`. Таймаут должен быть больше ожидания и не меньше `300` мс. Каждая стадия получает только остаток бюджета, поэтому conditional miss не складывает WAIT+TIMEOUT. `WAIT_MS=0` отключает очередь semaphore и pool wait, но stamp и транзакция используют общий deadline. Read-транзакция получает `timeout` = остаток минус encode-margin и `maxWait=min(WAIT_MS,budget)` при `WAIT_MS>0` (`WAIT_MS=0` => 0), с зарезервированным transaction slice, чтобы `maxWait+timeout` не превышал deadline; P2010/57014, P2024/P2028 становятся 503, а не 500. Уже отправленный запрос не отменяется, но истекает по этому budget. |
 | `BOARD_READ_RETRY_AFTER_SECONDS` | `2` | `Retry-After`, который отдаётся при отказе полного чтения доски. |
 | `BOARD_READ_COMPRESS_MIN_BYTES` | `1024` | Тела меньше этого размера не сжимаются в `GET /boards/:id`; большие проходят согласование gzip/Brotli и всегда отправляют `Vary: Accept-Encoding`. |
-| `TRUST_PROXY` | `0` | Число доверенных хопов обратного прокси. Задайте `1` за одним прокси. |
+| `TRUST_PROXY` | `0` (не задан в `.env.example`) | Число доверенных хопов обратного прокси. Задайте `1` за одним прокси; scale-overlay по умолчанию даёт `1`, если значение не задано. `2` — если впереди ещё внешний TLS-прокси. |
 | `UPLOAD_DIR` | пусто | Корень блобов для вложений и аватаров. Пусто означает `backend/data/uploads`; относительное значение привязывается к пакету backend, а не к рабочему каталогу процесса. |
 | `STATIC_DIR` | пусто | Каталог собранного интерфейса. Пусто означает только API. Образ задаёт `/app/public`. Встроенные скрипты отсюда разрешены хешами CSP, вычисленными при запуске, поэтому после пересборки интерфейса перезапустите API. |
 | `SITE_DIR` | пусто | Каталог собранного маркетингового сайта, отдаваемый по `/`. Пусто означает, что он не отдаётся. Образ задаёт `/app/site`. |
@@ -506,6 +530,8 @@ Compose также читает переменные, которые API не п
 | `API_REPLICAS` | `3` | Число реплик для overlay `docker-compose.scale.yml`; `--scale app=N` переопределяет его на один запуск. |
 | `API_CPUS` / `API_MEMORY_LIMIT` | `1.0` / `1536M` | Лимиты CPU и памяти на реплику в scale-overlay. Куча V8 должна быть меньше лимита памяти. |
 | `API_NOFILE` | `65536` | `ulimits.nofile` на реплику. |
+| `PROXY_CPUS` / `PROXY_MEMORY_LIMIT` | `0.5` / `512M` | Лимиты CPU/памяти прокси; на 16 vCPU/32 ГБ — `1.0` / `1G`. |
+| `PROXY_NOFILE` | `131072` | `ulimits.nofile` прокси для клиентских и upstream SSE-соединений. |
 | `JANOSIK_PROXY_IMAGE` | `nginx:1.27-alpine` | Образ прокси для scale-overlay; `caddy:2-alpine` включает встроенный Caddyfile. |
 | `MIGRATE_ON_BOOT` | `true` | Entrypoint применяет `prisma migrate deploy` до запуска API. Scale-overlay ставит `false` и запускает одноразовый сервис `migrate`. |
 

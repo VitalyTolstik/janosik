@@ -8,6 +8,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.12 review hardening. The scaled nginx proxy now mounts a full
+  `deploy/scale/nginx-main.conf` with `worker_connections 65536` and
+  `worker_rlimit_nofile 131072` (the stock 1024 would cap the documented
+  6k/20k streams), a shared upstream zone, `proxy_next_upstream_tries 0` across
+  3–4 replicas, and proxy `PROXY_CPUS`/`PROXY_MEMORY_LIMIT`/`PROXY_NOFILE`
+  sizing. SSE (`boards/:id/events`, `share/:token/events`) has a separate
+  3600 s no-buffer location; ordinary API requests use 90 s (covering the 60 s
+  ready long-poll), uploads and attachment/avatar reads keep the long timeout,
+  and the upload regex now
+  matches `users/*/avatar`, `boards/import` and attachment content/thumbnail/
+  poster. Caddy gained `lb_try_duration`/`fail_duration`/`max_fails`, an SSE
+  handle block, and proxies `/healthz` to the readiness probe. `.env.example`
+  leaves `TRUST_PROXY` unset so the overlay default of 1 is not defeated.
+  `deploy/scale/rollout.sh` no longer forces `--scale`, reads/validates the
+  configured `API_REPLICAS` (2–4, 1 for rollback), and states honestly that
+  plain Compose re-creates the service as a unit. Redis shutdown uses one
+  bounded quit helper for the throttler, realtime, health and login-backoff
+  clients. Docs now scope every limiter (cluster-wide global throttler and
+  live limit edits; Redis-shared login backoff; per-replica panel/token/agent/
+  share/SSE/presence state), note the 2–4 range and proxy budget, and record
+  that no live horizontal S2/S3 run was performed; TASK-200.14 remains the
+  gate. Tests: hermetic `.env.example` Compose renders for 1/3/4 replicas,
+  an invalid `API_REPLICAS` case, pinned `nginx:1.27-alpine` full-config syntax,
+  Caddy validate, entrypoint `MIGRATE_ONLY`/`MIGRATE_ON_BOOT`, rollout
+  no-`--scale`/range, and SSE `?since=` preservation.
+
 - TASK-200.12 horizontal API scaling. `docker-compose.scale.yml` is an optional
   overlay on the self-host stack that runs 2–4 API replicas behind one nginx
   (default) or Caddy proxy, with a one-shot `migrate` service so replicas boot

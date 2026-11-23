@@ -22,7 +22,9 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   The proxy adds gzip, keeps SSE unbuffered (`?since=` reconnect, no sticky
   sessions), passes uploads through, and the shared Redis contour keeps
   throttler counters and master-panel limit edits consistent across replicas.
-  Per-replica presence, agent budgets and SSE caps remain local; see
+  nginx ships a full main config sized for the documented streams. Plain
+  Compose is not zero-downtime, and per-replica presence, token/agent budgets,
+  public-share limits and SSE caps remain local; see
   [Self-hosting](/docs/self-hosting/).
 - Admins can open the same read-only edit history from a card, a user's
   comments or the comments table; deleted rows hide the link and return no
