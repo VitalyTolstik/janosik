@@ -256,6 +256,43 @@ export const env = cleanEnv(process.env, {
     default: 1500,
     example: "1500",
   }),
+  // TASK-200.6: bound concurrent full board reads. They are the largest
+  // transient allocation on the read path; a 500-reader burst must queue or
+  // receive a polite 503 instead of building 500 aggregates at once.
+  // Single-flight runs before the semaphore, so identical requests share one
+  // slot. `BOARD_READ_WAIT_MS` bounds the queue wait and
+  // `BOARD_READ_TIMEOUT_MS` bounds the whole build/serialize/compress step;
+  // both surface as `503` with `Retry-After`, never as an unhandled timeout.
+  BOARD_READ_MAX_CONCURRENT: positiveInt({
+    desc: "Full board aggregates built concurrently per process (TASK-200.6)",
+    default: 16,
+    example: "16",
+  }),
+  BOARD_READ_QUEUE_MAX: nonNegativeInt({
+    desc: "Board reads allowed to wait for a slot; beyond this the answer is 503 Retry-After",
+    default: 256,
+    example: "256",
+  }),
+  BOARD_READ_WAIT_MS: nonNegativeInt({
+    desc: "Max time a board read waits for a concurrency slot before 503 Retry-After",
+    default: 10_000,
+    example: "10000",
+  }),
+  BOARD_READ_TIMEOUT_MS: positiveInt({
+    desc: "Max total time for one full board read (slot + build + encode) before 503",
+    default: 20_000,
+    example: "20000",
+  }),
+  BOARD_READ_RETRY_AFTER_SECONDS: positiveInt({
+    desc: "Retry-After seconds advertised by board-read backpressure (TASK-200.6)",
+    default: 2,
+    example: "2",
+  }),
+  BOARD_READ_COMPRESS_MIN_BYTES: nonNegativeInt({
+    desc: "Bodies smaller than this stay uncompressed on GET /boards/:id",
+    default: 1024,
+    example: "1024",
+  }),
   // Reverse-proxy hops in front of the API (TASK-91). 0 (default) trusts no
   // proxy, so `req.ip` is the socket address. Behind one nginx set it to the
   // exact hop count: the throttler, the admin IP allowlist and the session

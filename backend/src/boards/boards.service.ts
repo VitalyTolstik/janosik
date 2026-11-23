@@ -504,6 +504,42 @@ export class BoardsService {
   }
 
   /**
+   * TASK-200.6: the cheap metadata behind the board read validator.
+   *
+   * `seq` covers every command-log write; `Board.updatedAt` covers the few
+   * board-metadata writes that do not advance it (agent policy/pause, admin
+   * restore). Both are monotonic enough for a weak ETag: a change in either
+   * invalidates the old validator, and a false 304 would require both values
+   * to be identical while the representation changed. This deliberately does
+   * not load columns/cards/labels, so a conditional request that answers 304
+   * never pays for the aggregate.
+   */
+  async getReadStamp(
+    boardId: string,
+  ): Promise<{ seq: number; updatedAt: number } | null> {
+    // One statement, one MVCC snapshot. Two independent Prisma reads could
+    // observe `updatedAt` from before a policy update and `seq` from after a
+    // card command (or vice versa), which would let a conditional request
+    // match a stale stamp. A scalar subquery keeps the pair coherent without
+    // opening a transaction.
+    const rows = await this.prisma.$queryRaw<
+      Array<{ updatedAt: Date; seq: bigint | null }>
+    >(Prisma.sql`
+      SELECT b."updatedAt" AS "updatedAt",
+             (SELECT MAX(c."seq") FROM "Command" c WHERE c."boardId" = b."id") AS "seq"
+      FROM "Board" b
+      WHERE b."id" = ${boardId} AND b."deletedAt" IS NULL
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (row === undefined) return null;
+    return {
+      seq: row.seq === null ? 0 : Number(row.seq),
+      updatedAt: row.updatedAt.getTime(),
+    };
+  }
+
+  /**
    * Cards on a board whose title, description, a checklist item, a comment or
    * a visible attachment file name matches `q` (case-insensitive substring).
    * Comments and attachments live outside the board aggregate, so this is the

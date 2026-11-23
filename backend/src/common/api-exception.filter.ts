@@ -45,8 +45,15 @@ export class ApiExceptionFilter implements ExceptionFilter {
     // ThrottlerExceptions).
     // TASK-200.3: the queued command answer is `503 rate_limited`; it is the
     // same backpressure signal and must not be logged as an unexpected 5xx.
+    // TASK-200.6: a board read refused by its semaphore is deliberate
+    // backpressure too. It is not a rate-limit budget, but it must not spam
+    // the error log with a stack per request during a read burst.
     const backpressure =
-      status === 429 || (status === 503 && body.code === "rate_limited");
+      status === 429 ||
+      (status === 503 &&
+        (body.code === "rate_limited" ||
+          body.code === "board_read_busy" ||
+          body.code === "board_read_timeout"));
     if (backpressure) this.traffic?.recordThrottled();
     if (status >= 500 && !backpressure) {
       const detail =
