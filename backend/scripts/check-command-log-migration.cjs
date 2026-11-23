@@ -1,11 +1,13 @@
-// TASK-200.11 migration check. Creates two throwaway databases on the existing
+// TASK-200.11 migration check. Creates four throwaway databases on the existing
 // test PostgreSQL server (no Docker/containers are started):
 //
 //   * empty    — every migration, including the partition swap, detail side
 //                table, global CommandKey registry and safe-drop helper;
 //   * existing — migrations up to the command-log work, then realistic
-//                Command/CommandDetail/CommandPreimage rows, then all four
-//                TASK-200.11 migrations.
+//                Command/CommandDetail/CommandPreimage rows, then all seven
+//                TASK-200.11 migrations;
+//   * deferred (two databases) — the row-count and physical-size deferred index
+//                branches.
 //
 // It asserts row counts, the details/key backfill, partition routing,
 // PK/sequence, the global id guard, FK cascade, the drop helper and a pruned
@@ -174,6 +176,24 @@ async function seedExisting(prisma) {
     }
   }
 
+  const seqBefore = await scalars(
+    prisma,
+    `SELECT last_value::bigint AS last_value, is_called
+       FROM "Command_seq_seq"`,
+  );
+  const newest = await scalars(
+    prisma,
+    `SELECT id FROM "Command" ORDER BY "seq" DESC LIMIT 1`,
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "CommandPreimage" WHERE "commandId" = $1`,
+    newest[0].id,
+  );
+  await prisma.$executeRawUnsafe(
+    `DELETE FROM "Command" WHERE "id" = $1`,
+    newest[0].id,
+  );
+
   const counts = await scalars(
     prisma,
     `SELECT
@@ -182,7 +202,11 @@ async function seedExisting(prisma) {
        (SELECT count(*)::int FROM "CommandPreimage") AS preimages,
        (SELECT COALESCE(max("seq"), 0)::bigint FROM "Command") AS maxseq`,
   );
-  return counts[0];
+  return {
+    ...counts[0],
+    seqLast: seqBefore[0].last_value,
+    seqCalled: seqBefore[0].is_called,
+  };
 }
 
 async function checkEmpty(prisma) {
@@ -423,6 +447,19 @@ async function checkExisting(prisma, before) {
   );
 
   // A new command keeps the shared sequence and routes to the current month.
+  const seqAfter = await scalars(
+    prisma,
+    `SELECT last_value::bigint AS last_value, is_called
+       FROM "Command_seq_seq"`,
+  );
+  assert(
+    Number(seqAfter[0].last_value) >= Number(before.seqLast),
+    "the migration never moves the sequence backwards",
+  );
+  assert(
+    before.seqCalled !== true || seqAfter[0].is_called === true,
+    "the migration preserves the sequence called state",
+  );
   const inserted = await scalars(
     prisma,
     `INSERT INTO "Command" ("id", "boardId", "actorId", "type", "payload", "result")
@@ -430,8 +467,8 @@ async function checkExisting(prisma, before) {
      RETURNING "seq"::bigint AS seq, tableoid::regclass::text AS part`,
   );
   assert(
-    Number(inserted[0].seq) > Number(before.maxseq),
-    "the shared sequence continues",
+    Number(inserted[0].seq) > Number(before.seqLast),
+    "the next seq is above the old high-water mark",
   );
   assert(
     inserted[0].part.includes("Command_202611"),

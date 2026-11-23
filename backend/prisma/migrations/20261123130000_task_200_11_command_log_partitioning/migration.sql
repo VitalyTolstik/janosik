@@ -325,10 +325,26 @@ ALTER SEQUENCE "Command_seq_seq" OWNED BY NONE;
 ALTER SEQUENCE "Command_seq_seq" OWNED BY "Command"."seq";
 
 DO $$
-DECLARE maxseq bigint;
+DECLARE
+  maxseq     bigint;
+  seq_last   bigint;
+  seq_called boolean;
+  next_last  bigint;
 BEGIN
   SELECT COALESCE(max("seq"), 0) INTO maxseq FROM "Command";
-  PERFORM setval('"Command_seq_seq"', GREATEST(maxseq, 1), maxseq > 0);
+  SELECT last_value, is_called
+    INTO seq_last, seq_called
+    FROM "Command_seq_seq";
+  -- A retention/demo purge may delete the newest command before this
+  -- migration; max(seq) alone would move the sequence backwards and reuse a
+  -- deleted seq, silently breaking deltaSince clients. Keep the high-water
+  -- mark and called state.
+  next_last := GREATEST(maxseq, seq_last, 1);
+  PERFORM setval(
+    '"Command_seq_seq"',
+    next_last,
+    seq_called OR next_last > seq_last
+  );
 END;
 $$;
 

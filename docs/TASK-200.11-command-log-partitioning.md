@@ -101,7 +101,7 @@ Every parent index is inherited by each partition:
   `(boardId, createdAt, seq)`, `(createdAt)`, `(actorId, createdAt)`,
   `(type, createdAt)`, `(apiTokenId, createdAt)`,
   `(agentSessionId, createdAt)`, `(runId)`, GIN `(touches)`.
-- `CommandKey`: PK `(id)`, `(createdAt)`.
+- `CommandKey`: PK `(id)`, `(boardId)`, `(createdAt)`.
 - `CommandDetail`: PK `(commandId, createdAt)`, `(boardId, commandId)`.
   No `(createdAt)` index: months are dropped by name and reads batch by
   board + commandId.
@@ -327,7 +327,8 @@ Migration 3 (`...command_key_registry`, one transaction):
 Migration 4 (`...safe_partition_drop`, one transaction):
 
 1. Recreate `janosik_ensure_command_partition` with the default-partition skip
-   (`skipped:<table>=<rows>`) and expired-month guard.
+   (`skipped:<table>=<rows>`). The expired-month filter lives in
+   `MaintenanceService.ensureCommandPartitions` (TS), not in the SQL helper.
 2. Recreate `janosik_drop_command_partition` with the reader lock order, 2 s
    lock timeout and `-1` retry signal.
 
@@ -449,18 +450,26 @@ missing registry rows before trusting idempotency. Check for duplicate ids
 first (cross-board duplicates cannot be reconciled automatically); then:
 
 ```sql
--- one row per command that has no key at all
+-- one row per command that has no key for its own board
 INSERT INTO "CommandKey" ("id", "boardId", "createdAt")
 SELECT c."id", c."boardId", c."createdAt"
   FROM "Command" c
-  LEFT JOIN "CommandKey" k ON k."id" = c."id"
+  LEFT JOIN "CommandKey" k
+    ON k."id" = c."id" AND k."boardId" = c."boardId"
  WHERE k."id" IS NULL
 ON CONFLICT ("id") DO NOTHING;
 
 -- must be 0; any remainder is a cross-board id conflict needing manual triage
 SELECT count(*) FROM "Command" c
- LEFT JOIN "CommandKey" k ON k."id" = c."id"
+ LEFT JOIN "CommandKey" k
+   ON k."id" = c."id" AND k."boardId" = c."boardId"
  WHERE k."id" IS NULL;
+
+-- key exists but points at a different board: never upsert over it silently
+SELECT c."id", c."boardId" AS command_board, k."boardId" AS key_board
+  FROM "Command" c
+  JOIN "CommandKey" k ON k."id" = c."id"
+ WHERE k."boardId" <> c."boardId";
 ```
 
 ### Runbook: orphan detail rows

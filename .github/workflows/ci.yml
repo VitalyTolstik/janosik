@@ -131,8 +131,8 @@ jobs:
           TASK1806_TEST_REDIS_URL: redis://localhost:6379
           JWT_SECRET: 00000000000000000000000000000000000000000000000000000000000000ff
 
-      # TASK-200.11: build two throwaway databases, seed the pre-migration
-      # schema, apply the four command-log migrations and assert the backfill,
+      # TASK-200.11: build four throwaway databases, seed the pre-migration
+      # schema, apply the seven command-log migrations and assert the backfill,
       # global id registry and safe drop. The service role can create databases.
       - name: Command log migration (empty + existing data)
         run: npm run test:migration:command-log -w backend
