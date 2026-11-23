@@ -22,11 +22,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `commandId` retry is answered from the stored command before the server
   recomputes a lease, move coordinates or the `expectedDescription` check, so
   it is a true replay rather than an `idempotency_conflict`/`version_conflict`.
-  A stable intent fingerprint (including field presence and the authenticated
-  actor, excluding version pins) proves the retry is the same request;
-  refreshed `ifMatchVersions` still replay, and pre-fingerprint rows replay
-  for the same actor during a rolling upgrade. Identical concurrent requests
-  are serialized per `(board, commandId)` in-process. Version conflicts carry
+  A stable v2 intent fingerprint (including field presence and the
+  authenticated actor, excluding version pins) proves the retry is the same
+  request; refreshed `ifMatchVersions` still replay. Rows with a v1 fingerprint
+  or none keep the older action/card/actor semantic match during a rolling
+  upgrade (claim lease length, move position; an unverifiable legacy
+  `expectedDescription` is refused). Identical concurrent requests are
+  serialized per `(board, commandId)` in-process. Version conflicts carry
   the pinned
   `card:`/`column:`/`board:` versions in `versions`, exported in
   `ConflictError`/`ApiErrorEnvelope`. The loader indexes only the card's
@@ -38,8 +40,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors do not promise the header. MCP
   `claim_card`, `release_card`, `move_card` and `update_card` use the targeted
   context/intents: no board read, one-card Definition-of-Done and description
-  checks, a targeted retry after a conflict, and a command-API fallback only
-  when the capability header is absent (a pre-200.7 server). `expectedVersion`
+  checks, a targeted retry after a conflict, and a command-API fallback when
+  the capability header is absent — either a pre-200.7 server or a board-level
+  guard `404`, whose fallback returns the same access error. `expectedVersion`
   remains the explicit full-board `ifMatch = seq` mode; comments already use
   the targeted card route. `janosik_add_comment` is unchanged and never reads
   a board.

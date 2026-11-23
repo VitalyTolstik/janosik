@@ -366,9 +366,11 @@ versions. Use it for a Definition-of-Done check, a release guard or a
 description compare-and-set without calling `GET /boards/:id`. The context
 route answers `X-Janosik-Intent-API: 1` on success and on its genuine
 missing-card `404` (which keeps the standard `ApiErrorEnvelope` and
-`X-Request-Id`). A context `404` without that header is a pre-200.7 server;
-MCP then falls back to the command API. Guard-level `401`/`403`/`429` do not
-promise the header.
+`X-Request-Id`). A context `404` without that header can be a pre-200.7
+server; MCP then falls back to the command API. It can also be a board-level
+guard `404` (for example an unknown board), which is not proof of an old
+server; the fallback then fails with the same access error. Guard-level
+`401`/`403`/`429` do not promise the header.
 
 Every intent body accepts `commandId` (the idempotency key; omitting it lets
 the server mint one, which is safe only when a lost response may create a
@@ -392,12 +394,13 @@ so it never turns into `idempotency_conflict` or `version_conflict`. Identical
 concurrent requests with the same `commandId` are serialized in the API
 process; the second waits for the first and returns its stored result. A
 different intent under the same key still answers `409 idempotency_conflict`
-because the server stores a stable intent fingerprint (including which fields
-were present and the authenticated actor), not the server-derived action.
-Version pins are excluded, so refreshing `ifMatchVersions` on a retry still
-replays the committed write. Command rows written before the fingerprint
-deploy have none; they replay for the same actor/card/type during a rolling
-upgrade. A stale precondition
+because the server stores a stable v2 intent fingerprint (including which
+fields were present and the authenticated actor), not the server-derived
+action. Version pins are excluded, so refreshing `ifMatchVersions` on a retry
+still replays the committed write. Rows with a v1 fingerprint or none at all
+keep the older action/card/actor semantic match during a rolling upgrade; it
+also compares claim lease length and move position, and a legacy patch with
+an unverifiable `expectedDescription` is refused rather than replayed. A stale precondition
 answers `409 version_conflict` with the board `seq` in `currentVersion` and
 the versions of the pinned entities in `versions`; merge those into
 `ifMatchVersions` and retry the same call, or re-read only

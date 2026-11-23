@@ -665,9 +665,10 @@ paths:
         An agent uses it for the Definition-of-Done check, a release guard or
         a compare-and-set description edit before calling a card intent.
         Successful responses and this route's genuine missing-card `404`
-        carry `X-Janosik-Intent-API: 1`; guard-level errors may not. An older
-        server's context `404` lacks the header, which is how an MCP client
-        decides to fall back to the command API.
+        carry `X-Janosik-Intent-API: 1`; guard-level errors may not. A
+        header-less context `404` can mean a pre-200.7 server (MCP may fall
+        back to the command API) or a board-level guard refusal (the fallback
+        then returns the same error).
       responses:
         "200":
           description: The card context.
@@ -682,9 +683,11 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404":
           description: |
-            Board or card not found/card intents unavailable. A card-intent
-            server still sends `X-Janosik-Intent-API: 1`; the standard error
-            envelope and `X-Request-Id` are preserved.
+            This route's own missing-card 404 carries
+            `X-Janosik-Intent-API: 1` and the standard error envelope with
+            `X-Request-Id`. A board-level guard 404 (for example an unknown
+            board) may arrive without the capability header, so clients must
+            not read a header-less 404 as proof of an older server.
           headers:
             X-Janosik-Intent-API:
               $ref: "#/components/headers/X-Janosik-Intent-API"
@@ -3531,8 +3534,9 @@ components:
     X-Janosik-Intent-API:
       description: |
         TASK-200.7 capability marker (`1`) on the card-context route. Its
-        presence on a `404` means the card is genuinely missing; its absence
-        means the server predates card intents.
+        presence on this route's own missing-card `404` means the card is
+        genuinely missing. Its absence can mean a pre-200.7 server or a
+        board-level guard `404`; it is not by itself proof of an old server.
       schema:
         type: string
         enum: ["1"]

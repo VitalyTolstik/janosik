@@ -326,12 +326,16 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   An exact retry with the same `commandId`, actor and intent is a true replay
   even though the server recomputes a lease or move coordinates; refreshed
   `ifMatchVersions` pins do not break it. A different intent, a different
-  actor or a pre-fingerprint row under the same key answers
-  `idempotency_conflict` (the oldest rows without a fingerprint replay only
-  for the same actor). A genuine missing card on a 200.7 server is a normal
-  `not_found` and does **not** fall back; only a context `404` without
-  `X-Janosik-Intent-API: 1` means a pre-200.7 server and triggers the
-  command-API fallback. `expectedVersion` remains the explicit full-board mode
+  actor or a different fingerprinted intent under the same key answers
+  `idempotency_conflict`. Rows with a v1 fingerprint or none at all fall back
+  to the older action/card/actor semantic match (including claim lease length
+  and move position; an unverifiable legacy `expectedDescription` is refused),
+  so the same actor’s matching request replays. A genuine missing card on a
+  200.7 server is a normal
+  `not_found` and does **not** fall back; a context `404` without
+  `X-Janosik-Intent-API: 1` can mean a pre-200.7 server and triggers the
+  command-API fallback, but it can also be a board-level guard `404`, whose
+  fallback returns the same access error. `expectedVersion` remains the explicit full-board mode
   for callers that read
   the whole board: the write is pinned to that `seq` as before. `add_comment`
   calls the already-targeted comment route and never reads a board. Tools that
