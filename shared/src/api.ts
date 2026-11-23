@@ -15,6 +15,7 @@ import type {
   CardCover,
   CardPriority,
   CommentKind,
+  IncomingCardLink,
   Label,
 } from "./types/kanban";
 import type { BoardWorkflow } from "./workflow";
@@ -797,6 +798,11 @@ export interface BoardCardDetailDto {
   version: number;
   linkCount: number;
   blocked: boolean;
+  /**
+   * Incoming relation rows for this card. A summary-only board has no rows
+   * for the source cards, so the detail read carries its own reverse side.
+   */
+  incomingLinks: IncomingCardLink[];
   seq: number;
   atSeq: number;
   aggregateRevision: number;

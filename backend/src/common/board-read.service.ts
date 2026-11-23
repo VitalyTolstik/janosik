@@ -125,6 +125,13 @@ export interface BoardReadRequest {
   route: string;
   acceptEncoding: string | undefined;
   ifNoneMatch: string | undefined;
+  /**
+   * Optional subresource existence check for conditional requests. A
+   * wildcard `If-None-Match: *` is a validator like any other; the cheap
+   * board stamp alone must not answer 304 for a missing/foreign card or
+   * column (TASK-200.9 review).
+   */
+  precheck?: () => Promise<void>;
 }
 
 /** Prisma budget handed to the full-read transaction (TASK-200.6). */
@@ -256,6 +263,10 @@ export class BoardReadService implements OnModuleDestroy {
       // stamp task that never settles would poison every later conditional
       // read, and a joiner could otherwise receive a pre-write 304.
       if (request.ifNoneMatch !== undefined) {
+        // Resolve the exact subresource before comparing validators. The
+        // board-level stamp cannot prove a card/column exists or belongs to
+        // this board, so `If-None-Match: *` must not bypass its 404.
+        await request.precheck?.();
         const stampBudget = this.remainingMs(deadline);
         if (stampBudget <= 0) {
           throw new SingleFlightTimeoutError(this.limits.timeoutMs);

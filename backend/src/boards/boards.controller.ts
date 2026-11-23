@@ -33,6 +33,7 @@ import type {
   BoardSummary,
   BoardsReadyDto,
   DeletedBoardItemsDto,
+  LabelAssignment,
   WorkspaceSearchResult,
 } from "@janosik/shared";
 import {
@@ -563,6 +564,7 @@ export class BoardsController {
           route: BOARD_CARDS_ROUTE,
           acceptEncoding,
           ifNoneMatch,
+          precheck: () => this.readModel.assertCardsInBoard(id, ids),
         },
         deps: {
           stamp: (budget) => this.boards.getReadStamp(id, budget),
@@ -608,6 +610,11 @@ export class BoardsController {
         route: BOARD_CARDS_ROUTE,
         acceptEncoding,
         ifNoneMatch,
+        ...(columnId !== undefined
+          ? {
+              precheck: () => this.readModel.assertColumnInBoard(id, columnId),
+            }
+          : {}),
       },
       deps: {
         stamp: (budget) => this.boards.getReadStamp(id, budget),
@@ -626,6 +633,20 @@ export class BoardsController {
       },
       projection: BOARD_READ_MODEL_VERSION,
     });
+  }
+
+  /**
+   * TASK-200.9: complete label assignment preimage for an undoable
+   * DELETE_LABEL. It is not a board read and carries no card content.
+   */
+  @UseGuards(MembershipGuard)
+  @Get(":id/labels/:labelId/assignments")
+  @Header("Cache-Control", "no-store")
+  labelAssignments(
+    @Param("id") id: string,
+    @Param("labelId") labelId: string,
+  ): Promise<LabelAssignment[]> {
+    return this.readModel.labelAssignments(id, labelId);
   }
 
   /** TASK-200.9: one full card (description, checklists, links). */
@@ -647,6 +668,7 @@ export class BoardsController {
         route: BOARD_CARD_DETAIL_ROUTE,
         acceptEncoding,
         ifNoneMatch,
+        precheck: () => this.readModel.assertCardInBoard(id, cardId),
       },
       deps: {
         stamp: (budget) => this.boards.getReadStamp(id, budget),

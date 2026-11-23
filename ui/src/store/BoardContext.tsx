@@ -153,6 +153,14 @@ function preimageCardIds(
     case "REMOVE_CARD_LINK":
     case "SET_CARD_TASK_SPEC":
       return [action.cardId];
+    case "ARCHIVE_CARD":
+    case "UNARCHIVE_CARD":
+      // Rows are needed to update the targets' blocked facts; a card with
+      // zero links has nothing to update and does not pay a detail request.
+      return (board.cards[action.cardId]?.readModel?.linkCount ?? 0) > 0
+        ? [action.cardId]
+        : [];
+    case "DUPLICATE_COLUMN":
     case "DELETE_COLUMN":
     case "ARCHIVE_COLUMN_CARDS": {
       const column = board.columns.find(
@@ -188,6 +196,12 @@ interface BoardStateValue {
    * background hydration finished (or gave up).
    */
   pendingBoardCount: number;
+  /**
+   * The active board's read-model pages are not fully loaded (a page request
+   * failed after retries). Counts still come from the summary; the views are
+   * incomplete until the next retry.
+   */
+  readModelPartial: boolean;
   /** Non-null while the data is at risk — rendered as a banner. */
   dataIssue: DataIssue | null;
   /**
@@ -495,6 +509,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     serverMode ? "loading" : "ready",
   );
   const [pendingBoardCount, setPendingBoardCount] = useState(0);
+  const [readModelPartialBoards, setReadModelPartialBoards] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
   const [roles, setRoles] = useState<Record<string, BoardRole>>({});
 
   /* eslint-enable react-hooks/refs */
@@ -761,11 +778,55 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // The generation prevents a refetch's pages from being applied after a
   // newer snapshot replaced the board.
   const readModelGenerationRef = useRef(new Map<string, number>());
+  const readModelBaselineRef = useRef(
+    new Map<string, { seq: number; revision: number }>(),
+  );
+  const readModelCompleteRef = useRef(new Map<string, boolean>());
+  const readModelWarnedRef = useRef(new Set<string>());
   const nextReadModelGeneration = useCallback((boardId: string) => {
     const next = (readModelGenerationRef.current.get(boardId) ?? 0) + 1;
     readModelGenerationRef.current.set(boardId, next);
     return next;
   }, []);
+
+  const markReadModelPartial = useCallback(
+    (boardId: string, partial: boolean) => {
+      setReadModelPartialBoards((current) => {
+        if (current.has(boardId) === partial) return current;
+        const next = new Set(current);
+        if (partial) next.add(boardId);
+        else next.delete(boardId);
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** Is this id still in the board's current column/archive scope? */
+  const isCardInScope = useCallback(
+    (boardId: string, cardId: string, columnId?: string): boolean => {
+      const board = stateRef.current.find((entry) => entry.id === boardId);
+      if (board === undefined) return false;
+      if (columnId !== undefined) {
+        return (
+          board.columns
+            .find((column) => column.id === columnId)
+            ?.cardIds.includes(cardId) === true
+        );
+      }
+      return (
+        board.archivedCardIds?.includes(cardId) === true ||
+        board.columns.some((column) => column.cardIds.includes(cardId)) ||
+        board.cards[cardId]?.archivedAt !== undefined
+      );
+    },
+    [],
+  );
+
+  const delay = useCallback(
+    (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    [],
+  );
 
   const hydrateRemainingPages = useCallback(
     async (
@@ -776,24 +837,63 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       const alive = () =>
         aliveRef.current &&
         readModelGenerationRef.current.get(boardId) === generation;
+      const baseline = {
+        seq: summary.atSeq,
+        revision: summary.aggregateRevision,
+      };
+      let failed = false;
+      const fetchPage = async (request: {
+        columnId?: string;
+        archived?: boolean;
+        cursor: string;
+      }): Promise<Awaited<ReturnType<typeof api.listBoardCards>>> => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          if (attempt > 0) await delay(200 * 2 ** (attempt - 1));
+          try {
+            return await api.listBoardCards(boardId, {
+              ...request,
+              limit: READ_MODEL_PAGE,
+            });
+          } catch (error) {
+            lastError = error;
+            const retryable =
+              !(error instanceof ApiError) ||
+              error.status === 0 ||
+              error.status === 408 ||
+              error.status === 429 ||
+              error.status >= 500;
+            if (!retryable) throw error;
+          }
+        }
+        throw lastError;
+      };
       const nextPage = async (
         cursor: string,
         request: { columnId?: string; archived?: boolean },
       ): Promise<void> => {
         let next: string | null = cursor;
         while (next !== null && alive()) {
-          const page = await api.listBoardCards(boardId, {
-            ...request,
-            cursor: next,
-            limit: READ_MODEL_PAGE,
-          });
+          const page = await fetchPage({ ...request, cursor: next });
           if (!alive()) return;
+          // A page from before the summary (or from an older content
+          // revision) must not resurrect deleted cards or hide newer ones.
+          if (
+            page.atSeq < baseline.seq ||
+            page.aggregateRevision < baseline.revision
+          ) {
+            failed = true;
+            return;
+          }
           if (page.cards.length > 0) {
-            apply({
-              type: "HYDRATE_CARDS",
-              boardId,
-              cards: page.cards.map(cardFromSummary),
-            });
+            const scoped = page.cards
+              .filter((card) =>
+                isCardInScope(boardId, card.id, request.columnId),
+              )
+              .map(cardFromSummary);
+            if (scoped.length > 0) {
+              apply({ type: "HYDRATE_CARDS", boardId, cards: scoped });
+            }
           }
           next = page.nextCursor;
         }
@@ -804,18 +904,35 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             ? []
             : [
                 nextPage(column.nextCursor, { columnId: column.id }).catch(
-                  () => undefined,
+                  () => {
+                    failed = true;
+                  },
                 ),
               ],
         ),
       );
       if (summary.archivedNextCursor !== null) {
         await nextPage(summary.archivedNextCursor, { archived: true }).catch(
-          () => undefined,
+          () => {
+            failed = true;
+          },
         );
       }
+      if (!alive()) return;
+      if (failed) {
+        readModelCompleteRef.current.set(boardId, false);
+        markReadModelPartial(boardId, true);
+        if (!readModelWarnedRef.current.has(boardId)) {
+          readModelWarnedRef.current.add(boardId);
+          toast.error(t("sync.loadFailed"));
+        }
+        return;
+      }
+      readModelCompleteRef.current.set(boardId, true);
+      readModelWarnedRef.current.delete(boardId);
+      markReadModelPartial(boardId, false);
     },
-    [apply],
+    [apply, delay, isCardInScope, markReadModelPartial, t, toast],
   );
 
   /**
@@ -863,11 +980,33 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       boardId: string,
       summary: Awaited<ReturnType<typeof api.getBoardSummary>> | null,
     ): void => {
-      if (summary === null) return;
+      if (summary === null) {
+        readModelBaselineRef.current.delete(boardId);
+        readModelCompleteRef.current.delete(boardId);
+        markReadModelPartial(boardId, false);
+        return;
+      }
       const generation = nextReadModelGeneration(boardId);
+      readModelBaselineRef.current.set(boardId, {
+        seq: summary.atSeq,
+        revision: summary.aggregateRevision,
+      });
+      const allIds = [
+        ...summary.columns.flatMap((column) => column.cardIds),
+        ...summary.archivedCardIds,
+      ];
+      const board = stateRef.current.find((entry) => entry.id === boardId);
+      const missing = allIds.some((id) => board?.cards[id] === undefined);
+      // A completed board with every summary id present needs no page
+      // re-download on every focus; SSE already keeps the loaded cards
+      // current. If a resync/new card leaves a hole, hydrate again.
+      if (readModelCompleteRef.current.get(boardId) === true && !missing) {
+        return;
+      }
+      readModelCompleteRef.current.set(boardId, false);
       void hydrateRemainingPages(boardId, summary, generation);
     },
-    [hydrateRemainingPages, nextReadModelGeneration],
+    [hydrateRemainingPages, markReadModelPartial, nextReadModelGeneration],
   );
 
   // One in-flight full-detail request per board:card. The dialog and a
@@ -879,33 +1018,60 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (boardId: string, cardId: string): Promise<Card | null> => {
       const existing = stateRef.current.find((board) => board.id === boardId)
         ?.cards[cardId];
-      if (hasCardDetail(existing)) return Promise.resolve(existing!);
+      if (!serverMode || hasCardDetail(existing)) {
+        return Promise.resolve(existing ?? null);
+      }
       const key = `${boardId}:${cardId}`;
       const running = detailRequestsRef.current.get(key);
       if (running !== undefined) return running;
-      const request = api
-        .getBoardCardDetail(boardId, cardId)
-        .then((detail) => {
-          if (!aliveRef.current) return null;
-          const card = cardFromDetail(detail);
-          apply({ type: "HYDRATE_CARDS", boardId, cards: [card] });
-          return card;
-        })
-        .catch((error: unknown) => {
-          // A card deleted by someone else is a miss, not a crash: the
-          // caller (a deep link) reports it like any unknown card.
-          if (error instanceof ApiError && error.status === 404) return null;
-          throw error;
-        })
-        .finally(() => {
-          if (detailRequestsRef.current.get(key) === request) {
-            detailRequestsRef.current.delete(key);
+      const request = (async (): Promise<Card | null> => {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          if (attempt > 0) await delay(250);
+          try {
+            const detail = await api.getBoardCardDetail(boardId, cardId);
+            if (!aliveRef.current) return null;
+            // A card moved out of the board, archived by another client or
+            // deleted must not be resurrected by a late detail response.
+            if (!isCardInScope(boardId, cardId)) return null;
+            const baseline = readModelBaselineRef.current.get(boardId);
+            if (
+              attempt === 0 &&
+              baseline !== undefined &&
+              (detail.atSeq < baseline.seq ||
+                detail.aggregateRevision < baseline.revision)
+            ) {
+              // One retry for a detail that predates the summary; the second
+              // response is still protected by the reducer's updatedAt guard.
+              continue;
+            }
+            const card = cardFromDetail(detail);
+            apply({ type: "HYDRATE_CARDS", boardId, cards: [card] });
+            return card;
+          } catch (error) {
+            // A card deleted by someone else is a miss, not a crash: the
+            // caller (a deep link) reports it like any unknown card.
+            if (error instanceof ApiError && error.status === 404) return null;
+            lastError = error;
+            const retryable =
+              !(error instanceof ApiError) ||
+              error.status === 0 ||
+              error.status === 408 ||
+              error.status === 429 ||
+              error.status >= 500;
+            if (!retryable) throw error;
           }
-        });
+        }
+        throw lastError;
+      })().finally(() => {
+        if (detailRequestsRef.current.get(key) === request) {
+          detailRequestsRef.current.delete(key);
+        }
+      });
       detailRequestsRef.current.set(key, request);
       return request;
     },
-    [apply],
+    [apply, delay, isCardInScope, serverMode],
   );
 
   /**
@@ -930,14 +1096,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         const chunk = missing.slice(index, index + BOARD_CARD_DETAIL_BATCH_MAX);
         const result = await api.getBoardCardDetails(boardId, chunk);
         if (!aliveRef.current) return false;
-        const cards = result.cards.map(cardFromDetail);
+        const cards = result.cards
+          .filter((detail) => isCardInScope(boardId, detail.card.id))
+          .map(cardFromDetail);
         if (cards.length > 0) {
           apply({ type: "HYDRATE_CARDS", boardId, cards });
         }
       }
       return true;
     },
-    [apply],
+    [apply, isCardInScope],
   );
 
   /** Toast for a command the server refused or the network dropped. */
@@ -2131,7 +2299,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      return sync.enqueue(boardId, scoped).then((outcome) => {
+      // The assignment list is a local inverse preimage, not command data:
+      // keep it out of the command log and the SSE echo.
+      const wireAction =
+        scoped.type === "DELETE_LABEL" &&
+        scoped.preimageAssignments !== undefined
+          ? ({ ...scoped, preimageAssignments: undefined } as BoardAction)
+          : scoped;
+      return sync.enqueue(boardId, wireAction).then((outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
@@ -2215,32 +2390,62 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
       if (!boardId) return;
+      const fail = (error: unknown): false => {
+        if (opts?.silentFailure !== true) {
+          showFailure(
+            error instanceof ApiError && error.offline
+              ? { kind: "offline" }
+              : {
+                  kind: "rejected",
+                  status: error instanceof ApiError ? error.status : 0,
+                },
+          );
+        }
+        return false;
+      };
+      const finish = async (next: BoardAction): Promise<boolean> => {
+        const result = runDispatch(next, opts);
+        return result === undefined ? true : result;
+      };
+      // A label delete removes rows on every card, not just the loaded first
+      // page. Fetch the complete assignment preimage first; undoing from the
+      // loaded subset would silently strip the label from the rest.
+      if (
+        serverMode &&
+        action.type === "DELETE_LABEL" &&
+        action.preimageAssignments === undefined
+      ) {
+        return api
+          .getLabelAssignments(boardId, action.labelId)
+          .then((assignments) =>
+            finish({ ...action, preimageAssignments: assignments }),
+          )
+          .catch((error: unknown) => {
+            // An older server has no preimage route; its legacy full board
+            // already holds every card, so the local inverse is complete.
+            if (
+              error instanceof ApiError &&
+              (error.status === 404 ||
+                error.status === 405 ||
+                error.status === 501)
+            ) {
+              return finish(action);
+            }
+            return fail(error);
+          });
+      }
       const board = stateRef.current.find((entry) => entry.id === boardId);
       const needed = preimageCardIds(action, board).filter(
         (id) => !hasCardDetail(board?.cards[id]),
       );
       if (!serverMode || needed.length === 0) {
+        // Local dispatch must stay synchronous: callers/tests rely on the
+        // optimistic state being visible when the handler returns.
         return runDispatch(action, opts);
       }
       return loadCardDetails(boardId, needed)
-        .then(async (ok) => {
-          if (!ok) return false;
-          const result = runDispatch(action, opts);
-          return result === undefined ? true : result;
-        })
-        .catch((error: unknown) => {
-          if (opts?.silentFailure !== true) {
-            showFailure(
-              error instanceof ApiError && error.offline
-                ? { kind: "offline" }
-                : {
-                    kind: "rejected",
-                    status: error instanceof ApiError ? error.status : 0,
-                  },
-            );
-          }
-          return false;
-        });
+        .then((ok) => (ok ? finish(action) : false))
+        .catch(fail);
     },
     [serverMode, loadCardDetails, runDispatch, showFailure],
   );
@@ -2616,10 +2821,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       archiveBatch,
       boards: state,
       pendingBoardCount,
+      readModelPartial:
+        board?.id !== undefined && readModelPartialBoards.has(board.id),
       dataIssue,
       syncStatus,
     }),
-    [board, state, pendingBoardCount, dataIssue, syncStatus, archiveBatch],
+    [
+      board,
+      state,
+      pendingBoardCount,
+      readModelPartialBoards,
+      dataIssue,
+      syncStatus,
+      archiveBatch,
+    ],
   );
 
   const identity = useMemo<BoardIdentityValue>(
@@ -3296,6 +3511,7 @@ export function ShareBoardProvider({
       archiveBatch: null,
       boards: [board],
       pendingBoardCount: 0,
+      readModelPartial: false,
       dataIssue: null,
       syncStatus: "ready",
     }),

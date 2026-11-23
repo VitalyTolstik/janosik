@@ -958,4 +958,36 @@ describe("invert — MOVE_CARD trusts the board, not the command", () => {
     expect(reduce(before, stale)).toBe(before);
     expect(invert(before, stale)).toBeNull();
   });
+
+  it("does not write an untouched description back on a title-only undo", () => {
+    const before = fixture();
+    const action: BoardAction = {
+      type: "UPDATE_CARD",
+      cardId: "c-1",
+      title: "Renamed",
+      at: AT,
+    };
+    const inverse = invert(before, action);
+    expect(inverse).not.toBeNull();
+    expect(inverse).not.toHaveProperty("description");
+    const after = reduce(before, action);
+    const undone = reduce(after, inverse!);
+    expect(undone.cards["c-1"].description).toBe("Notes");
+    expect(undone.cards["c-1"].title).toBe("Zebra");
+  });
+
+  it("does not rewrite a title on a description-only undo", () => {
+    const before = fixture();
+    const action: BoardAction = {
+      type: "UPDATE_CARD",
+      cardId: "c-1",
+      description: "Changed",
+      at: AT,
+    };
+    const inverse = invert(before, action);
+    expect(inverse).not.toBeNull();
+    expect(inverse).not.toHaveProperty("title");
+    const after = reduce(before, action);
+    expect(reduce(after, inverse!).cards["c-1"].description).toBe("Notes");
+  });
 });

@@ -151,6 +151,16 @@ export class BoardHistory {
         action.type === "TOUCH_CARD"
           ? ({ ...previous.do, at: action.at } as BoardAction)
           : ({ ...previous.do, ...action } as BoardAction);
+      // The inverse of the coalesced run must cover every field either
+      // command touched. Since TASK-200.9 an UPDATE_CARD inverse only
+      // carries the fields its own command changed, so keep the oldest
+      // inverse's fields and fill the gaps from the newer one.
+      if (action.type !== "TOUCH_CARD") {
+        previous.undo = {
+          ...undoAction,
+          ...previous.undo,
+        } as BoardAction;
+      }
     } else if (action.type === "TOUCH_CARD") {
       // A touch with nothing to coalesce into is not a step: it would cost
       // an undo press that only moves a timestamp, and the debounced stamp

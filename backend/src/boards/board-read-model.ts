@@ -21,6 +21,8 @@ import type {
   CardLink,
   CardPriority,
   CoverColor,
+  IncomingCardLink,
+  LabelAssignment,
   CoverGradient,
   LabelColor,
 } from "@janosik/shared";
@@ -149,6 +151,20 @@ const CARD_SUMMARY_SELECT = {
 type CardSummaryRow = Prisma.CardGetPayload<{
   select: typeof CARD_SUMMARY_SELECT;
 }>;
+
+const CARD_DETAIL_INCLUDE = {
+  labels: true,
+  checklists: {
+    where: { deletedAt: null },
+    orderBy: { position: "asc" as const },
+    include: {
+      items: {
+        where: { deletedAt: null },
+        orderBy: { position: "asc" as const },
+      },
+    },
+  },
+} satisfies Prisma.CardInclude;
 
 type CardWithDetail = Prisma.CardGetPayload<{
   include: {
@@ -536,6 +552,69 @@ export class BoardReadModelService {
     });
   }
 
+  /** Conditional-read precheck: a card must exist on this board. */
+  async assertCardInBoard(boardId: string, cardId: string): Promise<void> {
+    const card = await this.prisma.card.findFirst({
+      where: { id: cardId, column: { boardId }, deletedAt: null },
+      select: { id: true },
+    });
+    if (card === null) throw new NotFoundException("Card not found");
+  }
+
+  /** Conditional-read precheck: a column must exist on this board. */
+  async assertColumnInBoard(boardId: string, columnId: string): Promise<void> {
+    const column = await this.prisma.column.findFirst({
+      where: { id: columnId, boardId, deletedAt: null },
+      select: { id: true },
+    });
+    if (column === null) throw new NotFoundException("Column not found");
+  }
+
+  /** Conditional batch precheck: every requested card belongs to the board. */
+  async assertCardsInBoard(boardId: string, ids: string[]): Promise<void> {
+    const unique = [...new Set(ids)];
+    const rows = await this.prisma.card.findMany({
+      where: { id: { in: unique }, column: { boardId }, deletedAt: null },
+      select: { id: true },
+    });
+    if (rows.length !== unique.length) {
+      throw new NotFoundException("Card not found");
+    }
+  }
+
+  /**
+   * Complete label assignment preimage for a DELETE_LABEL undo. Selects only
+   * ids/positions/stamps, never card content, so a 1 000-card board costs one
+   * indexed read instead of loading every page in the client.
+   */
+  async labelAssignments(
+    boardId: string,
+    labelId: string,
+  ): Promise<LabelAssignment[]> {
+    const label = await this.prisma.label.findFirst({
+      where: { id: labelId, boardId, deletedAt: null },
+      select: { id: true },
+    });
+    if (label === null) throw new NotFoundException("Label not found");
+    const rows = await this.prisma.cardLabel.findMany({
+      where: {
+        labelId,
+        card: { column: { boardId }, deletedAt: null },
+      },
+      orderBy: [{ position: "asc" }, { cardId: "asc" }],
+      select: {
+        cardId: true,
+        position: true,
+        card: { select: { updatedAt: true } },
+      },
+    });
+    return rows.map((row) => ({
+      cardId: row.cardId,
+      index: row.position,
+      updatedAt: row.card.updatedAt.getTime(),
+    }));
+  }
+
   async detail(
     boardId: string,
     cardId: string,
@@ -544,10 +623,25 @@ export class BoardReadModelService {
     return this.readTransaction(budget, async (tx) => {
       await this.summaryRow(tx, boardId);
       const card = await this.loadCard(tx, boardId, cardId);
-      const [links, labels, facts, stamp] = await Promise.all([
+      const [links, incoming, labels, facts, stamp] = await Promise.all([
         tx.cardLink.findMany({
           where: { fromCardId: cardId, boardId, deletedAt: null },
           orderBy: [{ position: "asc" }, { id: "asc" }],
+        }),
+        tx.cardLink.findMany({
+          where: {
+            toCardId: cardId,
+            boardId,
+            deletedAt: null,
+            fromCard: { deletedAt: null },
+          },
+          orderBy: [{ position: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            type: true,
+            fromCardId: true,
+            fromCard: { select: { archivedAt: true } },
+          },
         }),
         tx.label.findMany({
           where: { boardId, deletedAt: null },
@@ -563,6 +657,7 @@ export class BoardReadModelService {
         card,
         card.columnId,
         links,
+        this.incomingDtos(incoming),
         labelIds,
         factsForCard,
         stamp,
@@ -586,13 +681,27 @@ export class BoardReadModelService {
     }
     return this.readTransaction(budget, async (tx) => {
       await this.summaryRow(tx, boardId);
-      const rows = await Promise.all(
-        unique.map((id) => this.loadCard(tx, boardId, id)),
-      );
-      const [links, labels, facts, stamp] = await Promise.all([
+      const rows = await this.loadCards(tx, boardId, unique);
+      const [links, incoming, labels, facts, stamp] = await Promise.all([
         tx.cardLink.findMany({
           where: { fromCardId: { in: unique }, boardId, deletedAt: null },
           orderBy: [{ position: "asc" }, { id: "asc" }],
+        }),
+        tx.cardLink.findMany({
+          where: {
+            toCardId: { in: unique },
+            boardId,
+            deletedAt: null,
+            fromCard: { deletedAt: null },
+          },
+          orderBy: [{ position: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            type: true,
+            fromCardId: true,
+            toCardId: true,
+            fromCard: { select: { archivedAt: true } },
+          },
         }),
         tx.label.findMany({
           where: { boardId, deletedAt: null },
@@ -607,6 +716,12 @@ export class BoardReadModelService {
         list.push(link);
         linksByCard.set(link.fromCardId, list);
       }
+      const incomingByCard = new Map<string, IncomingCardLink[]>();
+      for (const link of incoming) {
+        const list = incomingByCard.get(link.toCardId) ?? [];
+        list.push(...this.incomingDtos([link]));
+        incomingByCard.set(link.toCardId, list);
+      }
       const labelIds = new Set(labels.map((label) => label.id));
       return {
         boardId,
@@ -616,6 +731,7 @@ export class BoardReadModelService {
             card,
             card.columnId,
             linksByCard.get(card.id) ?? [],
+            incomingByCard.get(card.id) ?? [],
             labelIds,
             facts.get(card.id) ?? { degree: 0, blocked: false },
             stamp,
@@ -635,22 +751,45 @@ export class BoardReadModelService {
   ): Promise<CardWithDetail> {
     const card = await tx.card.findFirst({
       where: { id: cardId, column: { boardId }, deletedAt: null },
-      include: {
-        labels: true,
-        checklists: {
-          where: { deletedAt: null },
-          orderBy: { position: "asc" },
-          include: {
-            items: {
-              where: { deletedAt: null },
-              orderBy: { position: "asc" },
-            },
-          },
-        },
-      },
+      include: CARD_DETAIL_INCLUDE,
     });
     if (card === null) throw new NotFoundException("Card not found");
     return card;
+  }
+
+  /** One query for a bounded preimage batch, preserving the requested order. */
+  private async loadCards(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    ids: string[],
+  ): Promise<CardWithDetail[]> {
+    const cards = await tx.card.findMany({
+      where: { id: { in: ids }, column: { boardId }, deletedAt: null },
+      include: CARD_DETAIL_INCLUDE,
+    });
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    return ids.flatMap((id) => {
+      const card = byId.get(id);
+      return card === undefined ? [] : [card];
+    });
+  }
+
+  private incomingDtos(
+    links: Array<{
+      id: string;
+      type: string;
+      fromCardId: string;
+      fromCard: { archivedAt: Date | null };
+    }>,
+  ): IncomingCardLink[] {
+    return links
+      .filter((link) => isCardLinkType(link.type))
+      .map((link) => ({
+        id: link.id,
+        type: link.type as CardLink["type"],
+        fromCardId: link.fromCardId,
+        fromArchived: link.fromCard.archivedAt !== null,
+      }));
   }
 
   private detailDto(
@@ -658,6 +797,7 @@ export class BoardReadModelService {
     card: CardWithDetail,
     columnId: string,
     links: CardLinkRow[],
+    incomingLinks: IncomingCardLink[],
     labelIds: Set<string>,
     facts: LinkFacts,
     stamp: { seq: number; revision: number },
@@ -676,6 +816,7 @@ export class BoardReadModelService {
       version: card.version,
       linkCount: facts.degree,
       blocked: facts.blocked,
+      incomingLinks,
       seq: stamp.seq,
       atSeq: stamp.seq,
       aggregateRevision: stamp.revision,

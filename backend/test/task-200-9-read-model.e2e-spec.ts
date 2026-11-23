@@ -307,6 +307,13 @@ describe("Board read model v1 (e2e)", () => {
       .query({ columnId: "col-1", cursor: "not-a-cursor" })
       .set(auth(adminToken))
       .expect(400);
+    // A wildcard validator must not skip the subresource existence check.
+    await server()
+      .get(`/api/v1/boards/${boardId}/cards`)
+      .query({ columnId: "missing-column" })
+      .set(auth(adminToken))
+      .set("If-None-Match", "*")
+      .expect(404);
     // A column from another board is not an id oracle.
     await server()
       .get(`/api/v1/boards/${archivedBoardId}/cards`)
@@ -348,6 +355,14 @@ describe("Board read model v1 (e2e)", () => {
     expect(body.columnId).toBe("col-1");
     expect(body.blocked).toBe(true);
     expect(body.linkCount).toBe(1);
+    expect(body.incomingLinks).toEqual([
+      {
+        id: "link-1",
+        type: "blocks",
+        fromCardId: "card-1",
+        fromArchived: false,
+      },
+    ]);
 
     const viewer = await server()
       .get(`/api/v1/boards/${boardId}/cards/card-2`)
@@ -362,6 +377,22 @@ describe("Board read model v1 (e2e)", () => {
       .set(auth(adminToken))
       .expect(404);
     await server()
+      .get(`/api/v1/boards/${boardId}/cards/missing-card`)
+      .set(auth(adminToken))
+      .set("If-None-Match", "*")
+      .expect(404);
+    await server()
+      .get(`/api/v1/boards/${boardId}/cards/card-2`)
+      .set(auth(adminToken))
+      .set("If-None-Match", "*")
+      .expect(304);
+    await server()
+      .get(`/api/v1/boards/${boardId}/cards`)
+      .query({ ids: "card-1,missing-card", detail: "full" })
+      .set(auth(adminToken))
+      .set("If-None-Match", "*")
+      .expect(404);
+    await server()
       .get(`/api/v1/boards/${boardId}/cards/card-2`)
       .set(auth(outsiderToken))
       .expect(403);
@@ -372,6 +403,20 @@ describe("Board read model v1 (e2e)", () => {
       .expect(200);
     expect((source.body as BoardCardDetailDto).card.links).toEqual([
       { id: expect.any(String), type: "blocks", targetCardId: "card-2" },
+    ]);
+    expect((source.body as BoardCardDetailDto).incomingLinks).toEqual([]);
+
+    const assignments = await server()
+      .get(`/api/v1/boards/${boardId}/labels/label-1/assignments`)
+      .set(auth(adminToken))
+      .expect(200)
+      .expect("Cache-Control", "no-store");
+    expect(assignments.body).toEqual([
+      {
+        cardId: "card-2",
+        index: 0,
+        updatedAt: expect.any(Number),
+      },
     ]);
 
     // Batch preimages are bounded and full-detail only.

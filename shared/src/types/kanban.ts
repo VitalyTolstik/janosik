@@ -141,6 +141,20 @@ export interface CardLink {
 }
 
 /**
+ * TASK-200.9 read-model detail: one incoming relation, loaded with the card
+ * so a summary-only board can render the "is blocked by" side without every
+ * source card's rows. It is UI metadata, never stored in `Card.links` (which
+ * stays the card's own outgoing rows).
+ */
+export interface IncomingCardLink {
+  id: string;
+  type: CardLinkType;
+  fromCardId: string;
+  /** The source is archived, so its `blocks` no longer blocks. */
+  fromArchived: boolean;
+}
+
+/**
  * Read-model metadata for a card that was loaded as a summary (TASK-200.9).
  *
  * The board summary and its per-column pages deliberately omit description
@@ -225,6 +239,12 @@ export interface Card {
    * consumer skips dangling rows instead.
    */
   links?: CardLink[];
+  /**
+   * TASK-200.9 read-model detail metadata: incoming link rows loaded with
+   * this card. Never written back as outgoing rows; the client link index
+   * merges them for the "blocked by"/linked-cards UI.
+   */
+  incomingLinks?: IncomingCardLink[];
   /** Optional decorative cover. Omitted when unset. */
   cover?: CardCover;
   /** References to labels defined on the board; empty when unlabeled. */

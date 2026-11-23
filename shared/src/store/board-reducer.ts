@@ -434,6 +434,12 @@ export interface DeleteLabelAction {
    * cards.
    */
   cardStamps?: readonly LabelCardStamp[];
+  /**
+   * UI-only preimage (TASK-200.9): every assignment the server will remove,
+   * including cards whose summary/page has not loaded yet. `invert` prefers
+   * this list; the wire validator drops it from a fresh command.
+   */
+  preimageAssignments?: readonly LabelAssignment[];
 }
 
 export interface AddChecklistAction {
@@ -1051,7 +1057,18 @@ function deleteCard(board: Board, action: DeleteCardAction): Board {
     ...col,
     cardIds: col.cardIds.filter((id) => id !== action.cardId),
   }));
-  return { ...board, columns, cards };
+  return {
+    ...board,
+    ...(board.archivedCardIds !== undefined
+      ? {
+          archivedCardIds: board.archivedCardIds.filter(
+            (id) => id !== action.cardId,
+          ),
+        }
+      : {}),
+    columns,
+    cards,
+  };
 }
 
 /** Take a card off the board without deleting it — TASK-18.1 archive. */
@@ -1074,14 +1091,59 @@ function archiveCard(
     updatedAt: cardStamp(action),
   };
   nextCard = appendActivity(nextCard, "archived", action, 0, options);
+  const cards = { ...board.cards, [action.cardId]: nextCard };
+  updateTargetsForArchivedSource(board, nextCard, cards, true);
   return {
     ...board,
+    ...(board.archivedCardIds !== undefined
+      ? {
+          archivedCardIds: [
+            ...new Set([...board.archivedCardIds, action.cardId]),
+          ],
+        }
+      : {}),
     columns: board.columns.map((col) => ({
       ...col,
       cardIds: col.cardIds.filter((id) => id !== action.cardId),
     })),
-    cards: { ...board.cards, [action.cardId]: nextCard },
+    cards,
   };
+}
+
+/**
+ * Keep summary link facts current when a blocker is archived/unarchived.
+ * A summary target cannot prove other blockers do not exist, so its
+ * `blocked` stays conservative; a detail-loaded target has the complete
+ * reverse rows and can be recomputed exactly.
+ */
+function updateTargetsForArchivedSource(
+  board: Board,
+  source: Card,
+  cards: Board["cards"],
+  archived: boolean,
+): void {
+  for (const link of source.links ?? []) {
+    if (link.targetCardId === source.id) continue;
+    const target = board.cards[link.targetCardId];
+    if (target?.readModel === undefined) continue;
+    const incomingLinks = (target.incomingLinks ?? []).map((entry) =>
+      entry.id === link.id ? { ...entry, fromArchived: archived } : entry,
+    );
+    let blocked = target.readModel.blocked;
+    if (target.readModel.detailLoaded) {
+      blocked =
+        link.type === "blocks" && !archived
+          ? true
+          : hasLoadedIncomingBlock(board, target.id, "", source.id);
+    } else if (link.type === "blocks" && !archived) {
+      blocked = true;
+    }
+    cards[target.id] = {
+      ...target,
+      readModel: { ...target.readModel, blocked },
+      ...(target.readModel.detailLoaded ? { incomingLinks } : {}),
+    };
+  }
 }
 
 /**
@@ -1118,8 +1180,17 @@ function unarchiveCard(
     0,
     options,
   );
+  const cards = { ...board.cards, [action.cardId]: nextCard };
+  updateTargetsForArchivedSource(board, nextCard, cards, false);
   return {
     ...board,
+    ...(board.archivedCardIds !== undefined
+      ? {
+          archivedCardIds: board.archivedCardIds.filter(
+            (id) => id !== action.cardId,
+          ),
+        }
+      : {}),
     columns: board.columns.map((col) =>
       col.id === column.id
         ? {
@@ -1132,7 +1203,7 @@ function unarchiveCard(
           }
         : col,
     ),
-    cards: { ...board.cards, [action.cardId]: nextCard },
+    cards,
   };
 }
 
@@ -1158,8 +1229,21 @@ function archiveColumnCards(
     nextCard = appendActivity(nextCard, "archived", action, index, options);
     cards[cardId] = nextCard;
   });
+  for (const cardId of column.cardIds) {
+    const nextCard = cards[cardId];
+    if (nextCard?.archivedAt !== undefined) {
+      updateTargetsForArchivedSource(board, nextCard, cards, true);
+    }
+  }
   return {
     ...board,
+    ...(board.archivedCardIds !== undefined
+      ? {
+          archivedCardIds: [
+            ...new Set([...board.archivedCardIds, ...column.cardIds]),
+          ],
+        }
+      : {}),
     columns: board.columns.map((col) =>
       col.id === action.columnId ? { ...col, cardIds: [] } : col,
     ),
@@ -1282,6 +1366,18 @@ function duplicateCard(
     // A fresh copy starts unlinked: the rows belong to the original (and a
     // "duplicates" link to it is the user's call, not an automatic one).
     links: undefined,
+    incomingLinks: undefined,
+    // Summary counters describe the source; the copy has the same list fields
+    // but starts with no relations. Never inherit a stale link_count badge.
+    ...(source.readModel !== undefined
+      ? {
+          readModel: {
+            ...source.readModel,
+            linkCount: 0,
+            blocked: false,
+          },
+        }
+      : {}),
     // The copy is a new card — it starts its own history, not the source's.
     activity: createdActivity(
       activityStamp(action, 0),
@@ -1293,6 +1389,7 @@ function duplicateCard(
   };
   if (copy.activity === undefined) delete copy.activity;
   if (copy.links === undefined) delete copy.links;
+  if (copy.incomingLinks === undefined) delete copy.incomingLinks;
   const columns = board.columns.map((col, index) =>
     index === columnIndex
       ? {
@@ -1357,6 +1454,16 @@ function duplicateColumn(
         : undefined,
       labelIds: [...sourceCard.labelIds],
       links: undefined,
+      incomingLinks: undefined,
+      ...(sourceCard.readModel !== undefined
+        ? {
+            readModel: {
+              ...sourceCard.readModel,
+              linkCount: 0,
+              blocked: false,
+            },
+          }
+        : {}),
       activity: createdActivity(
         activityStamp(action, index),
         options,
@@ -1367,6 +1474,7 @@ function duplicateColumn(
     };
     if (cardCopy.activity === undefined) delete cardCopy.activity;
     if (cardCopy.links === undefined) delete cardCopy.links;
+    if (cardCopy.incomingLinks === undefined) delete cardCopy.incomingLinks;
     cards[cardIds[index]] = cardCopy;
   });
   const copy: Column = {
@@ -2032,21 +2140,54 @@ function addCardLink(
     type: action.linkType,
     targetCardId: target.id,
   };
+  const sourceCard: Card = {
+    ...source,
+    links: [...links, link],
+    updatedAt: cardStamp(action),
+    ...(source.readModel !== undefined
+      ? {
+          readModel: {
+            ...source.readModel,
+            linkCount: source.readModel.linkCount + 1,
+          },
+        }
+      : {}),
+  };
   const nextCard = appendActivity(
-    { ...source, links: [...links, link], updatedAt: cardStamp(action) },
+    sourceCard,
     "link-added",
     action,
     0,
     options,
     target.title,
   );
-  return {
-    ...board,
-    cards: {
-      ...board.cards,
-      [source.id]: nextCard,
-    },
-  };
+  const cards = { ...board.cards, [source.id]: nextCard };
+  if (target.readModel !== undefined) {
+    cards[target.id] = {
+      ...target,
+      readModel: {
+        ...target.readModel,
+        linkCount: target.readModel.linkCount + 1,
+        ...(action.linkType === "blocks" && source.archivedAt === undefined
+          ? { blocked: true }
+          : {}),
+      },
+      ...(target.readModel.detailLoaded
+        ? {
+            incomingLinks: [
+              ...(target.incomingLinks ?? []),
+              {
+                id: link.id,
+                type: link.type,
+                fromCardId: source.id,
+                fromArchived: source.archivedAt !== undefined,
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+  return { ...board, cards };
 }
 
 /**
@@ -2067,9 +2208,21 @@ function removeCardLink(
   const links = source.links ?? [];
   const index = links.findIndex((link) => link.id === action.linkId);
   if (index === -1) return board;
-  const targetTitle = cardOf(board, links[index].targetCardId)?.title;
+  const removed = links[index];
+  const targetTitle = cardOf(board, removed.targetCardId)?.title;
   const nextLinks = links.filter((_, i) => i !== index);
-  const nextCard: Card = { ...source, updatedAt: cardStamp(action) };
+  const nextCard: Card = {
+    ...source,
+    updatedAt: cardStamp(action),
+    ...(source.readModel !== undefined
+      ? {
+          readModel: {
+            ...source.readModel,
+            linkCount: Math.max(0, source.readModel.linkCount - 1),
+          },
+        }
+      : {}),
+  };
   if (nextLinks.length === 0) {
     delete nextCard.links;
   } else {
@@ -2083,13 +2236,68 @@ function removeCardLink(
     options,
     targetTitle,
   );
-  return {
-    ...board,
-    cards: {
-      ...board.cards,
-      [source.id]: stampedCard,
-    },
-  };
+  const cards = { ...board.cards, [source.id]: stampedCard };
+  const target = cardOf(board, removed.targetCardId);
+  if (target?.readModel !== undefined && target.id !== source.id) {
+    const incomingLinks = (target.incomingLinks ?? []).filter(
+      (entry) => entry.id !== removed.id,
+    );
+    const stillBlocked =
+      (removed.type === "blocks" &&
+        target.readModel.detailLoaded &&
+        !hasLoadedIncomingBlock(board, target.id, removed.id)) ||
+      (removed.type !== "blocks" && target.readModel.blocked);
+    cards[target.id] = {
+      ...target,
+      readModel: {
+        ...target.readModel,
+        linkCount: Math.max(0, target.readModel.linkCount - 1),
+        blocked: stillBlocked,
+      },
+      ...(target.readModel.detailLoaded
+        ? {
+            incomingLinks,
+          }
+        : {}),
+    };
+  }
+  return { ...board, cards };
+}
+
+/**
+ * Is there another loaded incoming `blocks` row to `targetId`? Used only
+ * when the target's detail is loaded, where the reverse rows are complete;
+ * a summary target keeps its server `blocked` fact rather than guessing.
+ */
+function hasLoadedIncomingBlock(
+  board: Board,
+  targetId: string,
+  excludedLinkId: string,
+  excludedSourceId?: string,
+): boolean {
+  for (const card of Object.values(board.cards)) {
+    if (card.id === excludedSourceId) continue;
+    for (const link of card.links ?? []) {
+      if (
+        link.id !== excludedLinkId &&
+        link.type === "blocks" &&
+        link.targetCardId === targetId &&
+        card.archivedAt === undefined
+      ) {
+        return true;
+      }
+    }
+  }
+  const target = cardOf(board, targetId);
+  return (
+    target?.incomingLinks?.some(
+      (link) =>
+        link.id !== excludedLinkId &&
+        link.fromCardId !== excludedSourceId &&
+        link.type === "blocks" &&
+        !link.fromArchived,
+    ) ?? false
+  );
 }
 
 /** A cover is valid when its type/value pair is one the app can render. */
@@ -2365,6 +2573,14 @@ function restoreCard(
     card.title.trim() === "" ? { ...card, title: UNTITLED_CARD_TITLE } : card;
   return {
     ...board,
+    ...(board.archivedCardIds !== undefined
+      ? {
+          archivedCardIds:
+            card.archivedAt !== undefined
+              ? [...new Set([...board.archivedCardIds, card.id])]
+              : board.archivedCardIds.filter((id) => id !== card.id),
+        }
+      : {}),
     columns: column
       ? board.columns.map((c) =>
           c.id === column.id
@@ -2705,13 +2921,19 @@ function commit(
  * re-render. Full detail always wins over a summary; an older summary never
  * replaces a newer local card.
  */
-function hydrateCards(
-  current: Board["cards"],
-  incoming: readonly Card[],
-): Board["cards"] {
+function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
+  const current = board.cards;
+  const inScope = (id: string) =>
+    board.columns.some((column) => column.cardIds.includes(id)) ||
+    board.archivedCardIds?.includes(id) === true ||
+    current[id]?.archivedAt !== undefined;
   let next: Board["cards"] | null = null;
   for (const card of incoming) {
-    const existing = cardOf({ cards: current } as Board, card.id);
+    // Never add an id the summary does not place yet: a late page/detail
+    // from before a move, create or delete would resurrect a card outside
+    // every column.
+    if (!inScope(card.id)) continue;
+    const existing = cardOf(board, card.id);
     if (existing === card) continue;
     const incomingIsDetail =
       card.readModel === undefined || card.readModel.detailLoaded;
@@ -2719,6 +2941,9 @@ function hydrateCards(
     if (existing === undefined) {
       chosen = card;
     } else if (incomingIsDetail) {
+      // A late detail response for an older card must never overwrite a
+      // newer optimistic edit or a fresher page summary.
+      if (card.updatedAt < existing.updatedAt) continue;
       chosen =
         card.activity === undefined && existing.activity !== undefined
           ? { ...card, activity: existing.activity }
@@ -2799,7 +3024,7 @@ export function boardReducer(
   if (!board) return state;
 
   if (action.type === "HYDRATE_CARDS") {
-    const cards = hydrateCards(board.cards, action.cards);
+    const cards = hydrateCards(board, action.cards);
     return cards === board.cards
       ? state
       : state.map((b, i) => (i === index ? { ...b, cards } : b));
