@@ -7,7 +7,7 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RequestLogService } from "@/common/request-log";
-import { resetRateLimits } from "@/common/rate-limit";
+import { consumeBoardRateLimit, resetRateLimits } from "@/common/rate-limit";
 import { TrafficService } from "@/common/traffic.service";
 import { recentQueueJobs, resetQueueJobLog } from "@/ops/queue-core";
 import {
@@ -119,11 +119,14 @@ describe("Observability and agent rate limits (e2e)", () => {
       .expect(200);
   }
 
-  async function createToken(name: string): Promise<string> {
+  async function createToken(
+    name: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<string> {
     return server()
       .post("/api/v1/users/me/tokens")
       .set(auth(session))
-      .send({ name })
+      .send({ name, ...extra })
       .expect(201)
       .then((res) => res.body.token as string);
   }
@@ -228,6 +231,123 @@ describe("Observability and agent rate limits (e2e)", () => {
       .expect(200);
   });
 
+  it("caps an explicit token limit at the derived agent share", async () => {
+    setBoardRateLimit(1_000);
+    setAgentTokenRateLimit(2);
+    const noisy = await createToken("explicit-noisy", {
+      rateLimitPerMinute: 100_000,
+    });
+    const quiet = await createToken("explicit-quiet");
+
+    // The 100k/min key is capped at the derived share while a parallel quiet
+    // agent on the same board keeps working.
+    const responses = await Promise.all([
+      server().get(`/api/v1/boards/${boardId}`).set(auth(noisy)),
+      server().get(`/api/v1/boards/${boardId}`).set(auth(noisy)),
+      server().get(`/api/v1/boards/${boardId}`).set(auth(noisy)),
+      server().get(`/api/v1/boards/${boardId}`).set(auth(quiet)),
+    ]);
+    expect(responses.map((res) => res.status).sort()).toEqual([
+      200, 200, 200, 429,
+    ]);
+    expect(responses[3]!.status).toBe(200);
+    const limited = responses.find((res) => res.status === 429)!;
+    expect(limited.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "token",
+    });
+  });
+
+  it("charges a batch by its command count on the board and token budgets", async () => {
+    setBoardRateLimit(2);
+    setAgentCommandQueueMs(0);
+    const pat = await createToken("batch-cost");
+    const batch = (titles: string[]) =>
+      server()
+        .post(`/api/v1/boards/${boardId}/commands/batch`)
+        .set(auth(pat))
+        .send({
+          commands: titles.map((title) => ({
+            commandId: randomUUID(),
+            action: {
+              boardId,
+              at: Date.now(),
+              type: "RENAME_BOARD",
+              title,
+            },
+          })),
+        });
+
+    await batch(["Batch one", "Batch two"]).expect(200);
+    const denied = await batch(["Batch three"]).expect(503);
+    expect(denied.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "board",
+      retryAfter: Number(denied.headers["retry-after"]),
+    });
+
+    // A two-command batch also spends two tokens of the token budget.
+    resetRateLimits();
+    setBoardRateLimit(1_000);
+    setAgentTokenRateLimit(3);
+    await batch(["Batch four", "Batch five"]).expect(200);
+    const tokenDenied = await batch(["Batch six", "Batch seven"]).expect(429);
+    expect(tokenDenied.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "token",
+    });
+
+    const quiet = await createToken("batch-quiet");
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands/batch`)
+      .set(auth(quiet))
+      .send({
+        commands: [
+          {
+            commandId: randomUUID(),
+            action: {
+              boardId,
+              at: Date.now(),
+              type: "RENAME_BOARD",
+              title: "Quiet batch",
+            },
+          },
+        ],
+      })
+      .expect(200);
+  });
+
+  it("queues a command until the next board token and reports the wait", async () => {
+    setBoardRateLimit(1_000);
+    setAgentCommandQueueMs(1_500);
+    const pat = await createToken("queue-succeed");
+    // Drain the shared token bucket; 60 req/s refills the next token in
+    // ~17 ms, inside the queue budget.
+    for (let i = 0; i < 1_000; i += 1) {
+      consumeBoardRateLimit(boardId, 1_000);
+    }
+
+    const response = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(pat))
+      .send({
+        commandId: randomUUID(),
+        action: {
+          boardId,
+          at: Date.now(),
+          type: "RENAME_BOARD",
+          title: "Queued rename",
+        },
+      })
+      .expect(200);
+    expect(
+      Number(response.headers["x-ratelimit-queued-ms"]),
+    ).toBeGreaterThanOrEqual(1);
+  });
+
   it("answers a burst command with 503 Retry-After instead of an instant 429", async () => {
     setBoardRateLimit(1);
     setAgentCommandQueueMs(0);
@@ -257,6 +377,9 @@ describe("Observability and agent rate limits (e2e)", () => {
     });
     expect(denied.headers["retry-after"]).toBeDefined();
     expect(denied.headers["x-ratelimit-scope"]).toBe("board");
+    expect(
+      traffic.snapshot().telemetry?.rateLimited.board,
+    ).toBeGreaterThanOrEqual(1);
 
     // The write was refused before the handler, so the same command is still
     // safe to send after the budget refills.

@@ -106,6 +106,55 @@ describe("TrafficService", () => {
     });
   });
 
+  it("counts the queued 503 as backpressure, not a 5xx error", () => {
+    const traffic = new TrafficService();
+    const base = 2_150_000_000_000;
+    traffic.recordCompleted({
+      at: base,
+      status: 503,
+      durationMs: 1_200,
+      actorType: "agent",
+      write: true,
+      rateLimit: {
+        scope: "board",
+        limit: 12_000,
+        remaining: 0,
+        resetAt: base + 60_000,
+      },
+      rateLimited: true,
+    });
+
+    expect(traffic.snapshot(base + 1_000).telemetry).toMatchObject({
+      errors: 0,
+      rateLimited: { total: 1, board: 1, ip: 0, token: 0, session: 0 },
+    });
+  });
+
+  it("still counts a board write timeout as a 5xx error", () => {
+    const traffic = new TrafficService();
+    const base = 2_160_000_000_000;
+    traffic.recordCompleted({
+      at: base,
+      status: 503,
+      durationMs: 900,
+      actorType: "agent",
+      write: true,
+      // The request was allowed and carried budget headers; then the write
+      // lock timed out. This is not backpressure.
+      rateLimit: {
+        scope: "board",
+        limit: 12_000,
+        remaining: 3,
+        resetAt: base + 60_000,
+      },
+    });
+
+    expect(traffic.snapshot(base + 1_000).telemetry).toMatchObject({
+      errors: 1,
+      rateLimited: { total: 0, board: 0 },
+    });
+  });
+
   it("ages completed-request counters out of the 60s window", () => {
     const traffic = new TrafficService();
     const base = 2_200_000_000_000;

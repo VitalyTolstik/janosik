@@ -30,6 +30,8 @@ export interface RequestLogEntry {
     remaining: number;
     resetAt: number;
   };
+  /** TASK-200.3: the request was refused with the `rate_limited` envelope. */
+  rateLimited?: boolean;
 }
 
 /** Request shape the log reads; attribution is filled by the guards. */
@@ -147,6 +149,7 @@ export function buildRequestLogEntry(
       resetAt: request.rateLimit.resetAt,
     };
   }
+  if (request.rateLimited === true) entry.rateLimited = true;
   return entry;
 }
 
@@ -189,6 +192,7 @@ export class RequestLogService {
             },
           }
         : {}),
+      ...(entry.rateLimited === true ? { rateLimited: true } : {}),
       ...(entry.operation !== undefined ? { operation: entry.operation } : {}),
     });
     if (env.NODE_ENV !== "test") {
