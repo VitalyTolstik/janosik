@@ -3,6 +3,10 @@ import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import { argon2id, hash as argonHash } from "argon2";
 import type { AddressInfo } from "node:net";
+import type {
+  ReadableStreamDefaultReader,
+  ReadableStreamReadResult,
+} from "node:stream/web";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -115,18 +119,37 @@ describe("SSE authz (e2e)", () => {
       for (;;) {
         const remaining = deadline - Date.now();
         if (remaining <= 0) return false;
-        const chunk = await Promise.race([
-          reader.read(),
-          new Promise<null>((resolve) =>
-            setTimeout(() => resolve(null), remaining),
-          ),
-        ]);
+        const chunk = await readWithTimeout(reader, remaining);
         if (chunk === null) return false;
         if (chunk.done) return true;
       }
     } finally {
       await reader.cancel().catch(() => undefined);
     }
+  }
+
+  /**
+   * One read or `null` on timeout, with the timer always cleared. The old
+   * `Promise.race` left an armed timeout behind on every successful read,
+   * which Jest reported as an open handle after the suite.
+   */
+  function readWithTimeout(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    ms: number,
+  ): Promise<ReadableStreamReadResult<Uint8Array> | null> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(null), ms);
+      reader.read().then(
+        (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        (error: unknown) => {
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        },
+      );
+    });
   }
 
   it("M5: the realtime flag disables new streams and closes open ones", async () => {

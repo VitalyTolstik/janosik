@@ -429,10 +429,15 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
     expect(
       boardIdOf({ originalUrl: "/api/v1/admin/boards/b9/metrics" } as never),
     ).toBe("b9");
-    // `import` is an account route, not a board id.
-    expect(
-      boardIdOf({ originalUrl: "/api/v1/boards/import" } as never),
-    ).toBeUndefined();
+    // `import`, `ready` and `search` are account/workspace routes, not board
+    // ids for rate-limit attribution.
+    for (const path of [
+      "/api/v1/boards/import",
+      "/api/v1/boards/ready",
+      "/api/v1/boards/search",
+    ]) {
+      expect(boardIdOf({ originalUrl: path } as never)).toBeUndefined();
+    }
   });
 
   it("queues only board command POSTs", () => {

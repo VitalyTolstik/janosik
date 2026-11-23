@@ -603,6 +603,10 @@ model Card {
   columnId             String
   title                String       @db.VarChar(300) // LIMITS.cardTitle
   description          String?      @db.Text // markdown, LIMITS.description
+  // TASK-200.2: stored character length so a ready summary can expose
+  // `descriptionChars` without detoasting the text. Maintained by the
+  // Card_description_length trigger (migration 20261123110000).
+  descriptionLength    Int          @default(0)
   coverType            String? // color | gradient
   coverValue           String?
   dueDate              DateTime?

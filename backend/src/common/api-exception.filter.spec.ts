@@ -24,13 +24,17 @@ function harness(initial: Record<string, string | number> = {}) {
     status: jest.fn().mockReturnThis(),
     json: jest.fn(),
   };
+  const request = { rateLimited: false };
   const host = {
     getType: () => "http",
-    switchToHttp: () => ({ getResponse: () => response }),
+    switchToHttp: () => ({
+      getResponse: () => response,
+      getRequest: () => request,
+    }),
   } as unknown as ArgumentsHost;
   const traffic = { recordThrottled: jest.fn() };
   const filter = new ApiExceptionFilter(traffic as never);
-  return { filter, host, response, traffic };
+  return { filter, host, response, traffic, request };
 }
 
 describe("ApiExceptionFilter Retry-After", () => {
@@ -108,6 +112,28 @@ describe("ApiExceptionFilter Retry-After", () => {
     );
     expect(timeout.traffic.recordThrottled).not.toHaveBeenCalled();
     expect(readBackpressure(timeout.response)).toBe("board_read");
+  });
+
+  it("treats long-poll capacity as backpressure and writes Retry-After", () => {
+    const { filter, host, response, traffic, request } = harness();
+    filter.catch(
+      new ServiceUnavailableException({
+        message: "Too many held ready polls; retry shortly",
+        code: "ready_poll_capacity",
+        retryable: true,
+        retryAfter: 5,
+      }),
+      host,
+    );
+    expect(traffic.recordThrottled).toHaveBeenCalledTimes(1);
+    expect(request.rateLimited).toBe(true);
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(response.setHeader).toHaveBeenCalledWith("Retry-After", "5");
+    expect(response.json.mock.calls[0]![0]).toMatchObject({
+      code: "ready_poll_capacity",
+      retryable: true,
+      retryAfter: 5,
+    });
   });
 
   it("treats the queued 503 rate_limited as backpressure, not a 5xx bug", () => {

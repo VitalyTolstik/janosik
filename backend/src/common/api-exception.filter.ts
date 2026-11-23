@@ -34,6 +34,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     }
 
     const response = host.switchToHttp().getResponse<Response>();
+    const request = host.switchToHttp().getRequest<{ rateLimited?: boolean }>();
     // A stream (SSE/blob) may already be committed; rewriting it would throw
     // and hide the original failure.
     if (response.headersSent) return;
@@ -51,15 +52,22 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const boardReadBackpressure =
       status === 503 &&
       (body.code === "board_read_busy" || body.code === "board_read_timeout");
+    // TASK-200.2: `503 ready_poll_capacity` is held-poll admission pressure,
+    // not an outage; it gets the same treatment and Retry-After.
     const rateLimitRefusal =
-      status === 429 || (status === 503 && body.code === "rate_limited");
+      status === 429 ||
+      (status === 503 &&
+        (body.code === "rate_limited" || body.code === "ready_poll_capacity"));
     const backpressure = rateLimitRefusal || boardReadBackpressure;
     if (boardReadBackpressure) {
       // The request log runs on the same response object after this filter and
       // counts `rate_limit.read`; do not also add it to the 429 throttle ring.
       markBackpressure(response, "board_read");
     }
-    if (rateLimitRefusal) this.traffic?.recordThrottled();
+    if (rateLimitRefusal) {
+      request.rateLimited = true;
+      this.traffic?.recordThrottled();
+    }
     if (status >= 500 && !backpressure) {
       const detail =
         exception instanceof Error ? exception.stack : String(exception);

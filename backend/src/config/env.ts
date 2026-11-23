@@ -66,6 +66,11 @@ if (process.env.NODE_ENV === "test") {
 if (process.env.NODE_ENV === "test") {
   process.env.SHARE_AGGREGATE_CACHE_MS = "0";
   process.env.ADMIN_METRICS_CACHE_MS = "0";
+  // TASK-200.5 hot-path caches default off for the same reason. The focused
+  // cache spec overrides HOT_PATH_CACHE_CONFIG with short positive windows.
+  process.env.AUTH_CACHE_TTL_MS = "0";
+  process.env.MEMBERSHIP_CACHE_TTL_MS = "0";
+  process.env.FEATURE_FLAG_CACHE_MS = "0";
 }
 
 // Tests are hermetic: a developer machine's SMTP_* (backend/.env) must not
@@ -435,6 +440,41 @@ export const env = cleanEnv(process.env, {
     desc: "Master /admin/metrics cache window in ms (0 = disabled)",
     default: 5000,
     example: "5000",
+  }),
+  // TASK-200.5 hot-path auth caches. A PAT lookup, a (user, board)
+  // membership and a feature-flag row are reused for this long; every write,
+  // pause/resume and the realtime control channel invalidate them explicitly,
+  // so the window only bounds what a missed bus frame can cost. 10–30 s is
+  // the intended band; 0 disables a cache (tests use that for determinism).
+  AUTH_CACHE_TTL_MS: nonNegativeInt({
+    desc: "PAT-by-hash cache window in ms (0 = disabled, intended 10-30 s)",
+    default: 15_000,
+    example: "15000",
+  }),
+  MEMBERSHIP_CACHE_TTL_MS: nonNegativeInt({
+    desc: "Board membership cache window in ms (0 = disabled, intended 10-30 s)",
+    default: 30_000,
+    example: "30000",
+  }),
+  FEATURE_FLAG_CACHE_MS: nonNegativeInt({
+    desc: "Feature-flag row cache window in ms (0 = disabled, intended 10-30 s)",
+    default: 30_000,
+    example: "30000",
+  }),
+  AUTH_CACHE_MAX_ENTRIES: nonNegativeInt({
+    desc: "Bound on the PAT cache (LRU entries; 0 = unbounded)",
+    default: 5000,
+    example: "5000",
+  }),
+  MEMBERSHIP_CACHE_MAX_ENTRIES: nonNegativeInt({
+    desc: "Bound on each membership cache (LRU entries; 0 = unbounded)",
+    default: 10_000,
+    example: "10000",
+  }),
+  FEATURE_FLAG_CACHE_MAX_ENTRIES: nonNegativeInt({
+    desc: "Bound on the feature-flag cache (LRU entries; 0 = unbounded)",
+    default: 64,
+    example: "64",
   }),
   // Live-stream admission caps (TASK-146): a ceiling on concurrent SSE
   // connections per instance, per user and per board. One VIEWER opening

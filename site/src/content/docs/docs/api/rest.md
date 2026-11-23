@@ -53,7 +53,9 @@ design (they are not reducer actions). Content lives in the command log.
 | `PATCH`  | `/boards/:id/members/:userId` | `ADMIN`     | `UpdateMemberDto` | `BoardMemberDto`   |
 | `DELETE` | `/boards/:id/members/me`      | member      | none              | `{ status: "ok" }` |
 | `DELETE` | `/boards/:id/members/:userId` | `ADMIN`     | none              | `{ status: "ok" }` |
+| `GET`    | `/boards/ready`               | user        | query `limit`     | `BoardsReady`      |
 | `GET`    | `/boards/search`              | user        | query `q`         | `{ matches: WorkspaceSearchMatch[]; total: number; truncated: boolean }` |
+| `GET`    | `/boards/:id/ready`           | member      | query `limit`, `wait`, `since` | `BoardReady` (or `204`) |
 | `GET`    | `/boards/:id/export`          | member      | none              | `BoardEnvelope`    |
 | `GET`    | `/boards/:id/deleted`         | `ADMIN`/`MEMBER` | none         | `DeletedBoardItemsDto` |
 | `POST`   | `/boards/:id/deleted/:type/:itemId/restore` | `ADMIN`/`MEMBER` | none | `{ status: "ok" }` |
@@ -132,6 +134,51 @@ that must observe its own write should not treat it as read-your-writes. A
 burst beyond the per-process read limit may answer `503 board_read_busy` (or
 `board_read_timeout`) with `Retry-After` instead of overloading the process.
 Retry those two codes.
+
+### Ready work and long-polling
+
+`GET /boards/:id/ready?limit=&wait=&since=` is a **summary**, not a board read:
+the cards an agent can pick up now, never their descriptions, checklists, links,
+labels or comments. Ready means the board's initial column
+(`workflow.initialColumnId`, else the first column), unassigned, not
+archived/deleted, not under a live claim (a null or lapsed lease is free) and not
+the target of a live `blocks` link. The list is ordered by priority, most urgent
+first, and capped at 100. Each card carries `id`, `title`, board and column
+ids/titles, `priority`, `claimedBy`, `leaseUntil`, `version` and
+`descriptionChars` (the stored description length, counted in Unicode code
+points). The text itself is never
+selected or returned, so a large description is not detoasted. The response
+also carries the board's command `seq`, mirrored in `X-Board-Seq`.
+
+`wait` is a server-side hold in **milliseconds**, 0–60000 (default 0 = immediate
+snapshot). It wakes only on a readiness-relevant action (card presence, move,
+priority, assignee, claim, link or column/workflow change) or a resync frame —
+every command touches `board:<id>`, so label, checklist, comment and board-rename
+frames do not wake it. After a wake it re-reads and answers `200` when work
+exists; if the change still leaves no ready card it **keeps holding** until the
+deadline instead of returning an empty snapshot. Co-waiters that woke on the same
+event share one snapshot read. A held answer and a timed `204` carry
+`X-Ready-Held: 1`; the `204` also carries `X-Board-Seq` and
+`Cache-Control: no-store` and no body.
+
+`since` is the `seq` from the previous answer: when the board has advanced before
+the hold starts, the snapshot answers immediately even if no card is ready. A
+client disconnect aborts the hold and releases its subscription and admitted poll
+slot. A board deleted during the hold answers `404`, not `204`. Per-instance
+held-poll caps answer `503 ready_poll_capacity` with `Retry-After`. Only a
+successful held `200`/`204` marked `X-Ready-Held: 1` is excluded from the API
+latency p50/p95; immediate snapshots and failures stay in it. Any accepted role
+may read the endpoint, including `VIEWER`; an archived board answers `200` with
+`archived: true` and no cards. Invalid `limit`, `wait` or `since` bounds answer
+`400`.
+
+`GET /boards/ready?limit=` is the cross-board snapshot: every accessible board
+as `{ id, title, archived, seq }`, plus at most `limit` ready cards (total, not
+per board) from the active boards' initial columns. It is built with one
+board/column read, one column-scoped card query and one grouped `seq` read — no
+per-board fan-out and no full aggregates. A board-scoped PAT sees only its own
+board. This route is a snapshot only; hold one board with
+`/boards/:id/ready?wait=`.
 
 `GET /boards/:id/members` returns only **active** accepted memberships by
 default; an expired `VIEWER` is omitted so assignee pickers and filters never
@@ -924,12 +971,16 @@ rather than relying on the absence of a route.
 
 | Method | Path                   | Auth / role | Request                 | Response     |
 | ------ | ---------------------- | ----------- | ----------------------- | ------------ |
-| `GET`  | `/boards/:id/events`   | member      | query `since`, `client` | SSE stream   |
+| `GET`  | `/boards/:id/events`   | member      | query `since`, `client`, `presence` | SSE stream   |
 | `POST` | `/boards/:id/presence` | member      | `PresencePingDto`       | `204`, empty |
 
 `GET /boards/:id/events` is the server-sent event stream. Auth is the Bearer
 token (an access token or a personal API token); any role, `VIEWER` included,
-may connect. The stream delivers the board's command log exactly once and in
+may connect. A browser access token defaults to presence on; a personal API
+token (an agent) defaults to `?presence=0`. Send `?presence=1` to opt an agent
+stream into the roster, or `?presence=0` to silence a browser stream. A stream
+opened with presence off neither joins the roster nor receives `presence`
+frames. The stream delivers the board's command log exactly once and in
 order, or tells the client to resync; it never leaves a silent hole:
 
 - **Catch-up.** The connection replays the command-log delta from `?since=`
@@ -944,16 +995,21 @@ order, or tells the client to resync; it never leaves a silent hole:
   on the way (for example between nodes), the stream re-reads the missing
   commands from the log rather than deliver out of order.
 
-A keep-alive comment `ping` is sent every 25 seconds. On the same tick the
-server re-checks the caller and closes the stream when access is gone: the
-membership was removed or no longer accepted, a `VIEWER`'s access expired,
-the account was disabled, the board was deleted, or the stream was opened
-with a personal API token that has since been revoked or has expired.
+A keep-alive frame is sent every 25 seconds for a browser stream and every
+60 seconds for a PAT (agent) stream; up to 2.5 s / 6 s of jitter spreads
+thousands of connections so their checks do not fire in one wave. If a tick's
+database work is still running at the next beat, that beat is skipped rather
+than stacked. On the same tick the server re-checks the caller and closes the
+stream when access is gone: the membership was removed or no longer accepted,
+a `VIEWER`'s access expired, the account was disabled, the board was deleted,
+or the stream was opened with a personal API token that has since been revoked
+or has expired. Credential fields for a browser stream are read fresh on every
+tick, so a password change also closes the stream on the next beat.
 
 `?client=` is an optional tab-scoped id matching `^[A-Za-z0-9_-]{8,64}$`.
 When omitted or malformed, the server generates one.
 
-The stream carries six event types:
+The stream carries seven event types:
 
 | `type`       | Payload                                                        | Notes                                          |
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------- |
@@ -962,6 +1018,7 @@ The stream carries six event types:
 | `membership` | `boardId`, `userId`, `change`                                  | `change` is `accepted`, `updated`, `removed` (admin) or `left` (voluntary) |
 | `activity`   | `id`, `boardId`, `cardId?`, `actorId`, `actorType?`, `at`, `kind`, `detail?`, `apiTokenId?`, `agentSessionId?`, `runId?`, `agentName?` | non-reducer activity, e.g. a new comment |
 | `agent`      | `op` (`started`, `paused`, `resumed`, `heartbeat`, `ended`), `sessionId?`, `scope?`, `at` | agent-session control-plane transition; `heartbeat` is a throttled session liveness refresh |
+| `keepalive`  | `presenceEpoch?`                                                | periodic liveness tick; no `seq` and no log    |
 | `resync`     | none                                                           | the gap cannot be replayed; refetch the board  |
 
 `commandId` is the idempotency key sent with the command. A client uses it to

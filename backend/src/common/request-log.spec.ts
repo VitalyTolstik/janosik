@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import {
   buildRequestLogEntry,
+  isHeldReadyPoll,
   operationOf,
   sanitizeRequestPath,
   toRequestLogLine,
@@ -149,6 +150,48 @@ describe("buildRequestLogEntry", () => {
       Date.now(),
     );
     expect(entry.boardId).toBeUndefined();
+  });
+
+  it("does not mistake the ready or search routes for board ids", () => {
+    for (const path of ["/api/v1/boards/ready", "/api/v1/boards/search"]) {
+      const entry = buildRequestLogEntry(
+        request({ originalUrl: path, user: { id: "user-1" } }),
+        response(200),
+        Date.now(),
+      );
+      expect(entry.path).toBe(path);
+      expect(entry.boardId).toBeUndefined();
+    }
+  });
+
+  it("marks only a successful held ready poll for latency exclusion", () => {
+    expect(isHeldReadyPoll(204, "1")).toBe(true);
+    expect(isHeldReadyPoll(200, "1")).toBe(true);
+    expect(isHeldReadyPoll(200, undefined)).toBe(false);
+    expect(isHeldReadyPoll(503, "1")).toBe(false);
+    expect(isHeldReadyPoll(400, "1")).toBe(false);
+
+    const held = buildRequestLogEntry(
+      request({
+        originalUrl: "/api/v1/boards/b1/ready?wait=25000",
+        user: { id: "user-1" },
+        boardMembership: { boardId: "b1" },
+      }),
+      response(204, { "X-Ready-Held": "1" }),
+      Date.now(),
+    );
+    expect(held.longPoll).toBe(true);
+
+    const refused = buildRequestLogEntry(
+      request({
+        originalUrl: "/api/v1/boards/b1/ready?wait=25000",
+        user: { id: "user-1" },
+        boardMembership: { boardId: "b1" },
+      }),
+      response(503, { "X-Ready-Held": "1" }),
+      Date.now(),
+    );
+    expect(refused.longPoll).toBeUndefined();
   });
 
   it("marks every 429 as rate limited, including the global throttler", () => {

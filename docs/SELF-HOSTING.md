@@ -147,9 +147,10 @@ kanban.example.com {
 sudo systemctl reload caddy
 ```
 
-**nginx** — terminate TLS and proxy everything to the app. Realtime works
-without extra tuning because the API sends `X-Accel-Buffering: no`, but
-turning buffering off explicitly is harmless and makes the intent clear:
+**nginx** — terminate TLS and proxy everything to the app. The API sends
+`X-Accel-Buffering: no`, but realtime still has one proxy requirement: turn
+buffering off and set `proxy_read_timeout` above the 60 s PAT keep-alive
+(`3600s` is safe). No other tuning is needed:
 
 ```nginx
 server {
@@ -165,7 +166,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;          # realtime (SSE)
-        proxy_read_timeout 3600s;     # keep long-lived streams open
+        proxy_read_timeout 3600s;     # keep long-lived streams open; must exceed the 60 s PAT keep-alive
     }
 }
 ```
@@ -282,6 +283,9 @@ that matter most:
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
 | `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. Each process stores up to 64 board aggregates by count and evicts the least recently used at capacity. Memory depends on board size. A changed board `seq` invalidates the entry. `0` disables storage. Up to 64 distinct rebuilds can run concurrently per process. A new rebuild at capacity returns `503`. |
 | `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/api/v1/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
+| `AUTH_CACHE_TTL_MS` | `15000` | PAT-by-sha256 resolution cache. Writes/SSE bypass it; revoke/pause invalidate it through the realtime bus. Keep it in the 10–30 s band; `0` disables. Bounded by `AUTH_CACHE_MAX_ENTRIES` (`5000`). |
+| `MEMBERSHIP_CACHE_TTL_MS` | `30000` | `(user, board)` membership cache for reads and the SSE keep-alive. Writes/SSE bypass it; role/removal events invalidate it. `0` disables. Bounded by `MEMBERSHIP_CACHE_MAX_ENTRIES` (`10000`). |
+| `FEATURE_FLAG_CACHE_MS` | `30000` | Raw feature-flag row cache; a flag update invalidates it on every node. `0` disables. Bounded by `FEATURE_FLAG_CACHE_MAX_ENTRIES` (`64`). |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container; raise on a larger host. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |
@@ -389,7 +393,10 @@ board event fan-out is already cross-node (TASK-74) and BullMQ workers spread
 across replicas, so you can run several API replicas behind a load balancer:
 drop the host `ports:` mapping from the `app` service and let the balancer reach
 the replicas on the container network (or run them under an orchestrator), and
-set `TRUST_PROXY=1`. Keep the Postgres budget in mind — `DB_CONNECTION_LIMIT`
+set `TRUST_PROXY=1`. Redis also carries the auth/membership/feature-flag cache
+invalidations between replicas; without it each replica still bounds staleness
+by its 10–30 s TTL, but a revoke/role change is only prompt on the node that
+performed it. Keep the Postgres budget in mind — `DB_CONNECTION_LIMIT`
 (per process) × replicas must stay under `POSTGRES_MAX_CONNECTIONS`. One
 limitation remains: **presence** (the list of people on a board) is stored per
 node until shared Redis storage is implemented, so the roster can differ

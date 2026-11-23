@@ -24,6 +24,9 @@ import { assertImpersonationAllows } from "./impersonation-policy";
 /** HTTP methods that mutate state — refused for a read-only PAT. */
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/** SSE stream routes re-check the token fresh on connect (TASK-200.5). */
+const SSE_PATH = /\/events\/?$/;
+
 /**
  * TASK-166.3 human-only pause routes. These are checked here, before the
  * board membership/role guard, so a MEMBER or read-only PAT gets the
@@ -117,8 +120,14 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     if (!isPat || raw === undefined) {
       throw new UnauthorizedException();
     }
+    const path = pathOf(request.originalUrl ?? request.url);
+    // TASK-200.5: writes and SSE connects must see a pause/scope change
+    // immediately, so they bypass the 10–30 s PAT cache. Plain reads reuse it.
+    const fresh =
+      WRITE_METHODS.has((request.method ?? "GET").toUpperCase()) ||
+      SSE_PATH.test(path);
     const { user, tokenId, tokenName, identity, scope } =
-      await this.apiTokens.authenticate(raw);
+      await this.apiTokens.authenticate(raw, { fresh });
     // Per-token budget first, so an abusive token is counted even when the
     // request is then refused on scope grounds (TASK-157). TASK-166.10: the
     // same count now carries the headers and a precise Retry-After, so a

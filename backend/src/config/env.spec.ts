@@ -39,6 +39,15 @@ describe("parseNonNegativeInt", () => {
       expect(() => parseNonNegativeInt(value)).toThrow();
     }
   });
+
+  it("guards the TASK-200.5 TTLs and cache bounds against negatives", () => {
+    for (const value of ["-1", "-15000"]) {
+      expect(() => parseNonNegativeInt(value)).toThrow(/non-negative/i);
+    }
+    // The cache env fields all use this validator; 0 means "disabled" and a
+    // positive whole number is a valid window/entry bound.
+    expect(parseNonNegativeInt("30000")).toBe(30_000);
+  });
 });
 
 describe("parseBoundedNonNegativeInt", () => {

@@ -18,6 +18,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import { env } from "@/config/env";
 import { maxBoardsPerUser } from "@/config/limits";
@@ -100,6 +101,7 @@ export class AuthService {
     private readonly flags: FeatureFlagsService,
     private readonly loginBackoff: LoginBackoffService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly hotPathCache: HotPathCacheService,
   ) {}
 
   /**
@@ -404,6 +406,9 @@ export class AuthService {
       });
       return tokens.tokenIds;
     });
+    // Password reset revokes every PAT in the same transaction; the cached
+    // resolutions must go before the response, on every replica.
+    this.hotPathCache.invalidatePat();
     await this.securityAudit.record({
       userId: candidate.userId,
       actorId: candidate.userId,
@@ -620,6 +625,7 @@ export class AuthService {
       });
       return revoked.tokenIds;
     });
+    this.hotPathCache.invalidatePat();
     await this.securityAudit.record({
       userId,
       actorId: userId,

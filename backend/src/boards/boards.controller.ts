@@ -5,6 +5,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -12,12 +13,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   ServiceUnavailableException,
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { type BoardMember, Role } from "@prisma/client";
 import type {
   BoardAgentPolicyStateDto,
@@ -26,8 +28,14 @@ import type {
   BoardImportPreviewDto,
   BoardMemberDto,
   BoardSummary,
+  BoardsReadyDto,
   DeletedBoardItemsDto,
   WorkspaceSearchResult,
+} from "@janosik/shared";
+import {
+  READY_WORK_LIMIT_DEFAULT,
+  READY_WORK_LIMIT_MAX,
+  READY_WORK_WAIT_MAX_MS,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
@@ -63,6 +71,7 @@ import { markGuaranteedRollback } from "@/common/rollback-certainty";
 import { boardStarterCommands } from "./board-starter";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
+import { ReadyService } from "./ready.service";
 import { UpdateBoardAgentPolicyDto } from "./dto/agent-policy.dto";
 import { CreateBoardDto } from "./dto/create-board.dto";
 import { InviteMemberDto } from "./dto/invite-member.dto";
@@ -90,6 +99,36 @@ function includeMatches(value: unknown): boolean {
 }
 
 /**
+ * Parse one numeric ready-work query parameter. Every value is a plain
+ * non-negative decimal integer; a repeated parameter, a sign, a fraction or
+ * whitespace is a `400` rather than a silently coerced bound.
+ */
+function intQuery(
+  name: string,
+  value: unknown,
+  options: { min: number; max?: number; fallback: number },
+): number {
+  if (value === undefined) return options.fallback;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    throw new BadRequestException(`${name} must be a non-negative integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < options.min) {
+    throw new BadRequestException(
+      `${name} must be an integer from ${options.min}${
+        options.max === undefined ? "" : ` to ${options.max}`
+      }`,
+    );
+  }
+  if (options.max !== undefined && parsed > options.max) {
+    throw new BadRequestException(
+      `${name} must be an integer from ${options.min} to ${options.max}`,
+    );
+  }
+  return parsed;
+}
+
+/**
  * Boards + membership REST surface (§7.4).
  *
  * Content mutations (columns/cards/labels/checklists) are NOT here — they
@@ -105,6 +144,7 @@ export class BoardsController {
     private readonly idempotency: IdempotencyService,
     private readonly commands: CommandsService,
     private readonly boardRead: BoardReadService,
+    private readonly ready: ReadyService,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -269,6 +309,103 @@ export class BoardsController {
   }
 
   /**
+   * TASK-200.2: cross-board ready snapshot without an N+1 read. Declared
+   * before `:id` so `/boards/ready` is not parsed as a board id. A
+   * board-scoped PAT sees only its board, matching `GET /boards`.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get("ready")
+  @Header("Cache-Control", "no-store")
+  listReady(
+    @CurrentUser() user: AuthUser,
+    @CurrentPrincipal() principal: AuthPrincipal | undefined,
+    @Query("limit") limitRaw?: unknown,
+  ): Promise<BoardsReadyDto> {
+    const limit = intQuery("limit", limitRaw, {
+      min: 1,
+      max: READY_WORK_LIMIT_MAX,
+      fallback: READY_WORK_LIMIT_DEFAULT,
+    });
+    return this.ready.listReadyForUser(
+      user.id,
+      principal?.tokenScope?.boardId ?? undefined,
+      limit,
+    );
+  }
+
+  /**
+   * TASK-200.2: ready cards for one board, optionally held as a long-poll.
+   * Any accepted role may read it (VIEWER included). `wait` is milliseconds
+   * and bounded by `READY_WORK_WAIT_MAX_MS`; a hold that times out answers
+   * `204` with no body but still carries `X-Board-Seq` and
+   * `Cache-Control: no-store`. `since` is the last observed `seq`: a changed
+   * board answers immediately even when no card is ready. After a relevant
+   * wake with no ready card the request keeps holding, so an empty post-wake
+   * `200` cannot trigger a re-poll storm. The response is a summary only —
+   * never a board aggregate.
+   *
+   * The abort signal fires when the client disconnects, so a closed agent
+   * connection never leaves a realtime subscription or held-poll slot behind.
+   */
+  @UseGuards(MembershipGuard)
+  @Get(":id/ready")
+  async readyCards(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthUser,
+    @Query("limit") limitRaw: unknown,
+    @Query("wait") waitRaw: unknown,
+    @Query("since") sinceRaw: unknown,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const limit = intQuery("limit", limitRaw, {
+      min: 1,
+      max: READY_WORK_LIMIT_MAX,
+      fallback: READY_WORK_LIMIT_DEFAULT,
+    });
+    const wait = intQuery("wait", waitRaw, {
+      min: 0,
+      max: READY_WORK_WAIT_MAX_MS,
+      fallback: 0,
+    });
+    const since =
+      sinceRaw === undefined
+        ? undefined
+        : intQuery("since", sinceRaw, { min: 0, fallback: 0 });
+
+    const controller = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    req.on("aborted", onClose);
+    res.on("close", onClose);
+    try {
+      const result = await this.ready.getBoardReady(id, {
+        userId: user.id,
+        limit,
+        wait,
+        since,
+        signal: controller.signal,
+      });
+      if (result.status === "aborted") return;
+      res.setHeader("Cache-Control", "no-store");
+      if (result.held) res.setHeader("X-Ready-Held", "1");
+      if (result.status === "timeout") {
+        res.setHeader("X-Board-Seq", String(result.seq));
+        if (!res.headersSent && !res.destroyed) {
+          res.status(HttpStatus.NO_CONTENT).end();
+        }
+        return;
+      }
+      res.setHeader("X-Board-Seq", String(result.body.seq));
+      res.status(HttpStatus.OK).json(result.body);
+    } finally {
+      req.off("aborted", onClose);
+      res.off("close", onClose);
+    }
+  }
+
+  /**
    * Full board aggregate with the TASK-200.6 read path: conditional `304`,
    * single-flight, a bounded semaphore and negotiated gzip/Brotli.
    *
@@ -278,6 +415,7 @@ export class BoardsController {
    * `X-Board-Seq` stays on both 200 and 304, so a client that revalidates can
    * still advance its SSE resume baseline.
    */
+
   @UseGuards(MembershipGuard)
   @Get(":id")
   async get(

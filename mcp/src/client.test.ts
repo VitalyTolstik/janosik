@@ -86,6 +86,33 @@ describe("session attribution for resource routes", () => {
   });
 });
 
+describe("ready/work endpoints", () => {
+  it("sends the long-poll query and treats 204 as a timeout", async () => {
+    const { calls } = stubFetch(() => new Response(null, { status: 204 }));
+    const client = new JanosikClient("http://api.test", "jnk_token");
+
+    await expect(
+      client.getBoardReady("b1", { limit: 5, waitMs: 25_000, since: 7 }),
+    ).resolves.toBeUndefined();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe(
+      "http://api.test/api/v1/boards/b1/ready?limit=5&wait=25000&since=7",
+    );
+  });
+
+  it("reads the cross-board ready snapshot in one request", async () => {
+    const { calls } = stubFetch(() =>
+      json({ boards: [], limit: 10, cards: [] }),
+    );
+    const client = new JanosikClient("http://api.test", "jnk_token");
+
+    await client.listReadyWork(10);
+
+    expect(calls[0]!.url).toBe("http://api.test/api/v1/boards/ready?limit=10");
+  });
+});
+
 describe("JanosikClient.command", () => {
   it("posts a stamped action with auth and an idempotency key", async () => {
     const { calls } = stubFetch(() =>

@@ -148,6 +148,34 @@ describe("TrafficService", () => {
     });
   });
 
+  it("excludes a held long-poll duration from the latency p50/p95", () => {
+    const traffic = new TrafficService();
+    const base = 2_170_000_000_000;
+    traffic.recordCompleted({
+      at: base,
+      status: 200,
+      durationMs: 10,
+      actorType: "agent",
+      write: false,
+    });
+    traffic.recordCompleted({
+      at: base + 1_000,
+      status: 204,
+      durationMs: 60_000,
+      actorType: "agent",
+      write: false,
+      longPoll: true,
+    });
+
+    const snapshot = traffic.snapshot(base + 2_000);
+    expect(snapshot.telemetry).toMatchObject({
+      latencyMs: { count: 1, p50: 10, p95: 10, max: 10 },
+    });
+    // The poll still counts as an agent request and a successful response.
+    expect(snapshot.telemetry?.requests.agent).toBe(2);
+    expect(snapshot.telemetry?.errors).toBe(0);
+  });
+
   it("still counts a board write timeout as a 5xx error", () => {
     const traffic = new TrafficService();
     const base = 2_160_000_000_000;

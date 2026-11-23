@@ -158,9 +158,10 @@ kanban.example.com {
 sudo systemctl reload caddy
 ```
 
-**nginx** terminates TLS and proxies everything to the app. Realtime works
-without extra tuning because the API sends `X-Accel-Buffering: no`, but turning
-buffering off explicitly is harmless and makes the intent clear. Raise
+**nginx** terminates TLS and proxies everything to the app. The API sends
+`X-Accel-Buffering: no`, but realtime still has a proxy requirement: turn
+buffering off and set `proxy_read_timeout` above the 60 s PAT keep-alive
+(`3600s` is safe). No other tuning is needed. Raise
 `client_max_body_size`: nginx refuses bodies over 1 MB by default, which would
 break attachments (up to 25 MB), board imports (25 MB), command/plan bodies
 (10 MB) and large commands (2 MB) with a `413`.
@@ -181,7 +182,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;          # realtime (SSE)
-        proxy_read_timeout 3600s;     # keep long-lived streams open
+        proxy_read_timeout 3600s;     # keep long-lived streams open; must exceed the 60 s PAT keep-alive
     }
 }
 ```
@@ -315,6 +316,9 @@ compose stack fills the ones it needs from `.env`.
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
 | `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. Each process stores up to 64 board aggregates by count and evicts the least recently used at capacity. Memory depends on board size. A changed board `seq` invalidates the entry. `0` disables storage. Up to 64 distinct rebuilds can run concurrently per process. A new rebuild at capacity returns `503`. |
 | `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/api/v1/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
+| `AUTH_CACHE_TTL_MS` | `15000` | PAT-by-sha256 resolution cache. Writes/SSE bypass it; revoke/pause invalidate it through the realtime bus. Keep it in the 10–30 s band; `0` disables. Bounded by `AUTH_CACHE_MAX_ENTRIES` (`5000`). |
+| `MEMBERSHIP_CACHE_TTL_MS` | `30000` | `(user, board)` membership cache for reads and the SSE keep-alive. Writes/SSE bypass it; role/removal events invalidate it. `0` disables. Bounded by `MEMBERSHIP_CACHE_MAX_ENTRIES` (`10000`). |
+| `FEATURE_FLAG_CACHE_MS` | `30000` | Raw feature-flag row cache; a flag update invalidates it on every node. `0` disables. Bounded by `FEATURE_FLAG_CACHE_MAX_ENTRIES` (`64`). |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |
@@ -326,7 +330,7 @@ compose stack fills the ones it needs from `.env`.
 | `SMTP_USER` | empty | SMTP user. |
 | `SMTP_PASS` | empty | SMTP password. |
 | `SMTP_FROM` | `Janosik <no-reply@janosik.local>` | From header for outgoing mail. |
-| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue and per-process counters. |
+| `REDIS_URL` | empty | Redis URL for BullMQ queues, realtime fan-out and auth/membership/flag cache invalidation across nodes, and the shared rate-limit and login-backoff counters. Unset means the in-process queue, per-process counters, and per-replica TTL-only cache invalidation. |
 | `QUEUES_DASHBOARD` | `false` | Mount the Bull Board queue dashboard at `/api/v1/admin/queues`. Owner only. |
 | `SETTINGS_SECRET` | empty | Encrypts credentials saved from the master panel. Derived from `JWT_SECRET` when unset. |
 | `PUBLIC_ORIGIN` | `http://localhost:5173` | Public base URL of the UI. Builds OAuth callback URLs. Compose defaults it to `http://localhost:3000`. |

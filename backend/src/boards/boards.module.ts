@@ -15,6 +15,7 @@ import { RealtimeModule } from "@/realtime/realtime.module";
 import { BoardsController } from "./boards.controller";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
+import { ReadyPollAdmission, ReadyService } from "./ready.service";
 
 /** Boards + membership + import/export (§7.2, TASK-25). */
 @Module({
@@ -30,6 +31,12 @@ import { DeletedItemsService } from "./deleted-items.service";
   providers: [
     BoardsService,
     DeletedItemsService,
+    ReadyService,
+    {
+      provide: ReadyPollAdmission,
+      // Factory: the class takes numeric caps, not injectable providers.
+      useFactory: () => new ReadyPollAdmission(),
+    },
     MembershipGuard,
     // TASK-200.6: one limiter/coalescer per process, shared by every board.
     {

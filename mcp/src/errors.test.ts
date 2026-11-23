@@ -313,6 +313,15 @@ describe("rate-limit retry policy (TASK-200.3)", () => {
     expect(
       isRateLimited(new ApiError(503, { code: "board_write_timeout" })),
     ).toBe(false);
+    expect(
+      isRateLimited(
+        new ApiError(503, {
+          code: "ready_poll_capacity",
+          retryable: true,
+          retryAfter: 5,
+        }),
+      ),
+    ).toBe(true);
     expect(isRateLimited(new Error("fetch failed"))).toBe(false);
   });
 

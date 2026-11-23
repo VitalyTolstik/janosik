@@ -329,9 +329,21 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   active board's initial column (`workflow.initialColumnId`, or the first column
   when no workflow exists) that are unassigned, free of a live claim and not
   blocked, ordered by priority. The initial column is a convention, not a
-  column named Backlog. `janosik_wait_for_work` checks the board at the
-  requested interval until one appears or the timeout expires; it does not
-  reserve or claim the card.
+  column named Backlog. Both it and `janosik_wait_for_work` read the compact
+  server ready summary (`GET /boards/:id/ready`, or `GET /boards/ready` without
+  `boardId`) instead of a board aggregate. A single-board wait is held by the
+  server for 25–60 s per request and wakes only on readiness-relevant changes;
+  `pollMs` is ignored for that hold. A cross-board wait re-reads the snapshot
+  every 15–60 s across the full jittered range, with `pollMs` as the floor. A
+  relevant wake that leaves no work keeps holding, and `timeoutMs: 0` still
+  performs one initial snapshot (5 s HTTP budget); other snapshot calls are
+  bounded by the remaining deadline. `janosik_list_ready_cards` keeps the
+  normal GET network/429 retries. Transient network and capacity
+  (`503 ready_poll_capacity` + `Retry-After`) failures retry only inside the
+  caller's deadline. The tool keeps `timeoutMs`, `pollMs`, `boardId` and its
+  `{ card: … }` / `{ card: null }` result. On a server without the endpoint
+  (`404`) it falls back to a full board read, so upgrading the server is what
+  removes the idle board load. A wait does not reserve or claim the card.
 - **A Definition-of-Done check in MCP.** When `janosik_move_card` enters a done
   column (`workflow.doneColumnIds`, falling back to the board's last column when
   the list is empty or no workflow exists), it checks cards with a task contract for unticked

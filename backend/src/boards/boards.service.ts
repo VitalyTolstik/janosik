@@ -1140,6 +1140,10 @@ export class BoardsService {
         approvalApplied,
       }),
     );
+    // TASK-200.5: the board row is now soft-deleted. Open SSE streams keep
+    // only a membership snapshot, so clear it on this node and every replica;
+    // their next keep-alive sees `board.deletedAt` and closes.
+    this.realtime.publishInvalidation({ kind: "board", boardId });
   }
 
   /**

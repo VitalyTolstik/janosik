@@ -28,6 +28,8 @@ export interface RequestLogEntry {
   runId?: string;
   approvalId?: string;
   operation?: OperationKind;
+  /** A held ready/work poll; its duration is not user-facing latency. */
+  longPoll?: boolean;
   rateLimit?: {
     scope: RateLimitScope;
     limit: number;
@@ -51,12 +53,27 @@ export interface LoggedRequest extends Request, RateLimitedRequest {
 const MAX_RECENT = 200;
 const SHARE_TOKEN_PATH = /(\/share\/)[^/?#]+/;
 const BOARD_PATH = /^\/api\/v1\/(?:admin\/)?boards\/([^/]+?)(?:\/|$)/;
+const BOARD_NON_ID_SEGMENTS = new Set(["import", "ready", "search"]);
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Public share tokens are credentials: keep them out of every log line. */
 export function sanitizeRequestPath(raw: string): string {
   const path = (raw.split("?")[0] ?? "").split("#")[0] ?? "";
   return path.replace(SHARE_TOKEN_PATH, "$1[redacted]");
+}
+
+/**
+ * Only a held ready poll that actually produced a success (`200` after a
+ * wake or `204` on timeout) is excluded from API latency. Immediate
+ * snapshots, validation failures and capacity/rate-limit `503`s stay in the
+ * latency distribution. The controller marks a real hold with
+ * `X-Ready-Held: 1`.
+ */
+export function isHeldReadyPoll(status: number, heldHeader: unknown): boolean {
+  return (
+    (status === 200 || status === 204) &&
+    (heldHeader === "1" || (Array.isArray(heldHeader) && heldHeader[0] === "1"))
+  );
 }
 
 /** Path/method/status → operation counter; bodies are never inspected. */
@@ -123,7 +140,13 @@ export function buildRequestLogEntry(
   const pathBoardId = BOARD_PATH.exec(path)?.[1];
   const boardId =
     request.boardMembership?.boardId ??
-    (pathBoardId === "import" ? undefined : pathBoardId);
+    (pathBoardId === undefined || BOARD_NON_ID_SEGMENTS.has(pathBoardId)
+      ? undefined
+      : pathBoardId);
+  const longPoll = isHeldReadyPoll(
+    response.statusCode,
+    response.getHeader("X-Ready-Held"),
+  );
   const runId =
     headerValue(response.getHeader("X-Run-Id")) ??
     stringParam(request.params?.runId);
@@ -145,6 +168,7 @@ export function buildRequestLogEntry(
   if (stringParam(request.params?.approvalId) !== undefined) {
     entry.approvalId = stringParam(request.params?.approvalId);
   }
+  if (longPoll) entry.longPoll = true;
   const operation = operationOf(entry.method, path, entry.status);
   if (operation !== undefined) entry.operation = operation;
   if (request.rateLimit !== undefined) {
@@ -193,6 +217,7 @@ export class RequestLogService {
       durationMs: entry.durationMs,
       actorType: entry.actorType,
       write: WRITE_METHODS.has(entry.method),
+      ...(entry.longPoll === true ? { longPoll: true } : {}),
       ...(entry.rateLimit !== undefined
         ? {
             rateLimit: {

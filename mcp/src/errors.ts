@@ -44,15 +44,16 @@ export const RATE_LIMIT_CAP_BASE_MS = 7_400;
 export const RATE_LIMIT_CAP_JITTER_MS = 600;
 
 /**
- * `429 rate_limited`, or the server's queued `503 rate_limited` (TASK-200.3):
- * both rejected the request before applying it, so retrying the same body is
- * safe even without an `Idempotency-Key` (command bodies also keep their
- * `commandId`).
+ * `429 rate_limited`, the server's queued `503 rate_limited` (TASK-200.3), or
+ * held-poll admission pressure (`503 ready_poll_capacity`, TASK-200.2): all
+ * rejected the request before applying it, so retrying the same read is safe.
  */
 export function isRateLimited(error: unknown): boolean {
   if (!(error instanceof ApiError)) return false;
   if (error.status === 429) return true;
-  return error.status === 503 && asRecord(error.body).code === "rate_limited";
+  if (error.status !== 503) return false;
+  const code = asRecord(error.body).code;
+  return code === "rate_limited" || code === "ready_poll_capacity";
 }
 
 /**
