@@ -6,19 +6,27 @@ import {
 import type { AdminFeatureFlagDto, FeatureFlagKey } from "@janosik/shared";
 import { FEATURE_FLAGS } from "@janosik/shared";
 import { Prisma } from "@prisma/client";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { env } from "@/config/env";
 
 /**
  * Behaviour feature flags (TASK-61). One row per key (`FeatureFlag`) carries
  * the global switch plus an optional per-user override map; the seed value
- * for an absent row comes from the env/most-permissive default. Reads are
- * cheap and the table is tiny, so no cache is kept — a toggle takes effect
- * on the very next request, no restart.
+ * for an absent row comes from the env/most-permissive default.
+ *
+ * TASK-200.5: the raw row (not the per-user answer) is cached for 10–30 s.
+ * That is safe to share across tenants — the override map is applied after
+ * the lookup — and keeps a 30 s SSE tick from re-reading the same four rows
+ * for every connection. `update()` invalidates the key synchronously and on
+ * every replica through the realtime bus.
  */
 @Injectable()
 export class FeatureFlagsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hotPathCache: HotPathCacheService,
+  ) {}
 
   /** The fallback value when no row exists for a key. */
   envDefaults(): Record<FeatureFlagKey, boolean> {
@@ -35,7 +43,11 @@ export class FeatureFlagsService {
     key: FeatureFlagKey,
     userId?: string | null,
   ): Promise<boolean> {
-    const row = await this.prisma.featureFlag.findUnique({ where: { key } });
+    let row = this.hotPathCache.getFlag(key);
+    if (row === undefined) {
+      row = await this.prisma.featureFlag.findUnique({ where: { key } });
+      this.hotPathCache.rememberFlag(key, row);
+    }
     if (userId && row?.perUser && typeof row.perUser === "object") {
       const overrides = row.perUser as Record<string, boolean>;
       if (Object.prototype.hasOwnProperty.call(overrides, userId)) {
@@ -98,6 +110,8 @@ export class FeatureFlagsService {
       },
       update: data,
     });
+    // The toggle must beat the cached row on this node and every replica.
+    this.hotPathCache.invalidateFlags(key);
     const perUser = (row.perUser as Record<string, boolean> | null) ?? null;
     const flag = FEATURE_FLAGS.find((entry) => entry.key === key)!;
     return {

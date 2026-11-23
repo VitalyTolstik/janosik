@@ -278,6 +278,9 @@ that matter most:
 | `NODE_OPTIONS` | `--max-old-space-size=1024` | Node heap ceiling for the API process. Bounds memory so a live-stream surge triggers GC instead of the container OOM-killer. Raise it on a bigger host. |
 | `SHARE_AGGREGATE_CACHE_MS` | `2000` | Live-share aggregate cache window. Each process stores up to 64 board aggregates by count and evicts the least recently used at capacity. Memory depends on board size. A changed board `seq` invalidates the entry. `0` disables storage. Up to 64 distinct rebuilds can run concurrently per process. A new rebuild at capacity returns `503`. |
 | `ADMIN_METRICS_CACHE_MS` | `5000` | Master `/api/v1/admin/metrics` cache window (dropped on any moderation action). `0` disables. |
+| `AUTH_CACHE_TTL_MS` | `15000` | PAT-by-sha256 resolution cache. Writes/SSE bypass it; revoke/pause invalidate it through the realtime bus. Keep it in the 10–30 s band; `0` disables. Bounded by `AUTH_CACHE_MAX_ENTRIES` (`5000`). |
+| `MEMBERSHIP_CACHE_TTL_MS` | `30000` | `(user, board)` membership cache for reads and the SSE keep-alive. Writes/SSE bypass it; role/removal events invalidate it. `0` disables. Bounded by `MEMBERSHIP_CACHE_MAX_ENTRIES` (`10000`). |
+| `FEATURE_FLAG_CACHE_MS` | `30000` | Raw feature-flag row cache; a flag update invalidates it on every node. `0` disables. Bounded by `FEATURE_FLAG_CACHE_MAX_ENTRIES` (`64`). |
 | `POSTGRES_SHARED_BUFFERS` | `256MB` | `shared_buffers` of the bundled Postgres container; raise on a larger host. |
 | `POSTGRES_WORK_MEM` | `8MB` | `work_mem` of the bundled Postgres container. |
 | `POSTGRES_MAX_CONNECTIONS` | `100` | `max_connections` of the bundled Postgres container. |

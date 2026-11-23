@@ -7,6 +7,7 @@ import {
 import type { ApiToken, User } from "@prisma/client";
 import { API_TOKEN_PREFIX } from "@janosik/shared";
 import { createHash } from "node:crypto";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import type { PrismaService } from "@/common/prisma/prisma.service";
 import {
   API_TOKEN_DEFAULT_TTL_DAYS,
@@ -99,7 +100,21 @@ const makeToken = (overrides: Partial<ApiToken> = {}): ApiToken => ({
 describe("ApiTokenService", () => {
   let service: ApiTokenService;
   const attentionMock = { notifyTokenRevoked: jest.fn() };
-  const realtimeMock = { publish: jest.fn() };
+  const realtimeMock = {
+    publish: jest.fn(),
+    publishInvalidation: jest.fn(),
+    onInvalidation: jest.fn(() => () => undefined),
+  };
+  const hotPathCache = new HotPathCacheService(realtimeMock as never, {
+    patTtlMs: 0,
+    membershipTtlMs: 0,
+    streamMembershipTtlMs: 0,
+    flagsTtlMs: 0,
+    patMaxEntries: 10,
+    membershipMaxEntries: 10,
+    streamMembershipMaxEntries: 10,
+    flagsMaxEntries: 10,
+  });
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -122,6 +137,7 @@ describe("ApiTokenService", () => {
       } as never,
       attentionMock as never,
       realtimeMock as never,
+      hotPathCache,
     );
   });
 
@@ -781,6 +797,152 @@ describe("ApiTokenService", () => {
         },
         data: { stopAllPausedAt: null, stopAllPausedBy: null },
       });
+    });
+  });
+
+  describe("TASK-200.5 TTL cache", () => {
+    function harness(ttlMs: number): {
+      cached: ApiTokenService;
+      prisma: typeof prismaMock;
+      bus: {
+        publishInvalidation: jest.Mock;
+        onInvalidation: jest.Mock;
+        publish: jest.Mock;
+      };
+    } {
+      const listeners = new Set<(event: unknown) => void>();
+      const bus = {
+        publish: jest.fn(),
+        publishInvalidation: jest.fn((event: unknown) => {
+          for (const listener of listeners) listener(event);
+        }),
+        onInvalidation: jest.fn((listener: (event: unknown) => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        }),
+      };
+      const cache = new HotPathCacheService(bus as never, {
+        patTtlMs: ttlMs,
+        membershipTtlMs: 0,
+        streamMembershipTtlMs: 0,
+        flagsTtlMs: 0,
+        patMaxEntries: 100,
+        membershipMaxEntries: 10,
+        streamMembershipMaxEntries: 10,
+        flagsMaxEntries: 10,
+      });
+      return {
+        cached: new ApiTokenService(
+          prismaMock,
+          { record: jest.fn() } as never,
+          attentionMock as never,
+          bus as never,
+          cache,
+        ),
+        prisma: prismaMock,
+        bus,
+      };
+    }
+
+    function stored(overrides: Partial<ApiToken> = {}) {
+      return {
+        ...makeToken({
+          lastUsedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          ...overrides,
+        }),
+        user: makeUser(),
+      };
+    }
+
+    it("serves 500 agent reads from one PAT lookup", async () => {
+      const { cached, prisma } = harness(30_000);
+      prisma.apiToken.findUnique.mockResolvedValue(stored());
+
+      for (let i = 0; i < 500; i += 1) {
+        await expect(cached.authenticate("raw-token")).resolves.toMatchObject({
+          tokenId: "token-1",
+        });
+      }
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("bypasses the cache for writes and SSE connects", async () => {
+      const { cached, prisma } = harness(30_000);
+      prisma.apiToken.findUnique.mockResolvedValue(stored());
+
+      await cached.authenticate("raw-token");
+      await cached.authenticate("raw-token", { fresh: true });
+      await cached.authenticate("raw-token", { fresh: true });
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(3);
+    });
+
+    it("expires the entry after its window", async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date("2026-11-23T10:00:00Z"));
+      try {
+        const { cached, prisma } = harness(15_000);
+        prisma.apiToken.findUnique.mockResolvedValue(stored());
+        await cached.authenticate("raw-token");
+        await cached.authenticate("raw-token");
+        expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(1);
+        jest.advanceTimersByTime(15_000);
+        await cached.authenticate("raw-token");
+        expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("does not cache a token that expires inside the window", async () => {
+      const { cached, prisma } = harness(30_000);
+      prisma.apiToken.findUnique.mockResolvedValue(
+        stored({ expiresAt: new Date(Date.now() + 1000) }),
+      );
+      await cached.authenticate("raw-token");
+      await cached.authenticate("raw-token");
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it("makes a revoke visible immediately through the invalidation bus", async () => {
+      const { cached, prisma, bus } = harness(30_000);
+      const valid = stored();
+      prisma.apiToken.findUnique.mockResolvedValue(valid);
+      await cached.authenticate("raw-token");
+
+      prisma.apiToken.findFirst.mockResolvedValue(makeToken());
+      prisma.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
+      prisma.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      await cached.revoke("user-1", "token-1");
+      expect(bus.publishInvalidation).toHaveBeenCalledWith({
+        kind: "pat",
+        tokenId: "token-1",
+      });
+
+      prisma.apiToken.findUnique.mockResolvedValue({
+        ...valid,
+        revokedAt: new Date(),
+      });
+      await expect(cached.authenticate("raw-token")).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it("invalidates the resolution when a token is paused", async () => {
+      const { cached, prisma } = harness(30_000);
+      prisma.apiToken.findUnique.mockResolvedValue(stored());
+      await cached.authenticate("raw-token");
+
+      prisma.apiToken.findFirst.mockResolvedValue(makeToken());
+      prisma.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prisma.apiToken.findUniqueOrThrow.mockResolvedValue(
+        makeToken({ individualPausedAt: new Date("2026-11-23T10:05:00Z") }),
+      );
+      await cached.pause("user-1", "token-1", "freeze");
+
+      await cached.authenticate("raw-token");
+      expect(prisma.apiToken.findUnique).toHaveBeenCalledTimes(2);
     });
   });
 });

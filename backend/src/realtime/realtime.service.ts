@@ -25,6 +25,22 @@ export type SubscriberAdmission =
   | { ok: true; release: () => void }
   | { ok: false; reason: "instance" | "user" | "board"; limit: number };
 
+/**
+ * A control-plane cache invalidation (TASK-200.5). It travels on the same
+ * Redis connection as board frames but on its own channel, so every API
+ * replica drops a stale auth/membership/flag entry at the same moment —
+ * no board stream has to be open for the message to arrive.
+ *
+ * `pat` without `tokenId` and `flags` without `key` mean "all entries".
+ */
+export type CacheInvalidation =
+  | { kind: "pat"; tokenId?: string }
+  | { kind: "membership"; boardId: string; userId: string }
+  | { kind: "board"; boardId: string }
+  | { kind: "flags"; key?: string };
+
+export type CacheInvalidationListener = (event: CacheInvalidation) => void;
+
 /** Redis publish retries before the frame is given up on (B-4). */
 const PUBLISH_ATTEMPTS = 3;
 const PUBLISH_RETRY_MS = 250;
@@ -65,6 +81,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private lastLoggedSubscribers = 0;
   /** This node's id — so it ignores the echo of its own published frames. */
   private readonly nodeId = randomUUID();
+  /** Cache-invalidation subscribers (TASK-200.5). */
+  private readonly invalidationListeners = new Set<CacheInvalidationListener>();
 
   onModuleInit(): void {
     // Log the live-stream count on a timer regardless of Redis (TASK-140):
@@ -79,6 +97,10 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         maxRetriesPerRequest: null,
       });
       this.subscriber.on("message", (channel: string, payload: string) => {
+        if (channel === CHANNEL_INVALIDATE) {
+          this.receiveInvalidation(payload);
+          return;
+        }
         const boardId = channel.replace(CHANNEL_PREFIX, "");
         try {
           const envelope = JSON.parse(payload) as {
@@ -92,6 +114,18 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
           /* ignore malformed frames */
         }
       });
+      // TASK-200.5: cache invalidation is control-plane, independent of any
+      // board subscription. Best-effort: a missed frame is bounded by the
+      // TTL, not by correctness.
+      void this.subscriber
+        .subscribe(CHANNEL_INVALIDATE)
+        .catch((error: unknown) =>
+          this.logger.warn(
+            `Realtime cache-invalidation channel unavailable: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+        );
       this.logger.log("Realtime fan-out via Redis pub/sub");
     } catch (error) {
       this.logger.warn(
@@ -132,6 +166,24 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
 
   /** Push one committed event to every subscriber of the board (all nodes). */
   publish(boardId: string, event: BoardSseEvent): void {
+    // TASK-200.5: a membership frame already proves that the (board, user)
+    // permission snapshot changed, so it doubles as the invalidation. Doing
+    // this here covers every publisher — boards, invitations, admin, profile
+    // updates — without threading the cache through each service.
+    if (event.type === "membership") {
+      this.publishInvalidation({
+        kind: "membership",
+        boardId: event.boardId,
+        userId: event.userId,
+      });
+    }
+    if (
+      event.type === "agent" &&
+      event.scope === "board" &&
+      (event.op === "paused" || event.op === "resumed")
+    ) {
+      this.publishInvalidation({ kind: "board", boardId });
+    }
     // Local first (this node's subscribers), then Redis for the others.
     this.publishLocal(boardId, event);
     if (this.publisher !== null) {
@@ -140,6 +192,72 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
         JSON.stringify({ origin: this.nodeId, event }),
         1,
       );
+    }
+  }
+
+  /**
+   * Register a cache-invalidation listener (TASK-200.5). The returned
+   * function removes it; services normally live for the process lifetime.
+   */
+  onInvalidation(listener: CacheInvalidationListener): () => void {
+    this.invalidationListeners.add(listener);
+    return () => this.invalidationListeners.delete(listener);
+  }
+
+  /**
+   * Drop stale auth/membership/flag entries on every node. Local listeners
+   * run synchronously, so the writer's next request already sees its own
+   * change; Redis carries the same event to the other replicas.
+   */
+  publishInvalidation(event: CacheInvalidation): void {
+    this.emitInvalidation(event);
+    if (this.publisher === null) return;
+    void this.publisher
+      .publish(
+        CHANNEL_INVALIDATE,
+        JSON.stringify({ origin: this.nodeId, event }),
+      )
+      .catch((error: unknown) => {
+        // TTL is the backstop; one failed publication must not fail a write.
+        this.logger.warn(
+          `Cache invalidation publish failed (${event.kind}): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
+  }
+
+  /** Run a remote invalidation received from another node. */
+  private receiveInvalidation(payload: string): void {
+    try {
+      const envelope = JSON.parse(payload) as {
+        origin?: string;
+        event?: CacheInvalidation;
+      };
+      if (
+        envelope.origin === this.nodeId ||
+        envelope.event === undefined ||
+        typeof envelope.event !== "object"
+      ) {
+        return;
+      }
+      this.emitInvalidation(envelope.event);
+    } catch {
+      /* ignore malformed control frames */
+    }
+  }
+
+  private emitInvalidation(event: CacheInvalidation): void {
+    for (const listener of this.invalidationListeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.logger.warn(
+          `Cache invalidation listener failed (${event.kind}): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
   }
 
@@ -334,3 +452,5 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
 }
 
 const CHANNEL_PREFIX = "janosik:board:";
+/** Control-plane cache invalidation (TASK-200.5), separate from boards. */
+const CHANNEL_INVALIDATE = "janosik:cache-invalidate";

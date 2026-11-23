@@ -2904,6 +2904,11 @@ export class AdminService {
       email: user.email,
       role,
     });
+    this.realtime.publishInvalidation({
+      kind: "membership",
+      boardId,
+      userId: user.id,
+    });
     return { status: "ok" };
   }
 
@@ -2931,6 +2936,11 @@ export class AdminService {
       userId: member.userId,
       ...dto,
     });
+    this.realtime.publishInvalidation({
+      kind: "membership",
+      boardId,
+      userId: member.userId,
+    });
     return { status: "ok" };
   }
 
@@ -2946,6 +2956,11 @@ export class AdminService {
     await this.prisma.boardMember.delete({ where: { id: memberId } });
     await this.audit(admin, "board.member_removed", "board", boardId, {
       memberId,
+      userId: member.userId,
+    });
+    this.realtime.publishInvalidation({
+      kind: "membership",
+      boardId,
       userId: member.userId,
     });
     return { status: "ok" };
@@ -2982,6 +2997,7 @@ export class AdminService {
     await this.audit(admin, "board.owner_transferred", "board", boardId, {
       userId,
     });
+    this.realtime.publishInvalidation({ kind: "board", boardId });
     return { status: "ok" };
   }
 
