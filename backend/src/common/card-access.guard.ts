@@ -7,6 +7,7 @@ import { Reflector } from "@nestjs/core";
 import { ApiTokenService } from "@/auth/api-token.service";
 import { isWriteMethod } from "@/auth/agent-pause";
 import type { AuthUser } from "@/auth/auth.types";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { ARCHIVED_BOARD_MESSAGE } from "./archived-board";
 import { GuardedRequest, MembershipGuard } from "./membership.guard";
@@ -26,8 +27,9 @@ export class CardAccessGuard extends MembershipGuard {
     reflector: Reflector,
     prisma: PrismaService,
     apiTokens: ApiTokenService,
+    hotPathCache: HotPathCacheService,
   ) {
-    super(reflector, prisma, apiTokens);
+    super(reflector, prisma, apiTokens, hotPathCache);
   }
 
   /**
