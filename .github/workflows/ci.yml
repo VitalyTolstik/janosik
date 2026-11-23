@@ -94,6 +94,17 @@ jobs:
           npm run openapi:check
           npm run openapi:test
 
+      # TASK-200.8: the optional gateway is a separate compose profile. Validate
+      # the interpolation and the token-free service before the Docker job
+      # builds the image.
+      - name: Validate compose config (MCP gateway profile)
+        env:
+          JWT_SECRET: 00000000000000000000000000000000000000000000000000000000000000ff
+          POSTGRES_USER: janosik
+          POSTGRES_PASSWORD: janosik
+          POSTGRES_DB: janosik
+        run: docker compose --profile mcp config > /dev/null
+
       # The MCP server: type-check, unit tests and a bundle, so a broken
       # tool schema fails the build before it reaches `npx @janosik/mcp`.
       - name: MCP server typecheck
@@ -382,6 +393,17 @@ jobs:
           tags: janosik-selfhost-local:codex
           cache-from: type=gha,scope=janosik-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=janosik-${{ matrix.arch }}
+      - name: Build MCP gateway image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: mcp/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: false
+          load: true
+          tags: janosik-mcp-local:test
+          cache-from: type=gha,scope=janosik-mcp-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=janosik-mcp-${{ matrix.arch }}
       - name: Smoke test self-host installation
         run: bash scripts/self-host-smoke.sh
 
@@ -433,6 +455,23 @@ jobs:
           cache-from: type=gha,scope=janosik-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=janosik-${{ matrix.arch }}
 
+      - name: Build and push MCP gateway image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: mcp/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            APP_VERSION=${{ steps.product.outputs.version }}
+          push: true
+          tags: ghcr.io/vitalytolstik/janosik-mcp:${{ github.ref_name }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/VitalyTolstik/janosik
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.product.outputs.version }}
+          cache-from: type=gha,scope=janosik-mcp-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=janosik-mcp-${{ matrix.arch }}
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [publish-images]
@@ -470,6 +509,18 @@ jobs:
           docker buildx imagetools create "${args[@]}" \
             "ghcr.io/vitalytolstik/janosik:${GITHUB_REF_NAME}-amd64" \
             "ghcr.io/vitalytolstik/janosik:${GITHUB_REF_NAME}-arm64"
+
+      - name: Publish MCP gateway manifest
+        env:
+          MCP_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] && args+=(--tag "${tag/janosik:/janosik-mcp:}")
+          done <<< "$MCP_IMAGE_TAGS"
+          docker buildx imagetools create "${args[@]}" \
+            "ghcr.io/vitalytolstik/janosik-mcp:${GITHUB_REF_NAME}-amd64" \
+            "ghcr.io/vitalytolstik/janosik-mcp:${GITHUB_REF_NAME}-arm64"
 
   # Publish the MCP server to npm and to the MCP Registry on a `mcp-v*` tag
   # (TASK-136). The registry only hosts metadata; the npm package is the

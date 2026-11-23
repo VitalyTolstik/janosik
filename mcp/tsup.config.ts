@@ -6,7 +6,7 @@ import { defineConfig } from "tsup";
  * SDK and Zod stay external so they resolve from the published dependencies.
  */
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/http.ts"],
   format: ["esm"],
   target: "node22",
   platform: "node",

@@ -217,6 +217,16 @@ function parseToolsets(value: string | undefined): ReadonlySet<Toolset> {
   return out;
 }
 
+export interface LoadConfigOptions {
+  /**
+   * The Streamable HTTP gateway receives the personal key on each request.
+   * It still needs the instance URL and the tool configuration, but it must
+   * never start with one shared token: in this mode `JANOSIK_TOKEN` and
+   * `--token` are ignored and {@link Config.token} is empty.
+   */
+  tokenFromRequest?: boolean;
+}
+
 /**
  * Resolve the config, or throw a {@link ConfigError} naming the missing
  * variable so the client shows an actionable message instead of a stack.
@@ -224,10 +234,13 @@ function parseToolsets(value: string | undefined): ReadonlySet<Toolset> {
 export function loadConfig(
   argv: string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
+  options: LoadConfigOptions = {},
 ): Config {
   const args = parseArgs(argv);
   const url = args.url ?? env.JANOSIK_URL;
-  const token = args.token ?? env.JANOSIK_TOKEN;
+  const token = options.tokenFromRequest
+    ? undefined
+    : (args.token ?? env.JANOSIK_TOKEN);
 
   if (!url) {
     throw new ConfigError(
@@ -235,7 +248,7 @@ export function loadConfig(
         "https://boards.example.com (or pass --url).",
     );
   }
-  if (!token) {
+  if (!token && !options.tokenFromRequest) {
     throw new ConfigError(
       "Missing JANOSIK_TOKEN. Create a personal API key in Janosik " +
         "(Account → API keys) and set it here (or pass --token).",
@@ -248,7 +261,7 @@ export function loadConfig(
 
   return {
     url: normalizeUrl(url),
-    token,
+    token: token ?? "",
     appBase,
     allowFs,
     fsRoot: fsRootRaw ? path.resolve(fsRootRaw) : null,

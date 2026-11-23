@@ -21,7 +21,8 @@
   ],
   "type": "module",
   "bin": {
-    "janosik-mcp": "dist/index.js"
+    "janosik-mcp": "dist/index.js",
+    "janosik-mcp-http": "dist/http.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -39,7 +40,9 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
+    "dev:http": "tsx src/http.ts",
     "start": "node dist/index.js",
+    "start:http": "node dist/http.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

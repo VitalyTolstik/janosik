@@ -113,6 +113,53 @@ services:
       retries: 3
       start_period: 40s
 
+  # Shared MCP Streamable HTTP gateway (TASK-200.8). Optional: start it with
+  #   docker compose --profile mcp up -d
+  # It is a separate process from the API and holds one JanosikClient per MCP
+  # session. Clients prove identity on every request with
+  # `Authorization: Bearer jnk_…`; this container never gets JANOSIK_TOKEN.
+  mcp:
+    image: ${JANOSIK_MCP_IMAGE:-ghcr.io/vitalytolstik/janosik-mcp}:${JANOSIK_TAG:-latest}
+    # Uncomment to build the gateway from this checkout instead of pulling:
+    # build:
+    #   context: .
+    #   dockerfile: mcp/Dockerfile
+    profiles: ["mcp"]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      JANOSIK_URL: http://app:3000
+      JANOSIK_APP_BASE: /app
+      JANOSIK_MCP_HTTP_HOST: 0.0.0.0
+      JANOSIK_MCP_HTTP_PORT: "8080"
+      JANOSIK_MCP_HTTP_MAX_SESSIONS: ${JANOSIK_MCP_HTTP_MAX_SESSIONS:-500}
+      JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN: ${JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN:-0}
+      JANOSIK_MCP_HTTP_SESSION_IDLE_MS: ${JANOSIK_MCP_HTTP_SESSION_IDLE_MS:-300000}
+      JANOSIK_MCP_HTTP_SESSION_SWEEP_MS: ${JANOSIK_MCP_HTTP_SESSION_SWEEP_MS:-30000}
+      JANOSIK_MCP_HTTP_ALLOWED_ORIGINS: ${JANOSIK_MCP_HTTP_ALLOWED_ORIGINS:-}
+      JANOSIK_MCP_HTTP_TRUST_PROXY: ${JANOSIK_MCP_HTTP_TRUST_PROXY:-0}
+      JANOSIK_MCP_HTTP_LOG_LEVEL: ${JANOSIK_MCP_HTTP_LOG_LEVEL:-info}
+      JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS: ${JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS:-10000}
+      JANOSIK_MCP_TOOLSETS: ${JANOSIK_MCP_TOOLSETS:-}
+      JANOSIK_MCP_READONLY: ${JANOSIK_MCP_READONLY:-false}
+      # No JANOSIK_TOKEN here on purpose: one shared key would defeat session
+      # isolation. Set each client's Authorization header instead.
+      NODE_OPTIONS: ${JANOSIK_MCP_NODE_OPTIONS:---max-old-space-size=1024}
+    ports:
+      - "${JANOSIK_MCP_BIND_ADDRESS:-127.0.0.1}:${JANOSIK_MCP_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
