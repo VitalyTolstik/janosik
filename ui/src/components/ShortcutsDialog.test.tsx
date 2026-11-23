@@ -106,6 +106,7 @@ describe("keyboard shortcuts", () => {
     expect(table).toHaveTextContent("Ctrl+K");
     expect(table).toHaveTextContent("N");
     expect(table).toHaveTextContent("J");
+    expect(table).toHaveTextContent("Select all visible cards");
     fireEvent.keyDown(table, { key: "Escape" });
     // Radix closes on Escape via its own handler.
   });
@@ -132,8 +133,17 @@ describe("keyboard shortcuts", () => {
     const table = screen.getByTestId("shortcuts-table");
     expect(table).toHaveTextContent("Focus the board filter");
     expect(table).toHaveTextContent("Undo");
+    expect(table).toHaveTextContent("Select all visible cards");
     expect(table).not.toHaveTextContent("Next card");
     expect(table).not.toHaveTextContent("New column");
+  });
+
+  it("does not advertise bulk select-all in the calendar", () => {
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    pressKey("?");
+    const table = screen.getByTestId("shortcuts-table");
+    expect(table).not.toHaveTextContent("Select all visible cards");
   });
 
   it("opens the cheat sheet from the Help menu", () => {

@@ -10,6 +10,10 @@ import {
   TableView,
   WatchView,
 } from "@/components/board/views-lazy";
+import {
+  BulkActionBar,
+  BoardSelectionToggle,
+} from "@/components/board/BulkActionBar";
 import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
@@ -22,6 +26,7 @@ import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
+import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { hasCard } from "@/utils/card-nav";
@@ -161,6 +166,46 @@ export function BoardSection() {
   const matchCount = filteredIds
     ? Object.values(filteredIds).reduce((sum, ids) => sum + ids.length, 0)
     : 0;
+  // Flat visual order of the cards the current projection shows, for
+  // select-all and Shift ranges. Selection stays on the board/table; the
+  // calendar and watch projections cannot host the bulk bar.
+  const visibleCardIds = useMemo(
+    () =>
+      board === undefined
+        ? []
+        : board.columns.flatMap(
+            (column) => filteredIds?.[column.id] ?? column.cardIds,
+          ),
+    [board, filteredIds],
+  );
+  // The table publishes its sorted/filtered row order; Shift ranges and
+  // "select all visible" must use exactly that order. Keyed by board so a
+  // stale table order never leaks into another board.
+  const [tableOrder, setTableOrder] = useState<{
+    boardId: string;
+    ids: readonly string[];
+  } | null>(null);
+  const activeBoardId = board?.id;
+  const handleTableOrder = useCallback(
+    (ids: readonly string[]) => {
+      if (activeBoardId === undefined) return;
+      setTableOrder((previous) => {
+        if (
+          previous?.boardId === activeBoardId &&
+          previous.ids.length === ids.length &&
+          previous.ids.every((id, index) => id === ids[index])
+        ) {
+          return previous;
+        }
+        return { boardId: activeBoardId, ids };
+      });
+    },
+    [activeBoardId],
+  );
+  const selectionOrder =
+    view === "table" && tableOrder !== null && tableOrder.boardId === board?.id
+      ? tableOrder.ids
+      : visibleCardIds;
 
   // The open card mirrors the `?card=` URL param (shareable card links and
   // the global-search "open the card itself" behaviour): navigating with the
@@ -267,138 +312,152 @@ export function BoardSection() {
   // its dialog open at the top. The params never enable anything on their own.
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusAttachmentId = searchParams.get("attachment") ?? undefined;
+  // Selection is a write affordance and only exists where cards are rows.
+  const selectionEnabled = !readOnly && (view === "board" || view === "table");
 
   return (
-    <main
-      data-testid="board-main"
-      tabIndex={-1}
-      className={cn(
-        "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 outline-none sm:px-6",
-        boardBackgroundById(background).className,
-      )}
+    <CardSelectionProvider
+      boardId={board.id}
+      order={selectionOrder}
+      enabled={selectionEnabled}
     >
-      {/* An archived board is a read-only view: say why before the filter
+      <main
+        data-testid="board-main"
+        tabIndex={-1}
+        className={cn(
+          "flex min-h-0 w-full flex-1 flex-col px-4 pt-4 pb-4 outline-none sm:px-6",
+          boardBackgroundById(background).className,
+        )}
+      >
+        {/* An archived board is a read-only view: say why before the filter
           toolbar, and offer the restore action to an ADMIN. */}
-      {board.archivedAt !== undefined ? (
-        <ArchivedBoardNotice boardId={board.id} className="mb-3" />
-      ) : null}
-      {/* The watch view reads the whole board feed; a card filter would only
+        {board.archivedAt !== undefined ? (
+          <ArchivedBoardNotice boardId={board.id} className="mb-3" />
+        ) : null}
+        {/* The watch view reads the whole board feed; a card filter would only
           contradict it, so the toolbar is hidden there. */}
-      {view !== "watch" ? (
-        <div className="mb-3">
-          <FilterBar
-            filter={filter}
-            labels={board.labels}
-            boardId={board.id}
-            matchCount={matchCount}
-            matchPending={serverPending}
-            onChange={setFilter}
-          />
+        {view !== "watch" ? (
+          <div className="mb-3">
+            <FilterBar
+              filter={filter}
+              labels={board.labels}
+              boardId={board.id}
+              matchCount={matchCount}
+              matchPending={serverPending}
+              onChange={setFilter}
+            />
+          </div>
+        ) : null}
+        {serverPending ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="filter-server-pending"
+            className="mb-3 text-xs text-muted-foreground"
+          >
+            {t("filter.searchingServer")}
+          </p>
+        ) : null}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <ViewSwitcher value={view} onChange={setView} />
+          <div className="flex flex-wrap items-center gap-2">
+            <BoardSelectionToggle />
+            {/* Board-view display controls: column style, glass + card density. */}
+            {view === "board" ? (
+              <BoardDisplayMenu
+                density={density}
+                onDensityChange={setDensity}
+                columnStyle={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
+                onColumnStyleChange={setBoardColumnStyle}
+                readOnly={readOnly}
+              />
+            ) : null}
+          </div>
         </div>
-      ) : null}
-      {serverPending ? (
-        <p
-          role="status"
-          aria-live="polite"
-          data-testid="filter-server-pending"
-          className="mb-3 text-xs text-muted-foreground"
-        >
-          {t("filter.searchingServer")}
-        </p>
-      ) : null}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <ViewSwitcher value={view} onChange={setView} />
-        {/* Board-view display controls: column style, glass + card density. */}
         {view === "board" ? (
-          <BoardDisplayMenu
+          <DndBoard
+            filteredCardIds={filteredIds ?? undefined}
+            isFiltering={active}
+            filterPending={serverPending}
+            highlight={filter.query}
+            onCardClick={handleCardClick}
             density={density}
-            onDensityChange={setDensity}
-            columnStyle={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
-            onColumnStyleChange={setBoardColumnStyle}
             readOnly={readOnly}
           />
-        ) : null}
-      </div>
-      {view === "board" ? (
-        <DndBoard
-          filteredCardIds={filteredIds ?? undefined}
-          isFiltering={active}
-          filterPending={serverPending}
-          highlight={filter.query}
-          onCardClick={handleCardClick}
-          density={density}
-          readOnly={readOnly}
-        />
-      ) : view === "watch" ? (
-        <WatchView boardId={board.id} />
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {view === "calendar" ? (
-            <CalendarView
-              filteredCardIds={filteredIds ?? undefined}
-              isFiltering={active}
-              onCardClick={handleCardClick}
-              readOnly={readOnly}
-            />
-          ) : (
-            <TableView
-              filteredCardIds={filteredIds ?? undefined}
-              isFiltering={active}
-              filterPending={serverPending}
-              highlight={filter.query}
-              onCardClick={handleCardClick}
-              readOnly={readOnly}
-            />
-          )}
-        </div>
-      )}
+        ) : view === "watch" ? (
+          <WatchView boardId={board.id} />
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {view === "calendar" ? (
+              <CalendarView
+                filteredCardIds={filteredIds ?? undefined}
+                isFiltering={active}
+                onCardClick={handleCardClick}
+                readOnly={readOnly}
+              />
+            ) : (
+              <TableView
+                filteredCardIds={filteredIds ?? undefined}
+                isFiltering={active}
+                filterPending={serverPending}
+                highlight={filter.query}
+                onCardClick={handleCardClick}
+                readOnly={readOnly}
+                onVisibleOrderChange={handleTableOrder}
+              />
+            )}
+          </div>
+        )}
 
-      {/* A crash inside the dialog is contained here (TASK-151, C11) and resets
+        <BulkActionBar />
+
+        {/* A crash inside the dialog is contained here (TASK-151, C11) and resets
           for the next card (TASK-156) instead of pinning the fallback. The
           fallback's Close clears the crash: the card closes (and its deep
           link with it) so the remount starts from a closed dialog, not from
           the same crash (TASK-156 review). */}
-      <ErrorBoundary
-        compact
-        resetKey={openCardId ?? "closed"}
-        onReset={() => {
-          closedCardRef.current = openCardId;
-          setOpenCardId(null);
-          if (searchParams.get("card")) {
-            const next = copySearchParamsWithoutLanguageHandoff(searchParams);
-            next.delete("card");
-            next.delete("comment");
-            next.delete("attachment");
-            setSearchParams(next, { replace: true });
-          }
-        }}
-      >
-        <CardDialog
-          cardId={openCardId}
-          open={openCardId !== null}
-          readOnly={readOnly}
-          focusCommentId={focusCommentId}
-          focusAttachmentId={focusAttachmentId}
-          onOpenChange={(open) => {
-            if (!open) {
-              // Mark the closing card so a server commit landing between the
-              // state update and the param cleanup cannot reopen the dialog.
-              closedCardRef.current = openCardId;
-              setOpenCardId(null);
-              // Clear the deep link so a refresh doesn't reopen the card,
-              // while keeping filter and view state (TASK-152).
-              if (searchParams.get("card")) {
-                const next =
-                  copySearchParamsWithoutLanguageHandoff(searchParams);
-                next.delete("card");
-                next.delete("comment");
-                next.delete("attachment");
-                setSearchParams(next, { replace: true });
-              }
+        <ErrorBoundary
+          compact
+          resetKey={openCardId ?? "closed"}
+          onReset={() => {
+            closedCardRef.current = openCardId;
+            setOpenCardId(null);
+            if (searchParams.get("card")) {
+              const next = copySearchParamsWithoutLanguageHandoff(searchParams);
+              next.delete("card");
+              next.delete("comment");
+              next.delete("attachment");
+              setSearchParams(next, { replace: true });
             }
           }}
-        />
-      </ErrorBoundary>
-    </main>
+        >
+          <CardDialog
+            cardId={openCardId}
+            open={openCardId !== null}
+            readOnly={readOnly}
+            focusCommentId={focusCommentId}
+            focusAttachmentId={focusAttachmentId}
+            onOpenChange={(open) => {
+              if (!open) {
+                // Mark the closing card so a server commit landing between the
+                // state update and the param cleanup cannot reopen the dialog.
+                closedCardRef.current = openCardId;
+                setOpenCardId(null);
+                // Clear the deep link so a refresh doesn't reopen the card,
+                // while keeping filter and view state (TASK-152).
+                if (searchParams.get("card")) {
+                  const next =
+                    copySearchParamsWithoutLanguageHandoff(searchParams);
+                  next.delete("card");
+                  next.delete("comment");
+                  next.delete("attachment");
+                  setSearchParams(next, { replace: true });
+                }
+              }
+            }}
+          />
+        </ErrorBoundary>
+      </main>
+    </CardSelectionProvider>
   );
 }

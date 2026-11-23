@@ -1,6 +1,12 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TableView } from "@/components/board/TableView";
 import { ToastProvider } from "@/components/Toast";
@@ -66,7 +72,9 @@ function seedBoard() {
   );
 }
 
-function renderTable() {
+function renderTable(
+  onVisibleOrderChange?: (cardIds: readonly string[]) => void,
+) {
   return render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -76,7 +84,10 @@ function renderTable() {
               <MemoryRouter initialEntries={["/board/board-sort"]}>
                 <ToastProvider>
                   <BoardProvider>
-                    <TableView onCardClick={() => {}} />
+                    <TableView
+                      onCardClick={() => {}}
+                      onVisibleOrderChange={onVisibleOrderChange}
+                    />
                   </BoardProvider>
                 </ToastProvider>
               </MemoryRouter>
@@ -173,6 +184,18 @@ describe("TableView sorting", () => {
     renderTable();
     const table = within(screen.getByRole("table"));
     expect(table.getAllByTestId("card-due-badge")).toHaveLength(2);
+  });
+
+  it("publishes the visible sorted order for bulk selection", async () => {
+    const publish = vi.fn();
+    renderTable(publish);
+    await waitFor(() =>
+      expect(publish).toHaveBeenCalledWith(["card-b", "card-c", "card-a"]),
+    );
+    fireEvent.click(screen.getByTestId("table-sort-title"));
+    await waitFor(() =>
+      expect(publish).toHaveBeenLastCalledWith(["card-a", "card-b", "card-c"]),
+    );
   });
 
   it("hides the row hover archive on touch — row menu and dialog cover it", () => {

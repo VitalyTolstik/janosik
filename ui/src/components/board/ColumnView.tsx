@@ -38,6 +38,7 @@ import type { CardLinkIndex } from "@/utils/links";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
+import { useCardSelection } from "@/store/board-selection";
 import type { Card, Column, Label } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
@@ -143,6 +144,7 @@ function ColumnViewBody({
     setColumnAccent,
   } = useBoardActions();
   const { t, tp } = useI18n();
+  const selection = useCardSelection();
   const [renameOpen, setRenameOpen] = useState(false);
   const openRename = useCallback(() => setRenameOpen(true), []);
   // Touch has no reliable `dblclick` here: the header owns dnd-kit's
@@ -516,6 +518,11 @@ function ColumnViewBody({
                           duplicateDisabledReason={duplicateDisabledReason}
                           compact={compact}
                           readOnly={readOnly}
+                          selected={selection.selectedSet.has(card.id)}
+                          selectionMode={selection.enabled && selection.mode}
+                          onToggleSelect={
+                            selection.enabled ? selection.toggle : undefined
+                          }
                         />
                       </li>
                     </Fragment>

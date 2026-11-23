@@ -16,18 +16,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   assignment per card wins, a trailing unassign or a no-op notifies nobody, and
   replays never fan out again. The dedup key is
   `card.assigned:<minSeq>-<maxSeq>:<recipientId>` (one row per recipient). A
-  single card opens its dialog; a batch
-  opens the board filtered with `f.assignee=<assigneeId>`. The EN/RU
-  `attention_card_assigned` letter respects `notifyAttention` while the inbox
-  row is always written; scheduled digests, governed by `notifyDigest`, label
-  the category as assignment updates. The bounded inbox/letter body names the
-  actor and a few card titles plus “and N more”. Due reminder letters now link
-  each listed card
-  absolutely through `PUBLIC_ORIGIN` and `UI_BASE` (escaped, capped with “and N
-  more”, with plain URLs in the text alternative) while keeping `ReminderSent`
+  single card opens its dialog; a batch opens the board filtered with
+  `f.assignee=<assigneeId>`. The EN/RU `attention_card_assigned` letter
+  respects `notifyAttention` while the inbox row is always written; scheduled
+  digests, governed by `notifyDigest`, label the category as assignment
+  updates. The bounded inbox/letter body names the actor and a few card titles
+  plus “and N more”. Due reminder letters now link each listed card absolutely
+  through `PUBLIC_ORIGIN` and `UI_BASE` (escaped, capped with “and N more”,
+  with plain URLs in the text alternative) while keeping `ReminderSent`
   dedupe, opt-out and UTC labels; no in-app due rows were added. API EN/RU
   docs, user guide, admin template docs, OpenAPI enum and CHANGELOG are
   updated.
+
+- TASK-177.19 bulk card actions (U-08). Board and table views gain a
+  selection mode with checkboxes, Shift ranges across columns, `X` on the
+  keyboard cursor and `Ctrl/⌘+A` for all visible cards, capped at 100. The
+  bottom bar moves, labels, assigns, archives and deletes selected cards with
+  a count, progress, cancellation and a scrollable per-card error summary.
+  Archive and delete confirm first. Table ranges and select-all follow the
+  visible sort order; each run is capped at 100 cards. Every card still travels
+  through the normal command path, so workflow, definition-of-done conditions,
+  WIP limits, column caps and the per-card label cap are enforced and undo
+  stays one step per card. A running batch and its result stay visible after
+  switching to Calendar or Watch until dismissed, and cancelling keeps failed
+  and never-processed cards selected. The toast stack is lifted above the
+  visible result bar, so Dismiss and the failure list stay reachable. VIEWERs
+  and archived boards keep the read-only surface. EN/RU copy, the user guide,
+  component tests and focused e2e coverage are included.
 
 - TASK-177.12 comment mentions (U-01). Typing `@` at a word boundary opens an
   accessible board-member picker (arrow/Home/End/Tab/Enter/Escape, portalled
