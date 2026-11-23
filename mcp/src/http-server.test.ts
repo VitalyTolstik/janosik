@@ -1,5 +1,6 @@
 import {
   createServer as createHttpServer,
+  request as httpRequest,
   type IncomingMessage,
   type Server,
   type ServerResponse,
@@ -206,6 +207,7 @@ function gatewayConfig(
     sessionSweepMs: 0,
     maxBodyBytes: 64 * 1024,
     sessionlessMaxBodyBytes: 4 * 1024,
+    maxConcurrentBodyReads: 64,
     allowedOrigins: new Set(),
     readinessUrl: `${upstream.url}/api/v1/health/ready`,
     readinessCacheMs: 0,
@@ -408,6 +410,42 @@ async function listBoards(
   return (payload.structuredContent?.boards ?? []).map(
     (board) => board.title ?? "",
   );
+}
+
+function chunkedPost(
+  running: RunningGateway,
+  token: string,
+  chunks: string[],
+): Promise<{ status: number; body: string }> {
+  const url = new URL(`${running.url}/mcp`);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.on("end", () =>
+          resolve({ status: response.statusCode ?? 0, body }),
+        );
+      },
+    );
+    request.on("error", reject);
+    for (const chunk of chunks) request.write(chunk);
+    request.end();
+  });
 }
 
 async function waitFor(
@@ -732,7 +770,10 @@ describe("MCP Streamable HTTP gateway", () => {
     };
     const running = await startGateway(
       upstream,
-      { shutdownGraceMs: 1_000 },
+      {
+        shutdownGraceMs: 1_000,
+        allowedOrigins: new Set(["https://allowed.example"]),
+      },
       { createMcpServer: createSlowServer },
     );
     const sessionId = await initialize(running, ALPHA);
@@ -750,10 +791,23 @@ describe("MCP Streamable HTTP gateway", () => {
     await startedPromise;
     const closePromise = running.gateway.close("test");
     await sleep(25);
-    const duringDrain = await rpc(running, ALPHA, INITIALIZE);
+    const duringDrain = await rpc(running, ALPHA, INITIALIZE, undefined, {
+      origin: "https://allowed.example",
+    });
     expect(duringDrain.status).toBe(503);
     expect(duringDrain.headers.get("retry-after")).toBe("1");
+    expect(duringDrain.headers.get("access-control-allow-origin")).toBe(
+      "https://allowed.example",
+    );
     expect(duringDrain.json).toMatchObject({ error: "shutting_down" });
+    const duringDrainSession = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 31, method: "tools/list" },
+      sessionId,
+    );
+    expect(duringDrainSession.status).toBe(503);
+    expect(duringDrainSession.headers.get("retry-after")).toBe("1");
     const call = await callPromise;
     expect(call.status).toBe(200);
     const payload = toolResult(call) as { content?: Array<{ text?: string }> };
@@ -977,6 +1031,38 @@ describe("MCP Streamable HTTP gateway", () => {
     const after = await rpc(running, ALPHA, INITIALIZE);
     expect(after.status).toBe(429);
     expect(after.headers.get("retry-after")).toBeTruthy();
+  });
+
+  it("caps a chunked sessionless body with no Content-Length", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      sessionlessMaxBodyBytes: 64,
+    });
+    const before = upstream.authCalls;
+    const response = await chunkedPost(running, ALPHA, [
+      "x".repeat(100),
+      "y".repeat(100),
+    ]);
+    expect(response.status).toBe(413);
+    expect(response.body).toContain("payload_too_large");
+    expect(upstream.authCalls).toBe(before);
+  });
+
+  it("allows a session-bound body between INIT_MAX and MAX", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      sessionlessMaxBodyBytes: 1_024,
+      maxBodyBytes: 4_096,
+    });
+    const sessionId = await initialize(running, ALPHA);
+    const body =
+      JSON.stringify({ jsonrpc: "2.0", id: 77, method: "tools/list" }) +
+      " ".repeat(2_000);
+    const result = await rpc(running, ALPHA, body, sessionId);
+    expect(result.status).toBe(200);
+    expect(toolResult(result)).toHaveProperty("tools");
   });
 
   it("consumes the initialize bucket even for malformed sessionless bodies", async () => {

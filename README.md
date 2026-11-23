@@ -424,8 +424,9 @@ Works in Claude Desktop/Code, Cursor, VS Code, opencode and Codex. For a
 swarm of agents on one host, the package also ships a **separate Streamable
 HTTP gateway** (`janosik-mcp-http`): one process serves many sessions, each
 binding its own `Authorization: Bearer jnk_…`, so 500 agents do not spawn 500
-Node processes. Initialize is gated locally per IP/token (per-key cap 50 by
-default) before the API; raise API `THROTTLE_LIMIT` for a large first-time
+Node processes. Initialize is gated locally per IP/token (per-key cap
+`min(50, MAX_SESSIONS)` by default) before the API; raise API `THROTTLE_LIMIT`
+for a large first-time
 swarm. Sessions live in gateway memory, so a restart drops them and replicas
 need session affinity; limits and the SSE/proxy setup are in
 [mcp/README.md](./mcp/README.md#shared-streamable-http-gateway). Start it with

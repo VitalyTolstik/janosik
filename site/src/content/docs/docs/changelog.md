@@ -21,8 +21,9 @@ specific release, set `JANOSIK_TAG` in `.env` (see
   Bearer jnk_…` key; there is no shared `JANOSIK_TOKEN`. POST responses use
   SSE with keepalives, the gateway exposes `/health` and `/ready`, caps
   sessions and idle time, drains gracefully and logs no keys. Initialize
-  admission is local before the API: per-key cap (default 50), per-IP/token
-  buckets, negative cache and single-flight validation with bounded retries.
+  admission is local before the API: per-key cap (default
+  `min(50, MAX_SESSIONS)`), per-IP/token buckets, negative cache and
+  single-flight validation with bounded retries.
   Sessions are in-memory: a restart drops them and replicas need session
   affinity.
 - Admins can open the same read-only edit history from a card, a user's

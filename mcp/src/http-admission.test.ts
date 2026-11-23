@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ConcurrencyGate,
   KeyedTokenBucket,
   NegativeTokenCache,
   SingleFlight,
@@ -8,6 +9,16 @@ import {
 } from "./http-admission.js";
 
 describe("gateway admission", () => {
+  it("bounds concurrent holders without queueing", () => {
+    const gate = new ConcurrencyGate(2);
+    expect(gate.tryAcquire()).toBe(true);
+    expect(gate.tryAcquire()).toBe(true);
+    expect(gate.tryAcquire()).toBe(false);
+    gate.release();
+    expect(gate.tryAcquire()).toBe(true);
+    expect(gate.inUse).toBe(2);
+  });
+
   it("limits a key, reports Retry-After and refills over time", () => {
     let now = 0;
     const bucket = new KeyedTokenBucket({

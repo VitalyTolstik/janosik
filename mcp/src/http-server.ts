@@ -22,6 +22,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Config } from "./config.js";
 import { parseRetryAfter } from "./errors.js";
 import {
+  ConcurrencyGate,
   KeyedTokenBucket,
   NegativeTokenCache,
   SingleFlight,
@@ -262,7 +263,10 @@ type TokenValidation =
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function clientAddress(req: IncomingMessage, trustedHops: number): string {
+export function clientAddress(
+  req: IncomingMessage,
+  trustedHops: number,
+): string {
   if (trustedHops > 0) {
     const forwarded = headerString(req.headers["x-forwarded-for"]);
     if (forwarded !== undefined) {
@@ -326,6 +330,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
   const authValidation = new SingleFlight<TokenValidation>({
     maxKeys: config.authValidationMaxInFlight,
   });
+  const bodyReadGate = new ConcurrencyGate(config.maxConcurrentBodyReads);
 
   let closing = false;
   let closePromise: Promise<void> | null = null;
@@ -402,6 +407,25 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
    * a cheap read (`/api/v1/auth/me`) and prevents fabricated keys from
    * consuming the global session pool. The token itself is never logged.
    */
+  async function readBodyBounded(
+    req: IncomingMessage,
+    limit: number,
+  ): Promise<unknown> {
+    if (!bodyReadGate.tryAcquire()) {
+      throw new GatewayHttpError(
+        503,
+        "body_busy",
+        "Too many request bodies are being read; retry shortly.",
+        { "Retry-After": "1" },
+      );
+    }
+    try {
+      return await readJsonBody(req, limit);
+    } finally {
+      bodyReadGate.release();
+    }
+  }
+
   async function validateTokenOnce(token: string): Promise<TokenValidation> {
     const controller = new AbortController();
     const timer = setTimeout(
@@ -532,14 +556,6 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       if (path !== config.path) {
         throw new GatewayHttpError(404, "not_found", "Not found.");
       }
-      if (closing) {
-        throw new GatewayHttpError(
-          503,
-          "shutting_down",
-          "The gateway is shutting down.",
-          { "Retry-After": RETRY_AFTER_SHUTDOWN },
-        );
-      }
       const origin = headerString(req.headers.origin);
       if (!originAllowed(origin)) {
         logLevel = "warn";
@@ -553,6 +569,14 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       const cors = corsHeaders(origin);
       for (const [name, value] of Object.entries(cors)) {
         res.setHeader(name, value);
+      }
+      if (closing) {
+        throw new GatewayHttpError(
+          503,
+          "shutting_down",
+          "The gateway is shutting down.",
+          { "Retry-After": RETRY_AFTER_SHUTDOWN },
+        );
       }
       if (method === "OPTIONS") {
         if (origin === undefined || origin === "") {
@@ -664,23 +688,9 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           return;
         }
 
-        // An initialize body is tiny; reject an oversized declared body
-        // before buffering anything. The body reader applies the same cap to
-        // chunked requests.
-        const declared = Number(
-          headerString(req.headers["content-length"]) ?? "0",
-        );
-        if (
-          Number.isFinite(declared) &&
-          declared > config.sessionlessMaxBodyBytes
-        ) {
-          throw new GatewayHttpError(
-            413,
-            "payload_too_large",
-            "Initialize request body too large.",
-          );
-        }
-        const body = await readJsonBody(req, config.sessionlessMaxBodyBytes);
+        // The body reader checks a declared Content-Length before reading and
+        // applies the same strict cap while streaming chunked requests.
+        const body = await readBodyBounded(req, config.sessionlessMaxBodyBytes);
         if (!containsInitialize(body)) {
           throw new GatewayHttpError(
             400,
@@ -809,7 +819,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       try {
         const body =
           method === "POST"
-            ? await readJsonBody(req, config.maxBodyBytes)
+            ? await readBodyBounded(req, config.maxBodyBytes)
             : undefined;
         await session.transport.handleRequest(req, res, body);
       } finally {

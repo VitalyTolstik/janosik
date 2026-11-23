@@ -142,6 +142,30 @@ export class NegativeTokenCache {
   }
 }
 
+/** A simple bounded concurrency gate (try-acquire, no queue). */
+export class ConcurrencyGate {
+  private readonly maxConcurrent: number;
+  private active = 0;
+
+  constructor(maxConcurrent: number) {
+    this.maxConcurrent = Math.max(1, maxConcurrent);
+  }
+
+  tryAcquire(): boolean {
+    if (this.active >= this.maxConcurrent) return false;
+    this.active += 1;
+    return true;
+  }
+
+  release(): void {
+    if (this.active > 0) this.active -= 1;
+  }
+
+  get inUse(): number {
+    return this.active;
+  }
+}
+
 export class SingleFlightCapacityError extends Error {
   constructor() {
     super("Too many distinct validation calls are already in flight.");

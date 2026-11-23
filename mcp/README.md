@@ -131,7 +131,7 @@ initialize attempts/min and 50 live sessions**: a key that legitimately needs
 50 sessions must raise `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or create
 them over several minutes). The API's own IP throttle still applies to
 first-time keys:
-raise `THROTTLE_LIMIT` (and the gateway's
+raise the API `THROTTLE_LIMIT` (and the gateway's
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`) for a large
 simultaneous first-time swarm, and put the gateway behind a trusted proxy so
 `TRUST_PROXY`/`JANOSIK_MCP_HTTP_TRUST_PROXY` see real client addresses.
@@ -200,7 +200,8 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_SESSION_SWEEP_MS` | `30000` | Idle sweeper interval. |
 | `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` | empty | Browser origins allowed to call the gateway; empty rejects every browser `Origin`. |
 | `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap for all POSTs. |
-| `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES` | `min(262144, MAX_BODY_BYTES)` | Strict sessionless/initialize body cap, checked before buffering. |
+| `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES` | `min(262144, MAX_BODY_BYTES)` | Strict sessionless/initialize body cap, checked before buffering; over it gets `413`. |
+| `JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS` | `64` | Maximum request bodies read concurrently across all POSTs. |
 | `JANOSIK_MCP_HTTP_READY_URL` | `${JANOSIK_URL}/api/v1/health/ready` | Upstream readiness probe; no token is sent. |
 | `JANOSIK_MCP_HTTP_READY_CACHE_MS` | `5000` | Cache for the readiness probe (`0` = every request probes). |
 | `JANOSIK_MCP_HTTP_READY_TIMEOUT_MS` | `3000` | Readiness probe timeout. |

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ConfigError, DEFAULT_TOOLSETS } from "./config.js";
-import { loadGatewayConfig } from "./http-config.js";
+import { HTTP_USAGE, loadGatewayConfig } from "./http-config.js";
 
 const baseEnv = { JANOSIK_URL: "https://boards.example.com/" };
 
@@ -36,6 +36,7 @@ describe("loadGatewayConfig", () => {
       sessionSweepMs: 30_000,
       maxBodyBytes: 16 * 1024 * 1024,
       sessionlessMaxBodyBytes: 256 * 1024,
+      maxConcurrentBodyReads: 64,
       readinessUrl: "https://boards.example.com/api/v1/health/ready",
       readinessCacheMs: 5_000,
       readinessTimeoutMs: 3_000,
@@ -73,6 +74,7 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_SESSION_SWEEP_MS: "5000",
       JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
       JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES: "512",
+      JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "16",
       JANOSIK_MCP_HTTP_ALLOWED_ORIGINS:
         "https://app.example.com, http://localhost:5173/",
       JANOSIK_MCP_HTTP_READY_URL: "https://api.example.com/health/ready",
@@ -108,6 +110,7 @@ describe("loadGatewayConfig", () => {
       sessionSweepMs: 5_000,
       maxBodyBytes: 1024,
       sessionlessMaxBodyBytes: 512,
+      maxConcurrentBodyReads: 16,
       readinessUrl: "https://api.example.com/health/ready",
       readinessCacheMs: 0,
       readinessTimeoutMs: 500,
@@ -131,6 +134,14 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_ALLOWED_ORIGINS: "*",
     });
     expect(loaded.config.allowedOrigins).toEqual(new Set(["*"]));
+  });
+
+  it("describes the SSE/JSON/202 contract and clamped defaults in --help", () => {
+    expect(HTTP_USAGE).toContain("Successful MCP POSTs return SSE");
+    expect(HTTP_USAGE).toContain("notifications return 202");
+    expect(HTTP_USAGE).toContain("min(50, MAX_SESSIONS)");
+    expect(HTTP_USAGE).toContain("INIT_MAX_BODY_BYTES");
+    expect(HTTP_USAGE).toContain("413 above it");
   });
 
   it("names the missing URL", () => {
@@ -162,12 +173,15 @@ describe("loadGatewayConfig", () => {
     bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "6" });
     bad({ JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT: "0" });
     bad({ JANOSIK_MCP_HTTP_AUTH_MAX_IN_FLIGHT: "2000" });
+    bad({ JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "0" });
+    bad({ JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS: "2000" });
     bad({ JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "0" });
     bad({
       JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
       JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES: "2048",
     });
     bad({ JANOSIK_MCP_HTTP_TRUST_PROXY: "left" });
+    bad({ JANOSIK_MCP_HTTP_TRUST_PROXY: "17" });
     bad({ JANOSIK_MCP_HTTP_LOG_LEVEL: "verbose" });
     bad({ JANOSIK_MCP_HTTP_HOST: "has space" });
   });
@@ -178,6 +192,14 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_MAX_SESSIONS: "10",
     });
     expect(loaded.config.maxSessionsPerToken).toBe(10);
+  });
+
+  it("clamps the sessionless body cap to a smaller MAX", () => {
+    const loaded = loadGatewayConfig({
+      ...baseEnv,
+      JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1000",
+    });
+    expect(loaded.config.sessionlessMaxBodyBytes).toBe(1000);
   });
 
   it("accepts legacy booleans for the trusted proxy hop count", () => {

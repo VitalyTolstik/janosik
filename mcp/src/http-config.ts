@@ -47,6 +47,8 @@ export interface GatewayConfig {
   maxBodyBytes: number;
   /** Strict body cap for a sessionless (initialize) POST. */
   sessionlessMaxBodyBytes: number;
+  /** Maximum concurrent request-body reads across all POSTs. */
+  maxConcurrentBodyReads: number;
   /** Exact browser origins allowed to call the gateway; empty denies all. */
   allowedOrigins: ReadonlySet<string>;
   /** API readiness probe used by `GET /ready`. */
@@ -321,6 +323,12 @@ export function loadGatewayConfig(
         "JANOSIK_MCP_HTTP_MAX_BODY_BYTES.",
     );
   }
+  const maxConcurrentBodyReads = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS",
+    64,
+    { max: 1_024 },
+  );
   const readinessUrl = normalizeProbeUrl(
     envString(
       env,
@@ -398,6 +406,7 @@ export function loadGatewayConfig(
       sessionSweepMs,
       maxBodyBytes,
       sessionlessMaxBodyBytes,
+      maxConcurrentBodyReads,
       allowedOrigins: normalizeOrigins(env.JANOSIK_MCP_HTTP_ALLOWED_ORIGINS),
       readinessUrl,
       readinessCacheMs,
@@ -425,7 +434,8 @@ Environment:
   JANOSIK_MCP_HTTP_PORT               Bind port (default ${DEFAULT_HTTP_PORT})
   JANOSIK_MCP_HTTP_PATH               MCP endpoint (default ${DEFAULT_PATH})
   JANOSIK_MCP_HTTP_MAX_SESSIONS       Global session cap (default 500)
-  JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN  Per-key cap (default 50; 0 = off)
+  JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN  Per-key cap
+                                      (default min(50, MAX_SESSIONS); 0 = off)
   JANOSIK_MCP_HTTP_INIT_RATE_LIMIT    Initialize attempts/IP/min (default 600)
   JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN  Per-key/min (default 10)
   JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS  Bad-key cache (default 60000)
@@ -436,7 +446,10 @@ Environment:
   JANOSIK_MCP_HTTP_SESSION_IDLE_MS    Idle expiry (default 300000)
   JANOSIK_MCP_HTTP_SESSION_SWEEP_MS   Sweep interval (default 30000)
   JANOSIK_MCP_HTTP_MAX_BODY_BYTES     Request body cap (default 16777216)
-  JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES  Sessionless body cap (default 262144)
+  JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES  Sessionless cap
+                                      (default min(262144, MAX_BODY_BYTES);
+                                      413 above it)
+  JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS  Concurrent reads (default 64)
   JANOSIK_MCP_HTTP_ALLOWED_ORIGINS    Comma-separated browser origins
   JANOSIK_MCP_HTTP_READY_URL          Upstream readiness probe
   JANOSIK_MCP_HTTP_READY_CACHE_MS     Probe cache (default 5000)

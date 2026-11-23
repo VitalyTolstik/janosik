@@ -17,12 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   different key, and never accepts a shared `JANOSIK_TOKEN`. POST responses
   use SSE (with keepalives for long `wait_for_work` calls) after the SDK's
   JSON-response mode was found to retain completed stream mappings. Global
-  and per-key session caps (per-key default 50), idle expiry, graceful drain,
+  and per-key session caps (per-key default `min(50, MAX_SESSIONS)`), idle
+  expiry, graceful drain,
   `/health`, `/ready`, token-free structured logs and CORS/Origin checks are
   included. Initialize admission is local before `/api/v1/auth/me`: per-IP and
   per-fingerprint token buckets, a bounded negative cache, a strict
   sessionless body cap before buffering, and single-flight validation with
-  bounded `429`/`503` retries; one valid key cannot take every session. The
+  bounded `429`/`503` retries; when `MAX_SESSIONS` exceeds 50 one valid key
+  cannot take every session (a smaller cap clamps the per-key default). The
   gateway trusts a configured number of right-edge X-Forwarded-For hops, not a
   spoofable leftmost entry. Sessions are in-memory: a restart drops them, and multiple
   replicas need session affinity. The container bundles its dependencies into one file; a

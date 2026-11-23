@@ -269,8 +269,9 @@ docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
 Each client connects to that URL with its **own** personal key in an
 `Authorization: Bearer jnk_…` header; the gateway never receives a shared
 `JANOSIK_TOKEN` (it may be absent; if present it is ignored with a warning).
-Admission is local before the API: a global cap, a per-key cap (default 50
-sessions), per-IP and per-token initialize buckets, and a short negative cache
+Admission is local before the API: a global cap, a per-key cap (default
+`min(50, MAX_SESSIONS)` sessions), per-IP and per-token initialize buckets,
+and a short negative cache
 for invalid fingerprints. Only then does the gateway call the API
 `/api/v1/auth/me` (invalid keys `401`, API rate limits `429`, outage `503`);
 concurrent initializes for one key share one call and a one-shot API

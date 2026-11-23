@@ -77,7 +77,8 @@ lets an active tool call finish (up to 10 s), then closes sessions/streams.
 Each client connects to `https://your-gateway/mcp` with **its own** key in
 `Authorization: Bearer jnk_…`; the gateway never receives a shared
 `JANOSIK_TOKEN` (absent is normal; present is ignored with a warning). Local
-admission comes first: a global cap, a per-key cap (default 50 sessions),
+admission comes first: a global cap, a per-key cap (default
+`min(50, MAX_SESSIONS)` sessions),
 per-IP and per-token initialize buckets, and a short negative cache. Only then
 does the gateway validate the key against `/api/v1/auth/me` (invalid keys
 `401`, API rate limits `429`, outage `503`), sharing one call between

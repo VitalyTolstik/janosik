@@ -34,8 +34,9 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
 - stdio remains `dist/index.js`; the existing desktop configuration is
   unchanged.
 - No database and no shared token; only bounded in-memory sessions and
-  admission state (LRU rate buckets, a bounded negative cache, and a
-  validation single-flight capped at `AUTH_MAX_IN_FLIGHT`).
+  admission state (LRU rate buckets, a bounded negative cache, a validation
+  single-flight capped at `AUTH_MAX_IN_FLIGHT`, and body reads capped at
+  `MAX_CONCURRENT_BODY_READS`).
 
 ## Transport contract
 
@@ -66,6 +67,8 @@ Error contract (all `503`s carry `Retry-After`):
   includes `Retry-After`.
 - `503 auth_busy` — too many distinct validations are in flight; includes
   `Retry-After`.
+- `503 body_busy` — too many request bodies are being read concurrently;
+  includes `Retry-After`.
 - `503 session_limit` — global/per-key cap; includes `Retry-After`.
 - `503 shutting_down` — SIGTERM drain window; includes `Retry-After`.
 - `403 token_mismatch` — a valid key that is not the key bound to the
@@ -82,8 +85,10 @@ On `initialize`, the gateway checks local admission before any API call **and
 before reading the body**: global capacity, the per-token session cap (default
 `min(50, MAX_SESSIONS)`), a per-IP initialize bucket (default 600/min), a
 per-token-fingerprint bucket (default 10/min), and a bounded negative cache of
-invalid fingerprints. The sessionless body is capped strictly (default 256 KiB)
-before buffering; all POSTs still use the normal body cap. Every new session
+invalid fingerprints. The sessionless body is capped strictly (default
+`min(256 KiB, MAX_BODY_BYTES)`) before buffering; all POSTs still use the
+normal body cap, and at most `MAX_CONCURRENT_BODY_READS` bodies are read at
+once. Every new session
 that passes the buckets and is not in the negative cache performs one
 authenticated API read (`/api/v1/auth/me` by default); only a cached invalid
 fingerprint skips it. Concurrent initializes for one fingerprint share one
@@ -96,8 +101,9 @@ throttled one up to `AUTH_RETRY_ATTEMPTS` calls. At most
 the key is invalid, `429` carries `Retry-After`, and `503` means validation
 itself is unavailable.
 
-The default per-key limits are 10 initialize attempts/min and 50 live
-sessions. A key that legitimately needs 50 sessions must raise
+The default per-key limits are 10 initialize attempts/min and
+`min(50, MAX_SESSIONS)` live sessions. A key that legitimately needs the
+per-key session cap must raise
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or spread creation over several
 minutes); the session cap alone does not grant 50 immediate initializes.
 
@@ -149,13 +155,18 @@ Docker or heavy load):
   A still usable afterwards;
 - key validation: fabricated key (401), negative-cache hit (no second API
   call), API rate limit (429), API outage (503), bounded retry after a one-shot
-  API 429, valid key, and no key in any log line;
+  API 429, no retry above `AUTH_RETRY_MAX_DELAY_MS`, valid key, and no key in
+  any log line;
 - initialize flood stops at the per-IP bucket before the API; per-token
-  bucket; concurrent validation single-flight; per-token HTTP cap
-  (503 + Retry-After) and a second key still admitted;
-- malformed and oversized sessionless bodies consume the IP bucket; the
-  oversized `Content-Length` is rejected before buffering; a spoofed leftmost
-  XFF entry cannot bypass the bucket when trusted hops are configured;
+  bucket; concurrent validation single-flight; in-flight validation cap
+  (`auth_busy`); per-token HTTP cap (503 + Retry-After) and a second key still
+  admitted;
+- malformed, chunked (no Content-Length) and oversized sessionless bodies
+  consume the IP bucket; oversized is rejected before buffering; an
+  unauthenticated oversized body is rejected without admission; a
+  session-bound body between INIT and MAX is allowed;
+- XFF trusted-hop selection covers short chains, non-IP, IPv4:port, IPv6 and a
+  spoofed leftmost entry; `TRUST_PROXY=17` is rejected;
 - global limit (503), explicit DELETE, replacement session;
 - active slow tool call is drained before close; a request during drain gets
   `503 shutting_down` + `Retry-After`; open GET SSE closes during drain; idle
