@@ -130,6 +130,24 @@ describe("TrafficService", () => {
     });
   });
 
+  it("counts a board-read 503 as read backpressure, not a 5xx error", () => {
+    const traffic = new TrafficService();
+    const base = 2_155_000_000_000;
+    traffic.recordCompleted({
+      at: base,
+      status: 503,
+      durationMs: 100,
+      actorType: "agent",
+      write: false,
+      backpressure: "board_read",
+    });
+
+    expect(traffic.snapshot(base + 1_000).telemetry).toMatchObject({
+      errors: 0,
+      rateLimited: { total: 1, read: 1, board: 0, ip: 0, token: 0 },
+    });
+  });
+
   it("still counts a board write timeout as a 5xx error", () => {
     const traffic = new TrafficService();
     const base = 2_160_000_000_000;

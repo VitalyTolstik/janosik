@@ -119,13 +119,19 @@ answers `404`. The aggregate carries `workflow` when the board has one.
 
 The response is content-negotiated: JSON bodies of at least 1 KB use gzip or
 Brotli and always send `Vary: Accept-Encoding`; tiny bodies stay identity.
-The weak `ETag` is scoped to the board, `seq`, `updatedAt`, route, role and
-projection. Send it as `If-None-Match` for a `304` with no body; the `304`
-still carries `X-Board-Seq`, so a client can advance its SSE baseline without
-downloading the board. `Cache-Control` is `private, no-store`. Identical
-concurrent reads share one build; a burst beyond the read limit may answer
-`503 board_read_busy` (or `board_read_timeout`) with `Retry-After` instead of
-overloading the process. Retry those two codes.
+The weak `ETag` is scoped to the board id, a monotonic `aggregateRevision`,
+route, role and projection. `aggregateRevision` also moves on comments,
+attachments, claim expiry, admin edits and command sweeps; `X-Board-Seq` stays
+the separate SSE baseline. Send the ETag as `If-None-Match` for a `304` with
+no body; the `304` still carries `X-Board-Seq`, so a client can advance its SSE
+baseline without downloading the board. `Cache-Control` is `private, no-store`,
+so the validator is for explicit conditional clients (the UI does not send it
+yet), not for browser-managed revalidation. Identical concurrent reads share
+one build whose linearization point is the leader's database snapshot; a caller
+that must observe its own write should not treat it as read-your-writes. A
+burst beyond the per-process read limit may answer `503 board_read_busy` (or
+`board_read_timeout`) with `Retry-After` instead of overloading the process.
+Retry those two codes.
 
 `GET /boards/:id/members` returns only **active** accepted memberships by
 default; an expired `VIEWER` is omitted so assignee pickers and filters never

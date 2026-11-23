@@ -414,12 +414,19 @@ paths:
         The response is content-negotiated: gzip or Brotli is applied to JSON
         bodies of at least 1 KB (TASK-200.6), `Vary: Accept-Encoding` is always
         present, and tiny bodies stay identity. The validator is weak and
-        scoped by board, `seq`, `updatedAt`, route, role and projection; send
-        it back as `If-None-Match` for a bodyless `304`. Identical concurrent
-        reads are coalesced, and a full-read burst is bounded — excess callers
-        may receive `503 board_read_busy` with `Retry-After` instead of the
-        server building every aggregate at once. `Cache-Control: private,
-        no-store` keeps board JSON out of browser/shared caches.
+        scoped by board id, the monotonic `aggregateRevision`, route, role and
+        projection; send it back as `If-None-Match` for a bodyless `304`.
+        `aggregateRevision` is not `X-Board-Seq`: it also changes on comments,
+        attachments, claim expiry, admin edits and command sweeps, while
+        `X-Board-Seq` keeps its SSE-resume meaning. Identical concurrent reads
+        are coalesced with the leader's database snapshot as the linearization
+        point; a caller that must observe its own write should not treat the
+        coalesced read as read-your-writes. A full-read burst is bounded —
+        excess callers may receive `503 board_read_busy` with `Retry-After`
+        instead of the server building every aggregate at once. `Cache-Control:
+        private, no-store` deliberately keeps board JSON out of browser/shared
+        caches; the ETag is for explicit conditional clients (the UI does not
+        send `If-None-Match` yet).
       parameters:
         - $ref: "#/components/parameters/IfNoneMatch"
       responses:
@@ -3140,8 +3147,9 @@ components:
       required: false
       description: |
         Weak validator returned by a previous `GET /boards/{boardId}`. When the
-        board still has the same `seq`, `updatedAt`, route, role and projection,
-        the answer is `304` with no body and the current `X-Board-Seq`.
+        board still has the same `aggregateRevision`, route, role and
+        projection, the answer is `304` with no body and the current
+        `X-Board-Seq`.
       schema:
         type: string
         example: 'W/"K7f3…"'
@@ -3250,8 +3258,10 @@ components:
     ETag:
       description: |
         Weak validator of the board read representation. Its material is board
-        id, `seq`, `updatedAt`, route, role and projection; it never contains a
-        token, user id or role name in clear form.
+        id, the monotonic `aggregateRevision`, route, role and projection; it
+        never contains a token, user id or role name in clear form. It is not
+        derived from `X-Board-Seq` (which may move backwards after a command
+        sweep) or `updatedAt` (which misses direct Card writes).
       schema:
         type: string
         example: 'W/"K7f3…"'
@@ -3329,8 +3339,10 @@ components:
         minimum: 0
     Retry-After:
       description: |
-        Seconds to wait before retrying a `429 rate_limited` or a queued `503
-        rate_limited`.
+        Seconds to wait before retrying a `429 rate_limited`, a queued `503
+        rate_limited`, or a full-read `503 board_read_busy`/`board_read_timeout`.
+        The read refusals are deliberate backpressure and are not counted as
+        server errors.
       schema:
         type: integer
         minimum: 0
@@ -3530,13 +3542,16 @@ components:
       description: |
         Deliberate full-read backpressure (`TASK-200.6`), safe to retry:
 
-        - `board_read_busy`: the process's read queue is full, or the caller
-          waited `BOARD_READ_WAIT_MS` for a slot. Identical reads already share
-          one build, so only distinct board/role/projection/coding groups
-          compete.
+        - `board_read_busy`: this API process's read queue is full, or the
+          caller waited `BOARD_READ_WAIT_MS` for a slot. The cap is per process
+          (`BOARD_READ_CAP`), so a cluster with N replicas admits N × the cap.
+          Identical reads already share one build, so only distinct
+          board/role/projection/coding groups compete.
         - `board_read_timeout`: one response exceeded
-          `BOARD_READ_TIMEOUT_MS` while waiting, building or encoding. The
-          server did not keep the request in an unbounded build.
+          `BOARD_READ_TIMEOUT_MS` (which must exceed `BOARD_READ_WAIT_MS`)
+          while waiting, building or encoding. This bounds the response; the
+          underlying Prisma query is not cancelled and finishes by its own
+          transaction timeout.
 
         Both set `Retry-After` and `retryable: true`; no board data is included.
       headers:
@@ -3777,6 +3792,8 @@ components:
         - starter_cleanup_failed
         - starter_read_failed
         - board_read_failed
+        - board_read_busy
+        - board_read_timeout
         - invalid_cursor
         - invalid_filter
         - invalid_range

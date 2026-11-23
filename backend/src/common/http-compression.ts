@@ -72,8 +72,11 @@ export function parseAcceptEncoding(
 /**
  * Pick the best supported coding. `br` wins a tie with `gzip`; an explicit
  * `q=0` for a coding excludes it, and `*` applies to the supported list when
- * a coding is not named. No acceptable coding falls back to identity (the
- * board route has no `406` contract).
+ * a coding is not named. Identity is a representation too: an explicit
+ * `identity;q` higher than both codings selects identity (`gzip;q=0.5` means
+ * the client prefers plain JSON). When every coding and identity is refused,
+ * the board route falls back to identity because it has no `406` contract —
+ * documented rather than silently inventing an encoding.
  */
 export function negotiateContentEncoding(
   header: string | undefined,
@@ -89,6 +92,10 @@ export function negotiateContentEncoding(
   const br = quality("br");
   const gzipQuality = quality("gzip");
   if (br <= 0 && gzipQuality <= 0) return "identity";
+  const identity =
+    accepted.get("identity") ?? (wildcard !== undefined ? wildcard : 1);
+  const best = Math.max(br, gzipQuality);
+  if (identity > best) return "identity";
   return br >= gzipQuality ? "br" : "gzip";
 }
 

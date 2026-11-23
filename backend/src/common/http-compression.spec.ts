@@ -41,11 +41,20 @@ describe("negotiateContentEncoding", () => {
     expect(negotiateContentEncoding("*;q=0.5, gzip;q=0.9")).toBe("gzip");
   });
 
+  it("honours an explicit identity preference", () => {
+    expect(negotiateContentEncoding("identity;q=1, gzip;q=0.5")).toBe(
+      "identity",
+    );
+    expect(negotiateContentEncoding("gzip;q=0.5")).toBe("identity");
+    expect(negotiateContentEncoding("identity;q=0, gzip;q=0.5")).toBe("gzip");
+  });
+
   it("falls back to identity without a usable coding", () => {
     expect(negotiateContentEncoding(undefined)).toBe("identity");
     expect(negotiateContentEncoding("")).toBe("identity");
     expect(negotiateContentEncoding("identity")).toBe("identity");
     expect(negotiateContentEncoding("deflate")).toBe("identity");
+    expect(negotiateContentEncoding("identity;q=0, gzip;q=0")).toBe("identity");
   });
 });
 
@@ -93,6 +102,16 @@ describe("compressBody", () => {
     const result = await compressBody(BIG, "identity");
     expect(result.encoding).toBe("identity");
     expect(result.body).toBe(BIG);
+  });
+
+  it("falls back to identity when compression would grow the body", async () => {
+    const small = Buffer.from("tiny");
+    const result = await compressBody(small, "gzip", { minBytes: 1 });
+    expect(result).toEqual({
+      body: small,
+      encoding: "identity",
+      compressed: false,
+    });
   });
 
   it("never compresses an SSE or no-transform response", async () => {

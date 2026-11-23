@@ -11,6 +11,35 @@ const WINDOW_SECONDS = 60;
 /** Who issued a request (TASK-166.10 structured request log). */
 export type RequestActorType = "human" | "agent" | "admin" | "anonymous";
 
+/**
+ * TASK-200.6: deliberate backpressure that is not a rate-limit budget.
+ * The response object carries this marker from the exception filter to the
+ * request-log middleware, so telemetry does not have to guess from a 503
+ * status (a board write timeout is a real 5xx).
+ */
+export const BACKPRESSURE_RESPONSE = Symbol("janosikBackpressure");
+
+export type BackpressureKind = "board_read";
+
+export interface BackpressureResponse {
+  [BACKPRESSURE_RESPONSE]?: BackpressureKind;
+}
+
+/** Mark a response whose 503 is expected backpressure, not an incident. */
+export function markBackpressure(
+  response: object,
+  kind: BackpressureKind,
+): void {
+  (response as BackpressureResponse)[BACKPRESSURE_RESPONSE] = kind;
+}
+
+/** Read the marker set by the exception filter. */
+export function readBackpressure(
+  response: object,
+): BackpressureKind | undefined {
+  return (response as BackpressureResponse)[BACKPRESSURE_RESPONSE];
+}
+
 /** Operations the request log classifies without touching request bodies. */
 export type OperationKind =
   | "approval_created"
@@ -39,6 +68,8 @@ export interface RequestSample {
   };
   /** TASK-200.3: the response used the `rate_limited` envelope. */
   rateLimited?: boolean;
+  /** TASK-200.6: a `board_read_*` 503, i.e. deliberate read backpressure. */
+  backpressure?: BackpressureKind;
   operation?: OperationKind;
 }
 
@@ -101,10 +132,19 @@ export class TrafficService {
     const rateLimited =
       sample.status === 429 ||
       (sample.status === 503 && sample.rateLimited === true);
-    if (sample.status >= 500 && !rateLimited) this.bumpLabel("errors", at);
+    const readBackpressure = sample.backpressure === "board_read";
+    if (sample.status >= 500 && !rateLimited && !readBackpressure) {
+      this.bumpLabel("errors", at);
+    }
     if (rateLimited) {
       this.bumpLabel("rate_limit.total", at);
       this.bumpLabel(`rate_limit.${sample.rateLimit?.scope ?? "ip"}`, at);
+    }
+    if (readBackpressure) {
+      // Count it with backpressure, but keep the read-specific bucket so an
+      // operator can tell a full-read surge from a token/board budget refusal.
+      this.bumpLabel("rate_limit.total", at);
+      this.bumpLabel("rate_limit.read", at);
     }
     if (sample.operation !== undefined) {
       this.bumpLabel(`operation.${sample.operation}`, at);
@@ -155,6 +195,7 @@ export class TrafficService {
         token: count("rate_limit.token"),
         session: count("rate_limit.session"),
         board: count("rate_limit.board"),
+        read: count("rate_limit.read"),
       },
       operations: {
         approvalsCreated: count("operation.approval_created"),

@@ -2,8 +2,12 @@ import { Injectable, Logger } from "@nestjs/common";
 import type { Request, Response } from "express";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
 import { env } from "@/config/env";
-import type { OperationKind, RequestActorType } from "./traffic.service";
-import { TrafficService } from "./traffic.service";
+import type {
+  BackpressureKind,
+  OperationKind,
+  RequestActorType,
+} from "./traffic.service";
+import { readBackpressure, TrafficService } from "./traffic.service";
 import { REQUEST_ID_HEADER } from "./request-context";
 import type { RateLimitedRequest, RateLimitScope } from "./rate-limit";
 
@@ -32,6 +36,8 @@ export interface RequestLogEntry {
   };
   /** TASK-200.3: the request was refused with the `rate_limited` envelope. */
   rateLimited?: boolean;
+  /** TASK-200.6: a `board_read_*` 503 (deliberate read backpressure). */
+  backpressure?: BackpressureKind;
 }
 
 /** Request shape the log reads; attribution is filled by the guards. */
@@ -153,6 +159,8 @@ export function buildRequestLogEntry(
   // A 429 is always a rate-limit refusal, including the global throttler,
   // which throws before the agent interceptor can set the flag.
   if (response.statusCode === 429) entry.rateLimited = true;
+  const backpressure = readBackpressure(response);
+  if (backpressure !== undefined) entry.backpressure = backpressure;
   return entry;
 }
 
@@ -196,6 +204,9 @@ export class RequestLogService {
           }
         : {}),
       ...(entry.rateLimited === true ? { rateLimited: true } : {}),
+      ...(entry.backpressure !== undefined
+        ? { backpressure: entry.backpressure }
+        : {}),
       ...(entry.operation !== undefined ? { operation: entry.operation } : {}),
     });
     if (env.NODE_ENV !== "test") {

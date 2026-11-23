@@ -65,6 +65,18 @@ services:
       AGENT_TOKEN_RATE_LIMIT: ${AGENT_TOKEN_RATE_LIMIT:-0}
       BOARD_RATE_LIMIT: ${BOARD_RATE_LIMIT:-0}
       AGENT_COMMAND_QUEUE_MS: ${AGENT_COMMAND_QUEUE_MS:-1500}
+      # TASK-200.6 full board reads. This cap is per API process; with N
+      # replicas the cluster admits N × BOARD_READ_CAP builds. Identical
+      # concurrent reads coalesce before the cap. Excess readers wait
+      # BOARD_READ_WAIT_MS and then get 503 board_read_busy + Retry-After;
+      # a whole response is bounded by BOARD_READ_TIMEOUT_MS (must exceed the
+      # wait). JSON below the byte threshold stays identity.
+      BOARD_READ_CAP: ${BOARD_READ_CAP:-16}
+      BOARD_READ_QUEUE_MAX: ${BOARD_READ_QUEUE_MAX:-256}
+      BOARD_READ_WAIT_MS: ${BOARD_READ_WAIT_MS:-10000}
+      BOARD_READ_TIMEOUT_MS: ${BOARD_READ_TIMEOUT_MS:-20000}
+      BOARD_READ_RETRY_AFTER_SECONDS: ${BOARD_READ_RETRY_AFTER_SECONDS:-2}
+      BOARD_READ_COMPRESS_MIN_BYTES: ${BOARD_READ_COMPRESS_MIN_BYTES:-1024}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}

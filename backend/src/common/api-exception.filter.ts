@@ -9,7 +9,7 @@ import {
 import type { Response } from "express";
 import { translateException } from "./api-error";
 import { currentRequestId } from "./request-context";
-import { TrafficService } from "./traffic.service";
+import { markBackpressure, TrafficService } from "./traffic.service";
 
 /**
  * TASK-166.4: the default exception filter. Unhandled exceptions — Nest's own,
@@ -48,12 +48,17 @@ export class ApiExceptionFilter implements ExceptionFilter {
     // TASK-200.6: a board read refused by its semaphore is deliberate
     // backpressure too. It is not a rate-limit budget, but it must not spam
     // the error log with a stack per request during a read burst.
+    const boardReadBackpressure =
+      status === 503 &&
+      (body.code === "board_read_busy" || body.code === "board_read_timeout");
     const backpressure =
       status === 429 ||
       (status === 503 &&
-        (body.code === "rate_limited" ||
-          body.code === "board_read_busy" ||
-          body.code === "board_read_timeout"));
+        (body.code === "rate_limited" || boardReadBackpressure));
+    if (boardReadBackpressure) {
+      // The request log runs on the same response object after this filter.
+      markBackpressure(response, "board_read");
+    }
     if (backpressure) this.traffic?.recordThrottled();
     if (status >= 500 && !backpressure) {
       const detail =
