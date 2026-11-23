@@ -292,8 +292,11 @@ docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d \
 4 vCPU/8 ГБ и `1.0` / `1G` на 16 vCPU/32 ГБ, `PROXY_NOFILE=131072`.
 `deploy/scale/nginx-main.conf` поднимает nginx до `worker_connections 65536` и
 `worker_rlimit_nofile 131072`; стандартных 1024 соединений мало для
-документированных 6k/20k потоков. В production — 2–4 реплики; одна только для
-отката. Это отправные точки: живой горизонтальный прогон S2/S3 для этого
+документированных 6k/20k потоков. `PROXY_NOFILE` — лимит nofile контейнера;
+держите его не меньше nginx `worker_rlimit_nofile` (на хосте с меньшим hard
+limit снижайте оба). В production — 2–4 реплики; одна только для отката. Compose не проверяет диапазон `API_REPLICAS` (прямой `up` с 5 запустит
+пять; `rollout.sh` отклонит), приоритет — shell env → `.env` → default 3.
+Это отправные точки: живой горизонтальный прогон S2/S3 для этого
 изменения не выполнялся; гейт ёмкости остаётся за TASK-200.14.
 
 Держите `реплики × DB_CONNECTION_LIMIT + ~10 < POSTGRES_MAX_CONNECTIONS` с
@@ -352,10 +355,11 @@ SSE-лимиты instance/user/board (анонимные share-потоки ог
 downstream `send_timeout` (дефолтные 60 с обрывали бы PAT-поток во время
 0–6 с jitter keep-alive) и без буферизации; обычные API-запросы — 90 с
 (с запасом на 60-секундный ready long-poll), загрузки/скачивания — длинный
-таймаут. nginx кэширует
+таймаут с `client_body_timeout 3600s` для медленных тел. nginx кэширует
 контентно-хэшированные `/_astro/` и `/app/assets/` на 7 дней; Caddy проксирует
 статику без дополнительного кэша. `/healthz` на обоих проверяет readiness API.
-Проверка без запуска контейнеров: `npm run deploy:test`. Живая проверка SSE
+Проверка без запуска stack/app-контейнеров (только временные контейнеры
+проверки синтаксиса): `npm run deploy:test`. Живая проверка SSE
 между репликами на Linux-хосте:
 `JANOSIK_TOKEN=… JANOSIK_BOARD_ID=… node deploy/scale/smoke-sse.mjs`;
 unit-smoke входит в обычный backend-набор.

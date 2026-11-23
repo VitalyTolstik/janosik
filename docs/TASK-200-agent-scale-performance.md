@@ -613,7 +613,8 @@ health-gated зависимость прокси. Полный `deploy/scale/ngi
 read/send и downstream `send_timeout` (дефолтные 60 с обрывали бы PAT-поток
 во время 0–6 с jitter keep-alive), без буферизации; обычный API — 90 с
 (с запасом на 60-секундный ready long-poll), upload/download — длинный
-таймаут; regex
+таймаут с `client_body_timeout 3600s` (иначе медленное 25-МБ тело получит
+408); regex
 покрывает `users/*/avatar`, `boards/import`, attachment content/thumbnail/
 poster. Caddy: `lb_try_duration`/`fail_duration`/`max_fails`, SSE-handle и
 `/healthz` через readiness API. `.env.example` больше не задаёт

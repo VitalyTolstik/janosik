@@ -17,7 +17,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   3600 s no-buffer location with a 3600 s downstream `send_timeout` (nginx's
   default 60 s would cut PAT streams during their 0–6 s keep-alive jitter);
   ordinary API requests use 90 s (covering the 60 s ready long-poll), uploads
-  and attachment/avatar reads keep the long timeout, and the upload regex now
+  and attachment/avatar reads keep the long timeout with
+  `client_body_timeout 3600s` (a slow 25 MB body would otherwise get 408), and
+  the upload regex now
   matches `users/*/avatar`, `boards/import` and attachment content/thumbnail/
   poster. Caddy gained `lb_try_duration`/`fail_duration`/`max_fails`, an SSE
   handle block, and proxies `/healthz` to the readiness probe. `.env.example`

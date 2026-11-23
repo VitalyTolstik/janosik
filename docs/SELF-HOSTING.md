@@ -493,11 +493,16 @@ part of the host budget:
 `deploy/scale/nginx-main.conf` is mounted as `/etc/nginx/nginx.conf`; the stock
 nginx image's `worker_connections 1024` is not enough for the documented 6k/20k
 streams. The same proxy limits apply when `JANOSIK_PROXY_IMAGE=caddy:2-alpine`.
-`worker_rlimit_nofile` cannot exceed the container's hard nofile limit; lower
-both values if the host or Docker enforces a smaller limit.
+`worker_rlimit_nofile` cannot exceed the container's hard nofile limit; the
+container limit is `PROXY_NOFILE` (default 131 072). Keep
+`PROXY_NOFILE >= worker_rlimit_nofile`; if the host or Docker enforces a smaller
+limit, lower `PROXY_NOFILE` and the nginx value together.
 
 The supported production range is **2–4 replicas** (the overlay defaults to 3).
-Use one replica only for a rollback.
+Use one replica only for a rollback. Compose itself does not range-check the
+value: a direct `docker compose ... up` with `API_REPLICAS=5` starts five
+replicas, while `deploy/scale/rollout.sh` rejects it. Precedence is shell
+environment → `.env` → overlay default (`3`).
 
 Keep this inequality with headroom for the migration job and an admin CLI
 session:
@@ -595,7 +600,8 @@ The bundled configs live in `deploy/scale/nginx-main.conf`,
 - `client_max_body_size 30m` for nginx attachments, imports and command
   batches; Caddy has no 1 MB body default and streams request bodies;
 - upload routes (`cards/:id/attachments`, `users/*/avatar`, `boards/import`)
-  and attachment/avatar downloads stream with the long timeout;
+  and attachment/avatar downloads stream with the long timeout and a 3600 s
+  `client_body_timeout`, so a slow 25 MB body does not get 408;
 - static assets and uploads are forwarded to a replica with their existing
   `Cache-Control`/`ETag` headers preserved; nginx also caches content-hashed
   `/_astro/` and `/app/assets/` output for 7 days in a bounded 1 GB cache,
@@ -609,12 +615,13 @@ outer proxy's exact CIDR to `servers { trusted_proxies static … }`; do not
 trust every private address, because direct LAN clients could then spoof
 `X-Forwarded-For`.
 
-Validate the configs without starting the stack:
+Validate the configs without starting the stack (the syntax probes use
+throwaway nginx/Caddy containers):
 
 ```bash
 npm run deploy:test
 # optional, for the syntax containers:
-docker pull nginx:alpine && docker pull caddy:2-alpine
+docker pull nginx:1.27-alpine && docker pull caddy:2-alpine
 ```
 
 For a live end-to-end check of cross-replica SSE (Linux Docker host; the cheap

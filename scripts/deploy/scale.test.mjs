@@ -275,6 +275,7 @@ test("nginx proxy config: SSE, normal API timeouts, retries, uploads", () => {
     nginx,
     /attachments\/\[\^\/\]\+\/\(\?:content\|thumbnail\|poster\)/,
   );
+  assert.match(nginx, /client_body_timeout 3600s;/);
   assert.match(nginx, /proxy_pass http:\/\/janosik_api;/);
   assert.doesNotMatch(nginx, /ip_hash|sticky\s+on/);
 });

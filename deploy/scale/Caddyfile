@@ -22,100 +22,99 @@
 # Validate: caddy validate --config deploy/scale/Caddyfile
 # Reload after a scale/rollout: docker compose ... exec proxy \
 #   caddy reload --config /etc/caddy/Caddyfile
-
 {
-    # The proxy is intentionally a plain HTTP container; TLS is either an
-    # outer proxy or this Caddyfile changed to a real domain.
-    auto_https off
-    # Behind an outer TLS proxy, add only that proxy's exact network here so
-    # Caddy preserves the client IP and X-Forwarded-Proto. Do not trust every
-    # private address: direct LAN clients could then spoof X-Forwarded-For.
-    #   servers { trusted_proxies static 172.18.0.0/16 }
+	# The proxy is intentionally a plain HTTP container; TLS is either an
+	# outer proxy or this Caddyfile changed to a real domain.
+	auto_https off
+	# Behind an outer TLS proxy, add only that proxy's exact network here so
+	# Caddy preserves the client IP and X-Forwarded-Proto. Do not trust every
+	# private address: direct LAN clients could then spoof X-Forwarded-For.
+	#   servers { trusted_proxies static 172.18.0.0/16 }
 }
 
 :8080 {
-    # Compress site/app assets. The API negotiates gzip/Brotli itself for
-    # large board reads and streams SSE; excluding /api/ keeps both semantics,
-    # and avoids any compression wrapper around event-stream frames.
-    @static not path /api/*
-    encode @static gzip
+	# Compress site/app assets. The API negotiates gzip/Brotli itself for
+	# large board reads and streams SSE; excluding /api/ keeps both semantics,
+	# and avoids any compression wrapper around event-stream frames.
+	@static not path /api/*
+	encode @static gzip
 
-    route {
-        # SSE has its own upstream block: no buffering and a 3600 s read/write
-        # timeout, far above the 60 s PAT / 25 s human keep-alive. Ordinary API
-        # requests use the 90 s block below.
-        @sse path /api/v1/boards/*/events* /api/v1/share/*/events*
-        handle @sse {
-            reverse_proxy app:3000 {
-                flush_interval -1
-                lb_policy round_robin
-                lb_try_duration 10s
-                lb_try_interval 250ms
-                fail_duration 30s
-                max_fails 3
-                transport http {
-                    dial_timeout 5s
-                    read_timeout 3600s
-                    write_timeout 3600s
-                    keepalive 30s
-                    keepalive_idle_conns 64
-                }
-            }
-        }
+	route {
+		# SSE has its own upstream block: no buffering and a 3600 s read/write
+		# timeout, far above the 60 s PAT / 25 s human keep-alive. Ordinary API
+		# requests use the 90 s block below.
+		@sse path /api/v1/boards/*/events* /api/v1/share/*/events*
+		handle @sse {
+			reverse_proxy app:3000 {
+				flush_interval -1
+				lb_policy round_robin
+				lb_try_duration 10s
+				lb_try_interval 250ms
+				fail_duration 30s
+				max_fails 3
+				transport http {
+					dial_timeout 5s
+					read_timeout 3600s
+					write_timeout 3600s
+					keepalive 30s
+					keepalive_idle_conns 64
+				}
+			}
+		}
 
-        # Uploads, attachment reads and avatar reads/writes may be large and
-        # slow. Caddy streams request bodies; the API enforces the real caps.
-        @uploads path /api/v1/cards/*/attachments /api/v1/users/*/avatar /api/v1/boards/import /api/v1/attachments/*/content /api/v1/attachments/*/thumbnail /api/v1/attachments/*/poster
-        handle @uploads {
-            reverse_proxy app:3000 {
-                lb_policy round_robin
-                lb_try_duration 10s
-                lb_try_interval 250ms
-                fail_duration 30s
-                max_fails 3
-                transport http {
-                    dial_timeout 5s
-                    read_timeout 3600s
-                    write_timeout 3600s
-                    keepalive 30s
-                    keepalive_idle_conns 64
-                }
-            }
-        }
+		# Uploads, attachment reads and avatar reads/writes may be large and
+		# slow. Caddy streams request bodies; the API enforces the real caps.
+		@uploads path /api/v1/cards/*/attachments /api/v1/users/*/avatar /api/v1/boards/import /api/v1/attachments/*/content /api/v1/attachments/*/thumbnail /api/v1/attachments/*/poster
+		handle @uploads {
+			reverse_proxy app:3000 {
+				lb_policy round_robin
+				lb_try_duration 10s
+				lb_try_interval 250ms
+				fail_duration 30s
+				max_fails 3
+				transport http {
+					dial_timeout 5s
+					read_timeout 3600s
+					write_timeout 3600s
+					keepalive 30s
+					keepalive_idle_conns 64
+				}
+			}
+		}
 
-        # Compose healthcheck: proxy the API readiness probe (DB + configured
-        # Redis) so an unhealthy replica set turns the proxy unhealthy too.
-        handle /healthz {
-            rewrite * /api/v1/health/ready
-            reverse_proxy app:3000 {
-                lb_policy round_robin
-                lb_try_duration 5s
-                lb_try_interval 250ms
-                fail_duration 30s
-                max_fails 3
-                transport http {
-                    dial_timeout 5s
-                    read_timeout 10s
-                    write_timeout 10s
-                }
-            }
-        }
+		# Compose healthcheck: proxy the API readiness probe (DB + configured
+		# Redis) so an unhealthy replica set turns the proxy unhealthy too.
+		handle /healthz {
+			rewrite * /api/v1/health/ready
+			reverse_proxy app:3000 {
+				lb_policy round_robin
+				lb_try_duration 5s
+				lb_try_interval 250ms
+				fail_duration 30s
+				max_fails 3
+				transport http {
+					dial_timeout 5s
+					read_timeout 10s
+					write_timeout 10s
+				}
+			}
+		}
 
-        # Normal API and static/frontend requests: 90 s covers the 60 s ready
-        # long-poll and no longer hides a stuck call for an hour.
-        reverse_proxy app:3000 {
-            lb_policy round_robin
-            lb_try_duration 10s
-            lb_try_interval 250ms
-            fail_duration 30s
-            max_fails 3
-            transport http {
-                dial_timeout 5s
-                read_timeout 90s
-                write_timeout 90s
-                keepalive 30s
-                keepalive_idle_conns 64
-            }
-        }
-    }
+		# Normal API and static/frontend requests: 90 s covers the 60 s ready
+		# long-poll and no longer hides a stuck call for an hour.
+		reverse_proxy app:3000 {
+			lb_policy round_robin
+			lb_try_duration 10s
+			lb_try_interval 250ms
+			fail_duration 30s
+			max_fails 3
+			transport http {
+				dial_timeout 5s
+				read_timeout 90s
+				write_timeout 90s
+				keepalive 30s
+				keepalive_idle_conns 64
+			}
+		}
+	}
 }

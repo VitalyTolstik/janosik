@@ -287,7 +287,11 @@ The proxy is part of the host budget: `PROXY_CPUS=0.5` / `PROXY_MEMORY_LIMIT=512
 on 4 vCPU/8 GB and `1.0` / `1G` on 16 vCPU/32 GB, with `PROXY_NOFILE=131072`.
 `deploy/scale/nginx-main.conf` raises nginx to `worker_connections 65536` and
 `worker_rlimit_nofile 131072`; the stock 1024-connection limit is too small for
-the documented 6k/20k streams. Production uses 2–4 replicas; one is rollback-only.
+the documented 6k/20k streams. `PROXY_NOFILE` is the container nofile limit; keep
+it at least the nginx `worker_rlimit_nofile` (lower both on a host with a smaller
+hard limit). Production uses 2–4 replicas; one is rollback-only.
+Compose does not range-check `API_REPLICAS` (a direct `up` with 5 starts five;
+`rollout.sh` rejects it), and the precedence is shell env → `.env` → default 3.
 These are starting points: no live horizontal S2/S3 run was performed for this
 change; TASK-200.14 remains the capacity gate.
 
@@ -343,16 +347,18 @@ The bundled configs are `deploy/scale/nginx-main.conf`,
 `deploy/scale/nginx.conf` and `deploy/scale/Caddyfile`. The nginx main config
 raises `worker_connections` to 65 536 and `worker_rlimit_nofile` to 131 072
 (the stock image's 1024 is too small for the documented streams); both proxies
-use retry/passive-failure handling. SSE routes use 3600 s read/send timeouts,
-  3600 s downstream `send_timeout` (the default 60 s would cut PAT streams
-  during their 0–6 s keep-alive jitter) and no buffering; ordinary API requests
-  use 90 s (covering the 60 s ready long-poll); uploads/downloads use the long
-  timeout. nginx caches content-hashed `/_astro/` and `/app/assets/` output for `/app/assets/` output for
-7 days; Caddy forwards static assets without an extra cache. `/healthz` proxies
-the API readiness probe on both. Validate with `npm run deploy:test` (no
-containers are started). For a live cross-replica SSE check on a Linux Docker
-host, run `JANOSIK_TOKEN=… JANOSIK_BOARD_ID=… node deploy/scale/smoke-sse.mjs`;
-the unit smoke is part of the backend suite.
+use retry/passive-failure handling. SSE routes use 3600 s read/send timeouts, a
+3600 s downstream `send_timeout` (the default 60 s would cut PAT streams during
+their 0–6 s keep-alive jitter) and no buffering; ordinary API requests use 90 s
+(covering the 60 s ready long-poll); uploads/downloads use the long timeout,
+with a 3600 s `client_body_timeout` for slow bodies.
+nginx caches content-hashed `/_astro/` and `/app/assets/` output for 7 days;
+Caddy forwards static assets without an extra cache. `/healthz` proxies
+the API readiness probe on both. Validate with `npm run deploy:test` (it starts
+no stack/app containers; only throwaway nginx/Caddy syntax containers). For a
+live cross-replica SSE check on a Linux Docker host, run
+`JANOSIK_TOKEN=… JANOSIK_BOARD_ID=… node deploy/scale/smoke-sse.mjs`; the unit
+smoke is part of the backend suite.
 
 ```bash
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.scale.yml"
