@@ -1,0 +1,35 @@
+name: perf-nightly
+
+# TASK-200.1 placeholder: mock-only smoke, no secrets and no real API.
+# The full S1–S6 baseline runs on a dedicated host (see scripts/perf/README.md);
+# this job only keeps the harness and its contracts from rotting.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  mock-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run perf:lint
+      - run: npm run perf:test
+      - run: npm run perf:smoke
+      - run: npm run perf:mcp-smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-smoke-results
+          path: scripts/perf/results/
+          retention-days: 7
