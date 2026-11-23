@@ -46,12 +46,39 @@ function sortJson(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Plan action without transport context. A targeted move carries the client's
+ * requested position as `targetedPosition` (and a marker); its resolved
+ * `fromIndex`/`toIndex` are server state, so they are excluded from the hash
+ * while the requested destination/position stays authorized.
+ */
+function canonicalPlanAction(action: unknown): unknown {
+  if (action === null || typeof action !== "object" || Array.isArray(action)) {
+    return action;
+  }
+  const rest = { ...(action as Record<string, unknown>) };
+  delete rest.at;
+  delete rest.boardId;
+  if (rest.targetedMove === true) {
+    delete rest.fromIndex;
+    delete rest.toIndex;
+  }
+  return rest;
+}
+
 /** `sha256(utf8(canonicalJson(...)))`, lower-case 64 hex characters. */
 export function approvalPlanHash(plan: ApprovalPlan): string {
   const payload = {
     schemaVersion: plan.schemaVersion,
     boardId: plan.boardId,
-    ...(plan.commands !== undefined ? { commands: plan.commands } : {}),
+    ...(plan.commands !== undefined
+      ? {
+          commands: plan.commands.map((command) => ({
+            ...command,
+            action: canonicalPlanAction(command.action),
+          })),
+        }
+      : {}),
     ...(plan.operations !== undefined ? { operations: plan.operations } : {}),
   };
   return createHash("sha256")
@@ -130,6 +157,15 @@ export function planActionFingerprint(action: unknown): string {
   const rest = { ...(action as Record<string, unknown>) };
   delete rest.at;
   delete rest.boardId;
+  if (rest.type === "MOVE_CARD") {
+    // Coordinates are resolved server state. The plan hash still pins a
+    // targeted move's requested position; the stored command/prepared action
+    // comparison must ignore the resolved indexes.
+    delete rest.fromIndex;
+    delete rest.toIndex;
+    delete rest.targetedMove;
+    delete rest.targetedPosition;
+  }
   return JSON.stringify(sortJson(rest));
 }
 

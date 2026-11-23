@@ -1333,7 +1333,7 @@ Every API error (new and changed in 166.4) returns:
 | `approval_rejected` | 409 | false | approval rejected | `approvalId`, `decidedAt` |
 | `approval_cancelled` | 409 | false | approval cancelled | `approvalId` |
 | `approval_consumed` | 409 | false | approval already applied (consumed) | `approvalId`, `runId` |
-| `version_conflict` | 409 | false | `ifMatch`/`ifMatchVersions`/policy CAS | `conflict: "version"`, `currentVersion`, `field` |
+| `version_conflict` | 409 | false | `ifMatch`/`ifMatchVersions`/policy CAS | `conflict: "version"`, `currentVersion`, `field`, `versions` (TASK-200.7 actual entity versions) |
 | `id_conflict` | 409 | false | id belongs to another board | `conflict: "id"`, `currentVersion` |
 | `workflow_conflict` | 409 | false | workflow forbade the transition | `conflict: "workflow"`, `workflow` (current format) |
 | `run_conflict` | 409 | false | `clientRunId`/run already used by another plan; run already reverted; revert of revert | `runId`, `currentVersion` |
