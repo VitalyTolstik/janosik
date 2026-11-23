@@ -24,4 +24,20 @@ export default [
       ],
     },
   },
+  {
+    // TASK-200.12 deployment checks and the optional on-host smoke script.
+    files: ["scripts/deploy/**/*.mjs", "deploy/scale/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+    rules: {
+      "no-console": "off",
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ];

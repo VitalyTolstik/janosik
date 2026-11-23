@@ -1,6 +1,21 @@
 import { Logger } from "@nestjs/common";
 import type { ThrottlerStorage } from "@nestjs/throttler";
 import type Redis from "ioredis";
+import { quitRedis } from "./redis-shutdown";
+
+/**
+ * The handful of Redis methods this adapter needs. Keeping them explicit
+ * makes the unit tests trivially fakeable and documents that the adapter
+ * never reaches for a connection of its own.
+ */
+type RedisThrottlerClient = Pick<Redis, "eval"> &
+  Partial<Pick<Redis, "quit" | "disconnect">> & {
+    status?: string;
+  };
+
+type ShutdownableThrottlerStorage = ThrottlerStorage & {
+  onApplicationShutdown?: () => void;
+};
 
 /**
  * Shared throttler counters (B-8). With the default in-memory storage every
@@ -40,7 +55,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
   private lastWarnAt = 0;
 
   constructor(
-    private readonly redis: Pick<Redis, "eval">,
+    private readonly redis: RedisThrottlerClient,
     private readonly fallback: ThrottlerStorage,
   ) {}
 
@@ -93,5 +108,16 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
       isBlocked: blocked === 1,
       timeToBlockExpire: Math.max(0, Math.ceil(blockMs / 1000)),
     };
+  }
+
+  /**
+   * Release the shared connection and any fallback timers at shutdown
+   * (TASK-200.12). Without this the ioredis socket keeps the Node process
+   * alive after `app.close()`, so a Compose rollout would always end in
+   * SIGKILL instead of a graceful stop.
+   */
+  async close(): Promise<void> {
+    (this.fallback as ShutdownableThrottlerStorage).onApplicationShutdown?.();
+    await quitRedis(this.redis);
   }
 }

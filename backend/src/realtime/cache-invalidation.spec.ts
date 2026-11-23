@@ -85,4 +85,33 @@ describe("Realtime cache invalidation (TASK-200.5)", () => {
       userId: "user-1",
     });
   });
+
+  it("carries a throttle-limit change to every replica (TASK-200.12)", () => {
+    const service = bus();
+    const listener = jest.fn();
+    service.onInvalidation(listener);
+    const receive = (
+      service as unknown as { receiveInvalidation: (payload: string) => void }
+    ).receiveInvalidation.bind(service);
+
+    receive(
+      JSON.stringify({
+        v: CACHE_INVALIDATION_VERSION,
+        origin: "other-node",
+        event: { kind: "throttle", limit: 450 },
+      }),
+    );
+    expect(listener).toHaveBeenCalledWith({ kind: "throttle", limit: 450 });
+
+    // A malformed or non-positive limit must not change the live limiter.
+    listener.mockClear();
+    receive(
+      JSON.stringify({
+        v: CACHE_INVALIDATION_VERSION,
+        origin: "other-node",
+        event: { kind: "throttle", limit: 0 },
+      }),
+    );
+    expect(listener).not.toHaveBeenCalled();
+  });
 });

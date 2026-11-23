@@ -746,6 +746,43 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `docker-compose*.yml`, `Dockerfile`, `deploy/*`, docs
 self-hosting.
 
+**Статус:** реализовано в `feat/TASK-200.12-api-replicas`.
+`docker-compose.scale.yml` — overlay на обычный стек: 2–4 реплики `app` за
+одним nginx (по умолчанию) или Caddy, одноразовый `migrate`-сервис
+(`MIGRATE_ON_BOOT=false` у реплик), `ulimits.nofile`, memory/CPU limits,
+`DB_CONNECTION_LIMIT` на реплику, `TRUST_PROXY=1`, `stop_grace_period` и
+health-gated зависимость прокси. Полный `deploy/scale/nginx-main.conf`
+поднимает `worker_connections 65536` и `worker_rlimit_nofile 131072` (стоковые
+1024 не покрывают 6k/20k потоков), прокси имеет собственные
+`PROXY_CPUS`/`PROXY_MEMORY_LIMIT`/`PROXY_NOFILE`, общий upstream zone и
+`proxy_next_upstream_tries 0` для 3–4 реплик. SSE-локация — 3600 с на
+read/send и downstream `send_timeout` (дефолтные 60 с обрывали бы PAT-поток
+во время 0–6 с jitter keep-alive), без буферизации; обычный API — 90 с
+(с запасом на 60-секундный ready long-poll), upload/download — длинный
+таймаут с `client_body_timeout 3600s` (иначе медленное 25-МБ тело получит
+408); regex
+покрывает `users/*/avatar`, `boards/import`, attachment content/thumbnail/
+poster. Caddy: `lb_try_duration`/`fail_duration`/`max_fails`, SSE-handle и
+`/healthz` через readiness API. `.env.example` больше не задаёт
+`TRUST_PROXY=0` (иначе overlay не получал default 1). `rollout.sh` не форсит
+`--scale`, читает/валидирует `API_REPLICAS` (2–4, 1 — откат) и честно пишет,
+что plain Compose пересоздаёт сервис целиком. Redis-клиенты закрываются через
+общий bounded `quitRedis`. Sticky не нужен: клиент переподключается с
+`?since=`. Redis остаётся опциональным для одной реплики; при нескольких —
+общие счётчики throttler, SSE fan-out и инвалидации, а правка
+`THROTTLE_LIMIT` из панели доставляется на все реплики через control-канал.
+Общими в кластере являются только глобальный throttler и правки лимита;
+login backoff — Redis с per-replica fallback; per-user лимит панели, лимиты
+токенов, агентские бюджеты 200.3 и очередь команд, public-share лимиты,
+SSE-лимиты, presence и TTL-кэши (TTL-fallback) — на реплику. Uploads требуют
+общего FS на нескольких хостах; Compose не zero-downtime. Sizing и rollback —
+в self-hosting EN/RU. Живой горизонтальный прогон S2/S3 не выполнялся;
+TASK-200.14 остаётся гейтом ёмкости. Проверки: `scripts/deploy/scale.test.mjs`
+(герметичный `.env.example`, compose 1/3/4, порты/имена/health, nginx
+`1.27-alpine` full-config, caddy validate, entrypoint MIGRATE_ONLY/BOOT,
+rollout range, SSE `?since=`), unit-тесты общего throttler и SSE между
+репликами, `npm run deploy:test`.
+
 ---
 
 ### 200.13 — Pre-serialized SSE frames и keep-alive (P2)
