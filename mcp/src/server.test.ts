@@ -44,6 +44,8 @@ let approvalStatus:
   "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 /** Command action type that answers 409 approval_required without a header. */
 let approvalRequiredFor: string | null;
+/** Older-server simulation: the ready endpoints answer 404. */
+let readyEndpointMissing: boolean;
 
 function board(cards: Record<string, unknown> = {}) {
   return {
@@ -128,13 +130,177 @@ function board(cards: Record<string, unknown> = {}) {
   };
 }
 
-function fakeApi(
+interface FakeReadyCard {
+  id: string;
+  title: string;
+  priority?: string;
+  claimedBy?: string;
+  leaseUntil?: number;
+  version?: number;
+  description?: string;
+  archivedAt?: number;
+  assigneeId?: string;
+  links?: Array<{ type: string; targetCardId: string }>;
+}
+
+interface FakeBoard {
+  id: string;
+  title: string;
+  archivedAt?: number;
+  columns: Array<{
+    id: string;
+    title: string;
+    cardIds: string[];
+    createdAt: number;
+  }>;
+  cards: Record<string, FakeReadyCard>;
+  labels: unknown[];
+  createdAt: number;
+  updatedAt: number;
+  workflow?: unknown;
+}
+
+/** The synthetic board a ready request targets, or null for an unknown id. */
+function readyBoardSnapshot(boardId: string): FakeBoard | null {
+  if (boardId === "b1") {
+    return {
+      ...(board(cardOverrides) as unknown as FakeBoard),
+      ...(archivedBoard ? { archivedAt: 5 } : {}),
+    };
+  }
+  if (boardId === "b3") {
+    return {
+      id: "b3",
+      title: "Empty",
+      columns: [{ id: "col1", title: "Backlog", cardIds: [], createdAt: 1 }],
+      cards: {},
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  }
+  return null;
+}
+
+function priorityRank(priority: unknown): number {
+  return ["blocker", "highest", "high", "medium", "low", "lowest"].indexOf(
+    typeof priority === "string" ? priority : "medium",
+  );
+}
+
+/** A ready summary in the real endpoint's shape, for the fake API. */
+function readySummary(boardId: string, limit: number) {
+  const snapshot = readyBoardSnapshot(boardId)!;
+  const archived = snapshot.archivedAt !== undefined;
+  const cards = archived
+    ? []
+    : (() => {
+        const initial = (boardWorkflow as { initialColumnId?: string } | null)
+          ?.initialColumnId;
+        const column =
+          snapshot.columns.find((entry) => entry.id === initial) ??
+          snapshot.columns[0];
+        if (!column) return [];
+        const blocked = new Set<string>();
+        for (const card of Object.values(snapshot.cards)) {
+          if (card.archivedAt !== undefined) continue;
+          for (const link of card.links ?? []) {
+            if (link.type === "blocks") blocked.add(link.targetCardId);
+          }
+        }
+        const now = Date.now();
+        return column.cardIds
+          .map((id) => snapshot.cards[id])
+          .filter((card): card is FakeReadyCard => card !== undefined)
+          .filter((card) => {
+            if (card.archivedAt !== undefined) return false;
+            if (card.assigneeId !== undefined) return false;
+            if (card.claimedBy !== undefined && (card.leaseUntil ?? 0) > now) {
+              return false;
+            }
+            return !blocked.has(card.id);
+          })
+          .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))
+          .slice(0, limit)
+          .map((card) => ({
+            id: card.id,
+            title: card.title,
+            boardId,
+            boardTitle: snapshot.title,
+            columnId: column.id,
+            columnTitle: column.title,
+            priority: card.priority ?? "medium",
+            claimedBy: card.claimedBy ?? null,
+            leaseUntil: card.leaseUntil ?? null,
+            version: card.version ?? 0,
+            descriptionChars: card.description?.length ?? 0,
+          }));
+      })();
+  return {
+    boardId,
+    boardTitle: snapshot.title,
+    archived,
+    seq: boardSeq,
+    limit,
+    cards,
+  };
+}
+
+/** A 204 long-poll timeout, after a short simulated hold. */
+function timeoutResponse(waitMs: number): Promise<Response> {
+  return new Promise((resolve) => {
+    setTimeout(
+      () => resolve(new Response(null, { status: 204 })),
+      Math.min(waitMs, 25),
+    );
+  });
+}
+
+async function fakeApi(
   path: string,
   method: string,
   body: unknown,
   searchParams: URLSearchParams,
   headers: Record<string, string>,
-): Response {
+): Promise<Response> {
+  const readyMatch = /^\/boards\/([^/]+)\/ready$/.exec(path);
+  if (readyMatch && method === "GET") {
+    if (readyEndpointMissing) return respond({ message: "not found" }, 404);
+    const boardId = readyMatch[1]!;
+    if (boardId !== "b1" && boardId !== "b3") {
+      return respond({ message: "not found" }, 404);
+    }
+    const limit = Number(searchParams.get("limit") ?? 30);
+    const wait = Number(searchParams.get("wait") ?? 0);
+    const since = searchParams.get("since");
+    const summary = readySummary(boardId, limit);
+    if (
+      wait > 0 &&
+      summary.cards.length === 0 &&
+      !summary.archived &&
+      (since === null || Number(since) === boardSeq)
+    ) {
+      return timeoutResponse(wait);
+    }
+    return respond(summary);
+  }
+  if (path === "/boards/ready" && method === "GET") {
+    if (readyEndpointMissing) return respond({ message: "not found" }, 404);
+    const limit = Number(searchParams.get("limit") ?? 30);
+    const summary = readySummary("b1", limit);
+    return respond({
+      boards: [
+        {
+          id: "b1",
+          title: "Alpha",
+          archived: summary.archived,
+          seq: boardSeq,
+        },
+      ],
+      limit,
+      cards: summary.cards,
+    });
+  }
   if (path === "/boards" && method === "GET") {
     return respond([
       {
@@ -619,6 +785,7 @@ beforeEach(() => {
   boardWorkflow = null;
   approvalStatus = "pending";
   approvalRequiredFor = null;
+  readyEndpointMissing = false;
   vi.stubGlobal("fetch", (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -1733,6 +1900,115 @@ describe("janosik MCP server", () => {
       arguments: { boardId: "b3", timeoutMs: 0 },
     });
     expect(result.structuredContent).toMatchObject({ card: null });
+    await client.close();
+  });
+
+  it("long-polls the ready endpoint instead of reading the board", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({
+      card: { id: "k1", column: "Todo" },
+    });
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/b1/ready" && call.method === "GET",
+      ),
+    ).toBe(true);
+    expect(
+      calls.some((call) => call.path === "/boards/b1" && call.method === "GET"),
+    ).toBe(false);
+    await client.close();
+  });
+
+  it("long-polls a board with no ready card and returns null on timeout", async () => {
+    const client = await connect();
+    const started = Date.now();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b3", timeoutMs: 80 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: null });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(60);
+    expect(
+      calls.filter((call) => call.path === "/boards/b3/ready").length,
+    ).toBeGreaterThan(1);
+    expect(
+      calls.some((call) => call.path === "/boards/b3" && call.method === "GET"),
+    ).toBe(false);
+    await client.close();
+  });
+
+  it("uses the cross-board ready snapshot when boardId is omitted", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/ready" && call.method === "GET",
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) =>
+          call.path.startsWith("/boards/") &&
+          call.path !== "/boards/ready" &&
+          call.method === "GET",
+      ),
+    ).toBe(false);
+    await client.close();
+  });
+
+  it("falls back to a full board read on a server without the ready endpoint", async () => {
+    readyEndpointMissing = true;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_wait_for_work",
+      arguments: { boardId: "b1", timeoutMs: 1000 },
+    });
+    expect(result.structuredContent).toMatchObject({ card: { id: "k1" } });
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/b1/ready" && call.method === "GET",
+      ),
+    ).toBe(true);
+    expect(
+      calls.some((call) => call.path === "/boards/b1" && call.method === "GET"),
+    ).toBe(true);
+    await client.close();
+  });
+
+  it("lists ready cards from the summary endpoint", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_list_ready_cards",
+      arguments: { boardId: "b1" },
+    });
+    expect(result.structuredContent).toBeDefined();
+    const results = (
+      result.structuredContent as {
+        results: Array<{ id: string; descriptionChars: number }>;
+      }
+    ).results;
+    expect(
+      results.some(
+        (entry) =>
+          entry.id === "k1" && entry.descriptionChars === "original".length,
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/b1/ready" && call.method === "GET",
+      ),
+    ).toBe(true);
+    expect(
+      calls.some((call) => call.path === "/boards/b1" && call.method === "GET"),
+    ).toBe(false);
     await client.close();
   });
 
