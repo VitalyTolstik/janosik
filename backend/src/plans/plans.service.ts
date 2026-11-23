@@ -36,7 +36,7 @@ import {
   SCOPE_RANK,
   type BoardAgentPolicy,
 } from "@/auth/token-scope";
-import { loadBoardAggregate } from "@/boards/board-aggregate";
+import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import {
   actionFingerprint,
   prepareCommandDto,
@@ -149,6 +149,7 @@ export class PlansService {
     private readonly prisma: PrismaService,
     private readonly commands: CommandsService,
     private readonly approvals: ApprovalsService,
+    private readonly boardAggregates: BoardAggregateLoader,
   ) {}
 
   /** `POST /boards/:id/plans` — dry-run only. */
@@ -301,10 +302,14 @@ export class PlansService {
   private async loadContext(boardId: string): Promise<PlanContext> {
     const row = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
-      select: { agentPolicy: true },
+      // TASK-200.10: the revision rides along on the policy read, so a cache
+      // hit needs no aggregate query and a miss costs no extra SELECT.
+      select: { agentPolicy: true, aggregateRevision: true },
     });
     if (row === null) throw new NotFoundException("Board not found");
-    const board = await loadBoardAggregate(this.prisma, boardId);
+    const board = await this.boardAggregates.load(this.prisma, boardId, {
+      revision: row.aggregateRevision,
+    });
     if (board === null) throw new NotFoundException("Board not found");
     return { board, policy: readBoardAgentPolicy(row.agentPolicy) };
   }

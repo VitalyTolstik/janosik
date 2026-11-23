@@ -50,6 +50,7 @@ describe("BoardsService.listBoards", () => {
       {} as never,
       {} as never,
       {} as never,
+      { load: jest.fn(), loadWithRevision: jest.fn() } as never,
     );
     const summaries = await service.listBoards("u1");
 
@@ -93,6 +94,7 @@ describe("BoardsService.inviteMember — reviving a pending invite", () => {
       {} as never,
       {} as never,
       {} as never,
+      { load: jest.fn(), loadWithRevision: jest.fn() } as never,
     );
     return { service, update };
   }
@@ -251,6 +253,7 @@ describe("BoardsService.leaveBoard (TASK-177.2)", () => {
       realtime as never,
       {} as never,
       {} as never,
+      { load: jest.fn(), loadWithRevision: jest.fn() } as never,
     );
     return { service, remove, activity, realtime, count };
   }
@@ -355,6 +358,7 @@ describe("BoardsService.createBoard — L24 rollback proof", () => {
       {} as never,
       attention as never,
       {} as never,
+      { load: jest.fn(), loadWithRevision: jest.fn() } as never,
     );
 
     await expect(service.createBoard("u1", { title: "Board" })).rejects.toBe(
@@ -378,6 +382,7 @@ describe("BoardsService.discardFreshBoard", () => {
       {} as never,
       {} as never,
       {} as never,
+      { load: jest.fn(), loadWithRevision: jest.fn() } as never,
     );
   }
 

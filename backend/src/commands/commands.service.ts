@@ -49,10 +49,8 @@ import {
   planFromPreparedCommands,
   type PlanRequirement,
 } from "@/approvals/approval-plan";
-import {
-  emptyBoardAggregate,
-  loadBoardAggregate,
-} from "@/boards/board-aggregate";
+import { emptyBoardAggregate } from "@/boards/board-aggregate";
+import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import {
   loadTargetedBoardAggregate,
   targetedCardIds,
@@ -280,6 +278,16 @@ export interface InversePreconditionFailure {
   currentVersion: number;
 }
 
+/**
+ * Overlay one optional card field from the committed row: `null` means the
+ * aggregate's optional-field rule omits it, not that it is stored as null.
+ */
+function assignOptional(target: object, key: string, value: unknown): void {
+  const record = target as Record<string, unknown>;
+  if (value === null || value === undefined) delete record[key];
+  else record[key] = value;
+}
+
 /** Best-effort entity label for a precondition conflict. */
 function inverseTouch(action: BoardAction): string {
   const record = action as unknown as Record<string, unknown>;
@@ -470,6 +478,7 @@ export class CommandsService {
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
     private readonly approvals: ApprovalsService,
+    private readonly boardAggregates: BoardAggregateLoader,
     @Optional() private readonly attention?: AttentionService,
     @Optional()
     private readonly catchUpBudget: CatchUpBudget = processCatchUpBudget,
@@ -525,9 +534,16 @@ export class CommandsService {
     board: BoardRow,
     actions: BoardAction[],
     targeted: boolean,
+    cacheOnMiss = true,
   ): Promise<BoardAggregate | null> {
     if (!targeted) {
-      return loadBoardAggregate(client, boardId, { board });
+      // TASK-200.10: the revision from the row we already hold validates the
+      // process cache. Inside the write transaction a miss is deliberately
+      // not stored — only the post-commit result is known to be committed.
+      return this.boardAggregates.load(client, boardId, {
+        board,
+        cacheOnMiss,
+      });
     }
     const loaded = await loadTargetedBoardAggregate(client, boardId, {
       board,
@@ -535,6 +551,62 @@ export class CommandsService {
       indexColumnIds: targetedIndexColumnIds(actions),
     });
     return loaded?.board ?? null;
+  }
+
+  /**
+   * TASK-200.10: a command's in-memory reducer result and the row the writer
+   * committed differ in a few **server-attribution** fields that are not part
+   * of the action: `Card.lastActorId`, the claim token/session columns, the
+   * denormalized `attachmentCount`, and bookkeeping stamps. A fresh aggregate
+   * read includes them, so a cache entry built from the reducer result alone
+   * would answer a later GET with subtly different cards.
+   *
+   * Read a narrow projection for exactly the cards this batch touched (one
+   * query, no relations) and copy those fields onto the final aggregate. This
+   * keeps the cached snapshot deep-equal to a fresh load without re-reading
+   * the whole board.
+   */
+  private async reconcileCardWriteMetadata(
+    tx: Prisma.TransactionClient,
+    board: BoardAggregate,
+    cardIds: ReadonlySet<string>,
+  ): Promise<void> {
+    if (cardIds.size === 0) return;
+    const rows = await tx.card.findMany({
+      where: { id: { in: [...cardIds] } },
+      select: {
+        id: true,
+        deletedAt: true,
+        lastActorId: true,
+        claimedBy: true,
+        claimedByTokenId: true,
+        claimedBySessionId: true,
+        leaseUntil: true,
+        attachmentCount: true,
+        updatedAt: true,
+        archivedAt: true,
+        archivedFromColumnId: true,
+      },
+    });
+    for (const row of rows) {
+      const card = board.cards[row.id];
+      // A soft-deleted card is expected to be gone from the reducer's map;
+      // the delete/restore commands own that transition, not this overlay.
+      if (card === undefined || row.deletedAt !== null) continue;
+      assignOptional(card, "lastActorId", row.lastActorId);
+      assignOptional(card, "claimedBy", row.claimedBy);
+      assignOptional(card, "claimedByTokenId", row.claimedByTokenId);
+      assignOptional(card, "claimedBySessionId", row.claimedBySessionId);
+      assignOptional(card, "leaseUntil", row.leaseUntil?.getTime() ?? null);
+      assignOptional(
+        card,
+        "attachmentCount",
+        row.attachmentCount > 0 ? row.attachmentCount : null,
+      );
+      assignOptional(card, "archivedAt", row.archivedAt?.getTime() ?? null);
+      assignOptional(card, "archivedFromColumnId", row.archivedFromColumnId);
+      card.updatedAt = row.updatedAt.getTime();
+    }
   }
 
   /**
@@ -728,6 +800,8 @@ export class CommandsService {
         runId: string | null;
         createdRun: boolean;
         freshCommandIds: string[];
+        finalBoard: BoardAggregate | null;
+        finalRevision: bigint | null;
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` checks below see each
@@ -825,6 +899,9 @@ export class CommandsService {
             board,
             fresh.map((entry) => entry.action),
             options.targeted === true,
+            // A miss here may observe an uncommitted revision (earlier
+            // commands of this batch); cache only after `run` resolves.
+            false,
           );
           if (aggregate === null) {
             throw new NotFoundException("Board not found");
@@ -953,6 +1030,7 @@ export class CommandsService {
 
         const responses: CommandResponse[] = [];
         const events: InternalCommandEvent[] = [];
+        const touchedCards = new Set<string>();
         for (const entry of prepared) {
           const existing = existingById.get(entry.dto.commandId);
           if (existing) {
@@ -1024,6 +1102,11 @@ export class CommandsService {
           }
           responses.push(outcome.response);
           running = outcome.board;
+          for (const touched of outcome.touches) {
+            if (touched.startsWith("card:")) {
+              touchedCards.add(touched.slice("card:".length));
+            }
+          }
           // Collected here, published by the caller only after the commit: a
           // subscriber must never replay a command the database could still
           // roll back. `touches` rides along (TASK-30.1) — it is what the
@@ -1056,6 +1139,32 @@ export class CommandsService {
             await options.afterRun(tx, runId, responses);
           }
         }
+        // TASK-200.10: the revision this transaction committed, read in the
+        // same snapshot as the writes. The caller stores `running` under it
+        // only after `BoardWriteService.run` resolves; nothing here may leak
+        // an uncommitted snapshot into the cache.
+        let finalBoard: BoardAggregate | null = null;
+        let finalRevision: bigint | null = null;
+        if (
+          running !== null &&
+          this.boardAggregates.enabled &&
+          // A targeted snapshot (TASK-200.7) holds only the shell and the
+          // named card(s); caching it under the board revision would serve a
+          // partial board to the next full read.
+          options.targeted !== true
+        ) {
+          // Reducer state + server-only card attribution = the fresh-read
+          // shape; one narrow query for the cards this batch touched.
+          await this.reconcileCardWriteMetadata(tx, running, touchedCards);
+          const finalRow = await tx.board.findUnique({
+            where: { id: boardId },
+            select: { aggregateRevision: true },
+          });
+          if (finalRow !== null) {
+            finalBoard = running;
+            finalRevision = finalRow.aggregateRevision;
+          }
+        }
         if (approval !== null && !approvalReplay && runId !== null) {
           const consumed = await this.approvals.consumeCommandApproval(
             tx,
@@ -1071,6 +1180,8 @@ export class CommandsService {
             runId,
             createdRun,
             freshCommandIds: fresh.map((entry) => entry.dto.commandId),
+            finalBoard,
+            finalRevision,
           };
         }
         return {
@@ -1080,10 +1191,23 @@ export class CommandsService {
           runId,
           createdRun,
           freshCommandIds: fresh.map((entry) => entry.dto.commandId),
+          finalBoard,
+          finalRevision,
         };
       },
       pauseGateFor(options.principal, attribution.agentSessionId),
     );
+
+    // TASK-200.10: the transaction committed, so the final in-memory
+    // aggregate is now the truth at `finalRevision`. Publish nothing before
+    // this point: a failed batch throws above and never reaches the store.
+    if (applied.finalBoard !== null && applied.finalRevision !== null) {
+      this.boardAggregates.remember(
+        boardId,
+        applied.finalRevision,
+        applied.finalBoard,
+      );
+    }
 
     if (applied.consumedApproval !== null) {
       await this.approvals.publishState(applied.consumedApproval);
@@ -1162,7 +1286,7 @@ export class CommandsService {
     client: Prisma.TransactionClient | PrismaService = this.prisma,
     options: { exemptRestoreLimits?: boolean } = {},
   ): Promise<InversePreconditionFailure[]> {
-    let board = await loadBoardAggregate(client, boardId);
+    let board = await this.boardAggregates.load(client, boardId);
     if (board === null) return [];
     const currentVersion = await this.latestSeq(boardId, client);
     const failures: InversePreconditionFailure[] = [];
@@ -1336,7 +1460,8 @@ export class CommandsService {
     await this.assertIdsBelongToBoard(client, boardId, [...ids]);
     // H2 preview parity: a plan that re-parents a same-board checklist/item
     // must be refused in the preview, not only inside the apply transaction.
-    const current = board ?? (await loadBoardAggregate(this.prisma, boardId));
+    const current =
+      board ?? (await this.boardAggregates.load(this.prisma, boardId));
     if (current !== null) {
       await this.assertEntityParentage(client, prepared, current, ledger);
     }

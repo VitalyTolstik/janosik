@@ -38,6 +38,7 @@ function service(
       consumeCommandApproval: jest.fn(),
       publishState: jest.fn(),
     } as never,
+    { load: jest.fn(), remember: jest.fn() } as never,
     undefined,
     budget,
   );
@@ -480,6 +481,7 @@ describe("CommandsService.applyBatch size caps", () => {
         consumeCommandApproval: jest.fn(),
         publishState: jest.fn(),
       } as never,
+      { load: jest.fn(), remember: jest.fn() } as never,
     );
 
     await expect(

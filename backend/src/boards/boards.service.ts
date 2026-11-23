@@ -55,11 +55,8 @@ import {
 import { AttentionService } from "@/notifications/attention.service";
 import { deleteBoardMentionAttention } from "@/notifications/mention-attention";
 import { RealtimeService } from "@/realtime/realtime.service";
-import {
-  loadBoardAggregateWithRevision,
-  toBoardSummary,
-  toMemberDto,
-} from "./board-aggregate";
+import { toBoardSummary, toMemberDto } from "./board-aggregate";
+import { BoardAggregateLoader } from "./board-aggregate-loader";
 import {
   assertBoardExportSize,
   assertBoardQuota,
@@ -138,6 +135,7 @@ export class BoardsService {
     private readonly realtime: RealtimeService,
     private readonly attention: AttentionService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly boardAggregates: BoardAggregateLoader,
   ) {}
 
   /**
@@ -1079,7 +1077,13 @@ export class BoardsService {
     budget?: { maxWaitMs?: number; timeoutMs?: number },
   ): Promise<{ board: BoardAggregate; seq: number; revision: bigint }> {
     const read = async (reader: Prisma.TransactionClient) => {
-      const loaded = await loadBoardAggregateWithRevision(reader, boardId);
+      // TASK-200.10: a revision-keyed hit is valid in this REPEATABLE READ
+      // snapshot — the loader confirms the revision from the board row it
+      // reads in the same transaction, so it is never newer than the seq.
+      const loaded = await this.boardAggregates.loadWithRevision(
+        reader,
+        boardId,
+      );
       if (!loaded) throw new NotFoundException("Board not found");
       const max = await reader.command.aggregate({
         where: { boardId },

@@ -4,6 +4,7 @@ import { BoardWriteService } from "./board-write.service";
 import { requestContext, setBoardWriteContext } from "./request-context";
 import type { PrismaService } from "./prisma/prisma.service";
 import { BoardsService } from "@/boards/boards.service";
+import type { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import { InvitationsService } from "@/invitations/invitations.service";
 import type { RealtimeService } from "@/realtime/realtime.service";
 import type { AttentionService } from "@/notifications/attention.service";
@@ -130,6 +131,10 @@ describe("last administrator revalidation", () => {
         { publish: jest.fn() } as unknown as RealtimeService,
         {} as AttentionService,
         {} as SecurityAuditService,
+        {
+          load: jest.fn(),
+          loadWithRevision: jest.fn(),
+        } as unknown as BoardAggregateLoader,
       );
       const call =
         operation === "demote"
