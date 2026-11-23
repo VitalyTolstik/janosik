@@ -63,6 +63,7 @@ import type {
 } from "@janosik/shared";
 import type { Board } from "@janosik/shared";
 import {
+  CARD_INTENT_API_HEADER,
   READY_WORK_LIMIT_DEFAULT,
   READY_WORK_LIMIT_MAX,
   READY_WORK_WAIT_MAX_MS,
@@ -365,6 +366,7 @@ export class JanosikClient {
         response.status,
         await readBody(response),
         parseRetryAfter(response.headers.get("retry-after")),
+        response.headers.get(CARD_INTENT_API_HEADER) === "1",
       );
     }
     if (raw) {

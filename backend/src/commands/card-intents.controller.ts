@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -14,11 +15,12 @@ import {
 import type { Response } from "express";
 import { Role } from "@prisma/client";
 import type { BoardMember } from "@prisma/client";
-import type {
-  CardClaimIntentResponse,
-  CardContextDto,
-  CardIntentResponse,
-  CardMoveIntentResponse,
+import {
+  CARD_INTENT_API_HEADER,
+  type CardClaimIntentResponse,
+  type CardContextDto,
+  type CardIntentResponse,
+  type CardMoveIntentResponse,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
@@ -51,11 +53,25 @@ export class CardIntentsController {
 
   @UseGuards(MembershipGuard)
   @Get("context")
-  context(
+  async context(
     @Param("id") boardId: string,
     @Param("cardId") cardId: string,
-  ): Promise<CardContextDto> {
-    return this.intents.context(boardId, cardId);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<CardContextDto | Record<string, unknown>> {
+    res.setHeader(CARD_INTENT_API_HEADER, "1");
+    try {
+      return await this.intents.context(boardId, cardId);
+    } catch (error) {
+      if (!(error instanceof NotFoundException)) throw error;
+      // Keep the capability header on the 404 too: MCP distinguishes this
+      // genuine missing card from a server without the context route.
+      res.status(HttpStatus.NOT_FOUND);
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        code: "not_found",
+        message: "Card not found",
+      };
+    }
   }
 
   @UseGuards(MembershipGuard)

@@ -98,8 +98,19 @@ export async function loadTargetedBoardAggregate(
         }),
   ]);
 
-  const indexColumns = new Set(options.indexColumnIds ?? []);
-  if (options.includeTargetColumn === true && cards[0]?.columnId) {
+  // Validate before indexing: a caller-supplied destination id from another
+  // board must never become an index query even though it could not leak a
+  // row. Only columns loaded for this board are eligible, and the query is
+  // scoped by `column.boardId` as defence in depth.
+  const boardColumnIds = new Set(columns.map((column) => column.id));
+  const indexColumns = new Set(
+    [...(options.indexColumnIds ?? [])].filter((id) => boardColumnIds.has(id)),
+  );
+  if (
+    options.includeTargetColumn === true &&
+    cards[0]?.columnId &&
+    boardColumnIds.has(cards[0].columnId)
+  ) {
     indexColumns.add(cards[0].columnId);
   }
   const indexRows =
@@ -108,6 +119,7 @@ export async function loadTargetedBoardAggregate(
       : await db.card.findMany({
           where: {
             columnId: { in: [...indexColumns] },
+            column: { boardId },
             deletedAt: null,
             archivedAt: null,
           },

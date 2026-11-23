@@ -375,7 +375,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
   });
 
   it("replays exact claim, move and expectedDescription retries", async () => {
-    const { boardId, doingId, pat } = await newBoard("Exact replay");
+    const { boardId, todoId, doingId, pat } = await newBoard("Exact replay");
     const cardId = await card(boardId, "Replay card");
 
     const claimId = randomUUID();
@@ -386,6 +386,13 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
       claimId,
     ).expect(200);
+    // A foreign release must not change what the replayed command reports.
+    await command(boardId, {
+      type: "CLAIM_CARD",
+      cardId,
+      claimedBy: null,
+      leaseUntil: null,
+    }).expect(200);
     const replayClaim = await claim(
       boardId,
       cardId,
@@ -395,7 +402,32 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     ).expect(200);
     expect(replayClaim.body.seq).toBe(firstClaim.body.seq);
     expect(replayClaim.body.versions).toEqual(firstClaim.body.versions);
+    expect(replayClaim.body.claimedBy).toBe(firstClaim.body.claimedBy);
     expect(replayClaim.body.leaseUntil).toBe(firstClaim.body.leaseUntil);
+
+    // The same `commandId` arriving while the first request is still in flight
+    // must queue and read the stored result, not rebuild a different lease.
+    const concurrentCard = await card(boardId, "Concurrent claim");
+    const concurrentId = randomUUID();
+    const concurrent = await Promise.all([
+      claim(boardId, concurrentCard, { leaseMs: 60_000 }, pat, concurrentId),
+      claim(boardId, concurrentCard, { leaseMs: 60_000 }, pat, concurrentId),
+    ]);
+    expect(concurrent.map((res) => res.status)).toEqual([200, 200]);
+    expect(concurrent[0]!.body.seq).toBe(concurrent[1]!.body.seq);
+    expect(concurrent[0]!.body.versions).toEqual(concurrent[1]!.body.versions);
+
+    // A different intent under the same commandId is rejected, not replayed.
+    const differentIntent = await claim(
+      boardId,
+      concurrentCard,
+      { leaseMs: 120_000 },
+      pat,
+      concurrentId,
+    ).expect(409);
+    expect(differentIntent.body).toMatchObject({
+      code: "idempotency_conflict",
+    });
 
     const moveId = randomUUID();
     const firstMove = await move(
@@ -414,6 +446,14 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     ).expect(200);
     expect(replayMove.body.seq).toBe(firstMove.body.seq);
     expect(replayMove.body.versions).toEqual(firstMove.body.versions);
+    const differentMove = await move(
+      boardId,
+      cardId,
+      { toColumnId: todoId, position: 0 },
+      pat,
+      moveId,
+    ).expect(409);
+    expect(differentMove.body).toMatchObject({ code: "idempotency_conflict" });
 
     const patchId = randomUUID();
     const firstPatch = await patch(
@@ -439,6 +479,16 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     ).expect(200);
     expect(replayPatch.body.seq).toBe(firstPatch.body.seq);
     expect(replayPatch.body.versions).toEqual(firstPatch.body.versions);
+    const differentPatch = await patch(
+      boardId,
+      cardId,
+      { description: "another" },
+      pat,
+      patchId,
+    ).expect(409);
+    expect(differentPatch.body).toMatchObject({
+      code: "idempotency_conflict",
+    });
   });
 
   it("enforces WIP and workflow on targeted moves", async () => {
@@ -586,6 +636,27 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       first.pat,
     ).expect(404);
 
+    // A destination id from another board is a 404 and must never reach the
+    // card-index query: the loader drops columns not loaded for the route
+    // board, and the SQL is additionally scoped by `column.boardId`.
+    const cardFindMany = jest.spyOn(prisma.card, "findMany");
+    try {
+      await move(
+        first.boardId,
+        cardId,
+        { toColumnId: other.doingId },
+        first.pat,
+      ).expect(404);
+      const foreignReads = cardFindMany.mock.calls.filter(([args]) => {
+        const where = (args as { where?: { columnId?: { in?: string[] } } })
+          ?.where;
+        return where?.columnId?.in?.includes(other.doingId) === true;
+      });
+      expect(foreignReads).toHaveLength(0);
+    } finally {
+      cardFindMany.mockRestore();
+    }
+
     await prisma.board.update({
       where: { id: first.boardId },
       data: {
@@ -648,6 +719,17 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
   it("keeps explicit ifMatch = seq mode and rejects nulls as validation errors", async () => {
     const { boardId, doingId, pat } = await newBoard("Explicit mode");
     const cardId = await card(boardId, "Sequenced");
+    const contextResponse = await server()
+      .get(`/api/v1/boards/${boardId}/cards/${cardId}/context`)
+      .set(auth(pat))
+      .expect(200);
+    expect(contextResponse.headers["x-janosik-intent-api"]).toBe("1");
+    const missingContext = await server()
+      .get(`/api/v1/boards/${boardId}/cards/missing/context`)
+      .set(auth(pat))
+      .expect(404);
+    expect(missingContext.headers["x-janosik-intent-api"]).toBe("1");
+    expect(missingContext.body).toMatchObject({ code: "not_found" });
     const snapshot = await context(boardId, cardId, pat);
 
     await patch(

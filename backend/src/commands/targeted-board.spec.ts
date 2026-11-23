@@ -70,31 +70,37 @@ describe("loadTargetedBoardAggregate", () => {
         attachmentCount: 0,
       },
     ];
-    const indexCalls: Array<{ where?: { columnId?: { in?: string[] } } }> = [];
+    const indexCalls: Array<{
+      where?: {
+        columnId?: { in?: string[] };
+        column?: { boardId?: string };
+      };
+    }> = [];
     const db = {
       board: { findFirst: jest.fn().mockResolvedValue(board) },
       column: { findMany: jest.fn().mockResolvedValue(columns) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
       card: {
-        findMany: jest
-          .fn()
-          .mockImplementation(
-            (args: {
-              select?: unknown;
-              where?: { columnId?: { in?: string[] } };
-            }) => {
-              if (args?.select !== undefined) {
-                indexCalls.push(args);
-                return Promise.resolve([
-                  { id: "c1", columnId: "todo" },
-                  { id: "c2", columnId: "todo" },
-                  { id: "c3", columnId: "doing" },
-                  { id: "c4", columnId: "done" },
-                ]);
-              }
-              return Promise.resolve(cards);
-            },
-          ),
+        findMany: jest.fn().mockImplementation(
+          (args: {
+            select?: unknown;
+            where?: {
+              columnId?: { in?: string[] };
+              column?: { boardId?: string };
+            };
+          }) => {
+            if (args?.select !== undefined) {
+              indexCalls.push(args);
+              return Promise.resolve([
+                { id: "c1", columnId: "todo" },
+                { id: "c2", columnId: "todo" },
+                { id: "c3", columnId: "doing" },
+                { id: "c4", columnId: "done" },
+              ]);
+            }
+            return Promise.resolve(cards);
+          },
+        ),
       },
       cardLink: { findMany: jest.fn().mockResolvedValue([]) },
     } as unknown as Prisma.TransactionClient;
@@ -123,6 +129,7 @@ describe("loadTargetedBoardAggregate", () => {
     ]);
     expect(indexCalls).toHaveLength(1);
     expect(indexCalls[0]!.where?.columnId?.in).toEqual(["doing", "todo"]);
+    expect(indexCalls[0]!.where?.column?.boardId).toBe("b1");
     expect(loaded!.board.workflow?.doneColumnIds).toEqual(["done"]);
     expect(loaded!.versions).toEqual({
       "board:b1": 5,
@@ -131,6 +138,17 @@ describe("loadTargetedBoardAggregate", () => {
       "column:done": 6,
       "card:c1": 9,
     });
+  });
+
+  it("never indexes a column from another board", async () => {
+    const { db, indexCalls } = harness();
+    await loadTargetedBoardAggregate(db, "b1", {
+      cardIds: ["c1"],
+      includeTargetColumn: true,
+      indexColumnIds: ["foreign-board-column"],
+    });
+    expect(indexCalls).toHaveLength(1);
+    expect(indexCalls[0]!.where?.columnId?.in).toEqual(["todo"]);
   });
 
   it("does not issue an index query for a claim/patch read", async () => {

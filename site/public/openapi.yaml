@@ -664,16 +664,32 @@ paths:
         aggregate: no other card payload, checklist or description is read.
         An agent uses it for the Definition-of-Done check, a release guard or
         a compare-and-set description edit before calling a card intent.
+        Every answer, including a genuine missing-card `404`, carries
+        `X-Janosik-Intent-API: 1`; an older server's `404` lacks it, which is
+        how an MCP client decides to fall back to the command API.
       responses:
         "200":
           description: The card context.
+          headers:
+            X-Janosik-Intent-API:
+              $ref: "#/components/headers/X-Janosik-Intent-API"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CardContext"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
+        "404":
+          description: |
+            Board or card not found/card intents unavailable. A card-intent
+            server still sends `X-Janosik-Intent-API: 1`.
+          headers:
+            X-Janosik-Intent-API:
+              $ref: "#/components/headers/X-Janosik-Intent-API"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
         "429": { $ref: "#/components/responses/TooManyRequests" }
   /boards/{boardId}/cards/{cardId}:
     parameters:
@@ -3508,6 +3524,14 @@ components:
       description: Agent run created by this write, when one exists.
       schema:
         type: string
+    X-Janosik-Intent-API:
+      description: |
+        TASK-200.7 capability marker (`1`) on the card-context route. Its
+        presence on a `404` means the card is genuinely missing; its absence
+        means the server predates card intents.
+      schema:
+        type: string
+        enum: ["1"]
     X-Delta-Resync:
       description: "`1` when the command delta cannot be replayed; refetch the board."
       schema:
@@ -5067,8 +5091,10 @@ components:
               maxLength: 300
             description:
               type: string
+              maxLength: 64000
             expectedDescription:
               type: string
+              maxLength: 64000
               description: Compare-and-set on the description the caller read.
     CardContext:
       type: object

@@ -143,6 +143,13 @@ export interface PatchCardIntentRequest extends CardIntentRequest {
   expectedDescription?: string;
 }
 
+/**
+ * TASK-200.7 capability header on the card-context route. A `404` that still
+ * carries it is a genuine missing card; a `404` without it means the server is
+ * older than card intents and the client may fall back to the command API.
+ */
+export const CARD_INTENT_API_HEADER = "X-Janosik-Intent-API";
+
 /** A card's small agent-facing context (TASK-200.7), no full board read. */
 export interface CardContextDto {
   boardId: string;

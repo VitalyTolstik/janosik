@@ -383,7 +383,12 @@ builds the normal `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD` action and applies it
 through `CommandsService` with a targeted board load. An exact retry with the
 same `commandId` and intent is answered from the stored command before the
 server recomputes the lease, move coordinates or `expectedDescription` check,
-so it never turns into `idempotency_conflict` or `version_conflict`. A stale precondition
+so it never turns into `idempotency_conflict` or `version_conflict`. Identical
+concurrent requests with the same `commandId` are serialized in the API
+process; the second waits for the first and returns its stored result. A
+different intent under the same key still answers `409 idempotency_conflict`
+because the server stores a stable intent fingerprint (including which fields
+were present), not the server-derived action. A stale precondition
 answers `409 version_conflict` with the board `seq` in `currentVersion` and
 the versions of the pinned entities in `versions`; merge those into
 `ifMatchVersions` and retry the same call, or re-read only

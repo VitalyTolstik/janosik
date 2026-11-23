@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Role } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type {
@@ -52,6 +52,7 @@ interface StoredIntentCommand {
   payload: Prisma.JsonValue;
   result: Prisma.JsonValue;
   runId: string | null;
+  details: Prisma.JsonValue;
 }
 
 interface ReplayedCommand {
@@ -76,6 +77,15 @@ interface ReplayedCommand {
  */
 @Injectable()
 export class CardIntentsService {
+  /**
+   * TASK-200.7: identical concurrent retries are queued per
+   * `(board, commandId)` in this process. The second call then finds the
+   * stored command/fingerprint instead of racing the first into a derived
+   * payload conflict. Entries are only live requests and are deleted after
+   * the queue drains, so the map stays bounded by concurrency.
+   */
+  private readonly intentChains = new Map<string, Promise<void>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly commands: CommandsService,
@@ -109,23 +119,44 @@ export class CardIntentsService {
     };
   }
 
-  async claim(
+  claim(
     boardId: string,
     cardId: string,
     dto: ClaimCardIntentDto,
     actor: CardIntentActor,
   ): Promise<CardClaimIntentResponse> {
+    return this.serialize(boardId, dto.commandId, () =>
+      this.claimUnlocked(boardId, cardId, dto, actor),
+    );
+  }
+
+  private async claimUnlocked(
+    boardId: string,
+    cardId: string,
+    dto: ClaimCardIntentDto,
+    actor: CardIntentActor,
+  ): Promise<CardClaimIntentResponse> {
+    const fingerprint = this.intentFingerprint(
+      "CLAIM_CARD",
+      boardId,
+      cardId,
+      dto,
+    );
     const release = dto.release === true;
     const replay = await this.replay(
       boardId,
       cardId,
       dto.commandId,
       "CLAIM_CARD",
-      (payload) =>
-        (payload.claimedBy ?? null) === (release ? null : actor.actorId),
+      fingerprint,
     );
     if (replay !== null) {
-      return this.claimResponse(replay.response, boardId, cardId);
+      return this.claimResponse(
+        replay.response,
+        boardId,
+        cardId,
+        replay.action,
+      );
     }
 
     // Only the card matters for a claim; no board-wide order is read.
@@ -149,23 +180,40 @@ export class CardIntentsService {
         leaseUntil,
       } as BoardAction,
       versions,
+      fingerprint,
     );
     return this.claimResponse(response, boardId, cardId);
   }
 
-  async move(
+  move(
     boardId: string,
     cardId: string,
     dto: MoveCardIntentDto,
     actor: CardIntentActor,
   ): Promise<CardMoveIntentResponse> {
+    return this.serialize(boardId, dto.commandId, () =>
+      this.moveUnlocked(boardId, cardId, dto, actor),
+    );
+  }
+
+  private async moveUnlocked(
+    boardId: string,
+    cardId: string,
+    dto: MoveCardIntentDto,
+    actor: CardIntentActor,
+  ): Promise<CardMoveIntentResponse> {
+    const fingerprint = this.intentFingerprint(
+      "MOVE_CARD",
+      boardId,
+      cardId,
+      dto,
+    );
     const replay = await this.replay(
       boardId,
       cardId,
       dto.commandId,
       "MOVE_CARD",
-      (payload) =>
-        dto.toColumnId === undefined || payload.toColumnId === dto.toColumnId,
+      fingerprint,
     );
     if (replay !== null) {
       return this.moveResponse(replay.response, boardId, cardId, {
@@ -228,6 +276,7 @@ export class CardIntentsService {
       dto,
       action,
       loaded.versions,
+      fingerprint,
     );
     return this.moveResponse(response, boardId, cardId, {
       fromColumnId: source.id,
@@ -248,15 +297,29 @@ export class CardIntentsService {
         field: "title",
       });
     }
+    return this.serialize(boardId, dto.commandId, () =>
+      this.patchUnlocked(boardId, cardId, dto, actor),
+    );
+  }
+
+  private async patchUnlocked(
+    boardId: string,
+    cardId: string,
+    dto: PatchCardIntentDto,
+    actor: CardIntentActor,
+  ): Promise<CardIntentResponse> {
+    const fingerprint = this.intentFingerprint(
+      "UPDATE_CARD",
+      boardId,
+      cardId,
+      dto,
+    );
     const replay = await this.replay(
       boardId,
       cardId,
       dto.commandId,
       "UPDATE_CARD",
-      (payload) =>
-        (dto.title === undefined || payload.title === dto.title) &&
-        (dto.description === undefined ||
-          payload.description === dto.description),
+      fingerprint,
     );
     if (replay !== null)
       return this.patchResponse(replay.response, boardId, cardId);
@@ -292,6 +355,7 @@ export class CardIntentsService {
           : {}),
       } as BoardAction,
       loaded.versions,
+      fingerprint,
     );
     return this.patchResponse(response, boardId, cardId);
   }
@@ -300,14 +364,25 @@ export class CardIntentsService {
     response: CommandResponse,
     boardId: string,
     cardId: string,
+    storedAction?: Record<string, unknown>,
   ): Promise<CardClaimIntentResponse> {
     const fresh = await this.cardSnapshot(boardId, cardId);
+    // A replay reports what that command actually applied, not the claim a
+    // foreign release/claim may have put on the card since.
+    const claimedBy =
+      storedAction === undefined
+        ? (fresh.card.claimedBy ?? null)
+        : ((storedAction.claimedBy as string | null | undefined) ?? null);
+    const leaseUntil =
+      storedAction === undefined
+        ? (fresh.card.leaseUntil ?? null)
+        : ((storedAction.leaseUntil as number | null | undefined) ?? null);
     return {
       ...response,
       card: fresh.card,
       columnId: fresh.columnId,
-      claimedBy: fresh.card.claimedBy ?? null,
-      leaseUntil: fresh.card.leaseUntil ?? null,
+      claimedBy,
+      leaseUntil,
       results: [response],
     };
   }
@@ -390,12 +465,18 @@ export class CardIntentsService {
     cardId: string,
     commandId: string | undefined,
     type: BoardAction["type"],
-    matches: (payload: Record<string, unknown>) => boolean,
+    fingerprint: string,
   ): Promise<ReplayedCommand | null> {
     if (commandId === undefined) return null;
     const row = (await this.prisma.command.findUnique({
       where: { id: commandId },
-      select: { boardId: true, payload: true, result: true, runId: true },
+      select: {
+        boardId: true,
+        payload: true,
+        result: true,
+        runId: true,
+        details: true,
+      },
     })) as StoredIntentCommand | null;
     if (row === null) return null;
     if (row.boardId !== boardId) {
@@ -407,11 +488,12 @@ export class CardIntentsService {
       });
     }
     const payload = asRecord(row.payload);
+    const details = asRecord(row.details);
     if (
       payload === null ||
       payload.type !== type ||
       payload.cardId !== cardId ||
-      !matches(payload)
+      details?.intentFingerprint !== fingerprint
     ) {
       throw new ConflictException({
         message: "commandId already used with a different payload",
@@ -428,6 +510,73 @@ export class CardIntentsService {
         ...(row.runId !== null ? { runId: row.runId } : {}),
       },
     };
+  }
+
+  /**
+   * Serialize identical `(board, commandId)` requests inside this process.
+   * A concurrent identical retry then waits for the first write and reads its
+   * stored result instead of racing the server-derived action. Different
+   * intents under the same key still see the stored fingerprint and answer
+   * `409 idempotency_conflict`.
+   */
+  private async serialize<T>(
+    boardId: string,
+    commandId: string | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    if (commandId === undefined) return run();
+    const key = `${boardId}:${commandId}`;
+    const previous = this.intentChains.get(key);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = (previous ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => gate);
+    this.intentChains.set(key, tail);
+    try {
+      if (previous !== undefined) await previous.catch(() => {});
+      return await run();
+    } finally {
+      release();
+      if (this.intentChains.get(key) === tail) this.intentChains.delete(key);
+    }
+  }
+
+  /**
+   * Stable hash of the client intent, including field presence. Server-derived
+   * fields (lease expiry, source index, resolved destination) are deliberately
+   * absent: those change on a retry and must not turn it into a new request.
+   */
+  private intentFingerprint(
+    type: BoardAction["type"],
+    boardId: string,
+    cardId: string,
+    dto: ClaimCardIntentDto | MoveCardIntentDto | PatchCardIntentDto,
+  ): string {
+    const keys =
+      type === "CLAIM_CARD"
+        ? (["release", "leaseMs"] as const)
+        : type === "MOVE_CARD"
+          ? (["toColumnId", "position"] as const)
+          : (["title", "description", "expectedDescription"] as const);
+    const record = dto as Record<string, unknown>;
+    const intent = {
+      schemaVersion: 1,
+      type,
+      boardId,
+      cardId,
+      fields: Object.fromEntries(
+        [...keys, "ifMatch", "ifMatchVersions"].map((key) => [
+          key,
+          Object.hasOwn(record, key)
+            ? { present: true, value: canonicalJson(record[key]) }
+            : { present: false },
+        ]),
+      ),
+    };
+    return createHash("sha256").update(JSON.stringify(intent)).digest("hex");
   }
 
   private async cardVersion(
@@ -468,6 +617,7 @@ export class CardIntentsService {
     dto: ClaimCardIntentDto | MoveCardIntentDto | PatchCardIntentDto,
     action: BoardAction,
     versions: EntityVersions,
+    intentFingerprint: string,
   ): Promise<CommandResponse> {
     const cardId = (action as BoardAction & { cardId: string }).cardId;
     // A caller-supplied map wins; otherwise pin the version this intent read.
@@ -495,6 +645,7 @@ export class CardIntentsService {
         ? { approvalId: actor.approvalId }
         : {}),
       targeted: true,
+      intentFingerprint,
     });
   }
 }
@@ -512,4 +663,20 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+/** Canonical JSON value for the intent fingerprint (sorted object keys). */
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [
+          key,
+          canonicalJson((value as Record<string, unknown>)[key]),
+        ]),
+    );
+  }
+  return value;
 }

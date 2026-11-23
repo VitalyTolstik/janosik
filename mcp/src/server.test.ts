@@ -482,7 +482,13 @@ async function fakeApi(
   const contextMatch = /^\/boards\/b1\/cards\/([^/]+)\/context$/.exec(path);
   if (contextMatch && method === "GET") {
     if (intentEndpointMissing) return respond({ message: "not found" }, 404);
-    return respond(cardContext(contextMatch[1]!));
+    const context = cardContext(contextMatch[1]!);
+    if (context.card === null) {
+      return respond({ message: "Card not found", code: "not_found" }, 404, {
+        "X-Janosik-Intent-API": "1",
+      });
+    }
+    return respond(context);
   }
   const intentMatch = /^\/boards\/b1\/cards\/([^/]+)(?:\/(claim|move))?$/.exec(
     path,
@@ -1784,6 +1790,22 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
+  it("reports a genuine missing card on an intent-capable server", async () => {
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "missing", position: 1 },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toContain("not on board");
+    expect(
+      calls.some(
+        (call) => call.path === "/boards/b1/commands" && call.method === "POST",
+      ),
+    ).toBe(false);
+    await client.close();
+  });
+
   it("refuses a compare-and-set update when the description changed", async () => {
     const client = await connect();
     const result = await client.callTool({
@@ -2159,9 +2181,7 @@ describe("janosik MCP server", () => {
     await client.close();
   });
 
-  it("rechecks Done after a concurrent column reorder", async () => {
-    staleWrites = 1;
-    reorderOnConflict = true;
+  it("rechecks Done from the fresh card context before moving", async () => {
     const client = await connect();
     const result = await client.callTool({
       name: "janosik_move_card",

@@ -318,7 +318,9 @@ export function registerCardTools(
       title: "Get a card",
       description:
         "Read one card in full: fields, description, checklists and links, " +
-        "plus the column it sits in. Pass outputPath to save large documents.",
+        "plus the column it sits in. This tool reads the board aggregate to " +
+        "assemble the card; targeted claim/move/update use the one-card " +
+        "context instead. Pass outputPath to save large documents.",
       inputSchema: {
         boardId: boardIdSchema,
         cardId: cardIdSchema,
@@ -447,8 +449,10 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
-            // A pre-200.7 server has no context route. A missing card also
-            // answers 404; the legacy path then reports it consistently.
+            // A card-intent server marks even a genuine missing card; only a
+            // 404 without the capability header is an older server that needs
+            // the command-API fallback.
+            if (error.intentApi) return cardNotFound(cardId, boardId);
             return updateWithBoard(undefined);
           }
           throw error;
@@ -607,8 +611,7 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
-            // A pre-200.7 server has no context route. A genuinely missing
-            // card is reported by the legacy board read.
+            if (error.intentApi) return cardNotFound(cardId, boardId);
             return moveWithBoard(undefined);
           }
           throw error;
@@ -871,6 +874,7 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
+            if (error.intentApi) return cardNotFound(cardId, boardId);
             // Pre-200.7 fallback: the command API needs no card context.
             return claimWithCommand();
           }
@@ -970,6 +974,7 @@ export function registerCardTools(
           context = await client.getCardContext(boardId, cardId);
         } catch (error) {
           if (error instanceof ApiError && error.status === 404) {
+            if (error.intentApi) return cardNotFound(cardId, boardId);
             // Pre-200.7 fallback; a missing card is reported by the board read.
             return releaseWithBoard();
           }

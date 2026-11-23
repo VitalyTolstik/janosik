@@ -22,14 +22,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `commandId` retry is answered from the stored command before the server
   recomputes a lease, move coordinates or the `expectedDescription` check, so
   it is a true replay rather than an `idempotency_conflict`/`version_conflict`.
-  Version conflicts carry the pinned `card:`/`column:`/`board:` versions in
-  `versions`, exported in `ConflictError`/`ApiErrorEnvelope`. The loader
-  indexes only the card's column (context/response) or the move's source and
-  destination columns, not every card id on the board. MCP `claim_card`,
-  `release_card`, `move_card` and `update_card` use the targeted
+  A stable intent fingerprint (including field presence) proves the retry is
+  the same request; identical concurrent requests are serialized per
+  `(board, commandId)` in-process. Version conflicts carry the pinned
+  `card:`/`column:`/`board:` versions in `versions`, exported in
+  `ConflictError`/`ApiErrorEnvelope`. The loader indexes only the card's
+  column (context/response) or the move's source and destination columns, not
+  every card id on the board, and drops/rejects a foreign destination column
+  before any cross-board index query. The context route carries
+  `X-Janosik-Intent-API: 1`, including on a genuine missing-card `404`. MCP
+  `claim_card`, `release_card`, `move_card` and `update_card` use the targeted
   context/intents: no board read, one-card Definition-of-Done and description
-  checks, a targeted retry after a conflict, and a command-API fallback when a
-  pre-200.7 server answers the context route with `404`. `expectedVersion`
+  checks, a targeted retry after a conflict, and a command-API fallback only
+  when the capability header is absent (a pre-200.7 server). `expectedVersion`
   remains the explicit full-board `ifMatch = seq` mode; comments already use
   the targeted card route. `janosik_add_comment` is unchanged and never reads
   a board.

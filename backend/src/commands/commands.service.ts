@@ -420,6 +420,13 @@ export interface ApplyOptions {
    * command whose reducer may read an unrelated card.
    */
   targeted?: boolean;
+  /**
+   * TASK-200.7: stable hash of the original card intent (not the
+   * server-derived action). Stored on the command row so a retry with the same
+   * `commandId` can prove it is the same request even when the action carries
+   * a fresh lease or recomputed move coordinates.
+   */
+  intentFingerprint?: string;
 }
 
 @Injectable()
@@ -959,6 +966,9 @@ export class CommandsService {
             board: running,
             exemptRestoreLimits: options.exemptRestoreLimits === true,
             exemptClaimGuard: options.exemptClaimGuard === true,
+            ...(options.intentFingerprint !== undefined
+              ? { intentFingerprint: options.intentFingerprint }
+              : {}),
           });
           if (runId !== null && seed !== null) {
             const preimage = await finalizePreimage(tx, {
@@ -1364,6 +1374,8 @@ export class CommandsService {
       board: Board;
       exemptRestoreLimits?: boolean;
       exemptClaimGuard?: boolean;
+      /** TASK-200.7 stable intent hash stored beside the display details. */
+      intentFingerprint?: string;
     },
   ): Promise<{
     response: CommandResponse;
@@ -1451,6 +1463,15 @@ export class CommandsService {
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;
+    const storedDetails =
+      details !== null || params.intentFingerprint !== undefined
+        ? {
+            ...(details ?? {}),
+            ...(params.intentFingerprint !== undefined
+              ? { intentFingerprint: params.intentFingerprint }
+              : {}),
+          }
+        : null;
 
     const created = await tx.command.create({
       data: {
@@ -1465,8 +1486,8 @@ export class CommandsService {
         type: action.type,
         payload: jsonSafe(action),
         result: {},
-        ...(details !== null
-          ? { details: jsonSafe(details) as Prisma.InputJsonValue }
+        ...(storedDetails !== null
+          ? { details: jsonSafe(storedDetails) as Prisma.InputJsonValue }
           : {}),
         touches: [],
       },

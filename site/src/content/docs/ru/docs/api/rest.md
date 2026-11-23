@@ -396,7 +396,12 @@ runs, данные undo и SSE-лог команд не меняются: intent
 `CommandsService` с точечной загрузкой доски. Точный retry с тем же
 `commandId` и intent отвечает сохранённым результатом до пересчёта lease,
 координат move или проверки `expectedDescription`, поэтому не превращается
-в `idempotency_conflict` или `version_conflict`. Устаревшее предусловие
+в `idempotency_conflict` или `version_conflict`. Одинаковые конкурентные
+запросы с тем же `commandId` сериализуются в процессе API: второй ждёт
+первый и получает его сохранённый результат. Другой intent под тем же ключом
+по-прежнему отвечает `409 idempotency_conflict`, потому что сервер хранит
+стабильный fingerprint intent'а (включая наличие полей), а не вычисленное
+действие. Устаревшее предусловие
 отвечает `409 version_conflict` с `seq` доски в `currentVersion` и
 версиями закреплённых сущностей в `versions`; подставьте их в
 `ifMatchVersions` и повторите тот же вызов либо перечитайте только

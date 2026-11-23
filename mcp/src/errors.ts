@@ -17,6 +17,12 @@ export class ApiError extends Error {
     readonly status: number,
     readonly body: unknown,
     retryAfterSeconds?: number,
+    /**
+     * TASK-200.7: the response carried `X-Janosik-Intent-API: 1`. On a `404`
+     * this distinguishes a genuine missing card from a server older than the
+     * card-context route (which must fall back to the command API).
+     */
+    readonly intentApi = false,
   ) {
     super(`HTTP ${status}`);
     this.name = "ApiError";
@@ -628,7 +634,9 @@ function describeApiErrorBody(error: ApiError): string {
         return (
           `Error: the target changed since you read it` +
           (currentVersion !== undefined
-            ? ` (board seq ${currentVersion})`
+            ? ` (currentVersion ${currentVersion}; it is a board seq, an ` +
+              "entity version or an agent-policy version depending on the " +
+              "precondition)"
             : "") +
           (versions !== undefined
             ? `; current versions: ${Object.entries(versions)
@@ -648,11 +656,13 @@ function describeApiErrorBody(error: ApiError): string {
       }
       if (scoped.code === "version_conflict") {
         return (
-          "Error: the board changed since you read it" +
+          "Error: the target changed since you read it" +
           (currentVersion !== undefined
-            ? ` (now at version ${currentVersion})`
+            ? ` (currentVersion ${currentVersion}; this may be a board seq, ` +
+              "an entity version or an agent-policy version)"
             : "") +
-          ". Re-read the board and retry."
+          ". Retry the same targeted call, or re-read the board only in " +
+          "explicit full-board mode."
         );
       }
       const detail = restMessage(body);
