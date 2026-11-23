@@ -338,7 +338,8 @@ BEGIN
   -- A retention/demo purge may delete the newest command before this
   -- migration; max(seq) alone would move the sequence backwards and reuse a
   -- deleted seq, silently breaking deltaSince clients. Keep the high-water
-  -- mark and called state.
+  -- mark. For an empty table preserve is_called; a non-empty table forces it
+  -- true because last_value may already be a live seq.
   next_last := GREATEST(maxseq, seq_last, 1);
   PERFORM setval(
     '"Command_seq_seq"',

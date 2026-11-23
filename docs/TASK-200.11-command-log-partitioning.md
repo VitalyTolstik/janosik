@@ -288,14 +288,16 @@ Seven migrations:
   first and expect downtime proportional to the copy. `lock_timeout` is 30 s,
   so a competing lock fails the migration rather than hanging the boot
   indefinitely.
-- **Pre-release checksum:** an earlier pre-release (`5f21ac57`) applied the
-  original migration 1, and this branch corrected it in place. A database that
-  applied that checksum must be recreated or its `_prisma_migrations` row
-  resolved/updated from a backup before deploying; the old max-only `setval`
-  may already have lowered the sequence. Restore the backup (preferred) or
-  repair `Command_seq_seq` with the high-water rule above and verify the next
-  `seq` is above every surviving/deleted high-water mark. Fresh installs and
-  databases that have not run the old checksum need no action.
+- **Pre-release checksum:** any prior pre-release (for example `5f21ac57` or
+  `ff56e12e`) applied an earlier version of migration 1, and this branch
+  corrected it in place. A database that applied one of those checksums must
+  be recreated or its `_prisma_migrations` row resolved/updated from a backup
+  before deploying; the old max-only `setval` may already have lowered the
+  sequence. Restore the backup (preferred) or repair `Command_seq_seq` with the
+  `GREATEST(max(seq), last_value, 1)` / `is_called` rule in Migration 1 step 5,
+  then verify the next `seq` is above every surviving/deleted high-water mark.
+  Fresh installs and databases that have not run an old checksum need no
+  action.
 
 **Steps**
 
