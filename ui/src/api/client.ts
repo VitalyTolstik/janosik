@@ -47,6 +47,7 @@ import type {
   DeleteAccountResponse,
   EndAgentSessionRequest,
   InviteMemberRequest,
+  LabelAssignment,
   NotificationSettingsDto,
   RequestAccountDeletionCodeRequest,
   RequestAccountDeletionCodeResponse,
@@ -1033,6 +1034,22 @@ export class ApiClient {
     const query = params.toString();
     return this.request<BoardCardPageDto>(
       `/boards/${encodeURIComponent(boardId)}/cards${query === "" ? "" : `?${query}`}`,
+      { headers: { "X-Janosik-Read-Model": "v1" } },
+    );
+  }
+
+  /**
+   * TASK-200.9 rolling-deploy fallback: an older server (previous fix
+   * series) has no command-response preimage but still exposes this read.
+   * The provider snapshots it before DELETE_LABEL only as a fallback; a new
+   * server's locked response overwrites it.
+   */
+  getLabelAssignments(
+    boardId: string,
+    labelId: string,
+  ): Promise<LabelAssignment[]> {
+    return this.request<LabelAssignment[]>(
+      `/boards/${encodeURIComponent(boardId)}/labels/${encodeURIComponent(labelId)}/assignments`,
       { headers: { "X-Janosik-Read-Model": "v1" } },
     );
   }

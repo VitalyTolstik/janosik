@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "@/auth/AuthContext";
 import { BoardSection } from "@/components/BoardSection";
 import { createSeedBoard, LIMITS, type AttachmentDto } from "@janosik/shared";
+import type { Board } from "@janosik/shared";
 import { CardDialog } from "@/components/board/CardDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -376,6 +377,109 @@ describe("CardDialog read-model deep links (TASK-200.9)", () => {
     ).toHaveValue("deep body 55");
     expect(screen.queryByText("Card not found")).toBeNull();
   }, 20_000);
+
+  function linkedDeepBoard(): Board {
+    const cardIds = Array.from({ length: 60 }, (_, index) => `deep-${index}`);
+    return {
+      id: "b-1",
+      title: "Deep board",
+      columns: [{ id: "col-1", title: "Todo", cardIds, createdAt: 1 }],
+      cards: Object.fromEntries(
+        cardIds.map((id, index) => [
+          id,
+          {
+            id,
+            title: `Deep card ${index}`,
+            description: `deep body ${index}`,
+            labelIds: [],
+            createdAt: index,
+            updatedAt: index,
+            ...(id === "deep-0"
+              ? {
+                  links: [
+                    {
+                      id: "l-deep",
+                      type: "blocks" as const,
+                      targetCardId: "deep-55",
+                    },
+                  ],
+                }
+              : {}),
+          },
+        ]),
+      ),
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  }
+
+  async function openLinkedDeepCard(server: FakeServer) {
+    renderBoard("/board/b-1?card=deep-55");
+    const title = await screen.findByLabelText(
+      "Title",
+      {},
+      { timeout: 15_000 },
+    );
+    expect(title).toHaveValue("Deep card 55");
+    await screen.findByLabelText("Description");
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-1/events",
+        ),
+      ).toBe(true),
+    );
+    return () =>
+      server.requests.filter(
+        (entry) =>
+          entry.method === "GET" &&
+          entry.path === "/api/v1/boards/b-1/cards/deep-55",
+      ).length;
+  }
+
+  it("keeps an open detail card mounted when a foreign source is deleted", async () => {
+    const server = new FakeServer([linkedDeepBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    const detailReads = await openLinkedDeepCard(server);
+    const before = detailReads();
+
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "DELETE_CARD",
+        cardId: "deep-0",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(detailReads()).toBeGreaterThan(before), {
+      timeout: 15_000,
+    });
+    // The body stayed mounted throughout; only its reverse rows refreshed.
+    expect(screen.queryByTestId("card-detail-loading")).toBeNull();
+    expect(screen.getByLabelText("Description")).toHaveValue("deep body 55");
+  }, 25_000);
+
+  it("keeps an open detail card mounted when a foreign source is archived", async () => {
+    const server = new FakeServer([linkedDeepBoard()]);
+    vi.stubGlobal("fetch", server.handle);
+    const detailReads = await openLinkedDeepCard(server);
+    const before = detailReads();
+
+    act(() => {
+      server.publishCommand("b-1", {
+        type: "ARCHIVE_CARD",
+        cardId: "deep-0",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(detailReads()).toBeGreaterThan(before), {
+      timeout: 15_000,
+    });
+    expect(screen.queryByTestId("card-detail-loading")).toBeNull();
+    expect(screen.getByLabelText("Description")).toHaveValue("deep body 55");
+  }, 25_000);
 });
 
 /** CardDialog with a control that swaps the open card without closing it. */

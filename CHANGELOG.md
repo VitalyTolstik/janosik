@@ -38,17 +38,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   read inside the board write transaction, so the inverse restores every
   assignment on unloaded cards of a 1 000-card board and a concurrent
   add/remove cannot race it; undo/redo presses wait for that response before
-  popping the step, and a redo's fresh command snapshots its own inverse.
+  popping the step, a failed delete drops the queued press instead of undoing
+  an older step, and a redo's fresh command snapshots its own inverse.
   The deprecated `GET .../labels/:labelId/assignments` read remains for one
-  release so an older UI keeps full undo during a rolling deploy (deploy the
-  backend first; the new UI needs the response snapshot for unloaded cards).
-  Detail carries reverse link rows and reducers keep
+  release so an older UI keeps full undo during a rolling deploy; the new UI
+  also snapshots it before the delete as a fallback when talking to an older
+  backend. Detail carries reverse link rows and reducers keep
   `linkCount`/`blocked`/incoming facts current on link, archive,
   card/column delete and restore — including surviving *sources* of a deleted
   target — and keep a summary target's `blocked` conservative while another
-  blocker or a non-blocking relation may exist; a summary refresh replaces
-  cached detail whose link facts changed even when `updatedAt` did not, and
-  foreign checklist edits on summary cards schedule the same refresh.
+  blocker or a non-blocking relation may exist. A fact-only summary change
+  (same `updatedAt`) merges the fresh count/blocked into cached detail,
+  keeps `detailLoaded` so an open dialog never falls back to its loading
+  skeleton, drops the reverse rows and marks them stale; the dialog and
+  linked-cards popover then refetch the detail. Older pages never replace
+  newer local detail, and a same-stamp detail read is still applied when the
+  reverse-row identity changed. Foreign checklist edits on summary cards
+  schedule the same refresh.
   Reducers also reset duplicated-card facts, update description/checklist
   counters on edits and preimage duplicate columns; page hydration rejects
   pages older than the summary, only hydrates ids still in column/archive

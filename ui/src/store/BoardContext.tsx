@@ -1030,7 +1030,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (boardId: string, cardId: string): Promise<Card | null> => {
       const existing = stateRef.current.find((board) => board.id === boardId)
         ?.cards[cardId];
-      if (!serverMode || hasCardDetail(existing)) {
+      const staleReverse = existing?.readModel?.reverseLinksStale === true;
+      if (!serverMode || (hasCardDetail(existing) && !staleReverse)) {
         return Promise.resolve(existing ?? null);
       }
       const key = `${boardId}:${cardId}`;
@@ -1252,23 +1253,25 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // object would give `dispatch` (and with it the whole actions context) a
   // new identity on every state change and undo the render isolation of
   // TASK-21.4.
-  const labelPreimageGatesRef = useRef(new Map<string, Promise<void>>());
+  const labelPreimageGatesRef = useRef(new Map<string, Promise<boolean>>());
   /**
    * TASK-200.9: hold undo/redo presses until every in-flight DELETE_LABEL
    * has answered and amended its inverse. A gate chains on the board's
-   * previous one, so two fast deletes still release in command order.
+   * previous one, so two fast deletes still release in command order; a
+   * failed delete resolves the chain `false` and the queued press is dropped
+   * instead of undoing an unrelated older step.
    */
   const beginLabelPreimageGate = useCallback((boardId: string) => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
+    let release!: (ok: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => {
       release = resolve;
     });
     const previous =
-      labelPreimageGatesRef.current.get(boardId) ?? Promise.resolve();
-    const chained = previous.then(() => gate);
+      labelPreimageGatesRef.current.get(boardId) ?? Promise.resolve(true);
+    const chained = previous.then((ok) => gate.then((mine) => ok && mine));
     labelPreimageGatesRef.current.set(boardId, chained);
-    return () => {
-      release();
+    return (ok: boolean) => {
+      release(ok);
       void chained.finally(() => {
         if (labelPreimageGatesRef.current.get(boardId) === chained) {
           labelPreimageGatesRef.current.delete(boardId);
@@ -2382,6 +2385,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (
       action: BoardAction,
       opts?: { silentFailure?: boolean },
+      releasePreimageGate?: (ok: boolean) => void,
     ): void | Promise<boolean> => {
       const boardId =
         (action as { boardId?: string }).boardId ?? activeIdRef.current;
@@ -2413,12 +2417,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      // Hold undo until a label-delete response has amended the step: a
-      // Ctrl+Z faster than the round-trip must not send the loaded subset.
-      const releasePreimageGate =
-        scoped.type === "DELETE_LABEL"
-          ? beginLabelPreimageGate(boardId)
-          : undefined;
       const sent = sync.enqueue(boardId, scoped).then(async (outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
@@ -2489,7 +2487,16 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       });
       return releasePreimageGate === undefined
         ? sent
-        : sent.finally(releasePreimageGate);
+        : sent.then(
+            (ok) => {
+              releasePreimageGate(ok);
+              return ok;
+            },
+            (error: unknown) => {
+              releasePreimageGate(false);
+              throw error;
+            },
+          );
     },
     [
       apply,
@@ -2505,7 +2512,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       scheduleRefetch,
       reconcileUncertainCommand,
       amendLabelPreimage,
-      beginLabelPreimageGate,
     ],
   );
 
@@ -2540,6 +2546,30 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         const result = runDispatch(next, opts);
         return result === undefined ? true : result;
       };
+      // Rolling-deploy fallback: an older server has no response preimage,
+      // so snapshot the deprecated read just before sending. On a new server
+      // the locked response snapshot overwrites this seed. The undo gate is
+      // created *before* this read, so a Ctrl+Z during the preflight waits
+      // for the label step instead of popping an unrelated older one.
+      if (serverMode && action.type === "DELETE_LABEL") {
+        const release = beginLabelPreimageGate(boardId);
+        const commandId = createId();
+        return api.getLabelAssignments(boardId, action.labelId).then(
+          (assignments) => {
+            const result = runDispatch(
+              { ...action, commandId } as BoardAction,
+              opts,
+              release,
+            );
+            amendLabelPreimage(boardId, commandId, assignments);
+            return result === undefined ? true : result;
+          },
+          () => {
+            const result = runDispatch(action, opts, release);
+            return result === undefined ? true : result;
+          },
+        );
+      }
       const board = stateRef.current.find((entry) => entry.id === boardId);
       const needed = preimageCardIds(action, board).filter(
         (id) => !hasCardDetail(board?.cards[id]),
@@ -2553,7 +2583,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         .then((ok) => (ok ? finish(action) : false))
         .catch(fail);
     },
-    [serverMode, loadCardDetails, runDispatch, showFailure],
+    [
+      serverMode,
+      loadCardDetails,
+      runDispatch,
+      showFailure,
+      amendLabelPreimage,
+      beginLabelPreimageGate,
+    ],
   );
 
   // The archive dialog may close while work is being sent. Keep the queue

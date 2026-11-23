@@ -179,6 +179,13 @@ export interface CardReadModelMeta {
   blocked: boolean;
   /** True once the full card (description/checklists/links) is loaded. */
   detailLoaded: boolean;
+  /**
+   * Client-only TASK-200.9: the cached detail body is still valid, but its
+   * reverse link rows may not be. A summary with the same `updatedAt` can
+   * carry newer link facts (links do not stamp the target card); the next
+   * detail read refetches the rows and clears this flag.
+   */
+  reverseLinksStale?: boolean;
 }
 
 export interface Card {

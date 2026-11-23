@@ -363,9 +363,13 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(next.cards["c-1"].readModel).toMatchObject({
       linkCount: 2,
       blocked: true,
-      detailLoaded: false,
+      detailLoaded: true,
+      reverseLinksStale: true,
     });
-    expect(next.cards["c-1"].description).toBeUndefined();
+    // The dialog must not be downgraded to a loading skeleton.
+    expect(next.cards["c-1"].description).toBe("body");
+    expect(next.cards["c-1"].incomingLinks).toBeUndefined();
+    expect(hasCardDetail(next.cards["c-1"])).toBe(true);
   });
 
   it("hydrate replaces stale detail on the same link-fact change", () => {
@@ -406,9 +410,107 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(after.cards["c-1"].readModel).toMatchObject({
       linkCount: 2,
       blocked: true,
-      detailLoaded: false,
+      detailLoaded: true,
+      reverseLinksStale: true,
     });
-    expect(after.cards["c-1"].description).toBeUndefined();
+    expect(after.cards["c-1"].description).toBe("body");
+    expect(after.cards["c-1"].incomingLinks).toBeUndefined();
+  });
+
+  it("never lets an older page replace newer local detail", () => {
+    const detail: Card = {
+      id: "c-1",
+      title: "Local edit",
+      description: "body",
+      labelIds: [],
+      createdAt: 10,
+      updatedAt: 30,
+      readModel: {
+        descriptionChars: 4,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 1,
+        blocked: true,
+        detailLoaded: true,
+      },
+    };
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": detail },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const older = cardFromSummary(
+      summaryCard("c-1", {
+        updatedAt: 20,
+        title: "stale page",
+        linkCount: 2,
+        blocked: false,
+      }),
+    );
+    const after = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [older],
+    } as BoardAction)[0];
+    expect(after.cards["c-1"]).toBe(detail);
+  });
+
+  it("applies a same-stamp detail whose reverse rows changed identity", () => {
+    const detail = (linkId: string, fromCardId: string): Card =>
+      cardFromDetail({
+        boardId: "b-1",
+        columnId: "col-1",
+        card: {
+          id: "c-1",
+          title: "Cached detail",
+          labelIds: [],
+          createdAt: 10,
+          updatedAt: 20,
+        },
+        version: 1,
+        linkCount: 1,
+        blocked: true,
+        incomingLinks: [
+          {
+            id: linkId,
+            type: "blocks",
+            fromCardId,
+            fromArchived: false,
+          },
+        ],
+        seq: 1,
+        atSeq: 1,
+        aggregateRevision: 1,
+      });
+    const board: Board = {
+      id: "b-1",
+      title: "Board",
+      columns: [{ id: "col-1", title: "Todo", cardIds: ["c-1"], createdAt: 1 }],
+      cards: { "c-1": detail("l-old", "source-old") },
+      archivedCardIds: [],
+      labels: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const fresh = detail("l-new", "source-new");
+    const after = boardReducer([board], {
+      type: "HYDRATE_CARDS",
+      boardId: "b-1",
+      cards: [fresh],
+    } as BoardAction)[0];
+    expect(after.cards["c-1"].incomingLinks).toEqual([
+      {
+        id: "l-new",
+        type: "blocks",
+        fromCardId: "source-new",
+        fromArchived: false,
+      },
+    ]);
   });
 
   it("hydrates only ids still in the summary scope and keeps newer cards", () => {

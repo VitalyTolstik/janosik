@@ -105,7 +105,7 @@ interface Options {
    * `DELETE_LABEL` response has amended its inverse with the complete
    * server snapshot. `undefined` when nothing is pending.
    */
-  waitForPreimage?: (boardId: string) => Promise<void> | undefined;
+  waitForPreimage?: (boardId: string) => Promise<boolean> | undefined;
 }
 
 export function useUndoHistory({
@@ -187,10 +187,12 @@ export function useUndoHistory({
       if (!boardId) return;
       // A label delete records its step optimistically but its inverse is
       // only complete when the command response arrives. Waiting here makes
-      // a fast Ctrl+Z safe instead of restoring the loaded subset. Local
-      // mode has no gate and stays synchronous.
+      // a fast Ctrl+Z safe instead of restoring the loaded subset. A failed
+      // delete resolves the gate false: the rollback already undid it, so
+      // this press must not pop an unrelated older step. Local mode has no
+      // gate and stays synchronous.
       const gate = waitForPreimage?.(boardId);
-      if (gate !== undefined) await gate;
+      if (gate !== undefined && !(await gate)) return;
       const stack = historiesRef.current.get(boardId);
       if (!stack) return;
       for (;;) {

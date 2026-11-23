@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,8 +7,9 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { api } from "@/api/client";
 import { BoardSection } from "@/components/BoardSection";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -16,6 +18,7 @@ import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
 import { ToastProvider } from "@/components/Toast";
+import { FakeServer } from "@/test/fake-server";
 import { routes } from "@/routes";
 
 /**
@@ -163,4 +166,108 @@ describe("LinkedCardsPopover (card-front badges)", () => {
     );
     expect(screen.queryByTestId("card-links-popover")).toBeNull();
   });
+});
+
+describe("LinkedCardsPopover read-model refresh (TASK-200.9)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    api.clearAccessToken();
+    api.onAuthLost = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("refetches reverse rows when a foreign source is deleted", async () => {
+    const server = new FakeServer([
+      {
+        id: "b-links",
+        title: "Links",
+        columns: [
+          {
+            id: "col-1",
+            title: "To do",
+            cardIds: ["c-a", "c-c"],
+            createdAt: 1,
+          },
+          { id: "col-2", title: "Doing", cardIds: ["c-b"], createdAt: 2 },
+        ],
+        cards: {
+          "c-a": {
+            id: "c-a",
+            title: "Alpha card",
+            labelIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+            links: [{ id: "lk-a", type: "blocks", targetCardId: "c-b" }],
+          },
+          "c-c": {
+            id: "c-c",
+            title: "Gamma card",
+            labelIds: [],
+            createdAt: 2,
+            updatedAt: 2,
+            links: [{ id: "lk-c", type: "relates_to", targetCardId: "c-b" }],
+          },
+          "c-b": {
+            id: "c-b",
+            title: "Beta card",
+            labelIds: [],
+            createdAt: 3,
+            updatedAt: 3,
+          },
+        },
+        labels: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    vi.stubGlobal("fetch", server.handle);
+
+    renderBoard();
+    const beta = (
+      await screen.findByText("Beta card", {}, { timeout: 15_000 })
+    ).closest("article") as HTMLElement;
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) => entry.path === "/api/v1/boards/b-links/events",
+        ),
+      ).toBe(true),
+    );
+    fireEvent.click(within(beta).getByTestId("card-blocked-badge"));
+    const popover = await screen.findByTestId("card-links-popover");
+    await waitFor(() =>
+      expect(within(popover).getByText("Alpha card")).toBeTruthy(),
+    );
+    expect(within(popover).getByText("Gamma card")).toBeTruthy();
+
+    const detailReads = () =>
+      server.requests.filter(
+        (entry) =>
+          entry.method === "GET" &&
+          entry.path === "/api/v1/boards/b-links/cards/c-b",
+      ).length;
+    const before = detailReads();
+    act(() => {
+      server.publishCommand("b-links", {
+        type: "DELETE_CARD",
+        cardId: "c-a",
+        at: Date.now(),
+      });
+    });
+
+    await waitFor(() => expect(detailReads()).toBeGreaterThan(before), {
+      timeout: 15_000,
+    });
+    const refreshed = screen.getByTestId("card-links-popover");
+    await waitFor(() =>
+      expect(within(refreshed).queryByText("Alpha card")).toBeNull(),
+    );
+    expect(within(refreshed).getByText("Gamma card")).toBeTruthy();
+  }, 25_000);
 });

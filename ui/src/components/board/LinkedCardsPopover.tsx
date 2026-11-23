@@ -151,12 +151,15 @@ function LinkedCardsContent({
   const { board } = useBoardState();
   const { loadCardDetail } = useBoardActions();
   const [searchParams, setSearchParams] = useSearchParams();
+  const reverseStale =
+    board?.cards[cardId]?.readModel?.reverseLinksStale === true;
   // A summary card only carries its link counter. Open the popover with the
-  // card detail so both directions have real rows (TASK-200.9).
+  // card detail so both directions have real rows; a stale reverse set is
+  // refetched here too (facts changed without a card stamp).
   useEffect(() => {
     if (!open || boardId === undefined) return;
     void loadCardDetail(boardId, cardId).catch(() => undefined);
-  }, [open, boardId, cardId, loadCardDetail]);
+  }, [open, boardId, cardId, reverseStale, loadCardDetail]);
   if (!board) return null;
 
   // A linked card's "status" (Jira shows the status in the same spot) is

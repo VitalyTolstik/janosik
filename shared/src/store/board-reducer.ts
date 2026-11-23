@@ -3146,6 +3146,38 @@ function commit(
 }
 
 /**
+ * A summary link fact can change without stamping the target card. Merge the
+ * fresh count/blocked into cached detail, keep `detailLoaded`, drop the
+ * reverse rows that may now name the wrong sources, and mark them stale.
+ */
+function mergeFreshLinkFacts(existing: Card, incoming: Card): Card {
+  const merged: Card = {
+    ...existing,
+    readModel: {
+      ...existing.readModel!,
+      linkCount: incoming.readModel?.linkCount ?? existing.readModel!.linkCount,
+      blocked: incoming.readModel?.blocked ?? existing.readModel!.blocked,
+      reverseLinksStale: true,
+    },
+  };
+  delete merged.incomingLinks;
+  return merged;
+}
+
+/** Identity of the reverse relation set (ids, types, sources, archive state). */
+function sameIncomingLinks(left: Card, right: Card): boolean {
+  const key = (card: Card) =>
+    (card.incomingLinks ?? [])
+      .map(
+        (link) =>
+          `${link.id}:${link.type}:${link.fromCardId}:${link.fromArchived ? 1 : 0}`,
+      )
+      .sort()
+      .join("|");
+  return key(left) === key(right);
+}
+
+/**
  * Merge read-model cards into a card map (TASK-200.9). Returns the same map
  * when nothing changed so the reducer can keep its identity and skip a
  * re-render. Full detail always wins over a summary; an older summary never
@@ -3182,7 +3214,8 @@ function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
         chosen.title === existing.title &&
         chosen.updatedAt === existing.updatedAt &&
         chosen.readModel?.detailLoaded === true &&
-        existing.readModel?.detailLoaded === true
+        existing.readModel?.detailLoaded === true &&
+        sameIncomingLinks(chosen, existing)
       ) {
         continue;
       }
@@ -3190,16 +3223,21 @@ function hydrateCards(board: Board, incoming: readonly Card[]): Board["cards"] {
       existing.readModel === undefined ||
       existing.readModel.detailLoaded
     ) {
-      // Never downgrade a full card to a summary unless the summary is newer
-      // and the detail may have changed under us. Link facts are the
-      // exception: they can change without a card stamp, so a differing
-      // count/blocked must replace stale detail.
+      // An older page must never replace newer local detail, even when its
+      // link facts differ. At the same stamp, a fact-only change keeps the
+      // body and marks the reverse rows stale; a newer summary replaces the
+      // card (the dialog refetches on the stamp change).
+      if (card.updatedAt < existing.updatedAt) continue;
       const factsChanged =
         existing.readModel !== undefined &&
         (existing.readModel.linkCount !== card.readModel?.linkCount ||
           existing.readModel.blocked !== card.readModel?.blocked);
-      if (!factsChanged && card.updatedAt <= existing.updatedAt) continue;
-      chosen = card;
+      if (card.updatedAt === existing.updatedAt) {
+        if (!factsChanged) continue;
+        chosen = mergeFreshLinkFacts(existing, card);
+      } else {
+        chosen = card;
+      }
     } else if (card.updatedAt >= existing.updatedAt) {
       chosen = card;
     } else {

@@ -184,6 +184,12 @@ export class FakeServer {
    */
   emitCommandIds = true;
   /**
+   * Whether a DELETE_LABEL command response carries the in-transaction
+   * assignment snapshot (`false` mimics the previous server that only had
+   * the separate assignments route).
+   */
+  emitLabelPreimage = true;
+  /**
    * Catch-up cap of `GET /events`: a gap larger than this is not replayed —
    * the stream sends `resync` instead (the backend's truncated delta).
    */
@@ -1337,7 +1343,9 @@ export class FakeServer {
     const response: CommandResponse = {
       seq,
       versions,
-      ...(labelPreimage !== undefined ? { preimage: labelPreimage } : {}),
+      ...(labelPreimage !== undefined && this.emitLabelPreimage
+        ? { preimage: labelPreimage }
+        : {}),
     };
     this.commands.set(request.commandId, response);
     if (this.commandGate !== null) await this.commandGate;

@@ -903,7 +903,13 @@ export function CardDialog({
   // the description editor is uncontrolled and reads its value once.
   useEffect(() => {
     if (!open || !boardId || !cardId) return;
-    if (hasCardDetail(board?.cards[cardId])) return;
+    const cached = board?.cards[cardId];
+    if (
+      hasCardDetail(cached) &&
+      cached?.readModel?.reverseLinksStale !== true
+    ) {
+      return;
+    }
     let cancelled = false;
     void loadCardDetail(boardId, cardId).catch(() => {
       if (!cancelled) toast.error(t("sync.loadFailed"));
@@ -911,9 +917,20 @@ export function CardDialog({
     return () => {
       cancelled = true;
     };
-    // `updatedAt` re-runs the check after a refetch replaced the summary.
+    // Link facts can change without a card stamp, so the dialog also
+    // re-runs when the read-model flags say the reverse rows are stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, boardId, cardId, card?.updatedAt, loadCardDetail, t, toast]);
+  }, [
+    open,
+    boardId,
+    cardId,
+    card?.updatedAt,
+    card?.readModel?.detailLoaded,
+    card?.readModel?.reverseLinksStale,
+    loadCardDetail,
+    t,
+    toast,
+  ]);
 
   if (!board || !cardId) {
     // Dialog stays closed when there's nothing to show.

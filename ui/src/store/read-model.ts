@@ -121,6 +121,30 @@ export function cardFromDetail(dto: BoardCardDetailDto): Card {
 }
 
 /**
+ * TASK-200.9: a summary carries newer link facts for a card whose cached
+ * detail text is still current (links do not stamp the target's `updatedAt`).
+ * Keep the body and `detailLoaded`, replace the facts, drop the now-unreliable
+ * reverse rows, and mark them stale so opening the card/popover refetches
+ * exactly those rows.
+ */
+function mergeFreshLinkFacts(
+  existing: Card,
+  incoming: BoardCardSummaryDto,
+): Card {
+  const merged: Card = {
+    ...existing,
+    readModel: {
+      ...existing.readModel!,
+      linkCount: incoming.linkCount,
+      blocked: incoming.blocked,
+      reverseLinksStale: true,
+    },
+  };
+  delete merged.incomingLinks;
+  return merged;
+}
+
+/**
  * Build the normalized board from a summary, merging detail the store
  * already has. `previous` keeps an open dialog's full card (and any other
  * loaded detail) alive across a refetch; cards missing from the summary's
@@ -151,7 +175,9 @@ export function boardFromSummary(
     }
     // Link facts live on the summary and, unlike the card's text, are not
     // stamped onto the target card's `updatedAt`: a foreign link change can
-    // arrive with an identical stamp. Never let cached detail freeze them.
+    // arrive with an identical stamp. Never let cached detail freeze them,
+    // but never downgrade the open dialog either: merge the facts, keep the
+    // body, and mark the reverse rows stale for the next detail read.
     const factsChanged =
       existing?.readModel !== undefined &&
       (existing.readModel.linkCount !== incoming.linkCount ||
@@ -159,11 +185,16 @@ export function boardFromSummary(
     if (
       existing !== undefined &&
       hasCardDetail(existing) &&
-      existing.updatedAt >= incoming.updatedAt &&
-      !factsChanged
+      existing.readModel !== undefined
     ) {
-      cards[id] = existing;
-      continue;
+      if (factsChanged && existing.updatedAt >= incoming.updatedAt) {
+        cards[id] = mergeFreshLinkFacts(existing, incoming);
+        continue;
+      }
+      if (existing.updatedAt >= incoming.updatedAt) {
+        cards[id] = existing;
+        continue;
+      }
     }
     cards[id] = cardFromSummary(incoming);
   }

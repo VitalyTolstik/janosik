@@ -322,12 +322,25 @@ describe("BoardProvider read model (TASK-200.9)", () => {
       expect(screen.getByTestId("links").textContent).toBe("0"),
     );
     expect(screen.getByTestId("blocked").textContent).toBe("false");
-    expect(screen.getByTestId("detail-loaded").textContent).toBe("false");
+    // The open detail body is kept (no loading skeleton); only its reverse
+    // rows are stale, so the next detail read refreshes them.
+    expect(screen.getByTestId("detail-loaded").textContent).toBe("true");
+    expect(screen.getByTestId("description").textContent).toBe("body-99");
     expect(
       server.requests
         .slice(before)
         .some((entry) => entry.path.endsWith("/summary")),
     ).toBe(true);
+    const detailReads = () =>
+      server.requests.filter(
+        (entry) =>
+          entry.method === "GET" &&
+          entry.path === "/api/v1/boards/b-1/cards/card-99",
+      ).length;
+    const readsBefore = detailReads();
+    fireEvent.click(screen.getByTestId("load-detail"));
+    await waitFor(() => expect(detailReads()).toBe(readsBefore + 1));
+    expect(screen.getByTestId("description").textContent).toBe("body-99");
   });
 
   it("refreshes summary checklist counters after a foreign toggle", async () => {
@@ -592,6 +605,97 @@ describe("BoardProvider read model (TASK-200.9)", () => {
     expect(server.boards.get("b-1")?.cards["card-2"]?.labelIds).toEqual([
       "label-1",
     ]);
+  });
+
+  it("falls back to the pre-command assignment read on an older server", async () => {
+    const server = new FakeServer([largeBoard()]);
+    server.emitLabelPreimage = false;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://api.test");
+        if (
+          url.pathname === "/api/v1/boards/b-1/cards" &&
+          url.searchParams.has("columnId")
+        ) {
+          return new Response(null, { status: 500 });
+        }
+        return server.handle(input, init);
+      },
+    );
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("readModelPartial").textContent).toBe("true"),
+    );
+
+    fireEvent.click(screen.getByTestId("delete-label"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([]),
+    );
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-99"]?.labelIds).toEqual([
+        "label-1",
+      ]),
+    );
+    // The fallback read must happen before the delete (after it the rows are
+    // gone), and the command response itself carries no preimage here.
+    const preimageRead = server.requests.findIndex((entry) =>
+      entry.path.endsWith("/labels/label-1/assignments"),
+    );
+    const deleteWrite = server.requests.findIndex(
+      (entry) =>
+        entry.method === "POST" &&
+        (entry.body as { action?: { type?: string } } | undefined)?.action
+          ?.type === "DELETE_LABEL",
+    );
+    expect(preimageRead).toBeGreaterThan(-1);
+    expect(deleteWrite).toBeGreaterThan(preimageRead);
+  });
+
+  it("drops a queued undo when the label delete fails", async () => {
+    const board = largeBoard(3);
+    board.cards["card-2"].labelIds = ["label-1"];
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    renderApp();
+    await waitReady();
+    await waitFor(() =>
+      expect(screen.getByTestId("count").textContent).toBe("3"),
+    );
+    fireEvent.click(screen.getByTestId("rename-first"));
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.cards["card-0"]?.title).toBe("Renamed"),
+    );
+
+    server.failNextCommand(400, { message: "label delete refused" });
+    fireEvent.click(screen.getByTestId("delete-label"));
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() =>
+      expect(
+        server.requests.some(
+          (entry) =>
+            entry.method === "POST" &&
+            (entry.body as { action?: { type?: string } } | undefined)?.action
+              ?.type === "DELETE_LABEL",
+        ),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The failed delete was rolled back; the queued undo must not fall
+    // through and undo the rename step underneath it.
+    expect(server.boards.get("b-1")?.cards["card-0"]?.title).toBe("Renamed");
+    expect(server.boards.get("b-1")?.cards["card-2"]?.labelIds).toEqual([
+      "label-1",
+    ]);
+    expect(
+      server.requests.some(
+        (entry) =>
+          (entry.body as { action?: { type?: string } } | undefined)?.action
+            ?.type === "RESTORE_LABEL",
+      ),
+    ).toBe(false);
   });
 
   it("undoes a summary-card rename without erasing its description", async () => {
