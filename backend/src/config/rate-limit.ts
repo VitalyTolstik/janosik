@@ -81,10 +81,11 @@ export function effectiveAgentTokenRateLimit(
 }
 
 /**
- * Pure derivation of the per-board safety ceiling. `12000` requests/min is
- * 200 req/s — above the measured one-board command ceiling (~42–48/s) and the
- * idle cadence of a few hundred agents, but far below a node's raw HTTP
- * ceiling. An operator sizing a larger rig pins `BOARD_RATE_LIMIT`.
+ * Pure derivation of the per-board safety ceiling. `12000` weighted units/min
+ * is 200 req/s for single-command traffic — above the measured one-board
+ * command ceiling (~42–48/s) and the idle cadence of a few hundred agents, but
+ * far below a node's raw HTTP ceiling. An operator sizing a larger rig pins
+ * `BOARD_RATE_LIMIT`.
  */
 export function deriveBoardRateLimit(
   globalLimit: number,
@@ -94,7 +95,7 @@ export function deriveBoardRateLimit(
   return Math.max(BOARD_RATE_LIMIT_MIN, globalLimit * BOARD_RATE_LIMIT_FACTOR);
 }
 
-/** Per-agent-session budget, in requests per minute. */
+/** Per-agent-session budget, in weighted units per minute. */
 export function agentSessionRateLimit(): number {
   if (sessionOverride !== null) return sessionOverride;
   return deriveAgentSessionRateLimit(
@@ -103,16 +104,17 @@ export function agentSessionRateLimit(): number {
   );
 }
 
-/** Per-token agent budget, in requests per minute, for keys without an explicit limit. */
+/** Per-token agent budget, in weighted units per minute, for keys without an explicit limit. */
 export function agentTokenRateLimit(): number {
   if (tokenOverride !== null) return tokenOverride;
   return deriveAgentTokenRateLimit(throttleLimit(), env.AGENT_TOKEN_RATE_LIMIT);
 }
 
 /**
- * Per-board budget shared by all agent traffic on that board, in requests per
- * minute. Kept as a high safety ceiling: fairness comes from the token and
- * session buckets so one noisy agent cannot exhaust it for everyone else.
+ * Per-board budget shared by all agent traffic on that board, in weighted
+ * units per minute. Kept as a high safety ceiling: fairness comes from the
+ * token and session buckets so one noisy agent cannot exhaust it for everyone
+ * else.
  */
 export function boardRateLimit(): number {
   if (boardOverride !== null) return boardOverride;

@@ -1337,7 +1337,7 @@ Every API error (new and changed in 166.4) returns:
 | `idempotency_conflict` | 409 | false | same key, different body | `key` |
 | `idempotency_in_progress` | 409 | true | first record is still running or its outcome is uncertain | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
-| `request_timeout` | 408 | true | client disconnected while a command waited in the board queue; nothing was applied | `X-RateLimit-Queued-Ms` (elapsed queue wait, `0` if aborted before any wait; an immediate queue-cap rejection is the `503` path) |
+| `request_timeout` | 408 | true | the command was aborted before it could be applied; nothing was applied | `X-RateLimit-Queued-Ms` (elapsed queue wait, `0` if aborted before any wait; an immediate queue-cap rejection is the `503` path) |
 | `rate_limited` | 429, 503 (queued command) | true | global/per-token/per-agent/board limit | `retryAfter`, `limit`, `scope` |
 | `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |
 | `not_found` | 404 | false | entity/board/approval/run not found | `resource` |

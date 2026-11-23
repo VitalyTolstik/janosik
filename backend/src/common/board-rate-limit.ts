@@ -66,7 +66,7 @@ export class BoardCommandQueueAbortedError extends Error {
 }
 
 export interface BoardRateLimitWaitOptions {
-  /** Board budget in requests per minute. */
+  /** Board budget in weighted units per minute. */
   limit: number;
   /** Absolute `Date.now()` deadline for this request. */
   deadline: number;

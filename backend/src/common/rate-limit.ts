@@ -28,9 +28,9 @@ export type RateLimitScope = "ip" | "token" | "session" | "board";
 export interface RateLimitDecision {
   scope: RateLimitScope;
   allowed: boolean;
-  /** Ceiling of the bucket, in requests per window. */
+  /** Ceiling of the bucket, in budget units per window (weighted where noted). */
   limit: number;
-  /** Requests still allowed in the current window (never negative). */
+  /** Budget units still allowed in the current window (never negative). */
   remaining: number;
   /**
    * Unix timestamp (ms) when the bucket is whole again: the fixed window's

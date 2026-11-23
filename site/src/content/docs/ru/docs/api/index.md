@@ -195,7 +195,7 @@ Refresh-токен никогда не появляется в теле отве
 | `409` | `run_conflict` / `run_expired` | run уже откачен/откатывается или pre-images удалены retention |
 | `409` | `idempotency_conflict` | тот же `Idempotency-Key` использован с другим телом |
 | `409` | `idempotency_in_progress` | первый запрос ещё выполняется или его результат неизвестен |
-| `408` | `request_timeout` | клиент отключился, пока команда ждала в очереди; ничего не применено |
+| `408` | `request_timeout` | команда прервана до применения; `X-RateLimit-Queued-Ms` показывает время в очереди |
 | `413` | `payload_too_large` | тело/файл больше лимита маршрута; см. `limit` |
 | `416` | `range_not_satisfiable` | невыполнимый `Range` для вложения |
 | `429` | `rate_limited` | подождите `retryAfter` секунд и повторите |

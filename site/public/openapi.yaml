@@ -3274,9 +3274,9 @@ components:
             $ref: "#/components/schemas/ApiErrorEnvelope"
     RequestTimeout:
       description: |
-        The client disconnected while a command or batch waited in the
-        per-board queue (`408 request_timeout`, retryable). Nothing was
-        applied; resend the same `commandId` when reconnecting.
+        The command was aborted before it could be applied (before or while it
+        waited in the per-board queue); nothing was applied. `request_timeout`,
+        retryable; resend the same `commandId` when reconnecting.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

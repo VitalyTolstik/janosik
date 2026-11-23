@@ -1153,7 +1153,7 @@ names the cause.
 | `403`  | `code: "pat_forbidden"`: a personal API token on a session-only route                                                                                     |
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
 | `405`  | a write against the public share API                                                                                                                  |
-| `408`  | `code: "request_timeout"`: the client disconnected while a command waited in the board queue; nothing was applied                                           |
+| `408`  | `code: "request_timeout"`: the command was aborted before it could be applied; nothing was applied; `X-RateLimit-Queued-Ms` reports the queue wait |
 | `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card                           |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |

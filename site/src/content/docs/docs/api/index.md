@@ -187,7 +187,7 @@ it. `statusCode` is kept as a compatibility mirror.
 | `409` | `run_conflict` / `run_expired` | the run is already reverted/being reverted, or its pre-images were swept |
 | `409` | `idempotency_conflict` | the same `Idempotency-Key` was used with another body |
 | `409` | `idempotency_in_progress` | the first request is running or its outcome is uncertain |
-| `408` | `request_timeout` | the client disconnected while a command waited in the queue; nothing was applied |
+| `408` | `request_timeout` | the command was aborted before it could be applied; `X-RateLimit-Queued-Ms` reports the queue wait |
 | `413` | `payload_too_large` | body/file over the route limit; see `limit` |
 | `416` | `range_not_satisfiable` | an unsatisfiable `Range` on an attachment |
 | `429` | `rate_limited` | wait `retryAfter` seconds, then retry |
