@@ -236,7 +236,10 @@ safe defaults:
   `Retry-After` instead of exhausting memory. While streams are open, the API
   logs the active connection count once a minute. Tune with `SSE_MAX_CONNECTIONS` (per instance,
   default `5000`), `SSE_MAX_PER_USER` (default `32`) and `SSE_MAX_PER_BOARD`
-  (default `0` = unlimited). `0` means unlimited for each.
+  (default `0` = unlimited). `0` means unlimited for each. Board events are
+  serialized once and fanned out as one buffer; a stream that stops draining is
+  closed after `SSE_MAX_BUFFER_BYTES` (default `128 KiB`) or
+  `SSE_SLOW_CLOSE_MS` (default `60 s`) and resumes from `?since=`.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC instead of the container OOM-killer.
 

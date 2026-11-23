@@ -379,7 +379,10 @@ comfortably. Two knobs matter when you grow, and both have safe defaults:
   open, it logs the active connection count once a minute. Tune with `SSE_MAX_CONNECTIONS`
   (per instance, default `5000`), `SSE_MAX_PER_USER` (default `32`) and
   `SSE_MAX_PER_BOARD` (default `0` = unlimited — a swarm legitimately holds
-  many). `0` means unlimited for each.
+  many). `0` means unlimited for each. Board events are serialized once per
+  event and written to every stream as the same buffer; a reader that stops
+  draining is disconnected after `SSE_MAX_BUFFER_BYTES` (default `128 KiB`) or
+  `SSE_SLOW_CLOSE_MS` (default `60 s`) and resumes from `?since=` on reconnect.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC rather than the container OOM-killer, which would
   drop every open connection at once.

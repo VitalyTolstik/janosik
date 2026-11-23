@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.13 pre-serialized SSE frames and bounded slow subscribers. The
+  member event stream no longer goes through Nest's `@Sse` writer: each
+  published event is serialized once into one complete `id:`/`data:` frame
+  (`SseFrameStore`, identity-keyed `WeakMap`) and the same `Buffer` is written
+  to every subscriber. Live command wire objects are memoized by the bus event,
+  so N listeners share one `JSON.stringify`; catch-up, `?since=`, event order,
+  `resync`, presence and keep-alive frames keep their existing contract. A
+  subscriber whose socket stops draining queues shared buffers only up to
+  `SSE_MAX_BUFFER_BYTES` (128 KiB) or `SSE_SLOW_CLOSE_MS` (60 s), then the
+  connection is destroyed and the client resumes from its last applied seq
+  instead of growing the heap; `RealtimeService.slowSubscriberDrops` exposes
+  the count and the warning is aggregated to one line per minute. The 200.5
+  keep-alive jitter/overlap guard is unchanged. Focused unit/e2e coverage
+  includes one build across 64 subscribers, byte-identical fan-out, the queue
+  bound, reconnect catch-up and keep-alive timing. The 3 000-connection
+  CPU/p95 targets were **not** measured in this task, and the public share
+  stream still uses Nest `@Sse` (separate projection surface).
+
 - TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
   bounded summary of the cards ready to pick up on one board — the initial/work
   column, unassigned, without a live claim and not blocked — with

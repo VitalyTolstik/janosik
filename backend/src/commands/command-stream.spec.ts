@@ -59,6 +59,24 @@ describe("CommandStreamSequencer (B-3/B-4)", () => {
     expect(last).not.toHaveProperty("prevSeq");
   });
 
+  it("builds one wire object for the same live frame across subscribers", async () => {
+    // TASK-200.13: all subscribers receive the same bus object. The SSE frame
+    // store keys serialized bytes by object identity, so the sequencers must
+    // not create a fresh wire object each.
+    const a = harness([], 0);
+    const b = harness([], 0);
+    a.sequencer.start();
+    b.sequencer.start();
+    await flush();
+    const shared = live(5, 0);
+    a.sequencer.offer(shared);
+    b.sequencer.offer(shared);
+
+    expect(a.emitted).toHaveLength(1);
+    expect(a.emitted[0]).toBe(b.emitted[0]);
+    expect(a.emitted[0]).not.toHaveProperty("prevSeq");
+  });
+
   it("deduplicates a frame that arrived during the catch-up", async () => {
     const log = [10, 20];
     const h = harness(log, 0);

@@ -9,6 +9,8 @@ import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
+import { SseFrameStore } from "@/realtime/sse-frames";
+import { sseTiming } from "@/realtime/sse-timing";
 
 const OWNER_EMAIL = "events-owner@example.com";
 const MEMBER_EMAIL = "events-member@example.com";
@@ -202,6 +204,63 @@ describe("Board events SSE (e2e)", () => {
     );
   }
 
+  /**
+   * An agent-shaped stream: no presence roster and no presence frames, so the
+   * first block on the wire is the event under test.
+   */
+  function openQuietStream(token: string, since: number): Promise<Response> {
+    return fetch(
+      `${baseUrl}/boards/${boardId}/events?since=${since}&presence=0`,
+      {
+        headers: {
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+  }
+
+  /** Raw blocks (headers included) for byte-for-byte fan-out assertions. */
+  function openRawReader(response: Response) {
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No response body");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let closed = false;
+
+    const next = async (
+      predicate: (block: string) => boolean,
+      timeoutMs = 12_000,
+    ): Promise<string> => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        for (;;) {
+          const separator = buffer.indexOf("\n\n");
+          if (separator === -1) break;
+          const block = buffer.slice(0, separator);
+          buffer = buffer.slice(separator + 2);
+          if (predicate(block)) return block;
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          throw new Error(`Timed out waiting for an SSE block (${buffer})`);
+        }
+        const chunk = await readWithTimeout(reader, remaining);
+        if (chunk.done) throw new Error("Stream ended before the SSE block");
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+    };
+
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      await reader.cancel().catch(() => undefined);
+      await response.body?.cancel().catch(() => undefined);
+    };
+
+    return { next, close };
+  }
+
   /** An SSE reader that survives several `next()` calls (presence tests). */
   function openReader(response: Response) {
     const reader = response.body?.getReader();
@@ -385,6 +444,157 @@ describe("Board events SSE (e2e)", () => {
     expect(frames[0].touches).toContain(`card:card-live`);
     expect(frames[0].touches).toContain(`board:${boardId}`);
     expect(frames[1].touches).toContain(`column:col-live`);
+  }, 20_000);
+
+  it("builds a published frame once and writes identical bytes to every subscriber", async () => {
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "col-fanout",
+        title: "Fan-out",
+        at: Date.now(),
+      },
+      "evt-fanout-col",
+    );
+    const baseline = await boardSeq(ownerToken);
+    const frames = app.get(SseFrameStore);
+    const buildsBefore = frames.builtCount;
+
+    const [ownerStream, memberStream] = await Promise.all([
+      openQuietStream(ownerToken, baseline),
+      openQuietStream(memberToken, baseline),
+    ]);
+    expect(ownerStream.status).toBe(200);
+    expect(memberStream.status).toBe(200);
+    const ownerReader = openRawReader(ownerStream);
+    const memberReader = openRawReader(memberStream);
+    try {
+      const firstSeq = await command(
+        ownerToken,
+        {
+          type: "ADD_CARD",
+          newCardId: "card-fanout",
+          columnId: "col-fanout",
+          title: "Fan-out card",
+          at: Date.now(),
+        },
+        "evt-fanout-card",
+      );
+      const secondSeq = await command(
+        ownerToken,
+        {
+          type: "RENAME_COLUMN",
+          columnId: "col-fanout",
+          title: "Fan-out renamed",
+          at: Date.now(),
+        },
+        "evt-fanout-rename",
+      );
+
+      const isCommand = (block: string): boolean =>
+        block.includes("data:") && !block.includes('"type":"keepalive"');
+      const readTwo = async (
+        reader: ReturnType<typeof openRawReader>,
+      ): Promise<string[]> => [
+        await reader.next(isCommand),
+        await reader.next(isCommand),
+      ];
+      const [ownerBlocks, memberBlocks] = await Promise.all([
+        readTwo(ownerReader),
+        readTwo(memberReader),
+      ]);
+
+      // Same bytes, same ids, same order: one Buffer was written to both.
+      expect(ownerBlocks).toEqual(memberBlocks);
+      const payloads = ownerBlocks.map(
+        (block) =>
+          JSON.parse(
+            block
+              .split("\n")
+              .find((line) => line.startsWith("data:"))
+              ?.slice(5)
+              .trim() ?? "null",
+          ) as { type: string; seq: number },
+      );
+      expect(payloads.map((frame) => frame.seq)).toEqual([firstSeq, secondSeq]);
+      // Two published commands, two frames built — not one per subscriber.
+      expect(frames.builtCount - buildsBefore).toBe(2);
+    } finally {
+      await ownerReader.close();
+      await memberReader.close();
+    }
+  }, 20_000);
+
+  it("resumes a dropped quiet stream from its last applied seq", async () => {
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: "col-reconnect",
+        title: "Reconnect",
+        at: Date.now(),
+      },
+      "evt-reconnect-col",
+    );
+    const baseline = await boardSeq(ownerToken);
+    const first = openReader(await openQuietStream(ownerToken, baseline));
+    const firstSeq = await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: "card-reconnect",
+        columnId: "col-reconnect",
+        title: "Before drop",
+        at: Date.now(),
+      },
+      "evt-reconnect-before",
+    );
+    const [applied] = await first.next(1, "command");
+    expect(applied.seq).toBe(firstSeq);
+    // Simulate the disconnect a slow-consumer drop produces.
+    await first.close();
+
+    const missedSeq = await command(
+      ownerToken,
+      {
+        type: "RENAME_COLUMN",
+        columnId: "col-reconnect",
+        title: "While away",
+        at: Date.now(),
+      },
+      "evt-reconnect-missed",
+    );
+    const resumed = openReader(
+      await openQuietStream(ownerToken, applied.seq as number),
+    );
+    try {
+      const [missed] = await resumed.next(1, "command");
+      expect(missed.seq).toBe(missedSeq);
+      expect(missed.action?.type).toBe("RENAME_COLUMN");
+    } finally {
+      await resumed.close();
+    }
+  }, 20_000);
+
+  it("keeps an idle quiet stream alive through the shared writer", async () => {
+    const previous = sseTiming.keepAliveMs;
+    sseTiming.keepAliveMs = 100;
+    const response = await openQuietStream(
+      ownerToken,
+      await boardSeq(ownerToken),
+    );
+    const reader = openRawReader(response);
+    try {
+      const block = await reader.next((frame) =>
+        frame.includes('"type":"keepalive"'),
+      );
+      expect(block).toContain("data:");
+      expect(block).toContain('"type":"keepalive"');
+    } finally {
+      sseTiming.keepAliveMs = previous;
+      await reader.close();
+    }
   }, 20_000);
 
   it("scopes live events by the route board when a REST caller omits boardId", async () => {
