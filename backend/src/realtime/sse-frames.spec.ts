@@ -58,6 +58,7 @@ function connection(
     frames: SseFrameStore;
     maxBufferBytes: number;
     slowCloseMs: number;
+    burstGraceMs: number;
     onSlowConsumer: (info: {
       reason: "buffer" | "timeout";
       queuedBytes: number;
@@ -70,6 +71,7 @@ function connection(
     frames: overrides.frames ?? new SseFrameStore(),
     maxBufferBytes: overrides.maxBufferBytes ?? 1_000_000,
     slowCloseMs: overrides.slowCloseMs ?? 0,
+    burstGraceMs: overrides.burstGraceMs,
     onSlowConsumer: overrides.onSlowConsumer,
     onClose: overrides.onClose,
   });
@@ -108,6 +110,25 @@ describe("SseFrameStore (TASK-200.13)", () => {
     expect(first.bytes).not.toBe(second.bytes);
   });
 
+  it("shares a catch-up frame by command seq across fresh subscriber objects", () => {
+    const store = new SseFrameStore();
+    const first = store.frame({
+      type: "command",
+      seq: 7,
+      action: { type: "UPDATE_CARD", description: "x".repeat(64 * 1024) },
+    });
+    const second = store.frame({
+      type: "command",
+      seq: 7,
+      action: { type: "UPDATE_CARD", description: "x".repeat(64 * 1024) },
+    });
+
+    expect(store.builtCount).toBe(1);
+    expect(store.cachedCommandFrames).toBe(1);
+    expect(store.cachedCommandBytes).toBe(first.bytes.length);
+    expect(second.bytes).toBe(first.bytes);
+  });
+
   it("keeps the SSE data: framing for plain strings and embedded newlines", () => {
     const store = new SseFrameStore();
     expect(store.frame("ping").bytes.toString("utf8")).toBe(
@@ -140,6 +161,39 @@ describe("SseConnection headers and fan-out (TASK-200.13)", () => {
     expect(first.writes[1]).toBe(second.writes[1]);
     expect(a.bufferedFrames).toBe(0);
     expect(b.bufferedFrames).toBe(0);
+  });
+
+  it("shares 100 catch-up frames across three subscribers", () => {
+    const store = new SseFrameStore();
+    const responses = Array.from({ length: 3 }, () => new FakeResponse());
+    const writers = responses.map((response) =>
+      connection(response, { frames: store }),
+    );
+    for (const writer of writers) writer.open();
+    const description = "x".repeat(64 * 1024);
+
+    // Each subscriber runs its own delta query and gets fresh objects; the
+    // store must still build one Buffer per command seq.
+    for (const writer of writers) {
+      for (let seq = 1; seq <= 100; seq += 1) {
+        writer.write({
+          type: "command",
+          seq,
+          action: { type: "UPDATE_CARD", description },
+        });
+      }
+    }
+
+    expect(store.builtCount).toBe(100);
+    expect(store.cachedCommandFrames).toBe(100);
+    expect(store.cachedCommandBytes).toBeLessThan(8 * 1024 * 1024);
+    for (let seq = 0; seq < 100; seq += 1) {
+      const frame = responses[0]?.writes[seq + 1];
+      expect(frame).toBeDefined();
+      for (const response of responses) {
+        expect(response.writes[seq + 1]).toBe(frame);
+      }
+    }
   });
 
   it("uses one build for a large fan-out", () => {
@@ -362,6 +416,38 @@ describe("SseConnection backpressure (TASK-200.13)", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("arms the grace after the publish turn so a blocking fan-out can drain", async () => {
+    const store = new SseFrameStore();
+    const response = new FakeResponse();
+    const event = { seq: 1 };
+    const frame = store.frame(event);
+    const writer = connection(response, {
+      frames: store,
+      maxBufferBytes: frame.bytes.length * 2,
+      // Short enough for a unit test; the controller uses the 5 s default.
+      burstGraceMs: 20,
+    });
+    writer.open();
+    response.accept(false);
+    writer.write(event);
+    writer.write(event);
+    writer.write(event); // over the soft bound, inside the hard guard
+
+    // A synchronous publish blocks longer than the grace. The old code had
+    // already armed a timer; this implementation arms it only in the check
+    // phase, after the timer/poll phases got their turn.
+    const until = Date.now() + 40;
+    while (Date.now() < until) {
+      // deliberately block the event loop
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(writer.isClosed).toBe(false);
+
+    response.emit("drain");
+    expect(writer.isClosed).toBe(false);
+    expect(writer.bufferedFrames).toBe(0);
   });
 
   it("closes a burst past the 16 MiB hard referenced-byte guard", () => {

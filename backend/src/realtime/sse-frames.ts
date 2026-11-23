@@ -44,13 +44,42 @@ export const SSE_BURST_GRACE_MS = 5_000;
  */
 export const SSE_BURST_HARD_BYTES = 16 * 1024 * 1024;
 
+/** Effective hard guard: 16 MiB, or 2 × a soft bound above 8 MiB. */
+export function sseHardLimitBytes(maxBufferBytes: number): number {
+  return Math.max(SSE_BURST_HARD_BYTES, maxBufferBytes * 2);
+}
+
+/**
+ * Bounded process-wide cache for immutable command-log frames. A reconnect
+ * replays the same `(boardId, seq)` rows into fresh objects; without this
+ * cache each subscriber would build its own 64 KiB Buffer. 32 MiB covers
+ * several 100 × 64 KiB catch-ups; the LRU drops the oldest frames beyond it.
+ */
+export const SSE_COMMAND_FRAME_CACHE_BYTES = 32 * 1024 * 1024;
+
+/** The globally unique command sequence, when `data` is a command frame. */
+function commandSeq(data: object): number | null {
+  const event = data as { type?: unknown; seq?: unknown };
+  return event.type === "command" &&
+    typeof event.seq === "number" &&
+    Number.isSafeInteger(event.seq)
+    ? event.seq
+    : null;
+}
+
 export class SseFrameStore {
   private readonly cache = new WeakMap<object, SseFrame>();
+  /** Immutable command frames, keyed by the globally unique `Command.seq`. */
+  private readonly commandCache = new Map<number, SseFrame>();
+  private commandCacheBytes = 0;
   private nextId = 1;
   private builds = 0;
 
   /**
    * The complete SSE frame for `data`, building it at most once per object.
+   * Command frames are additionally keyed by `seq`, because catch-up replay
+   * creates a fresh object for every subscriber while the log row is
+   * immutable — those subscribers share one Buffer too.
    * Strings are not cached by identity (they have no stable identity worth a
    * map); the board stream only sends objects, but a raw `ping` stays legal.
    */
@@ -58,11 +87,29 @@ export class SseFrameStore {
     if (typeof data === "object" && data !== null) {
       const cached = this.cache.get(data);
       if (cached !== undefined) return cached;
+      const seq = commandSeq(data);
+      if (seq !== null) {
+        const commandCached = this.commandFrame(seq);
+        if (commandCached !== undefined) {
+          this.cache.set(data, commandCached);
+          return commandCached;
+        }
+      }
       const frame = this.build(data);
       this.cache.set(data, frame);
+      if (seq !== null) this.rememberCommand(seq, frame);
       return frame;
     }
     return this.build(data);
+  }
+
+  /** Bytes held by the bounded command-frame cache (tests/observability). */
+  get cachedCommandBytes(): number {
+    return this.commandCacheBytes;
+  }
+
+  get cachedCommandFrames(): number {
+    return this.commandCache.size;
   }
 
   /**
@@ -71,6 +118,33 @@ export class SseFrameStore {
    */
   get builtCount(): number {
     return this.builds;
+  }
+
+  /** LRU read: a hit moves the frame to the newest position. */
+  private commandFrame(seq: number): SseFrame | undefined {
+    const cached = this.commandCache.get(seq);
+    if (cached === undefined) return undefined;
+    this.commandCache.delete(seq);
+    this.commandCache.set(seq, cached);
+    return cached;
+  }
+
+  private rememberCommand(seq: number, frame: SseFrame): void {
+    if (frame.bytes.length > SSE_COMMAND_FRAME_CACHE_BYTES) return;
+    while (
+      this.commandCacheBytes + frame.bytes.length >
+      SSE_COMMAND_FRAME_CACHE_BYTES
+    ) {
+      const oldest = this.commandCache.keys().next().value;
+      if (oldest === undefined) break;
+      const removed = this.commandCache.get(oldest);
+      this.commandCache.delete(oldest);
+      if (removed !== undefined) {
+        this.commandCacheBytes -= removed.bytes.length;
+      }
+    }
+    this.commandCache.set(seq, frame);
+    this.commandCacheBytes += frame.bytes.length;
   }
 
   private build(data: unknown): SseFrame {
@@ -120,6 +194,8 @@ export interface SseConnectionOptions {
    * presumed dead. 0 disables the timer and relies on the buffer bound.
    */
   slowCloseMs: number;
+  /** Test/ops override for the overflow grace; defaults to 5 s. */
+  burstGraceMs?: number;
   onSlowConsumer?: (info: SlowSseConsumer) => void;
   /** The peer went away, or the connection was closed as slow/dead. */
   onClose?: () => void;
@@ -149,6 +225,8 @@ export class SseConnection {
   private slowTimer: NodeJS.Timeout | null = null;
   /** The soft bound was crossed; a burst is waiting for `drain`. */
   private overflowed = false;
+  /** Armed on the next turn so a blocking publish can reach its `drain`. */
+  private burstArmPending = false;
   private burstTimer: NodeJS.Timeout | null = null;
 
   private readonly onDrain = (): void => this.drain();
@@ -326,19 +404,35 @@ export class SseConnection {
       return;
     }
     if (this.queuedBytes <= max) return;
-    const hardBytes = Math.max(SSE_BURST_HARD_BYTES, max * 2);
-    if (this.queuedBytes > hardBytes) {
+    if (this.queuedBytes > sseHardLimitBytes(max)) {
       this.closeSlow("buffer", this.queuedBytes, this.queue.length);
       return;
     }
-    if (this.overflowed || this.burstTimer !== null) return;
+    if (this.overflowed || this.burstArmPending || this.burstTimer !== null) {
+      return;
+    }
     this.overflowed = true;
-    this.burstTimer = setTimeout(() => {
-      this.burstTimer = null;
-      if (this.closed || !this.blocked) return;
-      this.closeSlow("buffer", this.queuedBytes, this.queue.length);
-    }, SSE_BURST_GRACE_MS);
-    this.burstTimer.unref?.();
+    // A publish loop can stay synchronous for seconds. Arm the grace only in
+    // the check phase, after I/O (including `drain`) got a chance to run.
+    this.burstArmPending = true;
+    const arm = setImmediate(() => {
+      this.burstArmPending = false;
+      if (
+        this.closed ||
+        !this.blocked ||
+        !this.overflowed ||
+        this.burstTimer !== null
+      ) {
+        return;
+      }
+      this.burstTimer = setTimeout(() => {
+        this.burstTimer = null;
+        if (this.closed || !this.blocked) return;
+        this.closeSlow("buffer", this.queuedBytes, this.queue.length);
+      }, this.options.burstGraceMs ?? SSE_BURST_GRACE_MS);
+      this.burstTimer.unref?.();
+    });
+    arm.unref?.();
   }
 
   /** Close the response after the last queued frame was handed to Node. */
@@ -419,6 +513,7 @@ export class SseConnection {
 
   private clearBurstGrace(): void {
     this.overflowed = false;
+    this.burstArmPending = false;
     if (this.burstTimer === null) return;
     clearTimeout(this.burstTimer);
     this.burstTimer = null;

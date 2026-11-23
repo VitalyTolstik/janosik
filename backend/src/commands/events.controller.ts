@@ -383,7 +383,16 @@ export class EventsController implements OnModuleDestroy {
         return;
       }
       const live = liveRef.subscription;
-      if (live === undefined) return;
+      if (live === undefined) {
+        // Defensive: `subscribe` never returns undefined, but a missing
+        // teardown must not leak the presence join or admission slot.
+        releaseTracking();
+        if (presenceToken !== null) {
+          this.presence.leave(boardId, clientId, presenceToken.token);
+        }
+        subscriber.error(new Error("Realtime watch returned no subscription"));
+        return;
+      }
 
       // Everything that can reject synchronously (presence join, watch) has
       // succeeded: commit the 200 now, just before the first possible frame.

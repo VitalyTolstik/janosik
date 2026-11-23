@@ -241,10 +241,12 @@ safe defaults:
   streams (public share SSE still uses Nest's per-subscriber writer); a stream
   that stops draining is closed after the soft `SSE_MAX_BUFFER_BYTES` (default
   `128 KiB`; the already-accepted frame is extra and `0` means no queue),
-  `SSE_SLOW_CLOSE_MS` (default `60 s`) or the 5 s / 16 MiB batch-burst
-  guard, then resumes from `?since=`. Frames are shared buffers, so the guard
-  bounds references, not per-subscriber copies. The compose file forwards
-  both limits.
+  `SSE_SLOW_CLOSE_MS` (default `60 s`; `0` disables only this timer) or the
+  5 s batch-burst guard, then resumes from `?since=`. The hard guard is
+  16 MiB, or 2x the soft bound when it is above 8 MiB. Live and replayed
+  command frames are shared Buffers (command cache up to 32 MiB); the guard
+  bounds queue references, not per-subscriber copies, and a catch-up above it
+  answers `resync`. The compose file forwards both limits.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC instead of the container OOM-killer.
 

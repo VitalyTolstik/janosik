@@ -99,7 +99,14 @@ describe("CommandStreamSequencer (B-3/B-4)", () => {
     h.sequencer.offer(live(20, 10)); // the late one: already delivered
     await flush();
     expect(h.seqs()).toEqual([20, 30]);
-    expect(h.commands.deltaSince).toHaveBeenLastCalledWith("b1", 10);
+    expect(h.commands.deltaSince).toHaveBeenLastCalledWith(
+      "b1",
+      10,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(Number),
+    );
   });
 
   it("emits resync when the catch-up is truncated, then continues from the head", async () => {

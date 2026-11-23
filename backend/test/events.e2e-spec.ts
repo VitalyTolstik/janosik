@@ -187,6 +187,33 @@ describe("Board events SSE (e2e)", () => {
     return res.body.seq as number;
   }
 
+  /** Commit `count` 64 KiB `UPDATE_CARD` commands in one batch. */
+  async function updateBatch(
+    tag: string,
+    cardId: string,
+    count = 100,
+  ): Promise<void> {
+    await server()
+      .post(`/api/v1/boards/${boardId}/commands/batch`)
+      .set(auth(ownerToken))
+      .send({
+        commands: Array.from({ length: count }, (_, index) => {
+          const prefix = `${tag}-${index}-`;
+          return {
+            commandId: `evt-${tag}-${index}`,
+            action: {
+              type: "UPDATE_CARD",
+              cardId,
+              // LIMITS.description is exactly 64 000 characters.
+              description: prefix + "x".repeat(64_000 - prefix.length),
+              at: Date.now() + index,
+            },
+          };
+        }),
+      })
+      .expect(200);
+  }
+
   async function openStream(
     token: string | null,
     since: number,
@@ -487,7 +514,6 @@ describe("Board events SSE (e2e)", () => {
       () => realtime.subscriberCount === subscribersBefore + 2,
       5_000,
     );
-    const buildsBefore = frames.builtCount;
     let ownerReader: ReturnType<typeof openRawReader> | undefined;
     let memberReader: ReturnType<typeof openRawReader> | undefined;
     try {
@@ -495,6 +521,39 @@ describe("Board events SSE (e2e)", () => {
       memberReader = openRawReader(memberStream);
       const owner = ownerReader;
       const member = memberReader;
+      const isCommand = (block: string): boolean =>
+        block.includes("data:") && !block.includes('"type":"keepalive"');
+      const seqOf = (block: string): number =>
+        (
+          JSON.parse(
+            block
+              .split("\n")
+              .find((line) => line.startsWith("data:"))
+              ?.slice(5)
+              .trim() ?? "null",
+          ) as { seq: number }
+        ).seq;
+
+      // Ready handshake: both subscribers must deliver a live frame before
+      // the build counter becomes the measurement.
+      const warmSeq = await command(
+        ownerToken,
+        {
+          type: "RENAME_COLUMN",
+          columnId: "col-fanout",
+          title: "Fan-out warm",
+          at: Date.now(),
+        },
+        "evt-fanout-warm",
+      );
+      const [warmOwner, warmMember] = await Promise.all([
+        owner.next(isCommand),
+        member.next(isCommand),
+      ]);
+      expect(seqOf(warmOwner)).toBe(warmSeq);
+      expect(seqOf(warmMember)).toBe(warmSeq);
+      const buildsBefore = frames.builtCount;
+
       const firstSeq = await command(
         ownerToken,
         {
@@ -517,8 +576,6 @@ describe("Board events SSE (e2e)", () => {
         "evt-fanout-rename",
       );
 
-      const isCommand = (block: string): boolean =>
-        block.includes("data:") && !block.includes('"type":"keepalive"');
       const readTwo = async (
         reader: ReturnType<typeof openRawReader>,
       ): Promise<string[]> => [
@@ -550,6 +607,122 @@ describe("Board events SSE (e2e)", () => {
       await memberReader?.close();
     }
   }, 20_000);
+
+  it("shares one 100-frame catch-up across three subscribers", async () => {
+    const columnId = "col-catchup";
+    const cardId = "card-catchup";
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Catch-up",
+        at: Date.now(),
+      },
+      "evt-catchup-col",
+    );
+    await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Catch-up card",
+        at: Date.now(),
+      },
+      "evt-catchup-card",
+    );
+    const baseline = await boardSeq(ownerToken);
+    await updateBatch("catchup", cardId);
+    const frames = app.get(SseFrameStore);
+    const buildsBefore = frames.builtCount;
+
+    const [first, second, third] = await Promise.all([
+      openQuietStream(ownerToken, baseline),
+      openQuietStream(memberToken, baseline),
+      openQuietStream(viewerToken, baseline),
+    ]);
+    const readers: Array<ReturnType<typeof openRawReader>> = [];
+    try {
+      readers.push(
+        openRawReader(first),
+        openRawReader(second),
+        openRawReader(third),
+      );
+      const isCommand = (block: string): boolean =>
+        block.includes("data:") && !block.includes('"type":"keepalive"');
+      const readHundred = async (
+        reader: ReturnType<typeof openRawReader>,
+      ): Promise<string[]> => {
+        const blocks: string[] = [];
+        for (let index = 0; index < 100; index += 1) {
+          blocks.push(await reader.next(isCommand, 30_000));
+        }
+        return blocks;
+      };
+      const [a, b, c] = await Promise.all(readers.map(readHundred));
+
+      // Three independent delta queries, one build per command seq and the
+      // same Buffers for all three subscribers.
+      expect(a).toEqual(b);
+      expect(b).toEqual(c);
+      expect(frames.builtCount - buildsBefore).toBe(100);
+    } finally {
+      await Promise.all(readers.map((reader) => reader.close()));
+      // Reclaim the board column slot; the suite has a fixed column budget
+      // and later cases create their own.
+      await command(
+        ownerToken,
+        { type: "DELETE_COLUMN", columnId, at: Date.now() },
+        "evt-catchup-cleanup",
+      ).catch(() => undefined);
+    }
+  }, 90_000);
+
+  it("resyncs a catch-up delta above the hard byte guard", async () => {
+    const columnId = "col-oversize";
+    const cardId = "card-oversize";
+    await command(
+      ownerToken,
+      {
+        type: "ADD_COLUMN",
+        newColumnId: columnId,
+        title: "Oversize",
+        at: Date.now(),
+      },
+      "evt-oversize-col",
+    );
+    await command(
+      ownerToken,
+      {
+        type: "ADD_CARD",
+        newCardId: cardId,
+        columnId,
+        title: "Oversize card",
+        at: Date.now(),
+      },
+      "evt-oversize-card",
+    );
+    const baseline = await boardSeq(ownerToken);
+    // 300 x 64 KiB is ~19.2 MiB: above the 16 MiB catch-up guard but below
+    // the 5 000-command count cap, so only the byte bound can resync it.
+    await updateBatch("oversize-a", cardId);
+    await updateBatch("oversize-b", cardId);
+    await updateBatch("oversize-c", cardId);
+
+    const stream = openReader(await openQuietStream(memberToken, baseline));
+    try {
+      const [frame] = await stream.next(1, "resync", 30_000);
+      expect(frame.type).toBe("resync");
+    } finally {
+      await stream.close();
+      await command(
+        ownerToken,
+        { type: "DELETE_COLUMN", columnId, at: Date.now() },
+        "evt-oversize-cleanup",
+      ).catch(() => undefined);
+    }
+  }, 120_000);
 
   it.each([10, 100])(
     "survives a healthy live %i-command burst of 64 KiB descriptions",

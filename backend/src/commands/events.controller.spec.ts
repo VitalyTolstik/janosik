@@ -95,6 +95,43 @@ describe("EventsController shutdown (TASK-200.5)", () => {
 });
 
 describe("EventsController setup errors (TASK-200.13)", () => {
+  it("ends instead of throwing when setup fails after headers were sent", () => {
+    const response = new SlowResponse();
+    response.headersSent = true;
+    const release = jest.fn();
+    const controller = new EventsController(
+      {} as never,
+      { noteSlowSubscriber: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new SseFrameStore(),
+    );
+    (
+      controller as unknown as { stream: () => Observable<MessageEvent> }
+    ).stream = () =>
+      new Observable<MessageEvent>((subscriber) => {
+        subscriber.error(new Error("late setup failure"));
+      });
+
+    expect(() =>
+      (
+        controller as unknown as {
+          serve: (
+            boardId: string,
+            since: number,
+            clientId: string,
+            presence: boolean,
+            release: () => void,
+            res: Response,
+          ) => void;
+        }
+      ).serve("board-1", 0, "client-1", false, release, response.asResponse()),
+    ).not.toThrow();
+    expect(response.writableEnded).toBe(true);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it("throws a synchronous setup error before any SSE headers are sent", () => {
     const response = new SlowResponse();
     const release = jest.fn();
@@ -269,6 +306,7 @@ class SlowResponse extends EventEmitter {
   statusCode = 0;
   writableEnded = false;
   destroyed = false;
+  headersSent = false;
   readonly writes: Buffer[] = [];
   readonly socket = {
     setKeepAlive: jest.fn(),

@@ -3,6 +3,8 @@ import type {
   CommandSseEvent,
   ResyncSseEvent,
 } from "@janosik/shared";
+import { env } from "@/config/env";
+import { sseHardLimitBytes } from "@/realtime/sse-frames";
 import type { InternalCommandEvent } from "@/realtime/realtime.service";
 import type { CommandsService } from "./commands.service";
 
@@ -48,6 +50,14 @@ export class CommandStreamSequencer {
     since: number,
     private readonly emit: (event: BoardSseEvent) => void,
     private readonly fail: (error: unknown) => void,
+    /**
+     * TASK-200.13: keep one catch-up page within the same hard byte guard as
+     * the queue. A larger page becomes `resync`; otherwise a reconnect would
+     * be killed mid-replay and repeat the same page forever.
+     */
+    private readonly maxDeltaBytes: number = sseHardLimitBytes(
+      env.SSE_MAX_BUFFER_BYTES,
+    ),
   ) {
     this.lastSeq = since;
   }
@@ -117,6 +127,10 @@ export class CommandStreamSequencer {
         const delta = await this.commands.deltaSince(
           this.boardId,
           this.lastSeq,
+          undefined,
+          undefined,
+          undefined,
+          this.maxDeltaBytes,
         );
         if (this.closed) return;
         if (delta.resync) {

@@ -88,6 +88,21 @@ describe("CommandsService.deltaSince", () => {
     expect(delta.entries.map((e) => e.seq)).toEqual([1, 2]);
   });
 
+  it("downgrades an over-byte-budget page to resync", async () => {
+    const findMany = jest.fn().mockResolvedValue([row(1), row(2)]);
+    const delta = await service(findMany).deltaSince(
+      "board-1",
+      0,
+      undefined,
+      undefined,
+      undefined,
+      1,
+    );
+    // A tiny budget cannot fit even one frame; the SSE stream must full-refresh
+    // instead of replaying a partial page.
+    expect(delta).toEqual({ entries: [], resync: true });
+  });
+
   it("flags resync when the baseline seq was trimmed from the log", async () => {
     const findMany = jest.fn();
     const findFirst = jest.fn().mockResolvedValue(null);

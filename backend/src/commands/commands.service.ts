@@ -1474,6 +1474,11 @@ export class CommandsService {
    *   no longer in the log: the retention sweep trimmed it, and possibly
    *   commands after it.
    * Either way `resync: true` — the caller must re-read the board snapshot.
+   *
+   * TASK-200.13: an SSE catch-up also passes `maxBytes` (the same hard guard
+   * as the subscriber queue). A delta over that budget is unrepresentable
+   * for this stream — replaying it would drop the connection and make the
+   * client retry the same oversized page — so it becomes `resync` instead.
    */
   async deltaSince(
     boardId: string,
@@ -1485,6 +1490,7 @@ export class CommandsService {
       agentSessionId?: string;
     } = {},
     client: Prisma.TransactionClient = this.prisma,
+    maxBytes: number = Number.POSITIVE_INFINITY,
   ): Promise<CommandDelta> {
     if (since > 0) {
       const baseline = await client.command.findFirst({
@@ -1525,33 +1531,44 @@ export class CommandsService {
       },
     });
     const truncated = rows.length > max;
-    return {
-      entries: (truncated ? rows.slice(0, max) : rows).map((row) => {
-        const detail = commandDetail(row.details);
-        return {
-          seq: Number(row.seq),
-          // Rows written before ingress stamping may lack `boardId`; replay
-          // them scoped to the queried board so the UI's realtime bridge keeps
-          // them.
-          action: {
-            ...(row.payload as Record<string, unknown>),
-            boardId,
-          } as BoardAction,
-          actorId: row.actorId,
-          actorType: row.actorType as ActorType,
-          commandId: row.id,
-          touches: row.touches,
-          ...(detail === undefined ? {} : { detail }),
-          ...attributionFields({
-            apiTokenId: row.apiTokenId,
-            agentSessionId: row.agentSessionId,
-            runId: row.runId,
-            agentName: row.agentName,
-          }),
-        };
-      }),
-      resync: truncated,
-    };
+    const page = truncated ? rows.slice(0, max) : rows;
+    const entries: CommandDeltaEntry[] = [];
+    let usedBytes = 0;
+    const finiteBudget = Number.isFinite(maxBytes);
+    for (const row of page) {
+      const detail = commandDetail(row.details);
+      const entry: CommandDeltaEntry = {
+        seq: Number(row.seq),
+        // Rows written before ingress stamping may lack `boardId`; replay
+        // them scoped to the queried board so the UI's realtime bridge keeps
+        // them.
+        action: {
+          ...(row.payload as Record<string, unknown>),
+          boardId,
+        } as BoardAction,
+        actorId: row.actorId,
+        actorType: row.actorType as ActorType,
+        commandId: row.id,
+        touches: row.touches,
+        ...(detail === undefined ? {} : { detail }),
+        ...attributionFields({
+          apiTokenId: row.apiTokenId,
+          agentSessionId: row.agentSessionId,
+          runId: row.runId,
+          agentName: row.agentName,
+        }),
+      };
+      if (finiteBudget) {
+        // The stream frame adds `id:`/`data:`/blank-line overhead; a small
+        // per-entry allowance keeps the byte guard on the safe side.
+        usedBytes += Buffer.byteLength(JSON.stringify(entry), "utf8") + 64;
+        if (usedBytes > maxBytes) {
+          return { entries: [], resync: true };
+        }
+      }
+      entries.push(entry);
+    }
+    return { entries, resync: truncated };
   }
 
   /** Highest committed `seq` of the board (0 without commands). */
