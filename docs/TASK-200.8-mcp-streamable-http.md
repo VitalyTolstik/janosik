@@ -76,12 +76,14 @@ Error contract (all `503`s carry `Retry-After`):
 
 ## Token validation and isolation
 
-On `initialize`, the gateway checks local admission before any API call:
-global capacity, the per-token session cap (default 50), a per-IP initialize
-bucket (default 600/min), a per-token-fingerprint bucket (default 10/min), and
-a bounded negative cache of invalid fingerprints. Only a genuinely unknown key
-reaches the cheap authenticated API read (`/api/v1/auth/me` by default).
-Concurrent initializes for one fingerprint share one validation call; a
+On `initialize`, the gateway checks local admission before any API call **and
+before reading the body**: global capacity, the per-token session cap (default
+`min(50, MAX_SESSIONS)`), a per-IP initialize bucket (default 600/min), a
+per-token-fingerprint bucket (default 10/min), and a bounded negative cache of
+invalid fingerprints. The sessionless body is capped strictly (default 256 KiB)
+before buffering; all POSTs still use the normal body cap. Only a genuinely
+unknown key reaches the cheap authenticated API read (`/api/v1/auth/me` by
+default). Concurrent initializes for one fingerprint share one validation call; a
 `429`/`503` from the API is retried a bounded number of times, honoring a small
 `Retry-After` (a longer API delay is returned to the caller instead of sleeping
 in-request). Only a successful check proceeds; `401` means the key is invalid,
@@ -98,16 +100,18 @@ transport, so it cannot read A's board or consume A's upstream credentials.
 is present and non-empty, it is ignored and a warning without the value is
 logged; a stray `--token` flag is ignored the same way. The API's `/auth/me`
 is IP-throttled: raise `THROTTLE_LIMIT` and the gateway's
-`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` before a large first-time swarm, and use
-`JANOSIK_MCP_HTTP_TRUST_PROXY` behind a trusted proxy so per-IP buckets see
-real clients.
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` before a large first-time swarm.
+`JANOSIK_MCP_HTTP_TRUST_PROXY` is a **trusted-hop count** from the right of
+`X-Forwarded-For` (`0`–`16`; legacy `true` = `1`), not a boolean that trusts
+the attacker-controlled left edge. Use it behind a trusted proxy that appends
+the address it saw.
 
 ## Lifecycle and limits
 
 - One `McpServer` + `JanosikClient` per session, created on initialize.
 - `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500) caps live+initializing
-  sessions; `MAX_SESSIONS_PER_TOKEN` defaults to 50 and bounds one noisy key
-  (`0` explicitly disables it).
+  sessions; `MAX_SESSIONS_PER_TOKEN` defaults to `min(50, MAX_SESSIONS)` and
+  bounds one noisy key (`0` explicitly disables it).
 - Sessions idle for `SESSION_IDLE_MS` (default 5 min) are closed by a sweeper.
   A session with an in-flight request, an open SSE stream, or an `open()` still
   connecting is never swept. Timer env values are bounded to Node's maximum.
@@ -124,7 +128,8 @@ real clients.
 Docker or heavy load):
 
 - initialize + initialized + `tools/list` over real HTTP SSE, including the
-  official `StreamableHTTPClientTransport`;
+  official `StreamableHTTPClientTransport`; per-token default clamping when
+  `MAX_SESSIONS < 50`;
 - per-session `Authorization` pass-through and A/B isolation: A's board vs
   B's board, B-on-A and A-on-B rejected with 403, mismatched DELETE rejected,
   A still usable afterwards;
@@ -134,9 +139,13 @@ Docker or heavy load):
 - initialize flood stops at the per-IP bucket before the API; per-token
   bucket; concurrent validation single-flight; per-token HTTP cap
   (503 + Retry-After) and a second key still admitted;
+- malformed and oversized sessionless bodies consume the IP bucket; the
+  oversized `Content-Length` is rejected before buffering; a spoofed leftmost
+  XFF entry cannot bypass the bucket when trusted hops are configured;
 - global limit (503), explicit DELETE, replacement session;
-- active slow tool call is drained before close; open GET SSE closes during
-  drain; idle expiry -> 404 + session count 0; pending `open()` is not swept;
+- active slow tool call is drained before close; a request during drain gets
+  `503 shutting_down` + `Retry-After`; open GET SSE closes during drain; idle
+  expiry -> 404 + session count 0; pending `open()` is not swept;
 - GET SSE keepalive, no sweep while the stream is open, DELETE closes it,
   disconnect is eventually swept;
 - 20 × 1 MiB tool results over SSE with empty `_streamMapping`,

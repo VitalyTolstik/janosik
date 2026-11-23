@@ -14,7 +14,7 @@ import {
   type Server as HttpServer,
   type ServerResponse,
 } from "node:http";
-import type { AddressInfo } from "node:net";
+import { isIP, type AddressInfo } from "node:net";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -261,12 +261,20 @@ type TokenValidation =
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-function clientAddress(req: IncomingMessage, trustProxy: boolean): string {
-  if (trustProxy) {
+function clientAddress(req: IncomingMessage, trustedHops: number): string {
+  if (trustedHops > 0) {
     const forwarded = headerString(req.headers["x-forwarded-for"]);
     if (forwarded !== undefined) {
-      const first = forwarded.split(",")[0]?.trim();
-      if (first) return first;
+      const chain = forwarded
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== "");
+      // Each trusted proxy appends the address it saw to the right. Read
+      // from the right by the number of trusted hops; never the attacker-
+      // controlled left edge.
+      const index = chain.length - trustedHops;
+      const candidate = index >= 0 ? chain[index] : undefined;
+      if (candidate !== undefined && isIP(candidate) !== 0) return candidate;
     }
   }
   const remote = req.socket.remoteAddress ?? "unknown";
@@ -604,18 +612,10 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
             "An Mcp-Session-Id header is required after initialize.",
           );
         }
-        const body = await readJsonBody(req, config.maxBodyBytes);
-        if (!containsInitialize(body)) {
-          throw new GatewayHttpError(
-            400,
-            "initialization_required",
-            "Create a session with an initialize request first.",
-          );
-        }
-
-        // Local admission comes before the API: global/per-key capacity,
-        // then per-IP and per-fingerprint buckets, then the bounded negative
-        // cache. Only a genuinely unknown key reaches `/auth/me`.
+        // Local admission comes before the API and before reading the body:
+        // global/per-key capacity, per-IP and per-fingerprint buckets, then
+        // the bounded negative cache. Only a genuinely unknown key reaches
+        // `/auth/me`.
         const tokenHash = fingerprintToken(token);
         if (!manager.hasCapacity()) {
           logLevel = "warn";
@@ -636,7 +636,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           return;
         }
         const ipDecision = ipInitLimiter?.take(
-          clientAddress(req, config.trustProxy),
+          clientAddress(req, config.trustProxyHops),
         );
         if (ipDecision !== undefined && !ipDecision.ok) {
           logLevel = "warn";
@@ -660,6 +660,32 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           unauthorized(res);
           return;
         }
+
+        // An initialize body is tiny; reject an oversized declared body
+        // before buffering anything. The body reader applies the same cap to
+        // chunked requests.
+        const declared = Number(
+          headerString(req.headers["content-length"]) ?? "0",
+        );
+        if (
+          Number.isFinite(declared) &&
+          declared > config.sessionlessMaxBodyBytes
+        ) {
+          throw new GatewayHttpError(
+            413,
+            "payload_too_large",
+            "Initialize request body too large.",
+          );
+        }
+        const body = await readJsonBody(req, config.sessionlessMaxBodyBytes);
+        if (!containsInitialize(body)) {
+          throw new GatewayHttpError(
+            400,
+            "initialization_required",
+            "Create a session with an initialize request first.",
+          );
+        }
+
         const validation = await authValidation.run(tokenHash, async () => {
           const result = await validateTokenWithRetry(token);
           if (!result.ok && result.reason === "invalid") {
@@ -710,6 +736,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
               503,
               "shutting_down",
               "The gateway is shutting down.",
+              { "Retry-After": RETRY_AFTER_SHUTDOWN },
             );
           }
           sessionLimitResponse(res, opened.reason);
@@ -722,6 +749,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
             503,
             "shutting_down",
             "The gateway is shutting down.",
+            { "Retry-After": RETRY_AFTER_SHUTDOWN },
           );
         }
         logSessionId = session.id;
@@ -823,7 +851,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         status: res.statusCode,
         durationMs: Date.now() - started,
         sessionId: logSessionId ?? undefined,
-        clientIp: clientAddress(req, config.trustProxy),
+        clientIp: clientAddress(req, config.trustProxyHops),
       });
     }
   }
@@ -891,15 +919,8 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     closing = true;
     logger.info("gateway_stopping", { reason });
     closePromise = (async () => {
-      const stopped = new Promise<void>((resolve) => {
-        if (!server.listening) {
-          resolve();
-          return;
-        }
-        server.close(() => resolve());
-      });
-      // Stop accepting first, release idle sessions, then give in-flight
-      // tool calls the grace window before closing their sessions/streams.
+      // Keep the listening socket briefly so requests arriving during the
+      // drain get a clean 503 + Retry-After instead of a connection reset.
       await manager.closeIdle("shutdown_idle");
       const deadline = Date.now() + config.shutdownGraceMs;
       while (manager.activeRequestCount() > 0 && Date.now() < deadline) {
@@ -910,6 +931,13 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           activeRequests: manager.activeRequestCount(),
         });
       }
+      const stopped = new Promise<void>((resolve) => {
+        if (!server.listening) {
+          resolve();
+          return;
+        }
+        server.close(() => resolve());
+      });
       await manager.closeAll(reason);
       const force = setTimeout(() => {
         logger.warn("gateway_force_close");

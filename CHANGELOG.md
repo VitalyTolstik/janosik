@@ -20,9 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and per-key session caps (per-key default 50), idle expiry, graceful drain,
   `/health`, `/ready`, token-free structured logs and CORS/Origin checks are
   included. Initialize admission is local before `/api/v1/auth/me`: per-IP and
-  per-fingerprint token buckets, a bounded negative cache, and single-flight
-  validation with bounded `429`/`503` retries; one valid key cannot take every
-  session. Sessions are in-memory: a restart drops them, and multiple
+  per-fingerprint token buckets, a bounded negative cache, a strict
+  sessionless body cap before buffering, and single-flight validation with
+  bounded `429`/`503` retries; one valid key cannot take every session. The
+  gateway trusts a configured number of right-edge X-Forwarded-For hops, not a
+  spoofable leftmost entry. Sessions are in-memory: a restart drops them, and multiple
   replicas need session affinity. The container bundles its dependencies into one file; a
   mock-upstream test creates 100 then 500 HTTP sessions in one process, makes
   a tool call at the cap, asserts SSE stream maps are empty after 20 MiB of

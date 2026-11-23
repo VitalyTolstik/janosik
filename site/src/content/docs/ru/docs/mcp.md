@@ -70,7 +70,15 @@ Node-процесса.
 ```bash
 docker compose --profile mcp up -d
 # MCP endpoint: http://127.0.0.1:8080/mcp
+
+# обычный Docker: stop timeout должен быть больше 10-секундного drain
+docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
+  -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 ```
+
+В Compose задан `stop_grace_period: 20s`; по SIGTERM шлюз перестаёт принимать
+новые запросы, даёт активному вызову завершиться (до 10 с), затем закрывает
+сессии и потоки.
 
 Каждый клиент подключается к `https://your-gateway/mcp` со **своим** ключом в
 `Authorization: Bearer jnk_…`; общий `JANOSIK_TOKEN` шлюзу не передаётся

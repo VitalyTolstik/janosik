@@ -280,9 +280,10 @@ the key with the API. It keeps sessions **in memory**: restarting it drops
 them, and multiple replicas need a session-affine proxy (or clients must
 reconnect). Successful MCP POSTs are SSE streams and gateway errors are JSON,
 so disable proxy buffering and set a read timeout above the longest tool call.
-Defaults are a 500-session cap, a 1.5 GB memory limit and 2 CPUs. A large
-first-time swarm must also raise API `THROTTLE_LIMIT` and
-`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`; see
+Defaults are a 500-session cap, a 1.5 GB memory limit and 2 CPUs. Compose sets
+`stop_grace_period: 20s`; with plain Docker use `--stop-timeout 20` so the
+10 s drain can finish. A large first-time swarm must also raise API
+`THROTTLE_LIMIT` and `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`; see
 [the MCP guide](/docs/mcp/#shared-http-gateway-for-many-agents).
 
 ## Email (optional)

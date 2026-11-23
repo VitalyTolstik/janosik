@@ -103,7 +103,8 @@ JSON errors and `/health`/`/ready` use `no-store`.
 
 `JANOSIK_TOKEN` may be **absent**; the gateway never uses a shared key. If it
 is **present and non-empty**, it is ignored and the gateway logs a warning
-(without the value). On `initialize` the gateway validates the presented key
+(without the value). On `initialize`, after local admission and the strict
+sessionless body cap, the gateway validates the presented key
 with a cheap authenticated API read (`/api/v1/auth/me` by default), so a
 fabricated bearer string cannot consume the global session cap; invalid keys
 get `401`, API rate limits get `429` with `Retry-After`, and an API outage gets
@@ -113,10 +114,12 @@ key on the same `Mcp-Session-Id` gets `403 token_mismatch`; a request with no
 key at all gets `401`. Sessions are independent: one session's
 `JanosikClient` and board observations never cross into another.
 
-Admission is checked locally before `/api/v1/auth/me`: a global cap, a per-key cap
-(default 50 sessions), per-IP and per-token-fingerprint initialize buckets, and
-a bounded negative cache of invalid fingerprints. Concurrent initializes for
-one key share one validation call. A `429` from the gateway for initialize is
+Admission is checked locally before `/api/v1/auth/me` and before reading the
+request body: a global cap, a per-key cap (default `min(50, MAX_SESSIONS)`),
+per-IP and per-token-fingerprint initialize buckets, and a bounded negative
+cache of invalid fingerprints. A sessionless body is capped strictly (default
+256 KiB) before buffering; the normal body cap still applies to every POST.
+Concurrent initializes for one key share one validation call. A `429` from the gateway for initialize is
 `initialize_rate_limited`; `503 session_limit` and other 503s carry
 `Retry-After`. The API's own IP throttle still applies to first-time keys:
 raise `THROTTLE_LIMIT` (and the gateway's `INIT_RATE_LIMIT`) for a large
@@ -173,7 +176,7 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_PORT` | `8080` | Bind port. |
 | `JANOSIK_MCP_HTTP_PATH` | `/mcp` | MCP endpoint path; `/health` and `/ready` are reserved. |
 | `JANOSIK_MCP_HTTP_MAX_SESSIONS` | `500` | Global live-session cap; excess initializes get `503` + `Retry-After`. |
-| `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` | `50` | Per-key session cap; `0` explicitly disables the second limit. |
+| `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` | `min(50, MAX_SESSIONS)` | Per-key session cap; set `0` to explicitly disable the second limit. |
 | `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` | `600` | Initialize attempts per client IP per minute; `0` disables. |
 | `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` | `10` | Initialize attempts per token fingerprint per minute; `0` disables. |
 | `JANOSIK_MCP_HTTP_NEGATIVE_CACHE_TTL_MS` | `60000` | Bounded cache of invalid fingerprints; `0` disables. |
@@ -183,7 +186,8 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` | `300000` | Close a session with no request for this long. |
 | `JANOSIK_MCP_HTTP_SESSION_SWEEP_MS` | `30000` | Idle sweeper interval. |
 | `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS` | empty | Browser origins allowed to call the gateway; empty rejects every browser `Origin`. |
-| `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap. |
+| `JANOSIK_MCP_HTTP_MAX_BODY_BYTES` | `16777216` | JSON-RPC request body cap for all POSTs. |
+| `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES` | `min(262144, MAX_BODY_BYTES)` | Strict sessionless/initialize body cap, checked before buffering. |
 | `JANOSIK_MCP_HTTP_READY_URL` | `${JANOSIK_URL}/api/v1/health/ready` | Upstream readiness probe; no token is sent. |
 | `JANOSIK_MCP_HTTP_READY_CACHE_MS` | `5000` | Cache for the readiness probe (`0` = every request probes). |
 | `JANOSIK_MCP_HTTP_READY_TIMEOUT_MS` | `3000` | Readiness probe timeout. |
@@ -192,7 +196,7 @@ on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS` | `15000` | SSE keep-alive interval; `0` disables it. |
 | `JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS` | `60000` | Time allowed to receive a request; not a tool deadline. Long tool responses are kept alive by SSE. |
 | `JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS` | `60000` | Node headers timeout. |
-| `JANOSIK_MCP_HTTP_TRUST_PROXY` | off | Use the first `X-Forwarded-For` hop in logs. |
+| `JANOSIK_MCP_HTTP_TRUST_PROXY` | `0` | Trusted proxy hops from the right of `X-Forwarded-For` (`0`–`16`; legacy `true` = `1`). |
 | `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
 | `JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS` | `10000` | Drain window on SIGTERM/SIGINT before force-closing sockets. |
 

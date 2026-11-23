@@ -34,13 +34,14 @@ describe("loadGatewayConfig", () => {
       sessionIdleMs: 300_000,
       sessionSweepMs: 30_000,
       maxBodyBytes: 16 * 1024 * 1024,
+      sessionlessMaxBodyBytes: 256 * 1024,
       readinessUrl: "https://boards.example.com/api/v1/health/ready",
       readinessCacheMs: 5_000,
       readinessTimeoutMs: 3_000,
       authValidateUrl: "https://boards.example.com/api/v1/auth/me",
       authValidateTimeoutMs: 3_000,
       sseKeepAliveMs: 15_000,
-      trustProxy: false,
+      trustProxyHops: 0,
       logLevel: "info",
       shutdownGraceMs: 10_000,
       requestTimeoutMs: 60_000,
@@ -69,6 +70,7 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_SESSION_IDLE_MS: "60000",
       JANOSIK_MCP_HTTP_SESSION_SWEEP_MS: "5000",
       JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
+      JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES: "512",
       JANOSIK_MCP_HTTP_ALLOWED_ORIGINS:
         "https://app.example.com, http://localhost:5173/",
       JANOSIK_MCP_HTTP_READY_URL: "https://api.example.com/health/ready",
@@ -77,7 +79,7 @@ describe("loadGatewayConfig", () => {
       JANOSIK_MCP_HTTP_AUTH_URL: "https://api.example.com/auth/me",
       JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS: "400",
       JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS: "0",
-      JANOSIK_MCP_HTTP_TRUST_PROXY: "true",
+      JANOSIK_MCP_HTTP_TRUST_PROXY: "2",
       JANOSIK_MCP_HTTP_LOG_LEVEL: "debug",
       JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS: "2500",
       JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS: "0",
@@ -102,13 +104,14 @@ describe("loadGatewayConfig", () => {
       sessionIdleMs: 60_000,
       sessionSweepMs: 5_000,
       maxBodyBytes: 1024,
+      sessionlessMaxBodyBytes: 512,
       readinessUrl: "https://api.example.com/health/ready",
       readinessCacheMs: 0,
       readinessTimeoutMs: 500,
       authValidateUrl: "https://api.example.com/auth/me",
       authValidateTimeoutMs: 400,
       sseKeepAliveMs: 0,
-      trustProxy: true,
+      trustProxyHops: 2,
       logLevel: "debug",
       shutdownGraceMs: 2500,
       requestTimeoutMs: 0,
@@ -155,8 +158,36 @@ describe("loadGatewayConfig", () => {
     bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "0" });
     bad({ JANOSIK_MCP_HTTP_AUTH_RETRY_ATTEMPTS: "6" });
     bad({ JANOSIK_MCP_HTTP_NEGATIVE_CACHE_MAX_ENTRIES: "0" });
+    bad({
+      JANOSIK_MCP_HTTP_MAX_BODY_BYTES: "1024",
+      JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES: "2048",
+    });
+    bad({ JANOSIK_MCP_HTTP_TRUST_PROXY: "left" });
     bad({ JANOSIK_MCP_HTTP_LOG_LEVEL: "verbose" });
     bad({ JANOSIK_MCP_HTTP_HOST: "has space" });
+  });
+
+  it("clamps the per-token default to a smaller global cap", () => {
+    const loaded = loadGatewayConfig({
+      ...baseEnv,
+      JANOSIK_MCP_HTTP_MAX_SESSIONS: "10",
+    });
+    expect(loaded.config.maxSessionsPerToken).toBe(10);
+  });
+
+  it("accepts legacy booleans for the trusted proxy hop count", () => {
+    expect(
+      loadGatewayConfig({
+        ...baseEnv,
+        JANOSIK_MCP_HTTP_TRUST_PROXY: "true",
+      }).config.trustProxyHops,
+    ).toBe(1);
+    expect(
+      loadGatewayConfig({
+        ...baseEnv,
+        JANOSIK_MCP_HTTP_TRUST_PROXY: "0",
+      }).config.trustProxyHops,
+    ).toBe(0);
   });
 
   it("reports a --token flag as ignored shared state", () => {

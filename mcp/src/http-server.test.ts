@@ -199,6 +199,7 @@ function gatewayConfig(
     sessionIdleMs: 60_000,
     sessionSweepMs: 0,
     maxBodyBytes: 64 * 1024,
+    sessionlessMaxBodyBytes: 4 * 1024,
     allowedOrigins: new Set(),
     readinessUrl: `${upstream.url}/api/v1/health/ready`,
     readinessCacheMs: 0,
@@ -206,7 +207,7 @@ function gatewayConfig(
     authValidateUrl: `${upstream.url}/api/v1/auth/me`,
     authValidateTimeoutMs: 1_000,
     sseKeepAliveMs: 60_000,
-    trustProxy: false,
+    trustProxyHops: 0,
     logLevel: "debug",
     shutdownGraceMs: 1_000,
     requestTimeoutMs: 10_000,
@@ -731,6 +732,11 @@ describe("MCP Streamable HTTP gateway", () => {
     );
     await startedPromise;
     const closePromise = running.gateway.close("test");
+    await sleep(25);
+    const duringDrain = await rpc(running, ALPHA, INITIALIZE);
+    expect(duringDrain.status).toBe(503);
+    expect(duringDrain.headers.get("retry-after")).toBe("1");
+    expect(duringDrain.json).toMatchObject({ error: "shutting_down" });
     const call = await callPromise;
     expect(call.status).toBe(200);
     const payload = toolResult(call) as { content?: Array<{ text?: string }> };
@@ -919,6 +925,65 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(running.gateway.manager.stats().sessions).toBe(0);
   });
 
+  it("rejects an oversized sessionless body before buffering it", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      sessionlessMaxBodyBytes: 64,
+      initRateLimitPerMinute: 1,
+    });
+    const before = upstream.authCalls;
+    const oversized = await rpc(running, ALPHA, "x".repeat(1_000));
+    expect(oversized.status).toBe(413);
+    expect(oversized.json).toMatchObject({ error: "payload_too_large" });
+    expect(upstream.authCalls).toBe(before);
+    // The oversized attempt consumed the initialize bucket.
+    const after = await rpc(running, ALPHA, INITIALIZE);
+    expect(after.status).toBe(429);
+    expect(after.headers.get("retry-after")).toBeTruthy();
+  });
+
+  it("consumes the initialize bucket even for malformed sessionless bodies", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      initRateLimitPerMinute: 1,
+    });
+    const before = upstream.authCalls;
+    const malformed = await rpc(running, ALPHA, "{");
+    expect(malformed.status).toBe(400);
+    expect(malformed.json).toMatchObject({ error: "invalid_json" });
+    expect(upstream.authCalls).toBe(before);
+    const after = await rpc(running, ALPHA, INITIALIZE);
+    expect(after.status).toBe(429);
+  });
+
+  it("uses trusted XFF hops instead of the spoofable left edge", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream, {
+      trustProxyHops: 2,
+      initRateLimitPerMinute: 1,
+    });
+    const first = await rpc(
+      running,
+      "jnk_fabricated_alpha",
+      INITIALIZE,
+      undefined,
+      { "x-forwarded-for": "1.2.3.4, 10.0.0.1" },
+    );
+    expect(first.status).toBe(401);
+    const spoofed = await rpc(
+      running,
+      "jnk_fabricated_beta",
+      INITIALIZE,
+      undefined,
+      { "x-forwarded-for": "9.9.9.9, 1.2.3.4, 10.0.0.1" },
+    );
+    expect(spoofed.status).toBe(429);
+    expect(spoofed.json).toMatchObject({ error: "initialize_rate_limited" });
+  });
+
   it("rate-limits initialize per token fingerprint as well as per IP", async () => {
     const upstream = await startUpstream();
     cleanup.push(() => upstream.close());
@@ -1032,6 +1097,7 @@ describe("MCP Streamable HTTP gateway", () => {
     cleanup.push(() => upstream.close());
     const running = await startGateway(upstream, {
       maxBodyBytes: 1_000,
+      sessionlessMaxBodyBytes: 1_000,
       allowedOrigins: new Set(["https://allowed.example"]),
     });
 

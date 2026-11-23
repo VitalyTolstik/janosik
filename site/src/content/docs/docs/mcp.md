@@ -64,7 +64,14 @@ Node process:
 ```bash
 docker compose --profile mcp up -d
 # MCP endpoint: http://127.0.0.1:8080/mcp
+
+# plain Docker: the stop timeout must exceed the 10 s drain window
+docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
+  -e JANOSIK_URL=http://host.docker.internal:3000 janosik-mcp
 ```
+
+Compose sets `stop_grace_period: 20s`; on SIGTERM the gateway stops admitting,
+lets an active tool call finish (up to 10 s), then closes sessions/streams.
 
 Each client connects to `https://your-gateway/mcp` with **its own** key in
 `Authorization: Bearer jnk_…`; the gateway never receives a shared

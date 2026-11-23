@@ -43,6 +43,8 @@ export interface GatewayConfig {
   sessionSweepMs: number;
   /** Largest accepted JSON-RPC request body. */
   maxBodyBytes: number;
+  /** Strict body cap for a sessionless (initialize) POST. */
+  sessionlessMaxBodyBytes: number;
   /** Exact browser origins allowed to call the gateway; empty denies all. */
   allowedOrigins: ReadonlySet<string>;
   /** API readiness probe used by `GET /ready`. */
@@ -54,8 +56,8 @@ export interface GatewayConfig {
   authValidateTimeoutMs: number;
   /** SSE keep-alive interval; 0 disables it. */
   sseKeepAliveMs: number;
-  /** Trust the first `X-Forwarded-For` hop for logs. */
-  trustProxy: boolean;
+  /** Number of trusted proxy hops on the right of X-Forwarded-For. */
+  trustProxyHops: number;
   logLevel: LogLevel;
   shutdownGraceMs: number;
   /**
@@ -106,10 +108,19 @@ function positiveInt(
   return value;
 }
 
-function boolean(env: NodeJS.ProcessEnv, name: string): boolean {
-  const raw = env[name];
-  if (raw === undefined || raw.trim() === "") return false;
-  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
+function trustProxyHops(env: NodeJS.ProcessEnv): number {
+  const raw = env.JANOSIK_MCP_HTTP_TRUST_PROXY?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return 0;
+  if (["true", "yes", "on"].includes(raw)) return 1;
+  if (["false", "no", "off"].includes(raw)) return 0;
+  if (/^\d+$/.test(raw)) {
+    const hops = Number(raw);
+    if (hops >= 0 && hops <= 16) return hops;
+  }
+  throw new ConfigError(
+    "JANOSIK_MCP_HTTP_TRUST_PROXY must be a trusted-hop count (0-16) " +
+      "or a boolean.",
+  );
 }
 
 function normalizePath(raw: string): string {
@@ -229,7 +240,7 @@ export function loadGatewayConfig(
   const maxSessionsPerToken = positiveInt(
     env,
     "JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN",
-    50,
+    Math.min(50, maxSessions),
     { allowZero: true },
   );
   if (maxSessionsPerToken > maxSessions) {
@@ -291,6 +302,17 @@ export function loadGatewayConfig(
     "JANOSIK_MCP_HTTP_MAX_BODY_BYTES",
     16 * 1024 * 1024,
   );
+  const sessionlessMaxBodyBytes = positiveInt(
+    env,
+    "JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES",
+    Math.min(256 * 1024, maxBodyBytes),
+  );
+  if (sessionlessMaxBodyBytes > maxBodyBytes) {
+    throw new ConfigError(
+      "JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES cannot exceed " +
+        "JANOSIK_MCP_HTTP_MAX_BODY_BYTES.",
+    );
+  }
   const readinessUrl = normalizeProbeUrl(
     envString(
       env,
@@ -366,6 +388,7 @@ export function loadGatewayConfig(
       sessionIdleMs,
       sessionSweepMs,
       maxBodyBytes,
+      sessionlessMaxBodyBytes,
       allowedOrigins: normalizeOrigins(env.JANOSIK_MCP_HTTP_ALLOWED_ORIGINS),
       readinessUrl,
       readinessCacheMs,
@@ -373,7 +396,7 @@ export function loadGatewayConfig(
       authValidateUrl,
       authValidateTimeoutMs,
       sseKeepAliveMs,
-      trustProxy: boolean(env, "JANOSIK_MCP_HTTP_TRUST_PROXY"),
+      trustProxyHops: trustProxyHops(env),
       logLevel: logLevel(env),
       shutdownGraceMs,
       requestTimeoutMs,
@@ -403,6 +426,7 @@ Environment:
   JANOSIK_MCP_HTTP_SESSION_IDLE_MS    Idle expiry (default 300000)
   JANOSIK_MCP_HTTP_SESSION_SWEEP_MS   Sweep interval (default 30000)
   JANOSIK_MCP_HTTP_MAX_BODY_BYTES     Request body cap (default 16777216)
+  JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES  Sessionless body cap (default 262144)
   JANOSIK_MCP_HTTP_ALLOWED_ORIGINS    Comma-separated browser origins
   JANOSIK_MCP_HTTP_READY_URL          Upstream readiness probe
   JANOSIK_MCP_HTTP_READY_CACHE_MS     Probe cache (default 5000)
@@ -411,7 +435,7 @@ Environment:
                                       (default /api/v1/auth/me)
   JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS    Key-validation timeout (default 3000)
   JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS   SSE keep-alive (default 15000; 0 = off)
-  JANOSIK_MCP_HTTP_TRUST_PROXY        Trust X-Forwarded-For (default off)
+  JANOSIK_MCP_HTTP_TRUST_PROXY        Trusted XFF proxy hops (default 0)
   JANOSIK_MCP_HTTP_LOG_LEVEL          debug|info|warn|error (default info)
   JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS  Drain grace (default 10000)
   JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS Receive-request timeout (default 60000)
