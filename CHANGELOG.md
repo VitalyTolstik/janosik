@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.11 CI follow-up: the browser e2e legacy-watch fixture clears the
+  `CommandDetail` side row instead of the removed `Command.details` column, so
+  the Watch feed is still tested against a command without a display snapshot.
+  The self-host smoke recreates the database before replaying its `pg_dump
+  --clean` backup: PostgreSQL cannot drop an inherited partition constraint
+  (`Command_default_pkey`, …) on the live partitioned schema, while those
+  statements are no-ops in a fresh database.
+
 - TASK-200.12 review hardening. The scaled nginx proxy now mounts a full
   `deploy/scale/nginx-main.conf` with `worker_connections 65536` and
   `worker_rlimit_nofile 131072` (the stock 1024 would cap the documented
