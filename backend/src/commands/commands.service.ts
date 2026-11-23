@@ -75,7 +75,7 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { AttentionService } from "@/notifications/attention.service";
-import { CatchUpBudget } from "./catch-up-budget";
+import { CatchUpBudget, processCatchUpBudget } from "./catch-up-budget";
 import { applyCommandWrites, collectVersions } from "./command-writers";
 import {
   type EntityParentageLedger,
@@ -430,7 +430,7 @@ export class CommandsService {
     private readonly approvals: ApprovalsService,
     @Optional() private readonly attention?: AttentionService,
     @Optional()
-    private readonly catchUpBudget: CatchUpBudget = new CatchUpBudget(),
+    private readonly catchUpBudget: CatchUpBudget = processCatchUpBudget,
   ) {}
 
   /**
@@ -1551,6 +1551,7 @@ export class CommandsService {
     const releaseAttempt = this.catchUpBudget.tryBegin();
     if (releaseAttempt === null) return { entries: [], resync: true };
     let releaseBytes: (() => void) | null = null;
+    const extraReleases: Array<() => void> = [];
     try {
       // Cheap preflight: no row/JSON materialisation in Node. `payload` and
       // `details` are detoasted only inside PostgreSQL for this aggregate.
@@ -1567,30 +1568,40 @@ export class CommandsService {
           Prisma.sql`"agentSessionId" = ${filters.agentSessionId}`,
         );
       }
-      const [estimate] = await client.$queryRaw<
-        Array<{ count: bigint; bytes: bigint }>
-      >(
-        Prisma.sql`SELECT COUNT(*)::bigint AS "count",
-          COALESCE(SUM(
+      const whereSql = Prisma.join(conditions, " AND ");
+      // Count only a bounded window. `since=0` on a large board must not scan
+      // the full history just to discover it is too large to replay.
+      const [countRow] = await client.$queryRaw<Array<{ count: bigint }>>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS "count" FROM (
+          SELECT 1 FROM "Command" WHERE ${whereSql} LIMIT ${max + 1}
+        ) AS "bounded"`,
+      );
+      const count = countRow?.count ?? 0n;
+      if (count > BigInt(max)) return { entries: [], resync: true };
+      const countNumber = Number(count);
+      const [estimate] = await client.$queryRaw<Array<{ bytes: bigint }>>(
+        Prisma.sql`SELECT COALESCE(SUM(
             octet_length("payload"::text) +
             COALESCE(octet_length("details"::text), 0) +
             COALESCE(octet_length(array_to_string("touches", ',')), 0)
           ), 0)::bigint AS "bytes"
-          FROM "Command" WHERE ${Prisma.join(conditions, " AND ")}`,
+          FROM (
+            SELECT "payload", "details", "touches"
+            FROM "Command" WHERE ${whereSql}
+            ORDER BY "seq" ASC LIMIT ${max}
+          ) AS "bounded"`,
       );
-      const count = estimate?.count ?? 0n;
-      if (count > BigInt(max)) return { entries: [], resync: true };
-      const countNumber = Number(count);
       // Frame/`data:` overhead is small but per entry; keep the reservation
-      // slightly above the raw JSON size.
-      const estimatedBytes = Number(estimate?.bytes ?? 0n) + countNumber * 64;
+      // conservative. The page loop tops it up if actual JSON is larger.
+      const estimatedBytes = Number(estimate?.bytes ?? 0n) + countNumber * 256;
       if (estimatedBytes > maxBytes) return { entries: [], resync: true };
       releaseBytes = this.catchUpBudget.tryReserve(estimatedBytes);
       if (releaseBytes === null) return { entries: [], resync: true };
+      let reservedBytes = estimatedBytes;
 
       // Fetch in small pages: never hold more than one page of row objects
       // while replaying, and abort to resync if the actual JSON exceeds the
-      // reservation.
+      // reservation or the local byte guard.
       const entries: CommandDeltaEntry[] = [];
       let usedBytes = 0;
       let fetched = 0;
@@ -1610,6 +1621,19 @@ export class CommandsService {
           const entry = this.deltaEntry(boardId, row);
           usedBytes += Buffer.byteLength(JSON.stringify(entry), "utf8") + 64;
           if (usedBytes > maxBytes) return { entries: [], resync: true };
+          if (usedBytes > reservedBytes) {
+            // The SQL estimate was low for this entry. Grow the process-wide
+            // reservation before keeping the bytes; otherwise another
+            // catch-up could already be using that headroom.
+            const releaseExtra = this.catchUpBudget.tryReserve(
+              usedBytes - reservedBytes,
+            );
+            if (releaseExtra === null) {
+              return { entries: [], resync: true };
+            }
+            extraReleases.push(releaseExtra);
+            reservedBytes = usedBytes;
+          }
           entries.push(entry);
           lastSeq = Number(row.seq);
         }
@@ -1617,6 +1641,7 @@ export class CommandsService {
       }
       return { entries, resync: false };
     } finally {
+      for (const release of extraReleases) release();
       releaseBytes?.();
       releaseAttempt();
     }

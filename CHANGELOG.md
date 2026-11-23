@@ -28,10 +28,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A real slow reader is disconnected by the grace, the hard guard or
   `SSE_SLOW_CLOSE_MS` (60 s; `0` disables only this timer) and resumes from its
   last applied `?since=`. Catch-up deltas are byte-bounded by the same guard;
-  a cheap SQL `COUNT`/`SUM(octet_length(...))` preflight rejects an oversized
-  delta before loading payload rows, and accepted deltas are fetched in
-  100-row pages with a 32 MiB / 6-slot process-wide `CatchUpBudget`; excess
-  reconnects get `resync` instead of multiplying transient row memory. A
+  a `LIMIT max+1` SQL count runs first and only a fitting page gets the
+  `SUM(octet_length(...))` preflight, so an oversized delta is rejected
+  before loading payload rows. Accepted deltas are fetched in 100-row pages
+  with a 32 MiB / 6-slot process-wide `CatchUpBudget`; the reservation is
+  topped up (or the stream resyncs) as actual JSON bytes accumulate, so
+  excess reconnects cannot multiply transient row memory. A
   larger page becomes `resync`, so an offline client cannot loop on the same
   oversized replay. `RealtimeService.slowSubscriberDrops` is exposed in
   `/admin/observability` (`jobs.realtime.slowDrops`) and its warning is
@@ -41,11 +43,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not per-connection cursors (`?since=` is the resume point). The 200.5
   keep-alive jitter/overlap guard is unchanged. `SSE_MAX_BUFFER_BYTES` and
   `SSE_SLOW_CLOSE_MS` are forwarded by `docker-compose.yml`. Focused unit/e2e
-  coverage includes one build across 64 subscribers, three-subscriber
-  catch-up sharing, byte-identical fan-out, a batch burst inside the grace,
-  the hard/grace bounds, catch-up preflight/pagination and global-budget
-  exhaustion → `resync`, 32 MiB frame-cache eviction, an oversized delta →
-  `resync`, reconnect catch-up and keep-alive timing. The 3 000-connection CPU/p95 targets were **not**
+  coverage includes one build across 64 subscribers, 3×100×64 KiB frame-store
+  sharing and a 3×10×64 KiB e2e catch-up inside the 32 MiB budget,
+  byte-identical fan-out, a batch burst inside the grace, the hard/grace
+  bounds, catch-up preflight/pagination and global-budget exhaustion →
+  `resync`, 32 MiB frame-cache eviction, an oversized delta → `resync`,
+  reconnect catch-up and keep-alive timing. The 3 000-connection CPU/p95 targets were **not**
   measured in this task, and the public share stream still uses Nest `@Sse`
   (separate projection surface, documented in the runbooks).
 

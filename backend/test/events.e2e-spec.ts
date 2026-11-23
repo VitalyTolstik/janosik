@@ -713,6 +713,15 @@ describe("Board events SSE (e2e)", () => {
     await updateBatch("oversize-b", cardId);
     await updateBatch("oversize-c", cardId);
 
+    // The REST delta catch-up uses the same guard/budget and returns the
+    // existing resync signal instead of loading the 19 MiB page.
+    const delta = await server()
+      .get(`/api/v1/boards/${boardId}/commands?since=${baseline}`)
+      .set(auth(ownerToken))
+      .expect(200);
+    expect(delta.headers["x-delta-resync"]).toBe("1");
+    expect(delta.body).toEqual([]);
+
     const stream = openReader(await openQuietStream(memberToken, baseline));
     try {
       const [frame] = await stream.next(1, "resync", 30_000);

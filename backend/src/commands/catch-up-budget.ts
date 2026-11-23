@@ -60,3 +60,6 @@ export class CatchUpBudget {
     return this.reservedBytes;
   }
 }
+
+/** One budget per API process; injected with a test override where needed. */
+export const processCatchUpBudget = new CatchUpBudget();

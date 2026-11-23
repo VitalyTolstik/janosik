@@ -36,6 +36,8 @@ import {
   normalizeIdempotencyKey,
 } from "@/common/idempotency.service";
 import { MembershipGuard } from "@/common/membership.guard";
+import { env } from "@/config/env";
+import { sseHardLimitBytes } from "@/realtime/sse-frames";
 import { CommandsService } from "./commands.service";
 import { CreateCommandBatchDto } from "./dto/create-command-batch.dto";
 import { CreateCommandDto } from "./dto/create-command.dto";
@@ -199,6 +201,10 @@ export class CommandsController {
           ? { agentSessionId }
           : {}),
       },
+      undefined,
+      // REST delta catch-up shares the SSE hard guard and global budget; a
+      // too-large page answers the resync header instead of loading rows.
+      sseHardLimitBytes(env.SSE_MAX_BUFFER_BYTES),
     );
     if (delta.resync) {
       res.setHeader(DELTA_RESYNC_HEADER, "1");

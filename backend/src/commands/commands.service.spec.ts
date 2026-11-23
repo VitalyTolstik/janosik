@@ -101,7 +101,8 @@ describe("CommandsService.deltaSince", () => {
     const findMany = jest.fn();
     const queryRaw = jest
       .fn()
-      .mockResolvedValue([{ count: 2n, bytes: 10_000n }]);
+      .mockResolvedValueOnce([{ count: 2n }])
+      .mockResolvedValueOnce([{ bytes: 10_000n }]);
     const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
       "board-1",
       0,
@@ -110,10 +111,15 @@ describe("CommandsService.deltaSince", () => {
       undefined,
       1_000,
     );
-    // The aggregate says the page is too large; no payload row is loaded into
-    // Node and the SSE stream gets `resync`.
+    // The bounded sum says the page is too large; no payload row is loaded
+    // into Node and the SSE stream gets `resync`.
     expect(delta).toEqual({ entries: [], resync: true });
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    const countSql = (
+      queryRaw.mock.calls[0]?.[0] as { text?: string } | undefined
+    )?.text;
+    expect(countSql).toContain("LIMIT");
+    expect(countSql).not.toContain("octet_length");
     expect(findMany).not.toHaveBeenCalled();
   });
 
@@ -121,9 +127,7 @@ describe("CommandsService.deltaSince", () => {
     const findMany = jest.fn();
     const queryRaw = jest
       .fn()
-      .mockResolvedValue([
-        { count: BigInt(COMMAND_DELTA_MAX + 1), bytes: 10n },
-      ]);
+      .mockResolvedValueOnce([{ count: BigInt(COMMAND_DELTA_MAX + 1) }]);
     const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
       "board-1",
       0,
@@ -133,6 +137,13 @@ describe("CommandsService.deltaSince", () => {
       16 * 1024 * 1024,
     );
     expect(delta).toEqual({ entries: [], resync: true });
+    // The count subquery is LIMIT-bounded; the expensive SUM never runs.
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const countSql = (
+      queryRaw.mock.calls[0]?.[0] as { text?: string } | undefined
+    )?.text;
+    expect(countSql).toContain("LIMIT");
+    expect(countSql).not.toContain("octet_length");
     expect(findMany).not.toHaveBeenCalled();
   });
 
@@ -160,7 +171,10 @@ describe("CommandsService.deltaSince", () => {
       .fn()
       .mockResolvedValueOnce([row(1)])
       .mockResolvedValueOnce([row(2)]);
-    const queryRaw = jest.fn().mockResolvedValue([{ count: 2n, bytes: 10n }]);
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ count: 2n }])
+      .mockResolvedValueOnce([{ bytes: 10n }]);
     const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
       "board-1",
       0,
@@ -175,6 +189,60 @@ describe("CommandsService.deltaSince", () => {
     expect(findMany.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ take: 2 }),
     );
+  });
+
+  it("fetches a 150-row catch-up in 100-row pages", async () => {
+    const rows = Array.from({ length: 150 }, (_, index) => row(index + 1));
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce(rows.slice(0, 100))
+      .mockResolvedValueOnce(rows.slice(100));
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ count: 150n }])
+      .mockResolvedValueOnce([{ bytes: 10n }]);
+    const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
+      "board-1",
+      0,
+      undefined,
+      undefined,
+      undefined,
+      10_000_000,
+    );
+
+    expect(delta.resync).toBe(false);
+    expect(delta.entries).toHaveLength(150);
+    expect(findMany).toHaveBeenCalledTimes(2);
+    expect(findMany.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ take: 100 }),
+    );
+    expect(findMany.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ take: 50 }),
+    );
+  });
+
+  it("resyncs when actual page bytes exceed the reservation", async () => {
+    const big = {
+      ...row(1),
+      payload: { type: "RENAME_BOARD", title: "x".repeat(500), at: 1 },
+    };
+    const findMany = jest.fn().mockResolvedValue([big]);
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([{ count: 1n }])
+      .mockResolvedValueOnce([{ bytes: 0n }]);
+    const budget = new CatchUpBudget(300, 6);
+    const delta = await service(
+      findMany,
+      jest.fn(),
+      queryRaw,
+      budget,
+    ).deltaSince("board-1", 0, undefined, undefined, undefined, 1_000_000);
+
+    // The preflight reserve fits, but the real entry is larger; the budget
+    // refuses the top-up and the stream must resync.
+    expect(delta).toEqual({ entries: [], resync: true });
+    expect(budget.activeBytes).toBe(0);
   });
 
   it("flags resync when the baseline seq was trimmed from the log", async () => {

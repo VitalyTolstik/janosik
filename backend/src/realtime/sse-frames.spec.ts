@@ -8,6 +8,7 @@ class FakeResponse extends EventEmitter {
   readonly headers: Record<string, string | number | string[]> = {};
   writableEnded = false;
   destroyed = false;
+  headersSent = false;
   readonly writes: Buffer[] = [];
   readonly flushHeaders = jest.fn();
   readonly socket = {
@@ -250,6 +251,18 @@ describe("SseConnection headers and fan-out (TASK-200.13)", () => {
     for (const response of responses) {
       expect(response.writes[1]).toBe(frame);
     }
+  });
+
+  it("does not set headers when the response already sent them", () => {
+    const response = new FakeResponse();
+    response.headersSent = true;
+    const setHeader = jest.spyOn(response, "setHeader");
+    const writer = connection(response);
+    writer.open();
+
+    expect(setHeader).not.toHaveBeenCalled();
+    expect(writer.responseStarted).toBe(true);
+    expect(response.writes[0]?.toString("utf8")).toBe("\n");
   });
 
   it("sets the documented SSE headers and socket options", () => {
