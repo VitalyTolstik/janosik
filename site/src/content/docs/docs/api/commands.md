@@ -120,7 +120,7 @@ A refused command answers `409` with a `ConflictError` body
 also carries `versions`, the actual `card:`/`column:`/`board:` versions of
 the entities pinned by `ifMatchVersions`; merge them into the next attempt
 and retry only the touched entity, or switch to the targeted card intents in
-[REST · Targeted card intents](./rest.md#targeted-card-intents). The categories
+[REST · Targeted card intents](/docs/api/rest/#targeted-card-intents). The categories
 are:
 
 | `conflict` | Meaning                                                              |
