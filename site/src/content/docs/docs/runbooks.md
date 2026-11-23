@@ -245,8 +245,11 @@ safe defaults:
   5 s batch-burst guard, then resumes from `?since=`. The hard guard is
   16 MiB, or 2x the soft bound when it is above 8 MiB. Live and replayed
   command frames are shared Buffers (command cache up to 32 MiB); the guard
-  bounds queue references, not per-subscriber copies, and a catch-up above it
-  answers `resync`. The compose file forwards both limits.
+  bounds queue references, not per-subscriber copies. Catch-up preflights
+  `COUNT`/`SUM(octet_length(...))` in SQL, reads accepted deltas in 100-row
+  pages and shares a 32 MiB / 6-slot budget; excess or oversized reconnects
+  answer `resync`. `SSE_MAX_BUFFER_BYTES=0` affects only the blocked queue.
+  The compose file forwards both limits.
 - **Heap.** `NODE_OPTIONS=--max-old-space-size=…` (default `1024`) caps V8's old
   space so a surge triggers GC instead of the container OOM-killer.
 

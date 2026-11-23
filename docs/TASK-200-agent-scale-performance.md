@@ -527,6 +527,16 @@ self-hosting.
   не 300 копий. `data:`-фрейминг, порядок и `resync` сохранены. `id:` — это **process frame id** (один и тот же id у всех
   подписчиков одного события), а не per-connection курсор: API не читает
   `Last-Event-ID`, и переподключение всегда идёт с `?since=<board seq>`.
+- Catch-up не грузит до 5 000 payload/details-строк вслепую. Сначала идёт
+  дешёвый SQL preflight (`COUNT(*)` + `SUM(octet_length(payload::text) +
+  details + touches)`) без материализации JSON в Node; при превышении
+  hard guard сразу отдаётся `resync`. Иначе строки читаются страницами по
+  100, и фактический JSON-размер проверяется на каждой странице. Глобальный
+  `CatchUpBudget` (32 МиБ оценённых transient-байт и 6 одновременных
+  catch-up на процесс) не даёт 3 000 переподключений умножить эту память:
+  лишние потоки получают `resync` и перечитывают summary/страницы. Кэш
+  command-кадров (32 МиБ) — это отдельная shared-память `Buffer`; entry/row
+  память ограничена бюджетом и живёт только на время одной страницы.
 - Member-SSE больше не идёт через Nest `@Sse`: контроллер отдаёт тот же
   контракт (`Content-Type`, `X-Accel-Buffering: no`, заголовки, лидирующий
   `\n`, presence/keep-alive/teardown) через `SseConnection` и `@Res`. Это
@@ -555,7 +565,8 @@ self-hosting.
   огромной дельте. Кадр, который уже принял сокет при `write() === false`,
   в мягкий лимит не входит: реальный худший случай — лимит плюс один такой
   кадр; `SSE_MAX_BUFFER_BYTES=0` означает «без очереди» и роняет первый
-  кадр после backpressure, а не блокирующий. Клиент переподключается с
+  кадр после backpressure, а не блокирующий; на catch-up-бюджет и preflight
+  это не влияет. Клиент переподключается с
   последним `?since=` и получает дельту/`resync`; здоровые подписчики не
   теряют ни одного кадра. Метрика — `RealtimeService.slowSubscriberDrops`,
   она отдаётся в `/admin/observability` (`jobs.realtime.slowDrops`), лог
@@ -571,11 +582,13 @@ self-hosting.
   клиента и не входит в файловый scope 200.13.
 - Тесты: `sse-frames.spec.ts` (один build на событие, N=64 подписчиков,
   идентичные байты, **100 catch-up-кадров на трёх подписчиков = 100 сборок**,
-  drain без потерь, **10 и 100 кадров по 64 КиБ без drop**, 16-МиБ hard
-  guard, grace после блокирующего publish-такта, grace-timeout для
-  медленного читателя, `SSE_MAX_BUFFER_BYTES=0`, timeout, peer close),
-  `commands.service.spec.ts` (байтовый бюджет дельты → `resync`),
-  `command-stream.spec.ts` (общий wire-объект для live-кадра),
+  32-МиБ LRU eviction, drain без потерь, **10 и 100 кадров по 64 КиБ без
+  drop**, 16-МиБ hard guard, grace после блокирующего publish-такта,
+  grace-timeout для медленного читателя, `SSE_MAX_BUFFER_BYTES=0` и healthy
+  catch-up, timeout, peer close), `catch-up-budget.spec.ts` (глобальные
+  32 МиБ/6 слотов и release), `commands.service.spec.ts` (preflight
+  count/octet_length без загрузки строк, пагинация, глобальный budget →
+  `resync`), `command-stream.spec.ts` (общий wire-объект для live-кадра),
   `events.controller.spec.ts` (медленный подписчик →
   метрика/уничтожение и teardown; синхронный setup-error → `409` без
   SSE-заголовков; `headersSent`-ветка), `realtime.service.spec.ts` (счётчик и

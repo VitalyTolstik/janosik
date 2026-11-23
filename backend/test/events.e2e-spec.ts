@@ -608,7 +608,7 @@ describe("Board events SSE (e2e)", () => {
     }
   }, 20_000);
 
-  it("shares one 100-frame catch-up across three subscribers", async () => {
+  it("shares one 10-frame large catch-up across three subscribers", async () => {
     const columnId = "col-catchup";
     const cardId = "card-catchup";
     await command(
@@ -633,7 +633,10 @@ describe("Board events SSE (e2e)", () => {
       "evt-catchup-card",
     );
     const baseline = await boardSeq(ownerToken);
-    await updateBatch("catchup", cardId);
+    // Ten 64 KiB updates fit the process-wide 32 MiB catch-up budget across
+    // three simultaneous subscribers; 100 would (correctly) resync two of
+    // them, which the unit budget test covers.
+    await updateBatch("catchup", cardId, 10);
     const frames = app.get(SseFrameStore);
     const buildsBefore = frames.builtCount;
 
@@ -651,22 +654,22 @@ describe("Board events SSE (e2e)", () => {
       );
       const isCommand = (block: string): boolean =>
         block.includes("data:") && !block.includes('"type":"keepalive"');
-      const readHundred = async (
+      const readPage = async (
         reader: ReturnType<typeof openRawReader>,
       ): Promise<string[]> => {
         const blocks: string[] = [];
-        for (let index = 0; index < 100; index += 1) {
+        for (let index = 0; index < 10; index += 1) {
           blocks.push(await reader.next(isCommand, 30_000));
         }
         return blocks;
       };
-      const [a, b, c] = await Promise.all(readers.map(readHundred));
+      const [a, b, c] = await Promise.all(readers.map(readPage));
 
       // Three independent delta queries, one build per command seq and the
       // same Buffers for all three subscribers.
       expect(a).toEqual(b);
       expect(b).toEqual(c);
-      expect(frames.builtCount - buildsBefore).toBe(100);
+      expect(frames.builtCount - buildsBefore).toBe(10);
     } finally {
       await Promise.all(readers.map((reader) => reader.close()));
       // Reclaim the board column slot; the suite has a fixed column budget

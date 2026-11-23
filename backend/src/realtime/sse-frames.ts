@@ -75,6 +75,10 @@ export class SseFrameStore {
   private nextId = 1;
   private builds = 0;
 
+  constructor(
+    private readonly commandCacheLimit = SSE_COMMAND_FRAME_CACHE_BYTES,
+  ) {}
+
   /**
    * The complete SSE frame for `data`, building it at most once per object.
    * Command frames are additionally keyed by `seq`, because catch-up replay
@@ -130,10 +134,10 @@ export class SseFrameStore {
   }
 
   private rememberCommand(seq: number, frame: SseFrame): void {
-    if (frame.bytes.length > SSE_COMMAND_FRAME_CACHE_BYTES) return;
+    if (frame.bytes.length > this.commandCacheLimit) return;
     while (
       this.commandCacheBytes + frame.bytes.length >
-      SSE_COMMAND_FRAME_CACHE_BYTES
+      this.commandCacheLimit
     ) {
       const oldest = this.commandCache.keys().next().value;
       if (oldest === undefined) break;

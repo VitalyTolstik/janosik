@@ -28,7 +28,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A real slow reader is disconnected by the grace, the hard guard or
   `SSE_SLOW_CLOSE_MS` (60 s; `0` disables only this timer) and resumes from its
   last applied `?since=`. Catch-up deltas are byte-bounded by the same guard;
-  a larger page becomes `resync`, so an offline client cannot loop on the same
+  a cheap SQL `COUNT`/`SUM(octet_length(...))` preflight rejects an oversized
+  delta before loading payload rows, and accepted deltas are fetched in
+  100-row pages with a 32 MiB / 6-slot process-wide `CatchUpBudget`; excess
+  reconnects get `resync` instead of multiplying transient row memory. A
+  larger page becomes `resync`, so an offline client cannot loop on the same
   oversized replay. `RealtimeService.slowSubscriberDrops` is exposed in
   `/admin/observability` (`jobs.realtime.slowDrops`) and its warning is
   aggregated to one line per minute. The 200 response is committed only after
@@ -39,8 +43,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SSE_SLOW_CLOSE_MS` are forwarded by `docker-compose.yml`. Focused unit/e2e
   coverage includes one build across 64 subscribers, three-subscriber
   catch-up sharing, byte-identical fan-out, a batch burst inside the grace,
-  the hard/grace bounds, an oversized delta → `resync`, reconnect catch-up
-  and keep-alive timing. The 3 000-connection CPU/p95 targets were **not**
+  the hard/grace bounds, catch-up preflight/pagination and global-budget
+  exhaustion → `resync`, 32 MiB frame-cache eviction, an oversized delta →
+  `resync`, reconnect catch-up and keep-alive timing. The 3 000-connection CPU/p95 targets were **not**
   measured in this task, and the public share stream still uses Nest `@Sse`
   (separate projection surface, documented in the runbooks).
 

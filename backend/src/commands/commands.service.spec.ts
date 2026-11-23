@@ -1,6 +1,7 @@
 import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
 import { MAX_COMMAND_BYTES } from "@janosik/shared";
 import type { PrismaService } from "@/common/prisma/prisma.service";
+import { CatchUpBudget } from "./catch-up-budget";
 import {
   COMMAND_DELTA_MAX,
   CommandsService,
@@ -17,9 +18,15 @@ const row = (seq: number) => ({
   touches: [],
 });
 
-function service(findMany: jest.Mock, findFirst = jest.fn()) {
+function service(
+  findMany: jest.Mock,
+  findFirst = jest.fn(),
+  queryRaw = jest.fn(),
+  budget: CatchUpBudget = new CatchUpBudget(),
+) {
   const prisma = {
     command: { findMany, findFirst },
+    $queryRaw: queryRaw,
   } as unknown as PrismaService;
   return new CommandsService(
     prisma,
@@ -31,6 +38,8 @@ function service(findMany: jest.Mock, findFirst = jest.fn()) {
       consumeCommandApproval: jest.fn(),
       publishState: jest.fn(),
     } as never,
+    undefined,
+    budget,
   );
 }
 
@@ -88,19 +97,84 @@ describe("CommandsService.deltaSince", () => {
     expect(delta.entries.map((e) => e.seq)).toEqual([1, 2]);
   });
 
-  it("downgrades an over-byte-budget page to resync", async () => {
-    const findMany = jest.fn().mockResolvedValue([row(1), row(2)]);
-    const delta = await service(findMany).deltaSince(
+  it("preflights the delta bytes before loading any rows", async () => {
+    const findMany = jest.fn();
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValue([{ count: 2n, bytes: 10_000n }]);
+    const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
       "board-1",
       0,
       undefined,
       undefined,
       undefined,
-      1,
+      1_000,
     );
-    // A tiny budget cannot fit even one frame; the SSE stream must full-refresh
-    // instead of replaying a partial page.
+    // The aggregate says the page is too large; no payload row is loaded into
+    // Node and the SSE stream gets `resync`.
     expect(delta).toEqual({ entries: [], resync: true });
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("preflights the count cap and avoids a 5 001-row load", async () => {
+    const findMany = jest.fn();
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValue([
+        { count: BigInt(COMMAND_DELTA_MAX + 1), bytes: 10n },
+      ]);
+    const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
+      "board-1",
+      0,
+      undefined,
+      undefined,
+      undefined,
+      16 * 1024 * 1024,
+    );
+    expect(delta).toEqual({ entries: [], resync: true });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("resyncs when the global catch-up budget is exhausted", async () => {
+    const budget = new CatchUpBudget(32 * 1024 * 1024, 1);
+    const release = budget.tryBegin();
+    expect(release).not.toBeNull();
+    const findMany = jest.fn();
+    const queryRaw = jest.fn();
+    const delta = await service(
+      findMany,
+      jest.fn(),
+      queryRaw,
+      budget,
+    ).deltaSince("board-1", 0, undefined, undefined, undefined, 1_000);
+    expect(delta).toEqual({ entries: [], resync: true });
+    // The budget refuses before even the cheap preflight query runs.
+    expect(queryRaw).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
+    release?.();
+  });
+
+  it("pages a byte-budgeted catch-up and returns its entries", async () => {
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([row(1)])
+      .mockResolvedValueOnce([row(2)]);
+    const queryRaw = jest.fn().mockResolvedValue([{ count: 2n, bytes: 10n }]);
+    const delta = await service(findMany, jest.fn(), queryRaw).deltaSince(
+      "board-1",
+      0,
+      undefined,
+      undefined,
+      undefined,
+      1_000,
+    );
+    expect(delta.resync).toBe(false);
+    expect(delta.entries.map((entry) => entry.seq)).toEqual([1, 2]);
+    expect(findMany).toHaveBeenCalledTimes(2);
+    expect(findMany.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ take: 2 }),
+    );
   });
 
   it("flags resync when the baseline seq was trimmed from the log", async () => {

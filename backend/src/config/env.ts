@@ -456,7 +456,8 @@ export const env = cleanEnv(process.env, {
   // the hard guard for 5 s while `drain` is pending. The hard guard is 16 MiB,
   // or 2x this soft bound when it is above 8 MiB. Past that the connection is
   // dropped and the client resumes from ?since=.
-  // 0 = no queue: the frame after the first backpressure is dropped.
+  // 0 = no queue: the frame after the first backpressure is dropped; this
+  // does not disable the catch-up preflight/global byte budget.
   SSE_MAX_BUFFER_BYTES: nonNegativeInt({
     desc: "Soft byte bound on queued frames per slow SSE subscriber (0 = drop the first frame after backpressure)",
     default: 131_072,

@@ -386,9 +386,13 @@ comfortably. Two knobs matter when you grow, and both have safe defaults:
   queue), `SSE_SLOW_CLOSE_MS` (default `60 s`; `0` disables only this timer)
   or the 5 s burst guard for a batch burst, then resumes from `?since=`. The
   hard guard is 16 MiB, or 2x the soft bound when it is above 8 MiB. Live and
-  replayed command frames are shared Buffers (command cache up to 32 MiB), and
-  the guard bounds queue references, not per-subscriber copies. A catch-up
-  delta above the hard guard answers `resync` instead of replaying forever.
+  replayed command frames are shared Buffers (command cache up to 32 MiB); the
+  guard bounds queue references, not per-subscriber copies. Catch-up first
+  checks `COUNT`/`SUM(octet_length(...))` in SQL, reads accepted deltas in
+  100-row pages, and shares a process-wide 32 MiB / 6-slot budget; excess or
+  oversized reconnects answer `resync` instead of replaying forever.
+  `SSE_MAX_BUFFER_BYTES=0` affects only the blocked queue, not this catch-up
+  budget.
   This pre-serialized path is for authenticated member streams; public share
   SSE still uses Nest's per-subscriber writer. Both limits are forwarded by
   the compose file.

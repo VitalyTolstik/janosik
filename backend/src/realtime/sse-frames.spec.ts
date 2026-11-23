@@ -129,6 +129,43 @@ describe("SseFrameStore (TASK-200.13)", () => {
     expect(second.bytes).toBe(first.bytes);
   });
 
+  it("evicts the oldest cached command frames beyond its byte limit", () => {
+    const sample = new SseFrameStore();
+    const frameBytes = sample.frame({
+      type: "command",
+      seq: 1,
+      text: "x".repeat(200),
+    }).bytes.length;
+    const store = new SseFrameStore(frameBytes * 2);
+    const make = (seq: number) => ({
+      type: "command",
+      seq,
+      text: "x".repeat(200),
+    });
+    for (let seq = 1; seq <= 3; seq += 1) store.frame(make(seq));
+
+    expect(store.cachedCommandFrames).toBe(2);
+    expect(store.cachedCommandBytes).toBeLessThanOrEqual(frameBytes * 2);
+    expect(store.builtCount).toBe(3);
+
+    // seq 1 was evicted, so a fresh replay object builds again; the retained
+    // seq 3 still hits the LRU.
+    store.frame(make(1));
+    expect(store.builtCount).toBe(4);
+    store.frame(make(3));
+    expect(store.builtCount).toBe(4);
+  });
+
+  it("bounds the default 32 MiB command-frame cache", () => {
+    const store = new SseFrameStore();
+    const text = "x".repeat(1024 * 1024);
+    for (let seq = 1; seq <= 33; seq += 1) {
+      store.frame({ type: "command", seq, text });
+    }
+    expect(store.cachedCommandBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+    expect(store.cachedCommandFrames).toBeLessThan(33);
+  });
+
   it("keeps the SSE data: framing for plain strings and embedded newlines", () => {
     const store = new SseFrameStore();
     expect(store.frame("ping").bytes.toString("utf8")).toBe(
@@ -519,6 +556,25 @@ describe("SseConnection backpressure (TASK-200.13)", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("writes a healthy catch-up page with SSE_MAX_BUFFER_BYTES=0", () => {
+    const store = new SseFrameStore();
+    const response = new FakeResponse();
+    const slow = jest.fn();
+    const writer = connection(response, {
+      frames: store,
+      maxBufferBytes: 0,
+      onSlowConsumer: slow,
+    });
+    writer.open();
+    for (let seq = 1; seq <= 10; seq += 1) {
+      writer.write({ type: "command", seq, action: { type: "UPDATE_CARD" } });
+    }
+    expect(writer.isClosed).toBe(false);
+    expect(writer.bufferedFrames).toBe(0);
+    expect(response.writes).toHaveLength(11);
+    expect(slow).not.toHaveBeenCalled();
   });
 
   it("treats SSE_MAX_BUFFER_BYTES=0 as no queue after backpressure", () => {
