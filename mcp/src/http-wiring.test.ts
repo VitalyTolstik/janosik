@@ -85,6 +85,10 @@ describe("MCP gateway container wiring", () => {
     expect(workflow).toContain("--network host");
     expect(workflow).toContain("mcp/scripts/http-smoke.mjs");
     expect(workflow).toContain("gateway image size");
+    const smoke = read("mcp/scripts/http-smoke.mjs");
+    expect(smoke).not.toContain("@modelcontextprotocol");
+    expect(smoke).toContain("fetch(");
+    expect(smoke).toContain("tools/list");
     expect(workflow).toContain("Build and push MCP gateway image");
     expect(workflow).toContain("Publish MCP gateway manifest");
   });

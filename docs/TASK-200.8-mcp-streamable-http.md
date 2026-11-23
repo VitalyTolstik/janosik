@@ -91,10 +91,13 @@ per-token-fingerprint bucket (default 10/min), and a bounded negative cache of
 invalid fingerprints. The sessionless body is capped strictly (default
 `min(256 KiB, MAX_BODY_BYTES)`) and has its **own** per-IP/global budget
 (default 4/32, ~8 MiB) separate from session-bound reads (per-token 4, global
-16, ~256 MiB). An initialize flood across many IPs therefore cannot deny
-authenticated tool calls; each class answers `503 body_busy` +
-`Retry-After` only when its own gate is full. The slot is held until `handleRequest` resolves, because the parsed body stays
-referenced for the whole tool call; it is released in `finally` on success,
+16, ~256 MiB). An initialize flood across many IPs therefore cannot consume
+the session body gate, though CPU, network, API validation and the global
+session cap remain shared; each class answers `503 body_busy` + `Retry-After`
+only when its own gate is full. The slot is held until
+`handleRequest` resolves (or released early on client abort/disconnect),
+because the parsed body stays referenced for the whole tool call; it is
+released in `finally` on success,
 error, abort or timeout. Both classes use one explicit read deadline (default
 8 s) that resets a stalled body and releases its slot independently of Node's
 request checker (the connection is reset, not a deliverable `408`); 8 s is

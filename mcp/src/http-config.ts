@@ -500,10 +500,12 @@ Environment:
                                       413 above it)
   JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS  Global body reads
                                       (default 16; ~256 MiB at 16 MiB each)
-  JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN  Per-key (default 4)
+  JANOSIK_MCP_HTTP_MAX_CONCURRENT_BODY_READS_PER_TOKEN  Per-key
+                                      (default min(4, global body reads))
   JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS  Sessionless
                                       global reads (default 32; ~8 MiB)
-  JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP  Per-IP (default 4)
+  JANOSIK_MCP_HTTP_MAX_CONCURRENT_INIT_BODY_READS_PER_IP  Per-IP
+                                      (default min(4, global init reads))
   JANOSIK_MCP_HTTP_BODY_READ_TIMEOUT_MS  Stall deadline (default 8000)
   JANOSIK_MCP_HTTP_ALLOWED_ORIGINS    Comma-separated browser origins
   JANOSIK_MCP_HTTP_READY_URL          Upstream readiness probe

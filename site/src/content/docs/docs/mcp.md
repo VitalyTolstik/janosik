@@ -89,8 +89,12 @@ key with `403`.
 Successful MCP POSTs are SSE streams; gateway errors are JSON. A reverse proxy
 needs buffering off and a read timeout above the longest tool call. SSE uses
 `no-cache, no-transform`; errors and health use `no-store`. `GET /health` is
-liveness; `GET /ready` checks API reachability (not a key) and returns `503` +
-`Retry-After` when not ready.
+liveness and reports `bodyReads.session` / `bodyReads.initialize`; `GET /ready`
+checks API reachability (not a key) and returns `503` + `Retry-After` when not
+ready. Sessionless and tool bodies have separate per-IP/per-token budgets with
+global backstops; a full gate answers `503 body_busy` + `Retry-After`. During
+drain, unknown paths still `404` and disallowed origins `403`, while other MCP
+requests get `503 shutting_down`.
 
 **Sessions are in-memory.** Restarting the gateway drops every session;
 clients reconnect and initialize again. Multiple replicas need a

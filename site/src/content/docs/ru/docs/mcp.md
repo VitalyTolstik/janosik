@@ -95,8 +95,12 @@ docker run --rm -p 127.0.0.1:8080:8080 --stop-timeout 20 \
 Успешные MCP POST — SSE-потоки, ошибки шлюза — JSON. Reverse proxy без
 буферизации и с read timeout больше самого долгого вызова. SSE использует
 `no-cache, no-transform`; ошибки и health — `no-store`. `GET /health` —
-liveness; `GET /ready` проверяет доступность API (не ключ) и при `503` отдаёт
-`Retry-After`.
+liveness и счётчики `bodyReads.session` / `bodyReads.initialize`; `GET /ready`
+проверяет доступность API (не ключ) и при `503` отдаёт `Retry-After`. Тела
+initialize и инструментов имеют раздельные лимиты на IP/токен с глобальными
+backstop; при переполнении — `503 body_busy` + `Retry-After`. Во время drain
+неизвестный путь по-прежнему `404`, запрещённый Origin — `403`, остальные MCP
+запросы — `503 shutting_down`.
 
 **Сессии хранятся в памяти.** Перезапуск шлюза удаляет все сессии; клиенты
 подключаются и инициализируются заново. Несколько реплик требуют

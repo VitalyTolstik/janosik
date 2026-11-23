@@ -877,7 +877,7 @@ describe("MCP Streamable HTTP gateway", () => {
     console.info(
       `[retained-bodies] 8 × 12 MiB, cap 4: heap +${deltaMb.toFixed(1)} MB`,
     );
-    expect(deltaMb).toBeLessThan(400);
+    expect(deltaMb).toBeLessThan(200);
     const recovered = await rpc(
       running,
       ALPHA,
@@ -899,6 +899,8 @@ describe("MCP Streamable HTTP gateway", () => {
       bodyReadTimeoutMs: 300,
     });
     const sessionId = await initialize(running, ALPHA);
+    // Distinct forwarded client IPs: if XFF were ignored both would map to
+    // the same per-IP slot and this test would not reach active=2.
     const stalledA = startStalledPost(running, ALPHA, undefined, {
       "x-forwarded-for": "1.2.3.4",
     });

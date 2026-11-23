@@ -127,8 +127,9 @@ sessionless initialize reads are capped strictly at 256 KiB with their own
 per-IP (default 4) and global (default 32; ~8 MiB) gates, while session-bound
 tool bodies use a per-token gate (default 4) with a separate global backstop
 (default 16; ~256 MiB). An initialize flood across many IPs therefore cannot
-deny authenticated tool calls; each class only answers `503 body_busy` +
-`Retry-After` within its own budget. The normal body cap still applies to
+consume the session body gate, though CPU, network, API validation and the
+global session cap remain shared; each body class only answers `503 body_busy`
++ `Retry-After` within its own budget. The normal body cap still applies to
 every POST. Both gates share one explicit read deadline (default 8 s): a
 stalled body is reset and its slot released independently of Node's request
 checker, so a slow large upload must fit that deadline (raise it and the
@@ -227,20 +228,23 @@ paths still answer `404` and disallowed origins `403`; other MCP requests get
 | `JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS` | `15000` | SSE keep-alive interval; `0` disables it. |
 | `JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS` | `60000` | Time allowed to receive a request; not a tool deadline. Long tool responses are kept alive by SSE. |
 | `JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS` | `60000` | Node headers timeout. |
-| `JANOSIK_MCP_HTTP_TRUST_PROXY` | `0` | Trusted proxy hops from the right of `X-Forwarded-For` (`0`–`16`; legacy `true` = `1`). |
+| `JANOSIK_MCP_HTTP_TRUST_PROXY` | `0` | Trusted proxy hops from the right of `X-Forwarded-For` (`0`–`16`; legacy `true` = `1`). `0` ignores XFF entirely. |
 | `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
 | `JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS` | `10000` | Drain window on SIGTERM/SIGINT before force-closing sockets. |
 
-**Memory budget.** A body slot is held until `handleRequest` resolves, not
-just until the body is read, because the parsed body remains referenced for
-the whole tool call. Worst case is 16 × 16 MiB = 256 MiB of retained session
+**Memory budget.** A body slot is held until `handleRequest` resolves (or
+released early if the client aborts/disconnects), not just until the body is
+read, because the parsed body remains referenced for the whole tool call. Worst case is 16 × 16 MiB = 256 MiB of retained session
 bodies plus 32 × 256 KiB = 8 MiB of initialize bodies. During parsing the raw
 chunk buffers and JSON strings can add roughly one more copy of the in-flight
 bodies, so keep `mem_limit` above the 1 GiB V8 heap plus ~2× the gate budgets
 (Compose's 1536m is the minimum, not a large headroom). The per-token/per-IP
 caps and 8 s deadline keep one client from consuming either global gate; raise
 the deadline for slow large uploads. Lowering a global body limit clamps the
-unset per-token/per-IP default to it instead of failing startup.
+unset per-token/per-IP default to it instead of failing startup. Tune the
+body gates, read deadline and container `mem_limit` together; the global
+session cap (`MAX_SESSIONS`) and validation bucket remain separate shared
+limits.
 
 `JANOSIK_MCP_TOOLSETS`, `JANOSIK_MCP_READONLY`, `JANOSIK_APP_BASE` and the
 filesystem settings are shared with the stdio server. The gateway container

@@ -501,7 +501,6 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         code === "ERR_STREAM_PREMATURE_CLOSE" ||
         (error instanceof Error && error.name === "AbortError")
       ) {
-        logger.debug("body_read_aborted", { scope });
         throw new ClientBodyAbortError();
       }
       throw error;

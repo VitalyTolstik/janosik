@@ -308,7 +308,12 @@ default 10 initialize attempts/min is below its 50-session cap; raise
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must reach its per-key
 session cap immediately.
 `GET /ready` proves the API is reachable; it does not validate a key.
-`GET /health` is liveness. All `503`s carry `Retry-After`.
+`GET /health` is liveness and reports `bodyReads.session` /
+`bodyReads.initialize` counters. Sessionless and tool bodies use separate
+per-IP/per-token budgets with global backstops; a full gate answers `503
+body_busy` + `Retry-After`. All `503`s carry `Retry-After`. During drain,
+unknown paths still answer `404` and disallowed origins `403`; other MCP
+requests get `503 shutting_down`.
 
 For a large first-time swarm, 500 keys inside one minute exceed the API's
 default `THROTTLE_LIMIT=300`; raise `THROTTLE_LIMIT`, the gateway's
