@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  boardWorkState,
   buildClaimAction,
   buildCommentBody,
   buildMoveAction,
+  buildReleaseAction,
   findDoneColumn,
+  isDoneTitle,
   jitteredDelay,
   mulberry32,
   newCommandId,
@@ -35,18 +38,30 @@ function board() {
   };
 }
 
-test("findDoneColumn recognises English and Russian titles, else takes last", () => {
-  assert.equal(findDoneColumn(board()).id, "done");
+test("Done matching is Unicode-aware and works in a non-last column", () => {
+  assert.equal(isDoneTitle("Готово"), true);
+  assert.equal(isDoneTitle("Готово!"), true);
+  assert.equal(isDoneTitle("Выполнено"), true);
+  assert.equal(isDoneTitle("In progress"), false);
   assert.equal(
     findDoneColumn({
       columns: [
-        { id: "a", title: "Todo" },
-        { id: "b", title: "Готово" },
+        { id: "todo", title: "Todo" },
+        { id: "done-ru", title: "Готово" },
+        { id: "archive", title: "Archive" },
       ],
     }).id,
-    "b",
+    "done-ru",
   );
-  assert.equal(findDoneColumn({ columns: [{ id: "a" }, { id: "b" }] }).id, "b");
+  assert.equal(
+    findDoneColumn({
+      columns: [
+        { id: "todo", title: "Todo" },
+        { id: "later", title: "Later" },
+      ],
+    }).id,
+    "later",
+  );
   assert.equal(findDoneColumn({ columns: [] }), null);
 });
 
@@ -61,24 +76,46 @@ test("pickWork skips Done and live claims, rotates candidates", () => {
   assert.equal(work1.fromColumnId, "doing");
 });
 
-test("pickWork allows expired leases and returns null when empty", () => {
+test("pickWork allows expired leases and reports exhaustion and stranding", () => {
   const leased = board();
   leased.cards.c1.leaseUntil = Date.now() - 1_000;
   const work = pickWork(leased, { startIndex: 0, now: Date.now() });
   assert.equal(work.cardId, "c1");
 
   const empty = board();
-  empty.columns = [
-    { id: "todo", title: "Todo", cardIds: [] },
-    { id: "done", title: "Done", cardIds: [] },
-  ];
+  empty.columns[0].cardIds = [];
+  empty.columns[1].cardIds = [];
+  const state = boardWorkState(empty);
+  assert.equal(state.exhausted, true);
   assert.equal(pickWork(empty), null);
+
+  const stranded = board();
+  stranded.columns[0].cardIds = ["c1"];
+  stranded.columns[1].cardIds = [];
+  stranded.cards.c1.leaseUntil = Date.now() + 60_000;
+  const strandedState = boardWorkState(stranded);
+  assert.equal(strandedState.stranded, true);
+  assert.equal(strandedState.exhausted, false);
 });
 
-test("command bodies match the shared reducer shapes", () => {
+test("command bodies carry the real wire contract: type, at, boardId", () => {
+  const at = 1_700_000_000_000;
   assert.deepEqual(
-    buildClaimAction({ cardId: "c1", userId: "u1", leaseUntil: 123 }),
-    { type: "CLAIM_CARD", cardId: "c1", claimedBy: "u1", leaseUntil: 123 },
+    buildClaimAction({
+      cardId: "c1",
+      userId: "u1",
+      leaseUntil: at + 60_000,
+      boardId: "b1",
+      at,
+    }),
+    {
+      type: "CLAIM_CARD",
+      at,
+      boardId: "b1",
+      cardId: "c1",
+      claimedBy: "u1",
+      leaseUntil: at + 60_000,
+    },
   );
   const work = {
     cardId: "c1",
@@ -87,13 +124,23 @@ test("command bodies match the shared reducer shapes", () => {
     toColumnId: "done",
     toIndex: 5,
   };
-  assert.deepEqual(buildMoveAction(work), {
+  assert.deepEqual(buildMoveAction(work, { boardId: "b1", at }), {
     type: "MOVE_CARD",
+    at,
+    boardId: "b1",
     cardId: "c1",
     fromColumnId: "todo",
     fromIndex: 2,
     toColumnId: "done",
     toIndex: 5,
+  });
+  assert.deepEqual(buildReleaseAction({ cardId: "c1", boardId: "b1", at }), {
+    type: "CLAIM_CARD",
+    at,
+    boardId: "b1",
+    cardId: "c1",
+    claimedBy: null,
+    leaseUntil: null,
   });
   assert.deepEqual(buildCommentBody({ text: "hi", commandId: "x" }), {
     text: "hi",
@@ -120,7 +167,8 @@ test("performAgentCycle retries a 409 and posts claim → comment → move", asy
     },
     async claim(_boardId, command) {
       claimCalls += 1;
-      calls.push(`claim:${command.ifMatch}`);
+      calls.push(`claim:${command.ifMatch}:${command.action.boardId}`);
+      assert.equal(Number.isFinite(command.action.at), true);
       if (claimCalls === 1) return { status: 409, json: {} };
       return { status: 200, json: { seq: 11 } };
     },
@@ -129,7 +177,8 @@ test("performAgentCycle retries a 409 and posts claim → comment → move", asy
       return { status: 201 };
     },
     async move(_boardId, command) {
-      calls.push(`move:${command.ifMatch}`);
+      calls.push(`move:${command.ifMatch}:${command.action.boardId}`);
+      assert.equal(Number.isFinite(command.action.at), true);
       return { status: 200, json: { seq: 12 } };
     },
   };
@@ -146,15 +195,159 @@ test("performAgentCycle retries a 409 and posts claim → comment → move", asy
     conflicts: 1,
     actions: 3,
     cardId: "c3",
+    orphan: false,
   });
   assert.deepEqual(calls, [
     "read",
-    "claim:10",
+    "claim:10:b1",
     "read",
-    "claim:10",
+    "claim:10:b1",
     "comment:c3:true",
-    "move:11",
+    "move:11:b1",
   ]);
+});
+
+test("a failed comment releases the claim and keeps the successful write counted", async () => {
+  const actions = [];
+  let release = null;
+  let claimCalls = 0;
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      claimCalls += 1;
+      if (claimCalls > 1) {
+        release = command.action;
+        return { status: 200, json: { seq: 12 } };
+      }
+      return { status: 200, json: { seq: 11 } };
+    },
+    async comment() {
+      const error = new Error("comment.create -> 429");
+      error.status = 429;
+      throw error;
+    },
+    async move() {
+      throw new Error("move must not run after a failed comment");
+    },
+  };
+  const result = await performAgentCycle({
+    client,
+    boardId: "b1",
+    userId: "u1",
+    leaseMs: 60_000,
+    commentText: "probe",
+    onAction: (kind) => actions.push(kind),
+  });
+  assert.equal(result.failure.status, 429);
+  assert.equal(result.actions, 1);
+  assert.deepEqual(actions, ["write"]);
+  assert.equal(result.orphan, false);
+  assert.equal(release.claimedBy, null);
+  assert.equal(release.leaseUntil, null);
+});
+
+test("a move 409 releases the claim and retries a fresh cycle", async () => {
+  let moves = 0;
+  let releases = 0;
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) {
+        releases += 1;
+        return { status: 200, json: { seq: 15 } };
+      }
+      return { status: 200, json: { seq: 11 } };
+    },
+    async comment() {
+      return { status: 201 };
+    },
+    async move() {
+      moves += 1;
+      if (moves === 1) return { status: 409, json: {} };
+      return { status: 200, json: { seq: 12 } };
+    },
+  };
+  const result = await performAgentCycle({
+    client,
+    boardId: "b1",
+    userId: "u1",
+    leaseMs: 60_000,
+    commentText: "probe",
+  });
+  assert.equal(result.cycle, true);
+  assert.equal(result.conflicts, 1);
+  assert.equal(result.actions, 5);
+  assert.equal(releases, 1);
+  assert.equal(result.orphan, false);
+});
+
+test("a claim validation 400 is an error, not a lease conflict", async () => {
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim() {
+      const error = new Error("command.claim -> 400");
+      error.status = 400;
+      error.body = JSON.stringify({
+        message: "Invalid command (action.at): at is required",
+        field: "action.at",
+      });
+      throw error;
+    },
+    async comment() {
+      throw new Error("must not comment");
+    },
+    async move() {
+      throw new Error("must not move");
+    },
+  };
+  await assert.rejects(
+    performAgentCycle({
+      client,
+      boardId: "b1",
+      userId: "u1",
+      leaseMs: 60_000,
+      commentText: "probe",
+    }),
+    /command\.claim -> 400/,
+  );
+});
+
+test("a network failure during the move releases the claim", async () => {
+  let released = false;
+  const client = {
+    async readBoard() {
+      return { board: board(), seq: 10 };
+    },
+    async claim(_boardId, command) {
+      if (command.action.claimedBy === null) {
+        released = true;
+        return { status: 200, json: { seq: 12 } };
+      }
+      return { status: 200, json: { seq: 11 } };
+    },
+    async comment() {
+      return { status: 201 };
+    },
+    async move() {
+      throw new Error("fetch failed");
+    },
+  };
+  const result = await performAgentCycle({
+    client,
+    boardId: "b1",
+    userId: "u1",
+    leaseMs: 60_000,
+    commentText: "probe",
+  });
+  assert.equal(released, true);
+  assert.equal(result.actions, 2);
+  assert.match(result.failure.message, /fetch failed/);
 });
 
 test("jitter and PRNG helpers stay bounded and deterministic", () => {

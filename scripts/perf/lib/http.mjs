@@ -38,12 +38,14 @@ export class HttpClient {
     metrics,
     timeoutMs = 30_000,
     fetchImpl = fetch,
+    signal = undefined,
   }) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.token = token;
     this.metrics = metrics;
     this.timeoutMs = timeoutMs;
     this.fetch = fetchImpl;
+    this.signal = signal;
   }
 
   headers(extra = {}) {
@@ -52,6 +54,14 @@ export class HttpClient {
       ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
       ...extra,
     };
+  }
+
+  combinedSignal(extra) {
+    const signals = [];
+    if (this.signal !== undefined) signals.push(this.signal);
+    if (extra !== undefined) signals.push(extra);
+    if (signals.length === 0) return undefined;
+    return signals.length === 1 ? signals[0] : AbortSignal.any(signals);
   }
 
   async request(
@@ -63,12 +73,21 @@ export class HttpClient {
       headers = {},
       allowStatuses = [],
       timeoutMs = this.timeoutMs,
+      signal = undefined,
     } = {},
   ) {
     const started = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    timer.unref?.();
+    const timeoutController = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      timeoutController.abort();
+    }, timeoutMs);
+    const combined = this.combinedSignal(
+      signal === undefined
+        ? timeoutController.signal
+        : AbortSignal.any([signal, timeoutController.signal]),
+    );
     let response;
     let text;
     try {
@@ -79,12 +98,15 @@ export class HttpClient {
           ...headers,
         }),
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
+        signal: combined,
       });
       text = await response.text();
     } catch (error) {
       const elapsed = performance.now() - started;
-      this.metrics.recordRequest(operation, elapsed, 0);
+      const aborted =
+        !timedOut &&
+        (signal?.aborted === true || this.signal?.aborted === true);
+      this.metrics.recordRequest(operation, elapsed, aborted ? -1 : 0);
       throw error;
     } finally {
       clearTimeout(timer);
@@ -141,11 +163,17 @@ export class HttpClient {
       { timeoutMs: 120_000 },
     );
     const board = response.json;
-    const header = Number(response.headers.get("x-board-seq"));
-    const seq = Number.isFinite(header) ? header : Number(board?.seq ?? 0);
+    const headerText = response.headers.get("x-board-seq");
+    const header = headerText === null ? Number.NaN : Number(headerText);
+    const boardSeq = Number(board?.seq);
+    const seq = Number.isFinite(header)
+      ? header
+      : Number.isFinite(boardSeq)
+        ? boardSeq
+        : 0;
     return {
       board,
-      seq: Number.isFinite(seq) ? seq : 0,
+      seq,
       bytes: response.bytes,
       status: response.status,
     };
@@ -218,6 +246,7 @@ export class HttpClient {
   } = {}) {
     const controller = new AbortController();
     const signals = [controller.signal];
+    if (this.signal !== undefined) signals.push(this.signal);
     if (signal !== undefined) signals.push(signal);
     const combined =
       signals.length === 1 ? signals[0] : AbortSignal.any(signals);
@@ -307,7 +336,6 @@ export function sleep(ms, signal) {
   if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
     const timer = setTimeout(finish, Math.max(0, ms));
-    timer.unref?.();
     function finish() {
       clearTimeout(timer);
       signal?.removeEventListener("abort", finish);

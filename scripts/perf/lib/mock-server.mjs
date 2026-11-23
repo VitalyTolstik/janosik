@@ -1,11 +1,18 @@
 // TASK-200.1 — deterministic mock API for `npm run perf:smoke`.
 //
-// Implements only the routes the harness uses, with real-ish CAS behaviour
-// (409 on a stale ifMatch or a card lease held by another user) so the agent
-// loop, retries and 409 counters are exercised without Docker or Postgres.
+// Implements only the routes the harness uses, but it validates the same wire
+// fields the real command endpoint validates and mirrors its status codes:
+// a claim-lease conflict is `400`, a stale `ifMatch` is `409`. This is what
+// makes a mock run catch a missing `action.at`/`commandId` before a real one
+// spends a dedicated host discovering it.
 
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
+
+const MAX_ID_LENGTH = 128;
+const MAX_COMMAND_ID = 64;
+const CLAIM_LEASE_MAX_MS = 24 * 60 * 60 * 1000;
+const COMMAND_SKEW_MS = 5 * 60 * 1000;
 
 export async function startMockServer({
   port = 0,
@@ -19,14 +26,27 @@ export async function startMockServer({
     boards.set(board.id, board);
   }
   const sseClients = new Set();
-  const stats = { requests: 0, commands: 0, comments: 0, sseOpened: 0 };
+  const commands = new Map();
+  const comments = new Map();
+  const stats = {
+    requests: 0,
+    commands: 0,
+    comments: 0,
+    sseOpened: 0,
+    statuses: {},
+  };
 
   const server = createServer((request, response) => {
     handle(request, response).catch((error) => {
-      response.writeHead(500, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ message: String(error) }));
+      send(response, 500, { message: String(error) });
     });
   });
+
+  function send(response, status, body) {
+    stats.statuses[String(status)] = (stats.statuses[String(status)] ?? 0) + 1;
+    response.writeHead(status, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(body));
+  }
 
   async function handle(request, response) {
     stats.requests += 1;
@@ -36,26 +56,26 @@ export async function startMockServer({
     );
     const path = url.pathname.replace(/^\/api\/v1/, "") || "/";
     if (path === "/health") {
-      return json(response, 200, { status: "ok", mock: true });
+      return send(response, 200, { status: "ok", mock: true });
     }
     if (path === "/__mock/stats") {
-      return json(response, 200, stats);
+      return send(response, 200, { ...stats, statuses: { ...stats.statuses } });
     }
     const authorization = request.headers.authorization;
     if (
       typeof authorization !== "string" ||
       !authorization.startsWith("Bearer ")
     ) {
-      return json(response, 401, { message: "missing token" });
+      return send(response, 401, { message: "missing token" });
     }
     const token = authorization.slice("Bearer ".length);
     const user = mockUser(token);
 
     if (path === "/auth/me") {
-      return json(response, 200, user);
+      return send(response, 200, user);
     }
     if (path === "/boards") {
-      return json(
+      return send(
         response,
         200,
         [...boards.values()].map((board) => ({
@@ -79,35 +99,66 @@ export async function startMockServer({
         }
       }
       if (card === undefined) {
-        return json(response, 404, { message: "unknown card" });
+        return send(response, 400, {
+          message: "unknown card",
+          field: "cardId",
+        });
+      }
+      if (typeof body?.text !== "string" || body.text.trim() === "") {
+        return send(response, 400, {
+          message: "text is required",
+          field: "text",
+        });
+      }
+      const key =
+        request.headers["idempotency-key"] ??
+        (typeof body.commandId === "string" ? body.commandId : undefined);
+      if (typeof key === "string" && key !== "") {
+        const previous = comments.get(key);
+        if (previous !== undefined) {
+          if (previous.text !== body.text) {
+            return send(response, 409, {
+              message: "comment idempotency key is in use",
+              field: "commandId",
+              conflict: "id",
+            });
+          }
+          return send(response, previous.status, previous.body);
+        }
       }
       stats.comments += 1;
-      return json(response, 201, {
+      const payload = {
         id: `comment-${stats.comments}`,
         cardId: card.id,
         text: body.text,
         kind: body.kind ?? "note",
-      });
+      };
+      if (typeof key === "string" && key !== "") {
+        comments.set(key, { text: body.text, status: 201, body: payload });
+      }
+      return send(response, 201, payload);
     }
 
     const boardMatch = /^\/boards\/([^/]+)(?:\/(.*))?$/.exec(path);
-    if (boardMatch === null)
-      return json(response, 404, { message: "not found" });
+    if (boardMatch === null) {
+      return send(response, 404, { message: "not found" });
+    }
     const board = boards.get(decodeURIComponent(boardMatch[1]));
     if (board === undefined) {
-      return json(response, 404, { message: "unknown board" });
+      return send(response, 404, { message: "unknown board" });
     }
     const rest = boardMatch[2] ?? "";
     if (rest === "") {
       response.setHeader("X-Board-Seq", String(board.seq));
-      return json(response, 200, board.public);
+      return send(response, 200, board.public);
     }
     if (rest === "activity") {
-      return json(response, 200, { items: [], nextCursor: null });
+      return send(response, 200, { items: [], nextCursor: null });
     }
     if (rest === "ready") {
-      return json(response, 404, {
-        message: "ready endpoint not implemented (200.2)",
+      return send(response, 200, {
+        items: readyCards(board),
+        nextCursor: null,
       });
     }
     if (rest === "events") {
@@ -116,40 +167,113 @@ export async function startMockServer({
     if (rest === "commands" && request.method === "POST") {
       const body = await readJson(request);
       stats.commands += 1;
-      if (body.ifMatch !== undefined && Number(body.ifMatch) !== board.seq) {
-        return json(response, 409, {
-          message: "board seq conflict",
-          conflict: "version",
-        });
-      }
-      const error = applyAction(board, body.action, user);
-      if (error !== null) return json(response, 409, error);
-      board.seq += 1;
-      return json(response, 200, { seq: board.seq, versions: {} });
+      const result = applyCommand(board, body, user);
+      return send(response, result.status, result.body);
     }
-    return json(response, 404, { message: "not found" });
+    return send(response, 404, { message: "not found" });
   }
 
-  function applyAction(board, action, user) {
-    if (action === null || typeof action !== "object") {
-      return { message: "invalid action" };
+  function applyCommand(board, body, user) {
+    const problem = validateCommandEnvelope(body);
+    if (problem !== null) {
+      return { status: 400, body: problem };
     }
+    const { at: _at, ...fingerprintAction } = body.action;
+    const fingerprint = JSON.stringify({
+      ...fingerprintAction,
+      boardId: board.id,
+    });
+    const previous = commands.get(body.commandId);
+    if (previous !== undefined) {
+      if (previous.fingerprint !== fingerprint) {
+        return {
+          status: 409,
+          body: {
+            message: "commandId already used with a different payload",
+            field: "commandId",
+            conflict: "id",
+            code: "idempotency_conflict",
+          },
+        };
+      }
+      return { status: previous.status, body: previous.body };
+    }
+    if (body.ifMatch !== undefined && Number(body.ifMatch) !== board.seq) {
+      return {
+        status: 409,
+        body: { message: "board seq conflict", conflict: "version" },
+      };
+    }
+    if (body.action.boardId !== board.id) {
+      return {
+        status: 400,
+        body: {
+          message: "action.boardId must name the routed board",
+          field: "action.boardId",
+        },
+      };
+    }
+    const actionError = applyAction(board, body.action, user);
+    if (actionError !== null) {
+      return { status: actionError.status, body: actionError.body };
+    }
+    board.seq += 1;
+    const result = {
+      status: 200,
+      body: {
+        seq: board.seq,
+        versions: {
+          [`card:${body.action.cardId}`]: Date.now(),
+          [`board:${board.id}`]: Date.now(),
+        },
+      },
+    };
+    commands.set(body.commandId, { fingerprint, ...result });
+    return result;
+  }
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, resolve);
+  });
+  const actual = actualPort(server, port);
+  return {
+    url: `http://${host}:${actual}`,
+    baseUrl: `http://${host}:${actual}/api/v1`,
+    port: actual,
+    stats: () => ({ ...stats, statuses: { ...stats.statuses } }),
+    close: async () => {
+      for (const response of sseClients) response.end();
+      sseClients.clear();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+
+  function applyAction(board, action, user) {
     const card = board.cards[action.cardId];
-    if (card === undefined) return { message: "unknown card" };
+    if (card === undefined) {
+      return {
+        status: 400,
+        body: { message: "unknown card", field: "action.cardId" },
+      };
+    }
     if (action.type === "CLAIM_CARD") {
       const live =
         typeof card.claimedBy === "string" &&
         typeof card.leaseUntil === "number" &&
         card.leaseUntil > Date.now();
-      if (live && card.claimedBy !== user.id) {
-        return { message: "card is claimed by another member" };
-      }
       if (action.claimedBy === null) {
+        if (live && card.claimedBy !== user.id) {
+          return claimConflict(card);
+        }
         delete card.claimedBy;
         delete card.leaseUntil;
       } else {
-        card.claimedBy = user.id;
-        card.leaseUntil = Number(action.leaseUntil);
+        if (live && card.claimedBy !== user.id) {
+          return claimConflict(card);
+        }
+        card.claimedBy = action.claimedBy;
+        card.leaseUntil = action.leaseUntil;
       }
       card.updatedAt = Date.now();
       return null;
@@ -162,7 +286,19 @@ export async function startMockServer({
         (column) => column.id === action.toColumnId,
       );
       if (from === undefined || to === undefined) {
-        return { message: "unknown column" };
+        return {
+          status: 400,
+          body: { message: "unknown column", field: "action.toColumnId" },
+        };
+      }
+      if (!from.cardIds.includes(card.id)) {
+        return {
+          status: 400,
+          body: {
+            message: "card is not in fromColumnId",
+            field: "action.fromColumnId",
+          },
+        };
       }
       from.cardIds = from.cardIds.filter((id) => id !== card.id);
       const toIndex = Math.min(
@@ -173,7 +309,20 @@ export async function startMockServer({
       card.updatedAt = Date.now();
       return null;
     }
-    return null;
+    return {
+      status: 400,
+      body: { message: "unsupported action type", field: "action.type" },
+    };
+  }
+
+  function claimConflict(card) {
+    return {
+      status: 400,
+      body: {
+        message: `Card is claimed by another member until ${new Date(card.leaseUntil).toISOString()}`,
+        field: "action.claimedBy",
+      },
+    };
   }
 
   function openSse(request, response, board) {
@@ -198,25 +347,134 @@ export async function startMockServer({
     request.on("close", close);
     response.on("close", close);
   }
+}
 
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, resolve);
-  });
+function validateCommandEnvelope(body) {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return { message: "body must be an object", field: "body" };
+  }
+  if (
+    typeof body.commandId !== "string" ||
+    body.commandId.trim() === "" ||
+    body.commandId.length > MAX_COMMAND_ID
+  ) {
+    return {
+      message: "commandId is required (max 64 chars)",
+      field: "commandId",
+    };
+  }
+  if (
+    body.ifMatch !== undefined &&
+    (!Number.isInteger(body.ifMatch) || body.ifMatch < 0)
+  ) {
+    return {
+      message: "ifMatch must be a non-negative integer",
+      field: "ifMatch",
+    };
+  }
+  const action = body.action;
+  if (action === null || typeof action !== "object" || Array.isArray(action)) {
+    return { message: "action is required", field: "action" };
+  }
+  if (typeof action.type !== "string" || action.type === "") {
+    return { message: "type is required", field: "action.type" };
+  }
+  if (!["CLAIM_CARD", "MOVE_CARD"].includes(action.type)) {
+    return {
+      message: "unsupported action type",
+      field: "action.type",
+    };
+  }
+  if (!Number.isFinite(action.at)) {
+    return { message: "at is required", field: "action.at" };
+  }
+  if (Math.abs(action.at - Date.now()) > COMMAND_SKEW_MS) {
+    return {
+      message: "at is too far from the server clock",
+      field: "action.at",
+    };
+  }
+  if (!idField(action.cardId)) {
+    return { message: "cardId is required", field: "action.cardId" };
+  }
+  if (action.type === "CLAIM_CARD") {
+    if (action.claimedBy === null) {
+      if (action.leaseUntil !== null && action.leaseUntil !== undefined) {
+        return {
+          message: "leaseUntil must be null when releasing",
+          field: "action.leaseUntil",
+        };
+      }
+    } else if (!idField(action.claimedBy)) {
+      return {
+        message: "claimedBy must be null or a user id",
+        field: "action.claimedBy",
+      };
+    } else if (!Number.isFinite(action.leaseUntil)) {
+      return {
+        message: "leaseUntil is required when claiming",
+        field: "action.leaseUntil",
+      };
+    } else if (action.leaseUntil > action.at + CLAIM_LEASE_MAX_MS) {
+      return { message: "lease is too long", field: "action.leaseUntil" };
+    }
+  }
+  if (action.type === "MOVE_CARD") {
+    for (const field of ["fromColumnId", "toColumnId"]) {
+      if (!idField(action[field])) {
+        return { message: `${field} is required`, field: `action.${field}` };
+      }
+    }
+    for (const field of ["fromIndex", "toIndex"]) {
+      if (!Number.isInteger(action[field]) || action[field] < 0) {
+        return {
+          message: `${field} must be a non-negative integer`,
+          field: `action.${field}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function idField(value) {
+  return (
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    value.length <= MAX_ID_LENGTH &&
+    value !== "__proto__"
+  );
+}
+
+function actualPort(server, fallback) {
   const address = server.address();
-  const actualPort =
-    typeof address === "object" && address ? address.port : port;
-  return {
-    url: `http://${host}:${actualPort}`,
-    baseUrl: `http://${host}:${actualPort}/api/v1`,
-    port: actualPort,
-    stats: () => ({ ...stats }),
-    close: async () => {
-      for (const response of sseClients) response.end();
-      sseClients.clear();
-      await new Promise((resolve) => server.close(resolve));
-    },
-  };
+  return typeof address === "object" && address ? address.port : fallback;
+}
+
+function readyCards(board) {
+  const done = board.public.columns[board.public.columns.length - 1];
+  const cards = [];
+  for (const column of board.public.columns) {
+    if (column.id === done?.id) continue;
+    for (const cardId of column.cardIds) {
+      const card = board.cards[cardId];
+      if (card === undefined) continue;
+      if (
+        typeof card.claimedBy === "string" &&
+        typeof card.leaseUntil === "number" &&
+        card.leaseUntil > Date.now()
+      ) {
+        continue;
+      }
+      cards.push({
+        id: card.id,
+        title: card.title,
+        boardId: board.id,
+        column: column.title,
+      });
+    }
+  }
+  return cards;
 }
 
 function createBoard(index, cardCount) {
@@ -258,11 +516,6 @@ function mockUser(token) {
     email: `${digest}@perf.invalid`,
     displayName: `Perf agent ${digest.slice(0, 4)}`,
   };
-}
-
-function json(response, status, body) {
-  response.writeHead(status, { "Content-Type": "application/json" });
-  response.end(JSON.stringify(body));
 }
 
 function readJson(request) {

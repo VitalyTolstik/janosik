@@ -67,10 +67,35 @@ function numericStatus(status) {
   return Number.isInteger(status) ? status : null;
 }
 
+export function statusCounts(statuses) {
+  let client4xx = 0;
+  let server5xx = 0;
+  let network = 0;
+  let aborted = 0;
+  let auth401403 = 0;
+  let badRequest400 = 0;
+  for (const [key, count] of Object.entries(statuses)) {
+    const status = Number(key);
+    if (status === 0) network += count;
+    else if (status === -1) aborted += count;
+    else if (status >= 500) server5xx += count;
+    else if (status >= 400) {
+      client4xx += count;
+      if (status === 400) badRequest400 += count;
+      if (status === 401 || status === 403) auth401403 += count;
+    }
+  }
+  return { client4xx, server5xx, network, aborted, auth401403, badRequest400 };
+}
+
+function rate(count, requests) {
+  return requests > 0 ? round(count / requests, 5) : 0;
+}
+
 /**
  * Per-scenario metrics collector. Requests are recorded once (including
- * network failures, which use status 0) so rates stay honest even when the
- * generator itself starts failing.
+ * network failures, which use status 0, and deadline aborts, which use -1) so
+ * rates stay honest even when the generator itself starts failing.
  */
 export class RunMetrics {
   constructor(id) {
@@ -79,9 +104,16 @@ export class RunMetrics {
     this.bytes = 0;
     this.actions = 0;
     this.cycles = 0;
+    this.noWork = 0;
+    this.exhausted = 0;
+    this.stranded = 0;
+    this.recycled = 0;
     this.durations = [];
     this.operations = new Map();
     this.statuses = new Map();
+    this.activity = { reads: 0, writes: 0, comments: 0 };
+    this.toolCalls = 0;
+    this.tools = new Map();
     this.sse = {
       opened: 0,
       closed: 0,
@@ -90,6 +122,8 @@ export class RunMetrics {
       maxConcurrent: 0,
       frames: 0,
       bytes: 0,
+      rampObservedMs: null,
+      holdObservedMs: null,
     };
   }
 
@@ -102,7 +136,7 @@ export class RunMetrics {
     return entry;
   }
 
-  /** `status` 0 means the request never produced an HTTP answer. */
+  /** `status` 0 means no HTTP answer; `-1` means a deadline abort. */
   recordRequest(name, durationMs, status, bytes = 0) {
     const entry = this.operation(name);
     const duration = Number.isFinite(durationMs) ? durationMs : 0;
@@ -118,12 +152,46 @@ export class RunMetrics {
     this.statuses.set(key, (this.statuses.get(key) ?? 0) + 1);
   }
 
-  recordAction(count = 1) {
+  recordAction(count = 1, kind = null) {
     this.actions += count;
+    void kind;
+  }
+
+  recordActivity(kind) {
+    const key =
+      kind === "read"
+        ? "reads"
+        : kind === "write"
+          ? "writes"
+          : kind === "comment"
+            ? "comments"
+            : null;
+    if (key !== null) this.activity[key] += 1;
   }
 
   recordCycle() {
     this.cycles += 1;
+  }
+
+  recordNoWork({ exhausted = false, stranded = false } = {}) {
+    this.noWork += 1;
+    if (exhausted) this.exhausted += 1;
+    if (stranded) this.stranded += 1;
+  }
+
+  recordRecycled(count = 1) {
+    this.recycled += count;
+  }
+
+  recordTool(name, durationMs) {
+    this.toolCalls += 1;
+    let entry = this.tools.get(name);
+    if (entry === undefined) {
+      entry = { durations: [], count: 0 };
+      this.tools.set(name, entry);
+    }
+    entry.count += 1;
+    entry.durations.push(Number.isFinite(durationMs) ? durationMs : 0);
   }
 
   recordSseOpen(durationMs, status) {
@@ -171,6 +239,17 @@ export class RunMetrics {
     const statuses = sortedStatuses(this.statuses);
     const counts = statusCounts(statuses);
     const totalErrors = counts.client4xx + counts.server5xx + counts.network;
+    const activityTotal =
+      this.activity.reads + this.activity.writes + this.activity.comments;
+    const tools = {};
+    for (const [name, entry] of [...this.tools.entries()].sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    )) {
+      tools[name] = {
+        calls: entry.count,
+        latency: summarizeNumbers(entry.durations),
+      };
+    }
     return {
       id: this.id,
       durationMs,
@@ -179,6 +258,12 @@ export class RunMetrics {
       bytes: this.bytes,
       actions: this.actions,
       cycles: this.cycles,
+      noWork: this.noWork,
+      exhausted: this.exhausted,
+      stranded: this.stranded,
+      recycled: this.recycled,
+      toolCalls: this.toolCalls,
+      tools,
       actionsPerSecond: actionsPerSecond(this.actions, durationMs),
       requestsPerAgentPerMinute: requestsPerAgentPerMinute(
         this.requests,
@@ -187,15 +272,43 @@ export class RunMetrics {
       ),
       bytesPerRequest:
         this.requests > 0 ? round(this.bytes / this.requests, 1) : null,
+      activity: {
+        ...this.activity,
+        total: activityTotal,
+        mix:
+          activityTotal > 0
+            ? {
+                reads: round(this.activity.reads / activityTotal, 4),
+                writes: round(this.activity.writes / activityTotal, 4),
+                comments: round(this.activity.comments / activityTotal, 4),
+              }
+            : null,
+      },
       statuses,
       errors: {
         total: totalErrors,
-        rate: this.requests > 0 ? round(totalErrors / this.requests, 5) : 0,
+        rate: rate(totalErrors, this.requests),
         client4xx: counts.client4xx,
         server5xx: counts.server5xx,
         network: counts.network,
+        aborted: counts.aborted,
+        auth401403: counts.auth401403,
+        badRequest400: counts.badRequest400,
         conflict409: statuses["409"] ?? 0,
         rateLimited429: statuses["429"] ?? 0,
+        other4xx:
+          counts.client4xx -
+          (statuses["409"] ?? 0) -
+          (statuses["429"] ?? 0) -
+          counts.auth401403 -
+          counts.badRequest400,
+        rates: {
+          client4xx: rate(counts.client4xx, this.requests),
+          server5xx: rate(counts.server5xx, this.requests),
+          network: rate(counts.network, this.requests),
+          conflict409: rate(statuses["409"] ?? 0, this.requests),
+          rateLimited429: rate(statuses["429"] ?? 0, this.requests),
+        },
       },
       latency: summarizeNumbers(this.durations),
       operations,
@@ -210,17 +323,4 @@ function sortedStatuses(map) {
     output[String(key)] = map.get(key);
   }
   return output;
-}
-
-export function statusCounts(statuses) {
-  let client4xx = 0;
-  let server5xx = 0;
-  let network = 0;
-  for (const [key, count] of Object.entries(statuses)) {
-    const status = Number(key);
-    if (status === 0) network += count;
-    else if (status >= 500) server5xx += count;
-    else if (status >= 400) client4xx += count;
-  }
-  return { client4xx, server5xx, network };
 }

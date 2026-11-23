@@ -1,18 +1,97 @@
-// TASK-200.1 — agent behaviour: idle polling and claim → comment → move.
+// TASK-200.1 — agent behaviour: idle polling, claim → comment → move and the
+// S3 mixed read/write/comment profile.
 
 import { randomUUID } from "node:crypto";
 import { HttpError, sleep } from "./http.mjs";
 
-const DONE_TITLE = /\b(done|completed?|готово|выполнено|завершено)\b/i;
+const DONE_WORDS = new Set([
+  "done",
+  "complete",
+  "completed",
+  "finished",
+  "готово",
+  "выполнено",
+  "завершено",
+]);
 
-/** Last column, or the first one whose title looks like Done. */
+/** Unicode-aware Done-title test; `\b` does not work next to Cyrillic. */
+export function isDoneTitle(title) {
+  return String(title ?? "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .some((word) => DONE_WORDS.has(word));
+}
+
+/** First column whose title looks like Done, else the last column. */
 export function findDoneColumn(board) {
   const columns = Array.isArray(board?.columns) ? board.columns : [];
   return (
-    columns.find((column) => DONE_TITLE.test(String(column?.title ?? ""))) ??
+    columns.find((column) => isDoneTitle(column?.title)) ??
     columns[columns.length - 1] ??
     null
   );
+}
+
+function hasLiveClaim(card, now) {
+  return (
+    typeof card?.claimedBy === "string" &&
+    typeof card?.leaseUntil === "number" &&
+    card.leaseUntil > now
+  );
+}
+
+/**
+ * Describe the work available on a board. `exhausted` means no card is left
+ * outside Done; `stranded` means cards exist but every one is under a live
+ * lease. Both are reported so a fast-draining board cannot look like a
+ * successful long run.
+ */
+export function boardWorkState(board, { now = Date.now() } = {}) {
+  const columns = Array.isArray(board?.columns) ? board.columns : [];
+  const done = findDoneColumn(board);
+  if (done === null || columns.length < 2) {
+    return {
+      doneColumn: done,
+      candidates: [],
+      outside: 0,
+      liveLeases: 0,
+      exhausted: true,
+      stranded: false,
+    };
+  }
+  const cards = board?.cards ?? {};
+  const candidates = [];
+  let outside = 0;
+  let liveLeases = 0;
+  for (const column of columns) {
+    if (done !== null && column.id === done.id) continue;
+    const cardIds = Array.isArray(column.cardIds) ? column.cardIds : [];
+    for (let index = 0; index < cardIds.length; index += 1) {
+      const card = cards[cardIds[index]];
+      if (card === undefined || card === null) continue;
+      outside += 1;
+      if (hasLiveClaim(card, now)) {
+        liveLeases += 1;
+        continue;
+      }
+      candidates.push({
+        cardId: card.id,
+        title: card.title,
+        fromColumnId: column.id,
+        fromIndex: index,
+        toColumnId: done?.id,
+        toIndex: Array.isArray(done?.cardIds) ? done.cardIds.length : 0,
+      });
+    }
+  }
+  return {
+    doneColumn: done,
+    candidates,
+    outside,
+    liveLeases,
+    exhausted: outside === 0,
+    stranded: outside > 0 && candidates.length === 0,
+  };
 }
 
 /**
@@ -20,43 +99,60 @@ export function findDoneColumn(board) {
  * candidate list so a swarm does not send every agent at the first card.
  */
 export function pickWork(board, { now = Date.now(), startIndex = 0 } = {}) {
-  const columns = Array.isArray(board?.columns) ? board.columns : [];
-  const done = findDoneColumn(board);
-  if (done === null || columns.length < 2) return null;
-  const cards = board?.cards ?? {};
-  const candidates = [];
-  for (const column of columns) {
-    if (column.id === done.id) continue;
-    const cardIds = Array.isArray(column.cardIds) ? column.cardIds : [];
-    for (let index = 0; index < cardIds.length; index += 1) {
-      const card = cards[cardIds[index]];
-      if (card === undefined || card === null) continue;
-      const leased =
-        typeof card.claimedBy === "string" &&
-        typeof card.leaseUntil === "number" &&
-        card.leaseUntil > now;
-      if (leased) continue;
-      candidates.push({
-        cardId: card.id,
-        title: card.title,
-        fromColumnId: column.id,
-        fromIndex: index,
-        toColumnId: done.id,
-        toIndex: Array.isArray(done.cardIds) ? done.cardIds.length : 0,
-      });
-    }
-  }
+  const { candidates } = boardWorkState(board, { now });
   if (candidates.length === 0) return null;
   return candidates[Math.abs(startIndex) % candidates.length];
 }
 
-export function buildClaimAction({ cardId, userId, leaseUntil }) {
-  return { type: "CLAIM_CARD", cardId, claimedBy: userId, leaseUntil };
+/** A card a comment can be attached to (Done cards are not written to). */
+export function pickCommentCard(board, { startIndex = 0 } = {}) {
+  const columns = Array.isArray(board?.columns) ? board.columns : [];
+  const done = findDoneColumn(board);
+  const cards = board?.cards ?? {};
+  const ids = [];
+  for (const column of columns) {
+    if (done !== null && column.id === done.id) continue;
+    for (const cardId of Array.isArray(column.cardIds) ? column.cardIds : []) {
+      if (cards[cardId] !== undefined) ids.push(cardId);
+    }
+  }
+  if (ids.length === 0) return null;
+  return ids[Math.abs(startIndex) % ids.length];
 }
 
-export function buildMoveAction(work) {
+export function buildClaimAction({
+  cardId,
+  userId,
+  leaseUntil,
+  boardId,
+  at = Date.now(),
+}) {
+  return {
+    type: "CLAIM_CARD",
+    at,
+    ...(boardId !== undefined ? { boardId } : {}),
+    cardId,
+    claimedBy: userId,
+    leaseUntil,
+  };
+}
+
+export function buildReleaseAction({ cardId, boardId, at = Date.now() }) {
+  return {
+    type: "CLAIM_CARD",
+    at,
+    ...(boardId !== undefined ? { boardId } : {}),
+    cardId,
+    claimedBy: null,
+    leaseUntil: null,
+  };
+}
+
+export function buildMoveAction(work, { boardId, at = Date.now() } = {}) {
   return {
     type: "MOVE_CARD",
+    at,
+    ...(boardId !== undefined ? { boardId } : {}),
     cardId: work.cardId,
     fromColumnId: work.fromColumnId,
     fromIndex: work.fromIndex,
@@ -74,12 +170,60 @@ export function newCommandId(prefix) {
 }
 
 function statusOf(error) {
-  return error instanceof HttpError ? error.status : 0;
+  return Number.isInteger(error?.status) ? error.status : 0;
+}
+
+export function isAuthError(error) {
+  const status = statusOf(error);
+  return status === 401 || status === 403;
+}
+
+function seqOf(response, fallback) {
+  const seq = Number(response?.json?.seq);
+  return Number.isFinite(seq) ? seq : fallback;
+}
+
+function isLeaseConflict(error) {
+  if (statusOf(error) !== 400) return false;
+  const body = String(error?.body ?? "");
+  return (
+    !/Invalid command|Unsupported/i.test(body) &&
+    /claimed by another|live claim|lease/i.test(body)
+  );
+}
+
+/** Release a lease. Returns true when the API accepted the release. */
+export async function releaseClaim({ client, boardId, cardId }) {
+  try {
+    await client.claim(boardId, {
+      commandId: newCommandId("release"),
+      action: buildReleaseAction({ cardId, boardId, at: Date.now() }),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function failureResult({ error, actions, conflicts, orphan }) {
+  return {
+    idle: false,
+    cycle: false,
+    conflicts,
+    actions,
+    failure: error,
+    orphan,
+    cardId: null,
+  };
 }
 
 /**
- * One `read → claim → comment → move`. A 409 is a measured outcome, not a
- * crash: the cycle rereads the board and retries once (`maxConflicts`).
+ * One `read → claim → comment → move`.
+ *
+ * A successful write is reported through `onAction` immediately, so a later
+ * 429/5xx cannot erase it from the action count. A failed comment or move
+ * releases the claim before the cycle returns; a 409 releases the claim and
+ * starts a fresh cycle instead of leaving an orphan lease behind.
  */
 export async function performAgentCycle({
   client,
@@ -89,56 +233,189 @@ export async function performAgentCycle({
   commentText,
   maxConflicts = 2,
   startIndex = 0,
+  onAction,
+  withComment = true,
 } = {}) {
   let conflicts = 0;
   let actions = 0;
+  const record = (kind) => {
+    actions += 1;
+    onAction?.(kind);
+  };
+
   for (let attempt = 0; attempt <= maxConflicts; attempt += 1) {
     const { board, seq } = await client.readBoard(boardId);
     const work = pickWork(board, { startIndex: startIndex + attempt });
-    if (work === null) return { idle: true, conflicts };
-    const claim = await client.claim(boardId, {
-      commandId: newCommandId("claim"),
-      action: buildClaimAction({
-        cardId: work.cardId,
-        userId,
-        leaseUntil: Date.now() + leaseMs,
-      }),
-      ifMatch: seq,
-    });
+    if (work === null) {
+      const state = boardWorkState(board);
+      return {
+        idle: true,
+        cycle: false,
+        conflicts,
+        actions,
+        exhausted: state.exhausted,
+        stranded: state.stranded,
+      };
+    }
+
+    const claimCommandId = newCommandId("claim");
+    let claim;
+    try {
+      claim = await client.claim(boardId, {
+        commandId: claimCommandId,
+        action: buildClaimAction({
+          cardId: work.cardId,
+          userId,
+          leaseUntil: Date.now() + leaseMs,
+          boardId,
+          at: Date.now(),
+        }),
+        ifMatch: seq,
+      });
+    } catch (error) {
+      if (statusOf(error) === 409 || isLeaseConflict(error)) {
+        conflicts += 1;
+        continue;
+      }
+      throw error;
+    }
     if (claim.status === 409) {
       conflicts += 1;
       continue;
     }
-    actions += 1;
-    const claimSeq = Number(claim.json?.seq ?? seq);
+    record("write");
+    const claimSeq = seqOf(claim, seq);
 
-    const commandId = newCommandId("comment");
-    await client.comment(
-      work.cardId,
-      buildCommentBody({ text: commentText, commandId }),
-      { idempotencyKey: commandId },
-    );
-    actions += 1;
+    if (withComment) {
+      const commandId = newCommandId("comment");
+      try {
+        await client.comment(
+          work.cardId,
+          buildCommentBody({ text: commentText, commandId }),
+          { idempotencyKey: commandId },
+        );
+      } catch (error) {
+        const released = await releaseClaim({
+          client,
+          boardId,
+          cardId: work.cardId,
+        });
+        return failureResult({
+          error,
+          actions,
+          conflicts,
+          orphan: !released,
+        });
+      }
+      record("comment");
+    }
 
-    const move = await client.move(boardId, {
-      commandId: newCommandId("move"),
-      action: buildMoveAction(work),
-      ifMatch: claimSeq,
-    });
+    let move;
+    try {
+      move = await client.move(boardId, {
+        commandId: newCommandId("move"),
+        action: buildMoveAction(work, { boardId, at: Date.now() }),
+        ifMatch: claimSeq,
+      });
+    } catch (error) {
+      const released = await releaseClaim({
+        client,
+        boardId,
+        cardId: work.cardId,
+      });
+      if (statusOf(error) === 409) {
+        conflicts += 1;
+        if (released) continue;
+      }
+      return failureResult({
+        error,
+        actions,
+        conflicts,
+        orphan: !released,
+      });
+    }
     if (move.status === 409) {
       conflicts += 1;
-      continue;
+      const released = await releaseClaim({
+        client,
+        boardId,
+        cardId: work.cardId,
+      });
+      if (released) continue;
+      return failureResult({
+        error: new HttpError({
+          operation: "command.move",
+          path: `/boards/${boardId}/commands`,
+          status: 409,
+          body: move.text,
+        }),
+        actions,
+        conflicts,
+        orphan: true,
+      });
     }
-    actions += 1;
+    record("write");
     return {
       idle: false,
       cycle: true,
       conflicts,
       actions,
       cardId: work.cardId,
+      orphan: false,
     };
   }
-  return { idle: false, cycle: false, conflicts, actions };
+  return {
+    idle: false,
+    cycle: false,
+    conflicts,
+    actions,
+    exhausted: false,
+    stranded: false,
+  };
+}
+
+/** S3 write beat: claim + move without a comment. */
+export async function performWriteBeat(options) {
+  return performAgentCycle({ ...options, withComment: false });
+}
+
+/** S3 comment beat: post one comment; no claim is needed. */
+export async function performCommentBeat({
+  client,
+  boardId,
+  startIndex = 0,
+  commentText,
+  onAction,
+}) {
+  const { board } = await client.readBoard(boardId);
+  const cardId = pickCommentCard(board, { startIndex });
+  if (cardId === null) {
+    const state = boardWorkState(board);
+    return {
+      idle: true,
+      cycle: false,
+      actions: 0,
+      exhausted: state.exhausted,
+      stranded: state.stranded,
+    };
+  }
+  const commandId = newCommandId("comment");
+  await client.comment(
+    cardId,
+    buildCommentBody({ text: commentText, commandId }),
+    { idempotencyKey: commandId },
+  );
+  onAction?.("comment");
+  return { idle: false, cycle: true, actions: 1, cardId };
+}
+
+function pickKind(random, mix) {
+  const reads = mix?.reads ?? 0.6;
+  const writes = mix?.writes ?? 0.3;
+  const roll = random();
+  if (roll < reads) return "read";
+  if (roll < reads + writes) return "write";
+  return "comment";
 }
 
 /** Deterministic PRNG so a run can be replayed with the same jitter. */
@@ -167,10 +444,26 @@ async function idleOnce(client, boardId, endpoint) {
   return true;
 }
 
+async function afterCycle({ deadline, config, random, cycleStarted, signal }) {
+  const elapsed = Date.now() - cycleStarted;
+  const delay = jitteredDelay(config.cadenceMs, config.jitter ?? 0, random);
+  if (elapsed < delay) await sleep(delay - elapsed, signal);
+  void deadline;
+}
+
+async function waitForStart(startAt, startDelayMs, signal) {
+  if (startAt !== undefined) {
+    const wait = startAt - Date.now();
+    if (wait > 0) await sleep(wait, signal);
+    return;
+  }
+  if (startDelayMs > 0) await sleep(startDelayMs, signal);
+}
+
 /**
- * Run one simulated agent until `deadline`. Errors are counted by the HTTP
+ * Run one simulated agent until the deadline. Errors are counted by the HTTP
  * client and reported through `onError`; one failed cycle never stops the
- * swarm, so a run can measure a 5xx storm instead of dying on the first one.
+ * swarm, so a run measures a 5xx storm instead of dying on the first one.
  */
 export async function runAgentLoop({
   client,
@@ -184,9 +477,11 @@ export async function runAgentLoop({
   metrics,
   random,
   startDelayMs = 0,
+  startAt = undefined,
   onError,
+  onNoWork,
 }) {
-  if (startDelayMs > 0) await sleep(startDelayMs, signal);
+  await waitForStart(startAt, startDelayMs, signal);
   let readyFallback = false;
   while (!signal.aborted && Date.now() < deadline) {
     const cycleStarted = Date.now();
@@ -207,26 +502,129 @@ export async function runAgentLoop({
           leaseMs: config.leaseMs,
           commentText: `TASK-200.1 perf probe (${config.id})`,
           startIndex: agentIndex,
+          onAction: (kind) => metrics?.recordAction(1, kind),
         });
-        if (!result.idle) {
-          if (result.actions > 0) metrics.recordAction(result.actions);
-          if (result.cycle) metrics.recordCycle();
+        if (result.idle) {
+          const recycled = (await onNoWork?.(result)) === true;
+          if (recycled) continue;
+          metrics?.recordNoWork({
+            exhausted: result.exhausted === true,
+            stranded: result.stranded === true,
+          });
+        } else {
+          if (result.failure !== undefined) {
+            const fatal = isAuthError(result.failure);
+            onError?.({
+              agentIndex,
+              boardId,
+              error: result.failure,
+              fatal,
+              orphan: result.orphan === true,
+            });
+            if (fatal) return;
+          }
+          if (result.cycle) metrics?.recordCycle();
         }
       }
     } catch (error) {
-      if (statusOf(error) === 401 || statusOf(error) === 403) {
-        onError?.({ agentIndex, boardId, error, fatal: true });
-        return;
-      }
-      onError?.({ agentIndex, boardId, error, fatal: false });
+      const fatal = isAuthError(error);
+      onError?.({ agentIndex, boardId, error, fatal });
+      if (fatal) return;
     }
-    const elapsed = Date.now() - cycleStarted;
-    const delay = jitteredDelay(config.cadenceMs, config.jitter ?? 0, random);
-    if (elapsed < delay) await sleep(delay - elapsed, signal);
+    await afterCycle({ deadline, config, random, cycleStarted, signal });
   }
 }
 
-/** Human-like REST reader for S3: board, plus an activity read every third beat. */
+/**
+ * S3 agent loop: a deterministic ~60/30/10 read/write/comment action mix.
+ * Board reads are still needed before a write or comment; the reported mix is
+ * the chosen action mix, and the request table shows the resulting HTTP mix.
+ */
+export async function runMixedAgentLoop({
+  client,
+  userId,
+  boardId,
+  agentIndex = 0,
+  config,
+  deadline,
+  signal,
+  metrics,
+  random,
+  startDelayMs = 0,
+  startAt = undefined,
+  onError,
+  onNoWork,
+}) {
+  await waitForStart(startAt, startDelayMs, signal);
+  let beatIndex = 0;
+  while (!signal.aborted && Date.now() < deadline) {
+    const cycleStarted = Date.now();
+    const kind = pickKind(random, config.mix);
+    try {
+      if (kind === "read") {
+        await client.readBoard(boardId);
+        metrics?.recordActivity("read");
+      } else if (kind === "write") {
+        const result = await performWriteBeat({
+          client,
+          boardId,
+          userId,
+          leaseMs: config.leaseMs,
+          startIndex: agentIndex + beatIndex,
+          onAction: () => metrics?.recordAction(1, "write"),
+        });
+        if (result.idle) {
+          const recycled = (await onNoWork?.(result)) === true;
+          if (recycled) continue;
+          metrics?.recordNoWork({
+            exhausted: result.exhausted === true,
+            stranded: result.stranded === true,
+          });
+        } else {
+          metrics?.recordActivity("write");
+          if (result.failure !== undefined) {
+            const fatal = isAuthError(result.failure);
+            onError?.({
+              agentIndex,
+              boardId,
+              error: result.failure,
+              fatal,
+              orphan: result.orphan === true,
+            });
+            if (fatal) return;
+          }
+          if (result.cycle) metrics?.recordCycle();
+        }
+      } else {
+        const result = await performCommentBeat({
+          client,
+          boardId,
+          startIndex: agentIndex + beatIndex,
+          commentText: `TASK-200.1 S3 comment (${config.id})`,
+          onAction: () => metrics?.recordAction(1, "comment"),
+        });
+        if (result.idle) {
+          const recycled = (await onNoWork?.(result)) === true;
+          if (recycled) continue;
+          metrics?.recordNoWork({
+            exhausted: result.exhausted === true,
+            stranded: result.stranded === true,
+          });
+        } else {
+          metrics?.recordActivity("comment");
+        }
+      }
+    } catch (error) {
+      const fatal = isAuthError(error);
+      onError?.({ agentIndex, boardId, error, fatal });
+      if (fatal) return;
+    }
+    beatIndex += 1;
+    await afterCycle({ deadline, config, random, cycleStarted, signal });
+  }
+}
+
+/** Human-like REST reader for S3: board on the Watch cadence, activity every third beat. */
 export async function runHumanLoop({
   client,
   boardId,
@@ -244,11 +642,63 @@ export async function runHumanLoop({
       await client.readBoard(boardId);
       if (beat % 3 === 2) await client.readActivity(boardId);
     } catch (error) {
-      onError?.({ workerIndex, boardId, error, fatal: false });
+      onError?.({ workerIndex, boardId, error, fatal: isAuthError(error) });
+      if (isAuthError(error)) return;
     }
     beat += 1;
-    const delay = jitteredDelay(config.cadenceMs, config.jitter ?? 0, random);
+    const delay = jitteredDelay(
+      config.watchCadenceMs ?? config.cadenceMs,
+      config.jitter ?? 0,
+      random,
+    );
     const elapsed = Date.now() - started;
     if (elapsed < delay) await sleep(delay - elapsed, signal);
   }
+}
+
+/**
+ * Move Done cards back to the first column so a small board can sustain a
+ * longer run. The caller uses a dedicated client/metrics collector, so these
+ * writes never inflate the agent action counts.
+ */
+export async function recycleDoneCards({ client, boardId, limit = 100 }) {
+  const { board } = await client.readBoard(boardId);
+  const done = findDoneColumn(board);
+  const first = board.columns?.find((column) => column.id !== done?.id);
+  if (done === null || first === undefined) return 0;
+  let moved = 0;
+  let remaining = [...(done.cardIds ?? [])].slice(0, limit);
+  for (const cardId of [...remaining]) {
+    // The recycle PAT is a board ADMIN: clear the agent's lease first, so the
+    // moved-back card is picked up immediately instead of waiting for the
+    // lease to expire. A non-holder gets a 400 here; moving still proceeds.
+    try {
+      await client.claim(boardId, {
+        commandId: newCommandId("recycle-release"),
+        action: buildReleaseAction({ cardId, boardId, at: Date.now() }),
+      });
+    } catch {
+      // Best effort; the lease may belong to another identity.
+    }
+    try {
+      await client.move(boardId, {
+        commandId: newCommandId("recycle"),
+        action: {
+          type: "MOVE_CARD",
+          at: Date.now(),
+          boardId,
+          cardId,
+          fromColumnId: done.id,
+          fromIndex: remaining.indexOf(cardId),
+          toColumnId: first.id,
+          toIndex: 0,
+        },
+      });
+      remaining = remaining.filter((id) => id !== cardId);
+      moved += 1;
+    } catch {
+      break;
+    }
+  }
+  return moved;
 }

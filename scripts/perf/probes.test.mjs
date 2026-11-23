@@ -64,6 +64,11 @@ test("RuntimeSampler reads proc and probe-file samples with injected IO", () => 
     readText: () => probe,
   });
   sampler.poll();
+  assert.equal(
+    sampler.samples.find((sample) => sample.source === "generator")
+      .eventLoopLagMs,
+    null,
+  );
   probe = `${JSON.stringify({
     ts: 1_000,
     rssBytes: 5_000,
@@ -82,5 +87,38 @@ test("RuntimeSampler reads proc and probe-file samples with injected IO", () => 
   assert.equal(summary.samples, 1);
   assert.equal(summary.generator.rss.count, 3);
   assert.equal(summary.errors.length, 0);
+  sampler.stop();
+});
+
+test("RuntimeSampler keeps a partial JSONL tail and parses it next poll", () => {
+  let probe = "";
+  const sampler = new RuntimeSampler({
+    apiProbeFile: "/tmp/probe.jsonl",
+    readProc: () => null,
+    readText: () => probe,
+  });
+  const first = JSON.stringify({
+    ts: 1_000,
+    rssBytes: 5_000,
+    eventLoopLagMs: 7,
+  });
+  const second = JSON.stringify({
+    ts: 2_000,
+    rssBytes: 6_000,
+    eventLoopLagMs: 9,
+  });
+  probe = `${first}\n${second.slice(0, 12)}`;
+  sampler.poll();
+  let samples = sampler.samples.filter(
+    (sample) => sample.source === "api-preload",
+  );
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].rssBytes, 5_000);
+
+  probe = `${first}\n${second}\n`;
+  sampler.poll();
+  samples = sampler.samples.filter((sample) => sample.source === "api-preload");
+  assert.equal(samples.length, 2);
+  assert.equal(samples[1].rssBytes, 6_000);
   sampler.stop();
 });

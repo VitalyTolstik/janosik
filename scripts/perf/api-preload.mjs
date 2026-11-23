@@ -25,8 +25,10 @@ if (file !== undefined && file !== "") {
   let first = true;
   const tick = () => {
     const memory = process.memoryUsage();
-    const lag = first ? 0 : histogram.percentile(95) / 1e6;
-    const max = first ? 0 : histogram.max / 1e6;
+    // The first interval has no elapsed histogram; emitting `0` would
+    // contaminate the p95 with a fake perfect sample.
+    const lag = first ? null : histogram.percentile(95) / 1e6;
+    const max = first ? null : histogram.max / 1e6;
     first = false;
     histogram.reset();
     const line = JSON.stringify({
@@ -36,8 +38,8 @@ if (file !== undefined && file !== "") {
       heapTotalBytes: memory.heapTotal,
       externalBytes: memory.external,
       arrayBuffersBytes: memory.arrayBuffers,
-      eventLoopLagMs: Math.round(lag * 1_000) / 1_000,
-      eventLoopLagMaxMs: Math.round(max * 1_000) / 1_000,
+      eventLoopLagMs: lag === null ? null : Math.round(lag * 1_000) / 1_000,
+      eventLoopLagMaxMs: max === null ? null : Math.round(max * 1_000) / 1_000,
     });
     try {
       appendFileSync(file, `${line}\n`);

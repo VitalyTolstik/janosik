@@ -50,6 +50,7 @@ export function parseProbeLine(line) {
 }
 
 function finite(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -78,6 +79,7 @@ export class RuntimeSampler {
     this.now = now;
     this.samples = [];
     this.probeOffset = 0;
+    this.probePartial = "";
     this.probeLines = 0;
     this.errors = [];
     this.timer = null;
@@ -110,7 +112,7 @@ export class RuntimeSampler {
       heapTotalBytes: memory.heapTotal,
       externalBytes: memory.external,
       eventLoopLagMs: this.firstSample
-        ? 0
+        ? null
         : round(this.loopDelay.percentile(95) / 1e6),
     };
     this.firstSample = false;
@@ -140,11 +142,18 @@ export class RuntimeSampler {
   pollProbeFile() {
     try {
       const text = this.readText(this.apiProbeFile);
-      if (text.length < this.probeOffset) this.probeOffset = 0;
-      const chunk = text.slice(this.probeOffset);
+      if (text.length < this.probeOffset) {
+        this.probeOffset = 0;
+        this.probePartial = "";
+      }
+      const chunk = this.probePartial + text.slice(this.probeOffset);
       this.probeOffset = text.length;
       if (chunk === "") return;
-      for (const line of chunk.split(/\r?\n/)) {
+      const lines = chunk.split(/\r?\n/);
+      // A writer may be mid-line: keep the tail and parse it on the next poll
+      // instead of dropping a valid sample.
+      this.probePartial = lines.pop() ?? "";
+      for (const line of lines) {
         const parsed = parseProbeLine(line);
         if (parsed === null) continue;
         this.probeLines += 1;
