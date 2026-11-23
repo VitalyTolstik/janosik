@@ -501,14 +501,17 @@ restrictive CSP. Serve the public hostname over HTTPS to apply HSTS in browsers.
 
 The board command log is stored in monthly PostgreSQL partitions
 (`Command_YYYYMM`). Maintenance keeps the previous, current and next three
-months
-available and drops whole months older than the retention window (30 days by
-default, `PURGE_AFTER_DAYS` or the master-panel setting). A busy agent swarm can
-write tens of commands per second; check **Admin → Observability → commandLog**
-for partition size, dead tuples and vacuum times. `defaultRows` should stay
-near zero. The partitioning upgrade needs about twice the current log size in
-free disk space and a quiet window (stop old replicas before migrating);
-rollback is a database backup restore.
+months available and drops whole months older than the retention window
+(30 days by default, `PURGE_AFTER_DAYS` or the master-panel setting). The
+command-specific sweep budget is 1M rows per table per hourly run (24M/day);
+if the scheduler is paused, the effective window grows. A busy agent swarm can
+write tens of commands per second; read the `commandLog` field of
+`GET /api/v1/admin/observability` (not rendered on the current admin page) for
+partition size, dead tuples and vacuum times. `defaultRows` is an exact count
+and should stay at zero. The partitioning upgrade needs about twice the current
+log size in free disk space and a full quiet window — the whole migration
+transaction holds the old table names while it copies and builds indexes, so
+stop old replicas before migrating; rollback is a database backup restore.
 
 Backups, restores and upgrades live in
 [Operations runbooks](/docs/runbooks/). Report vulnerabilities privately; see

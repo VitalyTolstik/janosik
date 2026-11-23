@@ -1,63 +1,39 @@
-import { ObservabilityService } from "@/admin/observability.service";
+import { readCommandLogStats } from "@/admin/command-log-stats";
 
 /**
- * TASK-200.11: the observability snapshot exposes command-log partition
- * health from the catalog. The query itself is covered against PostgreSQL by
- * the migration/e2e checks; here we pin the BigInt/Date mapping and the
- * default-partition warning counter.
+ * TASK-200.11: command-log partition health. Partition rows/size/dead tuples
+ * are catalog estimates; the default partitions are counted exactly. The SQL
+ * itself is also exercised against PostgreSQL by the command-log e2e spec.
  */
-describe("ObservabilityService command log", () => {
-  it("maps partition estimates, dead tuples and vacuum timestamps", async () => {
-    const queryRaw = jest.fn().mockResolvedValue([
-      {
-        parent: "Command",
-        name: "Command_202611",
-        rows: 12_345n,
-        sizeBytes: 9_000_000n,
-        deadRows: 42n,
-        lastVacuumAt: new Date("2026-11-22T00:00:00Z"),
-        lastAutovacuumAt: null,
-      },
-      {
-        parent: "Command",
-        name: "Command_default",
-        rows: 3n,
-        sizeBytes: 8_192n,
-        deadRows: 0n,
-        lastVacuumAt: null,
-        lastAutovacuumAt: null,
-      },
-    ]);
-    const service = new ObservabilityService(
+describe("command log stats", () => {
+  it("maps partition estimates and sums exact default-partition counts", async () => {
+    const queryRaw = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          parent: "Command",
+          name: "Command_202611",
+          rows: 12_345n,
+          sizeBytes: 9_000_000n,
+          deadRows: 42n,
+          lastVacuumAt: new Date("2026-11-22T00:00:00Z"),
+          lastAutovacuumAt: null,
+        },
+        {
+          parent: "Command",
+          name: "Command_default",
+          rows: 0n,
+          sizeBytes: 8_192n,
+          deadRows: 0n,
+          lastVacuumAt: null,
+          lastAutovacuumAt: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ command: 3n, detail: 1n, preimage: 0n }]);
+    const stats = await readCommandLogStats(
       { $queryRaw: queryRaw } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      { retentionDays: jest.fn().mockResolvedValue(30) } as never,
+      30,
     );
-    const stats = await (
-      service as unknown as {
-        commandLogStats(): Promise<{
-          available: boolean;
-          retentionDays: number;
-          partitions: Array<{
-            rows: number;
-            sizeBytes: number;
-            deadRows: number;
-            lastVacuumAt: number | null;
-          }>;
-          defaultRows: number;
-        }>;
-      }
-    ).commandLogStats();
     expect(stats.available).toBe(true);
     expect(stats.retentionDays).toBe(30);
     expect(stats.partitions[0]).toMatchObject({
@@ -66,30 +42,8 @@ describe("ObservabilityService command log", () => {
       deadRows: 42,
       lastVacuumAt: new Date("2026-11-22T00:00:00Z").getTime(),
     });
-    expect(stats.defaultRows).toBe(3);
-  });
-
-  it("falls back to the configured retention when the panel has no override", async () => {
-    const service = new ObservabilityService(
-      { $queryRaw: jest.fn().mockResolvedValue([]) } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      { retentionDays: jest.fn().mockResolvedValue(null) } as never,
-    );
-    const stats = await (
-      service as unknown as {
-        commandLogStats(): Promise<{ retentionDays: number }>;
-      }
-    ).commandLogStats();
-    expect(stats.retentionDays).toBe(30);
+    // Exact count, not the reltuples estimate on the default partition.
+    expect(stats.defaultRows).toBe(4);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
   });
 });

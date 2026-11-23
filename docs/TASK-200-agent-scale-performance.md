@@ -580,11 +580,14 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 `backend/src/ops/maintenance.service.ts`, `backend/src/commands/*`.
 
 **Реализовано:** месячные RANGE-партиции по `createdAt` для `Command`,
-`CommandDetail` и `CommandPreimage`; тяжёлые `details` вынесены в side-таблицу
+`CommandDetail` и `CommandPreimage`; глобальная уникальность commandId через
+непартиционированный `CommandKey`; тяжёлые `details` вынесены в side-таблицу
 с капом 16 КиБ (строки — 1 024 символа); retention удаляет целый месяц через
-`DROP TABLE`; `ensure-command-partitions` продлевает окно; observability
-показывает размер/dead tuples/vacuum по партициям. Дизайн, миграция,
-rollback и план объёма: [`TASK-200.11-command-log-partitioning.md`](TASK-200.11-command-log-partitioning.md).
+`DROP TABLE` с блокировками в порядке чтения и retry; `ensure-command-partitions`
+пропускает месяцы с default-строками и не пересоздаёт истёкшие; observability
+показывает размер/dead tuples/vacuum по партициям и точный `defaultRows`.
+Дизайн, миграции, rollback и план объёма:
+[`TASK-200.11-command-log-partitioning.md`](TASK-200.11-command-log-partitioning.md).
 
 ---
 

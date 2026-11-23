@@ -8,6 +8,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.11 ops review follow-up: restore global commandId uniqueness,
+  make month retention lock-safe, and bound the sweep honestly. An
+  unpartitioned `CommandKey` registry (id PK, boardId, createdAt) is claimed by
+  a BEFORE INSERT trigger in the command transaction, moved on `createdAt`
+  updates, released by the delete trigger or the month-drop helper, and
+  backfilled by migration `20261123132000_task_200_11_command_key_registry`;
+  a cross-board collision now answers `409 id_conflict` instead of a duplicate
+  command, `CommandDetail` references the registry (`ON DELETE CASCADE`) and
+  detail reads are board-scoped. A batch with the same commandId twice is
+  rejected before the transaction. Migration
+  `20261123133000_task_200_11_safe_partition_drop` makes
+  `janosik_drop_command_partition` lock Command → CommandDetail → pre-images
+  with a 2 s timeout (returns -1 so the service retries), releases the month's
+  keys, and makes `janosik_ensure_command_partition` return
+  `skipped:<default>=<n>` instead of failing 23514 when a default partition
+  holds the requested month; the maintenance `ensure` job reports skips,
+  filters months already outside retention, and `run("all")` isolates a failed
+  job so later sweeps still run. The command log gets a 1M-row/table/run
+  drain budget (24M/day, above 50 commands/s × 30 days), `defaultRows` is an
+  exact count while partition rows stay planner estimates, the unused detail
+  `createdAt` index is dropped, pre-images use the command clock, legacy
+  details are copied uncapped (documented), snapshot caps/TOAST/payload limits
+  and the full-transaction downtime are documented, and `clipPair` preserves
+  middle card-order/task-spec edits. The e2e wipe includes
+  Command/CommandDetail/CommandKey; tests cover cross-board concurrency,
+  duplicate batches, concurrent read+drop, default-partition skip, all
+  Command indexes/FKs, real-PostgreSQL observability, and the migration script
+  is wired into CI and loads `backend/.env`/`TEST_DATABASE_URL`.
+
 - TASK-200.11 partitioned command log and a heat-aware detail side table. The
   `Command` table is now a monthly `RANGE (createdAt)` partitioned table
   (`Command_YYYYMM` plus a default), and `CommandPreimage` follows the same

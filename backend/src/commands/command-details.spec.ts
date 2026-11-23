@@ -69,6 +69,34 @@ describe("commandDetails", () => {
     expect(change?.from).not.toBe(change?.to);
     expect(change?.to?.endsWith(before.cards["card-98"]!.title)).toBe(true);
   });
+  it("keeps a middle card-order reorder visible after clipping", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    const ids = Array.from({ length: 100 }, (_, index) => `card-${index}`);
+    for (const id of ids) {
+      before.cards[id] = makeCard({ id, title: `${id}-${"x".repeat(120)}` });
+      after.cards[id] = before.cards[id]!;
+    }
+    before.columns[0]!.cardIds = ids;
+    after.columns[0]!.cardIds = [...ids];
+    [after.columns[0]!.cardIds[49], after.columns[0]!.cardIds[50]] = [
+      after.columns[0]!.cardIds[50]!,
+      after.columns[0]!.cardIds[49]!,
+    ];
+    const action = {
+      ...base,
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-1",
+      cardIds: after.columns[0]!.cardIds,
+    } as BoardAction;
+    const change = commandDetails(action, before, after)?.changes?.[0];
+    expect(change?.field).toBe("cardOrder");
+    expect(change?.from).not.toBe(change?.to);
+    expect(change?.from).toContain("card-49");
+    expect(change?.to).toContain("card-50");
+    expect(change?.from?.length).toBeLessThanOrEqual(1_025);
+  });
+
   it("freezes the card order before and after a reorder", () => {
     const before = makeBoard();
     const after = makeBoard();

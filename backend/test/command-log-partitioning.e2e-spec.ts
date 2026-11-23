@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { PrismaClient } from "@prisma/client";
 import "@/config/env";
+import { readCommandLogStats } from "@/admin/command-log-stats";
 import {
   addMonths,
   commandPartitionName,
@@ -8,6 +10,7 @@ import {
   utcMonthStart,
 } from "@/commands/command-log-partitions";
 import { commandDetailMap } from "@/commands/command-detail-store";
+import { wipeAll } from "./support/wipe";
 
 /**
  * TASK-200.11 — the migrated command log behaves like the old table for the
@@ -15,9 +18,10 @@ import { commandDetailMap } from "@/commands/command-detail-store";
  *
  * - Command/detail/pre-image rows route to their monthly partition;
  * - a time-bounded read is pruned to one partition by the planner;
- * - the details side table batches by commandId (no relation/FK);
- * - deleting a command removes its side row through the trigger;
- * - whole-month retention drops all three partitions of that month;
+ * - the global CommandKey registry releases ids with the command/partition;
+ * - the details side table batches by commandId and board scope;
+ * - deleting a command removes its side row through the key cascade;
+ * - whole-month retention drops all three partitions and their keys;
  * - the composite PK and the parent indexes exist on every partition.
  *
  * The heavier replay/resync/undo/admin coverage lives in the existing
@@ -144,7 +148,7 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
   });
 
   it("batches display details by commandId", async () => {
-    const details = await commandDetailMap(prisma, [
+    const details = await commandDetailMap(prisma, boardId, [
       `cmdlog-${suffix}-current`,
       `cmdlog-${suffix}-previous`,
       `cmdlog-${suffix}-missing`,
@@ -207,9 +211,15 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
         `${table}_boardId_seq_idx`,
         `${table}_boardId_createdAt_seq_idx`,
         `${table}_touches_idx`,
+        `${table}_createdAt_idx`,
+        `${table}_actorId_createdAt_idx`,
+        `${table}_type_createdAt_idx`,
+        `${table}_apiTokenId_createdAt_idx`,
+        `${table}_agentSessionId_createdAt_idx`,
         `${table}_runId_idx`,
       ]),
     );
+    expect(names).toHaveLength(10);
     const pk = await prisma.$queryRawUnsafe<Array<{ columns: string[] }>>(
       `SELECT array_agg(a.attname::text ORDER BY k.ord) AS columns
          FROM pg_constraint con
@@ -220,15 +230,34 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
       table,
     );
     expect(pk[0]!.columns).toEqual(["id", "createdAt"]);
+    const commandFks = await prisma.$queryRawUnsafe<Array<{ conname: string }>>(
+      `SELECT conname FROM pg_constraint
+        WHERE conrelid = '"Command"'::regclass AND contype = 'f'
+        ORDER BY conname`,
+    );
+    expect(commandFks.map((row) => row.conname)).toEqual([
+      "Command_actorId_fkey",
+      "Command_boardId_fkey",
+    ]);
   });
 
-  it("has no partitioned-to-partitioned FK on the detail table", async () => {
-    const fks = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
-      `SELECT count(*)::int AS n
-         FROM pg_constraint
-        WHERE conrelid = '"CommandDetail"'::regclass AND contype = 'f'`,
+  it("scopes detail reads through the global key and cascades on key delete", async () => {
+    const fks = await prisma.$queryRawUnsafe<
+      Array<{ conname: string; target: string }>
+    >(
+      `SELECT con.conname,
+              target.relname::text AS target
+         FROM pg_constraint con
+         JOIN pg_class target ON target.oid = con.confrelid
+        WHERE con.conrelid = '"CommandDetail"'::regclass AND con.contype = 'f'`,
     );
-    expect(fks[0]!.n).toBe(0);
+    expect(fks).toEqual([
+      { conname: "CommandDetail_commandId_fkey", target: "CommandKey" },
+    ]);
+    const leaked = await commandDetailMap(prisma, `other-board-${suffix}`, [
+      `cmdlog-${suffix}-current`,
+    ]);
+    expect(leaked.size).toBe(0);
   });
 
   it("continues the shared seq sequence across partitions", async () => {
@@ -246,5 +275,78 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
       select: { seq: true },
     });
     expect(Number(after.seq)).toBeGreaterThan(Number(before._max.seq));
+  });
+
+  it("skips a wedged default month and reports exact default rows", async () => {
+    const wedged = new Date(Date.UTC(2019, 7, 15, 12, 0, 0));
+    await createCommand("wedged", wedged, false);
+    const status = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+      `SELECT janosik_ensure_command_partition($1::date) AS status`,
+      "2019-08-01",
+    );
+    expect(status[0]!.status).toMatch(/^skipped:/);
+    const stats = await readCommandLogStats(prisma, 30);
+    expect(stats.available).toBe(true);
+    expect(stats.defaultRows).toBeGreaterThanOrEqual(1);
+    expect(
+      stats.partitions.some((part) => part.name === "Command_201908"),
+    ).toBe(false);
+    await prisma.command.deleteMany({
+      where: { id: `cmdlog-${suffix}-wedged` },
+    });
+  });
+
+  it("drops a month while a reader is between Command and CommandDetail", async () => {
+    await prisma.$queryRawUnsafe(
+      `SELECT janosik_ensure_command_partition($1::date)`,
+      "2019-03-01",
+    );
+    await createCommand(
+      "locked",
+      new Date(Date.UTC(2019, 2, 15, 12, 0, 0)),
+      true,
+    );
+    const reader = new PrismaClient();
+    try {
+      const read = reader.$transaction(async (tx) => {
+        // Same order as a board read: Command first, then CommandDetail.
+        await tx.$queryRawUnsafe(
+          `SELECT 1 FROM "Command" WHERE "id" = $1`,
+          `cmdlog-${suffix}-locked`,
+        );
+        await tx.$executeRawUnsafe(`SELECT pg_sleep(0.5)`);
+        await tx.$queryRawUnsafe(
+          `SELECT 1 FROM "CommandDetail" WHERE "commandId" = $1`,
+          `cmdlog-${suffix}-locked`,
+        );
+      });
+      await delay(100);
+      const dropped = await prisma.$queryRawUnsafe<Array<{ removed: bigint }>>(
+        `SELECT janosik_drop_command_partition($1::date) AS removed`,
+        "2019-03-01",
+      );
+      await read;
+      expect(Number(dropped[0]!.removed)).toBeGreaterThanOrEqual(0);
+      const gone = await prisma.$queryRawUnsafe<Array<{ n: number }>>(
+        `SELECT count(*)::int AS n FROM pg_class WHERE relname IN
+           ('Command_201903', 'CommandDetail_201903', 'CommandPreimage_201903')`,
+      );
+      expect(gone[0]!.n).toBe(0);
+      expect(
+        await prisma.commandKey.count({
+          where: { id: `cmdlog-${suffix}-locked` },
+        }),
+      ).toBe(0);
+    } finally {
+      await reader.$disconnect();
+    }
+  });
+
+  it("leaves no command, detail or key rows after the e2e wipe", async () => {
+    await createCommand("wipe", current, true);
+    await wipeAll(prisma);
+    expect(await prisma.command.count()).toBe(0);
+    expect(await prisma.commandDetail.count()).toBe(0);
+    expect(await prisma.commandKey.count()).toBe(0);
   });
 });

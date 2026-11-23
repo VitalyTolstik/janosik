@@ -377,24 +377,28 @@ upgrade during a quiet period on a large installation.
 The board's command log is a monthly partitioned PostgreSQL table
 (`Command_YYYYMM`). The maintenance job `ensure-command-partitions` keeps the
 previous, current and next three months present; `sweep-commands` drops whole
-months
-older than the retention window instead of deleting rows one by one. The
-default window is 30 days (`PURGE_AFTER_DAYS`, or the retention setting in the
-master panel). A large agent swarm writes 25–50 commands per second; at 50/s,
-30 days is roughly 130 million commands, so check the **Admin → Observability**
-`commandLog` block for partition size, dead tuples and the last
-vacuum/autovacuum. `defaultRows` should stay near zero — a growing default
-partition means a month was missed or a restored row fell outside the
+months older than the retention window instead of deleting rows one by one.
+The default window is 30 days (`PURGE_AFTER_DAYS`, or the retention setting in
+the master panel). A large agent swarm writes 25–50 commands per second; at
+50/s, 30 days is roughly 130 million commands. The command-specific sweep
+budget is 1M rows per table per hourly run (24M/day), so the 30-day target
+holds only while the scheduler runs; a paused scheduler makes the effective
+window longer. Check the `commandLog` field of
+`GET /api/v1/admin/observability` (the current admin Observability page does
+not render it yet) for partition size, dead tuples and vacuum times.
+`defaultRows` is an exact count and should stay at zero — a growing default
+partition means a month was skipped or a restored row fell outside the
 pre-created range.
 
 The upgrade that introduced this layout copies the existing log into the new
 tables and verifies counts before dropping the old ones. It needs roughly twice
-the current command-log size in free disk space and a quiet window: stop the
-old API before running it. On a single Compose host the container applies it
-on boot; with several replicas, stop them first. Rollback is a database backup
-restore — take a `pg_dump` before the upgrade. The full design, size plan and
-rollback notes are in
-[TASK-200.11](./TASK-200.11-command-log-partitioning.md).
+the current command-log size in free disk space and a full quiet window, not
+just a swap: the whole migration transaction holds the old table names under
+ACCESS EXCLUSIVE while it copies and builds indexes. Stop the old API before
+running it. On a single Compose host the container applies it on boot; with
+several replicas, stop them first. Rollback is a database backup restore —
+take a `pg_dump` before the upgrade. The full design, size plan and rollback
+notes are in [TASK-200.11](./TASK-200.11-command-log-partitioning.md).
 
 ### Scaling (streams and multiple nodes)
 
