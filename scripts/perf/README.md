@@ -28,10 +28,13 @@ npm run perf:lint        # ESLint for scripts/perf + root config
 runs `mock-server-main.mjs` on a separate port and spawns the CLI exactly as a
 real baseline would. Mock numbers only prove the harness works; they are never
 a product baseline. In smoke mode the harness ignores `JANOSIK_PERF_BOARDS`,
-`JANOSIK_PERF_PG_URL` and `JANOSIK_PERF_REDIS_URL`, uses one mock board, and
-caps agent/human/SSE/concurrency/duration overrides (`SMOKE_CAPS` in
-`lib/config.mjs`) so `--mock --agents 1000 --duration 1h` cannot become a
-heavy run by accident.
+`JANOSIK_PERF_PG_URL` and `JANOSIK_PERF_REDIS_URL`, caps mock board/card sizes
+(`MOCK_LIMITS`) and agent/human/SSE/concurrency/duration overrides
+(`SMOKE_CAPS` in `lib/config.mjs`) so `--mock --agents 1000 --duration 1h`
+cannot become a heavy run by accident. Each smoke scenario starts from a fresh
+mock board, so S2 cannot drain the S3 run. The mock accepts
+`MOCK_COMMAND_STATUS`, `MOCK_COMMENT_STATUS` and `MOCK_SSE_STATUS` for
+failure-injection tests.
 
 ## Real baseline
 
@@ -53,17 +56,26 @@ Required token/board profile:
 
 - The PAT must be a **board ADMIN or MEMBER** (`VIEWER` can read but cannot
   write commands or comments) with a preset that allows command writes.
+  Preflight validates **every** token's `/auth/me` identity (must be a PAT,
+  not read-only, not paused, scope `worker`/`reviewer`/`admin`) before load.
 - The board must exist, be accessible and **not archived**. Explicit `--board`
-  ids are preflighted with `GET /boards/:id`; a 401/403 stops the suite before
-  any load. Without `--board`, the first `--boards <n>` accessible,
-  non-archived boards are used.
+  ids are preflighted on the first token and then matched against every token's
+  `GET /boards` membership/role. Any failure exits `2` with the token index,
+  board index and id. Without `--board`, the first `--boards <n>` accessible,
+  non-archived boards of token 1 are selected, and every other token must also
+  be an ADMIN/MEMBER of each.
+- Basic-auth URLs are not supported: Node `fetch`/undici rejects credentials in
+  the URL. Use PAT `Authorization` headers (URL userinfo is stripped/redacted
+  defensively).
 - Seed enough non-Done cards. S2/S3/S4 move one card per completed cycle; a
   small board drains in seconds. The harness now reports that as `partial` (or
   `failed` when zero cycles completed) instead of a green run. Either seed
   `agents × cycles × 2` cards, or pass `--recycle` (below).
-- For S2/S3/S4 the default is one token/identity per agent. Use
-  `--shared-identity` only when the run intentionally models several agents
-  behind one identity.
+- For S2/S3/S4 the default is one token/identity per agent. With
+  `--driver mcp` the requirement is the **actual MCP worker count**
+  (`--mcp-processes`, or agents when unset; smoke caps at 2), not the
+  `--agents` label. S3 always uses the HTTP driver. Use `--shared-identity`
+  only when the run intentionally models several agents behind one identity.
 
 Token precedence is `--token` > `JANOSIK_PERF_TOKEN` > `PERF_TOKEN`; the pool
 is deduplicated and only `tokenCount` reaches the report.
@@ -98,20 +110,23 @@ The report shows the **actual** counts and shares. Humans read the board on a
 activity. A write beat is claim + move (two action writes); a comment beat is
 one comment; a read beat is one board read. Because every write/comment beat
 also needs a board read, the HTTP request table is read-heavier than the
-action mix.
+action mix. `--mix 100/0/0` is a valid read-only profile and is not failed just
+because it completes no write cycles.
 
 ### S4 burst semantics
 
 `--duration` is the work window **after** the ramp. With `--burst` (the
-default) all workers synchronise at the end of the 30 s ramp and start
-together; without it they are staggered across the ramp. The report contains
-the observed work window, so a ramp overrun or an early abort is visible.
+default) all workers synchronise at the end of the ramp at an absolute start
+time and start together; `--no-burst` staggers them across the ramp. The
+report contains the observed work window, so a ramp overrun or an early abort
+is visible.
 
 ### S5 hold semantics
 
 The hold starts when the ramp **actually completes**, not at the planned
-boundary. The report shows the observed ramp and hold durations. A run with no
-live stream is `failed`, not a successful empty ramp.
+boundary. The report shows opened/failed/max streams and the observed ramp and
+hold durations. No live stream is `failed`; one opened stream with thousands of
+failures is at least `partial`.
 
 ### Board recycling
 
@@ -125,7 +140,8 @@ work. It needs a **dedicated board ADMIN PAT** (`--recycle-token` or
 `JANOSIK_PERF_RECYCLE_TOKEN`); its requests are measured in a separate
 `recycle` block and are excluded from agent action counts. There is no
 implicit fallback to an agent token in real mode. Recycling is limited to the
-first board.
+first board. A release answered with 400/409 is an orphan: the card is not
+moved or counted, and the orphan is surfaced in the scenario status/report.
 
 ## Commands
 
@@ -135,27 +151,27 @@ one PAT.
 
 ```bash
 # A/C/D — one board, 100 agents
-npm run perf:agents -- --scenario S2 --board "$BOARD" --agents 100 --duration 5m
+npm run perf:agents -- --scenario S2 --board "$BOARD" --agents 100 --duration 5m --api-pid "$API_PID"
 
 # A — 500 agents / 20 boards
-npm run perf:agents -- --scenario S2 --boards 20 --agents 500 --cadence 10s --duration 10m
+npm run perf:agents -- --scenario S2 --boards 20 --agents 500 --cadence 10s --duration 10m --api-pid "$API_PID"
 
 # S3 — agents + humans + SSE
 npm run perf:agents -- --scenario S3 --board "$BOARD" \
-  --agents 500 --humans 50 --sse 100 --mix 60/30/10 --watch-cadence 3s
+  --agents 500 --humans 50 --sse 100 --mix 60/30/10 --watch-cadence 3s --api-pid "$API_PID"
 
 # S4 — thundering herd; 30 s ramp then a 30 s work window
 npm run perf:agents -- --scenario S4 --board "$BOARD" \
-  --agents 1000 --ramp 30s --duration 30s
+  --agents 1000 --ramp 30s --duration 30s --api-pid "$API_PID"
 
 # E — SSE ramp, no agents (hold starts after the real ramp)
 npm run perf:agents -- --scenario S5 --sse 5000 --ramp 5m --hold 10m --api-pid "$API_PID"
 
 # F — read burst
-npm run perf:agents -- --scenario S6 --boards 1 --concurrency 500 --api-pid "$API_PID"
+npm run perf:agents -- --scenario S6 --board "$BOARD" --concurrency 500 --api-pid "$API_PID"
 
 # S1 — idle swarm
-npm run perf:agents -- --scenario S1 --board "$BOARD" --agents 500 --cadence 30s --duration 10m
+npm run perf:agents -- --scenario S1 --board "$BOARD" --agents 500 --cadence 30s --duration 10m --api-pid "$API_PID"
 
 # MCP stdio, small smoke / dedicated host for a larger run
 npm run perf:agents -- --scenario S2 --driver mcp --agents 2 --mock --duration 2s
@@ -172,19 +188,23 @@ normal seed/reset procedure; the harness itself never truncates a board.
 Every scenario is `ok`, `partial`, `failed` or `interrupted` in JSON and
 Markdown; the report has an overall status and counts.
 
-- `ok` — every configured worker measured work.
-- `partial` — work happened, but the board exhausted/stranded a claim, a
-  network error occurred, or the S4 work window was under half the request.
-- `failed` — zero requests, zero work cycles, no SSE stream, or fatal
-  auth/preflight.
+- `ok` — successful 2xx work was measured; expected 409/429 are data.
+- `partial` — successful work happened, but the board exhausted/stranded a
+  claim, a claim release was orphaned, an S5 stream failed, the network
+  degraded, or unexpected 4xx/server 5xx crossed the documented thresholds
+  (`server5xxRate > 1%` or ≥5; `unexpected4xxRate > 0.1%` or ≥5), or the S4
+  work window was under half the request.
+- `failed` — zero successful 2xx responses, zero requests, zero required work
+  cycles, no SSE stream, or fatal auth/preflight.
 - `interrupted` — SIGINT/SIGTERM.
 
-Exit codes: `0` ok/partial, `1` failed or zero-work, `2` config/preflight
-(including 401/403 and a board that is missing/archived), `130` interrupted.
-`429` and `5xx` are **data**: they are reported and rate-labelled but do not
-turn an otherwise measured run into a failure. The first Ctrl-C cancels
-in-flight HTTP and psql, then writes a partial report; a second Ctrl-C exits
-130 immediately.
+`Err %` / `Unexp %` excludes expected `409`, `429` and claim-lease `400`
+conflicts; the report shows their separate counts and rates. Exit codes: `0`
+ok/partial, `1` failed or
+zero-work, `2` config/preflight (including 401/403 and a board that is
+missing/archived), `130` interrupted. The first Ctrl-C cancels in-flight HTTP
+and psql, writes a partial report and exits `130`; a second Ctrl-C exits `130`
+immediately without waiting.
 
 ## API instrumentation
 
@@ -204,7 +224,8 @@ npm run perf:agents -- --scenario S2 … --api-pid 12345
 endpoint and changes no product code. A partial JSONL tail is retained until
 the next poll, and the warm-up sample no longer injects a fake zero lag.
 Without either option the report shows `api.source = "none"`. Generator
-RSS/event-loop lag is always sampled and labelled `generator`, never `api`.
+RSS/event-loop lag is always sampled and labelled `generator`, never `api`;
+probe-file read errors and S5 opened/failed counts are surfaced in Markdown.
 
 ### CPU profile (Top-10 self time)
 
@@ -213,10 +234,10 @@ node --cpu-prof --cpu-prof-dir /tmp/janosik-cpu backend/dist/main.js
 npm run perf:agents -- --scenario S2 … --cpu-profile /tmp/janosik-cpu
 ```
 
-A directory is scanned for `.cpuprofile` files; the report aggregates the
-newest set by function and prints a Top-10 self-time table. This is a profile
-of the API process, run for one representative scenario, not a per-request
-trace.
+A directory is scanned for `.cpuprofile` files; files within 60 s of the
+newest mtime are treated as one run, **all their nodes are aggregated**, and
+only then is the Top-10 self-time table taken. This is a profile of the API
+process, run for one representative scenario, not a per-request trace.
 
 ### PostgreSQL
 
@@ -239,15 +260,21 @@ SELECT pg_stat_statements_reset();                                  -- before a 
 ```
 
 The harness shells out to `psql` (no npm dependency). It takes a
-`pg_stat_statements` snapshot before and after every scenario, computes deltas
-by `queryid` scoped to `current_database()`, and reports **Top-20 by calls and
-Top-20 by total_exec_time**. Internal `pg_stat_*` sampler queries are excluded.
+`pg_stat_statements` snapshot (up to 1,000 queryids) before and after every
+scenario, computes deltas by `queryid` scoped to `current_database()` — new
+after-only queryids included — and reports **Top-20 by calls and Top-20 by
+total_exec_time**. Internal `pg_stat_*` sampler queries are excluded.
 `--pg-activity` samples `pg_stat_activity` states and wait events (peak per
-state) for the current database. If `psql` or the extension is missing, the
-report says so instead of failing the run.
+state) for the current database; it warns and skips if `--pg-url` is missing.
+If `psql` or the extension is missing, the report says so instead of failing
+the run.
 
-The URL's userinfo is stripped from argv and from every report. The password
-travels via `PGPASSWORD` (or `.pgpass`); `psql` child-process errors are
+The URL's userinfo and secret query parameters (any key containing
+`password`, `passwd`, `pwd`, `secret`, `token`, `key` or `auth`, e.g.
+`sslpassword`, `client_secret`, `x-api-key`) are stripped from argv and every
+report. Standard `password`/`passwd`/`pwd` query values move to `PGPASSWORD`
+(along with userinfo); `sslpassword` has no portable env equivalent, so it is
+stripped/ignored rather than passed through. `psql` child-process errors are
 sanitized and never include the command line or DSN.
 
 ### Redis
@@ -260,8 +287,8 @@ npm run perf:agents -- --scenario S2 … \
 
 Takes start/end `INFO` samples and reports memory (used/peak/max), connected
 and blocked clients, instantaneous ops/s, rejected connections, keyspace
-hits/misses and hit rate. The password goes through `REDISCLI_AUTH`; the URL is
-redacted in reports.
+hits/misses and hit rate. The percent-encoded URL password is decoded into
+`REDISCLI_AUTH`; userinfo and secret query parameters are stripped/redacted.
 
 ### MCP stdio driver
 
@@ -269,24 +296,34 @@ redacted in reports.
 `mcp/src/index.ts` (via the repo's `tsx`), pointed at the API origin with
 `JANOSIK_URL`/`JANOSIK_TOKEN`. Each process runs
 `janosik_list_ready_cards → janosik_claim_card → janosik_add_comment →
-janosik_move_card`; the harness counts `tools/call` requests, per-tool latency,
-cycles/actions and child RSS/peak RSS from `/proc/<pid>/status`. The same
-scenarios, statuses and report are used. S1/S2/S3/S4 use MCP workers for the
-agents (S3 keeps HTTP humans/SSE); S5/S6 remain HTTP-only because they measure
-connections and raw board reads. Smoke mode caps the process count at
-2; a large MCP swarm is a dedicated-host capacity experiment.
+janosik_move_card`; every tool call is counted as a request with an inferred
+status (`2xx`, 409/429/5xx, network `0`, abort `-1`) and per-tool latency, so
+`requests/agent/min`, error rates and cycles are populated like the HTTP path.
+Child sampled RSS peak and `/proc` lifetime VmHWM peak come from
+`/proc/<pid>/status`. The same scenarios,
+statuses and report are used. **S3 is rejected with `--driver mcp`** because
+the mixed 60/30/10 loop is not implemented for MCP; run S3 with `--driver
+http`. S1/S2/S4 use MCP workers for the agents; S5/S6 remain HTTP-only because
+they measure connections and raw board reads. Smoke mode caps the process
+count at 2; a large MCP swarm is a dedicated-host capacity experiment. The
+connect/handshake timeout is 15 s and is also cancelled by the scenario signal;
+a failed or hung handshake closes the transport and kills the child.
 
 ## Secrets and redaction
 
 - PATs are never written to stdout, JSON or Markdown; only `tokenCount`.
-- `--base-url`, `--pg-url` and `--redis-url` are stripped of userinfo before
-  they reach logs or reports; sensitive query parameters are redacted.
+- `--base-url`, `--pg-url` and `--redis-url` are stripped of userinfo and of
+  any query key containing `password`, `passwd`, `pwd`, `secret`, `token`,
+  `key` or `auth` (including `sslpassword`, `client_secret`, `x-api-key`)
+  before they reach logs or reports.
 - PostgreSQL/Redis child processes receive passwords via environment variables
-  (`PGPASSWORD`, `REDISCLI_AUTH`), never argv.
+  (`PGPASSWORD`, `REDISCLI_AUTH`), never argv; query secrets are removed from
+  the psql connection string. Basic-auth URLs are not supported by Node
+  `fetch`/undici; use PAT headers.
 - Child-process stderr and fetch errors are sanitized (`safeChildError`,
   `sanitizeText`); `execFile`'s argv-bearing `error.message` is not reported.
-- Leak tests assert that stdout, JSON and Markdown contain neither a token nor
-  a URL password.
+- Leak tests assert that stdout, JSON and Markdown contain neither tokens nor
+  URL/query secrets such as `sslpassword` or `client_secret`.
 
 ## Files
 
@@ -310,6 +347,7 @@ scripts/perf/
   lib/mock-server.mjs    command-contract-accurate mock API
   lib/redact.mjs         URL/secret sanitizers
   lib/status.mjs         ok/partial/failed/interrupted rules
+  lib/preflight.mjs      token identity + every-token board membership preflight
   *.test.mjs             node --test coverage + real-mode/MCP mock smoke
 ```
 
@@ -317,15 +355,21 @@ scripts/perf/
 
 - p50/p95/p99 are per HTTP request across the scenario's **measurement
   window**; the operation table breaks them down.
-- `409` is a measured CAS conflict; `429` is the board/global rate limit;
-  `5xx` and network errors have separate columns and rates. A successful
+- `409` is a measured CAS conflict and `429` the board/global rate limit; the
+  report shows their counts and separate rates. `Unexp %` excludes both and
+  counts unexpected 4xx, 5xx and network failures. A successful
   claim/comment/move is counted immediately, so a later 429 cannot erase it.
+- Unexpected 4xx/5xx degrade a measured run to `partial` above the documented
+  thresholds (`server5xxRate > 1%` or ≥5; `unexpected4xxRate > 0.1%` or ≥5).
+  Zero successful 2xx is `failed`.
 - `actions/s` counts successful writes (claim + comment + move = 3 per S2/S4
   cycle), not cycles. `cycles` counts completed write sequences. `no work`
-  counts cycles that found no unleased card.
+  counts cycles that found no unleased card. An orphaned release is partial.
 - `requests/agent/min` uses the measured window, independent of worker drain.
-- For S5, `sse.maxConcurrent` is the peak open streams, and the observed ramp
-  and hold durations are reported separately.
+- For S5, `sse.maxConcurrent` is the peak open streams; opened/failed and the
+  observed ramp/hold durations are reported separately.
+- `/proc` `VmHWM` (the `--api-pid` `API peak RSS*`) is the process **lifetime**
+  peak; `--api-probe` peak is the scenario window. The report labels both.
 - WSL/dev-box caveat: never compare a same-host mock/dev run to a dedicated
   host baseline; run the generator on its own machine and keep the UI/Docker
   stack off it.
