@@ -235,7 +235,7 @@ describe("durable notification delivery (e2e)", () => {
     expect(await scheduler.run("due-reminders")).toEqual({ sent: 2 });
     await delivery.kick();
     expect(smtp.accepted.find((letter) => letter.to === EN)?.data).toContain(
-      "task(s) due soon",
+      "1 task due soon",
     );
     // Check the actual rendered Russian text before MIME's transfer encoding.
     const staged = await prisma.reminderSent.count();
@@ -258,7 +258,7 @@ describe("durable notification delivery (e2e)", () => {
               ),
             "latin1",
           ).toString("utf8");
-    expect(decoded).toContain("скоро срок");
+    expect(decoded).toContain("1 задача");
     expect(await scheduler.run("due-reminders")).toEqual({ sent: 0 });
   });
 

@@ -75,14 +75,20 @@ Each attention row with a destination is a real link to the place that needs
 you: a blocked or handed-off card opens its card dialog, an approval opens the
 board's approvals tab for a board admin (the exact request when it is known),
 while other recipients land on the board, a board limit opens that board, and a
-revoked API key opens **Account → API keys**. An account-level limit opens the
+revoked API key opens **Account → API keys**. An assignment notification opens
+the card when one card was assigned, or the board filtered to your cards
+(`f.assignee`) when a batch was assigned; assigning a card to yourself does not
+notify you. An account-level limit opens the
 account panel. Rows without a target stay plain text. Links work with the
 keyboard, middle-click and Cmd/Ctrl-click, and opening a row does not mark it
 read — use **Mark as read** or **Mark all as read** explicitly.
 
 To stop immediate emails for these events, open **Account → Profile** and turn
 off **Attention emails**. You can still read events in the bell. Scheduled
-digests and due reminders use the separate digest preference.
+digests and due reminders use the separate digest preference. Due reminders are
+sent only when an administrator sets the reminder lead above zero
+(`reminderLeadHours > 0`); each listed card links straight to the card. Due
+dates do not create in-app attention rows.
 
 ## Realtime updates and presence
 

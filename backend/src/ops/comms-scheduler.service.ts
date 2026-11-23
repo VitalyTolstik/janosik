@@ -15,6 +15,7 @@ import {
 import { env } from "@/config/env";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { activeMembershipWhere } from "@/common/membership";
+import { appBasePath } from "@/common/ui-base";
 import {
   NotificationDeliveryService,
   notificationMailId,
@@ -43,6 +44,8 @@ export const COMMS_QUEUE = QUEUE_NAMES.comms;
 export const COMMS_JOB = "run";
 /** setTimeout caps at 2^31-1 ms; cadences beyond it are chunked (TASK-83). */
 const MAX_TIMER_MS = 2_147_483_647;
+/** How many cards a due letter lists before “and N more”. */
+const DUE_REMINDER_LIST_LIMIT = 10;
 export const DIGEST_SCHEDULER_ID = "comms-digest";
 export const REMINDERS_SCHEDULER_ID = "comms-reminders";
 
@@ -376,18 +379,15 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
         (item) => !reminded.has(`${item.cardId}:${item.due.getTime()}`),
       );
       if (fresh.length === 0) continue;
-      const dueLabel = locale === "ru" ? "срок" : "due";
+      // A grouped letter must read chronologically even when the database
+      // returned the cards in another order.
+      fresh.sort((left, right) => left.due.getTime() - right.due.getTime());
       const date = new Intl.DateTimeFormat(locale, {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: "UTC",
       });
-      const tasksHtml = fresh
-        .map(
-          (item) =>
-            `<li><strong>${escapeHtml(item.title)}</strong> (${escapeHtml(item.board)}) — ${dueLabel} ${date.format(item.due)} UTC</li>`,
-        )
-        .join("");
+      const tasksHtml = dueReminderTasks(fresh, locale, date);
       const message = await this.templates.dueReminderEmail(
         fresh.length,
         tasksHtml,
@@ -461,6 +461,37 @@ export class CommsSchedulerService implements OnModuleInit, OnModuleDestroy {
     if (this.queue) return redisQueueStats(this.queue);
     return { pending: 0, processed: 0, failed: 0, backend: "memory" };
   }
+}
+
+/** Absolute, escaped card links for a due letter; the list stays bounded. */
+function dueReminderTasks(
+  items: ReadonlyArray<{
+    cardId: string;
+    title: string;
+    board: string;
+    boardId: string;
+    due: Date;
+  }>,
+  locale: MailLocale,
+  date: Intl.DateTimeFormat,
+): string {
+  const origin = env.PUBLIC_ORIGIN.replace(/\/+$/, "");
+  const base = appBasePath();
+  const dueLabel = locale === "ru" ? "срок" : "due";
+  const shown = items.slice(0, DUE_REMINDER_LIST_LIMIT);
+  const rows = shown.map((item) => {
+    const href = escapeHtml(
+      `${origin}${base}/board/${encodeURIComponent(item.boardId)}?card=${encodeURIComponent(item.cardId)}`,
+    );
+    return `<li><a href="${href}"><strong>${escapeHtml(item.title)}</strong></a> (${escapeHtml(item.board)}) — ${dueLabel} ${date.format(item.due)} UTC</li>`;
+  });
+  const more = items.length - shown.length;
+  if (more > 0) {
+    rows.push(
+      `<li>${escapeHtml(locale === "ru" ? `и ещё ${more}` : `and ${more} more`)}</li>`,
+    );
+  }
+  return rows.join("");
 }
 
 class ConcurrentMailReservation extends Error {}

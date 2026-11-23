@@ -372,7 +372,9 @@ disables it). The due reminder lead is in hours (0 to 720; 0 disables it).
 Recipients can opt out of both. The digest summarises what changed on each
 board since the last run. The reminder lists the cards assigned to a user whose
 due date falls inside the lead window. Each reminder is sent once per card,
-user and due date. Reminders use the recipient's saved locale (EN or RU), with
+user and due date. Reminders exist only while `reminderLeadHours > 0`; each
+listed card is an absolute link that opens that card. Reminders use the
+recipient's saved locale (EN or RU), with
 English as the default. A grouped reminder can be canceled if the recipient
 opts out or loses access to any board in the letter. The card, user and due-date
 markers remain reserved, so restoring access or opting back in does not requeue
@@ -447,7 +449,7 @@ send is audited.
 
 ### Email templates
 
-Five templates are editable:
+Seventeen templates are editable:
 
 | Key | Label |
 | --- | --- |
@@ -456,6 +458,18 @@ Five templates are editable:
 | `email_changed_notice` | Email changed notice |
 | `digest` | Board digest |
 | `due_reminder` | Due-date reminder |
+| `attention_approval_requested` | Attention: approval requested |
+| `attention_approval_decided` | Attention: approval decided |
+| `attention_approval_cancelled` | Attention: approval cancelled |
+| `attention_approval_consumed` | Attention: approval applied |
+| `attention_approval_expired` | Attention: approval expired |
+| `attention_agent_blocked` | Attention: agent blocked |
+| `attention_agent_needs_human` | Attention: agent needs a human |
+| `attention_comment_mention` | Attention: comment mention |
+| `attention_card_assigned` | Attention: card assigned |
+| `attention_claim_expired` | Attention: card claim expired |
+| `attention_quota_exceeded` | Attention: limit reached |
+| `attention_token_revoked` | Attention: API key revoked |
 
 Each template has a subject and an HTML body. Placeholders are shown as
 `{{name}}`. `Preview` renders the email with sample values in an iframe.

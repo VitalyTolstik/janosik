@@ -36,6 +36,8 @@ import {
 /** Default/maximum page size of the in-app attention inbox. */
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+/** How many card titles an assignment body repeats before “and N more”. */
+const ASSIGNMENT_TITLE_LIMIT = 3;
 // Prisma transmits Date values as RFC 3339, whose year has four digits.
 const MAX_CURSOR_MS = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
 /** How long a repeated quota warning stays deduplicated (one UTC day). */
@@ -102,6 +104,20 @@ export interface ClaimExpiredInput {
   claimedBy: string | null;
   agentName: string | null;
   leaseUntil: Date;
+}
+
+/** One committed assignment change; `assigneeId: null` is an unassign. */
+export interface CardAssignmentChange {
+  cardId: string;
+  assigneeId: string | null;
+  seq: number;
+}
+
+export interface CardsAssignedInput {
+  boardId: string;
+  actorId: string;
+  /** Applied events in command order; the last change per card wins. */
+  assignments: CardAssignmentChange[];
 }
 
 /**
@@ -493,6 +509,125 @@ export class AttentionService {
       // letter. The write already committed, so this only skips the fan-out.
       this.warn("comment attention lookup", error);
       return true;
+    }
+  }
+
+  /**
+   * TASK-177.20 — the new assignee of one or more cards in a committed batch.
+   *
+   * The caller passes every applied `SET_CARD_ASSIGN` in command order. The
+   * last change per card wins here too (A→B notifies only B; a trailing
+   * unassign notifies nobody), then one coalesced row is written per assignee
+   * for the whole batch. The board, cards and recipient are re-read live, so a
+   * board/card deleted or archived between commit and fan-out, a removed member
+   * or a disabled account produces nothing. Assigning a card to yourself is
+   * skipped. The dedupe base is the batch's seq range, which is stable for a
+   * retry and distinct for the next batch.
+   */
+  async notifyCardsAssigned(input: CardsAssignedInput): Promise<void> {
+    try {
+      const latest = new Map<string, CardAssignmentChange>();
+      for (const change of input.assignments) {
+        if (change.cardId === "") continue;
+        if (!Number.isSafeInteger(change.seq) || change.seq < 0) continue;
+        const assigneeId =
+          change.assigneeId === null ? "" : change.assigneeId.trim();
+        latest.set(change.cardId, {
+          cardId: change.cardId,
+          assigneeId: assigneeId === "" ? null : assigneeId,
+          seq: change.seq,
+        });
+      }
+      const byAssignee = new Map<string, CardAssignmentChange[]>();
+      for (const change of latest.values()) {
+        if (change.assigneeId === null) continue;
+        if (change.assigneeId === input.actorId) continue;
+        const list = byAssignee.get(change.assigneeId) ?? [];
+        list.push(change);
+        byAssignee.set(change.assigneeId, list);
+      }
+      if (byAssignee.size === 0) return;
+
+      const [board, cards, actor] = await Promise.all([
+        this.prisma.board.findFirst({
+          where: {
+            id: input.boardId,
+            deletedAt: null,
+            archivedAt: null,
+          },
+          select: { title: true },
+        }),
+        this.prisma.card.findMany({
+          where: {
+            id: { in: [...latest.keys()] },
+            deletedAt: null,
+            archivedAt: null,
+            column: { boardId: input.boardId, deletedAt: null },
+          },
+          select: { id: true, title: true, assigneeId: true },
+        }),
+        this.prisma.user.findUnique({
+          where: { id: input.actorId },
+          select: { displayName: true },
+        }),
+      ]);
+      if (board === null || cards.length === 0) return;
+      const cardById = new Map(cards.map((card) => [card.id, card]));
+      const actorName = actor?.displayName?.trim() || null;
+      const recipients = await this.members(input.boardId, [
+        ...byAssignee.keys(),
+      ]);
+      const recipientById = new Map(
+        recipients.map((recipient) => [recipient.id, recipient]),
+      );
+
+      for (const [assigneeId, changes] of byAssignee) {
+        const recipient = recipientById.get(assigneeId);
+        if (recipient === undefined) continue;
+        const live = changes
+          .filter((change) => {
+            const card = cardById.get(change.cardId);
+            // A concurrent batch may have reassigned the card between our
+            // commit and this read. Only the current assignee is notified.
+            return card !== undefined && card.assigneeId === change.assigneeId;
+          })
+          .sort((left, right) => left.seq - right.seq);
+        if (live.length === 0) continue;
+        const titles = live.map((change) => cardById.get(change.cardId)!.title);
+        const cardIds = live.map((change) => change.cardId);
+        const minSeq = live[0]!.seq;
+        const maxSeq = live[live.length - 1]!.seq;
+        await this.notify({
+          type: "card.assigned",
+          boardId: input.boardId,
+          dedupKey: `card.assigned:${minSeq}-${maxSeq}`,
+          recipients: [recipient],
+          emailVars: (locale) => ({
+            board: board.title,
+            cards: assignmentCardList(titles, locale),
+            count: live.length,
+            actor: actorName ?? "",
+          }),
+          inboxBody: (locale) =>
+            assignmentInboxBody(
+              {
+                board: board.title,
+                titles,
+                count: live.length,
+                actorName,
+              },
+              locale,
+            ),
+          data: {
+            assigneeId,
+            cardIds,
+            ...(cardIds.length === 1 ? { cardId: cardIds[0] } : {}),
+            ...(actorName !== null ? { actorName } : {}),
+          },
+        });
+      }
+    } catch (error) {
+      this.warn("card assigned", error);
     }
   }
 
@@ -968,6 +1103,42 @@ function toAttentionDto(row: {
     readAt: row.readAt?.getTime() ?? null,
     createdAt: row.createdAt.getTime(),
   };
+}
+
+/** A bounded, human card list: three titles then “and N more”. */
+function assignmentCardList(titles: string[], locale: MailLocale): string {
+  const shown = titles.slice(0, ASSIGNMENT_TITLE_LIMIT);
+  const more = titles.length - shown.length;
+  if (more === 0) return shown.join(", ");
+  return locale === "ru"
+    ? `${shown.join(", ")} и ещё ${more}`
+    : `${shown.join(", ")}, and ${more} more`;
+}
+
+/** Authenticated in-app body; the attention letter uses `emailVars` instead. */
+function assignmentInboxBody(
+  input: {
+    board: string;
+    titles: string[];
+    count: number;
+    actorName: string | null;
+  },
+  locale: MailLocale,
+): string {
+  const ru = locale === "ru";
+  const who =
+    input.actorName?.trim() || (ru ? "Участник доски" : "A board member");
+  const list = assignmentCardList(input.titles, locale);
+  if (input.count === 1) {
+    return ru
+      ? `${who} назначил(а) вам карточку «${list}» на доске «${input.board}». Откройте карточку, чтобы посмотреть детали.`
+      : `${who} assigned you a card “${list}” on board “${input.board}”. Open the card to see the details.`;
+  }
+  // Neutral count wording: “новые карточки (21)” stays grammatical for every
+  // Russian plural form instead of producing “21 карточек”.
+  return ru
+    ? `${who} назначил(а) вам новые карточки (${input.count}) на доске «${input.board}»: ${list}. Откройте доску с фильтром по вашим карточкам.`
+    : `${who} assigned you ${input.count} cards on board “${input.board}”: ${list}. Open the board filtered to your cards.`;
 }
 
 function parseLimit(raw: number | undefined): number {

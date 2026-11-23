@@ -3,7 +3,9 @@ import {
   announcementFallbackNotice,
   announcementFallbackSubjectPrefix,
   attentionEmail,
+  digestAttentionHtml,
   digestEmail,
+  dueReminderEmail,
   htmlToText,
   mentionInboxBody,
 } from "./templates";
@@ -110,6 +112,8 @@ describe("attentionEmail", () => {
     status: "approved",
     agent: "builder",
     actor: "Alice",
+    cards: "Ship it, Release",
+    count: 2,
     limit: 2,
     current: 2,
     expiresAt: "2026-11-10T12:00:00.000Z",
@@ -127,6 +131,7 @@ describe("attentionEmail", () => {
       "agent.blocked",
       "agent.needs_human",
       "comment.mention",
+      "card.assigned",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -148,6 +153,7 @@ describe("attentionEmail", () => {
       "agent.blocked",
       "agent.needs_human",
       "comment.mention",
+      "card.assigned",
       "claim.expired",
       "quota.exceeded",
       "token.revoked",
@@ -168,6 +174,14 @@ describe("attentionEmail", () => {
     expect(mail.html).not.toContain("<script>x</script>");
     expect(mail.html).toContain("&lt;script&gt;x&lt;/script&gt;");
     expect(mail.html).toContain("A&amp;B");
+
+    const assigned = attentionEmail(
+      "card.assigned",
+      { ...vars, board: "A&B", cards: "<script>cards</script>" },
+      "en",
+    );
+    expect(assigned.html).not.toContain("<script>cards</script>");
+    expect(assigned.html).toContain("&lt;script&gt;cards&lt;/script&gt;");
   });
 
   it("names the decision and the expiry in the right language", () => {
@@ -204,6 +218,94 @@ describe("attentionEmail", () => {
     expect(attentionEmail("comment.mention", vars, "ru").subject).toContain(
       "вас упомянули",
     );
+    expect(
+      attentionEmail(
+        "card.assigned",
+        { ...vars, cards: "Ship it, Release, QA" },
+        "en",
+      ).text,
+    ).toContain("Ship it, Release, QA");
+    expect(
+      attentionEmail("card.assigned", { ...vars, cards: "Ship it" }, "ru")
+        .subject,
+    ).toContain("новое назначение");
+    expect(
+      attentionEmail(
+        "card.assigned",
+        { ...vars, cards: "Ship it", count: 1, actor: "Alice" },
+        "en",
+      ).text,
+    ).toContain("Alice assigned you a card");
+    expect(
+      attentionEmail(
+        "card.assigned",
+        { ...vars, cards: "Ship it, Release", count: 2 },
+        "en",
+      ).text,
+    ).toContain("assigned you 2 cards");
+    const ruAssigned = attentionEmail(
+      "card.assigned",
+      { ...vars, cards: "Ship it, Release", count: 2, actor: "Алиса" },
+      "ru",
+    );
+    expect(ruAssigned.text).toContain("новые карточки (2)");
+    expect(ruAssigned.text).toContain("Алиса");
+    expect(ruAssigned.text).not.toContain("2 карточек");
+  });
+
+  it("labels assignment attention in the digest in both languages (TASK-177.20)", () => {
+    expect(
+      digestAttentionHtml([{ type: "card.assigned", count: 2 }], "en"),
+    ).toContain("assignment updates: <b>2</b>");
+    expect(
+      digestAttentionHtml([{ type: "card.assigned", count: 2 }], "ru"),
+    ).toContain("обновлений о назначениях: <b>2</b>");
+  });
+
+  it("keeps due-reminder URLs and list line breaks in the text alternative", () => {
+    const tasks =
+      '<ul><li><a href="https://kb.example/app/board/b-1?card=c-1">Ship it</a> — due 1 Jan 2026, 10:00 UTC</li><li><a href="https://kb.example/app/board/b-1?card=c-2">Fix it</a></li></ul>';
+    const mail = dueReminderEmail(2, tasks, "en");
+    expect(mail.text).toContain(
+      "Ship it (https://kb.example/app/board/b-1?card=c-1)",
+    );
+    expect(mail.text).toContain(
+      "Fix it (https://kb.example/app/board/b-1?card=c-2)",
+    );
+    expect(mail.text).toContain("\n");
+  });
+
+  it("decodes entities in a trusted href before the plain-text URL", () => {
+    const html =
+      '<p><a href="https://kb.example/app/board/b-1?card=c-1&amp;comment=x">Ship it</a></p>';
+    expect(htmlToText(html)).toContain(
+      "Ship it (https://kb.example/app/board/b-1?card=c-1&comment=x)",
+    );
+  });
+
+  it("never turns an escaped user anchor into a trusted link", () => {
+    const escapedTitle =
+      '&lt;a href="https://evil.example"&gt;Evil card&lt;/a&gt;';
+    const tasks = `<ul><li><a href="https://kb.example/app/board/b-1?card=c-1">${escapedTitle}</a> — due 1 Jan 2026, 10:00 UTC</li></ul>`;
+    const due = dueReminderEmail(1, tasks, "en");
+    expect(due.text).toContain(
+      "Evil card (https://kb.example/app/board/b-1?card=c-1)",
+    );
+    expect(due.text).not.toContain("https://evil.example");
+
+    const assigned = attentionEmail(
+      "card.assigned",
+      {
+        ...vars,
+        count: 1,
+        board: '<a href="https://evil.example/board">Evil board</a>',
+        actor: '<a href="https://evil.example/actor">Eve</a>',
+        cards: '<a href="https://evil.example">Evil card</a>',
+      },
+      "en",
+    );
+    expect(assigned.text).toContain("Evil card");
+    expect(assigned.text).not.toContain("https://evil.example");
   });
 
   it("keeps comment text out of the mention letter but in the inbox body", () => {
@@ -250,10 +352,65 @@ describe("attentionEmail", () => {
 describe("digestEmail attention summary", () => {
   it("keeps the original body when there is no attention", () => {
     const mail = digestEmail("Board", 2, 24, "en");
-    expect(mail.text).toBe(
-      'In "Board" there were 2 change(s) in the last 24 h.',
-    );
+    expect(mail.text).toBe('In "Board" there were 2 changes in the last 24 h.');
     expect(mail.html).not.toContain("Needs attention");
+  });
+
+  it("uses English singular/plural without literal (s)", () => {
+    const one = digestEmail("Board", 1, 24, "en");
+    expect(one.subject).toContain("1 change");
+    expect(one.subject).not.toContain("change(s)");
+    expect(one.text).toContain("there was 1 change in");
+    expect(digestEmail("Board", 2, 24, "en").text).toContain(
+      "there were 2 changes in",
+    );
+
+    expect(dueReminderEmail(1, "<li>Ship it</li>", "en").subject).toBe(
+      "Janosik: 1 task due soon",
+    );
+    expect(dueReminderEmail(2, "<li>Ship it</li>", "en").subject).toBe(
+      "Janosik: 2 tasks due soon",
+    );
+    expect(dueReminderEmail(1, "<li>Ship it</li>", "en").text).toContain(
+      "Task due soon:",
+    );
+    expect(dueReminderEmail(2, "<li>Ship it</li>", "en").text).toContain(
+      "Tasks due soon:",
+    );
+    // The saved-default neutral branch must not leak into direct letters.
+    expect(dueReminderEmail(1, "<li>Ship it</li>", "en").text).not.toContain(
+      "Due soon: 1 task",
+    );
+    expect(digestEmail("Board", 1, 24, "en").text).not.toContain(
+      "Board activity",
+    );
+  });
+
+  it("uses Russian plural forms for one, few and many", () => {
+    const one = digestEmail("Доска", 1, 24, "ru");
+    expect(one.subject).toContain("изменений: 1");
+    expect(one.text).toContain("было 1 изменение");
+    expect(one.text).not.toContain("1 изменений");
+    const two = digestEmail("Доска", 2, 24, "ru");
+    expect(two.subject).toContain("изменений: 2");
+    expect(two.text).toContain("было 2 изменения");
+    expect(digestEmail("Доска", 5, 24, "ru").text).toContain(
+      "было 5 изменений",
+    );
+
+    const dueOne = dueReminderEmail(1, "<li>Ship it</li>", "ru");
+    expect(dueOne.subject).toContain("1 задача с приближающимся сроком");
+    expect(dueOne.text).toContain("Задача с приближающимся сроком:");
+    expect(dueOne.text).not.toContain("1 задач ");
+    const dueTwo = dueReminderEmail(2, "<li>Ship it</li>", "ru");
+    expect(dueTwo.subject).toContain("2 задачи с приближающимся сроком");
+    expect(dueTwo.text).toContain("Задачи с приближающимся сроком:");
+    expect(dueReminderEmail(5, "<li>Ship it</li>", "ru").subject).toContain(
+      "5 задач с приближающимся сроком",
+    );
+    const due21 = dueReminderEmail(21, "<li>Ship it</li>", "ru");
+    expect(due21.subject).toContain("21 задача с приближающимся сроком");
+    expect(due21.text).toContain("Задачи с приближающимся сроком:");
   });
 
   it("adds aggregated categories in both locales", () => {

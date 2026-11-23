@@ -6,7 +6,9 @@ import {
   ATTENTION_EMAIL_TEMPLATE_KEYS,
   attentionEmail,
   digestAttentionHtml,
+  digestCountLabel,
   digestEmail,
+  dueCountLabel,
   dueReminderEmail,
   emailChangeCodeEmail,
   emailChangedNoticeEmail,
@@ -46,12 +48,30 @@ export const EMAIL_TEMPLATE_KEYS = [
     label: "Attention: agent needs a human",
   },
   { key: "attention_comment_mention", label: "Attention: comment mention" },
+  { key: "attention_card_assigned", label: "Attention: card assigned" },
   { key: "attention_claim_expired", label: "Attention: card claim expired" },
   { key: "attention_quota_exceeded", label: "Attention: limit reached" },
   { key: "attention_token_revoked", label: "Attention: API key revoked" },
 ] as const;
 
 export type EmailTemplateKey = (typeof EMAIL_TEMPLATE_KEYS)[number]["key"];
+
+/**
+ * A row equal to the built-in default was saved without edits. Digest and
+ * due-reminder defaults must then use the localized direct builder, not the
+ * English template text with a localized count phrase.
+ */
+function isBuiltInDefault(
+  key: EmailTemplateKey,
+  row: { subject: string; bodyHtml: string },
+): boolean {
+  const fallback = EMAIL_TEMPLATE_DEFAULTS[key];
+  return (
+    fallback !== undefined &&
+    row.subject === fallback.subject &&
+    row.bodyHtml === fallback.bodyHtml
+  );
+}
 
 export interface RenderedEmail {
   subject: string;
@@ -185,10 +205,13 @@ export class EmailTemplateService {
     attention: DigestAttentionCount[] = [],
   ): Promise<RenderedEmail> {
     const row = await this.row("digest");
-    if (row) {
+    if (row && !isBuiltInDefault("digest", row)) {
       const vars = {
         board: escapeHtml(board),
         count,
+        // Saved templates are single-language English defaults; a localized
+        // count phrase would produce “Board activity …: 1 изменение”.
+        countLabel: digestCountLabel(count, "en"),
         hours,
         attention: digestAttentionHtml(attention, locale),
       };
@@ -229,8 +252,14 @@ export class EmailTemplateService {
     locale: MailLocale,
   ): Promise<RenderedEmail> {
     const row = await this.row("due_reminder");
-    if (row) {
-      const vars = { count, tasks: tasksHtml };
+    if (row && !isBuiltInDefault("due_reminder", row)) {
+      const vars = {
+        count,
+        // The editable default is English; keep the phrase English even when
+        // the recipient locale is RU.
+        countLabel: dueCountLabel(count, "en"),
+        tasks: tasksHtml,
+      };
       const subject = fillTemplate(row.subject, vars);
       const html = fillTemplate(row.bodyHtml, vars);
       return { subject, text: htmlToText(html), html };

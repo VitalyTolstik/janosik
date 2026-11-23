@@ -368,7 +368,9 @@ GDPR erase явно удаляют ревизии и их Activity; GDPR-выг�
 Получатели могут отказаться от обоих. Дайджест суммирует, что изменилось на
 каждой доске с прошлого запуска. Напоминание перечисляет карточки, назначенные
 пользователю, срок которых попадает в окно. Каждое напоминание отправляется
-один раз на карточку, пользователя и срок.
+один раз на карточку, пользователя и срок. Напоминания существуют, только пока
+`reminderLeadHours > 0`; каждая карточка в письме — абсолютная ссылка, которая
+открывает эту карточку.
 
 Напоминания используют язык профиля (EN или RU, по умолчанию английский).
 Если получатель отписался или потерял доступ к любой из досок в письме,
@@ -447,7 +449,7 @@ SMTP баннер публикуется без писем. Само включ�
 
 ### Почтовые шаблоны
 
-Редактируются пять шаблонов:
+Редактируются семнадцать шаблонов:
 
 | Ключ | Метка |
 | --- | --- |
@@ -456,6 +458,18 @@ SMTP баннер публикуется без писем. Само включ�
 | `email_changed_notice` | Email changed notice |
 | `digest` | Board digest |
 | `due_reminder` | Due-date reminder |
+| `attention_approval_requested` | Attention: approval requested |
+| `attention_approval_decided` | Attention: approval decided |
+| `attention_approval_cancelled` | Attention: approval cancelled |
+| `attention_approval_consumed` | Attention: approval applied |
+| `attention_approval_expired` | Attention: approval expired |
+| `attention_agent_blocked` | Attention: agent blocked |
+| `attention_agent_needs_human` | Attention: agent needs a human |
+| `attention_comment_mention` | Attention: comment mention |
+| `attention_card_assigned` | Attention: card assigned |
+| `attention_claim_expired` | Attention: card claim expired |
+| `attention_quota_exceeded` | Attention: limit reached |
+| `attention_token_revoked` | Attention: API key revoked |
 
 У каждого шаблона есть тема и HTML-тело. Плейсхолдеры показаны как `{{name}}`.
 `Preview` показывает письмо с тестовыми данными во встроенном окне. `Save` сохраняет
