@@ -54,7 +54,7 @@ function menuTree(
   return (
     <I18nProvider>
       <ToastProvider>
-        <TooltipProvider>
+        <TooltipProvider delayDuration={0}>
           <SavedViewsMenu
             userId={options.userId}
             boardId={options.boardId}
@@ -107,6 +107,21 @@ afterEach(() => {
 });
 
 describe("SavedViewsMenu", () => {
+  it("hides the trigger tooltip when the popover opens", async () => {
+    renderMenu();
+    const trigger = screen.getByTestId("saved-views-menu");
+
+    act(() => trigger.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Saved views");
+
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("dialog", { name: "Saved views" });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument(),
+    );
+  });
+
   it("saves the current filter and projection, then returns focus", async () => {
     const { onApply } = renderMenu({ view: "table" });
     await openMenu();

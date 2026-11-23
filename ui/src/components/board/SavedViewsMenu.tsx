@@ -153,6 +153,10 @@ export function SavedViewsMenu({
 }: SavedViewsMenuProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  // The tooltip labels an icon-only trigger, but it must not survive the
+  // click that opens the popover: it then hovers over the trigger and the
+  // page header while the dialog is already covering the same area.
+  const [tooltipOpen, setTooltipOpen] = useState(false);
   const scope = `${userId}:${boardId}`;
   const peekedCount = useMemo(
     () => peekSavedViewsCount(userId, boardId),
@@ -183,8 +187,23 @@ export function SavedViewsMenu({
   };
 
   return (
-    <Tooltip>
-      <Popover open={open} onOpenChange={setOpen}>
+    <Tooltip
+      open={open ? false : tooltipOpen}
+      onOpenChange={(next) => {
+        if (open) {
+          setTooltipOpen(false);
+          return;
+        }
+        setTooltipOpen(next);
+      }}
+    >
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (next) setTooltipOpen(false);
+        }}
+      >
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <Button
@@ -192,7 +211,6 @@ export function SavedViewsMenu({
               variant="ghost"
               size="icon"
               aria-label={label}
-              title={label}
               data-testid="saved-views-menu"
               disabled={disabled}
               className="shrink-0 text-muted-foreground hover:text-foreground max-lg:h-11 max-lg:w-11"
