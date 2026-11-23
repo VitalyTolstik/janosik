@@ -19,15 +19,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claims/session end, admin restores) invalidate implicitly through the
   TASK-200.6 revision triggers — no Redis message is required for correctness.
   Reducer-only gaps in server attribution (`lastActorId`, claim token/session,
-  `attachmentCount`, archive stamps, `updatedAt`) are reconciled with one
-  narrow query for the cards a batch touched, keeping a hit deep-equal to a
-  fresh load. Bounds are LRU entries and approximate JSON bytes (default
-  32 / 32 MiB per process; `BOARD_AGGREGATE_CACHE_ENTRIES` /
-  `BOARD_AGGREGATE_CACHE_BYTES`, `0` disables), with unit and e2e coverage
-  for eviction, disabled mode, stale sets, clone isolation, command-path hits,
-  parity across card/label/checklist/column actions, external-writer
-  coherency and two-replica reads. Throughput is not claimed here; TASK-200.14
-  remains the measurement gate.
+  `attachmentCount`, archive stamps, `updatedAt`) are closed by rebuilding
+  each card a batch touched from the database with the same `toCard` mapping
+  (labels, checklists/items, link rows). That also means client-supplied
+  `activity`/`links` in a `RESTORE_*` payload never enter the cache, and a hit
+  matches a fresh load. Out-of-band live-content writers now take the same
+  per-board writer lock (`sweepClaims` groups by board; account erasure locks
+  every board whose card it clears/assigns/recounts), so a command cannot
+  cache a revision that misses their write. A repaired or cleared workflow
+  drops the sticky `workflowInvalid` flag, and `attachmentCount` follows the
+  blob owner when a description embeds another card's upload. Bounds are LRU
+  entries and approximate JSON bytes
+  (default 32 / 32 MiB per process; `BOARD_AGGREGATE_CACHE_ENTRIES` /
+  `BOARD_AGGREGATE_CACHE_BYTES`, `0` disables); a store pays one
+  `JSON.stringify` + `structuredClone` and a hit one clone. Unit and e2e
+  coverage includes eviction, disabled mode, stale sets, clone isolation,
+  command-path hits, parity across card/label/checklist/column/board actions
+  and restores, external-writer coherency and two-replica reads. Throughput is
+  not claimed here; TASK-200.14 remains the measurement gate.
 - TASK-200.9 board read model v1: `GET /boards/:id/summary`,
   `GET /boards/:id/cards` and `GET /boards/:id/cards/:cardId`. The summary
   returns board metadata, labels, columns with their complete ordered

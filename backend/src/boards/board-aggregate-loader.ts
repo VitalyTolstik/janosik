@@ -101,8 +101,9 @@ export class BoardAggregateLoader {
     }
 
     // No hint: read the row once, then either answer from the cache or hand
-    // that same row to the primitive. This is one SELECT either way — the
-    // cache never adds a query to the uncached path.
+    // that same row to the primitive. A hit costs this one SELECT; a miss is
+    // board SELECT + the four aggregate queries, plus `fillCache`'s revision
+    // check below before anything is stored.
     const board = await db.board.findFirst({
       where: { id: boardId, deletedAt: null },
     });
@@ -127,7 +128,7 @@ export class BoardAggregateLoader {
    * snapshots: a command committing in between would make the content newer
    * than `loaded.revision`, and serving it later under that key could skip a
    * delta. One cheap revision check on the miss path keeps the cache honest;
-   * a hit still costs no query.
+   * a cache hit returns before this method runs.
    */
   private async fillCache(
     db: Prisma.TransactionClient,

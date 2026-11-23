@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { Prisma } from "@prisma/client";
 import { argon2id, hash as argonHash } from "argon2";
 import request from "supertest";
 import { AppModule } from "@/app.module";
@@ -13,6 +14,7 @@ import {
 import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { MaintenanceService } from "@/ops/maintenance.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "aggregate-cache@example.com";
@@ -132,6 +134,27 @@ describe("Board aggregate cache (e2e)", () => {
       );
     }
     return res.body as { seq: number; versions: Record<string, number> };
+  }
+
+  async function batch(
+    boardId: string,
+    actions: Record<string, unknown>[],
+  ): Promise<{ results: Array<{ seq: number }> }> {
+    const res = await server()
+      .post(`/api/v1/boards/${boardId}/commands/batch`)
+      .set(auth(session))
+      .send({
+        commands: actions.map((action) => ({
+          commandId: randomUUID(),
+          action: { boardId, at: Date.now(), ...action },
+        })),
+      });
+    if (res.status !== 200) {
+      throw new Error(
+        `Batch failed (${res.status}): ${JSON.stringify(res.body)}`,
+      );
+    }
+    return res.body as { results: Array<{ seq: number }> };
   }
 
   async function createToken(boardId: string, name: string): Promise<string> {
@@ -583,6 +606,404 @@ describe("Board aggregate cache (e2e)", () => {
     expect(cached.cards[copyId]?.attachmentCount).toBeUndefined();
     expect(cached.cards[copyId]?.lastActorId).toBe(ownerId);
     expect(cached.cards[cardId]?.attachmentCount).toBe(1);
+  });
+
+  it("keeps parity for workflow repair, board archive and a multi-command batch", async () => {
+    const boardId = await createBoard("Workflow parity");
+    const firstColumn = randomUUID();
+    const doneColumn = randomUUID();
+    const cardId = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: firstColumn,
+      title: "Todo",
+    });
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: doneColumn,
+      title: "Done",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: cardId,
+      columnId: firstColumn,
+      title: "Task",
+    });
+
+    // Simulate a board written before validation existed: the aggregate
+    // exposes `workflowInvalid` until an ADMIN repairs or clears it.
+    await prisma.board.update({
+      where: { id: boardId },
+      data: { workflow: { schemaVersion: 99 } as Prisma.InputJsonValue },
+    });
+    const workflow = {
+      schemaVersion: 1,
+      enabled: true,
+      doneColumnIds: [doneColumn],
+      transitions: [
+        {
+          id: randomUUID(),
+          fromColumnId: firstColumn,
+          toColumnId: doneColumn,
+          allowedRoles: ["ADMIN", "MEMBER"],
+        },
+      ],
+    };
+    await command(boardId, { type: "SET_BOARD_WORKFLOW", workflow });
+    await expectCacheMatchesDatabase(boardId, "repaired workflow");
+    const repaired = cache.get(boardId, await revision(boardId))!;
+    expect(repaired.workflow).toEqual(workflow);
+    expect(repaired.workflowInvalid).toBeUndefined();
+
+    await command(boardId, { type: "SET_BOARD_WORKFLOW" });
+    await expectCacheMatchesDatabase(boardId, "cleared workflow");
+    const cleared = cache.get(boardId, await revision(boardId))!;
+    expect(cleared.workflow).toBeUndefined();
+    expect(cleared.workflowInvalid).toBeUndefined();
+
+    load.mockClear();
+    const batched = await batch(boardId, [
+      { type: "UPDATE_CARD", cardId, title: "Batched title" },
+      { type: "SET_CARD_PRIORITY", cardId, priority: "high" },
+      { type: "TOUCH_CARD", cardId },
+    ]);
+    expect(batched.results).toHaveLength(3);
+    expect(load).not.toHaveBeenCalled();
+    await expectCacheMatchesDatabase(boardId, "after batch");
+
+    await command(boardId, { type: "ARCHIVE_BOARD" });
+    await expectCacheMatchesDatabase(boardId, "after board archive");
+    expect(cache.get(boardId, await revision(boardId))!.archivedAt).toEqual(
+      expect.any(Number),
+    );
+
+    await command(boardId, { type: "UNARCHIVE_BOARD" });
+    await expectCacheMatchesDatabase(boardId, "after board unarchive");
+    expect(
+      cache.get(boardId, await revision(boardId))!.archivedAt,
+    ).toBeUndefined();
+  });
+
+  it("keeps parity for label/checklist restores, bulk archive and a column copy", async () => {
+    const boardId = await createBoard("Restore parity");
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    const labelId = randomUUID();
+    const checklistId = randomUUID();
+    const itemId = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: cardId,
+      columnId,
+      title: "Task",
+    });
+    await command(boardId, {
+      type: "ADD_LABEL",
+      label: { id: labelId, name: "Bug", color: "red" },
+    });
+    await command(boardId, {
+      type: "SET_CARD_LABEL",
+      cardId,
+      labelId,
+      on: true,
+    });
+    await command(boardId, {
+      type: "ADD_CHECKLIST",
+      cardId,
+      newChecklistId: checklistId,
+      title: "Steps",
+    });
+    await command(boardId, {
+      type: "ADD_CHECKLIST_ITEM",
+      cardId,
+      checklistId,
+      newItemId: itemId,
+      text: "One",
+    });
+
+    const beforeLabelDelete = (await loader.loadWithRevision(prisma, boardId))!
+      .board;
+    const label = beforeLabelDelete.labels.find((row) => row.id === labelId)!;
+    const assignments = [
+      {
+        cardId,
+        index: beforeLabelDelete.cards[cardId]!.labelIds.indexOf(labelId),
+      },
+    ];
+    await command(boardId, { type: "DELETE_LABEL", labelId });
+    await expectCacheMatchesDatabase(boardId, "after label delete");
+    await command(boardId, {
+      type: "RESTORE_LABEL",
+      label,
+      index: beforeLabelDelete.labels.indexOf(label),
+      assignments,
+    });
+    await expectCacheMatchesDatabase(boardId, "after label restore");
+
+    const beforeChecklistDelete = (await loader.loadWithRevision(
+      prisma,
+      boardId,
+    ))!.board;
+    const checklist = beforeChecklistDelete.cards[cardId]!.checklists!.find(
+      (row) => row.id === checklistId,
+    )!;
+    await command(boardId, {
+      type: "DELETE_CHECKLIST",
+      cardId,
+      checklistId,
+    });
+    await expectCacheMatchesDatabase(boardId, "after checklist delete");
+    await command(boardId, {
+      type: "RESTORE_CHECKLIST",
+      cardId,
+      checklist,
+      index: 0,
+    });
+    await expectCacheMatchesDatabase(boardId, "after checklist restore");
+
+    const secondChecklist = randomUUID();
+    await command(boardId, {
+      type: "ADD_CHECKLIST",
+      cardId,
+      newChecklistId: secondChecklist,
+      title: "Doomed",
+    });
+    await command(boardId, {
+      type: "DELETE_CHECKLIST",
+      cardId,
+      checklistId: secondChecklist,
+    });
+    await expectCacheMatchesDatabase(boardId, "after second checklist delete");
+
+    const copyCardId = randomUUID();
+    await command(boardId, {
+      type: "DUPLICATE_COLUMN",
+      columnId,
+      newColumnId: randomUUID(),
+      newCardIds: [copyCardId],
+      title: "Copy",
+    });
+    await expectCacheMatchesDatabase(boardId, "after column copy");
+    expect(
+      (await loader.loadWithRevision(prisma, boardId))!.board.cards[copyCardId]!
+        .title,
+    ).toBe("Task");
+
+    await command(boardId, { type: "ARCHIVE_COLUMN_CARDS", columnId });
+    await expectCacheMatchesDatabase(boardId, "after bulk archive");
+    expect(
+      (await loader.loadWithRevision(prisma, boardId))!.board.columns.find(
+        (column) => column.id === columnId,
+      )?.cardIds,
+    ).toEqual([]);
+    expect(
+      (await loader.loadWithRevision(prisma, boardId))!.board.cards[copyCardId]!
+        .archivedAt,
+    ).toBeUndefined();
+  });
+
+  it("keeps parity for touch, task spec and claim commands", async () => {
+    const boardId = await createBoard("Card command parity");
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: cardId,
+      columnId,
+      title: "Task",
+    });
+
+    await command(boardId, { type: "TOUCH_CARD", cardId });
+    await expectCacheMatchesDatabase(boardId, "after touch");
+    await command(boardId, {
+      type: "SET_CARD_TASK_SPEC",
+      cardId,
+      acceptanceCriteria: ["Works"],
+      definitionOfDone: ["Tested"],
+    });
+    await expectCacheMatchesDatabase(boardId, "after task spec");
+    await command(boardId, {
+      type: "CLAIM_CARD",
+      cardId,
+      claimedBy: ownerId,
+      leaseUntil: Date.now() + 900_000,
+    });
+    const claimedRevision = await expectCacheMatchesDatabase(
+      boardId,
+      "after claim",
+    );
+    const claimed = cache.get(boardId, claimedRevision)!;
+    expect(claimed.cards[cardId]).toMatchObject({
+      claimedBy: ownerId,
+      acceptanceCriteria: ["Works"],
+    });
+    expect(claimed.cards[cardId]!.leaseUntil).toEqual(expect.any(Number));
+  });
+
+  it("keeps parity for RESTORE_CARD and drops injected activity/links", async () => {
+    const boardId = await createBoard("Restore injection");
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    const otherCardId = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    for (const [id, title] of [
+      [cardId, "Restore me"],
+      [otherCardId, "Other"],
+    ] as const) {
+      await command(boardId, {
+        type: "ADD_CARD",
+        newCardId: id,
+        columnId,
+        title,
+      });
+    }
+    await command(boardId, {
+      type: "ADD_CHECKLIST",
+      cardId,
+      newChecklistId: randomUUID(),
+      title: "Steps",
+    });
+    const before = (await loader.loadWithRevision(prisma, boardId))!.board;
+    await command(boardId, { type: "DELETE_CARD", cardId });
+    await expectCacheMatchesDatabase(boardId, "before restore");
+
+    const snapshot = structuredClone(before.cards[cardId]!);
+    snapshot.activity = [
+      {
+        id: randomUUID(),
+        type: "created",
+        at: Date.now(),
+        actorId: ownerId,
+        detail: "injected",
+      },
+    ];
+    snapshot.links = [
+      {
+        id: randomUUID(),
+        type: "relates_to",
+        targetCardId: otherCardId,
+      },
+    ];
+    const injectedLinkId = snapshot.links[0]!.id;
+    await command(boardId, {
+      type: "RESTORE_CARD",
+      card: snapshot,
+      columnId,
+      index: 0,
+    });
+    await expectCacheMatchesDatabase(boardId, "after injected restore");
+
+    const cached = cache.get(boardId, await revision(boardId))!;
+    expect(cached.cards[cardId]!.title).toBe("Restore me");
+    expect(cached.cards[cardId]!.activity).toBeUndefined();
+    expect(cached.cards[cardId]!.links).toBeUndefined();
+    expect(cached.cards[cardId]!.checklists?.map((row) => row.title)).toEqual([
+      "Steps",
+    ]);
+    expect(await prisma.cardLink.count({ where: { id: injectedLinkId } })).toBe(
+      0,
+    );
+  });
+
+  it("rebuilds the attachment owner when a description embeds another card's upload", async () => {
+    const boardId = await createBoard("Cross-card embed");
+    const columnId = randomUUID();
+    const authorCard = randomUUID();
+    const ownerCard = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    for (const [id, title] of [
+      [authorCard, "Author"],
+      [ownerCard, "Owner"],
+    ] as const) {
+      await command(boardId, {
+        type: "ADD_CARD",
+        newCardId: id,
+        columnId,
+        title,
+      });
+    }
+    const uploaded = await server()
+      .post(`/api/v1/cards/${ownerCard}/attachments?description=1`)
+      .set(auth(session))
+      .attach("file", PDF, {
+        filename: "owner.pdf",
+        contentType: "application/pdf",
+      })
+      .expect(201);
+    // Prime the cache at the attachment revision.
+    await loader.loadWithRevision(prisma, boardId);
+
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId: authorCard,
+      description: `![file](/api/v1/attachments/${uploaded.body.id as string}/content)`,
+    });
+    await expectCacheMatchesDatabase(boardId, "after cross-card embed");
+    const cached = cache.get(boardId, await revision(boardId))!;
+    expect(cached.cards[ownerCard]!.attachmentCount).toBe(1);
+    expect(cached.cards[authorCard]!.attachmentCount).toBeUndefined();
+  });
+
+  it("reloads the cache after a lapsed-claim maintenance sweep", async () => {
+    const boardId = await createBoard("Claim sweep");
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: cardId,
+      columnId,
+      title: "Claimed",
+    });
+    await command(boardId, {
+      type: "CLAIM_CARD",
+      cardId,
+      claimedBy: ownerId,
+      leaseUntil: Date.now() - 1_000,
+    });
+    const before = await expectCacheMatchesDatabase(boardId, "before sweep");
+    expect(cache.get(boardId, before)!.cards[cardId]!.claimedBy).toBe(ownerId);
+
+    const maintenance = app.get(MaintenanceService);
+    expect(await maintenance.sweepClaims()).toBe(1);
+    const afterSweep = await revision(boardId);
+    expect(afterSweep).toBeGreaterThan(before);
+    expect(cache.revisionOf(boardId)).toBe(before);
+    expect(cache.get(boardId, afterSweep)).toBeNull();
+
+    load.mockClear();
+    await command(boardId, {
+      type: "UPDATE_CARD",
+      cardId,
+      title: "After sweep",
+    });
+    expect(load).toHaveBeenCalledTimes(1);
+    await expectCacheMatchesDatabase(boardId, "after sweep command");
+    expect(
+      cache.get(boardId, await revision(boardId))!.cards[cardId]!.claimedBy,
+    ).toBeUndefined();
   });
 
   it("reloads after a comment, an attachment, a session end and an admin restore", async () => {

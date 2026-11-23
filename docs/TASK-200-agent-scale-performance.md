@@ -729,21 +729,33 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   Устаревшая запись (меньшая ревизия) никогда не перетирает новую.
 - Reducer не содержит серверных атрибутов карточки (`lastActorId`,
   `claimedByTokenId`/`claimedBySessionId`, `attachmentCount`,
-  `archivedAt`/`archivedFromColumnId`, `updatedAt`). Перед кэшированием
-  они накладываются одним узким запросом по затронутым карточкам, поэтому
-  попадание побайтно равно свежей загрузке, включая duplicate/restore.
+  `archivedAt`/`archivedFromColumnId`, `updatedAt`), а `RESTORE_*`-payload
+  может нести клиентские `activity`/`links`. Перед кэшированием каждая
+  затронутая карточка **пересобирается из БД** тем же `toCard` +
+  labels/checklists/items/links, что и полная загрузка; несуществующие
+  карточки удаляются. Поэтому клиентские `activity`/произвольные `links`
+  никогда не попадают в кэш, а попадание совпадает со свежей загрузкой
+  (включая duplicate/restore и счётчик вложений карточки-владельца при
+  описании с чужим embed).
 - Границы: LRU по числу записей и приблизительному размеру
   (`JSON.stringify` + 256 байт на запись, считается только при записи);
   по умолчанию 32 записи / 32 МиБ на процесс, `0` в
   `BOARD_AGGREGATE_CACHE_ENTRIES` или `BOARD_AGGREGATE_CACHE_BYTES`
   полностью выключает кэш и возвращает путь без лишних запросов. Одна
-  доска больше бюджета не кэшируется и не вытесняет остальные.
+  доска больше бюджета не кэшируется и не вытесняет остальные. Запись
+  платит один `structuredClone` + `JSON.stringify`; попадание — один
+  `structuredClone` (временная копия на запрос).
 - Coherency: comment, attachment, claim/session-end, admin card restore и
   board restore проверены e2e — ревизия растёт, старая запись не
   отдаётся, следующая загрузка содержит новые данные; две независимые
   пары loader/cache имитируют реплики (писатель R+1, читатель на R
   промахивается и перечитывает). Ручной инвалидации нет — корректность
-  держится на триггерах 200.6.
+  держится на триггерах 200.6. Live-content писатели вне команд
+  (`MaintenanceService.sweepClaims`, удаление аккаунта) берут тот же
+  board-writer lock до записи Card, иначе команда могла бы закэшировать
+  ревизию, не содержащую их изменений. `SET_BOARD_WORKFLOW` (set/clear,
+  включая equal) снимает `workflowInvalid`; карточка-владелец
+  description-embed пересобирается по `attachmentCount`.
 - Тесты: `backend/src/boards/board-aggregate-cache.spec.ts` (LRU по
   entries/bytes, disabled=0, несовпадение ревизии, stale set, deep-clone,
   счётчики, oversize) и
