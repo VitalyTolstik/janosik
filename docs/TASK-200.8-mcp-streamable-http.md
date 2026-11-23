@@ -23,10 +23,14 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
                                              Janosik API /api/v1
 ```
 
-- Separate binary/container (`dist/http.js`), never embedded in the API.
+- Separate binary/container (npm entry `dist/http.js`; the image bundles one
+  self-contained `dist-http/http.js`), never embedded in the API.
 - MCP Streamable HTTP transport from `@modelcontextprotocol/sdk`
   (`StreamableHTTPServerTransport`), one transport and one `McpServer` per
-  session, JSON responses enabled for non-streaming calls.
+  session. POST responses use **SSE** (the transport default); JSON response
+  mode is deliberately not enabled because SDK 1.32 leaves its pending
+  `_streamMapping` entry behind for JSON responses. SSE also provides
+  keepalives for long `wait_for_work` calls.
 - stdio remains `dist/index.js`; the existing desktop configuration is
   unchanged.
 - No database, no cache, no shared token.
@@ -42,11 +46,17 @@ agent C --Authorization: jnk_C--> /    ├─ session A: McpServer + JanosikClie
 | `/ready` | `GET` | none | readiness; probes the API's `/api/v1/health/ready` (cached) |
 
 Initialize response carries `Mcp-Session-Id`; every later request must present
-it and the same bearer key. Error contract:
+it and the same bearer key. Every POST response is an SSE stream; reverse
+proxies need buffering off and a read timeout above the longest tool call.
+Error contract:
 
-- `401 unauthorized` — missing/malformed `Authorization`; includes
+- `401 unauthorized` — no/malformed `Authorization`, or the API rejects the
+  key during the validation call; includes
   `WWW-Authenticate: Bearer realm="janosik-mcp"`.
-- `403 token_mismatch` — a valid-looking key that is not the key bound to the
+- `429 rate_limited` — the API rate-limited the initialize-time key check;
+  includes `Retry-After`.
+- `503 auth_unavailable` — the key-validation call failed or timed out.
+- `403 token_mismatch` — a valid key that is not the key bound to the
   session.
 - `403 origin_not_allowed` — browser `Origin` not in the allowlist (default:
   all browser origins denied). An allowed origin also gets CORS preflight and
@@ -56,10 +66,15 @@ it and the same bearer key. Error contract:
 - `503 session_limit` — global/per-key cap; includes `Retry-After`.
 - `503 shutting_down` — SIGTERM drain window.
 
-## Token isolation
+## Token validation and isolation
 
-On `initialize`, the gateway computes `SHA-256(token)` and stores only that
-fingerprint in the session. The raw key lives in that session's
+On `initialize`, the gateway first makes one cheap authenticated read against
+the API (`/api/v1/auth/me` by default) so a fabricated bearer cannot create a
+session or exhaust the global cap. Only a successful check proceeds; `401`
+means the key is invalid, `429` carries the API's `Retry-After`, and `503`
+means validation itself is unavailable. The token is then hashed:
+`SHA-256(token)` is stored as the session fingerprint. The raw key lives in
+that session's
 `JanosikClient` and is never put in module state, logs, health output, or a
 second session. Every later request re-hashes the presented key and compares
 with `timingSafeEqual`. A different key on session A is rejected before the
@@ -73,10 +88,12 @@ ignored with a warning; a stray `--token` flag is ignored the same way.
 - `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500) caps live+initializing
   sessions; `MAX_SESSIONS_PER_TOKEN` optionally caps one noisy key.
 - Sessions idle for `SESSION_IDLE_MS` (default 5 min) are closed by a sweeper.
-  A session with an in-flight request or open SSE stream is never swept.
+  A session with an in-flight request, an open SSE stream, or an `open()` still
+  connecting is never swept. Timer env values are bounded to Node's maximum.
 - Explicit `DELETE` closes immediately; transport/network close also detaches.
-- Graceful shutdown: stop accepting, close every session/SSE stream, wait
-  `SHUTDOWN_GRACE_MS`, then force-close sockets. A second signal exits 1.
+- Graceful shutdown: stop accepting, release idle sessions, let in-flight
+  tool calls finish up to `SHUTDOWN_GRACE_MS`, close the remaining
+  sessions/SSE streams, then force-close sockets. A second signal exits 1.
 - Structured JSON logs include request id, session id, method, path, status,
   duration and client IP — never headers, bodies, keys, or token hashes.
 
@@ -85,24 +102,32 @@ ignored with a warning; a stray `--token` flag is ignored the same way.
 `mcp/src/http-*.test.ts`, `mcp/src/index.test.ts` (all use a mock API; no
 Docker or heavy load):
 
-- initialize + initialized + `tools/list` over real HTTP;
+- initialize + initialized + `tools/list` over real HTTP SSE, including the
+  official `StreamableHTTPClientTransport`;`
 - per-session `Authorization` pass-through and A/B isolation: A's board vs
   B's board, B-on-A and A-on-B rejected with 403, mismatched DELETE rejected,
   A still usable afterwards;
-- missing/malformed auth (401), no key in any log line;
+- key validation: fabricated key (401), API rate limit (429), API outage
+  (503), valid key, and no key in any log line;
 - global limit (503), explicit DELETE, replacement session, shutdown drain;
-- idle expiry -> 404 + session count 0;
+- idle expiry -> 404 + session count 0; pending `open()` is not swept;
+- GET SSE keepalive, no sweep while the stream is open, DELETE closes it,
+  disconnect is eventually swept;
+- 20 × 1 MiB tool results over SSE with empty `_streamMapping`,
+  `_requestToStreamMapping` and `_requestResponseMap`, plus a bounded heap;
+- single-flight `/ready` (two concurrent probes, one upstream call);
 - disallowed origin and oversized body;
-- health/readiness, including upstream readiness 503;
-- 100 then 500 real HTTP sessions in one process (mock upstream); heap and RSS
-  printed as evidence and bounded by the test;
+- 100 then 500 real HTTP sessions in one process (mock upstream), a tool call
+  at the 500 cap, and heap + RSS bounds;
 - spawn the stdio entry over `StdioClientTransport` and list tools (regression).
 
 Local evidence (WSL, Node 24, `vitest run`): 500 sessions in one process used
-about **+340 MB heap / 570 MB RSS** (including the Vitest worker and mock
+about **+300 MB heap / 600 MB RSS** (including the Vitest worker and mock
 upstream), versus the ~54 GB extrapolated for 500 stdio processes. The test
-asserts a generous 750 MB heap bound to catch a regression, not to be a
-benchmark.
+asserts a 750 MB heap and 1.5 GB RSS bound to catch a regression, not to be a
+benchmark. The gateway image is a bundled single file, so the runtime image is
+~350 MB (almost all of it the Node base image) instead of the previous ~571 MB
+dependency tree; CI checks it stays under 400 MB.
 
 ## Operational notes and gaps
 

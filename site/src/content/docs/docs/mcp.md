@@ -55,6 +55,35 @@ filesystem. Write failures return `filesystem_error`. Confinement requires
 Linux x64/arm64, `python3`, `/proc` and a kernel with `openat2`. Confined
 writes also require `O_TMPFILE` support on the target filesystem.
 
+### Shared HTTP gateway for many agents
+
+One stdio process per agent costs roughly 100 MB of memory. For a swarm, run
+the separate gateway container instead; it serves many MCP sessions from one
+Node process:
+
+```bash
+docker compose --profile mcp up -d
+# MCP endpoint: http://127.0.0.1:8080/mcp
+```
+
+Each client connects to `https://your-gateway/mcp` with **its own** key in
+`Authorization: Bearer jnk_…`; the gateway never receives a shared
+`JANOSIK_TOKEN`. It validates the key against the API on initialize (invalid
+keys get `401`, API rate limits `429`, an API outage `503`), binds it to that
+session, and rejects a different key with `403`. Every POST response is an
+SSE stream; a reverse proxy needs buffering off and a read timeout above the
+longest tool call. `GET /health` is liveness; `GET /ready` also proves the API
+is reachable.
+
+**Sessions are in-memory.** Restarting the gateway drops every session;
+clients reconnect and initialize again. Multiple replicas need a
+session-affine proxy (or clients must accept reconnects) because there is no
+shared session store. Limits come from `JANOSIK_MCP_HTTP_MAX_SESSIONS`
+(default 500), `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default unlimited)
+and the idle expiry (default 5 minutes); an in-flight call or open stream is
+never swept. The Compose service also sets a 1.5 GB memory limit and 2 CPUs.
+The API still enforces the key's board scope, role, preset and rate limit.
+
 ## Tools
 
 Tools come in groups. By default the server registers the groups that work

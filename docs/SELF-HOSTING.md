@@ -12,8 +12,8 @@ HTTPS, day-2 operations (upgrades, backups) and troubleshooting.
 
 ## What you get
 
-`docker compose up -d` starts three containers; the optional MCP gateway in
-the table is enabled with `--profile mcp`:
+`docker compose up -d` starts three containers by default. A fourth, the
+optional MCP gateway in the table, is enabled with `--profile mcp`:
 
 | Service | Image | Role |
 | --- | --- | --- |
@@ -22,9 +22,9 @@ the table is enabled with `--profile mcp`:
 | `postgres` | `postgres:16-alpine` | The database (boards, users, command log, audit). |
 | `redis` | `redis:7-alpine` | Job queues (mail, video transcoding, maintenance, exports). |
 
-`postgres` and `redis` are **not** published to the host — only the app port
-is exposed. On boot the `app` container applies database migrations, then
-starts the API.
+`postgres` and `redis` are **not** published to the host. The app port is
+published by default; the optional gateway publishes `127.0.0.1:8080` only.
+On boot the `app` container applies database migrations, then starts the API.
 
 ---
 
@@ -263,9 +263,11 @@ docker compose --profile mcp up -d
 
 Each client connects to that URL with its **own** personal key in an
 `Authorization: Bearer jnk_…` header; the gateway never receives a shared
-`JANOSIK_TOKEN`. The key is bound to the MCP session, and a different key on
-the same session gets `403`. Configure the MCP client's remote/URL transport
-with the header, for example:
+`JANOSIK_TOKEN`. On initialize it validates the key with the API's
+`/auth/me` (invalid keys get `401`, API rate limits `429`, an API outage
+`503`) before creating the session. The key is then bound to the MCP session,
+and a different key on the same session gets `403`. Configure the MCP
+client's remote/URL transport with the header, for example:
 
 ```json
 {
@@ -279,16 +281,29 @@ with the header, for example:
 ```
 
 For production, terminate TLS in front of port 8080 and set
-`JANOSIK_MCP_BIND_ADDRESS=127.0.0.1`. If a browser-based MCP client must call
-it, list its origin in `JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects
-all browser origins. Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
+`JANOSIK_MCP_BIND_ADDRESS=127.0.0.1`. The proxy runs on the host and forwards
+to `127.0.0.1:8080`; clients use the public `https://…/mcp` URL, never the
+Compose service name or the internal port. Turn proxy buffering off and set a
+read timeout above the longest tool call: every POST is an SSE stream and
+long `janosik_wait_for_work` calls send keepalives, not a JSON body. If a
+browser-based MCP client must call it, list its origin in
+`JANOSIK_MCP_HTTP_ALLOWED_ORIGINS`; the default rejects all browser origins.
+Tune `JANOSIK_MCP_HTTP_MAX_SESSIONS` (default 500),
 `JANOSIK_MCP_HTTP_SESSION_IDLE_MS` (default 5 minutes) and
 `JANOSIK_MCP_HTTP_MAX_SESSIONS_PER_TOKEN` (default unlimited) in `.env`.
 `GET /ready` proves the API is reachable too; `GET /health` is liveness.
 
+**Sessions are in-memory.** Restarting the gateway container drops every MCP
+session; clients reconnect and initialize again. Multiple replicas need a
+session-affine proxy (or clients must accept reconnects), because there is no
+shared session store. The Compose service sets `stop_grace_period: 20s`
+(above the 10 s drain window), a 1.5 GB memory limit and 2 CPUs by default;
+override with `JANOSIK_MCP_MEM_LIMIT` / `JANOSIK_MCP_CPUS`.
+
 Sessions are independent: each has its own `JanosikClient` and token
-fingerprint, and an idle sweeper closes abandoned ones. The API still enforces
-the key's board scope, role, preset and rate limit. See
+fingerprint, and an idle sweeper closes abandoned ones without ever sweeping
+an in-flight call or an open SSE stream. The API still enforces the key's
+board scope, role, preset and rate limit. See
 [the MCP guide](../mcp/README.md#shared-streamable-http-gateway) for the full
 environment table.
 

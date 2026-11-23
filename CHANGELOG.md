@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.8 shared MCP Streamable HTTP gateway. `@janosik/mcp` now ships a
+  separate `janosik-mcp-http` binary and `ghcr.io/vitalytolstik/janosik-mcp`
+  image that serve many MCP sessions from one Node process instead of one
+  ~100 MB stdio process per agent. Each session supplies its own
+  `Authorization: Bearer jnk_…`; the gateway validates it against the API
+  before creating a session, binds its SHA-256 fingerprint, rejects a
+  different key, and never accepts a shared `JANOSIK_TOKEN`. POST responses
+  use SSE (with keepalives for long `wait_for_work` calls) after the SDK's
+  JSON-response mode was found to retain completed stream mappings. Global
+  and per-key session caps, idle expiry, graceful drain, `/health`, `/ready`,
+  token-free structured logs and CORS/Origin checks are included. Sessions are
+  in-memory: a restart drops them, and multiple replicas need session
+  affinity. The container bundles its dependencies into one file; a
+  mock-upstream test creates 100 then 500 HTTP sessions in one process, makes
+  a tool call at the cap, asserts SSE stream maps are empty after 20 MiB of
+  results, and checks heap/RSS bounds. stdio remains the desktop transport.
+
 - TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
   bounded summary of the cards ready to pick up on one board — the initial/work
   column, unassigned, without a live claim and not blocked — with

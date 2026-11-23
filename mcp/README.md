@@ -91,13 +91,29 @@ Content-Type: application/json
 Accept: application/json, text/event-stream
 ```
 
+Every POST response is an SSE stream (`text/event-stream`), including ordinary
+tool calls; the gateway sends `: keepalive` comments while a tool such as
+`janosik_wait_for_work` is still running. Configure a reverse proxy with
+buffering off and a read timeout above the longest tool call. GET opens the
+optional server-to-client SSE stream; DELETE terminates the session.
+
 The gateway reads `JANOSIK_URL` and the normal tool settings, but it **never**
-reads `JANOSIK_TOKEN`. A key is accepted on the `initialize` request, bound to
-that session's SHA-256 fingerprint, and required (and checked in constant
-time) on every later request. A different key on the same `Mcp-Session-Id`
-gets `403 token_mismatch`; a missing or malformed key gets `401`. Sessions are
-independent: one session's `JanosikClient` and board observations never cross
-into another.
+reads `JANOSIK_TOKEN`. On `initialize` it first validates the key with a cheap
+authenticated API read (`/api/v1/auth/me` by default), so a fabricated
+bearer string cannot consume the global session cap; invalid keys get `401`,
+API rate limits get `429` with `Retry-After`, and an API outage gets `503`.
+The key is then bound to that session's SHA-256 fingerprint and required (and
+checked in constant time) on every later request. A different key on the same
+`Mcp-Session-Id` gets `403 token_mismatch`; a request with no key at all gets
+`401`. Sessions are independent: one session's `JanosikClient` and board
+observations never cross into another.
+
+**Sessions are in-memory.** A gateway restart drops every session; clients
+must initialize again. If you run more than one replica, use a session-affine
+proxy or accept reconnects; there is no shared session store. A session with
+no request is closed after `JANOSIK_MCP_HTTP_SESSION_IDLE_MS`, a request in
+flight or an open SSE stream is never swept, and `MAX_SESSIONS` /
+`MAX_SESSIONS_PER_TOKEN` bound the process.
 
 ```bash
 # from a checkout
@@ -144,7 +160,10 @@ use `POST`/`GET`/`DELETE` on `JANOSIK_MCP_HTTP_PATH` (default `/mcp`).
 | `JANOSIK_MCP_HTTP_READY_URL` | `${JANOSIK_URL}/api/v1/health/ready` | Upstream readiness probe; no token is sent. |
 | `JANOSIK_MCP_HTTP_READY_CACHE_MS` | `5000` | Cache for the readiness probe (`0` = every request probes). |
 | `JANOSIK_MCP_HTTP_READY_TIMEOUT_MS` | `3000` | Readiness probe timeout. |
-| `JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS` | `360000` | Node request timeout; `0` disables it (long `wait_for_work` calls). |
+| `JANOSIK_MCP_HTTP_AUTH_URL` | `${JANOSIK_URL}/api/v1/auth/me` | Key-validation call made once per initialize. |
+| `JANOSIK_MCP_HTTP_AUTH_TIMEOUT_MS` | `3000` | Key-validation timeout. |
+| `JANOSIK_MCP_HTTP_SSE_KEEPALIVE_MS` | `15000` | SSE keep-alive interval; `0` disables it. |
+| `JANOSIK_MCP_HTTP_REQUEST_TIMEOUT_MS` | `60000` | Time allowed to receive a request; not a tool deadline. Long tool responses are kept alive by SSE. |
 | `JANOSIK_MCP_HTTP_HEADERS_TIMEOUT_MS` | `60000` | Node headers timeout. |
 | `JANOSIK_MCP_HTTP_TRUST_PROXY` | off | Use the first `X-Forwarded-For` hop in logs. |
 | `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
@@ -160,11 +179,17 @@ and never expose it unauthenticated. It refuses browser `Origin`s unless
 listed, does not log authorization headers or request bodies, and sends
 no-store responses. The per-session idle expiry and global cap are resource
 guards, not an authorization boundary: the Janosik API still enforces each
-key's scopes, roles and rate limits.
+key's scopes, roles and rate limits. In Compose the published port is bound to
+`127.0.0.1`; a host proxy forwards to `127.0.0.1:8080`, while clients use the
+public `https://…/mcp` URL. Do not use the container name or internal port in
+client configuration.
 
 The `mcp` package test suite includes a mock-upstream smoke that creates 100
-then 500 real HTTP sessions in one process; on the development host 500
-sessions used about 570 MB RSS (one process, not 500 × 100 MB). See
+then 500 real HTTP sessions in one process, calls a tool at the cap, and
+checks that 20 MiB of SSE tool results leaves no SDK stream mappings behind.
+On the development host 500 sessions used about 600 MB RSS (one process, not
+500 × 100 MB). The gateway container bundles the SDK and Zod into one file, so
+its image is ~350 MB rather than a ~571 MB dependency tree. See
 `mcp/src/http-server.test.ts`.
 
 ## Tools
