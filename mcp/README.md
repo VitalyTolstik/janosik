@@ -316,8 +316,10 @@ working directory. Existing files are never overwritten.
 Successful command-log mutations return `structuredContent` with `ok: true`,
 `seq` and `runId` (`null` when no run was recorded). A batch returns the
 highest sequence from its results and the batch run ID. Use `seq` as
-`expectedVersion` for a subsequent write. The result may also carry
-`resourceId` or `approvalId`. Failed calls keep
+`expectedVersion` only when you deliberately want the full-board
+`ifMatch = seq` mode; `claim_card`, `move_card` and `update_card` already pin
+the one card they touch. The result may also carry `resourceId` or
+`approvalId`. Failed calls keep
 `isError: true` and carry `structuredContent` with `ok: false`, the API `code`,
 `retryable`, `requestId` and conflict details. The MCP server retries the API
 call automatically for a `429 rate_limited` (and the queued `503
@@ -329,8 +331,11 @@ Retry only `retryable: true`
 failures that still come back (`rate_limited`, `request_timeout`,
 `board_write_timeout`, `service_unavailable`, `idempotency_in_progress`);
 retry `service_unavailable` only with the same `commandId` or REST
-`Idempotency-Key`, because a `502`/`504` can follow an unkeyed write. Re-read
-the board on `version_conflict`, and stop on `approval_required`.
+`Idempotency-Key`, because a `502`/`504` can follow an unkeyed write. A
+`version_conflict` on a targeted action carries the actual entity `versions`;
+the MCP server refreshes only that card and retries (up to three times).
+Re-read the board only for a tool invoked with an explicit `expectedVersion`,
+and stop on `approval_required`.
 The REST-backed writes (`create_board`, `duplicate_card`, `add_comment`,
 `create_share`, `upload_attachment`) accept an optional `idempotencyKey` so a
 tool-call retry returns the first result instead of creating a second one.
@@ -522,14 +527,34 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
 - **No silent no-ops.** A write that changed nothing — an id that is not on
   the board, or a value that was already set — comes back as an error, so an
   agent never reads "done" for a write that did nothing.
-- **Compare-and-set.** Tools that compute a command from a read (`move_card`,
-  `move_column`, `duplicate_column`, `remove_card_link`) send it with `ifMatch`
-  on the board version they read; if another writer got there first, they
-  re-read and retry. Command-log mutation tools also take an optional
-  `expectedVersion` (the board `seq` from `janosik_get_board`): pass it and the
-  write is refused with a version conflict if the board changed since, instead
-  of overwriting another agent's edit. `janosik_update_card` keeps
-  `expectedDescription` for compare-and-set edits of shared text.
+- **Targeted compare-and-set.** `claim_card`, `move_card` and `update_card`
+  read one card context (`GET /boards/:id/cards/:cardId/context`) and call the
+  targeted intent with `ifMatchVersions` for that card only. A concurrent edit
+  or move of another card never conflicts; a change to this card answers `409`
+  with its current `versions`, and the tool retries only this card. The
+  Definition-of-Done check and `expectedDescription` use the same context.
+  An exact retry with the same `commandId`, actor and intent is a true replay
+  even though the server recomputes a lease or move coordinates; refreshed
+  `ifMatchVersions` pins do not break it. Identical concurrent retries are
+  serialized only inside one API process; across replicas a simultaneous
+  first attempt may answer `409 idempotency_conflict`, so retry it once the
+  first result is stored. A different intent, a different
+  actor or a different fingerprinted intent under the same key answers
+  `idempotency_conflict`. A bare v1 hash from the predecessor branch is the
+  same hash JSON and replays exactly. Only genuinely fingerprint-less rows use
+  the older action/card/actor semantic match (claim lease length within 1 ms,
+  move destination; position is not verifiable, and an unverifiable legacy
+  `expectedDescription` is refused). A genuine missing card on a
+  200.7 server is a normal
+  `not_found` and does **not** fall back; a context `404` without
+  `X-Janosik-Intent-API: 1` can mean a pre-200.7 server and triggers the
+  command-API fallback, but it can also be a board-level guard `404`, whose
+  fallback returns the same access error. `expectedVersion` remains the explicit full-board mode
+  for callers that read
+  the whole board: the write is pinned to that `seq` as before. `add_comment`
+  calls the already-targeted comment route and never reads a board. Tools that
+  compute a board-level command from a read (`move_column`,
+  `duplicate_column`, `remove_card_link`) keep their `ifMatch` board pin.
 - **Retries are safe.** A command that fails on the network is retried with
   the same idempotency key, so a write that did commit is never applied twice.
   Command-log create tools take a client id (`cardId`, `checklistId`, …) that
@@ -559,9 +584,10 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   the list is empty or no workflow exists), it checks cards with a task contract for unticked
   `Definition of Done` checklist items and an `evidence` comment. This is a
   convention of this MCP tool; the app's command API does not enforce it for
-  other clients. After a version conflict the tool re-reads the board and
-  repeats the check before retrying the move. The evidence-comment read is
-  separate from the move; this is not an atomic backend completion rule.
+  other clients. The check reads the one-card context, not the board. After a
+  version conflict the tool refreshes that card and repeats the check before
+  retrying the move. The evidence-comment read is separate from the move; this
+  is not an atomic backend completion rule.
 - **Workflow rules are enforced.** `janosik_get_workflow` reads the board's
   transitions, roles, conditions and initial/done columns; pass `cardId` for a
   per-card allowed/blocked check. A server-side `409` with

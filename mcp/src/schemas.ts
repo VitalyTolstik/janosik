@@ -120,7 +120,9 @@ export const expectedVersionSchema = z
   .optional()
   .describe(
     "Expected board version (seq from janosik_get_board). When set, the " +
-      "write is refused if the board changed since — re-read and retry.",
+      "write is pinned to that full-board state (explicit full-board mode) " +
+      "and refused if the board changed since. Omit it for claim/move/update " +
+      "so they pin only the tailored card versions and retry only that card.",
   );
 
 /**

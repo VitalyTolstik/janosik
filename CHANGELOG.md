@@ -41,6 +41,53 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a tool call at the cap, asserts SSE stream maps are empty after 20 MiB of
   results, and checks heap/RSS bounds. stdio remains the desktop transport.
 
+- TASK-200.7 targeted card intents and per-entity CAS. New routes
+  `GET /boards/:id/cards/:cardId/context`, `POST .../claim`,
+  `POST .../move` and `PATCH /boards/:id/cards/:cardId` load only the named
+  card, its column/column order and the board workflow shell — never the full
+  aggregate. They build the same `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD`
+  actions and apply them through `CommandsService`, so idempotency
+  (`commandId`), approvals, agent policy, WIP/workflow limits, run
+  pre-images and the SSE command log are unchanged. `ifMatchVersions` may be
+  empty/partial: the server always merges the card version it read, so
+  concurrent moves/updates of different cards never conflict, while a change
+  to the same card still answers `409`. A targeted move approval hashes the
+  requested destination/position, not the resolved source/slot indexes, so
+  unrelated reorders between approval and retry still apply. An exact
+  `commandId` retry is answered from the stored command before the server
+  recomputes a lease, move coordinates or the `expectedDescription` check, so
+  it is a true replay rather than an `idempotency_conflict`/`version_conflict`.
+  A stable v2 intent fingerprint (including field presence and the
+  authenticated actor, excluding version pins) proves the retry is the same
+  request; refreshed `ifMatchVersions` still replay. A bare v1 hash from the
+  predecessor branch is accepted exactly. Only genuinely fingerprint-less rows
+  use the older action/card/actor semantic match (claim lease length within
+  1 ms, move destination; position is not verifiable, and an unverifiable
+  legacy `expectedDescription` is refused). Identical concurrent requests are
+  serialized per `(board, commandId)` in-process; across replicas a
+  simultaneous first attempt may answer `409 idempotency_conflict` and is
+  safe to retry. Version conflicts carry
+  the pinned
+  `card:`/`column:`/`board:` versions in `versions`, exported in
+  `ConflictError`/`ApiErrorEnvelope`. The loader indexes only the card's
+  column (context/response) or the move's source and destination columns, not
+  every card id on the board, and drops/rejects a foreign destination column
+  before any cross-board index query. The context route carries
+  `X-Janosik-Intent-API: 1` on success and on its genuine missing-card `404`,
+  which keeps the normal error envelope and `X-Request-Id`; guard-level
+  errors do not promise the header. MCP
+  `claim_card`, `release_card`, `move_card` and `update_card` use the targeted
+  context/intents: no board read, one-card Definition-of-Done and description
+  checks, a targeted retry after a conflict, and a command-API fallback when
+  the capability header is absent — either a pre-200.7 server or a board-level
+  guard `404`, whose fallback returns the same access error. `expectedVersion`
+  remains the explicit full-board `ifMatch = seq` mode; comments already use
+  the targeted card route. `janosik_add_comment` is unchanged and never reads
+  a board.
+  OpenAPI, EN/RU REST and command docs, the MCP README, this changelog, the
+  TASK-200 status note, backend unit/e2e coverage and MCP client/tool tests
+  are included. No heavy load or 500-agent benchmark was run for this task.
+
 - TASK-200.6 compressed, conditionally revalidated and bounded board reads.
   `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least
   1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the

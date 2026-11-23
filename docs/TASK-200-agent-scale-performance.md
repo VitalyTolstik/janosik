@@ -491,6 +491,43 @@ workflow, create, смена workflow планом) добавляют один 
 **Файлы:** `mcp/src/client.ts`, `mcp/src/tools/*`,
 `backend/src/commands/*`, `shared/src/api.ts`.
 
+**Реализовано (TASK-200.7):**
+- Точечные маршруты `GET /boards/:id/cards/:cardId/context`,
+  `POST .../claim`, `POST .../move`, `PATCH /boards/:id/cards/:cardId`.
+  Загрузчик `commands/targeted-board.ts` читает оболочку доски
+  (колонки/метки/workflow), одну карточку с checklist/link и, для move,
+  лёгкий индекс `id + columnId` только source/destination-колонок; context
+  индексирует только колонку карточки. Полный aggregate и board-wide
+  card-id скан для этих действий не грузятся; spy-тесты это фиксируют.
+- Точный retry с тем же `commandId` отвечает сохранённым результатом до
+  пересчёта lease/move-координат/`expectedDescription`; иначе одинаковый
+  retry становился бы `idempotency_conflict` или `version_conflict`.
+- Intent собирает обычное действие `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD` и
+  вызывает тот же `CommandsService.applyBatch` с `targeted: true`. Поэтому
+  `commandId`-идемпотентность, approvals/agent policy, WIP/workflow,
+  run-preimages, `seq`/`versions` и SSE не дублируются. `ifMatchVersions`
+  проверяется как раньше; если клиент его не прислал, intent сам фиксирует
+  версию прочитанной карточки. Move сам вычисляет source column/index под
+  блокировкой доски.
+- `MCP`: `claim_card`, `release_card`, `move_card`, `update_card` больше не
+  читают доску (кроме явного `expectedVersion` — это полнодосковный
+  `ifMatch = seq` режим). DoD и `expectedDescription` проверяются по
+  one-card context; после `409` обновляется только карточка и повторяется
+  тот же intent (до 3 попыток). На pre-200.7 сервере (context → `404`)
+  claim/move/update/release откатываются на command API. `add_comment` уже
+  ходит в точечный comment-роут.
+- Контракт ошибок: `409 {conflict:"version"}` теперь содержит
+  `versions: {"card:<id>": n, "column:<id>": n, ...}` в `ConflictError` и
+  `ApiErrorEnvelope`; MCP печатает их и предлагает точечный retry.
+- Тесты: `commands/targeted-board.spec.ts`, `common/api-error.spec.ts`
+  (versions в конверте), `backend/test/card-intents.e2e-spec.ts` 8/8
+  (разные карточки без 409, та же карточка 409 + versions + retry, exact
+  replay claim/move/expectedDescription, WIP/workflow/approval+preimage,
+  observer/pause/cross-board, archived/release ownership, ifMatch=seq/null,
+  отсутствие full aggregate вызова),
+  MCP client/server tests (targeted routes, no full board GET, retry,
+  DoD/claim/comment). Тяжёлый load и 500-agent приёмка не запускались.
+
 ---
 
 ### 200.8 — MCP Streamable HTTP gateway (P1)
