@@ -84,6 +84,9 @@ body.janosik-touch-dragging {
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  /* Filled action colours (AA with white text in both themes). */
+  --color-action-primary: var(--action-primary);
+  --color-action-danger: var(--action-danger);
   --color-blue: var(--blue);
   --color-indigo: var(--indigo);
   --color-pink: var(--pink);
@@ -231,6 +234,23 @@ html.light {
   --chip-pink: #9d174d;
   --chip-slate: #334155;
   --chip-warning: #92400e;
+}
+
+/* Filled action tokens (TASK-177.20 UI review).
+ *
+ * The raw `--primary` / `--danger` tones are tuned for accents and text, not
+ * for a 12 px white label on a fill: in dark they measure 3.68:1 and 3.76:1.
+ * These deeper fills keep white text at AA (5.17:1 and 6.47:1); the light
+ * values match the existing light accents. Used by filled primary/destructive
+ * buttons and the saved-views count badge. */
+:root {
+  --action-primary: #2563eb;
+  --action-danger: #b91c1c;
+}
+
+html.light {
+  --action-primary: #2563eb;
+  --action-danger: #dc2626;
 }
 
 /* Russian lifecycle/pause labels are wider than the mockup's English column

@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, isApiEnabled } from "@/api/client";
@@ -19,13 +28,17 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
 import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
+import { SavedViewsMenuBoundary } from "@/components/board/SavedViewsMenuBoundary";
+import { loadSavedViewsMenu } from "@/components/board/saved-views-loader";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/auth/AuthContext";
 import { useBoard } from "@/store/BoardContext";
+import { useBoardMembersList } from "@/store/board-live";
 import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
@@ -48,6 +61,25 @@ import { copySearchParamsWithoutLanguageHandoff } from "@/utils/search-params";
 const SERVER_FILTER_DEBOUNCE_MS = 250;
 
 /**
+ * The saved-views menu and its storage/sanitizer live in their own chunk: the
+ * menu is secondary chrome, and its ~5 KB gzip was the last thing pushing the
+ * initial critical path against its 300 KB budget. The fallback reserves the
+ * exact 36/44 px trigger slot so the FilterBar never shifts when it arrives.
+ */
+const SavedViewsMenu = lazy(() =>
+  loadSavedViewsMenu().then((module) => ({
+    default: module.SavedViewsMenu,
+  })),
+);
+const SAVED_VIEWS_FALLBACK = (
+  <div
+    aria-hidden
+    data-testid="saved-views-menu-placeholder"
+    className="h-9 w-9 shrink-0 max-lg:h-11 max-lg:w-11"
+  />
+);
+
+/**
  * BoardSection — renders the active board in the chosen view (kanban strip,
  * calendar by due dates, or flat table), wrapped with a filter toolbar.
  * The filter state lives here so the toolbar and every view see it; the
@@ -58,6 +90,16 @@ const SERVER_FILTER_DEBOUNCE_MS = 250;
  */
 export function BoardSection() {
   const { board, roleOf, setBoardColumnStyle } = useBoard();
+  const { user } = useAuth();
+  // Undefined until the roster loads — never `[]` as "loaded": the saved-view
+  // drift pass would otherwise treat every assignee as deleted.
+  const members = useBoardMembersList(board?.id);
+  const savedViewAssigneeIds = useMemo(
+    () =>
+      members.length > 0 ? members.map((member) => member.userId) : undefined,
+    [members],
+  );
+  const savedViewsUserId = user?.id ?? "local";
   const { t } = useI18n();
   const { background } = useBoardBackground();
   // The filter lives in the URL (TASK-162 review, F-02): a reload, a shared
@@ -71,9 +113,12 @@ export function BoardSection() {
   // (or a facet pick followed by typing) would otherwise compute from the
   // same old prop and the later write would silently drop the earlier facet.
   // This ref holds the last filter written or observed, so every update
-  // composes on top of it.
+  // composes on top of it. A layout effect, not a passive one: the router
+  // applies URL writes in a transition, and a delayed passive effect from an
+  // older URL render would otherwise overwrite the optimistic ref, making the
+  // next facet pick silently drop the newer facet.
   const filterRef = useRef(filter);
-  useEffect(() => {
+  useLayoutEffect(() => {
     filterRef.current = filter;
   }, [filter]);
   const setFilter = useCallback(
@@ -314,6 +359,12 @@ export function BoardSection() {
   const focusAttachmentId = searchParams.get("attachment") ?? undefined;
   // Selection is a write affordance and only exists where cards are rows.
   const selectionEnabled = !readOnly && (view === "board" || view === "table");
+  const savedViewsUnavailable = (
+    <div role="status" data-testid="saved-views-menu-unavailable">
+      {SAVED_VIEWS_FALLBACK}
+      <span className="sr-only">{t("savedViews.unavailable")}</span>
+    </div>
+  );
 
   return (
     <CardSelectionProvider
@@ -337,15 +388,36 @@ export function BoardSection() {
         {/* The watch view reads the whole board feed; a card filter would only
           contradict it, so the toolbar is hidden there. */}
         {view !== "watch" ? (
-          <div className="mb-3">
-            <FilterBar
-              filter={filter}
-              labels={board.labels}
-              boardId={board.id}
-              matchCount={matchCount}
-              matchPending={serverPending}
-              onChange={setFilter}
-            />
+          <div
+            data-testid="board-toolbar"
+            className="mb-3 flex items-start gap-2"
+          >
+            <div className="min-w-0 flex-1">
+              <FilterBar
+                filter={filter}
+                labels={board.labels}
+                boardId={board.id}
+                matchCount={matchCount}
+                matchPending={serverPending}
+                onChange={setFilter}
+              />
+            </div>
+            <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
+              <Suspense fallback={SAVED_VIEWS_FALLBACK}>
+                <SavedViewsMenu
+                  userId={savedViewsUserId}
+                  boardId={board.id}
+                  filter={filter}
+                  view={view}
+                  labels={board.labels}
+                  assigneeIds={savedViewAssigneeIds}
+                  onApply={(nextFilter, nextView) => {
+                    setFilter(nextFilter);
+                    if (nextView) setView(nextView);
+                  }}
+                />
+              </Suspense>
+            </SavedViewsMenuBoundary>
           </div>
         ) : null}
         {serverPending ? (

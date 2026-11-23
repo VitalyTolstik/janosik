@@ -53,6 +53,33 @@ describe("TASK-156 conflict and access announcements", () => {
   });
 });
 
+describe("TASK-177.20 saved views", () => {
+  const keys = Object.keys(en).filter((key) => key.startsWith("savedViews."));
+
+  function placeholders(value: string): string[] {
+    return [...value.matchAll(/\{\{(\w+)\}\}/g)]
+      .map((match) => match[1])
+      .sort();
+  }
+
+  it("has the saved-view catalog in EN and RU", () => {
+    expect(keys.length).toBeGreaterThan(20);
+    for (const key of keys) {
+      for (const [locale, catalog] of Object.entries(CATALOGS)) {
+        expect(catalog[key], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("keeps saved-view placeholders in sync", () => {
+    for (const key of keys) {
+      expect(placeholders(CATALOGS.en[key]), `en:${key}`).toEqual(
+        placeholders(CATALOGS.ru[key]),
+      );
+    }
+  });
+});
+
 describe("TASK-185.4 comment history", () => {
   const keys = [
     "comment.history.title",

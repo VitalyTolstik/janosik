@@ -72,6 +72,24 @@ describe("FilterBar", () => {
     expect(search).toHaveFocus();
   });
 
+  it("keeps the active result/reset row mobile-safe under the saved-views trigger", () => {
+    renderBar({ ...EMPTY_FILTER, due: "overdue" });
+    const row = screen.getByTestId("filter-match-count").parentElement;
+    // 390 px contract: the row takes the available width and wraps instead
+    // of forcing the FilterBar past the card/board edge; desktop returns to
+    // the inline right-aligned layout.
+    expect(row).toHaveClass(
+      "w-full",
+      "flex-wrap",
+      "justify-end",
+      "gap-2",
+      "sm:ml-auto",
+      "sm:w-auto",
+    );
+    expect(screen.getByTestId("filter-reset")).toHaveClass("h-8");
+    expect(screen.getByTestId("filter-bar")).toHaveClass("flex-wrap");
+  });
+
   it("keeps the search input inline and the facets behind the popover", async () => {
     renderBar();
     expect(
@@ -227,7 +245,10 @@ describe("FilterBar", () => {
     // Every active facet is visible, not just the due/label/created trio.
     expect(screen.getAllByTestId("filter-chip")).toHaveLength(4);
     expect(screen.getByText("High")).toBeInTheDocument();
-    expect(screen.getByText("u-1")).toBeInTheDocument();
+    // With no roster (request failed/not loaded) a preserved assignee keeps
+    // its filter value but shows a friendly fallback, never the raw uuid.
+    expect(screen.getByText("Unknown user")).toBeInTheDocument();
+    expect(screen.queryByText("u-1")).not.toBeInTheDocument();
     expect(screen.getByText("Blocked")).toBeInTheDocument();
     expect(screen.getByText("Has links")).toBeInTheDocument();
 
