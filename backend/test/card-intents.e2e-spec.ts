@@ -387,6 +387,13 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
       claimId,
     ).expect(200);
+    const storedClaim = await prisma.command.findUniqueOrThrow({
+      where: { id: claimId },
+      select: { details: true },
+    });
+    expect(
+      (storedClaim.details as { intentFingerprint?: string }).intentFingerprint,
+    ).toMatch(/^v2:/);
     // A foreign release must not change what the replayed command reports.
     await command(boardId, {
       type: "CLAIM_CARD",
@@ -523,6 +530,104 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     await claim(boardId, legacyCard, { leaseMs: 60_000 }, pat, legacyId).expect(
       200,
     );
+    // A fingerprint-less row still keeps the older semantic match: a release
+    // is a different intent from the stored claim.
+    const legacyDifferent = await claim(
+      boardId,
+      legacyCard,
+      { release: true },
+      pat,
+      legacyId,
+    ).expect(409);
+    expect(legacyDifferent.body).toMatchObject({
+      code: "idempotency_conflict",
+    });
+    const legacyLease = await claim(
+      boardId,
+      legacyCard,
+      { leaseMs: 120_000 },
+      pat,
+      legacyId,
+    ).expect(409);
+    expect(legacyLease.body).toMatchObject({ code: "idempotency_conflict" });
+
+    // v1 rows (a bare hash from the earlier branch commit) use the same
+    // semantic bridge.
+    const v1Card = await card(boardId, "V1 fingerprint row");
+    const v1Id = randomUUID();
+    await claim(boardId, v1Card, { leaseMs: 60_000 }, pat, v1Id).expect(200);
+    await prisma.command.update({
+      where: { id: v1Id },
+      data: { details: { intentFingerprint: "a".repeat(64) } },
+    });
+    await claim(boardId, v1Card, { leaseMs: 60_000 }, pat, v1Id).expect(200);
+    const v1Different = await claim(
+      boardId,
+      v1Card,
+      { leaseMs: 120_000 },
+      pat,
+      v1Id,
+    ).expect(409);
+    expect(v1Different.body).toMatchObject({ code: "idempotency_conflict" });
+
+    const legacyMoveCard = await card(boardId, "Legacy move");
+    const legacyMoveId = randomUUID();
+    await move(
+      boardId,
+      legacyMoveCard,
+      { toColumnId: doingId, position: 0 },
+      pat,
+      legacyMoveId,
+    ).expect(200);
+    await prisma.command.update({
+      where: { id: legacyMoveId },
+      data: { details: {} },
+    });
+    await move(
+      boardId,
+      legacyMoveCard,
+      { toColumnId: doingId, position: 0 },
+      pat,
+      legacyMoveId,
+    ).expect(200);
+    const legacyPosition = await move(
+      boardId,
+      legacyMoveCard,
+      { toColumnId: doingId, position: 1 },
+      pat,
+      legacyMoveId,
+    ).expect(409);
+    expect(legacyPosition.body).toMatchObject({ code: "idempotency_conflict" });
+
+    const legacyPatchCard = await card(boardId, "Legacy patch");
+    const legacyPatchId = randomUUID();
+    await patch(
+      boardId,
+      legacyPatchCard,
+      { description: "legacy", expectedDescription: "" },
+      pat,
+      legacyPatchId,
+    ).expect(200);
+    await prisma.command.update({
+      where: { id: legacyPatchId },
+      data: { details: {} },
+    });
+    // A legacy row cannot prove the old expectedDescription; refuse rather
+    // than replay the compare-and-set unsafely.
+    await patch(
+      boardId,
+      legacyPatchCard,
+      { description: "legacy", expectedDescription: "" },
+      pat,
+      legacyPatchId,
+    ).expect(409);
+    await patch(
+      boardId,
+      legacyPatchCard,
+      { description: "legacy" },
+      pat,
+      legacyPatchId,
+    ).expect(200);
 
     const moveId = randomUUID();
     const firstMove = await move(

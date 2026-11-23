@@ -145,6 +145,10 @@ export class CardIntentsService {
       dto,
     );
     const release = dto.release === true;
+    const duration = Math.min(
+      Math.max(dto.leaseMs ?? CLAIM_LEASE_DEFAULT_MS, CLAIM_LEASE_MIN_MS),
+      CLAIM_LEASE_MAX_MS,
+    );
     const replay = await this.replay(
       boardId,
       cardId,
@@ -152,6 +156,19 @@ export class CardIntentsService {
       dto.commandId,
       "CLAIM_CARD",
       fingerprint,
+      (payload) => {
+        if ((payload.claimedBy ?? null) !== (release ? null : actor.actorId)) {
+          return false;
+        }
+        if (release) return payload.leaseUntil == null;
+        const at = payload.at;
+        const leaseUntil = payload.leaseUntil;
+        return (
+          typeof at === "number" &&
+          typeof leaseUntil === "number" &&
+          leaseUntil - at === duration
+        );
+      },
     );
     if (replay !== null) {
       return this.claimResponse(
@@ -164,10 +181,6 @@ export class CardIntentsService {
 
     // Only the card matters for a claim; no board-wide order is read.
     const versions = await this.cardVersion(boardId, cardId);
-    const duration = Math.min(
-      Math.max(dto.leaseMs ?? CLAIM_LEASE_DEFAULT_MS, CLAIM_LEASE_MIN_MS),
-      CLAIM_LEASE_MAX_MS,
-    );
     const leaseUntil = release ? null : Date.now() + duration;
     const claimedBy = release ? null : actor.actorId;
     const response = await this.apply(
@@ -219,6 +232,10 @@ export class CardIntentsService {
       dto.commandId,
       "MOVE_CARD",
       fingerprint,
+      (payload) =>
+        (dto.toColumnId === undefined ||
+          payload.toColumnId === dto.toColumnId) &&
+        (dto.position === undefined || payload.toIndex === dto.position),
     );
     if (replay !== null) {
       return this.moveResponse(replay.response, boardId, cardId, {
@@ -327,6 +344,13 @@ export class CardIntentsService {
       dto.commandId,
       "UPDATE_CARD",
       fingerprint,
+      (payload) =>
+        // Legacy rows did not store `expectedDescription`; a compare-and-set
+        // we cannot verify is refused rather than replayed unsafely.
+        dto.expectedDescription === undefined &&
+        (dto.title === undefined || payload.title === dto.title) &&
+        (dto.description === undefined ||
+          payload.description === dto.description),
     );
     if (replay !== null)
       return this.patchResponse(replay.response, boardId, cardId);
@@ -464,8 +488,10 @@ export class CardIntentsService {
 
   /**
    * An exact retry returns the stored result before a server-derived action
-   * or a stale-description precondition is evaluated. A different body under
-   * the same key is still an idempotency conflict.
+   * or a stale-description precondition is evaluated. v2 fingerprinted rows
+   * must match the full intent; v1 and pre-fingerprint rows use the older
+   * action/card/actor match as a rolling-upgrade bridge (a different body on
+   * a v2 row is an idempotency conflict).
    */
   private async replay(
     boardId: string,
@@ -474,6 +500,7 @@ export class CardIntentsService {
     commandId: string | undefined,
     type: BoardAction["type"],
     fingerprint: string,
+    legacyMatches: (payload: Record<string, unknown>) => boolean,
   ): Promise<ReplayedCommand | null> {
     if (commandId === undefined) return null;
     const row = (await this.prisma.command.findUnique({
@@ -499,13 +526,14 @@ export class CardIntentsService {
     const payload = asRecord(row.payload);
     const details = asRecord(row.details);
     const storedFingerprint = details?.intentFingerprint;
-    // Rows written before this fix have no fingerprint. They still replay for
-    // the same actor/type/card (rolling-deploy bridge); any newer row must
-    // match the full intent fingerprint.
+    // v2 fingerprints bind the actor and full intent. v1 rows (a bare hash
+    // from an earlier branch commit) and fully legacy rows keep the semantic
+    // match as the rolling-deploy bridge.
     const fingerprintMatches =
-      typeof storedFingerprint === "string"
+      typeof storedFingerprint === "string" &&
+      storedFingerprint.startsWith("v2:")
         ? storedFingerprint === fingerprint
-        : row.actorId === actorId;
+        : row.actorId === actorId && legacyMatches(payload ?? {});
     if (
       payload === null ||
       payload.type !== type ||
@@ -598,7 +626,9 @@ export class CardIntentsService {
         ]),
       ),
     };
-    return createHash("sha256").update(JSON.stringify(intent)).digest("hex");
+    // v2 binds the actor and field presence. Rows with v1 (or no prefix) are
+    // older branch deployments and fall back to the semantic matcher.
+    return `v2:${createHash("sha256").update(JSON.stringify(intent)).digest("hex")}`;
   }
 
   private async cardVersion(
