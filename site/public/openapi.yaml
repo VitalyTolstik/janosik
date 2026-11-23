@@ -791,12 +791,15 @@ paths:
       summary: Move or reorder a card
       description: |
         TASK-200.7. The server resolves the source column and both indexes
+        before the command transaction and rechecks the pinned card version
         under the board lock, so a caller does not need a board read. The card
         version is the only default precondition: another card's move in the
         same column is not a conflict, a move of this card is. WIP, workflow,
-        agent policy, approval and the command log are unchanged. A stale
-        `409` carries `versions` for a targeted retry; the response names the
-        final column and index.
+        agent policy, approval and the command log are unchanged. An approval
+        hash covers the requested destination/position, not the resolved
+        source/slot indexes, so unrelated reorders while the human decides do
+        not cause `approval_mismatch`. A stale `409` carries `versions` for a
+        targeted retry; the response names the final column and index.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
       requestBody:
@@ -5151,7 +5154,7 @@ components:
             type: integer
     CardIntentResponse:
       type: object
-      required: [seq, versions, card, columnId, results]
+      required: [seq, versions, columnId, results]
       properties:
         seq:
           type: integer
@@ -5163,7 +5166,11 @@ components:
         runId:
           type: [string, "null"]
         card:
-          $ref: "#/components/schemas/Card"
+          allOf:
+            - $ref: "#/components/schemas/Card"
+          description: |
+            Omitted on an idempotent replay whose card or board was deleted
+            after the command committed.
         columnId:
           type: [string, "null"]
         results:

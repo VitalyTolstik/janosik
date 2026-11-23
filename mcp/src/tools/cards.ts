@@ -103,8 +103,8 @@ function descriptionSnippet(description: string | undefined): string | null {
 /** The "not on this board" answer every card lookup shares. */
 function cardNotFound(cardId: string, boardId: string) {
   return errorResult(
-    `Error: card ${cardId} is not on board ${boardId}. Re-read the board ` +
-      "with janosik_get_board for current ids.",
+    `Error: card ${cardId} is not on board ${boardId}. The id may be ` +
+      "deleted or belong to another board; check the id before retrying.",
     { ok: false, code: "not_found", retryable: false, resource: "card" },
   );
 }

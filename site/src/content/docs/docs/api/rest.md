@@ -380,8 +380,12 @@ server pins the version of the card it read. `claim` takes `leaseMs` or
 `release: true`; the server fills the holder and applies the same live-lease
 guard and ADMIN/owner release rules as `CLAIM_CARD`. `move` takes an optional
 `toColumnId` and `position`; the server resolves the source column and both
-indexes under the board lock, so a move of another card in the same column is
-not a conflict. `PATCH` changes `title` and/or `description`, with an optional
+indexes before the command transaction and rechecks the pinned card version
+under the board lock. A move of another card in either column is not a
+conflict; the exact insert slot is last-write-wins for unrelated reorders.
+If the move needs approval, the plan hash covers the requested destination
+and position, not the resolved source/slot indexes, so an unrelated reorder
+while the human decides does not turn the retry into `approval_mismatch`. `PATCH` changes `title` and/or `description`, with an optional
 `expectedDescription` compare-and-set.
 
 Idempotency, approvals, agent policy, WIP/workflow, run pre-images, undo data
@@ -392,7 +396,10 @@ same `commandId` and intent is answered from the stored command before the
 server recomputes the lease, move coordinates or `expectedDescription` check,
 so it never turns into `idempotency_conflict` or `version_conflict`. Identical
 concurrent requests with the same `commandId` are serialized in the API
-process; the second waits for the first and returns its stored result. A
+process; the second waits for the first and returns its stored result. The
+serialization is in-process only: on multiple replicas two simultaneous
+first attempts can race and one may receive `409 idempotency_conflict`; retry
+it once the first result is stored. A
 different intent under the same key still answers `409 idempotency_conflict`
 because the server stores a stable v2 intent fingerprint (including which
 fields were present and the authenticated actor), not the server-derived
@@ -403,7 +410,9 @@ rows use the older action/card/actor semantic match during a rolling upgrade;
 it compares claim lease length (1 ms tolerance) and the move destination, but
 not a move position (the old action stored only the clamped index). A legacy
 patch with an unverifiable `expectedDescription` is refused rather than
-replayed. A stale precondition
+replayed. If the card or board was deleted after the stored command committed,
+the replay still returns the stored `seq`/`versions`; the response omits the
+optional `card`. A stale precondition
 answers `409 version_conflict` with the board `seq` in `currentVersion` and
 the versions of the pinned entities in `versions`; merge those into
 `ifMatchVersions` and retry the same call, or re-read only

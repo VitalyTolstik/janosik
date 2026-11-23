@@ -325,7 +325,10 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   Definition-of-Done check and `expectedDescription` use the same context.
   An exact retry with the same `commandId`, actor and intent is a true replay
   even though the server recomputes a lease or move coordinates; refreshed
-  `ifMatchVersions` pins do not break it. A different intent, a different
+  `ifMatchVersions` pins do not break it. Identical concurrent retries are
+  serialized only inside one API process; across replicas a simultaneous
+  first attempt may answer `409 idempotency_conflict`, so retry it once the
+  first result is stored. A different intent, a different
   actor or a different fingerprinted intent under the same key answers
   `idempotency_conflict`. A bare v1 hash from the predecessor branch is the
   same hash JSON and replays exactly. Only genuinely fingerprint-less rows use

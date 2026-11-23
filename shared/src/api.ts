@@ -174,8 +174,11 @@ export interface CardContextDto {
 
 /** `200` body of a single targeted card intent. */
 export interface CardIntentResponse extends CommandResponse {
-  /** The card after the command, in the aggregate shape. */
-  card: Card;
+  /**
+   * The card after the command, in the aggregate shape. Omitted on an
+   * idempotent replay whose card/board was deleted since the write.
+   */
+  card?: Card;
   columnId: string | null;
   /** Every command result; currently always one for these intents. */
   results: CommandResponse[];

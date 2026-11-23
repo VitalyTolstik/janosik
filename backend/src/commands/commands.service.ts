@@ -427,6 +427,13 @@ export interface ApplyOptions {
    * a fresh lease or recomputed move coordinates.
    */
   intentFingerprint?: string;
+  /**
+   * TASK-200.7: canonicalize the stored/hashed approval plan (not the action
+   * actually applied). Targeted moves replace resolved indexes with a
+   * client-intent marker so an unrelated positional change between approval
+   * and retry does not change the plan hash.
+   */
+  planForApproval?: (plan: ApprovalPlan) => ApprovalPlan;
 }
 
 @Injectable()
@@ -572,6 +579,9 @@ export class CommandsService {
     const approvalId =
       options.principal?.via === "pat" ? options.approvalId : undefined;
     const plan = planFromPreparedCommands(boardId, prepared);
+    // TASK-200.7: the approval is about the client intent, not the source/
+    // destination indexes the server resolved for this attempt.
+    const approvalPlan = options.planForApproval?.(plan) ?? plan;
     let requirement: PlanRequirement | null = null;
     if (options.principal?.via === "pat") {
       try {
@@ -646,7 +656,7 @@ export class CommandsService {
             role: actorRole,
             principal: options.principal,
             agentSessionId: attribution.agentSessionId,
-            plan,
+            plan: approvalPlan,
             requirement,
             policy,
             prepared,
@@ -712,8 +722,8 @@ export class CommandsService {
           const authorized = await this.approvals.authorizeCommandApply(tx, {
             boardId,
             approvalId,
-            plan,
-            planHash: approvalPlanHash(plan),
+            plan: approvalPlan,
+            planHash: approvalPlanHash(approvalPlan),
             requirement,
             principal: options.principal,
             agentSessionId: attribution.agentSessionId,
@@ -876,7 +886,7 @@ export class CommandsService {
               clientRunId,
               planHash:
                 options.run?.planHash ??
-                (approval !== null ? approvalPlanHash(plan) : null),
+                (approval !== null ? approvalPlanHash(approvalPlan) : null),
               approvalId: approval !== null ? approval.id : null,
               commandCount: prepared.length,
               revertsRunId: options.run?.revertsRunId ?? null,

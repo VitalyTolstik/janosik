@@ -15,10 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   aggregate. They build the same `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD`
   actions and apply them through `CommandsService`, so idempotency
   (`commandId`), approvals, agent policy, WIP/workflow limits, run
-  pre-images and the SSE command log are unchanged. `ifMatchVersions` pins
-  the touched card; the server also pins the card version it read when the
-  caller omits it, so concurrent moves/updates of different cards never
-  conflict, while a change to the same card still answers `409`. An exact
+  pre-images and the SSE command log are unchanged. `ifMatchVersions` may be
+  empty/partial: the server always merges the card version it read, so
+  concurrent moves/updates of different cards never conflict, while a change
+  to the same card still answers `409`. A targeted move approval hashes the
+  requested destination/position, not the resolved source/slot indexes, so
+  unrelated reorders between approval and retry still apply. An exact
   `commandId` retry is answered from the stored command before the server
   recomputes a lease, move coordinates or the `expectedDescription` check, so
   it is a true replay rather than an `idempotency_conflict`/`version_conflict`.
@@ -29,7 +31,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   use the older action/card/actor semantic match (claim lease length within
   1 ms, move destination; position is not verifiable, and an unverifiable
   legacy `expectedDescription` is refused). Identical concurrent requests are
-  serialized per `(board, commandId)` in-process. Version conflicts carry
+  serialized per `(board, commandId)` in-process; across replicas a
+  simultaneous first attempt may answer `409 idempotency_conflict` and is
+  safe to retry. Version conflicts carry
   the pinned
   `card:`/`column:`/`board:` versions in `versions`, exported in
   `ConflictError`/`ApiErrorEnvelope`. The loader indexes only the card's

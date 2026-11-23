@@ -9,6 +9,7 @@ import { Role } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type {
   ActorType,
+  ApprovalPlan,
   BoardAction,
   CardClaimIntentResponse,
   CardContextDto,
@@ -403,16 +404,16 @@ export class CardIntentsService {
     // foreign release/claim may have put on the card since.
     const claimedBy =
       storedAction === undefined
-        ? (fresh.card.claimedBy ?? null)
+        ? (fresh?.card.claimedBy ?? null)
         : ((storedAction.claimedBy as string | null | undefined) ?? null);
     const leaseUntil =
       storedAction === undefined
-        ? (fresh.card.leaseUntil ?? null)
+        ? (fresh?.card.leaseUntil ?? null)
         : ((storedAction.leaseUntil as number | null | undefined) ?? null);
     return {
       ...response,
-      card: fresh.card,
-      columnId: fresh.columnId,
+      ...(fresh !== null ? { card: fresh.card } : {}),
+      columnId: fresh?.columnId ?? null,
       claimedBy,
       leaseUntil,
       results: [response],
@@ -433,12 +434,12 @@ export class CardIntentsService {
     // payload and the destination title are needed afterwards. No second
     // column-index scan.
     const fresh = await this.cardSnapshot(boardId, cardId);
-    const destination = fresh.columns.find(
+    const destination = fresh?.columns.find(
       (column) => column.id === action.toColumnId,
     );
     return {
       ...response,
-      card: fresh.card,
+      ...(fresh !== null ? { card: fresh.card } : {}),
       columnId: action.toColumnId,
       fromColumnId: action.fromColumnId,
       toColumnId: action.toColumnId,
@@ -456,13 +457,17 @@ export class CardIntentsService {
     const fresh = await this.cardSnapshot(boardId, cardId);
     return {
       ...response,
-      card: fresh.card,
-      columnId: fresh.columnId,
+      ...(fresh !== null ? { card: fresh.card } : {}),
+      columnId: fresh?.columnId ?? null,
       results: [response],
     };
   }
 
-  /** One card plus the column shell, without a card-order index scan. */
+  /**
+   * The current card for a normal response. A stored-command replay may run
+   * after the card/board was deleted; that is not a reason to turn the replay
+   * into a 404, so callers receive `null` and omit the optional card.
+   */
   private async cardSnapshot(
     boardId: string,
     cardId: string,
@@ -470,10 +475,16 @@ export class CardIntentsService {
     card: CardContextDto["card"];
     columnId: string | null;
     columns: CardContextDto["columns"];
-  }> {
-    const loaded = await this.load(boardId, cardId, {});
+  } | null> {
+    let loaded;
+    try {
+      loaded = await this.load(boardId, cardId, {});
+    } catch (error) {
+      if (error instanceof NotFoundException) return null;
+      throw error;
+    }
     const card = loaded.board.cards[cardId];
-    if (card === undefined) throw new NotFoundException("Card not found");
+    if (card === undefined) return null;
     const column =
       loaded.board.columns.find((entry) => entry.cardIds.includes(cardId)) ??
       null;
@@ -672,19 +683,19 @@ export class CardIntentsService {
     intentFingerprint: string,
   ): Promise<CommandResponse> {
     const cardId = (action as BoardAction & { cardId: string }).cardId;
-    // A caller-supplied map wins; otherwise pin the version this intent read.
-    // That is the same optimistic contract as an `ifMatchVersions` write,
-    // with the read and the write kept to the touched card/columns.
-    const preconditions =
-      dto.ifMatchVersions ??
-      (versions[`card:${cardId}`] !== undefined
-        ? { [`card:${cardId}`]: versions[`card:${cardId}`]! }
-        : undefined);
+    const readVersion = versions[`card:${cardId}`];
+    // Always pin the card version this intent read; a caller's map may add
+    // other entities or override the card with an explicitly seen version.
+    // An empty/partial map must not silently drop the read-card precondition.
+    const preconditions = {
+      ...(readVersion !== undefined ? { [`card:${cardId}`]: readVersion } : {}),
+      ...(dto.ifMatchVersions ?? {}),
+    };
     const command: CreateCommandDto = {
       commandId: dto.commandId ?? randomUUID(),
       action: action as unknown as Record<string, unknown>,
       ...(dto.ifMatch !== undefined ? { ifMatch: dto.ifMatch } : {}),
-      ...(preconditions !== undefined
+      ...(Object.keys(preconditions).length > 0
         ? { ifMatchVersions: preconditions }
         : {}),
     };
@@ -698,8 +709,48 @@ export class CardIntentsService {
         : {}),
       targeted: true,
       intentFingerprint,
+      ...(action.type === "MOVE_CARD"
+        ? {
+            planForApproval: (plan: ApprovalPlan): ApprovalPlan =>
+              canonicalTargetedMovePlan(
+                plan,
+                (dto as MoveCardIntentDto).position,
+              ),
+          }
+        : {}),
     });
   }
+}
+
+/**
+ * Approval plan for a targeted move: keep the client's requested slot as the
+ * authorized intent and let the server-resolved source/destination indexes
+ * stay out of the hash. An unrelated card move between approval and retry
+ * then cannot invalidate the human decision.
+ */
+function canonicalTargetedMovePlan(
+  plan: ApprovalPlan,
+  position: number | undefined,
+): ApprovalPlan {
+  return {
+    ...plan,
+    ...(plan.commands !== undefined
+      ? {
+          commands: plan.commands.map((command) =>
+            command.action.type === "MOVE_CARD"
+              ? {
+                  ...command,
+                  action: {
+                    ...command.action,
+                    targetedMove: true,
+                    targetedPosition: position ?? null,
+                  },
+                }
+              : command,
+          ),
+        }
+      : {}),
+  };
 }
 
 /** An archived card is in the cards map but in no column. */

@@ -159,11 +159,14 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       .then((res) => res.body.token as string);
   }
 
-  async function joinBoard(boardId: string): Promise<void> {
+  async function joinBoard(
+    boardId: string,
+    role: "MEMBER" | "VIEWER" = "MEMBER",
+  ): Promise<void> {
     await server()
       .post(`/api/v1/boards/${boardId}/members`)
       .set(auth(session))
-      .send({ email: MEMBER_EMAIL, role: "MEMBER" })
+      .send({ email: MEMBER_EMAIL, role })
       .expect(201);
     const invitations = await server()
       .get("/api/v1/invitations")
@@ -246,10 +249,13 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     const { boardId, pat } = await newBoard("Concurrent updates");
     const a = await card(boardId, "A");
     const b = await card(boardId, "B");
+    load.mockClear();
     const before = await Promise.all([
       context(boardId, a, pat),
       context(boardId, b, pat),
     ]);
+    // Context is a one-card read, not a board aggregate.
+    expect(load).not.toHaveBeenCalled();
 
     load.mockClear();
     const different = await Promise.all([
@@ -393,6 +399,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     const cardId = await card(boardId, "Replay card");
 
     const claimId = randomUUID();
+    load.mockClear();
     const firstClaim = await claim(
       boardId,
       cardId,
@@ -400,6 +407,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
       claimId,
     ).expect(200);
+    expect(load).not.toHaveBeenCalled();
     const storedClaim = await prisma.command.findUniqueOrThrow({
       where: { id: claimId },
       select: { details: true },
@@ -693,6 +701,31 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       legacyPatchId,
     ).expect(200);
 
+    // A replay after the card was deleted still returns the stored result;
+    // the optional card is omitted instead of turning the replay into 404.
+    const deletedCard = await card(boardId, "Deleted replay");
+    const deletedClaimId = randomUUID();
+    const deletedFirst = await claim(
+      boardId,
+      deletedCard,
+      { leaseMs: 60_000 },
+      pat,
+      deletedClaimId,
+    ).expect(200);
+    await command(boardId, {
+      type: "DELETE_CARD",
+      cardId: deletedCard,
+    }).expect(200);
+    const deletedReplay = await claim(
+      boardId,
+      deletedCard,
+      { leaseMs: 60_000 },
+      pat,
+      deletedClaimId,
+    ).expect(200);
+    expect(deletedReplay.body.seq).toBe(deletedFirst.body.seq);
+    expect(deletedReplay.body).not.toHaveProperty("card");
+
     const moveId = randomUUID();
     const firstMove = await move(
       boardId,
@@ -878,6 +911,21 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       approvalId: expect.any(String),
       planHash: expect.any(String),
     });
+    // Unrelated cards change both source/destination indexes while the human
+    // decision is pending. The approval authorizes the destination intent,
+    // not the server-resolved positions, so the retry must still apply.
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: randomUUID(),
+      columnId: todoId,
+      title: "Source drift",
+    }).expect(200);
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: randomUUID(),
+      columnId: doingId,
+      title: "Destination drift",
+    }).expect(200);
     await server()
       .post(
         `/api/v1/boards/${boardId}/approvals/${refused.body.approvalId}/decision`,
@@ -918,6 +966,18 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       code: "scope_denied",
       effectiveTokenScope: "observer",
     });
+
+    // A VIEWER may read the targeted context but cannot use a write intent.
+    await joinBoard(first.boardId, "VIEWER");
+    const viewerPat = await createPat(first.boardId, "worker", memberSession);
+    await context(first.boardId, cardId, viewerPat);
+    const viewerMove = await move(
+      first.boardId,
+      cardId,
+      { toColumnId: first.doingId },
+      viewerPat,
+    ).expect(403);
+    expect(viewerMove.body).toMatchObject({ code: "scope_denied" });
 
     const other = await newBoard("Other board");
     const otherCard = await card(other.boardId, "Other card");
@@ -1063,6 +1123,26 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
     ).expect(409);
     expect(stale.body).toMatchObject({ conflict: "version" });
+
+    // An empty or partial map still pins the card version the intent read;
+    // the caller's extra/override keys are merged on top.
+    await patch(
+      boardId,
+      cardId,
+      { description: "empty pins", ifMatchVersions: {} },
+      pat,
+    ).expect(200);
+    const pinContext = await context(boardId, cardId, pat);
+    const columnKey = `column:${pinContext.columnId}`;
+    await patch(
+      boardId,
+      cardId,
+      {
+        description: "partial pins",
+        ifMatchVersions: { [columnKey]: pinContext.versions[columnKey]! },
+      },
+      pat,
+    ).expect(200);
 
     await move(
       boardId,
