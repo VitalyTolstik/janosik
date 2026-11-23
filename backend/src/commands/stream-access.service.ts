@@ -3,6 +3,8 @@ import { type AgentPauseStamp, resolveAgentPause } from "@/auth/agent-pause";
 import { ApiTokenService } from "@/auth/api-token.service";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import { securityStamp } from "@/auth/security-stamp";
+import { HotPathCacheService } from "@/common/hot-path-cache.service";
+import type { StreamMembershipSnapshot } from "@/common/hot-path-cache.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 
 /**
@@ -29,6 +31,7 @@ export class StreamAccessService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly apiTokens: ApiTokenService,
+    private readonly hotPathCache: HotPathCacheService,
   ) {}
 
   async memberStreamAllowed(
@@ -36,25 +39,37 @@ export class StreamAccessService {
     userId: string,
     principal: AuthPrincipal | undefined,
   ): Promise<boolean> {
-    const membership = await this.prisma.boardMember.findUnique({
-      where: { boardId_userId: { boardId, userId } },
-      select: {
-        acceptedAt: true,
-        expiresAt: true,
-        user: {
-          select: {
-            id: true,
-            email: true,
-            passwordHash: true,
-            emailVerifiedAt: true,
-            disabledAt: true,
+    // TASK-200.5: the joined membership snapshot is reused for its 30 s
+    // window. Membership changes invalidate it through the bus; the
+    // per-stream credential checks below (token pause/revocation, JWT
+    // expiry/stamp/family) deliberately stay fresh on every tick.
+    let membership: StreamMembershipSnapshot | null | undefined =
+      this.hotPathCache.getStreamMembership(boardId, userId);
+    if (membership === undefined) {
+      membership = await this.prisma.boardMember.findUnique({
+        where: { boardId_userId: { boardId, userId } },
+        select: {
+          acceptedAt: true,
+          expiresAt: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              passwordHash: true,
+              emailVerifiedAt: true,
+              disabledAt: true,
+            },
           },
+          board: { select: { deletedAt: true } },
         },
-        board: { select: { deletedAt: true } },
-      },
-    });
+      });
+      if (membership !== null) {
+        this.hotPathCache.rememberStreamMembership(boardId, userId, membership);
+      }
+    }
     if (
       membership === null ||
+      membership === undefined ||
       membership.acceptedAt === null ||
       membership.user.disabledAt !== null ||
       membership.board.deletedAt !== null ||

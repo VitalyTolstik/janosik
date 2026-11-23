@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
   Sse,
   UseGuards,
+  type OnModuleDestroy,
 } from "@nestjs/common";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
@@ -26,7 +27,8 @@ import {
   RealtimeService,
 } from "@/realtime/realtime.service";
 import { RealtimeFlagGuard } from "@/realtime/realtime-flag.guard";
-import { sseTiming } from "@/realtime/sse-timing";
+import { KeepAliveScheduler } from "@/realtime/keep-alive";
+import { keepAliveProfile } from "@/realtime/sse-timing";
 import { CommandStreamSequencer } from "./command-stream";
 import { CommandsService } from "./commands.service";
 import { parseSince } from "./parse-since";
@@ -34,6 +36,25 @@ import { StreamAccessService } from "./stream-access.service";
 
 /** Tab-scoped id the client sends to be recognized across reconnects. */
 const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** `?presence=` explicitly on/off; `undefined` means "use the peer default". */
+export function parsePresence(value: string | undefined): boolean | undefined {
+  if (value === "0" || value === "false") return false;
+  if (value === "1" || value === "true") return true;
+  return undefined;
+}
+
+/**
+ * TASK-200.5: a PAT is an agent credential, so its stream defaults to
+ * presence off; a browser JWT keeps the old presence-on default. An explicit
+ * `?presence=0/1` wins for either.
+ */
+export function presenceEnabledFor(
+  value: string | undefined,
+  via: AuthPrincipal["via"] | undefined,
+): boolean {
+  return parsePresence(value) ?? via !== "pat";
+}
 
 /**
  * `GET /boards/:id/events` — the SSE stream of §7.4 (TASK-30).
@@ -54,8 +75,10 @@ const CLIENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
  * membership/expiry, PAT) and closes the stream when access is gone.
  */
 @Controller("boards/:id/events")
-export class EventsController {
+export class EventsController implements OnModuleDestroy {
   private readonly logger = new Logger(EventsController.name);
+  /** One live scheduler per open stream; drained on app shutdown. */
+  private readonly keepAlives = new Set<KeepAliveScheduler>();
 
   constructor(
     private readonly commands: CommandsService,
@@ -64,6 +87,12 @@ export class EventsController {
     private readonly access: StreamAccessService,
     private readonly flags: FeatureFlagsService,
   ) {}
+
+  /** TASK-200.5: stop every stream timer before Nest closes the sockets. */
+  onModuleDestroy(): void {
+    for (const keepAlive of this.keepAlives) keepAlive.stop();
+    this.keepAlives.clear();
+  }
 
   @UseGuards(MembershipGuard, RealtimeFlagGuard)
   @Sse()
@@ -80,8 +109,11 @@ export class EventsController {
     const clientId =
       client !== undefined && CLIENT_ID.test(client) ? client : randomUUID();
     // `?presence=0` opts a stream out of presence entirely (agent/CI viewers):
-    // it neither joins the roster nor receives presence frames.
-    const presenceEnabled = presence !== "0" && presence !== "false";
+    // it neither joins the roster nor receives presence frames. TASK-200.5:
+    // a PAT is an agent credential, so its stream defaults to presence off
+    // even without the query parameter; a browser JWT keeps the old default.
+    // `?presence=1` opts a PAT back in for debugging/oversight.
+    const presenceEnabled = presenceEnabledFor(presence, principal?.via);
     if (presenceEnabled && user !== undefined) {
       // A `clientId` held by another user is refused *before* the stream
       // opens, so the answer is a clean 403 rather than an error thrown
@@ -216,42 +248,55 @@ export class EventsController {
 
       sequencer.start();
 
-      const keepAlive = setInterval(() => {
-        // The frame's presence epoch lets a client that missed a delta
-        // notice it and reconnect for a fresh `sync` (TASK-145).
-        send(
-          presenceToken !== null
-            ? {
-                type: "keepalive",
-                presenceEpoch: this.presence.epochOf(boardId),
-              }
-            : { type: "keepalive" },
-        );
-        void this.tick(boardId, user, principal, sequencer, sessionId).then(
-          (outcome) => {
-            if (subscriber.closed) return;
-            if (outcome.pause !== null) {
-              // TASK-166.3: announce the pause on the keep-alive tick, then
-              // close. Token/board pause closes every PAT stream; session
-              // pause only a stream opened with `?session=<id>`.
-              send({
-                type: "agent",
-                op: "paused",
-                scope: outcome.pause.scope,
-                at: outcome.pause.at ?? Date.now(),
-              });
-              subscriber.complete();
-              return;
-            }
-            if (!outcome.allowed) subscriber.complete();
-          },
-        );
-      }, sseTiming.keepAliveMs);
+      // TASK-200.5: one self-rescheduling timer per stream. PAT streams tick
+      // every 60 s, human streams every 25 s, both with jitter; a tick that
+      // is still running makes the next beat skip instead of piling a second
+      // validation query set onto a saturated pool.
+      const keepAlive = new KeepAliveScheduler({
+        ...keepAliveProfile(principal?.via === "pat"),
+        task: async () => {
+          // The frame's presence epoch lets a client that missed a delta
+          // notice it and reconnect for a fresh `sync` (TASK-145).
+          send(
+            presenceToken !== null
+              ? {
+                  type: "keepalive",
+                  presenceEpoch: this.presence.epochOf(boardId),
+                }
+              : { type: "keepalive" },
+          );
+          const outcome = await this.tick(
+            boardId,
+            user,
+            principal,
+            sequencer,
+            sessionId,
+          );
+          if (subscriber.closed) return;
+          if (outcome.pause !== null) {
+            // TASK-166.3: announce the pause on the keep-alive tick, then
+            // close. Token/board pause closes every PAT stream; session
+            // pause only a stream opened with `?session=<id>`.
+            send({
+              type: "agent",
+              op: "paused",
+              scope: outcome.pause.scope,
+              at: outcome.pause.at ?? Date.now(),
+            });
+            subscriber.complete();
+            return;
+          }
+          if (!outcome.allowed) subscriber.complete();
+        },
+      });
+      this.keepAlives.add(keepAlive);
+      keepAlive.start();
 
       return () => {
+        keepAlive.stop();
+        this.keepAlives.delete(keepAlive);
         sequencer.close();
         live.unsubscribe();
-        clearInterval(keepAlive);
         releaseTracking();
         if (presenceToken !== null) {
           this.presence.leave(boardId, clientId, presenceToken.token);
