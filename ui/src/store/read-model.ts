@@ -27,6 +27,21 @@ export function hasCardDetail(card: Card | undefined): boolean {
 }
 
 /**
+ * Own-property card lookup. Card ids can arrive from `?card=` (deep links) or
+ * a command payload; a bare `cards[id]` would resolve `constructor` or
+ * `__proto__` to a function/object and make an unknown id look loaded.
+ */
+export function cardById(
+  cards: Board["cards"] | undefined,
+  cardId: string | null | undefined,
+): Card | undefined {
+  if (cards === undefined || cardId === null || cardId === undefined) {
+    return undefined;
+  }
+  return Object.hasOwn(cards, cardId) ? cards[cardId] : undefined;
+}
+
+/**
  * Description presence for a card face. A detail-loaded card uses the real
  * body so clearing it immediately removes the badge; a summary uses the
  * server counter without downloading the text.

@@ -11,6 +11,7 @@ import {
 import { cardLinkIndex } from "@/utils/links";
 import {
   boardFromSummary,
+  cardById,
   cardChecklistProgress,
   cardFromDetail,
   cardFromSummary,
@@ -1629,5 +1630,18 @@ describe("read-model adapters (TASK-200.9)", () => {
     } as BoardAction)[0];
     expect(restored.archivedCardIds).toEqual([]);
     expect(restored.columns[0].cardIds).toEqual(["a"]);
+  });
+});
+
+describe("cardById", () => {
+  it("resolves only own card ids, never prototype members", () => {
+    const card = cardFromSummary(summaryCard("card-1"));
+    const cards: Board["cards"] = { "card-1": card };
+    expect(cardById(cards, "card-1")).toBe(card);
+    expect(cardById(cards, "constructor")).toBeUndefined();
+    expect(cardById(cards, "__proto__")).toBeUndefined();
+    expect(cardById(cards, "toString")).toBeUndefined();
+    expect(cardById(undefined, "card-1")).toBeUndefined();
+    expect(cardById(cards, null)).toBeUndefined();
   });
 });

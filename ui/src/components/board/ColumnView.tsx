@@ -78,6 +78,11 @@ interface ColumnViewProps {
   filterPending?: boolean;
   /** Filter/search query highlighted on the card fronts. */
   highlight?: string;
+  /**
+   * TASK-200.9: ids the server filter matched in their description. Summary
+   * cards need this to tell a description hit from a checklist/comment hit.
+   */
+  descriptionMatchIds?: ReadonlySet<string>;
   /** The j/k keyboard cursor card — rendered with a focus ring. */
   cursorCardId?: string;
   /**
@@ -124,6 +129,7 @@ function ColumnViewBody({
   isFiltered = false,
   filterPending = false,
   highlight,
+  descriptionMatchIds,
   cursorCardId,
   canDuplicateColumn = true,
   density = "full",
@@ -505,6 +511,7 @@ function ColumnViewBody({
                           boardId={boardId}
                           labels={cardLabels}
                           highlight={highlight}
+                          descriptionMatch={descriptionMatchIds?.has(card.id)}
                           isCursor={card.id === cursorCardId}
                           linkFacts={linkIndex.factsOf(card.id)}
                           onCardClick={

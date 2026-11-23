@@ -97,6 +97,13 @@ interface CardItemProps {
   selectionMode?: boolean;
   /** Toggles this card in the bulk selection (shift extends the range). */
   onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
+  /**
+   * TASK-200.9: the server filter matched this card's description. A
+   * read-model summary has only `descriptionChars`, so only the server can
+   * prove that a text hit is in the description rather than a checklist item
+   * or a comment.
+   */
+  descriptionMatch?: boolean;
 }
 
 /**
@@ -170,6 +177,7 @@ function CardItemView({
   selected = false,
   selectionMode = false,
   onToggleSelect,
+  descriptionMatch,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped(!compact);
   // Entry animation only for a card that appears in this tab now (created,
@@ -218,12 +226,20 @@ function CardItemView({
       ),
     );
   const checklistMatched = query !== "" && checklistMatch(card, query) !== null;
+  // A summary card carries only `descriptionChars`, never the body, so the
+  // face cannot prove a text match happened in the description. The board
+  // filter asks the server for the match field (the query can hit a checklist
+  // item or a comment instead); local mode and loaded detail keep the old
+  // behaviour.
+  const descriptionKnown =
+    card.readModel === undefined || card.readModel.detailLoaded === true;
   const descriptionOnly =
     query !== "" &&
     !titleMatched &&
     !labelMatched &&
     !checklistMatched &&
-    hasDescription;
+    hasDescription &&
+    (descriptionKnown || descriptionMatch === true);
   const snippet = descriptionOnly
     ? descriptionSnippet(card.description ?? "", query)
     : null;

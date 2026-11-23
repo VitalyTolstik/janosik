@@ -72,7 +72,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   50-card preimage batch is one query. Query budgets and the remaining risks
   are documented in the task doc. Initial bytes/RSS targets still need the
   200.1/200.15 harness on a dedicated host; this change ships the mechanism,
-  not measured capacity.
+  not measured capacity. The global palette's single cross-board search also
+  matches description and checklist text now that the read model no longer
+  ships those bodies, and a summary card face no longer claims a
+  description-only match it cannot prove. Deep links and undo preimages
+  resolve a card id only as an own property, so `?card=constructor` stays
+  inert. Browser e2e skeleton, resync and deep-link waits follow the summary
+  route instead of the legacy aggregate.
 - TASK-200.8 shared MCP Streamable HTTP gateway. `@janosik/mcp` now ships a
   separate `janosik-mcp-http` binary and `ghcr.io/vitalytolstik/janosik-mcp`
   image that serve many MCP sessions from one Node process instead of one

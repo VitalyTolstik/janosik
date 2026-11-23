@@ -489,3 +489,65 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
     expect(screen.queryByText("Landing redesign")).toBeNull();
   });
 });
+
+describe("GlobalSearch server content matches (TASK-200.9)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+    pendingBoardCountRef.current = 0;
+    boardsRef.current = [
+      makeBoard([
+        { id: "c-1", title: "Landing redesign" },
+        { id: "c-2", title: "Newsletter" },
+      ]),
+    ];
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("renders a description snippet from the workspace match", async () => {
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace([
+        {
+          boardId: "b-1",
+          boardTitle: "Alpha",
+          cardId: "c-1",
+          cardTitle: "Landing redesign",
+          matchIn: "description",
+          text: "The hero mockups are ready",
+        },
+      ]),
+    );
+
+    renderPalette();
+    await openAndType("mockups");
+    const option = await screen.findByRole("option");
+
+    expect(option).toHaveTextContent("Landing redesign");
+    expect(option).toHaveTextContent("The hero mockups are ready");
+  });
+
+  it("renders a checklist item text from the workspace match", async () => {
+    vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
+      workspace([
+        {
+          boardId: "b-1",
+          boardTitle: "Alpha",
+          cardId: "c-2",
+          cardTitle: "Newsletter",
+          matchIn: "checklist",
+          text: "run the widget migration",
+        },
+      ]),
+    );
+
+    renderPalette();
+    await openAndType("widget");
+    const option = await screen.findByRole("option");
+
+    expect(option).toHaveTextContent("Newsletter");
+    expect(option).toHaveTextContent("run the widget migration");
+  });
+});

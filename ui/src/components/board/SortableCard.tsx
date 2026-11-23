@@ -14,6 +14,8 @@ interface SortableCardProps {
   labels: Label[];
   /** Filter/search query highlighted on the card front. */
   highlight?: string;
+  /** TASK-200.9: the server filter proved a description match (summary cards). */
+  descriptionMatch?: boolean;
   /** True when this card holds the j/k keyboard cursor (focus ring). */
   isCursor?: boolean;
   /** Link facts for the card-front badges (TASK-46) — see CardItem. */
@@ -50,6 +52,7 @@ function SortableCardView({
   boardId,
   labels,
   highlight,
+  descriptionMatch,
   isCursor,
   linkFacts,
   onCardClick,
@@ -129,6 +132,7 @@ function SortableCardView({
         labels={labels}
         isDragging={isDragging}
         highlight={highlight}
+        descriptionMatch={descriptionMatch}
         isCursor={isCursor}
         linkFacts={linkFacts}
         onClick={onCardClick}

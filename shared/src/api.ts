@@ -1307,7 +1307,7 @@ interface WorkspaceSearchMatchBase {
   boardTitle: string;
   cardId: string;
   cardTitle: string;
-  /** Short snippet around the matched comment text or file name. */
+  /** Short snippet around the matched comment, file name, description or checklist item. */
   text?: string;
 }
 
@@ -1324,12 +1324,33 @@ export interface WorkspaceAttachmentSearchMatch extends WorkspaceSearchMatchBase
 }
 
 /**
- * One cross-board comment/attachment hit. Only text that is absent from the
- * board aggregate is returned: the palette matches titles, descriptions,
- * labels and checklists locally.
+ * A card-description hit from `GET /boards/search?q=` (TASK-200.9). The read
+ * model no longer ships description bodies, so the workspace palette cannot
+ * match them locally.
+ */
+export interface WorkspaceDescriptionSearchMatch extends WorkspaceSearchMatchBase {
+  matchIn: "description";
+  /** Snippet around the matched description text. */
+  text: string;
+}
+
+/** A checklist-item hit from `GET /boards/search?q=` (TASK-200.9). */
+export interface WorkspaceChecklistSearchMatch extends WorkspaceSearchMatchBase {
+  matchIn: "checklist";
+  /** Snippet around the matched item text. */
+  text: string;
+}
+
+/**
+ * One cross-board content hit. Comment, attachment, description and checklist
+ * text live outside the list-facing read model, so the server matches them in
+ * one request; titles and labels stay local.
  */
 export type WorkspaceSearchMatch =
-  WorkspaceCommentSearchMatch | WorkspaceAttachmentSearchMatch;
+  | WorkspaceCommentSearchMatch
+  | WorkspaceAttachmentSearchMatch
+  | WorkspaceDescriptionSearchMatch
+  | WorkspaceChecklistSearchMatch;
 
 /** `GET /boards/search?q=` — bounded to live memberships (TASK-177.13). */
 export interface WorkspaceSearchResult {

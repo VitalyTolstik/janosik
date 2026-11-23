@@ -130,7 +130,7 @@ describe("BoardSection server search (TASK-177.13)", () => {
       await screen.findByText("Other card", {}, { timeout: 15_000 }),
     ).toBeInTheDocument();
     expect(search).toHaveBeenCalledWith("b-1", "flaky", {
-      includeMatches: false,
+      includeMatches: true,
     });
     expect(screen.queryByText("Server card")).toBeNull();
   });
@@ -194,14 +194,14 @@ describe("BoardSection server search (TASK-177.13)", () => {
     fireEvent.change(filterInput(), { target: { value: "flaky" } });
     await waitFor(() =>
       expect(search).toHaveBeenCalledWith("b-1", "flaky", {
-        includeMatches: false,
+        includeMatches: true,
       }),
     );
 
     fireEvent.change(filterInput(), { target: { value: "widget" } });
     await waitFor(() =>
       expect(search).toHaveBeenCalledWith("b-1", "widget", {
-        includeMatches: false,
+        includeMatches: true,
       }),
     );
 
@@ -229,7 +229,7 @@ describe("BoardSection server search (TASK-177.13)", () => {
 
     await waitFor(() =>
       expect(search).toHaveBeenCalledWith("b-1", "flaky", {
-        includeMatches: false,
+        includeMatches: true,
       }),
     );
     await new Promise((resolve) => setTimeout(resolve, 350));

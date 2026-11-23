@@ -370,16 +370,18 @@ paths:
     get:
       tags: [Boards]
       operationId: searchWorkspaceMatches
-      summary: Search comments and attachment names across boards
+      summary: Search content across boards
       description: |
-        Case-insensitive substring search over comment text and attachment
-        file names on every board where the caller has an accepted, unexpired
-        membership (TASK-177.13). Text that is part of the board aggregate —
-        titles, descriptions, labels and checklists — is matched by the
-        client. Matches are deduped per board/card/kind and merged newest-first
-        across comments and files; at most 200 are returned and `total` /
-        `truncated` describe the complete result. A board-scoped PAT sees only
-        its own board. This route is declared before `/boards/{boardId}`.
+        Case-insensitive substring search over comment text, attachment file
+        names, card descriptions and checklist items on every board where the
+        caller has an accepted, unexpired membership (TASK-177.13,
+        TASK-200.9). The read model no longer ships description or checklist
+        text to the client, so the palette's single cross-board request covers
+        those fields too; titles and labels are still matched locally. Matches
+        are deduped per board/card/kind and merged newest-first; at most 200
+        are returned and `total` / `truncated` describe the complete result. A
+        board-scoped PAT sees only its own board. This route is declared before
+        `/boards/{boardId}`.
       parameters:
         - name: q
           in: query
@@ -392,7 +394,7 @@ paths:
             maxLength: 200
       responses:
         "200":
-          description: Matching comment and attachment rows.
+          description: Matching comment, attachment, description and checklist rows.
           content:
             application/json:
               schema:
@@ -5432,10 +5434,48 @@ components:
           description: Short snippet around the matched file name.
         attachmentId:
           type: string
+    WorkspaceDescriptionSearchMatch:
+      type: object
+      required: [matchIn, boardId, boardTitle, cardId, cardTitle, text]
+      properties:
+        matchIn:
+          type: string
+          const: description
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        cardId:
+          type: string
+        cardTitle:
+          type: string
+        text:
+          type: string
+          description: Short snippet around the matched description text.
+    WorkspaceChecklistSearchMatch:
+      type: object
+      required: [matchIn, boardId, boardTitle, cardId, cardTitle, text]
+      properties:
+        matchIn:
+          type: string
+          const: checklist
+        boardId:
+          type: string
+        boardTitle:
+          type: string
+        cardId:
+          type: string
+        cardTitle:
+          type: string
+        text:
+          type: string
+          description: Short snippet around the matched checklist item.
     WorkspaceSearchMatch:
       oneOf:
         - $ref: "#/components/schemas/WorkspaceCommentSearchMatch"
         - $ref: "#/components/schemas/WorkspaceAttachmentSearchMatch"
+        - $ref: "#/components/schemas/WorkspaceDescriptionSearchMatch"
+        - $ref: "#/components/schemas/WorkspaceChecklistSearchMatch"
     WorkspaceSearchResult:
       type: object
       required: [matches, total, truncated]

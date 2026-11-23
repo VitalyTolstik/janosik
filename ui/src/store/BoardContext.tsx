@@ -69,6 +69,7 @@ import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { changedEntityIds } from "@/store/board-diff";
 import {
   boardFromSummary,
+  cardById,
   cardFromDetail,
   cardFromSummary,
   hasCardDetail,
@@ -1033,8 +1034,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   /** Load a card's full detail (description/checklists/links) on demand. */
   const loadCardDetail = useCallback(
     (boardId: string, cardId: string): Promise<Card | null> => {
-      const existing = stateRef.current.find((board) => board.id === boardId)
-        ?.cards[cardId];
+      const existing = cardById(
+        stateRef.current.find((board) => board.id === boardId)?.cards,
+        cardId,
+      );
       const staleReverse = existing?.readModel?.reverseLinksStale === true;
       if (!serverMode || (hasCardDetail(existing) && !staleReverse)) {
         return Promise.resolve(existing ?? null);
@@ -1104,7 +1107,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         (board) => board.id === boardId,
       )?.cards;
       const missing = [...new Set(ids)].filter(
-        (id) => !hasCardDetail(cardMap?.[id]),
+        (id) => !hasCardDetail(cardById(cardMap, id)),
       );
       for (
         let index = 0;
@@ -2577,7 +2580,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       const board = stateRef.current.find((entry) => entry.id === boardId);
       const needed = preimageCardIds(action, board).filter(
-        (id) => !hasCardDetail(board?.cards[id]),
+        (id) => !hasCardDetail(cardById(board?.cards, id)),
       );
       if (!serverMode || needed.length === 0) {
         // Local dispatch must stay synchronous: callers/tests rely on the

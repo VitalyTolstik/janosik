@@ -153,6 +153,8 @@ export function BoardSection() {
     boardId: string;
     query: string;
     cardIds: ReadonlySet<string>;
+    /** TASK-200.9: cards the server matched in their description body. */
+    descriptionIds: ReadonlySet<string>;
   } | null>(null);
 
   const boardId = board?.id;
@@ -161,15 +163,20 @@ export function BoardSection() {
     let alive = true;
     const timer = setTimeout(() => {
       api
-        .searchBoardCards(boardId, query, { includeMatches: false })
+        .searchBoardCards(boardId, query, { includeMatches: true })
         .then((result) => {
           if (!alive) return;
           setServerMatch({
             boardId,
             query,
-            // The filter needs ids only; `matches` is empty unless a caller
-            // explicitly asks for the bounded explanatory list.
             cardIds: new Set(result.cardIds),
+            // Summary cards have no body: only the server can say that the
+            // text hit is in the description rather than a checklist item.
+            descriptionIds: new Set(
+              result.matches
+                .filter((match) => match.matchIn === "description")
+                .map((match) => match.cardId),
+            ),
           });
         })
         .catch(() => {
@@ -178,7 +185,12 @@ export function BoardSection() {
           // Resolve the query with no extra ids so the UI leaves its pending
           // state and can show the truthful local-only result.
           if (alive) {
-            setServerMatch({ boardId, query, cardIds: new Set<string>() });
+            setServerMatch({
+              boardId,
+              query,
+              cardIds: new Set<string>(),
+              descriptionIds: new Set<string>(),
+            });
           }
         });
     }, SERVER_FILTER_DEBOUNCE_MS);
@@ -201,6 +213,13 @@ export function BoardSection() {
     serverMatch.query === query &&
     query !== ""
       ? serverMatch.cardIds
+      : undefined;
+  const serverDescriptionIds =
+    serverMatch !== null &&
+    serverMatch.boardId === board?.id &&
+    serverMatch.query === query &&
+    query !== ""
+      ? serverMatch.descriptionIds
       : undefined;
 
   const filteredIds = useMemo(() => {
@@ -549,6 +568,7 @@ export function BoardSection() {
             isFiltering={active}
             filterPending={serverPending}
             highlight={filter.query}
+            descriptionMatchIds={serverDescriptionIds}
             onCardClick={handleCardClick}
             density={density}
             readOnly={readOnly}
