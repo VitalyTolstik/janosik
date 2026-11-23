@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.6 compressed, conditionally revalidated and bounded board reads.
+  `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least
+  1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the
+  threshold), always sends `Vary: Accept-Encoding`, skips streaming/SSE and
+  never re-encodes a `no-transform` response. A weak `ETag` is derived from
+  board id + `seq` + `updatedAt` + route + role + projection; a matching
+  `If-None-Match` answers `304` with no body before any aggregate load while
+  still carrying `X-Board-Seq`. `Cache-Control: private, no-store` keeps board
+  JSON out of browser/shared caches. Identical concurrent full reads coalesce
+  into one build (per board/role/projection/coding), and a counting semaphore
+  caps concurrent builds (`BOARD_READ_MAX_CONCURRENT`, default 16) with a
+  bounded waiting room (`BOARD_READ_QUEUE_MAX`, default 256,
+  `BOARD_READ_WAIT_MS`, default 10 s) and a total bound
+  (`BOARD_READ_TIMEOUT_MS`, default 20 s). Excess or timed-out readers receive
+  `503 board_read_busy`/`board_read_timeout` with `Retry-After`; queued reads
+  are rejected on shutdown. Single-flight entries are never retained after
+  settlement, so CAS writes and retries always see the database. No auth,
+  membership, flag, SSE or TTL-cache behaviour changed. The gzip/Brotli byte
+  reduction (target 70–80%) and the 500-read/1 000-card RSS target (<2 GB) are
+  to be measured on a dedicated host; this change ships the mechanism and
+  focused tests, not a claim that those numbers were observed. OpenAPI,
+  self-hosting env docs (EN/RU), the TASK-200 design doc, `.env.example` and
+  the nginx note are updated.
+
 - TASK-200.3 swarm-sized agent budgets and rate-limit recovery. The per-board
   bucket is now a safety ceiling (`BOARD_RATE_LIMIT`, default
   `max(12000, 2 × THROTTLE_LIMIT)`) with continuous refill, backed by a

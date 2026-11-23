@@ -410,20 +410,55 @@ paths:
       description: |
         Returns the frontend `Board` model. `X-Board-Seq` carries the command
         sequence the aggregate reflects, for resuming the SSE delta.
+
+        The response is content-negotiated: gzip or Brotli is applied to JSON
+        bodies of at least 1 KB (TASK-200.6), `Vary: Accept-Encoding` is always
+        present, and tiny bodies stay identity. The validator is weak and
+        scoped by board, `seq`, `updatedAt`, route, role and projection; send
+        it back as `If-None-Match` for a bodyless `304`. Identical concurrent
+        reads are coalesced, and a full-read burst is bounded — excess callers
+        may receive `503 board_read_busy` with `Retry-After` instead of the
+        server building every aggregate at once. `Cache-Control: private,
+        no-store` keeps board JSON out of browser/shared caches.
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
-          description: The board aggregate.
+          description: The board aggregate, possibly gzip/Brotli encoded.
           headers:
             X-Board-Seq:
               $ref: "#/components/headers/X-Board-Seq"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Vary:
+              $ref: "#/components/headers/Vary"
+            Cache-Control:
+              $ref: "#/components/headers/PrivateNoStore"
+            Content-Encoding:
+              $ref: "#/components/headers/ContentEncoding"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BoardAggregate"
+        "304":
+          description: |
+            The board still matches `If-None-Match`; the body is empty. The
+            current `X-Board-Seq` and `ETag` are returned so the client can
+            advance its SSE resume baseline without downloading the aggregate.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Vary:
+              $ref: "#/components/headers/Vary"
+            Cache-Control:
+              $ref: "#/components/headers/PrivateNoStore"
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/BoardReadUnavailable" }
     delete:
       tags: [Boards]
       operationId: deleteBoard
@@ -3099,6 +3134,17 @@ components:
       schema:
         type: string
         pattern: "^[A-Za-z0-9_-]{8,128}$"
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |
+        Weak validator returned by a previous `GET /boards/{boardId}`. When the
+        board still has the same `seq`, `updatedAt`, route, role and projection,
+        the answer is `304` with no body and the current `X-Board-Seq`.
+      schema:
+        type: string
+        example: 'W/"K7f3…"'
     ApprovalId:
       name: X-Approval-Id
       in: header
@@ -3201,6 +3247,32 @@ components:
       schema:
         type: integer
         minimum: 0
+    ETag:
+      description: |
+        Weak validator of the board read representation. Its material is board
+        id, `seq`, `updatedAt`, route, role and projection; it never contains a
+        token, user id or role name in clear form.
+      schema:
+        type: string
+        example: 'W/"K7f3…"'
+    Vary:
+      description: |
+        Always `Accept-Encoding` on the board read, including identity and
+        `304` responses, so a cache keys compressed and plain representations
+        separately.
+      schema:
+        type: string
+        example: Accept-Encoding
+    PrivateNoStore:
+      description: Board JSON is private and must not be stored by a cache.
+      schema:
+        type: string
+        example: private, no-store
+    ContentEncoding:
+      description: Present only when the JSON body was compressed.
+      schema:
+        type: string
+        enum: [gzip, br]
     X-Run-Id:
       description: Agent run created by this write, when one exists.
       schema:
@@ -3450,6 +3522,28 @@ components:
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorEnvelope"
+    BoardReadUnavailable:
+      description: |
+        Deliberate full-read backpressure (`TASK-200.6`), safe to retry:
+
+        - `board_read_busy`: the process's read queue is full, or the caller
+          waited `BOARD_READ_WAIT_MS` for a slot. Identical reads already share
+          one build, so only distinct board/role/projection/coding groups
+          compete.
+        - `board_read_timeout`: one response exceeded
+          `BOARD_READ_TIMEOUT_MS` while waiting, building or encoding. The
+          server did not keep the request in an unbounded build.
+
+        Both set `Retry-After` and `retryable: true`; no board data is included.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
       content:
         application/json:
           schema:

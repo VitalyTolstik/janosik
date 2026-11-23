@@ -117,6 +117,16 @@ response header carrying the command `seq` the aggregate reflects. A client
 resumes the SSE stream from that value. An unknown or soft-deleted board
 answers `404`. The aggregate carries `workflow` when the board has one.
 
+The response is content-negotiated: JSON bodies of at least 1 KB use gzip or
+Brotli and always send `Vary: Accept-Encoding`; tiny bodies stay identity.
+The weak `ETag` is scoped to the board, `seq`, `updatedAt`, route, role and
+projection. Send it as `If-None-Match` for a `304` with no body; the `304`
+still carries `X-Board-Seq`, so a client can advance its SSE baseline without
+downloading the board. `Cache-Control` is `private, no-store`. Identical
+concurrent reads share one build; a burst beyond the read limit may answer
+`503 board_read_busy` (or `board_read_timeout`) with `Retry-After` instead of
+overloading the process. Retry those two codes.
+
 `GET /boards/:id/members` returns only **active** accepted memberships by
 default; an expired `VIEWER` is omitted so assignee pickers and filters never
 offer a member the server will refuse. A board `ADMIN` may add

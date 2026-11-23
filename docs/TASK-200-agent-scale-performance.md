@@ -264,6 +264,49 @@ workflow, create, смена workflow планом) добавляют один 
 **Файлы:** `backend/src/boards/boards.service.ts`,
 `backend/src/common/*`, `nginx/Caddy` конфиг (если прокси).
 
+**Реализовано (TASK-200.6):**
+- `GET /boards/:id` отвечает через `BoardReadService`
+  (`backend/src/common/board-read.service.ts`): сначала дешёвая метка
+  `seq + Board.updatedAt` (`BoardsService.getReadStamp`), затем
+  `If-None-Match` → `304` **до** загрузки aggregate. Слабый `ETag` строится из
+  board id + `seq` + `updatedAt` + route + role + projection; `updatedAt`
+  закрывает изменения метаданных доски без движения `seq` (agent policy,
+  pause, admin restore). `304` сохраняет `X-Board-Seq`, чтобы клиент сдвинул
+  базу SSE. `Cache-Control: private, no-store`; `Vary: Accept-Encoding`
+  ставится и на 200, и на 304.
+- Сжатие — только этот буферизованный JSON: gzip/Brotli через async `zlib`
+  (Brotli q4 предпочтителен при равном q; q=0/`identity` соблюдаются), порог
+  1 КБ, откат в identity, если сжатие не уменьшило тело. SSE, multipart,
+  media и `no-transform` helper не трогает; глобального compression
+  middleware нет, поэтому uploads/ошибки/потоки остаются как были.
+- Singleflight (`backend/src/common/single-flight.ts`) объединяет одинаковые
+  конкурентные чтения в одну сборку **вместе с сериализацией и сжатием**
+  (ключ: board + role + projection + coding; ничего пользовательского), так
+  что всплеск делит и буферы. Запись живёт только до settle: ошибка/таймаут
+  не отравляют ключ, следующий запрос снова читает БД — CAS-retry не получает
+  pre-write snapshot.
+- Семафор (`backend/src/common/read-semaphore.ts`) ограничивает полные
+  сборки: `BOARD_READ_MAX_CONCURRENT=16`, `BOARD_READ_QUEUE_MAX=256`,
+  `BOARD_READ_WAIT_MS=10000`, `BOARD_READ_TIMEOUT_MS=20000`. Переполнение
+  очереди/ожидания и общий таймаут отвечают `503 board_read_busy`/
+  `board_read_timeout` + `Retry-After`; `onModuleDestroy` отклоняет очередь и
+  ждёт активные чтения (bounded). Порядок «auth → membership → role/pause →
+  ETag» задаёт `MembershipGuard`; чужой не получает 304.
+- Метрики процесса — `BoardReadService.metrics` (fullReads, coalesced,
+  notModified, compressed, identity, rejected, timeouts, inFlight,
+  active/waiting). Отдельного Prometheus-экспорта в проекте нет.
+- Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation,
+  ETag, сервис) и `backend/test/board-read.e2e-spec.ts` (gzip/br + Vary,
+  tiny/304, role/tenant, CAS rename, non-seq policy, 12→1 через spy на
+  `$transaction`, 503+Retry-After). `openapi:check`/`openapi:test` зелёные.
+- **Честно про DoD:** механизм и тесты поставлены, но −70…80% байт и
+  RSS <2 ГБ на 500×1 000 карточек **не измерялись** в этой задаче — для них
+  нужен отдельный стенд и прогон 200.1/200.15. Ожидание по байтам основано на
+  `docs/PERF-AGENT-SCALE.md` и gzip-замерах `PERF-25K-UX`, а не на новом
+  замере. Прокси: API сам отдаёт `Content-Encoding` + `Vary`; nginx не должен
+  повторно сжимать уже сжатый ответ (заметка в `deploy/nginx.conf`), Caddy
+  также оставляет upstream `Content-Encoding` без изменений.
+
 ---
 
 ### 200.7 — Per-entity CAS / targeted intents вместо board-wide CAS (P1)
