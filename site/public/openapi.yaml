@@ -544,8 +544,8 @@ paths:
         board: the initial column (`workflow.initialColumnId`, else the first
         column), unassigned, without a live claim, not archived/deleted and not
         blocked by a live `blocks` link. The response carries no description
-        body (descriptions are never selected), checklists, links or labels. It
-        is not a board aggregate read.
+        body (only the stored `descriptionChars` length), checklists, links or
+        labels. It is not a board aggregate read.
 
         `wait` is a server-side hold in milliseconds (0–60000). With `wait > 0`
         the request sleeps until a readiness-relevant command (card presence,
@@ -562,8 +562,9 @@ paths:
         A client disconnecting aborts the hold and releases its realtime
         subscription and admitted poll slot. A board deleted during the hold
         answers `404`, not `204`. Per-instance held-poll caps answer `503
-        ready_poll_capacity`; hold time is excluded from the API latency
-        metric.
+        ready_poll_capacity` with `Retry-After`. Only a held `200`/`204` that
+        carried `X-Ready-Held: 1` is excluded from the API latency metric;
+        immediate snapshots and failures stay in it.
 
         Any accepted role, including `VIEWER`, may read the endpoint. An
         archived board answers `200` with `archived: true` and no cards.
@@ -603,6 +604,13 @@ paths:
           headers:
             X-Board-Seq:
               $ref: "#/components/headers/X-Board-Seq"
+            X-Ready-Held:
+              description: |
+                `1` when the request actually held and woke on a relevant
+                change; omitted for an immediate snapshot.
+              schema:
+                type: string
+                enum: ["1"]
           content:
             application/json:
               schema:
@@ -612,6 +620,11 @@ paths:
           headers:
             X-Board-Seq:
               $ref: "#/components/headers/X-Board-Seq"
+            X-Ready-Held:
+              description: Always `1` on a timed hold.
+              schema:
+                type: string
+                enum: ["1"]
             Cache-Control:
               description: Always `no-store` for ready snapshots.
               schema:
@@ -625,7 +638,13 @@ paths:
         "503":
           description: |
             Held-poll admission is at its per-user or per-board cap
-            (`ready_poll_capacity`); retry shortly.
+            (`ready_poll_capacity`); retry after `Retry-After`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying the held poll.
+              schema:
+                type: integer
+                minimum: 1
           content:
             application/json:
               schema:
@@ -3962,6 +3981,7 @@ components:
           claimedBy,
           leaseUntil,
           version,
+          descriptionChars,
         ]
       properties:
         id:
@@ -3992,6 +4012,11 @@ components:
         version:
           type: integer
           description: The card's optimistic-concurrency version.
+        descriptionChars:
+          type: integer
+          description: |
+            Stored description length (0 when unset), maintained by the
+            database trigger. The text itself is never selected or returned.
     ReadyBoardSummary:
       type: object
       required: [id, title, archived, seq]

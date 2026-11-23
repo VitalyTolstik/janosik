@@ -334,9 +334,11 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   `boardId`) instead of a board aggregate. A single-board wait is held by the
   server for 25–60 s per request and wakes only on readiness-relevant changes;
   `pollMs` is ignored for that hold. A cross-board wait re-reads the snapshot
-  every 15–60 s with jitter, with `pollMs` as the floor. A relevant wake that
-  leaves no work keeps holding, and `timeoutMs: 0` still performs one initial
-  snapshot. The tool keeps `timeoutMs`, `pollMs`, `boardId` and its
+  every 15–60 s across the full jittered range, with `pollMs` as the floor. A
+  relevant wake that leaves no work keeps holding, and `timeoutMs: 0` still
+  performs one initial snapshot. Transient network and capacity
+  (`503 ready_poll_capacity` + `Retry-After`) failures retry only inside the
+  caller's deadline. The tool keeps `timeoutMs`, `pollMs`, `boardId` and its
   `{ card: … }` / `{ card: null }` result. On a server without the endpoint
   (`404`) it falls back to a full board read, so upgrading the server is what
   removes the idle board load. A wait does not reserve or claim the card.

@@ -11,27 +11,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
   bounded summary of the cards ready to pick up on one board — the initial/work
   column, unassigned, without a live claim and not blocked — with
-  `id/title`, board and column ids/titles, `priority`, claim state/lease and
-  card `version` only. Descriptions are never selected, so large text is not
-  detoasted, and it never loads a board aggregate. `?wait=` holds the request
+  `id/title`, board and column ids/titles, `priority`, claim state/lease,
+  card `version` and `descriptionChars` (the stored `Card.descriptionLength`
+  kept in sync by a database trigger). The description text is never selected,
+  so large text is not detoasted, and the endpoint never loads a board
+  aggregate. `?wait=` holds the request
   for 0–60 s and wakes only on readiness-relevant actions (card presence,
   move, priority, assignee, claim, link, column/workflow change) or a resync,
   not on every `board:` touch. A relevant wake that leaves no work keeps
-  holding; co-waiters share one post-wake snapshot, and a timed hold answers
-  `204` with `X-Board-Seq` and `Cache-Control: no-store`. `?since=` is the
+  holding; co-waiters share one post-wake snapshot, and a held answer or timed
+  `204` carries `X-Ready-Held: 1` plus `X-Board-Seq`/`Cache-Control: no-store`
+  where applicable. `?since=` is the
   previous board `seq` and answers immediately when the board changed before
   the hold. A client disconnect aborts the hold and releases its subscription
   and admitted poll slot; held polls are capped per user/board (`503
-  ready_poll_capacity`) and their hold time is excluded from API latency.
+  ready_poll_capacity` with `Retry-After`), and only a held `200`/`204` is
+  excluded from API latency.
   A board deleted during the hold answers `404`. `GET /boards/ready?limit=`
   returns the same cards across every accessible board (archived boards are
   listed empty; a board-scoped PAT sees its board) using constant-size SQL
   with no per-board fan-out and is not misparsed as board id `ready`.
   VIEWERs may read both. MCP `janosik_list_ready_cards` and
   `janosik_wait_for_work` use the endpoints; a single-board wait long-polls
-  25–60 s with jitter independently of `pollMs`, a cross-board wait uses a
-  15–60 s jittered cadence, `timeoutMs: 0` still snapshots once, and transient
-  network failures retry inside the deadline. An older server that answers
+  25–60 s with jitter independently of `pollMs`, a cross-board wait uses the
+  full 15–60 s jittered range, `timeoutMs: 0` still snapshots once, and
+  transient network/capacity failures retry only inside the deadline. An older
+  server that answers
   `404` keeps the legacy full-board fallback, so the tool contract
   (`timeoutMs`, `pollMs`, `boardId`, `{ card }`/`{ card: null }`) is unchanged.
   Shared types, OpenAPI, EN/RU API and MCP docs, the MCP README, the TASK-200
