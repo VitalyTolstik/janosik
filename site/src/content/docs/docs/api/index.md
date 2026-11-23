@@ -319,8 +319,9 @@ behaviour.
   was not applied, so retrying it with the same `commandId` stays idempotent.
 - A batch or plan apply is charged by `commands.length` on the board, token
   **and session** budgets. The queue keeps at most 64 commands, 32 MiB of
-  request bodies and a bounded promise chain per board. A pinned `AGENT_*` budget is either `0` (auto) or
-  at least `100`, so a valid 100-command batch can always fit.
+  serialized parsed request JSON (approximate for object overhead) and a
+  bounded promise chain per board. A pinned `AGENT_*` budget is either `0`
+  (auto) or at least `100`, so a valid 100-command batch can always fit.
 
 A response carries the budget that counted the request:
 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`,

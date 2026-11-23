@@ -37,35 +37,24 @@ export function commandRateLimitCost(request: {
 }
 
 /**
- * The queue remembers bodies, so the per-board byte cap needs their size.
- * `Content-Length` is the wire size, which is exact only for an identity body.
- * A gzip/br request can advertise a tiny length while the parsed body the
- * queue retains is up to 10 MiB, so compressed requests always measure the
- * serialized body instead.
+ * The queue remembers parsed bodies, so the per-board byte cap needs the
+ * serialized size of `request.body` — never `Content-Length`. A gzip/br body
+ * can advertise a tiny wire length while retaining up to 10 MiB after
+ * inflation, and an identity length also excludes JSON object overhead. The
+ * value is therefore an approximation of retained JSON bytes (no header or
+ * JavaScript object-header bytes), not the wire size.
  */
 export function commandBodyBytes(request: {
+  /** Intentionally ignored: wire length is not the retained body size. */
   headers?: Record<string, string | string[] | undefined>;
   body?: unknown;
 }): number {
-  const encoding = headerValue(request.headers?.["content-encoding"]);
-  const identity =
-    encoding === undefined ||
-    encoding.trim() === "" ||
-    encoding.trim().toLowerCase() === "identity";
-  if (identity) {
-    const declared = Number(headerValue(request.headers?.["content-length"]));
-    if (Number.isFinite(declared) && declared >= 0) return Math.ceil(declared);
-  }
   if (request.body === undefined) return 0;
   try {
     return Buffer.byteLength(JSON.stringify(request.body));
   } catch {
     return 0;
   }
-}
-
-function headerValue(raw: string | string[] | undefined): string | undefined {
-  return Array.isArray(raw) ? raw[0] : raw;
 }
 
 function isCommandBatch(value: unknown): value is unknown[] {

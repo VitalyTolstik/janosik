@@ -106,27 +106,29 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
     ).toBe(1);
   });
 
-  it("measures the retained body by Content-Length or serialized JSON", () => {
+  it("always measures serialized parsed JSON and ignores Content-Length", () => {
+    const body = { commands: batch(2) };
+    const measured = Buffer.byteLength(JSON.stringify(body));
     expect(
       commandBodyBytes({
         headers: { "content-length": "2048" },
-        body: { commands: batch(2) },
+        body,
       }),
-    ).toBe(2_048);
+    ).toBe(measured);
     expect(
       commandBodyBytes({
         headers: { "content-length": ["12", "12"] },
-        body: { commands: batch(2) },
+        body,
       }),
-    ).toBe(12);
+    ).toBe(measured);
     expect(commandBodyBytes({ body: "abc" })).toBe(5);
     expect(commandBodyBytes({})).toBe(0);
   });
 
-  it("measures the decompressed body when Content-Encoding is compressed", () => {
+  it("measures compressed and identity bodies by serialized parsed JSON", () => {
     const body = { commands: batch(100) };
-    const decompressed = Buffer.byteLength(JSON.stringify(body));
-    for (const encoding of ["gzip", "br", "deflate", "zstd"]) {
+    const measured = Buffer.byteLength(JSON.stringify(body));
+    for (const encoding of ["gzip", "br", "deflate", "zstd", "identity"]) {
       expect(
         commandBodyBytes({
           headers: {
@@ -135,14 +137,7 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
           },
           body,
         }),
-      ).toBe(decompressed);
+      ).toBe(measured);
     }
-    // An identity body may keep the exact wire length.
-    expect(
-      commandBodyBytes({
-        headers: { "content-encoding": "identity", "content-length": "64" },
-        body,
-      }),
-    ).toBe(64);
   });
 });

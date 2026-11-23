@@ -7,10 +7,10 @@ import { ACTION_REGISTRY } from "./command-validation";
  * the backend registry and that list from drifting silently.
  */
 describe("shared BOARD_ACTION_TYPES", () => {
-  it("contains every action the command transport accepts", () => {
-    const missing = Object.keys(ACTION_REGISTRY).filter(
-      (type) => !(BOARD_ACTION_TYPES as readonly string[]).includes(type),
-    );
-    expect(missing).toEqual([]);
+  it("matches every action the command transport accepts, in both directions", () => {
+    const backend = new Set(Object.keys(ACTION_REGISTRY));
+    const shared = new Set<string>(BOARD_ACTION_TYPES);
+    expect([...backend].filter((type) => !shared.has(type))).toEqual([]);
+    expect([...shared].filter((type) => !backend.has(type))).toEqual([]);
   });
 });

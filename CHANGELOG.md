@@ -25,8 +25,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   startup; use 0 (auto) or at least 100. A per-key `rateLimitPerMinute` of
   1–99 remains valid but cannot submit a 100-command batch, since a batch
   spends its command count against the token budget. Command writes over the
-  board ceiling wait in a per-board FIFO (64 commands / 32 MiB of decompressed
-  JSON / bounded promise chain, max 30 000 ms) and then answer `503 rate_limited` with
+  board ceiling wait in a per-board FIFO (64 commands / 32 MiB of serialized
+  parsed JSON, approximate for object overhead / bounded promise chain, max
+  30 000 ms) and then answer `503 rate_limited` with
   `Retry-After` and `X-RateLimit-Queued-Ms` (`0` when the queue cap rejects
   immediately) instead of an instant `429`; reads keep the immediate `429`.
   The MCP client retries `429` and the queued `503` up to four attempts,

@@ -361,7 +361,7 @@ describe("Observability and agent rate limits (e2e)", () => {
     });
   });
 
-  it("charges a gzip batched body by its decompressed queue bytes", async () => {
+  it("charges a gzip batched body by its serialized parsed queue bytes", async () => {
     setBoardRateLimit(1);
     setAgentCommandQueueMs(5_000);
     const pat = await createToken("gzip-batch");
