@@ -49,6 +49,7 @@ export interface CardIntentActor {
 /** A stored command, narrowed to what an intent replay needs. */
 interface StoredIntentCommand {
   boardId: string;
+  actorId: string;
   payload: Prisma.JsonValue;
   result: Prisma.JsonValue;
   runId: string | null;
@@ -140,12 +141,14 @@ export class CardIntentsService {
       "CLAIM_CARD",
       boardId,
       cardId,
+      actor.actorId,
       dto,
     );
     const release = dto.release === true;
     const replay = await this.replay(
       boardId,
       cardId,
+      actor.actorId,
       dto.commandId,
       "CLAIM_CARD",
       fingerprint,
@@ -206,11 +209,13 @@ export class CardIntentsService {
       "MOVE_CARD",
       boardId,
       cardId,
+      actor.actorId,
       dto,
     );
     const replay = await this.replay(
       boardId,
       cardId,
+      actor.actorId,
       dto.commandId,
       "MOVE_CARD",
       fingerprint,
@@ -312,11 +317,13 @@ export class CardIntentsService {
       "UPDATE_CARD",
       boardId,
       cardId,
+      actor.actorId,
       dto,
     );
     const replay = await this.replay(
       boardId,
       cardId,
+      actor.actorId,
       dto.commandId,
       "UPDATE_CARD",
       fingerprint,
@@ -463,6 +470,7 @@ export class CardIntentsService {
   private async replay(
     boardId: string,
     cardId: string,
+    actorId: string,
     commandId: string | undefined,
     type: BoardAction["type"],
     fingerprint: string,
@@ -472,6 +480,7 @@ export class CardIntentsService {
       where: { id: commandId },
       select: {
         boardId: true,
+        actorId: true,
         payload: true,
         result: true,
         runId: true,
@@ -489,11 +498,19 @@ export class CardIntentsService {
     }
     const payload = asRecord(row.payload);
     const details = asRecord(row.details);
+    const storedFingerprint = details?.intentFingerprint;
+    // Rows written before this fix have no fingerprint. They still replay for
+    // the same actor/type/card (rolling-deploy bridge); any newer row must
+    // match the full intent fingerprint.
+    const fingerprintMatches =
+      typeof storedFingerprint === "string"
+        ? storedFingerprint === fingerprint
+        : row.actorId === actorId;
     if (
       payload === null ||
       payload.type !== type ||
       payload.cardId !== cardId ||
-      details?.intentFingerprint !== fingerprint
+      !fingerprintMatches
     ) {
       throw new ConflictException({
         message: "commandId already used with a different payload",
@@ -546,13 +563,17 @@ export class CardIntentsService {
 
   /**
    * Stable hash of the client intent, including field presence. Server-derived
-   * fields (lease expiry, source index, resolved destination) are deliberately
-   * absent: those change on a retry and must not turn it into a new request.
+   * fields (lease expiry, source index, resolved destination) and version pins
+   * are deliberately absent: a retry may refresh `ifMatchVersions` after a
+   * conflict and must still replay the write that already committed. The
+   * authenticated actor is part of the intent, so another user cannot read
+   * back someone else’s stored claim/move/patch by reusing its key.
    */
   private intentFingerprint(
     type: BoardAction["type"],
     boardId: string,
     cardId: string,
+    actorId: string,
     dto: ClaimCardIntentDto | MoveCardIntentDto | PatchCardIntentDto,
   ): string {
     const keys =
@@ -567,8 +588,9 @@ export class CardIntentsService {
       type,
       boardId,
       cardId,
+      actorId,
       fields: Object.fromEntries(
-        [...keys, "ifMatch", "ifMatchVersions"].map((key) => [
+        keys.map((key) => [
           key,
           Object.hasOwn(record, key)
             ? { present: true, value: canonicalJson(record[key]) }

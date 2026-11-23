@@ -8,6 +8,7 @@ import "@/config/env";
 import * as boardAggregate from "@/boards/board-aggregate";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { CommandsService } from "@/commands/commands.service";
 import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "entity-cas@example.com";
@@ -405,17 +406,96 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     expect(replayClaim.body.claimedBy).toBe(firstClaim.body.claimedBy);
     expect(replayClaim.body.leaseUntil).toBe(firstClaim.body.leaseUntil);
 
+    // Version pins are preconditions, not intent: refreshing them on the
+    // retry must not turn an exact replay into idempotency_conflict.
+    const refreshedVersion = (await context(boardId, cardId, pat)).versions[
+      `card:${cardId}`
+    ]!;
+    const pinnedReplay = await claim(
+      boardId,
+      cardId,
+      {
+        leaseMs: 60_000,
+        ifMatchVersions: { [`card:${cardId}`]: refreshedVersion },
+      },
+      pat,
+      claimId,
+    ).expect(200);
+    expect(pinnedReplay.body.seq).toBe(firstClaim.body.seq);
+
+    // Presence-only differences are a different intent.
+    const presenceClaim = await claim(
+      boardId,
+      cardId,
+      { leaseMs: 60_000, release: false },
+      pat,
+      claimId,
+    ).expect(409);
+    expect(presenceClaim.body).toMatchObject({ code: "idempotency_conflict" });
+
     // The same `commandId` arriving while the first request is still in flight
     // must queue and read the stored result, not rebuild a different lease.
     const concurrentCard = await card(boardId, "Concurrent claim");
     const concurrentId = randomUUID();
-    const concurrent = await Promise.all([
-      claim(boardId, concurrentCard, { leaseMs: 60_000 }, pat, concurrentId),
-      claim(boardId, concurrentCard, { leaseMs: 60_000 }, pat, concurrentId),
-    ]);
-    expect(concurrent.map((res) => res.status)).toEqual([200, 200]);
-    expect(concurrent[0]!.body.seq).toBe(concurrent[1]!.body.seq);
-    expect(concurrent[0]!.body.versions).toEqual(concurrent[1]!.body.versions);
+    const originalApply = CommandsService.prototype.apply;
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let applyCalls = 0;
+    const applySpy = jest
+      .spyOn(CommandsService.prototype, "apply")
+      .mockImplementation(function (
+        this: CommandsService,
+        ...args: Parameters<CommandsService["apply"]>
+      ) {
+        applyCalls += 1;
+        if (applyCalls === 1) {
+          started();
+          return gate.then(() => originalApply.apply(this, args));
+        }
+        return originalApply.apply(this, args);
+      });
+    let startedTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const first = Promise.resolve(
+        claim(boardId, concurrentCard, { leaseMs: 60_000 }, pat, concurrentId),
+      );
+      await Promise.race([
+        startedPromise,
+        new Promise((_, reject) => {
+          startedTimer = setTimeout(
+            () => reject(new Error("first claim did not start")),
+            5_000,
+          );
+        }),
+      ]);
+      clearTimeout(startedTimer);
+      const second = claim(
+        boardId,
+        concurrentCard,
+        { leaseMs: 60_000 },
+        pat,
+        concurrentId,
+      );
+      releaseFirst();
+      const concurrent = await Promise.all([first, second]);
+      expect(concurrent.map((res) => res.status)).toEqual([200, 200]);
+      expect(concurrent[0]!.body.seq).toBe(concurrent[1]!.body.seq);
+      expect(concurrent[0]!.body.versions).toEqual(
+        concurrent[1]!.body.versions,
+      );
+      // The queued duplicate replayed; it did not enter CommandsService.
+      expect(applyCalls).toBe(1);
+    } finally {
+      clearTimeout(startedTimer);
+      releaseFirst();
+      applySpy.mockRestore();
+    }
 
     // A different intent under the same commandId is rejected, not replayed.
     const differentIntent = await claim(
@@ -429,18 +509,33 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       code: "idempotency_conflict",
     });
 
+    // A command row written before the fingerprint deploy still replays for
+    // the same actor/card/type (rolling-deploy bridge).
+    const legacyCard = await card(boardId, "Pre-fingerprint row");
+    const legacyId = randomUUID();
+    await claim(boardId, legacyCard, { leaseMs: 60_000 }, pat, legacyId).expect(
+      200,
+    );
+    await prisma.command.update({
+      where: { id: legacyId },
+      data: { details: {} },
+    });
+    await claim(boardId, legacyCard, { leaseMs: 60_000 }, pat, legacyId).expect(
+      200,
+    );
+
     const moveId = randomUUID();
     const firstMove = await move(
       boardId,
       cardId,
-      { toColumnId: doingId, position: 0 },
+      { toColumnId: doingId },
       pat,
       moveId,
     ).expect(200);
     const replayMove = await move(
       boardId,
       cardId,
-      { toColumnId: doingId, position: 0 },
+      { toColumnId: doingId },
       pat,
       moveId,
     ).expect(200);
@@ -449,11 +544,29 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     const differentMove = await move(
       boardId,
       cardId,
-      { toColumnId: todoId, position: 0 },
+      { toColumnId: todoId },
       pat,
       moveId,
     ).expect(409);
     expect(differentMove.body).toMatchObject({ code: "idempotency_conflict" });
+    const differentPosition = await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId, position: 1 },
+      pat,
+      moveId,
+    ).expect(409);
+    expect(differentPosition.body).toMatchObject({
+      code: "idempotency_conflict",
+    });
+    const presenceMove = await move(
+      boardId,
+      cardId,
+      { toColumnId: doingId, position: 0 },
+      pat,
+      moveId,
+    ).expect(409);
+    expect(presenceMove.body).toMatchObject({ code: "idempotency_conflict" });
 
     const patchId = randomUUID();
     const firstPatch = await patch(
@@ -487,6 +600,16 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       patchId,
     ).expect(409);
     expect(differentPatch.body).toMatchObject({
+      code: "idempotency_conflict",
+    });
+    const presencePatch = await patch(
+      boardId,
+      cardId,
+      { description: "mine", expectedDescription: "", title: "Replay card" },
+      pat,
+      patchId,
+    ).expect(409);
+    expect(presencePatch.body).toMatchObject({
       code: "idempotency_conflict",
     });
   });
@@ -702,7 +825,24 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     await joinBoard(boardId);
     const memberPat = await createPat(boardId, "worker", memberSession);
     const claimed = await card(boardId, "Owned claim");
-    await claim(boardId, claimed, { leaseMs: 60_000 }, pat).expect(200);
+    const sharedClaimId = randomUUID();
+    await claim(
+      boardId,
+      claimed,
+      { leaseMs: 60_000 },
+      pat,
+      sharedClaimId,
+    ).expect(200);
+    // Another authenticated actor cannot replay this command id and read the
+    // first holder's result.
+    const crossActor = await claim(
+      boardId,
+      claimed,
+      { leaseMs: 60_000 },
+      memberPat,
+      sharedClaimId,
+    ).expect(409);
+    expect(crossActor.body).toMatchObject({ code: "idempotency_conflict" });
     const release = await claim(
       boardId,
       claimed,
@@ -729,7 +869,13 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       .set(auth(pat))
       .expect(404);
     expect(missingContext.headers["x-janosik-intent-api"]).toBe("1");
-    expect(missingContext.body).toMatchObject({ code: "not_found" });
+    expect(missingContext.headers["x-request-id"]).toEqual(expect.any(String));
+    expect(missingContext.body).toMatchObject({
+      code: "not_found",
+      retryable: false,
+      requestId: missingContext.headers["x-request-id"],
+      currentVersion: null,
+    });
     const snapshot = await context(boardId, cardId, pat);
 
     await patch(

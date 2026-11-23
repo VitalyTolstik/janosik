@@ -38,7 +38,6 @@ let commandPayload: string;
 let cardOverrides: Record<string, unknown>;
 let searchFailure: number | null;
 let archivedBoard: boolean;
-let reorderOnConflict: boolean;
 let boardWorkflow: unknown;
 let approvalStatus:
   "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
@@ -48,6 +47,8 @@ let approvalRequiredFor: string | null;
 let readyEndpointMissing: boolean;
 /** Pre-200.7 server simulation: card context/intent routes answer 404. */
 let intentEndpointMissing: boolean;
+/** Make the first move conflict also change the destination to Done. */
+let doneAfterMoveConflict: boolean;
 /** Transient fetch failures before the next ready request succeeds. */
 let readyNetworkFailures: number;
 /** 503 ready_poll_capacity answers before the next ready request succeeds. */
@@ -460,14 +461,6 @@ async function fakeApi(
   }
   if (path === "/boards/b1" && method === "GET") {
     const snapshot = board(cardOverrides);
-    if (reorderOnConflict) {
-      snapshot.columns.splice(boardSeq > 3 ? 1 : 2, 0, {
-        id: "col3",
-        title: "Other",
-        cardIds: [],
-        createdAt: 1,
-      });
-    }
     return respond(
       { ...snapshot, ...(archivedBoard ? { archivedAt: 5 } : {}) },
       200,
@@ -527,6 +520,14 @@ async function fakeApi(
       if (staleWrites > 0) {
         staleWrites -= 1;
         boardSeq += 1;
+        if (doneAfterMoveConflict && intent === "move") {
+          boardWorkflow = {
+            schemaVersion: 1,
+            enabled: false,
+            doneColumnIds: ["col2"],
+            transitions: [],
+          };
+        }
         return respond(
           {
             conflict: "version",
@@ -1005,12 +1006,12 @@ beforeEach(() => {
   cardOverrides = {};
   searchFailure = null;
   archivedBoard = false;
-  reorderOnConflict = false;
   boardWorkflow = null;
   approvalStatus = "pending";
   approvalRequiredFor = null;
   readyEndpointMissing = false;
   intentEndpointMissing = false;
+  doneAfterMoveConflict = false;
   readyNetworkFailures = 0;
   readyCapacityFailures = 0;
   readyRateLimitFailures = 0;
@@ -1792,12 +1793,19 @@ describe("janosik MCP server", () => {
 
   it("reports a genuine missing card on an intent-capable server", async () => {
     const client = await connect();
-    const result = await client.callTool({
-      name: "janosik_move_card",
-      arguments: { boardId: "b1", cardId: "missing", position: 1 },
-    });
-    expect(result.isError).toBe(true);
-    expect(firstText(result)).toContain("not on board");
+    for (const [name, extra] of [
+      ["janosik_move_card", { position: 1 }],
+      ["janosik_update_card", { title: "X" }],
+      ["janosik_claim_card", { leaseMs: 60_000 }],
+      ["janosik_release_card", {}],
+    ] as const) {
+      const result = await client.callTool({
+        name,
+        arguments: { boardId: "b1", cardId: "missing", ...extra },
+      });
+      expect(result.isError).toBe(true);
+      expect(firstText(result)).toContain("not on board");
+    }
     expect(
       calls.some(
         (call) => call.path === "/boards/b1/commands" && call.method === "POST",
@@ -2192,6 +2200,31 @@ describe("janosik MCP server", () => {
     expect(calls.some((call) => call.path === "/boards/b1/cards/k3/move")).toBe(
       false,
     );
+    expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
+    await client.close();
+  });
+
+  it("rechecks Done after the destination becomes done on the retry", async () => {
+    boardWorkflow = {
+      schemaVersion: 1,
+      enabled: false,
+      doneColumnIds: ["col1"],
+      transitions: [],
+    };
+    staleWrites = 1;
+    doneAfterMoveConflict = true;
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_move_card",
+      arguments: { boardId: "b1", cardId: "k3", toColumnId: "col2" },
+    });
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/Definition of Done/i);
+    // One intent was refused; the retry was blocked by the fresh context and
+    // never became a second move or a command.
+    expect(
+      calls.filter((call) => call.path === "/boards/b1/cards/k3/move"),
+    ).toHaveLength(1);
     expect(calls.some((call) => call.path === "/boards/b1")).toBe(false);
     await client.close();
   });

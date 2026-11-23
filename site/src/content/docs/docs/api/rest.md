@@ -363,7 +363,12 @@ not re-download the board.
 column id/title list, `doneColumnIds` (with the last-column fallback),
 `workflow`, the current board `seq` and actual `board:`, `card:` and `column:`
 versions. Use it for a Definition-of-Done check, a release guard or a
-description compare-and-set without calling `GET /boards/:id`.
+description compare-and-set without calling `GET /boards/:id`. The context
+route answers `X-Janosik-Intent-API: 1` on success and on its genuine
+missing-card `404` (which keeps the standard `ApiErrorEnvelope` and
+`X-Request-Id`). A context `404` without that header is a pre-200.7 server;
+MCP then falls back to the command API. Guard-level `401`/`403`/`429` do not
+promise the header.
 
 Every intent body accepts `commandId` (the idempotency key; omitting it lets
 the server mint one, which is safe only when a lost response may create a
@@ -388,7 +393,11 @@ concurrent requests with the same `commandId` are serialized in the API
 process; the second waits for the first and returns its stored result. A
 different intent under the same key still answers `409 idempotency_conflict`
 because the server stores a stable intent fingerprint (including which fields
-were present), not the server-derived action. A stale precondition
+were present and the authenticated actor), not the server-derived action.
+Version pins are excluded, so refreshing `ifMatchVersions` on a retry still
+replays the committed write. Command rows written before the fingerprint
+deploy have none; they replay for the same actor/card/type during a rolling
+upgrade. A stale precondition
 answers `409 version_conflict` with the board `seq` in `currentVersion` and
 the versions of the pinned entities in `versions`; merge those into
 `ifMatchVersions` and retry the same call, or re-read only

@@ -5,7 +5,6 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   Param,
   Patch,
   Post,
@@ -57,21 +56,12 @@ export class CardIntentsController {
     @Param("id") boardId: string,
     @Param("cardId") cardId: string,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<CardContextDto | Record<string, unknown>> {
+  ): Promise<CardContextDto> {
+    // Set before the service call: the header must survive a thrown 404 so
+    // MCP can distinguish a genuine missing card from a pre-200.7 server.
+    // The exception filter still shapes the error envelope and X-Request-Id.
     res.setHeader(CARD_INTENT_API_HEADER, "1");
-    try {
-      return await this.intents.context(boardId, cardId);
-    } catch (error) {
-      if (!(error instanceof NotFoundException)) throw error;
-      // Keep the capability header on the 404 too: MCP distinguishes this
-      // genuine missing card from a server without the context route.
-      res.status(HttpStatus.NOT_FOUND);
-      return {
-        statusCode: HttpStatus.NOT_FOUND,
-        code: "not_found",
-        message: "Card not found",
-      };
-    }
+    return this.intents.context(boardId, cardId);
   }
 
   @UseGuards(MembershipGuard)

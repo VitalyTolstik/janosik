@@ -323,10 +323,16 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   or move of another card never conflicts; a change to this card answers `409`
   with its current `versions`, and the tool retries only this card. The
   Definition-of-Done check and `expectedDescription` use the same context.
-  An exact retry with the same `commandId` is a true replay even though the
-  server recomputes a lease or move coordinates. On a server older than
-  200.7 (context route `404`) these tools fall back to the command API.
-  `expectedVersion` remains the explicit full-board mode for callers that read
+  An exact retry with the same `commandId`, actor and intent is a true replay
+  even though the server recomputes a lease or move coordinates; refreshed
+  `ifMatchVersions` pins do not break it. A different intent, a different
+  actor or a pre-fingerprint row under the same key answers
+  `idempotency_conflict` (the oldest rows without a fingerprint replay only
+  for the same actor). A genuine missing card on a 200.7 server is a normal
+  `not_found` and does **not** fall back; only a context `404` without
+  `X-Janosik-Intent-API: 1` means a pre-200.7 server and triggers the
+  command-API fallback. `expectedVersion` remains the explicit full-board mode
+  for callers that read
   the whole board: the write is pinned to that `seq` as before. `add_comment`
   calls the already-targeted comment route and never reads a board. Tools that
   compute a board-level command from a read (`move_column`,

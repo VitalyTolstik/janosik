@@ -664,9 +664,10 @@ paths:
         aggregate: no other card payload, checklist or description is read.
         An agent uses it for the Definition-of-Done check, a release guard or
         a compare-and-set description edit before calling a card intent.
-        Every answer, including a genuine missing-card `404`, carries
-        `X-Janosik-Intent-API: 1`; an older server's `404` lacks it, which is
-        how an MCP client decides to fall back to the command API.
+        Successful responses and this route's genuine missing-card `404`
+        carry `X-Janosik-Intent-API: 1`; guard-level errors may not. An older
+        server's context `404` lacks the header, which is how an MCP client
+        decides to fall back to the command API.
       responses:
         "200":
           description: The card context.
@@ -682,10 +683,13 @@ paths:
         "404":
           description: |
             Board or card not found/card intents unavailable. A card-intent
-            server still sends `X-Janosik-Intent-API: 1`.
+            server still sends `X-Janosik-Intent-API: 1`; the standard error
+            envelope and `X-Request-Id` are preserved.
           headers:
             X-Janosik-Intent-API:
               $ref: "#/components/headers/X-Janosik-Intent-API"
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
           content:
             application/json:
               schema:
