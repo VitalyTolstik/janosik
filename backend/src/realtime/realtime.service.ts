@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
@@ -32,14 +33,44 @@ export type SubscriberAdmission =
  * no board stream has to be open for the message to arrive.
  *
  * `pat` without `tokenId` and `flags` without `key` mean "all entries".
+ * `throttle` carries a new live global request limit (TASK-200.12).
  */
 export type CacheInvalidation =
   | { kind: "pat"; tokenId?: string }
   | { kind: "membership"; boardId: string; userId: string }
   | { kind: "board"; boardId: string }
-  | { kind: "flags"; key?: string };
+  | { kind: "flags"; key?: string }
+  | { kind: "throttle"; limit: number };
 
 export type CacheInvalidationListener = (event: CacheInvalidation) => void;
+
+/**
+ * The slice of an ioredis client the fan-out uses. A factory seam lets the
+ * multi-replica test drive two services over one in-memory pub/sub bus
+ * (TASK-200.12) without a Redis server; production still constructs ioredis.
+ */
+export interface RealtimeRedisClient {
+  publish(channel: string, payload: string): Promise<unknown>;
+  subscribe(channel: string): Promise<unknown>;
+  unsubscribe(channel: string): Promise<unknown>;
+  on(
+    event: "message",
+    listener: (channel: string, payload: string) => void,
+  ): unknown;
+  quit(): Promise<unknown>;
+}
+
+export type RealtimeRedisFactory = (url: string) => RealtimeRedisClient;
+
+export interface RealtimeServiceOptions {
+  /** Override `env.REDIS_URL` (tests only; empty = local-only). */
+  redisUrl?: string;
+  /** Override the ioredis constructor (tests only). */
+  createRedis?: RealtimeRedisFactory;
+}
+
+const defaultRedisFactory: RealtimeRedisFactory = (url) =>
+  new Redis(url, { maxRetriesPerRequest: null });
 
 /**
  * Wire version of the cache-invalidation control frame. Bump it when the
@@ -81,8 +112,8 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly limitByUser = new Map<string, number>();
   private readonly limitByBoard = new Map<string, number>();
   private subscribers = 0;
-  private publisher: Redis | null = null;
-  private subscriber: Redis | null = null;
+  private publisher: RealtimeRedisClient | null = null;
+  private subscriber: RealtimeRedisClient | null = null;
   /** Periodic connection-count log (TASK-140). */
   private monitor: NodeJS.Timeout | null = null;
   private lastLoggedSubscribers = 0;
@@ -91,18 +122,28 @@ export class RealtimeService implements OnModuleInit, OnModuleDestroy {
   /** Cache-invalidation subscribers (TASK-200.5). */
   private readonly invalidationListeners = new Set<CacheInvalidationListener>();
 
+  constructor(
+    // Optional so Nest does not try to resolve the plain options object as a
+    // provider; production always uses the env default, tests inject a fake.
+    @Optional() private readonly options: RealtimeServiceOptions = {},
+  ) {}
+
+  private get redisUrl(): string {
+    return this.options.redisUrl ?? env.REDIS_URL;
+  }
+
+  private createRedis(url: string): RealtimeRedisClient {
+    return (this.options.createRedis ?? defaultRedisFactory)(url);
+  }
+
   onModuleInit(): void {
     // Log the live-stream count on a timer regardless of Redis (TASK-140):
     // the metric (`subscriberCount`) feeds observability, this feeds the logs.
     this.startMonitor();
-    if (env.REDIS_URL.trim().length === 0) return;
+    if (this.redisUrl.trim().length === 0) return;
     try {
-      this.publisher = new Redis(env.REDIS_URL, {
-        maxRetriesPerRequest: null,
-      });
-      this.subscriber = new Redis(env.REDIS_URL, {
-        maxRetriesPerRequest: null,
-      });
+      this.publisher = this.createRedis(this.redisUrl);
+      this.subscriber = this.createRedis(this.redisUrl);
       this.subscriber.on("message", (channel: string, payload: string) => {
         if (channel === CHANNEL_INVALIDATE) {
           this.receiveInvalidation(payload);
@@ -486,6 +527,12 @@ function isCacheInvalidation(value: unknown): value is CacheInvalidation {
       return typeof event.boardId === "string";
     case "flags":
       return event.key === undefined || typeof event.key === "string";
+    case "throttle":
+      return (
+        typeof event.limit === "number" &&
+        Number.isInteger(event.limit) &&
+        event.limit > 0
+      );
     default:
       return false;
   }

@@ -1,13 +1,16 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { BullModule } from "@nestjs/bullmq";
-import { ThrottlerModule, ThrottlerStorageService } from "@nestjs/throttler";
+import { ThrottlerModule } from "@nestjs/throttler";
 import { env } from "@/config/env";
 import { throttleLimit } from "@/config/throttle";
-import Redis from "ioredis";
 import { AgentRateLimitInterceptor } from "@/common/agent-rate-limit.interceptor";
 import { ApiExceptionFilter } from "@/common/api-exception.filter";
-import { RedisThrottlerStorage } from "@/common/redis-throttler-storage";
+import {
+  createSharedThrottlerStorage,
+  SHARED_THROTTLER_STORAGE,
+  SharedThrottlerShutdown,
+} from "@/common/shared-throttler";
 import { principalTracker } from "@/common/throttle-tracker";
 import { PrismaModule } from "@/common/prisma/prisma.module";
 import { SecurityAuditModule } from "@/common/security-audit/security-audit.module";
@@ -47,6 +50,11 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
  * checklists), activity feeds, comments, file attachments (TASK-47) and the
  * master-account admin module are live.
  */
+// TASK-200.12: one optional adapter shared by every replica. `undefined`
+// when REDIS_URL is empty, which keeps the stock in-process storage for a
+// bare single-node self-host.
+const sharedThrottler = createSharedThrottlerStorage();
+
 @Module({
   imports: [
     // B-8: buckets are per principal (user / known PAT, else IP — see
@@ -57,17 +65,8 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
         { name: "default", ttl: 60_000, limit: () => throttleLimit() },
       ],
       getTracker: (req) => principalTracker(req),
-      ...(env.REDIS_URL.trim().length > 0
-        ? {
-            storage: new RedisThrottlerStorage(
-              new Redis(env.REDIS_URL, {
-                maxRetriesPerRequest: 1,
-                commandTimeout: 500,
-                lazyConnect: true,
-              }),
-              new ThrottlerStorageService(),
-            ),
-          }
+      ...(sharedThrottler !== undefined
+        ? { storage: sharedThrottler.storage }
         : {}),
     }),
     PrismaModule,
@@ -111,6 +110,17 @@ import { PerUserRateLimitInterceptor } from "@/ops/per-user-rate-limit.intercept
       : []),
   ],
   providers: [
+    // TASK-200.12: close the shared Redis throttler connection on shutdown so
+    // a rolling replica restart can finish without SIGKILL.
+    ...(sharedThrottler !== undefined
+      ? [
+          {
+            provide: SHARED_THROTTLER_STORAGE,
+            useValue: sharedThrottler.storage,
+          },
+          SharedThrottlerShutdown,
+        ]
+      : []),
     PasswordResetAuditService,
     { provide: APP_GUARD, useClass: PasswordResetThrottlerGuard },
     { provide: APP_GUARD, useClass: MaintenanceGuard },

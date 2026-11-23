@@ -3,6 +3,20 @@ import type { ThrottlerStorage } from "@nestjs/throttler";
 import type Redis from "ioredis";
 
 /**
+ * The handful of Redis methods this adapter needs. Keeping them explicit
+ * makes the unit tests trivially fakeable and documents that the adapter
+ * never reaches for a connection of its own.
+ */
+type RedisThrottlerClient = Pick<Redis, "eval"> &
+  Partial<Pick<Redis, "quit" | "disconnect">> & {
+    status?: string;
+  };
+
+type ShutdownableThrottlerStorage = ThrottlerStorage & {
+  onApplicationShutdown?: () => void;
+};
+
+/**
  * Shared throttler counters (B-8). With the default in-memory storage every
  * node counts on its own, so N nodes silently multiply the limit by N. When
  * `REDIS_URL` is set the counters live in Redis instead, one fixed window
@@ -40,7 +54,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
   private lastWarnAt = 0;
 
   constructor(
-    private readonly redis: Pick<Redis, "eval">,
+    private readonly redis: RedisThrottlerClient,
     private readonly fallback: ThrottlerStorage,
   ) {}
 
@@ -93,5 +107,38 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
       isBlocked: blocked === 1,
       timeToBlockExpire: Math.max(0, Math.ceil(blockMs / 1000)),
     };
+  }
+
+  /**
+   * Release the shared connection and any fallback timers at shutdown
+   * (TASK-200.12). Without this the ioredis socket keeps the Node process
+   * alive after `app.close()`, so a Compose rollout would always end in
+   * SIGKILL instead of a graceful stop.
+   */
+  async close(): Promise<void> {
+    (this.fallback as ShutdownableThrottlerStorage).onApplicationShutdown?.();
+    const client = this.redis;
+    // A lazy, never-used connection has nothing to wait for; do not open one
+    // just to close it.
+    if (client.status === "wait" || client.status === "end") {
+      client.disconnect?.();
+      return;
+    }
+    if (typeof client.quit === "function") {
+      const quit = client.quit.bind(client);
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 1_000);
+        timer.unref?.();
+        void quit()
+          .catch(() => undefined)
+          .finally(() => {
+            clearTimeout(timer);
+            resolve();
+          });
+      });
+    }
+    // If Redis did not answer within the grace window, close the socket so a
+    // rolling restart is never held hostage by a dead dependency.
+    client.disconnect?.();
   }
 }
