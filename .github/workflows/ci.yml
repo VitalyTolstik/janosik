@@ -432,7 +432,7 @@ jobs:
           mock_pid=$!
           sleep 0.5
           docker run -d --name janosik-mcp-smoke \
-            --network host --memory 1536m --cpus 2 \
+            --network host --memory 2048m --cpus 2 \
             -e JANOSIK_URL=http://127.0.0.1:19090 \
             -e JANOSIK_MCP_HTTP_PORT=18090 \
             janosik-mcp-local:test

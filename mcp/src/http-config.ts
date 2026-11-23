@@ -528,5 +528,5 @@ the stdio server. JANOSIK_TOKEN is ignored: send
 
 Endpoints: JANOSIK_MCP_HTTP_PATH (default ${DEFAULT_PATH}), /health (liveness),
 /ready (readiness). Successful MCP POSTs return SSE; gateway errors return JSON
-and notifications return 202. Configure proxies with buffering off and a read
-timeout above long tool calls.`;
+and notifications return 202. JSON-RPC batches are rejected. Configure proxies
+with buffering off and a read timeout above long tool calls.`;

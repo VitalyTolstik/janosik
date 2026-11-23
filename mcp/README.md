@@ -133,16 +133,20 @@ global session cap remain shared; each body class only answers `503 body_busy`
 every POST. Both gates share one explicit read deadline (default 8 s): a
 stalled body is reset and its slot released independently of Node's request
 checker, so a slow large upload must fit that deadline (raise it and the
-memory budget together if needed). `/health` reports
+memory budget together if needed). After parsing, the slot stays held until
+`handleRequest` **and every tool promise started by that POST** settle; a
+client disconnect does not release it while a detached handler still holds
+its arguments (handlers are not cancelled). `/health` reports
 `bodyReads.session` and `bodyReads.initialize` active/max counters plus
-`timeoutMs`. Concurrent initializes for one key share one validation call. A `429` from the
-gateway for initialize is `initialize_rate_limited`; `503 session_limit` and
-other 503s carry `Retry-After`. The default per-key limits are **10
-initialize attempts/min and 50 live sessions**: a key that legitimately needs
-the per-key session cap must raise
+`timeoutMs`. JSON-RPC batches are rejected with `400 batch_not_supported`
+rather than charging one slot for up to 100 tool calls. Concurrent
+initializes for one key share one validation call. A `429` from the gateway
+for initialize is `initialize_rate_limited`; `503 session_limit` and other
+503s carry `Retry-After`. The default per-key limits are **10 initialize
+attempts/min and `min(50, MAX_SESSIONS)` live sessions**: a key that
+legitimately needs the per-key session cap must raise
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` (or create them over several
-minutes). The API's own IP throttle still applies to
-first-time keys:
+minutes). The API's own IP throttle still applies to first-time keys:
 raise the API `THROTTLE_LIMIT` (and the gateway's
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`) for a large
 simultaneous first-time swarm, and put the gateway behind a trusted proxy so
@@ -232,19 +236,23 @@ paths still answer `404` and disallowed origins `403`; other MCP requests get
 | `JANOSIK_MCP_HTTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`; logs are JSON and never contain keys. |
 | `JANOSIK_MCP_HTTP_SHUTDOWN_GRACE_MS` | `10000` | Drain window on SIGTERM/SIGINT before force-closing sockets. |
 
-**Memory budget.** A body slot is held until `handleRequest` resolves (or
-released early if the client aborts/disconnects), not just until the body is
-read, because the parsed body remains referenced for the whole tool call. Worst case is 16 × 16 MiB = 256 MiB of retained session
-bodies plus 32 × 256 KiB = 8 MiB of initialize bodies. During parsing the raw
-chunk buffers and JSON strings can add roughly one more copy of the in-flight
-bodies, so keep `mem_limit` above the 1 GiB V8 heap plus ~2× the gate budgets
-(Compose's 1536m is the minimum, not a large headroom). The per-token/per-IP
-caps and 8 s deadline keep one client from consuming either global gate; raise
-the deadline for slow large uploads. Lowering a global body limit clamps the
-unset per-token/per-IP default to it instead of failing startup. Tune the
-body gates, read deadline and container `mem_limit` together; the global
-session cap (`MAX_SESSIONS`) and validation bucket remain separate shared
+**Memory budget.** A body slot is held until `handleRequest` and every tool
+handler started by that POST settle, not just until the body is read, because
+the parsed body remains referenced while the handler runs. Worst case is
+16 × 16 MiB = 256 MiB of retained session bodies plus 32 × 256 KiB = 8 MiB of
+initialize bodies. During parsing the raw chunk buffers and JSON strings can
+add roughly one more copy, so Compose raises `mem_limit` to 2048m: 1 GiB V8
+heap + ~2× the gate budgets, leaving headroom. The per-token/per-IP caps and 8 s
+deadline keep one client from consuming either global gate; raise the
+deadline for slow large uploads. Lowering a global body limit clamps the
+unset per-token/per-IP default. Tune body gates, deadline and `mem_limit`
+together; `MAX_SESSIONS` and the validation bucket stay separate shared
 limits.
+
+**Cold-start tuning.** A 500-key first-time swarm from one IP needs the init
+body gates (default 4 per IP / 32 global), validation in-flight cap (64) and
+API `THROTTLE_LIMIT` raised together; otherwise some initializes get
+`body_busy`, `auth_busy` or API `429` and must retry.
 
 `JANOSIK_MCP_TOOLSETS`, `JANOSIK_MCP_READONLY`, `JANOSIK_APP_BASE` and the
 filesystem settings are shared with the stdio server. The gateway container
@@ -271,8 +279,8 @@ inside one minute exceed a `THROTTLE_LIMIT` of 300.
 The `mcp` package test suite includes a mock-upstream smoke that creates 100
 then 500 real HTTP sessions in one process, calls a tool at the cap, and
 checks that 20 MiB of SSE tool results leaves no SDK stream mappings behind.
-On the development host 500 sessions used about 630 MB RSS (one process, not
-500 × 100 MB). The gateway container bundles the SDK and Zod into one file, so
+On the development host 500 sessions used about 800 MB RSS (one process, not
+500 × 100 MB) including the retained-body tests. The gateway container bundles the SDK and Zod into one file, so
 its image is ~350 MB rather than a ~571 MB dependency tree. See
 `mcp/src/http-server.test.ts`.
 

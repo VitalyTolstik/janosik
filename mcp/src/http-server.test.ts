@@ -887,6 +887,91 @@ describe("MCP Streamable HTTP gateway", () => {
     expect(recovered.status).toBe(200);
   });
 
+  it("holds slots across aborted slow-handler waves until they finish", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    let starts = 0;
+    const createSlowServer = () => {
+      const server = new McpServer({ name: "slow-abort", version: "0.0.0" });
+      server.registerTool(
+        "slow_abort",
+        {
+          title: "Slow abort",
+          description: "Keeps running after its HTTP client disconnects.",
+          inputSchema: {},
+        },
+        async () => {
+          starts += 1;
+          await sleep(1_500);
+          return { content: [{ type: "text", text: "finished" }] };
+        },
+      );
+      return server;
+    };
+    const running = await startGateway(
+      upstream,
+      {
+        maxBodyBytes: 8 * 1024 * 1024,
+        maxConcurrentBodyReads: 12,
+        maxConcurrentBodyReadsPerToken: 12,
+        bodyReadTimeoutMs: 8_000,
+      },
+      { createMcpServer: createSlowServer },
+    );
+    const sessionId = await initialize(running, ALPHA);
+    const payload = "x".repeat(4 * 1024 * 1024);
+    const startCall = (index: number, signal: AbortSignal) =>
+      fetch(`${running.url}/mcp`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${ALPHA}`,
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-session-id": sessionId,
+          "mcp-protocol-version": "2025-06-18",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 300 + index,
+          method: "tools/call",
+          params: { name: "slow_abort", arguments: { payload } },
+        }),
+        signal,
+      });
+
+    for (let wave = 1; wave <= 3; wave += 1) {
+      const controllers = Array.from(
+        { length: 4 },
+        () => new AbortController(),
+      );
+      const calls = controllers.map((controller, index) =>
+        startCall(wave * 10 + index, controller.signal),
+      );
+      await waitForBodyReads(
+        running,
+        (stats) => stats.session.active === wave * 4,
+        3_000,
+      );
+      await waitFor(() => starts >= wave * 4, 3_000);
+      for (const controller of controllers) controller.abort();
+      await Promise.allSettled(calls);
+      await sleep(30);
+      expect((await bodyReadStats(running)).session.active).toBe(wave * 4);
+    }
+    await waitForBodyReads(
+      running,
+      (stats) => stats.session.active === 0,
+      3_000,
+    );
+    const recovered = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 330, method: "tools/list" },
+      sessionId,
+    );
+    expect(recovered.status).toBe(200);
+  });
+
   it("reserves the session body gate from a cross-IP initialize flood", async () => {
     const upstream = await startUpstream();
     cleanup.push(() => upstream.close());
@@ -1385,6 +1470,27 @@ describe("MCP Streamable HTTP gateway", () => {
     const result = await rpc(running, ALPHA, body, sessionId);
     expect(result.status).toBe(413);
     expect(result.json).toMatchObject({ error: "payload_too_large" });
+  });
+
+  it("rejects JSON-RPC batches explicitly", async () => {
+    const upstream = await startUpstream();
+    cleanup.push(() => upstream.close());
+    const running = await startGateway(upstream);
+    const sessionId = await initialize(running, ALPHA);
+    const batch = [
+      { jsonrpc: "2.0", id: 90, method: "tools/list" },
+      { jsonrpc: "2.0", id: 91, method: "tools/list" },
+    ];
+    const rejected = await rpc(running, ALPHA, batch, sessionId);
+    expect(rejected.status).toBe(400);
+    expect(rejected.json).toMatchObject({ error: "batch_not_supported" });
+    const recovered = await rpc(
+      running,
+      ALPHA,
+      { jsonrpc: "2.0", id: 92, method: "tools/list" },
+      sessionId,
+    );
+    expect(recovered.status).toBe(200);
   });
 
   it("consumes the initialize bucket even for malformed sessionless bodies", async () => {

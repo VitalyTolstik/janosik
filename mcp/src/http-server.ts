@@ -35,6 +35,11 @@ import {
 import type { GatewayConfig } from "./http-config.js";
 import type { Logger } from "./http-log.js";
 import {
+  ToolTracker,
+  installToolTracking,
+  toolRequestContext,
+} from "./http-tool-lifecycle.js";
+import {
   SessionManager,
   fingerprintToken,
   sessionMatchesToken,
@@ -321,8 +326,11 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
     maxSessionsPerToken: config.maxSessionsPerToken,
     idleMs: config.sessionIdleMs,
     sweepMs: config.sessionSweepMs,
-    createMcpServer: (token) =>
-      factory({ ...config.base, token }, { transport: "http" }),
+    createMcpServer: (token) => {
+      const server = factory({ ...config.base, token }, { transport: "http" });
+      installToolTracking(server);
+      return server;
+    },
     logger,
     transportOptions: { keepAliveMs: config.sseKeepAliveMs },
   });
@@ -432,12 +440,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
    * the parsed body stays referenced for the whole tool call. Abort/close
    * releases immediately; the caller's `finally` is idempotent.
    */
-  function acquireBodySlot(
-    gate: TenantConcurrencyGate,
-    key: string,
-    req: IncomingMessage,
-    res: ServerResponse,
-  ): BodySlot {
+  function acquireBodySlot(gate: TenantConcurrencyGate, key: string): BodySlot {
     const decision = gate.tryAcquire(key);
     if (!decision.ok) {
       logger.warn("body_read_busy", { scope: decision.scope });
@@ -451,18 +454,13 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       );
     }
     let released = false;
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      req.off("aborted", release);
-      res.off("close", release);
-      gate.release(key);
+    return {
+      release() {
+        if (released) return;
+        released = true;
+        gate.release(key);
+      },
     };
-    // `req.close` means the request body is complete, not that the call is
-    // over. Hold the slot until the response closes or the caller's finally.
-    req.once("aborted", release);
-    res.once("close", release);
-    return { release };
   }
 
   /**
@@ -766,12 +764,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
         // Take the per-IP body slot before charging initialize budgets, so a
         // `body_busy` retry cannot spend the caller's init allowance.
         const ipAddress = clientAddress(req, config.trustProxyHops);
-        const bodySlot = acquireBodySlot(
-          initBodyReads,
-          `ip:${ipAddress}`,
-          req,
-          res,
-        );
+        const bodySlot = acquireBodySlot(initBodyReads, `ip:${ipAddress}`);
         try {
           const ipDecision = ipInitLimiter?.take(ipAddress);
           if (ipDecision !== undefined && !ipDecision.ok) {
@@ -807,6 +800,13 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
             config.sessionlessMaxBodyBytes,
             "initialize",
           );
+          if (Array.isArray(body)) {
+            throw new GatewayHttpError(
+              400,
+              "batch_not_supported",
+              "JSON-RPC batches are not supported; send one message per POST.",
+            );
+          }
           if (!containsInitialize(body)) {
             throw new GatewayHttpError(
               400,
@@ -937,7 +937,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
 
       const bodySlot =
         method === "POST"
-          ? acquireBodySlot(bodyReads, `token:${session.tokenHash}`, req, res)
+          ? acquireBodySlot(bodyReads, `token:${session.tokenHash}`)
           : undefined;
       manager.begin(session);
       try {
@@ -945,7 +945,28 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
           method === "POST"
             ? await readBodyWithDeadline(req, config.maxBodyBytes, "session")
             : undefined;
-        await session.transport.handleRequest(req, res, body);
+        if (Array.isArray(body)) {
+          throw new GatewayHttpError(
+            400,
+            "batch_not_supported",
+            "JSON-RPC batches are not supported; send one message per POST.",
+          );
+        }
+        if (method === "POST") {
+          const tracker = new ToolTracker();
+          await toolRequestContext.run(tracker, async () => {
+            try {
+              await session.transport.handleRequest(req, res, body);
+            } finally {
+              // A disconnected client can resolve handleRequest while tool
+              // handlers still retain their arguments. Keep the body slot and
+              // session activity until those promises settle.
+              await tracker.waitForIdle();
+            }
+          });
+        } else {
+          await session.transport.handleRequest(req, res, body);
+        }
       } finally {
         manager.end(session);
         bodySlot?.release();

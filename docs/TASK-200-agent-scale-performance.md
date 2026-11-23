@@ -412,9 +412,10 @@ workflow, create, смена workflow планом) добавляют один 
 > на сессию, локальный admission per-IP/per-token с negative cache,
 > single-flight проверкой ключа, раздельными body gate для initialize
 > (IP/`MAX_CONCURRENT_INIT_BODY_READS`) и инструментов
-> (токен/`MAX_CONCURRENT_BODY_READS`); слот удерживается до завершения вызова,
-> `/health` показывает оба счётчика, дедлайн сбрасывает зависшее тело
-> (`503 body_busy`), `503 auth_busy` — при переполнении валидаций, idle/limit/
+> (токен/`MAX_CONCURRENT_BODY_READS`); слот удерживается до завершения всех
+> tool-промисов POST, JSON-RPC batch отклоняется, `/health` показывает оба
+> счётчика, дедлайн сбрасывает зависшее тело (`503 body_busy`), `503 auth_busy`
+> — при переполнении валидаций, idle/limit/
 > health и graceful drain (новые запросы получают 503, listener закрывается
 > после активных вызовов),
 > structured logs без токенов), отдельный Docker-образ/Compose-профиль и

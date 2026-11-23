@@ -77,6 +77,8 @@ Error contract (all `503`s carry `Retry-After`):
 - `403 origin_not_allowed` — browser `Origin` not in the allowlist (default:
   all browser origins denied). An allowed origin also gets CORS preflight and
   response headers, so a browser MCP host is usable when deliberately enabled.
+- `400 batch_not_supported` — JSON-RPC batches are rejected so one POST
+  cannot hide many tool calls behind one body slot.
 - `404 session_not_found` — unknown or expired `Mcp-Session-Id`.
 - `413 payload_too_large` — sessionless body over
   `JANOSIK_MCP_HTTP_INIT_MAX_BODY_BYTES`, or any body over
@@ -94,24 +96,26 @@ invalid fingerprints. The sessionless body is capped strictly (default
 16, ~256 MiB). An initialize flood across many IPs therefore cannot consume
 the session body gate, though CPU, network, API validation and the global
 session cap remain shared; each class answers `503 body_busy` + `Retry-After`
-only when its own gate is full. The slot is held until
-`handleRequest` resolves (or released early on client abort/disconnect),
-because the parsed body stays referenced for the whole tool call; it is
-released in `finally` on success,
-error, abort or timeout. Both classes use one explicit read deadline (default
-8 s) that resets a stalled body and releases its slot independently of Node's
-request checker (the connection is reset, not a deliverable `408`); 8 s is
-tight for a slow 16 MiB upload, so raise `BODY_READ_TIMEOUT_MS` together with
+only when its own gate is full. A per-request `ToolTracker` wraps every tool
+handler; the body slot and session activity stay held until `handleRequest`
+and all tool promises started by that POST settle. A client disconnect does
+**not** release the slot while a detached handler still holds its arguments
+(handlers are not cancelled), and the slot is released in `finally` on
+success, error or timeout. Both classes use one explicit read deadline
+(default 8 s) that resets a stalled body and releases its slot independently
+of Node's request checker (the connection is reset, not a deliverable `408`);
+8 s is tight for a slow 16 MiB upload, so raise `BODY_READ_TIMEOUT_MS` with
 the memory budget. `/health` exposes `bodyReads.session` and
-`bodyReads.initialize` active/max counters and `timeoutMs`.
+`bodyReads.initialize` active/max counters and `timeoutMs`. JSON-RPC batches
+are rejected (`400 batch_not_supported`) so one POST cannot hide up to 100
+tool calls behind one body slot.
 
 Every new session that passes the buckets and is not in the negative cache
 performs one authenticated API read (`/api/v1/auth/me` by default); only a
-cached invalid fingerprint skips it. Keep the Compose `mem_limit` above the
-1 GiB V8 heap plus the body and init gate products
-(16 × 16 MiB + 32 × 256 KiB ≈ 264 MiB retained). Parsing keeps raw buffers and
-JSON strings too, so allow roughly another copy of the in-flight bodies in the
-container budget. Concurrent
+cached invalid fingerprint skips it. Compose uses `mem_limit: 2048m`:
+1 GiB V8 heap + the body/init gate products (16 × 16 MiB + 32 × 256 KiB ≈
+264 MiB retained) + roughly another copy of in-flight bodies while parsing,
+plus headroom (1536m would be too tight). Concurrent
 initializes for one fingerprint share one validation call; a `429`/`503` from
 the API is retried a bounded number of
 times, honoring a small `Retry-After` (a longer API delay is returned to the
@@ -195,9 +199,12 @@ Docker or heavy load):
   the explicit read timeout/client abort releases the slot; an init flood
   across IPs fills only the init budget while a valid session still works;
 - global limit (503), explicit DELETE, replacement session;
-- active slow tool call is drained before close; a request during drain gets
+- active slow tool call is drained before close; aborted slow-handler waves
+  keep their body slots until handlers finish; a request during drain gets
   `503 shutting_down` + `Retry-After`; open GET SSE closes during drain; idle
   expiry -> 404 + session count 0; pending `open()` is not swept;
+- JSON-RPC batches are rejected; 8 × 12 MiB slow calls on one token with cap
+  4 gives 4 accepted/4 `body_busy` and bounded heap;
 - GET SSE keepalive, no sweep while the stream is open, DELETE closes it,
   disconnect is eventually swept;
 - 20 × 1 MiB tool results over SSE with empty `_streamMapping`,
@@ -209,10 +216,12 @@ Docker or heavy load):
 - spawn the stdio entry over `StdioClientTransport` and list tools (regression).
 
 Local evidence (WSL, Node 24, `vitest run`): 500 sessions in one process used
-about **+340 MB heap / 630 MB RSS** (including the Vitest worker and mock
-upstream), versus the ~54 GB extrapolated for 500 stdio processes. The test
-asserts a 750 MB heap and 1.5 GB RSS bound to catch a regression, not to be a
-benchmark. The gateway image is a bundled single file, so the runtime image is
+about **+300 MB heap / 800 MB RSS** including the Vitest worker, mock
+upstream and the retained-body tests, versus the ~54 GB extrapolated for 500
+stdio processes. The test asserts a 750 MB heap and 1.5 GB RSS bound to catch
+a regression, not to be a benchmark. A 500-key cold start from one IP also
+needs the init gates (4/IP, 32 global), validation in-flight cap (64) and API
+`THROTTLE_LIMIT` raised together. The gateway image is a bundled single file, so the runtime image is
 ~350 MB (almost all of it the Node base image) instead of the previous ~571 MB
 dependency tree; CI checks it stays under 400 MB.
 

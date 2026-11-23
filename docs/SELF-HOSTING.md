@@ -311,20 +311,22 @@ session cap immediately.
 `GET /health` is liveness and reports `bodyReads.session` /
 `bodyReads.initialize` counters. Sessionless and tool bodies use separate
 per-IP/per-token budgets with global backstops; a full gate answers `503
-body_busy` + `Retry-After`. All `503`s carry `Retry-After`. During drain,
+body_busy` + `Retry-After`; JSON-RPC batches are rejected. All `503`s carry
+`Retry-After`. During drain,
 unknown paths still answer `404` and disallowed origins `403`; other MCP
 requests get `503 shutting_down`.
 
 For a large first-time swarm, 500 keys inside one minute exceed the API's
 default `THROTTLE_LIMIT=300`; raise `THROTTLE_LIMIT`, the gateway's
-`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT` and any proxy/IP limits together, and use
+`JANOSIK_MCP_HTTP_INIT_RATE_LIMIT`, the 4/IP–32 global init body gates, the
+64 validation in-flight cap and any proxy/IP limits together, and use
 `JANOSIK_MCP_HTTP_TRUST_PROXY=1` behind a trusted proxy.
 
 **Sessions are in-memory.** Restarting the gateway container drops every MCP
 session; clients reconnect and initialize again. Multiple replicas need a
 session-affine proxy (or clients must accept reconnects), because there is no
 shared session store. The Compose service sets `stop_grace_period: 20s`
-(above the 10 s drain window), a 1.5 GB memory limit and 2 CPUs by default;
+(above the 10 s drain window), a 2 GB memory limit and 2 CPUs by default;
 override with `JANOSIK_MCP_MEM_LIMIT` / `JANOSIK_MCP_CPUS`.
 
 Sessions are independent: each has its own `JanosikClient` and token

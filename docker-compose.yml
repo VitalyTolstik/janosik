@@ -133,8 +133,9 @@ services:
       app:
         condition: service_healthy
     # Keep one gateway from starving the API host. The V8 heap default is
-    # 1024 MB; 1536m leaves room for 500+ sessions and the Node baseline.
-    mem_limit: ${JANOSIK_MCP_MEM_LIMIT:-1536m}
+    # 1024 MB; 2048m leaves room for body gates, parser copies and 500+
+    # sessions.
+    mem_limit: ${JANOSIK_MCP_MEM_LIMIT:-2048m}
     cpus: ${JANOSIK_MCP_CPUS:-2.0}
     environment:
       JANOSIK_URL: http://app:3000

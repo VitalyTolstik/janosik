@@ -92,8 +92,9 @@ needs buffering off and a read timeout above the longest tool call. SSE uses
 liveness and reports `bodyReads.session` / `bodyReads.initialize`; `GET /ready`
 checks API reachability (not a key) and returns `503` + `Retry-After` when not
 ready. Sessionless and tool bodies have separate per-IP/per-token budgets with
-global backstops; a full gate answers `503 body_busy` + `Retry-After`. During
-drain, unknown paths still `404` and disallowed origins `403`, while other MCP
+global backstops; a full gate answers `503 body_busy` + `Retry-After`, and
+JSON-RPC batches are rejected. During drain, unknown paths still `404` and
+disallowed origins `403`, while other MCP
 requests get `503 shutting_down`.
 
 **Sessions are in-memory.** Restarting the gateway drops every session;
@@ -106,11 +107,12 @@ shared session store. Limits come from `JANOSIK_MCP_HTTP_MAX_SESSIONS`
 (default 5 minutes); an in-flight call or open stream is never swept. A key's
 default 10 initialize attempts/min is below its 50-session cap; raise
 `JANOSIK_MCP_HTTP_INIT_RATE_LIMIT_PER_TOKEN` if one key must reach its per-key
-session cap immediately. The Compose service also sets a 1.5 GB memory limit and 2 CPUs. The API
+session cap immediately. The Compose service also sets a 2 GB memory limit and 2 CPUs. The API
 still enforces the key's board scope, role, preset and rate limit.
 
 For a large first-time swarm, 500 new keys in one minute exceed the API's
-default `THROTTLE_LIMIT=300`: raise it, the gateway initialize limit and proxy
+default `THROTTLE_LIMIT=300`: raise it, the gateway initialize limit, the
+4/IP–32 global init body gates, the 64 validation in-flight cap and proxy
 limits together, and set `JANOSIK_MCP_HTTP_TRUST_PROXY=1` behind a trusted
 proxy. Before exposing the gateway check TLS, the `127.0.0.1` bind, the origin
 allowlist, the absence of a shared token and the per-token cap.
