@@ -1298,8 +1298,11 @@ Every API error (new and changed in 166.4) returns:
 
 - `code` is a stable machine identifier in snake_case.
 - `message` is an English fallback; UI/MCP localize by `code`.
-- `retryable` is always present. `true` means the same request may be retried
-  without changes after `Retry-After`/a short pause.
+- `retryable` is always present. `true` means the request may be retried after
+  `Retry-After`/a short pause; for a write, resend the same `commandId` (and
+  REST `Idempotency-Key`), because a `502`/`504` can follow an unkeyed write.
+  `request_timeout` is retryable when the client aborted before the command was
+  applied.
 - `requestId` is the same id as `X-Request-Id`; it already exists in
   `request-context`.
 - `currentVersion` is the current version of the checked resource. For
