@@ -8,7 +8,12 @@
  */
 
 import type { BoardAction } from "./store/board-reducer";
-import type { Board, BoardAgentPolicy, CommentKind } from "./types/kanban";
+import type {
+  Board,
+  BoardAgentPolicy,
+  CardPriority,
+  CommentKind,
+} from "./types/kanban";
 import type { WorkflowCondition, WorkflowRole } from "./workflow";
 import type { UserAvatarColor } from "./types/account";
 import type { BoardExportFile } from "./utils/board-serialization";
@@ -626,6 +631,81 @@ export interface BoardSummary {
 
 /** Aggregate of `GET /boards/:id` — exactly the frontend `Board` model. */
 export type BoardAggregate = Board;
+
+/** Default number of ready cards returned by the ready/work endpoints. */
+export const READY_WORK_LIMIT_DEFAULT = 30;
+
+/** Hard upper bound on `limit` for the ready/work endpoints. */
+export const READY_WORK_LIMIT_MAX = 100;
+
+/**
+ * Longest server-side hold of `GET /boards/:id/ready?wait=`, in ms. It bounds
+ * one request, not a caller's whole wait: a client issues another request
+ * until its own deadline passes (TASK-200.2).
+ */
+export const READY_WORK_WAIT_MAX_MS = 60_000;
+
+/**
+ * One card that is ready to pick up, as returned by
+ * `GET /boards/:id/ready` and `GET /boards/ready` (TASK-200.2).
+ *
+ * This is a *summary*, not a board read: it carries no description body,
+ * checklists, links, labels or comments. `descriptionChars` is only the
+ * stored length (0 when unset) so the existing MCP output keeps its shape;
+ * the text itself never leaves the server. `claimedBy` can be non-null only
+ * when the lease has lapsed — a live claim is not ready.
+ */
+export interface ReadyCardDto {
+  id: string;
+  title: string;
+  boardId: string;
+  boardTitle: string;
+  columnId: string;
+  /** The board's first/work column title (MCP's former `column` field). */
+  columnTitle: string;
+  priority: CardPriority;
+  claimedBy: string | null;
+  leaseUntil: number | null;
+  /** The card's optimistic-concurrency version. */
+  version: number;
+  descriptionChars: number;
+}
+
+/**
+ * `GET /boards/:id/ready?limit=&wait=&since=` — a bounded ready-work summary
+ * for one board. `seq` is the board's command sequence at the moment of the
+ * snapshot (`X-Board-Seq` carries the same value); a long-poll that times out
+ * answers `204` with no body. An archived board answers `200` with
+ * `archived: true` and no cards; VIEWERs may read it.
+ */
+export interface BoardReadyDto {
+  boardId: string;
+  boardTitle: string;
+  archived: boolean;
+  seq: number;
+  limit: number;
+  cards: ReadyCardDto[];
+}
+
+/** One accessible board in the cross-board ready snapshot. */
+export interface ReadyBoardSummary {
+  id: string;
+  title: string;
+  archived: boolean;
+  seq: number;
+}
+
+/**
+ * `GET /boards/ready?limit=` — a snapshot across every board the caller can
+ * read, built with constant-size SQL (no per-board fan-out). Archived boards
+ * are listed with `archived: true` and contribute no cards. This endpoint is
+ * a snapshot only; long-poll one board with `/boards/:id/ready?wait=`.
+ */
+export interface BoardsReadyDto {
+  boards: ReadyBoardSummary[];
+  limit: number;
+  cards: ReadyCardDto[];
+}
 
 /**
  * A non-command event type stored in `Activity` (§7.3): membership changes

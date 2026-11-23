@@ -9,6 +9,7 @@ import { RealtimeModule } from "@/realtime/realtime.module";
 import { BoardsController } from "./boards.controller";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
+import { ReadyService } from "./ready.service";
 
 /** Boards + membership + import/export (§7.2, TASK-25). */
 @Module({
@@ -21,7 +22,12 @@ import { DeletedItemsService } from "./deleted-items.service";
     AttachmentsModule,
   ],
   controllers: [BoardsController],
-  providers: [BoardsService, DeletedItemsService, MembershipGuard],
+  providers: [
+    BoardsService,
+    DeletedItemsService,
+    ReadyService,
+    MembershipGuard,
+  ],
   // Reused by the master-account admin module (create/soft-delete board).
   exports: [BoardsService],
 })
