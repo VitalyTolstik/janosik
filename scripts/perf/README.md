@@ -131,7 +131,10 @@ boundary. Each open has a 10 s header timeout and the whole scenario has a
 bounded ramp+hold deadline. The report shows opened/closed/failed/early
 closes/read errors, live streams at hold start/end, and the observed ramp and
 hold durations. No live stream is `failed`; one opened stream with thousands of
-failures is at least `partial`. S3 checks its own SSE hold the same way.
+failures is at least `partial`. S3 checks its own SSE hold the same way. If the
+overall timer fires, the scenario is `timedOut`: it is `partial` when at least
+one live hold started, and `failed` when the deadline expired before any hold;
+the Markdown reason names the truncation.
 
 ### Board recycling
 
@@ -147,8 +150,9 @@ or `--recycle-token-file`); its requests are measured in a separate
 `recycle` block and are excluded from agent action counts. There is no
 implicit fallback to an agent token in real mode. Recycling is limited to the
 selected boards, each with its own recycler. A release answered with 400/409
-is a tolerated no-holder case; other failures are surfaced as orphans in the
-scenario status/report.
+is a tolerated no-holder case: the card is still moved back and is not counted
+as an orphan. Other release failures stop that board's recycler and are
+surfaced as orphans in the scenario status/report.
 
 ## Commands
 
@@ -201,7 +205,8 @@ Markdown; the report has an overall status and counts.
 - `ok` — successful 2xx work was measured; expected 409/429 are data.
 - `partial` — successful work happened, but the board exhausted/stranded a
   claim, a claim release was orphaned, an S5 stream failed, the network
-  degraded, or unexpected 4xx/server 5xx crossed the documented thresholds
+  degraded, a scenario/SSE deadline truncated a run that had a live hold, or
+  unexpected 4xx/server 5xx crossed the documented thresholds
   (`server5xxRate > 1%` or ≥5; `unexpected4xxRate > 0.1%` or ≥5), or the S4
   work window was under half the request.
 - `failed` — zero successful 2xx responses, zero requests, zero required work
@@ -213,7 +218,8 @@ conflicts; the report shows their separate counts and rates. Exit codes: `0`
 ok/partial, `1` failed or
 zero-work, `2` config/preflight (including 401/403 and a board that is
 missing/archived), `130` interrupted. `--require-ok` turns `partial` into exit
-`1`; `perf:smoke` and `perf:mcp-smoke` use it. The first Ctrl-C cancels in-flight HTTP
+`1`; it is recorded in `config.requireOk` in the report, and `perf:smoke` and
+`perf:mcp-smoke` use it. The first Ctrl-C cancels in-flight HTTP
 and psql, writes a partial report (including a minimal preflight report if the
 load has not started) and exits `130`; a second Ctrl-C exits `130` immediately
 without waiting.
@@ -256,8 +262,9 @@ npm run perf:agents -- --scenario S2 … \
 ```
 
 The harness starts `Profiler.start` before the scenarios and stops/writes the
-profile afterwards; a missing, stale or failed live profile makes the run
-`failed` and names the reason.
+profile afterwards. A failed inspector start still runs the load and writes a
+report marked `failed`; a missing, stale or failed live profile does the same
+and names the reason. The inspector socket is closed on every failure path.
 
 **Two-step static profile:** `node --cpu-prof` writes only when the API exits:
 
@@ -271,6 +278,9 @@ A directory is scanned for `.cpuprofile` files; files within 60 s of the
 newest mtime are treated as one run, **all their nodes are aggregated**, and
 only then is the Top-10 self-time table taken. This is a profile of the API
 process, run for one representative scenario, not a per-request trace.
+Freshness is enforced only for the live inspector flow: a static profile is
+legitimately written when the API exits, so it is not compared with the
+harness start time.
 
 ### PostgreSQL
 
@@ -405,9 +415,9 @@ scripts/perf/
   cycle), not cycles. `cycles` counts completed write sequences. `no work`
   counts cycles that found no unleased card. An orphaned release is partial.
   A lost claim response (timeout/reset) triggers a release attempt through a
-  separate short-timeout cleanup client before the next cycle; a failed release
-  is surfaced as an orphan, while a deadline-aborted cleanup is not counted as
-  a false orphan.
+  separate short-timeout cleanup client before the next cycle; a real server
+  failure is surfaced as an orphan, while a deadline-aborted cleanup is counted
+  separately as `cleanupAborted` and is not a false orphan.
 - `requests/agent/min` uses the measured window, independent of worker drain,
   and for MCP uses the actual spawned process count (`--mcp-processes`), not
   the requested `--agents` label. The report also records the resolved board
