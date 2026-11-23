@@ -636,6 +636,10 @@ export class MaintenanceService {
           });
           if (page.length < PURGE_CHUNK) break;
         }
+        // TASK-200.11: commands are gone; release the global ids and display
+        // rows now rather than waiting for the retention sweep (erasure).
+        await tx.commandDetail.deleteMany({ where: { boardId } });
+        await tx.commandKey.deleteMany({ where: { boardId } });
         await tx.checklistItem.deleteMany({
           where: { checklist: { card: { column: { boardId } } } },
         });

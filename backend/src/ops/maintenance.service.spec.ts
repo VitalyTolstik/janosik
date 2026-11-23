@@ -939,6 +939,12 @@ describe("MaintenanceService", () => {
         (call) => call[0].where.id.in.length,
       ),
     ).toEqual([PURGE_CHUNK, 40]);
+    expect(prisma.commandDetail.deleteMany).toHaveBeenCalledWith({
+      where: { boardId: "b1" },
+    });
+    expect(prisma.commandKey.deleteMany).toHaveBeenCalledWith({
+      where: { boardId: "b1" },
+    });
     // Each page is read with a take bound and a boardId filter.
     expect((prisma.activity.findMany as jest.Mock).mock.calls).toHaveLength(2);
     expect((prisma.activity.findMany as jest.Mock).mock.calls[0][0]).toEqual({

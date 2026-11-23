@@ -8,6 +8,7 @@ import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { wipeAll } from "./support/wipe";
 
 const EMAIL = "commands-undo@example.com";
 const PASSWORD = "correct horse battery";
@@ -346,23 +347,6 @@ describe("Undo contract: command then inverse (e2e)", () => {
   }, 60_000);
 
   async function wipe(db: PrismaService): Promise<void> {
-    await db.attachment.deleteMany();
-    await db.cardLink.deleteMany();
-    await db.cardLabel.deleteMany();
-    await db.checklistItem.deleteMany();
-    await db.checklist.deleteMany();
-    await db.commentRevision.deleteMany();
-    await db.comment.deleteMany();
-    await db.activity.deleteMany();
-    await db.command.deleteMany();
-    await db.card.deleteMany();
-    await db.column.deleteMany();
-    await db.label.deleteMany();
-    await db.boardMember.deleteMany();
-    await db.boardShare.deleteMany();
-    await db.board.deleteMany();
-    await db.apiToken.deleteMany();
-    await db.refreshToken.deleteMany();
-    await db.user.deleteMany();
+    await wipeAll(db);
   }
 });

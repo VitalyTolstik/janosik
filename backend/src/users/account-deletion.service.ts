@@ -612,6 +612,21 @@ export class AccountDeletionService {
           SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
         )
       `;
+          // TASK-200.11: keys/details have no actor column. Resolve the ids
+          // while the command rows still exist, so erasure does not depend on
+          // the deferred detail trigger or the later retention sweep.
+          await tx.$executeRaw`
+        DELETE FROM "CommandDetail"
+        WHERE "commandId" IN (
+          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
+        )
+      `;
+          await tx.$executeRaw`
+        DELETE FROM "CommandKey"
+        WHERE "id" IN (
+          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
+        )
+      `;
           await tx.command.deleteMany({ where: { actorId: userId } });
           await tx.agentRun.deleteMany({ where: { actorId: userId } });
           await tx.boardMember.deleteMany({ where: { userId } });

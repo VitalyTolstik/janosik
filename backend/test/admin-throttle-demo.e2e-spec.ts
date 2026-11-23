@@ -13,6 +13,7 @@ import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
 import { DemoService } from "@/admin/demo.service";
 import type { Prisma } from "@prisma/client";
+import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "throttle-owner@example.com";
 const OWNER_PASSWORD = "owner correct horse battery";
@@ -45,35 +46,7 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    await prisma.adminAuditLog.deleteMany();
-    await prisma.adminRefreshToken.deleteMany();
-    await prisma.adminUser.deleteMany();
-    await prisma.demoRun.deleteMany();
-    await prisma.throttleSettings.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    // The e2e DB accumulates across runs — wipe content (child → parent) so a
-    // previous demo run's commands/users cannot block this suite's setup.
-    await prisma.command.deleteMany();
-    await prisma.activity.deleteMany();
-    await prisma.commentRevision.deleteMany();
-    await prisma.comment.deleteMany();
-    await prisma.attachment.deleteMany();
-    await prisma.cardLabel.deleteMany();
-    await prisma.checklistItem.deleteMany();
-    await prisma.checklist.deleteMany();
-    await prisma.cardLink.deleteMany();
-    await prisma.card.deleteMany();
-    await prisma.column.deleteMany();
-    await prisma.label.deleteMany();
-    await prisma.boardMember.deleteMany();
-    await prisma.boardShare.deleteMany();
-    await prisma.board.deleteMany();
-    // Rows that reference a user without a cascade (another suite may have
-    // left them behind) must go before the users themselves.
-    await prisma.apiToken.deleteMany();
-    await prisma.dataExport.deleteMany();
-    await prisma.reminderSent.deleteMany();
-    await prisma.user.deleteMany();
+    await wipeAll(prisma);
 
     await prisma.adminUser.createMany({
       data: [
@@ -305,6 +278,8 @@ describe("Admin throttle settings & demo runner (e2e)", () => {
         where: { email: { contains: "@janosik.demo" } },
       }),
     ).toBe(0);
+    expect(await prisma.commandKey.count({ where: { boardId } })).toBe(0);
+    expect(await prisma.commandDetail.count({ where: { boardId } })).toBe(0);
 
     // The stop is audited.
     const audit = await prisma.adminAuditLog.findFirst({

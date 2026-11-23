@@ -458,7 +458,10 @@ model Command {
  * batches (the registry is large and unpartitioned, so retention must not do
  * an unbounded month delete here). `boardId` lets detail reads and purge paths
  * be scoped even if an old caller only has the id; `createdAt` drives the
- * orphan sweep.
+ * orphan sweep. The upsert accepts the same board so a partition-moving
+ * `createdAt` UPDATE can reuse its key; cross-board uniqueness is still
+ * DB-enforced, while a same-board duplicate of a live id is rejected by the
+ * application pre-check (a raw same-board INSERT is not blocked).
  */
 model CommandKey {
   id        String   @id

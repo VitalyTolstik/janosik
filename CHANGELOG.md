@@ -23,9 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   throttle/demo suite now covers moving a command's month and preserving its
   key/detail; the task doc adds the exact default-partition
   detach/move/reattach runbook, an intermediate duplicate-id cleanup runbook,
-  and registry/WAL sizing. A command delete leaves the key for the orphan
-  sweep, so the e2e wipe must include `CommandKey` (already added) and no
-  delete path assumes an immediate key release.
+  and registry/WAL sizing. Purge/erasure paths now delete board/actor-scoped
+  `CommandKey`/`CommandDetail` rows with their commands (account deletion,
+  board purge and demo purge), and the `events`, `commands-undo` and
+  `admin-throttle-demo` wipes use the shared `wipeAll` plus a fixed-id
+  after-wipe regression. The DB guarantee is documented as cross-board
+  uniqueness; same-board duplicates of a live id are rejected by the
+  application pre-check, while a raw same-board INSERT is not blocked by the
+  move-compatible upsert. Default partitions and registry keys are the
+  chunk-drained rows; everything else is month DDL.
 
 - TASK-200.11 ops review follow-up: restore global commandId uniqueness,
   make month retention lock-safe, and bound the sweep honestly. An

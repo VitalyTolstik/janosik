@@ -22,6 +22,7 @@ const nextAt = () => (clock += 100);
  * command, a leaked detail row or a cross-board delete.
  */
 describe("Command log global ids (e2e)", () => {
+  const suffix = randomUUID().slice(0, 8);
   let app: INestApplication;
   let prisma: PrismaService;
   let token: string;
@@ -153,6 +154,57 @@ describe("Command log global ids (e2e)", () => {
     expect(res.body).toMatchObject({ code: "idempotency_conflict" });
     expect(await prisma.command.count({ where: { id: commandId } })).toBe(0);
     expect(await prisma.commandDetail.count({ where: { commandId } })).toBe(0);
+  });
+
+  it("reuses a fixed commandId after the e2e wipe", async () => {
+    const fixed = `fixed-${suffix}`;
+    const firstUser = await prisma.user.create({
+      data: { email: `fixed-${suffix}@example.com` },
+      select: { id: true },
+    });
+    const firstBoard = await prisma.board.create({
+      data: { title: "Fixed id before wipe" },
+      select: { id: true },
+    });
+    const commandData = (userId: string, boardId: string) => ({
+      id: fixed,
+      boardId,
+      actorId: userId,
+      type: "RENAME_BOARD",
+      payload: { type: "RENAME_BOARD", title: "Fixed", at: Date.now() },
+      result: {},
+      createdAt: new Date(),
+    });
+    await prisma.command.create({
+      data: commandData(firstUser.id, firstBoard.id),
+    });
+    await prisma.commandDetail.create({
+      data: {
+        commandId: fixed,
+        boardId: firstBoard.id,
+        createdAt: new Date(),
+        data: { changes: [] },
+      },
+    });
+    await wipeAll(prisma);
+
+    const secondUser = await prisma.user.create({
+      data: { email: `fixed-${suffix}-2@example.com` },
+      select: { id: true },
+    });
+    const secondBoard = await prisma.board.create({
+      data: { title: "Fixed id after wipe" },
+      select: { id: true },
+    });
+    await prisma.command.create({
+      data: commandData(secondUser.id, secondBoard.id),
+    });
+    expect(await prisma.command.count({ where: { id: fixed } })).toBe(1);
+    expect(await prisma.commandKey.count({ where: { id: fixed } })).toBe(1);
+    await prisma.command.deleteMany({ where: { id: fixed } });
+    await prisma.commandKey.deleteMany({ where: { id: fixed } });
+    await prisma.board.deleteMany({ where: { id: secondBoard.id } });
+    await prisma.user.deleteMany({ where: { id: secondUser.id } });
   });
 
   async function readDetailForBoard(

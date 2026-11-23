@@ -707,6 +707,31 @@ describe("Limits & data safety (e2e)", () => {
 
   describe("self-service account deletion (D22)", () => {
     it("uses the latest schedule window across a re-enable", async () => {
+      const doomedBoard = await createBoardWith(token, "Deletion command");
+      const doomedCommandId = randomUUID();
+      await prisma.command.create({
+        data: {
+          id: doomedCommandId,
+          boardId: doomedBoard.id,
+          actorId: userId,
+          type: "RENAME_BOARD",
+          payload: { type: "RENAME_BOARD", title: "Doomed", at: Date.now() },
+          result: {},
+          createdAt: new Date(),
+        },
+      });
+      await prisma.commandDetail.create({
+        data: {
+          commandId: doomedCommandId,
+          boardId: doomedBoard.id,
+          createdAt: new Date(),
+          data: { changes: [] },
+        },
+      });
+      expect(
+        await prisma.commandKey.count({ where: { id: doomedCommandId } }),
+      ).toBe(1);
+
       await server()
         .delete("/api/v1/users/me")
         .set(auth(token))
@@ -760,6 +785,17 @@ describe("Limits & data safety (e2e)", () => {
       expect(
         await prisma.user.findUnique({ where: { id: userId } }),
       ).toBeNull();
+      expect(
+        await prisma.command.count({ where: { id: doomedCommandId } }),
+      ).toBe(0);
+      expect(
+        await prisma.commandKey.count({ where: { id: doomedCommandId } }),
+      ).toBe(0);
+      expect(
+        await prisma.commandDetail.count({
+          where: { commandId: doomedCommandId },
+        }),
+      ).toBe(0);
       expect(
         await prisma.securityAuditLog.findFirst({
           where: { action: "account.deleted", userId },

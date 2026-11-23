@@ -905,6 +905,25 @@ export class DemoService implements OnModuleDestroy {
       }
       await tx.activity.deleteMany({ where: { boardId, actorId: demoUsers } });
       await tx.command.deleteMany({ where: { boardId, actorId: demoUsers } });
+      // TASK-200.11: delete only the registry/detail rows whose command is
+      // gone, so a demo stop does not release ids belonging to real commands
+      // that share the board.
+      await tx.$executeRaw`
+        DELETE FROM "CommandDetail" d
+        WHERE d."boardId" = ${boardId}
+          AND NOT EXISTS (
+            SELECT 1 FROM "Command" c
+             WHERE c."id" = d."commandId" AND c."boardId" = d."boardId"
+          )
+      `;
+      await tx.$executeRaw`
+        DELETE FROM "CommandKey" k
+        WHERE k."boardId" = ${boardId}
+          AND NOT EXISTS (
+            SELECT 1 FROM "Command" c
+             WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+          )
+      `;
       // Keep recorded parents when other users have added dependent rows.
       const { count: removedCards } = await tx.card.deleteMany({
         where: {

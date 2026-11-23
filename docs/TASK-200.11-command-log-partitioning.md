@@ -12,8 +12,8 @@ soft-deleted rows. A monthly `RANGE (createdAt)` scheme gives:
 
 - **Retention is `DROP TABLE`.** A finished month is removed with metadata
   work instead of deleting tens of millions of rows and leaving a bloated heap
-  for autovacuum. The default partition is the only place that still needs
-  chunked row deletes.
+  for autovacuum. Default partitions and the unpartitioned registry still need
+  bounded row deletes.
 - **Pruning matches every hot read.** A board feed/delta always carries
   `boardId` plus a time or `seq` bound; with 30-day retention only the current
   and previous monthly partitions are live, so `id`/`seq` probes touch two or
@@ -28,8 +28,8 @@ unpartitioned `CommandKey` registry share the retention window. A whole-month
 drop locks in reader order (Command → CommandDetail → pre-images), drops the
 command, detail and pre-image partitions, and leaves the registry keys for the
 bounded orphan sweep (the unpartitioned registry is too large for an inline
-month delete). The default partitions are the only rows left for chunked
-deletes.
+month delete). Default partitions and registry keys are the rows left for
+chunked deletes.
 
 ## 2. Schema and constraints
 
@@ -54,7 +54,10 @@ Instead:
   trigger on `Command` claims the id. The trigger upserts for the same board
   (so a row move is not a duplicate) and raises 23505 for a cross-board id;
   the old global idempotency guarantee therefore survives the composite
-  `Command` key and a concurrent collision answers `409 id_conflict`.
+  `Command` key and a concurrent collision answers `409 id_conflict`. The DB
+  guarantee here is cross-board uniqueness; a same-board duplicate of a live
+  id is rejected by the application pre-check inside the board lock, not by
+  the upsert (a raw same-board INSERT is not blocked).
 - `CommandDetail` has **no FK** to `Command`/`CommandKey`. It stores `boardId`
   for scoping, and a deferred `Command` delete trigger removes the detail only
   when no replacement row exists. The move trigger rewrites both
@@ -65,7 +68,13 @@ Instead:
   chunks. That keeps the large unpartitioned registry out of the DDL path and
   cannot delete a live key whose command moved to a newer `createdAt`.
 - every id-only purge/sweep page is additionally paired with `boardId` (or
-  accepts that the key is global).
+  accepts that the key is global). Account deletion resolves actor command ids
+  before deleting them and removes `CommandKey`/`CommandDetail`; board purge
+  and demo purge delete their board/actor-scoped keys/details with the
+  commands, so erasure does not wait for retention.
+
+The e2e wipes use `wipeAll` (including `Command`, `CommandDetail` and
+`CommandKey`); a fixed-id regression applies the same id again after the wipe.
 
 The migration keeps the ordinary `Command → Board/User` FKs (a partitioned
 child referencing an unpartitioned parent is supported and does not block
@@ -415,9 +424,11 @@ drop another board's history.
   a concurrent reader, default-partition skip, exact `defaultRows`/registry
   stats, move-forward key+detail retention, stale-live-key preservation,
   wipe); `command-log-global-ids.e2e-spec.ts` (concurrent cross-board
-  collision, no duplicate/detail leak, duplicate batch); `admin-throttle-demo`
-  covers the real demo move; existing `events`, `runs`, `admin`, `commands-*`
-  suites run on the partitioned schema.
+  collision, no duplicate/detail leak, duplicate batch, fixed id after
+  `wipeAll`); `admin-throttle-demo` covers the real demo move and purge
+  erasure; existing `events`, `runs`, `admin`, `commands-*` suites run on the
+  partitioned schema (the fixed-id events/undo suites were run twice in a
+  row).
 - Migration: `backend/scripts/check-command-log-migration.cjs` (empty +
   existing data, row/detail/key counts, global-id rejection, no detail FK,
   board column/index, plan, move support, skipped default month, retention);
