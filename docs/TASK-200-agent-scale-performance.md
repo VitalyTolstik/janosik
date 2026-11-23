@@ -360,6 +360,111 @@ workflow, create, смена workflow планом) добавляют один 
 **Файлы:** `backend/src/boards/boards.service.ts`,
 `backend/src/common/*`, `nginx/Caddy` конфиг (если прокси).
 
+**Реализовано (TASK-200.6):**
+- `GET /boards/:id` отвечает через `BoardReadService`
+  (`backend/src/common/board-read.service.ts`): одна дешёвая SQL-метка
+  `aggregateRevision + MAX(Command.seq)` (`BoardsService.getReadStamp`), затем
+  `If-None-Match` → `304` **до** загрузки aggregate. Слабый `ETag` строится из
+  board id + `Board.aggregateRevision` + route + role + projection.
+  `aggregateRevision` — новая BIGINT-колонка (миграция
+  `20261123100000_task_200_6_board_aggregate_revision`, backfill из текущего
+  `MAX(seq)`), монотонная: `Board` BEFORE UPDATE trigger поднимает её на любую
+  правку доски, statement-level `Card` INSERT/UPDATE/DELETE триггеры — на
+  комментарии, вложения, claim-expiry, admin/account-deletion правки, а вторая
+  миграция `20261123120000_task_200_6_aggregate_table_triggers` покрывает
+  Label, Column, CardLink, CardLabel, Checklist и ChecklistItem
+  (statement-level transition tables, boardId через Card/Column joins).
+  Стоимость — один UPDATE строки `Board` на SQL statement на затронутую доску,
+  не на строку; при этом writer позиций чанкует по 1 000, поэтому перестановка
+  5 000 карточек — это 5 Card-стейтментов + 1 Column-bump (`bumpColumnVersion`)
+  + 1 Board-bump самой команды = 7 bump'ов, а не один. Циклы, пишущие по одной
+  строке на entity (duplicate column/cards, checklist item upserts, label
+  restore по одному), платят один bump на итерацию; это задокументированная
+  амплификация, а не per-row trigger. `X-Board-Seq` остаётся отдельным SSE-значением и может
+  уменьшиться после sweep команд, не меняя ETag. `304` берёт seq из той же
+  одно-запросной метки, чтобы клиент не перепрыгнул команду, отсутствующую в
+  кешированном теле.
+- `Cache-Control: private, no-store`; `Vary: Accept-Encoding` ставится и на
+  200, и на 304. UI/MCP пока не шлют `If-None-Match`, поэтому ETag — для явных
+  условных клиентов; `no-store` сознательно запрещает браузерную ревалидацию
+  (иначе ответ мог бы переехать между пользователями одного профиля).
+- Сжатие — только этот буферизованный JSON: gzip/Brotli через async `zlib`
+  (Brotli q4 предпочтителен при равном q; identity без явного q считается
+  q=1, поэтому `gzip;q=0.5` выбирает identity, а `gzip;q=1`/`*` — сжатие;
+  явный `identity;q` переопределяет; `q=0` исключает кодировку), порог 1 КБ,
+  откат в identity, если сжатие не уменьшило тело. SSE, multipart, media и
+  `no-transform` helper не трогает; глобального compression middleware нет,
+  поэтому uploads/ошибки/потоки остаются как были.
+- Singleflight (`backend/src/common/single-flight.ts`) объединяет одинаковые
+  конкурентные чтения в одну сборку **вместе с сериализацией и сжатием**
+  (ключ: board + role + projection + coding; ничего пользовательского), так
+  что всплеск делит и буферы. Точка линеаризации — снимок БД лидера, а не
+  момент присоединения: joiner после записи может получить pre-write snapshot;
+  это не read-your-writes, и клиенту с таким требованием нужен ещё один
+  проход. Запись живёт только до settle: ошибка/таймаут не отравляют ключ,
+  следующий запрос снова читает БД — CAS-retry не получает вечный snapshot.
+- Семафор (`backend/src/common/read-semaphore.ts`) ограничивает полные
+  сборки **на процесс**: `BOARD_READ_CAP=16`, `BOARD_READ_QUEUE_MAX=256`,
+  `BOARD_READ_WAIT_MS=10000`, `BOARD_READ_TIMEOUT_MS=20000` (обязан быть больше
+  wait и не меньше 300 мс), `BOARD_READ_RETRY_AFTER_SECONDS=2`. На старте
+  `read()` считается **один** deadline; remainder передаётся условному stamp,
+  semaphore/singleflight wait, Prisma `maxWait`/`timeout` и кодированию, поэтому
+  conditional miss не складывает `WAIT_MS + TIMEOUT_MS`. Stamp по-прежнему идёт
+  мимо semaphore (это один дешёвый indexed-запрос) и **намеренно не
+  coalesce'ится**: зависший общий stamp отравил бы все последующие
+  conditional-чтения, а joiner мог бы получить pre-write `304`. Каждый stamp
+  ограничен своим transaction/`statement_timeout`; зависший promise
+  бросается, следующий запрос начинает новый. Если stamp исчерпал deadline,
+  build уже не стартует. Cap может быть выше
+  `DB_CONNECTION_LIMIT=10`: лишние сборки ждут в Prisma pool не дольше
+  `BOARD_READ_WAIT_MS` и получают `503 board_read_busy`; для нулевого pool-wait
+  задайте cap ≤ pool. При `WAIT_MS=0` semaphore не держит очередь и pool
+  `maxWait=0`, но stamp и транзакция получают общий deadline; `maxWait +
+  timeout` всегда ≤ остатка (transaction slice резервируется заранее).
+  Переполнение очереди/ожидания, P2024, P2028-start, P2028-expired и
+  PostgreSQL `statement_timeout` (P2010/57014) отвечают `503
+  board_read_busy`/`board_read_timeout` + `Retry-After`; коды добавлены в
+  `API_ERROR_CODES`, OpenAPI enum и `RETRYABLE_CODES`. Read-транзакция получает
+  `timeout` = остаток минус encode-margin (не более 250 мс) и `maxWait` =
+  min(`BOARD_READ_WAIT_MS`, budget) с зарезервированным transaction slice,
+  поэтому pool-wait/transaction-timeout/statement-timeout не становятся `500`. Уже отправленный запрос не отменяется, но истекает по
+  этому budget и освобождает слот. `onModuleDestroy` отклоняет очередь и ждёт
+  активные чтения (bounded). Порядок «auth → membership → role/pause → ETag»
+  задаёт `MembershipGuard`; чужой не получает 304.
+- UI: фоновая гидратация остальных досок ретраит GET доски до 4 попыток с
+  backoff 1/2/4 с, но пока не выдерживает `Retry-After`; явный refetch после
+  `503 board_read_busy`/`board_read_timeout` не ретраится, а idempotent POST
+  делает один немедленный повтор. Расхождение ограничено этими бюджетами и
+  задокументировано; Retry-After-aware retry чтения остаётся будущему клиенту.
+  MCP считает оба кода transient и повторяет GET в своём bounded network-budget.
+- Метрики процесса — `BoardReadService.metrics` (fullReads, coalesced,
+  notModified, compressed, identity, rejected, timeouts, inFlight,
+  active/waiting); Prometheus-экспорта в проекте нет. Request-log/traffic
+  классифицируют `board_read_*` 503 как backpressure (`rateLimited.read`), не
+  как 5xx, через маркер ответа из exception filter; в `throttledLastMinute`
+  (429 ring) они не попадают, поэтому двойного счёта нет.
+- Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation с
+  identity/q=0 и fallback, ETag, сервис, общий stamp+build deadline,
+  hanging-stamp recovery, WAIT_MS=0 maxWait=0, P2010/57014/P2028/P2024→503,
+  timeout/backpressure) и `backend/test/board-read.e2e-spec.ts` (gzip/br +
+  Content-Length + Vary, tiny/304 + Cache-Control, role/tenant/role-change,
+  CAS rename, non-seq policy, attachment add/delete, comment, claim
+  release/expiry, direct admin edit, command-log sweep, прямые мутации
+  Label/Column/CardLabel/Checklist/ChecklistItem/CardLink через delete/restore,
+  trigger bump-семантика, 12→1 через spy на `$transaction`, queue-wait/
+  queue-full/timeout 503+Retry-After, настоящий PostgreSQL statement_timeout
+  через `pg_sleep`), `board-read-wait-zero.e2e-spec.ts` (полный 200 + 304 при
+  `WAIT_MS=0`), плюс `task-200-6-migration.e2e-spec.ts` для backfill и per-run
+  temp upload dir.
+  `openapi:check`/`openapi:test` зелёные.
+- **Честно про DoD:** механизм и тесты поставлены, но −70…80% байт и
+  RSS <2 ГБ на 500×1 000 карточек **не измерялись** в этой задаче — для них
+  нужен отдельный стенд и прогон 200.1/200.15. Ожидание по байтам основано на
+  `docs/PERF-AGENT-SCALE.md` и gzip-замерах `PERF-25K-UX`, а не на новом
+  замере. Прокси: API сам отдаёт `Content-Encoding` + `Vary`; nginx не должен
+  повторно сжимать уже сжатый ответ (заметка в `deploy/nginx.conf`), Caddy
+  также оставляет upstream `Content-Encoding` без изменений.
+
 ---
 
 ### 200.7 — Per-entity CAS / targeted intents вместо board-wide CAS (P1)

@@ -4,6 +4,7 @@ import {
 } from "@nestjs/common";
 import { ThrottlerException } from "@nestjs/throttler";
 import { ApiExceptionFilter } from "./api-exception.filter";
+import { readBackpressure } from "./traffic.service";
 
 /**
  * TASK-166.4: the filter must keep the real `Retry-After` a guard or
@@ -78,6 +79,39 @@ describe("ApiExceptionFilter Retry-After", () => {
     expect(
       (response.json.mock.calls[0]![0] as { retryAfter: number }).retryAfter,
     ).toBe(9);
+  });
+
+  it("marks a board-read 503 as backpressure for the request log", () => {
+    const { filter, host, response, traffic } = harness();
+    filter.catch(
+      new ServiceUnavailableException({
+        message:
+          "The board is under heavy read load; retry after a short pause",
+        code: "board_read_busy",
+        retryable: true,
+        retryAfter: 2,
+      }),
+      host,
+    );
+    // The request log counts `rate_limit.read`; the 429 throttle ring must not
+    // also receive this deliberate read backpressure.
+    expect(traffic.recordThrottled).not.toHaveBeenCalled();
+    expect(readBackpressure(response)).toBe("board_read");
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(response.setHeader).toHaveBeenCalledWith("Retry-After", "2");
+
+    const timeout = harness();
+    timeout.filter.catch(
+      new ServiceUnavailableException({
+        message: "The board read timed out",
+        code: "board_read_timeout",
+        retryable: true,
+        retryAfter: 2,
+      }),
+      timeout.host,
+    );
+    expect(timeout.traffic.recordThrottled).not.toHaveBeenCalled();
+    expect(readBackpressure(timeout.response)).toBe("board_read");
   });
 
   it("treats long-poll capacity as backpressure and writes Retry-After", () => {

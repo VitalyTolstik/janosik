@@ -8,6 +8,64 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.6 compressed, conditionally revalidated and bounded board reads.
+  `GET /boards/:id` now negotiates gzip or Brotli for JSON bodies of at least
+  1 KB (async `zlib`, Brotli preferred on a quality tie, identity below the
+  threshold, explicit `identity;q` honoured), always sends `Vary:
+  Accept-Encoding`, skips streaming/SSE and never re-encodes a `no-transform`
+  response. Two migrations add `Board.aggregateRevision` (bigint, backfilled
+  from the current command max): a `Board` BEFORE UPDATE trigger, statement-level
+  `Card` INSERT/UPDATE/DELETE triggers, and statement-level triggers for Label,
+  Column, CardLink, CardLabel, Checklist and ChecklistItem (boardId resolved via
+  Card/Column where needed). Every command also updates Board; comments,
+  attachments, claim expiry, admin/demo label/checklist/link/column
+  delete/restore, and account deletion would otherwise bypass Card. Trigger
+  cost is one Board row update per affected SQL statement, not per row: the
+  position writer chunks at 1 000, so a 5 000-card rewrite costs 5 Card bumps
+  + 1 `Column.version` bump + 1 command Board bump = 7, not one. Loops that
+  write one row per entity (duplicate column/cards, checklist item upserts,
+  one-by-one label restores) pay one bump per iteration; this is the documented
+  amplification, not a per-row trigger. The weak `ETag` is derived from board id + `aggregateRevision` + route +
+  role + projection; a matching `If-None-Match` answers `304` with no body
+  before any aggregate load while still carrying the separate `X-Board-Seq`.
+  `Cache-Control: private, no-store` keeps board JSON out of browser/shared
+  caches; the ETag is for explicit conditional clients (the UI does not send it
+  yet). Identical concurrent full reads coalesce into one build (per
+  board/role/projection/coding) whose linearization point is the leader's
+  database snapshot, so coalescing is not read-your-writes. A per-process
+  counting semaphore caps builds (`BOARD_READ_CAP`, default 16) with a bounded
+  waiting room (`BOARD_READ_QUEUE_MAX`, default 256, `BOARD_READ_WAIT_MS`,
+  default 10 s) and **one shared response deadline** (`BOARD_READ_TIMEOUT_MS`,
+  default 20 s, must exceed the wait and be at least 300 ms). The conditional
+  stamp, semaphore/single-flight wait, read transaction and encoding each get
+  only the remaining budget; a conditional miss cannot take WAIT_MS +
+  TIMEOUT_MS. Conditional stamps are deliberately not coalesced (a hung
+  shared stamp would poison later reads and a joiner could see a pre-write 304);
+  each is one indexed statement bounded by its own transaction and
+  `statement_timeout`. The read transaction gets
+  `timeout` = remaining minus a scaled encode margin and `maxWait` =
+  min(`BOARD_READ_WAIT_MS`, budget) with a transaction slice reserved so
+  `maxWait + timeout` cannot exceed the deadline; with `WAIT_MS=0` there is no
+  pool wait and the transaction gets the usable remaining budget. P2024/P2028
+  pool waits and transaction expiry, and PostgreSQL `statement_timeout`
+  (P2010/57014), answer `503 board_read_busy`/`board_read_timeout` with
+  `Retry-After`, never `500`. The cap may exceed `DB_CONNECTION_LIMIT`
+  (default 10): extra builds wait on the pool up to the wait budget; set cap ≤
+  pool to avoid pool waits. The codes are in the shared catalog and are
+  contract-retryable; MCP treats both as transient. The UI background
+  hydration retries other-board reads up to four times with 1/2/4 s backoff
+  but does not sleep `Retry-After`; explicit refetches are not retried and
+  idempotent writes retry once immediately (documented bounded mismatch). Queued reads are rejected on shutdown. Single-flight entries are
+  never retained after settlement, so CAS writes and retries always see the
+  database. Board-read 503s are classified as read backpressure in the request
+  log/traffic (`rateLimited.read`) and are not counted as server errors. No
+  auth, membership, flag, SSE or TTL-cache behaviour changed. The gzip/Brotli byte reduction (target 70–80%)
+  and the 500-read/1 000-card RSS target (<2 GB) are to be measured on a
+  dedicated host; this change ships the mechanism and focused tests, not a
+  claim that those numbers were observed. OpenAPI, self-hosting env docs
+  (EN/RU), the TASK-200 design doc, root/backend `.env.example`,
+  `docker-compose.yml` and the nginx note are updated.
+
 - TASK-200.2 server-side ready/work discovery. `GET /boards/:id/ready` returns a
   bounded summary of the cards ready to pick up on one board — the initial/work
   column, unassigned, without a live claim and not blocked — with
