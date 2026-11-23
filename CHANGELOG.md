@@ -21,10 +21,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attachments, claim expiry, admin/demo label/checklist/link/column
   delete/restore, and account deletion would otherwise bypass Card. Trigger
   cost is one Board row update per affected SQL statement, not per row: the
-  position writer chunks at 1 000, so a 5 000-card rewrite costs 5 bumps, not
-  one. Loops that write one row per entity (duplicate column/cards, checklist
-  item upserts, one-by-one label restores) pay one bump per iteration; this is
-  the documented amplification, not a per-row trigger. The weak `ETag` is derived from board id + `aggregateRevision` + route +
+  position writer chunks at 1 000, so a 5 000-card rewrite costs 5 Card bumps
+  + 1 `Column.version` bump + 1 command Board bump = 7, not one. Loops that
+  write one row per entity (duplicate column/cards, checklist item upserts,
+  one-by-one label restores) pay one bump per iteration; this is the documented
+  amplification, not a per-row trigger. The weak `ETag` is derived from board id + `aggregateRevision` + route +
   role + projection; a matching `If-None-Match` answers `304` with no body
   before any aggregate load while still carrying the separate `X-Board-Seq`.
   `Cache-Control: private, no-store` keeps board JSON out of browser/shared
@@ -43,9 +44,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each is one indexed statement bounded by its own transaction and
   `statement_timeout`. The read transaction gets
   `timeout` = remaining minus a scaled encode margin and `maxWait` =
-  min(`BOARD_READ_WAIT_MS`, budget); with `WAIT_MS=0` the pool uses the
-  remaining shared budget instead of a 1 ms floor. P2024/P2028 pool waits and
-  transaction expiry answer `503 board_read_busy`/`board_read_timeout` with
+  min(`BOARD_READ_WAIT_MS`, budget) with a transaction slice reserved so
+  `maxWait + timeout` cannot exceed the deadline; with `WAIT_MS=0` there is no
+  pool wait and the transaction gets the usable remaining budget. P2024/P2028
+  pool waits and transaction expiry, and PostgreSQL `statement_timeout`
+  (P2010/57014), answer `503 board_read_busy`/`board_read_timeout` with
   `Retry-After`, never `500`. The cap may exceed `DB_CONNECTION_LIMIT`
   (default 10): extra builds wait on the pool up to the wait budget; set cap ≤
   pool to avoid pool waits. The codes are in the shared catalog and are

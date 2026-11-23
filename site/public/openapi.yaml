@@ -3553,12 +3553,14 @@ components:
         - `board_read_timeout`: one response exceeded the single shared
           `BOARD_READ_TIMEOUT_MS` deadline (must exceed `BOARD_READ_WAIT_MS`
           and be at least 300 ms) while stamping, waiting, building or
-          encoding, or the read transaction expired (P2028). The stamp, queue,
-          transaction and encoder each get only the remaining budget, so a
-          conditional miss cannot take WAIT+TIMEOUT. The transaction receives
-          `maxWait=min(WAIT_MS,budget)` when `BOARD_READ_WAIT_MS > 0` (with
-          `WAIT_MS=0`, `maxWait` is the remaining budget) and
-          `timeout=remaining−encode margin`;
+          encoding, the read transaction expired (P2028), or PostgreSQL
+          cancelled the statement due to `statement_timeout` (P2010/57014).
+          The stamp, queue, transaction and encoder each get only the remaining
+          budget, so a conditional miss cannot take WAIT+TIMEOUT. The
+          transaction receives `maxWait=min(WAIT_MS,budget)` when
+          `BOARD_READ_WAIT_MS > 0` (with `WAIT_MS=0`, `maxWait` is 0) and
+          `timeout=remaining−encode margin`; a transaction slice is reserved so
+          `maxWait+timeout` stays within the deadline;
           a query already sent is not cancelled but expires by that budget.
           Conditional stamps are not coalesced; each is bounded by its own
           transaction and `statement_timeout`, and a hung stamp is abandoned so

@@ -27,6 +27,30 @@ describe("classifyBoardReadDbError", () => {
     ).toBe("timeout");
   });
 
+  it("classifies a PostgreSQL statement_timeout (P2010/57014) as timeout", () => {
+    expect(
+      classifyBoardReadDbError({
+        code: "P2010",
+        meta: { code: "57014" },
+        message:
+          "Raw query failed. Code: `57014`. Message: `canceling statement due to statement timeout`",
+      }),
+    ).toBe("timeout");
+    expect(
+      classifyBoardReadDbError({
+        code: "P2010",
+        message: "canceling statement due to statement timeout",
+      }),
+    ).toBe("timeout");
+    expect(
+      classifyBoardReadDbError({
+        code: "P2010",
+        meta: { code: "42P01" },
+        message: "relation does not exist",
+      }),
+    ).toBeUndefined();
+  });
+
   it("ignores unrelated errors", () => {
     expect(classifyBoardReadDbError(new Error("boom"))).toBeUndefined();
     expect(classifyBoardReadDbError({ code: "P2025" })).toBeUndefined();

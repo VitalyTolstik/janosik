@@ -25,10 +25,11 @@
  * conditional stamp, semaphore/single-flight wait, Prisma transaction and
  * encoding each receive only the remaining budget, never a fresh full one.
  * The transaction gets a `timeout` slightly below that remaining budget (the
- * encode margin) and `maxWait` capped by `BOARD_READ_WAIT_MS`; with WAIT_MS=0
- * the pool uses the remaining response budget rather than a 1 ms floor.
- * P2028/P2024 therefore surface as `503 board_read_timeout`/
- * `board_read_busy`, not `500`. Prisma still has no cancellation token for a
+ * encode margin) and `maxWait` capped by `BOARD_READ_WAIT_MS` while reserving a
+ * transaction slice, so the pair never exceeds the deadline. With WAIT_MS=0
+ * there is no pool wait and the transaction gets the usable remaining budget.
+ * P2010/57014 (statement_timeout), P2028 and P2024 therefore surface as
+ * `503 board_read_timeout`/`board_read_busy`, not `500`. Prisma still has no cancellation token for a
  * query already sent: the transaction expires by its own budget and then
  * releases the semaphore slot. A timed-out caller never blocks a later one.
  * `BOARD_READ_TIMEOUT_MS` below 300 ms is refused at construction.
@@ -313,18 +314,28 @@ export class BoardReadService implements OnModuleDestroy {
 
   /**
    * Split one remaining budget into the Prisma transaction timeout and pool
-   * wait. WAIT_MS=0 means "no semaphore queue"; the pool then gets the shared
-   * remaining budget instead of a pathological 1 ms wait.
+   * wait. The two are additive in Prisma, so a transaction slice is reserved
+   * before granting `maxWait`. WAIT_MS=0 means "no queue and no pool wait";
+   * the transaction gets the usable remaining budget.
    */
   private budgets(remaining: number): BoardReadBuildBudget {
     const margin = Math.min(250, Math.max(1, Math.floor(remaining / 2)));
-    const timeoutMs = Math.max(1, remaining - margin);
+    const usable = Math.max(1, remaining - margin);
+    // Prisma's maxWait (pool acquisition) and timeout (transaction body) are
+    // additive. Reserve a transaction slice before granting pool wait, so the
+    // pair can never exceed the shared budget. WAIT_MS=0 means no pool wait;
+    // the transaction gets the whole usable slice.
+    const transactionReserve = Math.min(
+      250,
+      Math.max(1, Math.floor(usable / 2)),
+    );
+    const maxWaitMs =
+      this.limits.waitMs > 0
+        ? Math.min(this.limits.waitMs, Math.max(0, usable - transactionReserve))
+        : 0;
     return {
-      maxWaitMs:
-        this.limits.waitMs > 0
-          ? Math.min(this.limits.waitMs, timeoutMs)
-          : timeoutMs,
-      timeoutMs,
+      maxWaitMs,
+      timeoutMs: Math.max(1, usable - maxWaitMs),
     };
   }
 
@@ -357,7 +368,7 @@ export class BoardReadService implements OnModuleDestroy {
     });
   }
 
-  /** Translate backpressure/P2028/P2024 into the public 503 contract. */
+  /** Translate backpressure/P2010/P2028/P2024 into the public 503 contract. */
   private fail(error: unknown): never {
     if (error instanceof ReadCapacityError) {
       this.rejected += 1;

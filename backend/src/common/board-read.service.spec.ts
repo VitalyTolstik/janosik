@@ -140,8 +140,27 @@ describe("BoardReadService", () => {
       timeoutMs: number;
     };
     expect(budget.maxWaitMs).toBe(100);
+    expect(budget.timeoutMs).toBeLessThanOrEqual(650);
+    expect(budget.timeoutMs).toBeGreaterThan(550);
+    expect(budget.maxWaitMs + budget.timeoutMs).toBeLessThanOrEqual(750);
+  });
+
+  it("gives WAIT_MS=0 no pool wait and the full transaction budget", async () => {
+    const read = service({ waitMs: 0, timeoutMs: 1_000 });
+    const build = jest
+      .fn()
+      .mockResolvedValue({ board: BOARD, seq: 3, revision: 3n });
+    await read.read(request({ acceptEncoding: "identity" }), {
+      stamp: () => Promise.resolve({ revision: 3n, seq: 3 }),
+      build,
+    });
+    const budget = build.mock.calls[0]![0] as {
+      maxWaitMs: number;
+      timeoutMs: number;
+    };
+    expect(budget.maxWaitMs).toBe(0);
     expect(budget.timeoutMs).toBeLessThanOrEqual(750);
-    expect(budget.timeoutMs).toBeGreaterThan(650);
+    expect(budget.timeoutMs).toBeGreaterThan(550);
   });
 
   it("shares one deadline between the conditional stamp and the build", async () => {

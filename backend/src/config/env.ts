@@ -263,9 +263,9 @@ export const env = cleanEnv(process.env, {
   // slot. `BOARD_READ_TIMEOUT_MS` is one shared deadline for stamp + queue +
   // Prisma transaction + encode (minimum 300 ms); each stage gets only the
   // remaining budget, never a fresh full one. `BOARD_READ_WAIT_MS` caps the
-  // semaphore wait and Prisma `maxWait`; with WAIT_MS=0 the stamp still gets
-  // the shared deadline and the pool gets the remaining budget instead of a
-  // 1 ms floor. P2028/P2024 maps to `503 board_read_timeout`/`board_read_busy`
+  // semaphore wait and Prisma `maxWait`; with WAIT_MS=0 there is no queue or
+  // pool wait, while stamp/transaction still use the shared deadline.
+  // `maxWait + transaction timeout` stay within that deadline. P2028/P2024 maps to `503 board_read_timeout`/`board_read_busy`
   // with `Retry-After`, never an unhandled 500.
   //
   // The cap is per process, not cluster-wide. The default 16 may exceed the

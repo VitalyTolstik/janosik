@@ -14,6 +14,7 @@ import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
 import { setupApp } from "@/common/app-setup";
+import { classifyBoardReadDbError } from "@/common/board-read-db-errors";
 import {
   BOARD_READ_LIMITS,
   BoardReadService,
@@ -981,6 +982,34 @@ describe("Board read: compression, ETag, single-flight (e2e)", () => {
       const recovered = await identity('W/"stale"');
       expect(recovered.status).toBe(200);
       expect(bodyOf(recovered).id).toBe(boardId);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("maps a real PostgreSQL statement timeout to 503", async () => {
+    let dbError: unknown;
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT set_config('statement_timeout', '50ms', true)`;
+        await tx.$queryRaw`SELECT pg_sleep(1)`;
+      });
+    } catch (error) {
+      dbError = error;
+    }
+    // Prisma surfaces SQLSTATE 57014 as P2010 with meta.code, not P2028.
+    expect(dbError).toBeDefined();
+    expect((dbError as { code?: string }).code).toBe("P2010");
+    expect((dbError as { meta?: { code?: string } }).meta?.code).toBe("57014");
+    expect(classifyBoardReadDbError(dbError)).toBe("timeout");
+
+    const spy = jest.spyOn(boards, "getReadStamp").mockRejectedValue(dbError);
+    try {
+      const response = await identity('W/"stale"');
+      expect(response.status).toBe(503);
+      expect(
+        (JSON.parse(response.body.toString("utf8")) as { code: string }).code,
+      ).toBe("board_read_timeout");
     } finally {
       spy.mockRestore();
     }

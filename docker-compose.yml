@@ -71,10 +71,10 @@ services:
       # BOARD_READ_WAIT_MS and then get 503 board_read_busy + Retry-After;
       # BOARD_READ_TIMEOUT_MS is one shared deadline for stamp + wait + build
       # + encode (must exceed the wait, at least 300 ms). The read transaction
-      # gets maxWait=min(WAIT_MS,budget) when WAIT_MS>0 (WAIT_MS=0 uses the
-      # remaining budget) and timeout=remaining−margin, so
-      # P2024/P2028 map to a 503, not a 500. WAIT_MS=0 disables semaphore
-      # queueing but stamp/pool still use the shared deadline. The cap may
+      # gets maxWait=min(WAIT_MS,budget) when WAIT_MS>0 (WAIT_MS=0 => 0) and
+      # timeout=remaining−margin, so P2024/P2028 map to a 503, not a 500.
+      # WAIT_MS=0 disables semaphore queueing and pool wait but stamp/transaction
+      # still use the shared deadline. The cap may
       # exceed DB_CONNECTION_LIMIT; set it at/below the pool to avoid pool
       # waits. JSON below the byte threshold stays identity.
       BOARD_READ_CAP: ${BOARD_READ_CAP:-16}

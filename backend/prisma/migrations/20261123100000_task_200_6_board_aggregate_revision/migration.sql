@@ -11,8 +11,8 @@
 --   * non-command writers touch Card/Comment/Attachment/claim/admin rows →
 --     statement-level Card triggers. One Board UPDATE per Card SQL statement
 --     per affected board, not per row. The position writer chunks at 1 000
---     rows, so a 5 000-card rewrite costs 5 Card statements → 5 bumps (plus
---     the command's own Board update), not one.
+--     rows, so a 5 000-card rewrite costs 5 Card statements + 1 Column
+--     (`bumpColumnVersion`) + 1 command Board update = 7 bumps, not one.
 
 ALTER TABLE "Board" ADD COLUMN "aggregateRevision" BIGINT NOT NULL DEFAULT 0;
 

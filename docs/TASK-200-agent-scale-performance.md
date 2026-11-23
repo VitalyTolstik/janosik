@@ -280,10 +280,11 @@ workflow, create, смена workflow планом) добавляют один 
   (statement-level transition tables, boardId через Card/Column joins).
   Стоимость — один UPDATE строки `Board` на SQL statement на затронутую доску,
   не на строку; при этом writer позиций чанкует по 1 000, поэтому перестановка
-  5 000 карточек — это 5 Card-стейтментов → 5 bump'ов (плюс Board-bump самой
-  команды), а не один. Циклы, пишущие по одной строке на entity (duplicate
-  column/cards, checklist item upserts, label restore по одному), платят один
-  bump на итерацию; это задокументированная амплификация, а не per-row trigger. `X-Board-Seq` остаётся отдельным SSE-значением и может
+  5 000 карточек — это 5 Card-стейтментов + 1 Column-bump (`bumpColumnVersion`)
+  + 1 Board-bump самой команды = 7 bump'ов, а не один. Циклы, пишущие по одной
+  строке на entity (duplicate column/cards, checklist item upserts, label
+  restore по одному), платят один bump на итерацию; это задокументированная
+  амплификация, а не per-row trigger. `X-Board-Seq` остаётся отдельным SSE-значением и может
   уменьшиться после sweep команд, не меняя ETag. `304` берёт seq из той же
   одно-запросной метки, чтобы клиент не перепрыгнул команду, отсутствующую в
   кешированном теле.
@@ -321,14 +322,16 @@ workflow, create, смена workflow планом) добавляют один 
   build уже не стартует. Cap может быть выше
   `DB_CONNECTION_LIMIT=10`: лишние сборки ждут в Prisma pool не дольше
   `BOARD_READ_WAIT_MS` и получают `503 board_read_busy`; для нулевого pool-wait
-  задайте cap ≤ pool. При `WAIT_MS=0` semaphore не держит очередь, но stamp
-  получает общий deadline, а pool `maxWait` — остаток общего бюджета, а не 1 мс.
-  Переполнение очереди/ожидания, P2024, P2028-start и P2028-expired отвечают
-  `503 board_read_busy`/`board_read_timeout` + `Retry-After`; коды добавлены в
+  задайте cap ≤ pool. При `WAIT_MS=0` semaphore не держит очередь и pool
+  `maxWait=0`, но stamp и транзакция получают общий deadline; `maxWait +
+  timeout` всегда ≤ остатка (transaction slice резервируется заранее).
+  Переполнение очереди/ожидания, P2024, P2028-start, P2028-expired и
+  PostgreSQL `statement_timeout` (P2010/57014) отвечают `503
+  board_read_busy`/`board_read_timeout` + `Retry-After`; коды добавлены в
   `API_ERROR_CODES`, OpenAPI enum и `RETRYABLE_CODES`. Read-транзакция получает
   `timeout` = остаток минус encode-margin (не более 250 мс) и `maxWait` =
-  min(`BOARD_READ_WAIT_MS`, budget), поэтому pool-wait/transaction-timeout не
-  становятся `500`. Уже отправленный запрос не отменяется, но истекает по
+  min(`BOARD_READ_WAIT_MS`, budget) с зарезервированным transaction slice,
+  поэтому pool-wait/transaction-timeout/statement-timeout не становятся `500`. Уже отправленный запрос не отменяется, но истекает по
   этому budget и освобождает слот. `onModuleDestroy` отклоняет очередь и ждёт
   активные чтения (bounded). Порядок «auth → membership → role/pause → ETag»
   задаёт `MembershipGuard`; чужой не получает 304.
@@ -346,15 +349,17 @@ workflow, create, смена workflow планом) добавляют один 
   (429 ring) они не попадают, поэтому двойного счёта нет.
 - Тесты: `backend/src/common/*.spec.ts` (singleflight, семафор, negotiation с
   identity/q=0 и fallback, ETag, сервис, общий stamp+build deadline,
-  hanging-stamp recovery, WAIT_MS=0, P2028/P2024→503, timeout/backpressure) и
-  `backend/test/board-read.e2e-spec.ts` (gzip/br +
+  hanging-stamp recovery, WAIT_MS=0 maxWait=0, P2010/57014/P2028/P2024→503,
+  timeout/backpressure) и `backend/test/board-read.e2e-spec.ts` (gzip/br +
   Content-Length + Vary, tiny/304 + Cache-Control, role/tenant/role-change,
   CAS rename, non-seq policy, attachment add/delete, comment, claim
   release/expiry, direct admin edit, command-log sweep, прямые мутации
   Label/Column/CardLabel/Checklist/ChecklistItem/CardLink через delete/restore,
   trigger bump-семантика, 12→1 через spy на `$transaction`, queue-wait/
-  queue-full/timeout 503+Retry-After), плюс
-  `task-200-6-migration.e2e-spec.ts` для backfill и per-run temp upload dir.
+  queue-full/timeout 503+Retry-After, настоящий PostgreSQL statement_timeout
+  через `pg_sleep`), `board-read-wait-zero.e2e-spec.ts` (полный 200 + 304 при
+  `WAIT_MS=0`), плюс `task-200-6-migration.e2e-spec.ts` для backfill и per-run
+  temp upload dir.
   `openapi:check`/`openapi:test` зелёные.
 - **Честно про DoD:** механизм и тесты поставлены, но −70…80% байт и
   RSS <2 ГБ на 500×1 000 карточек **не измерялись** в этой задаче — для них
