@@ -128,19 +128,28 @@ labels or comments. Ready means the board's initial column
 archived/deleted, not under a live claim (a null or lapsed lease is free) and not
 the target of a live `blocks` link. The list is ordered by priority, most urgent
 first, and capped at 100. Each card carries `id`, `title`, board and column
-ids/titles, `priority`, `claimedBy`, `leaseUntil`, `version` and
-`descriptionChars` (the stored text length only). The response also carries the
-board's command `seq`, mirrored in `X-Board-Seq`.
+ids/titles, `priority`, `claimedBy`, `leaseUntil` and `version`. Descriptions are
+never selected, so a large description is not detoasted. The response also
+carries the board's command `seq`, mirrored in `X-Board-Seq`.
 
 `wait` is a server-side hold in **milliseconds**, 0–60000 (default 0 = immediate
-snapshot). While holding, the request wakes on a relevant command that touches a
-card, a column or the board. It then answers the fresh summary (which can be
-empty); a hold that times out answers `204` with no body. `since` is the `seq`
-from the previous answer: when the board has advanced since then, the snapshot
-answers immediately even if no card is ready. A client disconnect aborts the
-hold and releases its subscription. Any accepted role may read the endpoint,
-including `VIEWER`; an archived board answers `200` with `archived: true` and no
-cards. Invalid `limit`, `wait` or `since` bounds answer `400`.
+snapshot). It wakes only on a readiness-relevant action (card presence, move,
+priority, assignee, claim, link or column/workflow change) or a resync frame —
+every command touches `board:<id>`, so label, checklist, comment and board-rename
+frames do not wake it. After a wake it re-reads and answers `200` when work
+exists; if the change still leaves no ready card it **keeps holding** until the
+deadline instead of returning an empty snapshot. Co-waiters that woke on the same
+event share one snapshot read. A timed hold answers `204` with `X-Board-Seq` and
+`Cache-Control: no-store` and no body.
+
+`since` is the `seq` from the previous answer: when the board has advanced before
+the hold starts, the snapshot answers immediately even if no card is ready. A
+client disconnect aborts the hold and releases its subscription and admitted poll
+slot. A board deleted during the hold answers `404`, not `204`. Per-instance
+held-poll caps answer `503 ready_poll_capacity`; hold time is excluded from the
+API latency p50/p95. Any accepted role may read the endpoint, including
+`VIEWER`; an archived board answers `200` with `archived: true` and no cards.
+Invalid `limit`, `wait` or `since` bounds answer `400`.
 
 `GET /boards/ready?limit=` is the cross-board snapshot: every accessible board
 as `{ id, title, archived, seq }`, plus at most `limit` ready cards (total, not

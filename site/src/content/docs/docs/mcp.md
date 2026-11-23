@@ -366,13 +366,15 @@ Three tools let a swarm share one board without stepping on itself:
   urgent first. Both it and `janosik_wait_for_work` use the server's compact
   ready summary (`GET /boards/:id/ready`, or `GET /boards/ready` when `boardId`
   is omitted), not a full board read. A single-board wait holds for 25–60 s per
-  request and wakes on the relevant board change; without `boardId` it re-reads
-  the cross-board snapshot at a jittered 15–60 s cadence. The tool still takes
-  `timeoutMs` (up to 5 min), `pollMs` and `boardId` and still returns
-  `{ card }` or `{ card: null }` on timeout. A server predating the ready
-  endpoint (it answers `404`) is handled by the documented full-board fallback,
-  so the tool result does not change — upgrade the server to remove the idle
-  board reads.
+  request and wakes only on readiness-relevant changes; `pollMs` is ignored for
+  that hold. Without `boardId` it re-reads the cross-board snapshot every
+  15–60 s with jitter (`pollMs` is the floor). A relevant wake that leaves no
+  work keeps holding instead of returning an empty snapshot. `timeoutMs: 0`
+  still performs one initial snapshot. The tool keeps `timeoutMs` (up to 5
+  min) and `boardId` and still returns `{ card }` or `{ card: null }` on
+  timeout. A server predating the ready endpoint (it answers `404`) falls back
+  to a **full board read**, so the tool result does not change — upgrade the
+  server to remove the idle board reads.
 - `janosik_move_card` checks completion requirements when moving a card into a
   **done column** (the configured `doneColumnIds`, falling back to the last
   column when the list is empty or the board has no workflow). The check applies if the card has a non-empty

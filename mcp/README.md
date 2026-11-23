@@ -332,12 +332,14 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   column named Backlog. Both it and `janosik_wait_for_work` read the compact
   server ready summary (`GET /boards/:id/ready`, or `GET /boards/ready` without
   `boardId`) instead of a board aggregate. A single-board wait is held by the
-  server for 25–60 s per request and wakes on a relevant board command; a
-  cross-board wait re-reads the snapshot at a jittered 15–60 s cadence. The tool
-  keeps `timeoutMs`, `pollMs`, `boardId` and its `{ card: … }` /
-  `{ card: null }` result. On a server without the endpoint (`404`) it falls
-  back to the full-board read, so upgrading the server is what removes the idle
-  board load. A wait does not reserve or claim the card.
+  server for 25–60 s per request and wakes only on readiness-relevant changes;
+  `pollMs` is ignored for that hold. A cross-board wait re-reads the snapshot
+  every 15–60 s with jitter, with `pollMs` as the floor. A relevant wake that
+  leaves no work keeps holding, and `timeoutMs: 0` still performs one initial
+  snapshot. The tool keeps `timeoutMs`, `pollMs`, `boardId` and its
+  `{ card: … }` / `{ card: null }` result. On a server without the endpoint
+  (`404`) it falls back to a full board read, so upgrading the server is what
+  removes the idle board load. A wait does not reserve or claim the card.
 - **A Definition-of-Done check in MCP.** When `janosik_move_card` enters a done
   column (`workflow.doneColumnIds`, falling back to the board's last column when
   the list is empty or no workflow exists), it checks cards with a task contract for unticked

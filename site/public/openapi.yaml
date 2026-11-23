@@ -544,17 +544,26 @@ paths:
         board: the initial column (`workflow.initialColumnId`, else the first
         column), unassigned, without a live claim, not archived/deleted and not
         blocked by a live `blocks` link. The response carries no description
-        body, checklists, links or labels — only `descriptionChars`, the stored
-        text length. It is not a board aggregate read.
+        body (descriptions are never selected), checklists, links or labels. It
+        is not a board aggregate read.
 
         `wait` is a server-side hold in milliseconds (0–60000). With `wait > 0`
-        the request sleeps until a relevant command touches a card, column or
-        the board, then answers `200` with the new snapshot; a hold that times
-        out answers `204` with no body. `since` is the board `seq` the caller
-        last observed (also the `X-Board-Seq` header here): if the board has
-        advanced since then, the snapshot answers immediately, even when no
-        card is ready. A client disconnecting aborts the hold and releases its
-        realtime subscription.
+        the request sleeps until a readiness-relevant command (card presence,
+        column, priority, claim, link or workflow; not every `board:` touch) or
+        a resync frame. It then re-reads and answers `200` when work exists; if
+        the relevant change still leaves no ready card it keeps holding until
+        the deadline. A timed hold answers `204` with `X-Board-Seq` and
+        `Cache-Control: no-store` and no body. Co-waiters that woke on the same
+        event share one snapshot read.
+
+        `since` is the board `seq` the caller last observed (also the
+        `X-Board-Seq` header here): if the board has advanced before the hold
+        starts, the snapshot answers immediately, even when no card is ready.
+        A client disconnecting aborts the hold and releases its realtime
+        subscription and admitted poll slot. A board deleted during the hold
+        answers `404`, not `204`. Per-instance held-poll caps answer `503
+        ready_poll_capacity`; hold time is excluded from the API latency
+        metric.
 
         Any accepted role, including `VIEWER`, may read the endpoint. An
         archived board answers `200` with `archived: true` and no cards.
@@ -599,12 +608,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/BoardReady"
         "204":
-          description: The long-poll timed out without a relevant change.
+          description: The long-poll timed out without ready work.
+          headers:
+            X-Board-Seq:
+              $ref: "#/components/headers/X-Board-Seq"
+            Cache-Control:
+              description: Always `no-store` for ready snapshots.
+              schema:
+                type: string
+                enum: [no-store]
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: |
+            Held-poll admission is at its per-user or per-board cap
+            (`ready_poll_capacity`); retry shortly.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorEnvelope"
   /boards/{boardId}/export:
     parameters:
       - $ref: "#/components/parameters/BoardId"
@@ -3762,6 +3787,7 @@ components:
         - idempotency_in_progress
         - payload_too_large
         - rate_limited
+        - ready_poll_capacity
         - request_timeout
         - login_backoff
         - current_password_invalid
@@ -3936,7 +3962,6 @@ components:
           claimedBy,
           leaseUntil,
           version,
-          descriptionChars,
         ]
       properties:
         id:
@@ -3967,11 +3992,6 @@ components:
         version:
           type: integer
           description: The card's optimistic-concurrency version.
-        descriptionChars:
-          type: integer
-          description: |
-            Stored description length (0 when unset). The text itself is never
-            returned.
     ReadyBoardSummary:
       type: object
       required: [id, title, archived, seq]
