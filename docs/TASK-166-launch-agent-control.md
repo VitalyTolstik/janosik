@@ -1375,7 +1375,9 @@ batch/DTO is `validation_failed` (400); an oversized body is
   token), or the fixed-window end;
 - `Retry-After` — seconds, required on `429 rate_limited` and on the queued
   `503 rate_limited`;
-- `X-RateLimit-Queued-Ms` — total time a command spent in the per-board queue.
+- `X-RateLimit-Queued-Ms` — elapsed queue wait for a command or batch `200`,
+  queued `503` or `408`; `0` when a depth/byte/chain cap rejects it
+  immediately.
 
 The bucket is keyed by principal: user, token, or IP for anonymous requests.
 Both the per-token limit and the global limit apply.
@@ -1393,7 +1395,7 @@ appears in the envelope (`rate_limited`, `retryable`, `retryAfter`, `limit`,
 `scope`, `requestId`). A batch or plan apply spends `commands.length` from the
 board, token and session budgets. Commands over the board ceiling wait up to
 `AGENT_COMMAND_QUEUE_MS` (default `1500`, max `30000`) in a per-board queue
-(64 commands / 32 MiB serialized parsed JSON, approximate for object overhead /
+(64 queued requests/batches / 32 MiB serialized parsed JSON, approximate for object overhead /
 chain bound), then answer `503 rate_limited` with
 `X-RateLimit-Queued-Ms` (`0` on an immediate queue-cap rejection: depth, byte
 or chain limit); other routes answer `429` immediately (including

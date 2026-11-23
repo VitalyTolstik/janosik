@@ -203,8 +203,9 @@ tolerate an unknown code and fall back to the HTTP status.
 
 Approval, pause and run errors describe the next action: stop and ask a human,
 re-read the board, or do not retry the same request. They are intentionally
-`retryable: false`; only `rate_limited`, `board_write_timeout` and
-`idempotency_in_progress` are safe to retry unchanged.
+`retryable: false`; only `rate_limited`, `request_timeout`,
+`board_write_timeout`, `service_unavailable` and `idempotency_in_progress` are
+safe to retry unchanged.
 
 ## Versioning and concurrency
 
@@ -318,7 +319,7 @@ behaviour.
   immediately, but still spends its command count. A command refused this way
   was not applied, so retrying it with the same `commandId` stays idempotent.
 - A batch or plan apply is charged by `commands.length` on the board, token
-  **and session** budgets. The queue keeps at most 64 commands, 32 MiB of
+  **and session** budgets. The queue keeps at most 64 queued requests/batches, 32 MiB of
   serialized parsed request JSON (approximate for object overhead) and a
   bounded promise chain per board. A pinned `AGENT_*` budget is either `0`
   (auto) or at least `100`, so a valid 100-command batch can always fit.

@@ -1,4 +1,5 @@
 import { commandBodyBytes, commandRateLimitCost } from "./command-cost";
+import { BOARD_COMMAND_QUEUE_MAX_BYTES } from "./board-rate-limit";
 import { COMMAND_BATCH_MAX } from "@janosik/shared";
 
 function batch(count: number): unknown[] {
@@ -139,5 +140,13 @@ describe("commandRateLimitCost (TASK-200.3)", () => {
         }),
       ).toBe(measured);
     }
+  });
+
+  it("reserves more than the whole queue for an unserializable body", () => {
+    let deep: Record<string, unknown> = {};
+    for (let index = 0; index < 6_000; index += 1) deep = { a: deep };
+    expect(commandBodyBytes({ body: { commands: [deep] } })).toBe(
+      BOARD_COMMAND_QUEUE_MAX_BYTES + 1,
+    );
   });
 });

@@ -205,8 +205,6 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
             if (now - this.lastQueueFullWarnAt >= QUEUE_FULL_WARN_INTERVAL_MS) {
               this.lastQueueFullWarnAt = now;
               this.logger.warn(message);
-            } else {
-              this.logger.debug(message);
             }
             request.rateLimited = true;
             request.rateLimit = decision;
@@ -225,7 +223,7 @@ export class AgentRateLimitInterceptor implements NestInterceptor {
               Math.max(0, Math.round(Date.now() - queuedAt)),
             );
             throw new HttpException(
-              "The request was aborted before its command was queued",
+              "The request was aborted before its command could be applied",
               HttpStatus.REQUEST_TIMEOUT,
             );
           }

@@ -418,6 +418,51 @@ describe("Observability and agent rate limits (e2e)", () => {
     }
   });
 
+  it("rejects a deep JSON body instead of queueing it as zero bytes", async () => {
+    setBoardRateLimit(1);
+    setAgentCommandQueueMs(5_000);
+    const pat = await createToken("deep-json");
+    const deep = '{"a":'.repeat(6_000) + "null" + "}".repeat(6_000);
+    const body =
+      '{"commands":[{"commandId":"deep","action":{"type":"RENAME_BOARD",' +
+      '"title":"Deep","at":' +
+      Date.now() +
+      ',"pad":"' +
+      "x".repeat(2_000_000) +
+      '","deep":' +
+      deep +
+      "}}]}";
+
+    const first = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(pat))
+      .set("Content-Type", "application/json")
+      .send(body);
+    expect(first.status).toBe(400);
+    expect(first.body).toMatchObject({
+      code: "validation_failed",
+    });
+    expect(first.body.message).toMatch(/deeply nested/i);
+
+    // The first request spent the only board token. The second reaches the
+    // queue: an unserializable body must count as larger than the byte cap,
+    // not as zero, and must not wait the full queue budget.
+    const started = Date.now();
+    const second = await server()
+      .post(`/api/v1/boards/${boardId}/commands`)
+      .set(auth(pat))
+      .set("Content-Type", "application/json")
+      .send(body);
+    expect(second.status).toBe(503);
+    expect(second.body).toMatchObject({
+      code: "rate_limited",
+      retryable: true,
+      scope: "board",
+    });
+    expect(second.headers["x-ratelimit-queued-ms"]).toBe("0");
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
   it("queues a command until the next board token and reports the wait", async () => {
     setBoardRateLimit(60);
     setAgentCommandQueueMs(1_500);

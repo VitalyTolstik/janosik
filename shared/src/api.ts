@@ -1379,7 +1379,7 @@ export interface UserTokenDto {
   boardId: string | null;
   /** When true the token may only read (TASK-157). */
   readOnly: boolean;
-  /** Requests per minute this token may make; `null` = no per-token limit. */
+  /** Weighted units per minute this token may spend; `null` = no per-token limit. */
   rateLimitPerMinute: number | null;
   /** TASK-166 capability preset; `readOnly` still wins when true. */
   scopePreset: ScopePreset;
@@ -1425,7 +1425,7 @@ export interface CreateUserTokenRequest {
   boardId?: string | null;
   /** Read-only token (TASK-157); omitted = read/write. */
   readOnly?: boolean;
-  /** Per-token request limit per minute (TASK-157); omitted/`null` = none. */
+  /** Per-token weighted-unit limit per minute (TASK-157); omitted/`null` = none. */
   rateLimitPerMinute?: number | null;
   /** TASK-166 preset; defaults to `worker`. */
   scopePreset?: ScopePreset;

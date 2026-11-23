@@ -325,7 +325,6 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
 
   it("sets X-RateLimit-Queued-Ms to zero and samples a full-queue log", async () => {
     const warn = jest.spyOn(Logger.prototype, "warn").mockImplementation();
-    const debug = jest.spyOn(Logger.prototype, "debug").mockImplementation();
     setBoardRateLimit(1);
     setAgentCommandQueueMs(0);
     const first = context({
@@ -368,12 +367,10 @@ describe("AgentRateLimitInterceptor (TASK-166.10 / TASK-200.3)", () => {
       status: 503,
     });
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(debug).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("command queue full (depth)"),
     );
     warn.mockRestore();
-    debug.mockRestore();
     release();
     await Promise.all(waiters);
     await new Promise((resolve) => setImmediate(resolve));

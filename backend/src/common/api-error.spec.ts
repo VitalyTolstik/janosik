@@ -111,7 +111,7 @@ describe("apiErrorEnvelope", () => {
   it("maps an aborted request to a retryable 408 request_timeout", () => {
     const { status, body } = translateException(
       new HttpException(
-        "The request was aborted before its command was queued",
+        "The request was aborted before its command could be applied",
         HttpStatus.REQUEST_TIMEOUT,
       ),
       "req-408",

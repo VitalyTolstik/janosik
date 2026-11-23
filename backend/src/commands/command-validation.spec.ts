@@ -1,5 +1,6 @@
+import { BadRequestException } from "@nestjs/common";
 import { BOARD_ACTION_TYPES } from "@janosik/shared";
-import { ACTION_REGISTRY } from "./command-validation";
+import { ACTION_REGISTRY, validateCommandAction } from "./command-validation";
 
 /**
  * TASK-200.3: `commandRateLimitCost` uses the shared runtime list to avoid
@@ -12,5 +13,27 @@ describe("shared BOARD_ACTION_TYPES", () => {
     const shared = new Set<string>(BOARD_ACTION_TYPES);
     expect([...backend].filter((type) => !shared.has(type))).toEqual([]);
     expect([...shared].filter((type) => !backend.has(type))).toEqual([]);
+  });
+});
+
+describe("deep command actions", () => {
+  it("answers a generic 400 when the action cannot be serialized", () => {
+    let deep: Record<string, unknown> = {};
+    for (let index = 0; index < 6_000; index += 1) deep = { a: deep };
+    let error: unknown;
+    try {
+      validateCommandAction({
+        type: "RENAME_BOARD",
+        title: "deep",
+        at: Date.now(),
+        deep,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(BadRequestException);
+    const response = (error as BadRequestException).getResponse();
+    expect(response).toMatchObject({ field: "action" });
+    expect(JSON.stringify(response)).not.toContain("Maximum call stack");
   });
 });

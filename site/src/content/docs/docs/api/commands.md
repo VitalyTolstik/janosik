@@ -233,7 +233,7 @@ the same `commandId`: the idempotency key makes the retry safe.
 A `503` with `rate_limited` is backpressure, not an outage. A command over the
 shared board budget waits up to `AGENT_COMMAND_QUEUE_MS` (default `1500` ms,
 maximum `30000`) for enough board tokens and queue capacity; if the budget or
-the per-board queue (64 commands / 32 MiB of serialized parsed JSON,
+the per-board queue (64 queued requests/batches / 32 MiB of serialized parsed JSON,
 approximate for object overhead / bounded chain) stays exhausted,
 nothing is applied
 and the reply carries `Retry-After`, the `rate_limited` envelope with

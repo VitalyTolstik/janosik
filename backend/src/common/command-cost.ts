@@ -1,4 +1,5 @@
 import { COMMAND_BATCH_MAX, isBoardActionType } from "@janosik/shared";
+import { BOARD_COMMAND_QUEUE_MAX_BYTES } from "./board-rate-limit";
 
 /**
  * TASK-200.3: the budget cost of one request.
@@ -53,7 +54,10 @@ export function commandBodyBytes(request: {
   try {
     return Buffer.byteLength(JSON.stringify(request.body));
   } catch {
-    return 0;
+    // A body that JSON.stringify cannot measure (for example extreme nesting)
+    // still occupies memory. Return more than any queue can hold so the byte
+    // cap rejects it instead of admitting it as "0 bytes".
+    return BOARD_COMMAND_QUEUE_MAX_BYTES + 1;
   }
 }
 

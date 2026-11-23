@@ -29,7 +29,7 @@ import {
  * holds no database connection.
  */
 
-/** Maximum commands waiting (running or queued) per board. */
+/** Maximum requests/batches in the queue (running or waiting) per board. */
 export const BOARD_COMMAND_QUEUE_MAX = 64;
 /** Chained promise nodes allowed per board before a waiter is refused. */
 export const BOARD_COMMAND_QUEUE_CHAIN_FACTOR = 2;
@@ -60,7 +60,7 @@ export class BoardCommandQueueFullError extends Error {
 
 export class BoardCommandQueueAbortedError extends Error {
   constructor() {
-    super("The request was aborted before its command was queued");
+    super("The request was aborted before its command could be applied");
     this.name = "BoardCommandQueueAbortedError";
   }
 }

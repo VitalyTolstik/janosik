@@ -3248,10 +3248,10 @@ components:
         enum: [token, session, board]
     X-RateLimit-Queued-Ms:
       description: |
-        Total time a command spent in the per-board queue, including the wait
-        behind earlier commands and the wait for enough board tokens. Present
-        on a command or batch `200`/`503` that entered the queue; `0` when the
-        queue depth or byte cap rejected it immediately.
+        Total time a command or batch spent in the per-board queue, including
+        the wait behind earlier requests and the wait for enough board tokens.
+        Present on `200`, queued `503` and `408 request_timeout`; `0` when the
+        queue depth/byte/chained-waiter cap rejects it immediately.
       schema:
         type: integer
         minimum: 0
@@ -3415,7 +3415,7 @@ components:
 
         - `rate_limited`: insufficient board tokens after waiting up to
           `AGENT_COMMAND_QUEUE_MS`, or the per-board command queue is full by
-          depth, retained bytes or chained waiters (64 commands / 32 MiB of
+          depth, retained bytes or chained waiters (64 queued requests/batches / 32 MiB of
           serialized parsed JSON, approximate for object overhead / bounded
           chain).
           Nothing was applied; `Retry-After` is set,
