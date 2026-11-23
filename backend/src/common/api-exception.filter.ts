@@ -43,8 +43,12 @@ export class ApiExceptionFilter implements ExceptionFilter {
     // TASK-166.10: the legacy gauge now sees every 429, including the new
     // per-token/session/board buckets (they are HttpExceptions, not
     // ThrottlerExceptions).
-    if (status === 429) this.traffic?.recordThrottled();
-    if (status >= 500) {
+    // TASK-200.3: the queued command answer is `503 rate_limited`; it is the
+    // same backpressure signal and must not be logged as an unexpected 5xx.
+    const backpressure =
+      status === 429 || (status === 503 && body.code === "rate_limited");
+    if (backpressure) this.traffic?.recordThrottled();
+    if (status >= 500 && !backpressure) {
       const detail =
         exception instanceof Error ? exception.stack : String(exception);
       this.logger.error(

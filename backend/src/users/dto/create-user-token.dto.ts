@@ -37,7 +37,7 @@ export class CreateUserTokenDto {
   @IsBoolean()
   readOnly?: boolean;
 
-  /** Per-token request limit per minute; omitted/`null` = none. */
+  /** Per-token weighted-unit limit per minute; omitted/`null` = none. */
   @IsOptional()
   @IsInt()
   @Min(API_TOKEN_RATE_MIN)

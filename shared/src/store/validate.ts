@@ -90,6 +90,70 @@ const CARD_ACTIVITY_REWIND_TYPES: ReadonlySet<string> = new Set([
   "MOVE_CARD",
 ]);
 
+/**
+ * Every reducer command the strict API validator accepts. Kept as a runtime
+ * list so a cheap pre-validation check (TASK-200.3 rate-limit cost) can reject
+ * an unknown type before the full command shape is parsed.
+ */
+export const BOARD_ACTION_TYPES = [
+  "ADD_COLUMN",
+  "RENAME_COLUMN",
+  "DELETE_COLUMN",
+  "ARCHIVE_COLUMN_CARDS",
+  "RENAME_BOARD",
+  "ARCHIVE_BOARD",
+  "UNARCHIVE_BOARD",
+  "MOVE_COLUMN",
+  "DUPLICATE_COLUMN",
+  "SORT_COLUMN",
+  "SET_COLUMN_CARD_ORDER",
+  "SET_COLUMN_WIP_LIMIT",
+  "SET_COLUMN_ACCENT",
+  "SET_BOARD_COLUMN_STYLE",
+  "SET_BOARD_WORKFLOW",
+  "ADD_CARD",
+  "UPDATE_CARD",
+  "TOUCH_CARD",
+  "DELETE_CARD",
+  "ARCHIVE_CARD",
+  "UNARCHIVE_CARD",
+  "SET_CARD_DUE_DATE",
+  "SET_CARD_PRIORITY",
+  "SET_CARD_ASSIGN",
+  "CLAIM_CARD",
+  "SET_CARD_TASK_SPEC",
+  "ADD_CARD_LINK",
+  "REMOVE_CARD_LINK",
+  "SET_CARD_COVER",
+  "MOVE_CARD",
+  "DUPLICATE_CARD",
+  "RESTORE_CARD",
+  "RESTORE_COLUMN",
+  "RESTORE_COLUMN_CARDS",
+  "RESTORE_CHECKLIST",
+  "RESTORE_CHECKLIST_ITEM",
+  "SET_CARD_LABEL",
+  "ADD_LABEL",
+  "RENAME_LABEL",
+  "SET_LABEL_COLOR",
+  "DELETE_LABEL",
+  "RESTORE_LABEL",
+  "ADD_CHECKLIST",
+  "RENAME_CHECKLIST",
+  "DELETE_CHECKLIST",
+  "ADD_CHECKLIST_ITEM",
+  "SET_CHECKLIST_ITEM_DONE",
+  "RENAME_CHECKLIST_ITEM",
+  "DELETE_CHECKLIST_ITEM",
+] as const;
+
+const BOARD_ACTION_TYPE_SET: ReadonlySet<string> = new Set(BOARD_ACTION_TYPES);
+
+/** True for a command type the strict API validator understands. */
+export function isBoardActionType(value: string): boolean {
+  return BOARD_ACTION_TYPE_SET.has(value);
+}
+
 /** Result of validating one `BoardAction`. */
 export type ActionValidationResult =
   | { ok: true; action: BoardAction }

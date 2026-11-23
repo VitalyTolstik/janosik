@@ -149,6 +149,14 @@
 **Файлы:** `backend/src/config/rate-limit.ts`,
 `backend/src/common/*rate-limit*`, `mcp/src/client.ts`, `mcp/src/errors.ts`.
 
+**Статус:** реализовано в `feat/TASK-200.3-rate-budget`. Доска — высокий
+предохранительный потолок с непрерывным пополнением (`BOARD_RATE_LIMIT`,
+`max(12000, 2 × THROTTLE_LIMIT)`); справедливость — на бюджетах токена
+(`AGENT_TOKEN_RATE_LIMIT`) и сессии. Команды сверх потолка ждут
+`AGENT_COMMAND_QUEUE_MS` и получают `503 rate_limited` + `Retry-After`; MCP
+сам повторяет `429`/`503` с `Retry-After`, jitter и лимитом попыток, сохраняя
+`commandId`/`Idempotency-Key`.
+
 ---
 
 ### 200.4 — Убрать дубли aggregate на PAT-команде (P0)
@@ -582,7 +590,9 @@ S2-harness.
    targeted intents)? Это самые рычаговые изменения.
 7. Какая staleness допустима для summary (100–500 мс)?
 8. Какой retention нужен для агентских команд: 30 дней, 7 дней, архив?
-9. 600/min board budget — продуктовое требование или дефолт?
+9. 600/min board budget — продуктовое требование или дефолт? **Решено в
+   200.3:** safety ceiling `max(12000, 2 × THROTTLE_LIMIT)` + взвешенные
+   бюджеты токена/сессии.
 10. Какой 409/retry budget считаем нормой?
 
 ---

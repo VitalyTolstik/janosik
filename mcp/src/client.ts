@@ -60,7 +60,15 @@ import {
   REQUEST_TIMEOUT_MS,
   UPLOAD_TIMEOUT_MS,
 } from "./constants.js";
-import { ApiError, NoChangeError, isTransientNetworkError } from "./errors.js";
+import {
+  ApiError,
+  NoChangeError,
+  RATE_LIMIT_MAX_ATTEMPTS,
+  isRateLimited,
+  isTransientNetworkError,
+  parseRetryAfter,
+  rateLimitDelayMs,
+} from "./errors.js";
 import { newCommandId, newIdempotencyKey } from "./ids.js";
 
 /** `Omit` that distributes over a union, so each action keeps its own shape. */
@@ -199,21 +207,38 @@ export class JanosikClient {
   }
 
   /**
-   * Low-level request; throws {@link ApiError} on any non-2xx response. A
-   * GET that fails on the network is retried once — reads are safe to repeat.
+   * Low-level request; throws {@link ApiError} on any non-2xx response.
+   *
+   * Two independent retry budgets:
+   * - a GET that fails on the network is retried once (reads are safe to
+   *   repeat); a write only when it carries an `Idempotency-Key`, so the
+   *   server replays the first result instead of applying the body twice;
+   * - TASK-200.3: a `429`/`503 rate_limited` is retried up to
+   *   {@link RATE_LIMIT_MAX_ATTEMPTS} in total, honouring `Retry-After` and
+   *   adding jittered exponential backoff. A rate-limit refusal happens before
+   *   the handler, so repeating the same body is safe even for an unkeyed
+   *   write; command bodies additionally keep their `commandId`.
    */
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    // Reads are safe to repeat. A write is only retried when it carries an
-    // Idempotency-Key: the server then replays the first result instead of
-    // applying the body twice (TASK-180.2 M17).
     const keyedWrite =
       options.headers?.["Idempotency-Key"] !== undefined &&
       (options.method ?? "GET") !== "GET";
-    const attempts = (options.method ?? "GET") === "GET" || keyedWrite ? 2 : 1;
-    for (let attempt = 1; ; attempt += 1) {
+    const networkAttempts =
+      (options.method ?? "GET") === "GET" || keyedWrite ? 2 : 1;
+    let networkAttempt = 0;
+    let rateLimitAttempt = 0;
+    for (;;) {
       try {
         return await this.send<T>(path, options);
       } catch (error) {
+        if (
+          isRateLimited(error) &&
+          rateLimitAttempt < RATE_LIMIT_MAX_ATTEMPTS - 1
+        ) {
+          rateLimitAttempt += 1;
+          await pause(rateLimitDelayMs(error, rateLimitAttempt));
+          continue;
+        }
         const retryable =
           isTransientNetworkError(error) ||
           // A gateway timeout/response loss after the write reached the
@@ -221,7 +246,8 @@ export class JanosikClient {
           (keyedWrite &&
             error instanceof ApiError &&
             (error.status === 502 || error.status === 504));
-        if (attempt >= attempts || !retryable) throw error;
+        networkAttempt += 1;
+        if (networkAttempt >= networkAttempts || !retryable) throw error;
       }
     }
   }
@@ -291,7 +317,11 @@ export class JanosikClient {
     });
 
     if (!response.ok) {
-      throw new ApiError(response.status, await readBody(response));
+      throw new ApiError(
+        response.status,
+        await readBody(response),
+        parseRetryAfter(response.headers.get("retry-after")),
+      );
     }
     if (raw) {
       return response as unknown as T;
@@ -391,7 +421,9 @@ export class JanosikClient {
     idempotencyKey?: string,
   ): Promise<T> {
     const headers = idempotencyHeaders(idempotencyKey);
-    for (let attempt = 0; ; attempt += 1) {
+    let networkAttempt = 0;
+    let rateLimitAttempt = 0;
+    for (;;) {
       try {
         return await this.send<T>(path, {
           method: "POST",
@@ -400,13 +432,25 @@ export class JanosikClient {
           ...(headers !== undefined ? { headers } : {}),
         });
       } catch (error) {
-        if (attempt >= COMMAND_RETRIES || !isTransientNetworkError(error)) {
+        // TASK-200.3: a 429 / queued 503 rejected the command before it was
+        // applied, so the same body (and its `commandId`) can be resent.
+        if (
+          isRateLimited(error) &&
+          rateLimitAttempt < RATE_LIMIT_MAX_ATTEMPTS - 1
+        ) {
+          rateLimitAttempt += 1;
+          await pause(rateLimitDelayMs(error, rateLimitAttempt));
+          continue;
+        }
+        if (
+          !isTransientNetworkError(error) ||
+          networkAttempt >= COMMAND_RETRIES
+        ) {
           throw error;
         }
+        networkAttempt += 1;
         // Back off a little: a busy board needs a moment to drain.
-        await new Promise((resolve) =>
-          setTimeout(resolve, COMMAND_RETRY_DELAY_MS * (attempt + 1)),
-        );
+        await pause(COMMAND_RETRY_DELAY_MS * networkAttempt);
       }
     }
   }
@@ -949,6 +993,11 @@ function idempotencyHeaders(
   return key !== undefined && key !== ""
     ? { "Idempotency-Key": key }
     : undefined;
+}
+
+/** Sleep helper shared by the retry policies. */
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Read a JSON error body, tolerating an empty or non-JSON response. */

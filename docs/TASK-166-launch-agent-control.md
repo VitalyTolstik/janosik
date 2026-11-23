@@ -955,7 +955,9 @@ Headers:
 | `X-Approval-Id` | commands/batch/plans/apply/lifecycle REST | approval id for the exact plan |
 | `Idempotency-Key` | create board/import/share/upload | REST idempotency, 24 h |
 | `X-Request-Id` | all responses | correlation id (already exists) |
-| `X-RateLimit-*`, `Retry-After` | all responses/429 | 166.10 |
+| `X-RateLimit-*`, `RateLimit-*` | agent responses | budget of the tightest bucket |
+| `X-RateLimit-Queued-Ms` | queued command/batch `200`, queued `503 rate_limited`, `408 request_timeout` | total per-board queue wait; `0` on an immediate cap rejection |
+| `Retry-After` | `429` and queued `503 rate_limited` | seconds until the next attempt |
 | `X-Board-Seq`, `X-Delta-Resync` | board read/delta | already exists |
 
 SSE `?session=<sessionId>` is optional; it is used for session pause (§9.3).
@@ -1296,8 +1298,11 @@ Every API error (new and changed in 166.4) returns:
 
 - `code` is a stable machine identifier in snake_case.
 - `message` is an English fallback; UI/MCP localize by `code`.
-- `retryable` is always present. `true` means the same request may be retried
-  without changes after `Retry-After`/a short pause.
+- `retryable` is always present. `true` means the request may be retried after
+  `Retry-After`/a short pause; for a write, resend the same `commandId` (and
+  REST `Idempotency-Key`), because a `502`/`504` can follow an unkeyed write.
+  `request_timeout` is retryable when the client aborted before the command was
+  applied.
 - `requestId` is the same id as `X-Request-Id`; it already exists in
   `request-context`.
 - `currentVersion` is the current version of the checked resource. For
@@ -1337,7 +1342,8 @@ Every API error (new and changed in 166.4) returns:
 | `idempotency_conflict` | 409 | false | same key, different body | `key` |
 | `idempotency_in_progress` | 409 | true | first record is still running or its outcome is uncertain | `key`, `retryAfter` |
 | `payload_too_large` | 413 | false | command/import/attachment body | `limit` |
-| `rate_limited` | 429 | true | global/per-token/per-agent limit | `retryAfter`, `limit` |
+| `request_timeout` | 408 | true | the command was aborted before it could be applied; nothing was applied | response header `X-RateLimit-Queued-Ms` (elapsed queue wait, `0` if aborted before any wait; an immediate queue-cap rejection is the `503` path) — not an envelope field |
+| `rate_limited` | 429, 503 (queued command) | true | global/per-token/per-agent/board limit | `retryAfter`, `limit`, `scope` |
 | `board_write_timeout` | 503 | true | lock/transaction timeout | current code is preserved |
 | `not_found` | 404 | false | entity/board/approval/run not found | `resource` |
 | `validation_failed` | 400 | false | class-validator/shape | `field`, `message` |
@@ -1367,22 +1373,41 @@ batch/DTO is `validation_failed` (400); an oversized body is
 
 - `X-RateLimit-Limit` — current bucket ceiling;
 - `X-RateLimit-Remaining` — remaining budget;
-- `X-RateLimit-Reset` — reset time as Unix seconds;
-- `Retry-After` — seconds, required on `429 rate_limited`.
+- `X-RateLimit-Reset` — Unix seconds when the bucket is whole again (fixed
+  window end, or a full continuously refilling board bucket);
+- `RateLimit-Reset` — seconds until **this request's weighted cost** can be
+  admitted (100 tokens for a 100-command batch, not the next single board
+  token), or the fixed-window end;
+- `Retry-After` — seconds, required on `429 rate_limited` and on the queued
+  `503 rate_limited`;
+- `X-RateLimit-Queued-Ms` — elapsed queue wait for a command or batch `200`,
+  queued `503` or `408`; `0` when a depth/byte/chain cap rejects it
+  immediately.
 
 The bucket is keyed by principal: user, token, or IP for anonymous requests.
 Both the per-token limit and the global limit apply.
 
-**Implementation (166.10).** The global per-principal `@nestjs/throttler`
-window is unchanged. On top of it, PAT traffic gets a per-session bucket
-(`AGENT_SESSION_RATE_LIMIT`, default = live global limit, min 60) and a
-per-board bucket (`BOARD_RATE_LIMIT`, default = 2× live global limit, min
-600). Browser sessions do not get the new buckets. The token's explicit
-`rateLimitPerMinute` remains the tightest token budget. `X-RateLimit-*` names
-the tightest bucket that counted the request (with `X-RateLimit-Scope`), and
-the same budget appears in the `429` envelope (`rate_limited`, `retryable`,
-`retryAfter`, `limit`, `scope`, `requestId`). `X-RateLimit-Reset` is Unix
-seconds; the IETF-style `RateLimit-Reset` is seconds until reset.
+**Implementation (166.10, resized by 200.3).** The global per-principal
+`@nestjs/throttler` window is unchanged. On top of it, PAT traffic gets a
+per-session bucket (`AGENT_SESSION_RATE_LIMIT`, default
+`max(600, THROTTLE_LIMIT)` weighted units), a per-token fairness bucket
+(`AGENT_TOKEN_RATE_LIMIT`, default `max(600, ceil(THROTTLE_LIMIT / 4))`; an
+explicit `rateLimitPerMinute` is capped by it) and a per-board safety ceiling
+(`BOARD_RATE_LIMIT`, default `max(12000, 2 × THROTTLE_LIMIT)`). Browser
+sessions do not get the new buckets. `X-RateLimit-*` names the tightest bucket
+that counted the request (with `X-RateLimit-Scope`), and the same budget
+appears in the envelope (`rate_limited`, `retryable`, `retryAfter`, `limit`,
+`scope`, `requestId`). A batch or plan apply spends `commands.length` from the
+board, token and session budgets. Commands over the board ceiling wait up to
+`AGENT_COMMAND_QUEUE_MS` (default `1500`, max `30000`) in a per-board queue
+(64 queued requests/batches / 32 MiB serialized parsed JSON, approximate for object overhead /
+chain bound), then answer `503 rate_limited` with
+`X-RateLimit-Queued-Ms` (`0` on an immediate queue-cap rejection: depth, byte
+or chain limit); other routes answer `429` immediately (including
+`plans/apply`). **Upgrade note:** pinned `AGENT_SESSION_RATE_LIMIT`,
+`AGENT_TOKEN_RATE_LIMIT` and `BOARD_RATE_LIMIT` values from 1 to 99 now fail
+startup; use 0 (auto) or at least 100. A per-key `rateLimitPerMinute` of 1–99
+remains valid but cannot submit a 100-command batch.
 
 The request log is one JSON line per finished API response with
 `requestId`, method/path/status/duration, `actorType`/`actorId`, `boardId`,

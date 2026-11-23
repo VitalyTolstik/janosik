@@ -150,6 +150,24 @@ describe("buildRequestLogEntry", () => {
     expect(entry.boardId).toBeUndefined();
   });
 
+  it("marks every 429 as rate limited, including the global throttler", () => {
+    const entry = buildRequestLogEntry(
+      request({ originalUrl: "/api/v1/boards/board-1" }),
+      response(429),
+      Date.now(),
+    );
+    expect(entry.rateLimited).toBe(true);
+    const explicit = buildRequestLogEntry(
+      request({
+        originalUrl: "/api/v1/boards/board-1/commands",
+        rateLimited: true,
+      }),
+      response(503),
+      Date.now(),
+    );
+    expect(explicit.rateLimited).toBe(true);
+  });
+
   it("marks admin and anonymous callers without inventing ids", () => {
     const admin = buildRequestLogEntry(
       request({
