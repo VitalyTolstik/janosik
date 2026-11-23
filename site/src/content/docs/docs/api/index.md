@@ -155,9 +155,10 @@ Every REST error uses one machine-readable body (TASK-166.4):
 - `field` points at a rejected input, `details` carries extra context, and
   `limit`/`current` describe a semantic limit. `conflict` (`version`, `wip`,
   `id`, `workflow`) and `workflow` remain for compatibility.
-- `versions` on a `version` conflict holds the actual `card:`/`column:`/
-  `board:` versions. Merge them into `ifMatchVersions` and retry the targeted
-  card intent; no full board read is needed.
+- `versions` on a `version` conflict holds the actual versions of the
+  entities pinned by `ifMatchVersions` (`card:`, `column:`, `board:`). Merge
+  them into the next attempt and retry the targeted card intent; no full
+  board read is needed. WIP/workflow conflicts omit it.
 
 `ValidationPipe` runs with `whitelist: true` and `transform: true`. An unknown
 body field is stripped; a failed class-validator constraint is

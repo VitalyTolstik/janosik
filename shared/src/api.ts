@@ -215,10 +215,10 @@ export interface ConflictError {
   conflict: CommandConflict;
   currentVersion: number;
   /**
-   * TASK-200.7: actual versions of the entities this command pinned or
-   * touched. A targeted client merges them into `ifMatchVersions` and retries
-   * only that entity instead of re-reading the board. Present when at least
-   * one entity still exists.
+   * TASK-200.7: actual versions of the entities the command pinned with
+   * `ifMatchVersions`. A targeted client merges them into the next attempt and
+   * retries only that entity instead of re-reading the board. Present only for
+   * a stale precondition, and only for pinned entities that still exist.
    */
   versions?: EntityVersions;
   /** Only for `conflict: "wip"`: the column whose limit was reached. */

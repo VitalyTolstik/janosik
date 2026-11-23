@@ -323,6 +323,9 @@ pause/resume routes. A PAT receives `403 pat_forbidden`.
   or move of another card never conflicts; a change to this card answers `409`
   with its current `versions`, and the tool retries only this card. The
   Definition-of-Done check and `expectedDescription` use the same context.
+  An exact retry with the same `commandId` is a true replay even though the
+  server recomputes a lease or move coordinates. On a server older than
+  200.7 (context route `404`) these tools fall back to the command API.
   `expectedVersion` remains the explicit full-board mode for callers that read
   the whole board: the write is pinned to that `seq` as before. `add_comment`
   calls the already-targeted comment route and never reads a board. Tools that

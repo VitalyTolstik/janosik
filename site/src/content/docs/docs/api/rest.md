@@ -380,11 +380,16 @@ not a conflict. `PATCH` changes `title` and/or `description`, with an optional
 Idempotency, approvals, agent policy, WIP/workflow, run pre-images, undo data
 and the SSE command log are the same as the command endpoint: each intent
 builds the normal `CLAIM_CARD`/`MOVE_CARD`/`UPDATE_CARD` action and applies it
-through `CommandsService` with a targeted board load. A stale precondition
+through `CommandsService` with a targeted board load. An exact retry with the
+same `commandId` and intent is answered from the stored command before the
+server recomputes the lease, move coordinates or `expectedDescription` check,
+so it never turns into `idempotency_conflict` or `version_conflict`. A stale precondition
 answers `409 version_conflict` with the board `seq` in `currentVersion` and
-the actual entity versions in `versions`; merge those into
+the versions of the pinned entities in `versions`; merge those into
 `ifMatchVersions` and retry the same call, or re-read only
-`/cards/:cardId/context`. Comments are already targeted
+`/cards/:cardId/context`. A stale `expectedDescription` uses the same
+`currentVersion`/`versions` pair for the card. WIP and workflow conflicts do
+not carry `versions` because no version retry can fix them. Comments are already targeted
 (`POST /cards/:cardId/comments`) and need no board read either.
 
 ## Resource board context
@@ -1253,7 +1258,7 @@ names the cause.
 | `404`  | unknown or soft-deleted board, card, comment, attachment or share; a disabled, revoked or expired public share; a thumbnail or poster that does not exist |
 | `405`  | a write against the public share API                                                                                                                  |
 | `408`  | `code: "request_timeout"`: the command was aborted before it could be applied; nothing was applied; `X-RateLimit-Queued-Ms` reports the queue wait |
-| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card; a stale version precondition (`versions` carries the actual entity versions for a targeted retry) |
+| `409`  | inviting an accepted member; demoting or removing the last `ADMIN`; an expired invitation; a `commandId` reused on another card; a stale version precondition (`versions` carries the pinned entities' actual versions for a targeted retry) |
 | `410`  | a live share whose board no longer exists                                                                                                                 |
 | `413`  | a command payload over `MAX_COMMAND_BYTES`; an import over 25 MB; a command/plan body over 10 MB; any other JSON body over 256 KB (`code: "payload_too_large"`) |
 | `416`  | an unsatisfiable `Range` on a blob                                                                                                                        |

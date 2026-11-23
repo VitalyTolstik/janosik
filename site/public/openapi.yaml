@@ -688,9 +688,11 @@ paths:
         the board shell. `ifMatchVersions` pins the card version the caller
         saw; omitted, the server pins the version it read. A stale card answers
         `409 version_conflict` with `versions` so the client retries only this
-        card. `expectedDescription` adds a compare-and-set on the text.
-        `expectedVersion`-style board-wide CAS is not needed here; use the
-        command endpoint for an explicit full-board read.
+        card. `expectedDescription` adds a compare-and-set on the text; a
+        mismatch answers `409 version_conflict` with the board `seq` in
+        `currentVersion` and the card in `versions`. `expectedVersion`-style
+        board-wide CAS is not needed here; use the command endpoint for an
+        explicit full-board read.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
       requestBody:
@@ -742,6 +744,9 @@ paths:
       responses:
         "200":
           description: The claimed/released card and command result.
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
           content:
             application/json:
               schema:
@@ -780,6 +785,9 @@ paths:
       responses:
         "200":
           description: The moved card and command result.
+          headers:
+            X-Run-Id:
+              $ref: "#/components/headers/X-Run-Id"
           content:
             application/json:
               schema:
@@ -3630,8 +3638,8 @@ components:
         limit (`limit_exceeded`), workflow (`workflow_conflict`), approval
         (`approval_required`/`approval_mismatch`/`approval_expired`/…), run
         state (`run_conflict`/`run_expired`), duplicate id or idempotency key.
-        A `version_conflict` carries the actual entity versions in `versions`
-        for a targeted retry.
+        A `version_conflict` carries the pinned entities' actual versions in
+        `versions` for a targeted retry; WIP/workflow conflicts do not.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
@@ -3850,9 +3858,10 @@ components:
           additionalProperties:
             type: integer
           description: |
-            TASK-200.7 actual entity versions behind a version conflict
-            (`card:<id>`, `column:<id>`, `board:<id>`). A targeted client merges
-            them into `ifMatchVersions` instead of re-reading the board.
+            TASK-200.7 actual versions of the entities pinned by
+            `ifMatchVersions` (`card:<id>`, `column:<id>`, `board:<id>`). A
+            targeted client merges them into the next attempt instead of
+            re-reading the board. Absent on WIP/workflow conflicts.
         columnId:
           type: string
           description: "Column whose WIP/absolute limit refused a `conflict: wip`."

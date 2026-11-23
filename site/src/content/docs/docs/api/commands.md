@@ -117,9 +117,9 @@ client from overwriting another user’s changes.
 
 A refused command answers `409` with a `ConflictError` body
 `{ "conflict": "<category>", "currentVersion": n }`. A `version` conflict
-also carries `versions`, the actual `card:`/`column:`/`board:` versions behind
-the stale precondition; merge them into `ifMatchVersions` and retry only the
-touched entity, or switch to the targeted card intents in
+also carries `versions`, the actual `card:`/`column:`/`board:` versions of
+the entities pinned by `ifMatchVersions`; merge them into the next attempt
+and retry only the touched entity, or switch to the targeted card intents in
 [REST · Targeted card intents](./rest.md#targeted-card-intents). The categories
 are:
 

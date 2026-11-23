@@ -18,14 +18,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pre-images and the SSE command log are unchanged. `ifMatchVersions` pins
   the touched card; the server also pins the card version it read when the
   caller omits it, so concurrent moves/updates of different cards never
-  conflict, while a change to the same card still answers `409`. Version
-  conflicts now carry the actual `card:`/`column:`/`board:` versions in
-  `versions`, which is exported in `ConflictError`/`ApiErrorEnvelope`. MCP
-  `claim_card`, `release_card`, `move_card` and `update_card` use the targeted
+  conflict, while a change to the same card still answers `409`. An exact
+  `commandId` retry is answered from the stored command before the server
+  recomputes a lease, move coordinates or the `expectedDescription` check, so
+  it is a true replay rather than an `idempotency_conflict`/`version_conflict`.
+  Version conflicts carry the pinned `card:`/`column:`/`board:` versions in
+  `versions`, exported in `ConflictError`/`ApiErrorEnvelope`. The loader
+  indexes only the card's column (context/response) or the move's source and
+  destination columns, not every card id on the board. MCP `claim_card`,
+  `release_card`, `move_card` and `update_card` use the targeted
   context/intents: no board read, one-card Definition-of-Done and description
-  checks, and a targeted retry after a conflict. `expectedVersion` remains the
-  explicit full-board `ifMatch = seq` mode; comments already use the targeted
-  card route. `janosik_add_comment` is unchanged and never reads a board.
+  checks, a targeted retry after a conflict, and a command-API fallback when a
+  pre-200.7 server answers the context route with `404`. `expectedVersion`
+  remains the explicit full-board `ifMatch = seq` mode; comments already use
+  the targeted card route. `janosik_add_comment` is unchanged and never reads
+  a board.
   OpenAPI, EN/RU REST and command docs, the MCP README, this changelog, the
   TASK-200 status note, backend unit/e2e coverage and MCP client/tool tests
   are included. No heavy load or 500-agent benchmark was run for this task.
