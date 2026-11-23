@@ -1819,11 +1819,13 @@ export interface AdminObservabilityDto {
     overBudget: { revisions: number; activity: number };
   };
   /**
-   * TASK-200.11: command-log partition and vacuum health. Rows are PostgreSQL
-   * planner estimates (`pg_class.reltuples`), not exact counts — an exact
-   * `count(*)` over a hundred million commands would make the panel itself a
-   * load source. `deadRows` and the vacuum timestamps come from
-   * `pg_stat_user_tables`; `defaultRows` should stay near zero.
+   * TASK-200.11: command-log partition and vacuum health. `partitions.rows`
+   * are PostgreSQL planner estimates (`pg_class.reltuples`), not exact counts —
+   * an exact `count(*)` over a hundred million commands would make the panel
+   * itself a load source. `defaultRows` is the opposite: an exact count over
+   * the three default partitions (normally empty), because it is the signal
+   * that a month needs repair. `deadRows` and vacuum timestamps come from
+   * `pg_stat_user_tables`.
    *
    * Optional for older/fake admin servers; the real API always sends it.
    */

@@ -30,7 +30,9 @@ export const COMMAND_DETAIL_TEXT_MAX = 1_024;
  * Hard ceiling for one side-table blob. The per-field clamp above already
  * bounds ordinary diffs; this catches hand-built/legacy shapes (a long
  * `cardOrder`, a future action with many changes) before they reach the
- * side table. Kept well below a TOAST page so most rows stay inline.
+ * side table. 16 KiB is a worst-case bound, not an inline target: JSONB above
+ * roughly 2 KiB is TOAST-compressed by PostgreSQL, and the command's action
+ * payload is separate and still required for replay.
  */
 export const COMMAND_DETAILS_MAX_BYTES = 16 * 1_024;
 /** More changes than any current action emits; a guard against new ones. */
@@ -340,14 +342,15 @@ function uncappedCommandDetails(
         ids.map((id) => board.cards[id]?.title ?? id).join(", ");
       const from = names(before, previous?.cardIds ?? []);
       const to = names(after, current?.cardIds ?? []);
+      const [fromClip, toClip] = clipPair(from, to);
       return {
         detail: clip(current?.title ?? previous?.title ?? null) ?? undefined,
         ...(from === to
           ? {}
           : {
-              // Column size and card titles are already bounded by LIMITS.
-              // Truncating here would hide changes near the end of the order.
-              changes: [{ field: "cardOrder", from, to }],
+              // Clip around the first reordered pair, not just the prefix:
+              // a reorder in the middle of a long column must stay visible.
+              changes: [{ field: "cardOrder", from: fromClip, to: toClip }],
             }),
       };
     }
@@ -544,16 +547,20 @@ function uncappedCommandDetails(
       // A list reads as its items joined inline; an empty (or cleared) list
       // is `null` — the same "—" the rest of the feed uses.
       const render = (list: string[] | undefined): string | null =>
-        list && list.length > 0 ? clip(list.join("; ")) : null;
+        list && list.length > 0 ? list.join("; ") : null;
       if (
         action.acceptanceCriteria !== undefined &&
         (from.acceptanceCriteria ?? []).join("; ") !==
           (to.acceptanceCriteria ?? []).join("; ")
       ) {
+        const [fromClip, toClip] = clipPair(
+          render(from.acceptanceCriteria),
+          render(to.acceptanceCriteria),
+        );
         changes.push({
           field: "acceptanceCriteria",
-          from: render(from.acceptanceCriteria),
-          to: render(to.acceptanceCriteria),
+          from: fromClip,
+          to: toClip,
         });
       }
       if (
@@ -561,10 +568,14 @@ function uncappedCommandDetails(
         (from.definitionOfDone ?? []).join("; ") !==
           (to.definitionOfDone ?? []).join("; ")
       ) {
+        const [fromClip, toClip] = clipPair(
+          render(from.definitionOfDone),
+          render(to.definitionOfDone),
+        );
         changes.push({
           field: "definitionOfDone",
-          from: render(from.definitionOfDone),
-          to: render(to.definitionOfDone),
+          from: fromClip,
+          to: toClip,
         });
       }
       return changes.length > 0 ? { changes } : null;

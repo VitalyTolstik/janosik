@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { env } from "@/config/env";
@@ -27,7 +28,6 @@ import {
   parseCommandPartitionMonth,
   partitionMonthsToEnsure,
 } from "@/commands/command-log-partitions";
-
 /**
  * TASK-68 — regular housekeeping. Everything that used to accumulate
  * forever is swept by a named job: soft-deleted rows past the retention
@@ -86,12 +86,26 @@ export const PURGE_CHUNK = 500;
 /** Safety bound on chunks per table per run (500 × 200 = 100k rows). */
 const PURGE_MAX_CHUNKS = 200;
 /**
+ * TASK-200.11: the command log is the only table whose inflow alone can beat
+ * the generic budget (50 commands/s = 4.32M/day; 100k/hour = 2.4M/day). A
+ * dedicated 1,000-row chunk × 1,000 chunks allows 1M command rows per run per
+ * table, i.e. 24M/day at the hourly cadence — above target load — while still
+ * bounding a single run. This is a drain budget, not a retention guarantee;
+ * see the size plan in `docs/TASK-200.11-command-log-partitioning.md`.
+ */
+export const COMMAND_PURGE_CHUNK = 1_000;
+export const COMMAND_PURGE_MAX_CHUNKS = 1_000;
+/**
  * The board-subtree purge runs in one board-locked transaction so a restore
  * cannot interleave. Prisma's 5 s default is far too short for a 25k-card
  * board; keep the lock bounded but generous enough for a full subtree.
  */
 export const PURGE_BOARD_TX_TIMEOUT_MS = 5 * 60_000;
 export const PURGE_BOARD_TX_MAX_WAIT_MS = 10_000;
+
+/** Whole-month DDL waits for readers inside the SQL helper, then the sweep retries. */
+export const COMMAND_DROP_ATTEMPTS = 3;
+const COMMAND_DROP_RETRY_DELAY_MS = 75;
 
 /** `YYYY-MM-01` for a UTC month boundary; safe to cast to `date`. */
 function monthSql(month: Date): string {
@@ -116,7 +130,20 @@ export class MaintenanceService {
     if (job === "all") {
       const results: MaintenanceRunResult[] = [];
       for (const name of MAINTENANCE_JOBS) {
-        results.push(...(await this.run(name)));
+        try {
+          results.push(...(await this.run(name)));
+        } catch (error) {
+          // One wedged sweep (a locked partition, a default partition that
+          // needs moving) must not stop retention/token cleanup that follows.
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(`maintenance ${name} failed: ${message}`);
+          results.push({
+            job: name,
+            removed: 0,
+            detail: `failed: ${message}`,
+          });
+        }
       }
       return results;
     }
@@ -590,7 +617,10 @@ export class MaintenanceService {
           });
           if (page.length === 0) break;
           await tx.commandPreimage.deleteMany({
-            where: { commandId: { in: page.map((row) => row.commandId) } },
+            where: {
+              commandId: { in: page.map((row) => row.commandId) },
+              boardId,
+            },
           });
           if (page.length < PURGE_CHUNK) break;
         }
@@ -602,7 +632,7 @@ export class MaintenanceService {
           });
           if (page.length === 0) break;
           await tx.command.deleteMany({
-            where: { id: { in: page.map((row) => row.id) } },
+            where: { id: { in: page.map((row) => row.id) }, boardId },
           });
           if (page.length < PURGE_CHUNK) break;
         }
@@ -661,13 +691,15 @@ export class MaintenanceService {
   private async purgeChunks<T>(
     find: (take: number) => Promise<T[]>,
     purge: (rows: T[]) => Promise<number>,
+    chunkSize: number = PURGE_CHUNK,
+    maxChunks: number = PURGE_MAX_CHUNKS,
   ): Promise<number> {
     let total = 0;
-    for (let chunk = 0; chunk < PURGE_MAX_CHUNKS; chunk += 1) {
-      const rows = await find(PURGE_CHUNK);
+    for (let chunk = 0; chunk < maxChunks; chunk += 1) {
+      const rows = await find(chunkSize);
       if (rows.length === 0) break;
       total += await purge(rows);
-      if (rows.length < PURGE_CHUNK) break;
+      if (rows.length < chunkSize) break;
     }
     return total;
   }
@@ -952,22 +984,46 @@ export class MaintenanceService {
     removed: number;
     detail: string;
   }> {
+    const days = await this.retentionDays();
+    const cutoff = new Date(Date.now() - days * 86_400_000);
     const created: string[] = [];
-    for (const month of partitionMonthsToEnsure(new Date())) {
+    const skipped: string[] = [];
+    const months = partitionMonthsToEnsure(new Date()).filter(
+      // Never recreate a month that retention already dropped (a short
+      // retention window can make the previous month fully expired).
+      (month) => !isWholeMonthExpired(month, cutoff),
+    );
+    for (const month of months) {
       const rows = await this.prisma.$queryRaw<
         Array<{ created: string | null }>
       >(
         Prisma.sql`SELECT janosik_ensure_command_partition(${monthSql(month)}::date) AS created`,
       );
-      const value = rows[0]?.created;
-      if (typeof value === "string" && value !== "") created.push(value);
+      const value = rows[0]?.created ?? "";
+      if (value.startsWith("skipped:")) {
+        // Rows are parked in a default partition for this month. Moving them
+        // is an operator action; create no partial month and keep the rest of
+        // the scheduler running.
+        skipped.push(`${monthSql(month)} ${value.slice("skipped:".length)}`);
+        continue;
+      }
+      if (value !== "") created.push(value);
+    }
+    if (skipped.length > 0) {
+      this.logger.warn(
+        `maintenance ensure-command-partitions skipped default-partition rows: ${skipped.join(" | ")}`,
+      );
+    }
+    const parts: string[] = [];
+    if (created.length > 0) parts.push(`created ${created.join(", ")}`);
+    if (skipped.length > 0) {
+      parts.push(`skipped default-partition rows for ${skipped.join(" | ")}`);
     }
     return {
-      removed: created.length,
-      detail:
-        created.length === 0
-          ? "partitions up to date"
-          : `created ${created.join(", ")}`,
+      // DDL creates partitions; it never removes rows. Keep the generic
+      // maintenance result honest: the detail carries what changed.
+      removed: 0,
+      detail: parts.length === 0 ? "partitions up to date" : parts.join("; "),
     };
   }
 
@@ -1010,20 +1066,50 @@ export class MaintenanceService {
             where: { commandId: { in: rows.map((row) => row.commandId) } },
           })
         ).count,
+      COMMAND_PURGE_CHUNK,
+      COMMAND_PURGE_MAX_CHUNKS,
     );
     removed += await this.purgeChunks(
       (take) =>
         this.prisma.command.findMany({
+          where: stale,
+          select: { id: true, boardId: true },
+          take,
+        }),
+      async (rows) =>
+        (
+          await this.prisma.command.deleteMany({
+            // Pair the id with its board even though CommandKey makes the id
+            // globally unique: a purge page must never cross a board boundary.
+            where: {
+              OR: rows.map((row) => ({
+                id: row.id,
+                boardId: row.boardId,
+              })),
+            },
+          })
+        ).count,
+      COMMAND_PURGE_CHUNK,
+      COMMAND_PURGE_MAX_CHUNKS,
+    );
+    // Whole-month DDL releases keys itself; a partial month's row trigger does
+    // the same. This pass only catches orphans left by an interrupted drop or
+    // a pre-registry row. Key deletion cascades any detail row still present.
+    removed += await this.purgeChunks(
+      (take) =>
+        this.prisma.commandKey.findMany({
           where: stale,
           select: { id: true },
           take,
         }),
       async (rows) =>
         (
-          await this.prisma.command.deleteMany({
+          await this.prisma.commandKey.deleteMany({
             where: { id: { in: rows.map((row) => row.id) } },
           })
         ).count,
+      COMMAND_PURGE_CHUNK,
+      COMMAND_PURGE_MAX_CHUNKS,
     );
     return removed;
   }
@@ -1059,10 +1145,23 @@ export class MaintenanceService {
     let removed = 0;
     for (const month of months.values()) {
       if (!isWholeMonthExpired(month, cutoff)) continue;
-      const dropped = await this.prisma.$queryRaw<Array<{ removed: bigint }>>(
-        Prisma.sql`SELECT janosik_drop_command_partition(${monthSql(month)}::date) AS removed`,
-      );
-      removed += Number(dropped[0]?.removed ?? 0n);
+      for (let attempt = 0; attempt < COMMAND_DROP_ATTEMPTS; attempt += 1) {
+        const dropped = await this.prisma.$queryRaw<Array<{ removed: bigint }>>(
+          Prisma.sql`SELECT janosik_drop_command_partition(${monthSql(month)}::date) AS removed`,
+        );
+        const value = Number(dropped[0]?.removed ?? 0n);
+        if (value >= 0) {
+          removed += value;
+          break;
+        }
+        if (attempt === COMMAND_DROP_ATTEMPTS - 1) {
+          this.logger.warn(
+            `sweep-commands: ${monthSql(month)} is still locked by readers; leaving the partition for the next run`,
+          );
+          break;
+        }
+        await delay(COMMAND_DROP_RETRY_DELAY_MS * (attempt + 1));
+      }
     }
     return removed;
   }

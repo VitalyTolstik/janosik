@@ -516,6 +516,7 @@ export async function writePreimage(
     boardId: string;
     runId: string;
     data: PreimageData;
+    createdAt: Date;
   },
 ): Promise<void> {
   await tx.commandPreimage.create({
@@ -524,6 +525,8 @@ export async function writePreimage(
       boardId: params.boardId,
       runId: params.runId,
       data: jsonSafe(params.data) as Prisma.InputJsonValue,
+      // Same clock as the command: pre-image and command retire together.
+      createdAt: params.createdAt,
     },
   });
 }

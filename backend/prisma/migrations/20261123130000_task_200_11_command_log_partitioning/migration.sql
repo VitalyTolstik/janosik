@@ -94,8 +94,11 @@ COMMENT ON FUNCTION janosik_drop_command_partition(date) IS
   'TASK-200.11: drop one expired month of the command log and its pre-images.';
 
 -- ---------------------------------------------------------------------------
--- 2. Move the legacy tables aside. This is the only ACCESS EXCLUSIVE window
---    on existing data; the copy below works on the new, still-unused tables.
+-- 2. Move the legacy tables aside. Everything below runs in the same
+--    transaction: the old table names keep an ACCESS EXCLUSIVE lock until
+--    commit, including the copy and index builds. Treat the whole migration as
+--    downtime; stop writers/old API replicas first. The new tables are unused
+--    until the transaction commits.
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE "CommandPreimage" RENAME TO "CommandPreimage_legacy_task20011";
