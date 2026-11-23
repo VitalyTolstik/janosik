@@ -56,7 +56,7 @@ import { AttentionService } from "@/notifications/attention.service";
 import { deleteBoardMentionAttention } from "@/notifications/mention-attention";
 import { RealtimeService } from "@/realtime/realtime.service";
 import {
-  loadBoardAggregate,
+  loadBoardAggregateWithRevision,
   toBoardSummary,
   toMemberDto,
 } from "./board-aggregate";
@@ -504,6 +504,59 @@ export class BoardsService {
   }
 
   /**
+   * TASK-200.6: the cheap metadata behind the board read validator.
+   *
+   * `aggregateRevision` is the monotonic content revision maintained by
+   * database triggers: every Board update and every Card INSERT/UPDATE/DELETE
+   * advances it. It is deliberately not `seq` (which can move backwards when
+   * old commands are swept) and not `updatedAt` (which misses direct Card
+   * writes such as comments, attachments and claim expiry). This query does
+   * not load columns/cards/labels, so a conditional request that answers 304
+   * never pays for the aggregate.
+   */
+  async getReadStamp(
+    boardId: string,
+    budget?: { maxWaitMs?: number; timeoutMs?: number },
+  ): Promise<{ revision: bigint; seq: number } | null> {
+    // One statement, one MVCC snapshot: the revision and the SSE baseline
+    // must describe the same moment. Two independent reads could match a
+    // cached revision and still report a newer seq, letting the client skip a
+    // command that is not in its cached body.
+    const sql = Prisma.sql`
+      SELECT b."aggregateRevision" AS "aggregateRevision",
+             (SELECT MAX(c."seq") FROM "Command" c WHERE c."boardId" = b."id") AS "seq"
+      FROM "Board" b
+      WHERE b."id" = ${boardId} AND b."deletedAt" IS NULL
+      LIMIT 1
+    `;
+    type Row = { aggregateRevision: bigint; seq: bigint | null };
+    const rows =
+      budget?.timeoutMs === undefined
+        ? await this.prisma.$queryRaw<Row[]>(sql)
+        : await this.prisma.$transaction(
+            async (tx) => {
+              // Bound the SQL itself, not just the caller's promise. Without
+              // this a cancelled conditional request could leave the raw query
+              // running on the database after the HTTP response is gone.
+              await tx.$queryRaw`SELECT set_config('statement_timeout', ${`${Math.max(1, budget.timeoutMs as number)}ms`}, true)`;
+              return tx.$queryRaw<Row[]>(sql);
+            },
+            {
+              ...(budget.maxWaitMs === undefined
+                ? {}
+                : { maxWait: Math.max(0, budget.maxWaitMs) }),
+              timeout: Math.max(1, budget.timeoutMs),
+            },
+          );
+    const row = rows[0];
+    if (row === undefined) return null;
+    return {
+      revision: row.aggregateRevision,
+      seq: row.seq === null ? 0 : Number(row.seq),
+    };
+  }
+
+  /**
    * Cards on a board whose title, description, a checklist item, a comment or
    * a visible attachment file name matches `q` (case-insensitive substring).
    * Comments and attachments live outside the board aggregate, so this is the
@@ -928,17 +981,19 @@ export class BoardsService {
   async getAggregateWithSeq(
     boardId: string,
     tx?: Prisma.TransactionClient,
-  ): Promise<{ board: BoardAggregate; seq: number }> {
+    budget?: { maxWaitMs?: number; timeoutMs?: number },
+  ): Promise<{ board: BoardAggregate; seq: number; revision: bigint }> {
     const read = async (reader: Prisma.TransactionClient) => {
-      const board = await loadBoardAggregate(reader, boardId);
-      if (!board) throw new NotFoundException("Board not found");
+      const loaded = await loadBoardAggregateWithRevision(reader, boardId);
+      if (!loaded) throw new NotFoundException("Board not found");
       const max = await reader.command.aggregate({
         where: { boardId },
         _max: { seq: true },
       });
       return {
-        board,
+        board: loaded.board,
         seq: max._max.seq === null ? 0 : Number(max._max.seq),
+        revision: loaded.revision,
       };
     };
     // A caller supplying a transaction holds the board write lock.
@@ -946,6 +1001,15 @@ export class BoardsService {
       ? read(tx)
       : this.prisma.$transaction(read, {
           isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          // TASK-200.6: the HTTP read path passes its budget. Without these,
+          // a saturated pool or a slow aggregate surfaced as P2028 → 500
+          // internal_error.
+          ...(budget?.maxWaitMs !== undefined
+            ? { maxWait: budget.maxWaitMs }
+            : {}),
+          ...(budget?.timeoutMs !== undefined
+            ? { timeout: budget.timeoutMs }
+            : {}),
         });
   }
 

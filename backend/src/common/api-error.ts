@@ -41,6 +41,8 @@ const RETRYABLE_CODES = new Set<string>([
   "idempotency_in_progress",
   "rate_limited",
   "board_write_timeout",
+  "board_read_busy",
+  "board_read_timeout",
   "service_unavailable",
 ]);
 

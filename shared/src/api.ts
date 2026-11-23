@@ -306,6 +306,8 @@ export const API_ERROR_CODES = [
   "starter_cleanup_failed",
   "starter_read_failed",
   "board_read_failed",
+  "board_read_busy",
+  "board_read_timeout",
   "invalid_cursor",
   "invalid_filter",
   "invalid_range",

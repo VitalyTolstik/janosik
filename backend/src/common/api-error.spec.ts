@@ -92,6 +92,12 @@ describe("apiErrorEnvelope", () => {
     expect(
       apiErrorEnvelope(409, { code: "idempotency_conflict" }, "r").retryable,
     ).toBe(false);
+    expect(
+      apiErrorEnvelope(503, { code: "board_read_busy" }, "r").retryable,
+    ).toBe(true);
+    expect(
+      apiErrorEnvelope(503, { code: "board_read_timeout" }, "r").retryable,
+    ).toBe(true);
   });
 
   it("preserves an explicit field, limit and currentVersion", () => {
