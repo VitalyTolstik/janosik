@@ -206,13 +206,9 @@ export async function createMcpWorker({
         });
       } catch (error) {
         const elapsed = performance.now() - started;
-        metrics?.recordRequest(
-          `mcp.${name}`,
-          elapsed,
-          errorStatus(error, null, signal),
-        );
+        const status = errorStatus(error, null, signal);
+        metrics?.recordRequest(`mcp.${name}`, elapsed, status);
         metrics?.recordTool(name, elapsed);
-        const status = typeof error?.status === "number" ? error.status : null;
         throw new McpToolError({
           name,
           message: error instanceof Error ? error.message : String(error),
@@ -237,7 +233,7 @@ export async function createMcpWorker({
         throw new McpToolError({
           name,
           message: errorMessage(result),
-          status: status === 0 ? null : status,
+          status,
           code: structured.code ?? null,
           structured,
         });
@@ -275,7 +271,10 @@ export async function createMcpWorker({
 }
 
 function toolStatusError(error) {
-  return error instanceof McpToolError ? error.status : 0;
+  if (error instanceof McpToolError) {
+    return Number.isInteger(error.status) ? error.status : 0;
+  }
+  return 0;
 }
 
 function mcpLeaseConflict(error) {
@@ -371,7 +370,6 @@ export async function runMcpAgentLoop({
             }
             if (toolStatusError(error) === 0) {
               const released = await releaseViaMcp(worker, boardId, cardId);
-              metrics?.recordOrphan(released ? 0 : 1);
               onError?.({
                 agentIndex,
                 boardId,

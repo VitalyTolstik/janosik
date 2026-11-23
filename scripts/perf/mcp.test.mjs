@@ -4,7 +4,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { HttpClient } from "./lib/http.mjs";
 import { RunMetrics } from "./lib/metrics.mjs";
-import { createMcpWorker } from "./lib/mcp.mjs";
+import { McpToolError, createMcpWorker, runMcpAgentLoop } from "./lib/mcp.mjs";
 import { startMockServer } from "./lib/mock-server.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -50,7 +50,7 @@ test("scenario abort cancels an MCP handshake", async () => {
   await assert.rejects(pending, /aborted by scenario signal/);
 });
 
-test("MCP worker close is bounded", async () => {
+test("MCP worker close is bounded and reaps the child", async () => {
   const mock = await startMockServer({ boardCount: 1, cardsPerBoard: 2 });
   const worker = await createMcpWorker({
     baseUrl: mock.baseUrl,
@@ -60,10 +60,115 @@ test("MCP worker close is bounded", async () => {
     metrics: new RunMetrics("mcp-close"),
     closeTimeoutMs: 50,
   });
+  const pid = worker.pid;
   const started = Date.now();
   await worker.close();
   await mock.close();
   assert.equal(Date.now() - started < 3_000, true);
+  assert.equal(Number.isInteger(pid), true);
+  let gone = false;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      gone = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.equal(gone, true);
+});
+
+test("runMcpAgentLoop releases a card after a network-status claim error", async () => {
+  let releaseCalls = 0;
+  const errors = [];
+  const metrics = new RunMetrics("mcp-claim-timeout");
+  const worker = {
+    sampleRss() {},
+    async call(name) {
+      if (name === "janosik_list_ready_cards") {
+        return { results: [{ id: "c1" }] };
+      }
+      if (name === "janosik_get_workflow") {
+        return { doneColumnIds: ["done"], seq: 1 };
+      }
+      if (name === "janosik_claim_card") {
+        throw new McpToolError({
+          name,
+          message: "request timed out",
+          status: 0,
+          code: "ETIMEDOUT",
+        });
+      }
+      if (name === "janosik_release_card") {
+        releaseCalls += 1;
+        return {};
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+  };
+  await runMcpAgentLoop({
+    worker,
+    boardId: "board-1",
+    agentIndex: 0,
+    mode: "work",
+    config: { id: "S2", cadenceMs: 1, jitter: 0, leaseMs: 60_000 },
+    deadline: Date.now() + 25,
+    signal: new AbortController().signal,
+    metrics,
+    random: () => 0.5,
+    onError: (entry) => errors.push(entry),
+  });
+  assert.equal(releaseCalls > 0, true);
+  assert.equal(errors.length > 0, true);
+  assert.equal(
+    errors.every((entry) => entry.orphan === false),
+    true,
+  );
+  assert.equal(metrics.orphans, 0);
+});
+
+test("MCP orphan is counted once by the scenario onError site", async () => {
+  const errors = [];
+  const metrics = new RunMetrics("mcp-orphan-count");
+  const worker = {
+    sampleRss() {},
+    async call(name) {
+      if (name === "janosik_list_ready_cards") {
+        return { results: [{ id: "c1" }] };
+      }
+      if (name === "janosik_get_workflow") {
+        return { doneColumnIds: ["done"], seq: 1 };
+      }
+      if (name === "janosik_claim_card" || name === "janosik_release_card") {
+        throw new McpToolError({
+          name,
+          message: "network down",
+          status: 0,
+          code: "network_error",
+        });
+      }
+      throw new Error(`unexpected tool ${name}`);
+    },
+  };
+  await runMcpAgentLoop({
+    worker,
+    boardId: "board-1",
+    agentIndex: 0,
+    mode: "work",
+    config: { id: "S2", cadenceMs: 1, jitter: 0, leaseMs: 60_000 },
+    deadline: Date.now() + 25,
+    signal: new AbortController().signal,
+    metrics,
+    random: () => 0.5,
+    onError: (entry) => {
+      errors.push(entry);
+      if (entry.orphan === true) metrics.recordOrphan();
+    },
+  });
+  const orphanEvents = errors.filter((entry) => entry.orphan === true).length;
+  assert.equal(orphanEvents > 0, true);
+  assert.equal(metrics.orphans, orphanEvents);
 });
 
 test("MCP tool errors are counted as requests with their real status", async () => {
