@@ -213,7 +213,7 @@ export function SavedViewsMenu({
               aria-label={label}
               data-testid="saved-views-menu"
               disabled={disabled}
-              className="shrink-0 text-muted-foreground transition-colors hover:bg-warning/15 hover:text-(--agent-tone-warning) max-lg:h-11 max-lg:w-11"
+              className="shrink-0 text-muted-foreground transition-colors hover:bg-warning/25 hover:text-(--agent-tone-warning) max-lg:h-11 max-lg:w-11"
             >
               <span className="relative">
                 <Bookmark className="h-5 w-5" aria-hidden />
