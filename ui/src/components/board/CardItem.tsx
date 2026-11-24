@@ -615,13 +615,13 @@ function CardItemView({
           was getting shaved by sub-pixel rounding; the card's own clip plus
           the padding absorb any stray pixel. */}
             <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                 {hasDescription ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
-                          "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-(--tab-text)",
+                          "inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-(--tab-text)",
                           descriptionOnly &&
                             "border-primary/40 bg-primary/10 text-(--tab-text)",
                         )}
@@ -640,9 +640,10 @@ function CardItemView({
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
-                {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
+                {/* Linked-cards badges (TASK-46): both the red blocker icon
               and the link count open the linked-cards popover instead of
-              bubbling into the card dialog. */}
+              bubbling into the card dialog. The blocker is icon-only on the
+              card face so the meta row does not crowd the priority. */}
                 {linkFacts ? (
                   <LinkedCardsPopover
                     boardId={boardId}
@@ -655,7 +656,7 @@ function CardItemView({
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
-                          "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                          "inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
                           done === total
                             ? "border-success/40 bg-success/10 text-(--chip-green)"
                             : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-(--tab-text)",
