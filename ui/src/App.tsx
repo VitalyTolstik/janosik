@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   createBrowserRouter,
   RouterProvider,
@@ -8,10 +8,15 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { Archive, Loader2, Plus } from "lucide-react";
-import { LIMITS, type BoardStarterLocale } from "@janosik/shared";
+import { Archive, Info, Loader2, Plus, Sparkles } from "lucide-react";
+import {
+  LIMITS,
+  type BoardStarterLocale,
+  type BoardTemplateId,
+} from "@janosik/shared";
 
 import { BoardSection } from "@/components/BoardSection";
+import { TemplatePickerDialog } from "@/components/board/TemplatePickerDialog";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { BoardShellSkeleton } from "@/components/board/BoardSkeleton";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
@@ -83,29 +88,45 @@ const PublicBoardPage = lazy(() =>
  */
 export function NoBoardRoute() {
   const { t, lang } = useI18n();
-  const { boards, addBoard } = useBoard();
+  const { boards, addBoard, setHomeRedirectPaused } = useBoard();
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
-  const [busy, setBusy] = useState<"empty" | "starter" | null>(null);
+  const [busy, setBusy] = useState<"empty" | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const submitRef = useRef(false);
 
+  // The provider normally redirects home to the first active board as soon
+  // as one exists. Keep the empty state while the picker shows its success
+  // panel; closing the picker releases the redirect.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    setHomeRedirectPaused(true);
+    return () => setHomeRedirectPaused(false);
+  }, [pickerOpen, setHomeRedirectPaused]);
+
   const allArchived = allBoardsArchived(boards);
+  const existingTitles = useMemo(
+    () => boards.map((board) => board.title),
+    [boards],
+  );
   const trimmed = title.trim();
   const canCreate =
     trimmed.length > 0 && trimmed.length <= LIMITS.boardTitle && busy === null;
-  const starterLocale: BoardStarterLocale = lang.startsWith("ru") ? "ru" : "en";
+  // The example supplies its own name, so only a busy empty-board create can
+  // disable it. This is deliberately a different flag from `canCreate`.
+  const canPickExample = busy === null;
+  const templateLocale: BoardStarterLocale = lang.startsWith("ru")
+    ? "ru"
+    : "en";
 
-  const create = async (template?: "starter") => {
+  const create = async () => {
     // Two Enter presses (or a click plus Enter) can arrive before the disabled
     // state paints; the ref makes the guard synchronous.
     if (!canCreate || submitRef.current) return;
     submitRef.current = true;
-    setBusy(template ?? "empty");
+    setBusy("empty");
     try {
-      const id = await addBoard(
-        trimmed,
-        template ? { template, templateLocale: starterLocale } : undefined,
-      );
+      const id = await addBoard(trimmed);
       if (id) navigate(routes.board(id));
     } finally {
       submitRef.current = false;
@@ -113,50 +134,62 @@ export function NoBoardRoute() {
     }
   };
 
+  const createFromTemplate = async (
+    name: string,
+    template: BoardTemplateId,
+  ): Promise<string | null> => {
+    // This path must not early-return on `canCreate`: the generated name is
+    // already valid and the empty-state field is intentionally untouched.
+    if (busy !== null) return null;
+    return await addBoard(name, { template, templateLocale });
+  };
+
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <div className="flex w-full max-w-sm flex-col items-center gap-4 text-center">
+    <main className="flex flex-1 items-center justify-center p-6 max-[620px]:p-4">
+      <div className="relative flex w-full max-w-[500px] flex-col items-center text-center">
         <span
           aria-hidden
-          className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground"
+          className="mb-4 flex h-[54px] w-[54px] items-center justify-center rounded-2xl border border-border bg-card text-muted-foreground shadow-sm"
         >
-          <Archive className="h-6 w-6" />
+          <Archive className="h-[23px] w-[23px]" />
         </span>
-        <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold text-foreground">
-            {allArchived ? t("board.emptyArchived") : t("board.noBoard")}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {allArchived
-              ? t("board.emptyArchivedHint")
-              : t("board.emptyNewHint")}
-          </p>
-        </div>
+        <h2 className="mb-[7px] text-[23px] font-semibold leading-tight tracking-[-0.025em] text-foreground">
+          {allArchived ? t("board.emptyArchived") : t("board.noBoard")}
+        </h2>
+        <p className="mx-auto max-w-[360px] text-[13px] leading-[1.55] text-muted-foreground">
+          {allArchived ? t("board.emptyArchivedHint") : t("board.emptyNewHint")}
+        </p>
+
         <form
           noValidate
-          className="w-full text-left"
+          className="mt-[18px] w-full rounded-[15px] border border-border bg-card p-[17px] text-left shadow-md"
           onSubmit={(event) => {
             event.preventDefault();
             void create();
           }}
         >
-          <label
-            htmlFor="first-board-name"
-            className="text-sm font-medium text-foreground"
-          >
-            {t("board.firstRun.nameLabel")}
-          </label>
-          <div className="relative mt-1.5">
+          <div className="mb-1.5 flex items-center gap-[7px]">
+            <label
+              htmlFor="first-board-name"
+              className="text-[12.5px] font-semibold text-foreground"
+            >
+              {t("board.firstRun.nameLabel")}
+            </label>
+            <span className="rounded-[4px] border border-border px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              {t("board.firstRun.nameOptional")}
+            </span>
+          </div>
+          <div className="relative">
             <input
               id="first-board-name"
               name="board-title"
-              autoFocus={boards.length === 0}
               value={title}
               maxLength={LIMITS.boardTitle}
               onChange={(event) => setTitle(event.target.value)}
               placeholder={t("board.firstRun.placeholder")}
+              aria-describedby="first-board-name-help first-board-name-status"
               data-testid="empty-board-name"
-              className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/70 hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
             />
             <LimitCounter
               length={title.length}
@@ -165,36 +198,65 @@ export function NoBoardRoute() {
               testId="empty-board-limit"
             />
           </div>
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
+          <p
+            id="first-board-name-help"
+            className="mt-1.5 text-[10.5px] leading-[1.45] text-muted-foreground"
+          >
+            {t("board.firstRun.nameHelper")}
+          </p>
+          <div className="mt-3 flex gap-2 max-[620px]:flex-col">
+            <button
+              type="button"
+              disabled={!canPickExample}
+              onClick={() => setPickerOpen(true)}
+              data-testid="empty-create-template"
+              className="inline-flex h-10 flex-[1.25] items-center justify-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden />
+              {t("board.firstRun.starterCta")}
+            </button>
             <button
               type="submit"
               disabled={!canCreate}
               data-testid="empty-create-board"
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex h-10 flex-[0.9] items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
-              <Plus className="h-4 w-4" aria-hidden />
+              {busy === "empty" ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-4 w-4" aria-hidden />
+              )}
               {busy === "empty"
                 ? t("board.firstRun.creating")
                 : t("board.firstRun.emptyCta")}
             </button>
-            <button
-              type="button"
-              disabled={!canCreate}
-              onClick={() => void create("starter")}
-              data-testid="empty-create-template"
-              className="inline-flex h-9 items-center rounded-lg border border-border bg-card px-4 text-sm font-medium text-foreground transition-colors hover:bg-hover disabled:pointer-events-none disabled:opacity-50"
-            >
-              {busy === "starter"
-                ? t("board.firstRun.creating")
-                : t("board.firstRun.starterCta")}
-            </button>
           </div>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            {t("board.firstRun.starterHint")}
+          <p
+            id="first-board-name-status"
+            className="mt-2.5 flex items-start gap-1 text-[10.5px] leading-[1.5] text-muted-foreground"
+          >
+            <Info
+              aria-hidden
+              className="mt-0.5 h-3 w-3 shrink-0 text-primary"
+            />
+            {trimmed.length > 0
+              ? t("board.firstRun.exampleHint")
+              : t("board.firstRun.emptyDisabledHint")}
           </p>
         </form>
+        <p className="mt-3.5 text-[10.5px] text-muted-foreground">
+          {t("board.firstRun.footHint")}
+        </p>
         {allArchived ? <BoardSwitcher archivedEntry /> : null}
       </div>
+      <TemplatePickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        existingTitles={existingTitles}
+        initialName={title}
+        createBoard={createFromTemplate}
+        onOpenBoard={(boardId) => navigate(routes.board(boardId))}
+      />
     </main>
   );
 }
