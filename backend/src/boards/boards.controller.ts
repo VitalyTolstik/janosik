@@ -81,6 +81,7 @@ import { plainRecord } from "@/approvals/approval-plan";
 import { CommandsService } from "@/commands/commands.service";
 import { markGuaranteedRollback } from "@/common/rollback-certainty";
 import { boardStarterCommands } from "./board-starter";
+import { boardTemplateCommands } from "./board-templates";
 import { BoardsService } from "./boards.service";
 import { DeletedItemsService } from "./deleted-items.service";
 import { ReadyService } from "./ready.service";
@@ -231,9 +232,13 @@ export class BoardsController {
     // Board creation is account-wide `admin` (TASK-166): a board-scoped or
     // worker/reviewer token cannot mint boards outside its mandate.
     assertAccountWidePreset(principal, "board.create");
-    if (dto.template !== "starter" && dto.templateLocale !== undefined) {
+    // `@IsOptional()` lets a JSON null through, so normalize it before any
+    // lookup. A locale without a template would silently do nothing; every
+    // curated template and the legacy starter accept one.
+    const template = dto.template ?? undefined;
+    if (template === undefined && dto.templateLocale !== undefined) {
       throw new BadRequestException({
-        message: "templateLocale requires template=starter",
+        message: "templateLocale requires a template",
         field: "templateLocale",
       });
     }
@@ -244,34 +249,32 @@ export class BoardsController {
       requestHash: hashIdempotentRequest({
         title: dto.title,
         // Old clients that omit the template keep their previous hash.
-        ...(dto.template
-          ? { template: dto.template, locale: dto.templateLocale ?? "en" }
-          : {}),
+        ...(template ? { template, locale: dto.templateLocale ?? "en" } : {}),
       }),
       run: async () => {
         const board = await this.boards.createBoard(user.id, dto, principal);
-        if (dto.template !== "starter") {
+        if (template === undefined) {
           return { body: board, status: 201, resourceId: board.id };
         }
-        // The starter is ordinary content, so it goes through the command log
-        // as one all-or-nothing batch created by the new board's ADMIN. It is
-        // a separate transaction from the board insert, so a failure must
+        // Template content is ordinary content, so it goes through the command
+        // log as one all-or-nothing batch created by the new board's ADMIN. It
+        // is a separate transaction from the board insert, so a failure must
         // remove that freshly created board before the idempotency key is
         // released — otherwise an automatic 503/504 retry duplicates the board.
+        const templateLocale = dto.templateLocale ?? "en";
+        const templateCommands =
+          template === "starter"
+            ? boardStarterCommands(board.id, templateLocale)
+            : boardTemplateCommands(board.id, template, templateLocale);
         try {
-          await this.commands.applyBatch(
-            board.id,
-            user.id,
-            boardStarterCommands(board.id, dto.templateLocale ?? "en"),
-            {
-              actorType: actorTypeOf(principal),
-              attribution: requestAttribution(principal),
-              principal,
-              ...(principal?.via === "pat"
-                ? { run: { kind: "batch" as const } }
-                : {}),
-            },
-          );
+          await this.commands.applyBatch(board.id, user.id, templateCommands, {
+            actorType: actorTypeOf(principal),
+            attribution: requestAttribution(principal),
+            principal,
+            ...(principal?.via === "pat"
+              ? { run: { kind: "batch" as const } }
+              : {}),
+          });
         } catch (error) {
           const cleaned = await this.boards.discardFreshBoard(board.id);
           if (!cleaned) {

@@ -15,6 +15,8 @@ export * from "./store/migrate";
 export * from "./store/validate";
 export * from "./store/seed-data";
 export * from "./board-starter";
+export * from "./board-templates";
+export * from "./board-template-plan";
 export * from "./utils/text";
 export * from "./utils/column-limits";
 export * from "./utils/board-serialization";

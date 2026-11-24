@@ -4,6 +4,8 @@ import { Test } from "@nestjs/testing";
 import type { Board, BoardEnvelope } from "@janosik/shared";
 import {
   LIMITS,
+  boardTemplateCommandCount,
+  boardTemplatePlan,
   normalizeBoards,
   parseExport,
   serializeExport,
@@ -216,6 +218,89 @@ describe("Boards API (e2e)", () => {
         .expect(200);
       expect(commands.body).toHaveLength(8);
       expect(commands.body[0]?.action).toMatchObject({ type: "ADD_COLUMN" });
+    });
+
+    it("creates a curated template with labels, due dates and checklists", async () => {
+      const res = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Launch plan — Nov 24",
+          template: "product-launch",
+          templateLocale: "en",
+        })
+        .expect(201);
+
+      const board = res.body as Board;
+      expect(board.columns.map((column) => column.title)).toEqual([
+        "Strategy",
+        "Build",
+        "Launch prep",
+        "Shipped",
+      ]);
+      expect(board.labels.map((label) => label.name)).toEqual([
+        "Strategy",
+        "Decision",
+        "Web",
+        "Video",
+        "Email",
+        "Enablement",
+        "Research",
+      ]);
+      const cards = Object.values(board.cards);
+      expect(cards).toHaveLength(7);
+      const brief = cards.find(
+        (card) => card.title === "Write the launch brief",
+      );
+      expect(brief?.labelIds).toHaveLength(2);
+      expect(brief?.description).toContain("one-line promise");
+      expect(brief?.dueDate).toEqual(expect.any(Number));
+      expect(brief?.checklists?.[0]?.title).toBe("Brief checklist");
+      expect(brief?.checklists?.[0]?.items).toHaveLength(4);
+
+      const commands = await server()
+        .get(`/api/v1/boards/${board.id}/commands`)
+        .set(auth(adminToken))
+        .expect(200);
+      const plan = boardTemplatePlan(
+        "product-launch",
+        "en",
+        randomUUID,
+        Date.now(),
+      );
+      expect(commands.body).toHaveLength(boardTemplateCommandCount(plan));
+      expect(commands.body.length).toBeLessThanOrEqual(80);
+      expect(commands.body[0]?.action).toMatchObject({ type: "ADD_COLUMN" });
+      expect(
+        commands.body.some(
+          (command: { action: { type: string } }) =>
+            command.action.type === "ADD_LABEL",
+        ),
+      ).toBe(true);
+    });
+
+    it("accepts templateLocale for every curated template", async () => {
+      const res = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Спринт 2026-W48",
+          template: "sprint",
+          templateLocale: "ru",
+        })
+        .expect(201);
+      const board = res.body as Board;
+      expect(board.columns.map((column) => column.title)).toEqual([
+        "Бэклог",
+        "В работе",
+        "Ревью",
+        "Готово",
+      ]);
+      expect(
+        Object.values(board.cards).some(
+          (card) => card.title === "Выпустить сохранённые виды",
+        ),
+      ).toBe(true);
     });
 
     it("creates a Russian starter and an empty board without template", async () => {
