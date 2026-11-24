@@ -330,6 +330,61 @@ describe("Board aggregate cache (e2e)", () => {
     expect(board.cards[secondCard].description).toBe("no reload");
   });
 
+  it("warms the cache from snapshot reads and plan previews", async () => {
+    const boardId = await createBoard("Snapshot warming");
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: columnId,
+      title: "Todo",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: cardId,
+      columnId,
+      title: "Task",
+    });
+    cache.clear();
+
+    // Legacy GET opens its own RepeatableRead transaction: a miss may store.
+    await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(session))
+      .expect(200);
+    const afterRead = await revision(boardId);
+    expect(cache.revisionOf(boardId)).toBe(afterRead);
+
+    load.mockClear();
+    await server()
+      .get(`/api/v1/boards/${boardId}`)
+      .set(auth(session))
+      .expect(200);
+    expect(load).not.toHaveBeenCalled();
+
+    // Plan preview uses loadFresh (same snapshot rule).
+    cache.clear();
+    await server()
+      .post(`/api/v1/boards/${boardId}/plans`)
+      .set(auth(session))
+      .send({
+        commands: [
+          {
+            commandId: randomUUID(),
+            action: { type: "UPDATE_CARD", cardId, title: "Previewed" },
+          },
+        ],
+      })
+      .expect(200);
+    const afterPreview = await revision(boardId);
+    expect(cache.revisionOf(boardId)).toBe(afterPreview);
+
+    load.mockClear();
+    const hit = await loader.loadWithRevision(prisma, boardId);
+    expect(hit?.revision).toBe(afterPreview);
+    expect(load).not.toHaveBeenCalled();
+  });
+
   it("keeps the cached aggregate identical to a fresh load after representative actions", async () => {
     const boardId = await createBoard("Parity board");
     const firstColumn = randomUUID();
@@ -1231,19 +1286,29 @@ describe("Board aggregate cache (e2e)", () => {
     );
     await started;
 
+    const originalRun = boardWrite.run.bind(boardWrite);
+    let acceptRun!: () => void;
+    const acceptRunEntered = new Promise<void>((resolve) => {
+      acceptRun = resolve;
+    });
+    const runSpy = jest.spyOn(boardWrite, "run").mockImplementation((async (
+      ...args: unknown[]
+    ) => {
+      if (args[0] === boardId) acceptRun();
+      return (originalRun as (...a: unknown[]) => Promise<unknown>)(...args);
+    }) as never);
+
     const accept = server()
       .post(`/api/v1/invitations/${invitationId}/accept`)
       .set(auth(inviteeToken));
     let settled = false;
-    void accept.then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    const accepted = accept.then((res) => {
+      settled = true;
+      return res;
+    });
+    // The request has entered BoardWriteService.run and is now blocked on
+    // the user key we hold on another board. No wall-clock guess.
+    await acceptRunEntered;
     expect(settled).toBe(false);
     expect(
       (
@@ -1256,7 +1321,8 @@ describe("Board aggregate cache (e2e)", () => {
 
     release();
     await held;
-    await accept.expect(200);
+    expect((await accepted).status).toBe(200);
+    runSpy.mockRestore();
     expect(
       (
         await prisma.boardMember.findUnique({
@@ -1384,6 +1450,102 @@ describe("Board aggregate cache (e2e)", () => {
     ).toBe(0);
     expect(
       await prisma.attachment.count({ where: { uploadedById: userId } }),
+    ).toBe(0);
+  });
+
+  it("recounts a card first seen by the post-lock attachment re-read", async () => {
+    const registration = await server()
+      .post("/api/v1/auth/register")
+      .send({
+        email: "late-attachment@example.com",
+        password: PASSWORD,
+        displayName: "Late attachment",
+      })
+      .expect(201);
+    const userToken = registration.body.accessToken as string;
+    const userId = registration.body.user.id as string;
+    const boardId = await server()
+      .post("/api/v1/boards")
+      .set(auth(userToken))
+      .send({ title: "Late attachment board" })
+      .expect(201)
+      .then((res) => res.body.id as string);
+    const columnId = randomUUID();
+    const attachedCard = randomUUID();
+    const lateCard = randomUUID();
+    await command(
+      boardId,
+      { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+      { token: userToken },
+    );
+    for (const [id, title] of [
+      [attachedCard, "Attached"],
+      [lateCard, "Late"],
+    ] as const) {
+      await command(
+        boardId,
+        { type: "ADD_CARD", newCardId: id, columnId, title },
+        { token: userToken },
+      );
+    }
+    await prisma.card.update({
+      where: { id: lateCard },
+      data: { attachmentCount: 9 },
+    });
+    await server()
+      .post(`/api/v1/cards/${attachedCard}/attachments`)
+      .set(auth(userToken))
+      .attach("file", PDF, {
+        filename: "late.pdf",
+        contentType: "application/pdf",
+      })
+      .expect(201);
+
+    let attachmentReads = 0;
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    const transactionSpy = jest
+      .spyOn(prisma, "$transaction")
+      .mockImplementation(((fn: unknown, options: unknown) =>
+        originalTransaction(async (tx: Prisma.TransactionClient) => {
+          const wrapped = new Proxy(tx, {
+            get(target, property, receiver) {
+              if (property !== "attachment") {
+                return Reflect.get(target, property, receiver);
+              }
+              const attachment = target.attachment;
+              return new Proxy(attachment, {
+                get(delegate, key, delegateReceiver) {
+                  if (key !== "findMany") {
+                    return Reflect.get(delegate, key, delegateReceiver);
+                  }
+                  return async (args: unknown) => {
+                    attachmentReads += 1;
+                    const rows = await delegate.findMany(args as never);
+                    return attachmentReads === 2
+                      ? [...rows, { cardId: lateCard }]
+                      : rows;
+                  };
+                },
+              });
+            },
+          });
+          return (fn as (client: unknown) => Promise<unknown>)(wrapped);
+        }, options as never)) as never);
+
+    try {
+      await app.get(AccountDeletionService).deleteAccount(userId);
+    } finally {
+      transactionSpy.mockRestore();
+    }
+
+    expect(attachmentReads).toBeGreaterThanOrEqual(2);
+    expect(
+      (
+        await prisma.card.findUniqueOrThrow({
+          where: { id: lateCard },
+          select: { attachmentCount: true },
+        })
+      ).attachmentCount,
     ).toBe(0);
   });
 

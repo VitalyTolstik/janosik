@@ -717,11 +717,13 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 - `BoardAggregateLoader` — кэширующий вход для команд, планов, approvals
   и legacy-чтения `GET /boards/:id`. Если `Board` уже прочитан, ревизия
   берётся из него (лишнего `SELECT` на попадании нет); узкие policy-чтения
-  передают только `aggregateRevision`. **Промах загружает из БД и не
-  кэширует**: кэш наполняется только явным post-commit `remember` из
-  `CommandsService.applyBatch`. Поэтому нет ни второго пула-соединения, ни
-  READ COMMITTED/незакоммиченного окна, которое пыталась закрыть прежняя
-  fill-проверка; чтения, планы и approvals — только потребители.
+  передают только `aggregateRevision`. **Обычный промах загружает из БД и
+  не кэширует.** `snapshot: true` разрешает запись только потому, что
+  вызывающий уже читает board row и все aggregate-запросы в одном
+  REPEATABLE READ снимке: так работает собственный legacy-read
+  (`getAggregateWithSeq`) и `loadFresh` для plans/approvals. Команда
+  по-прежнему пишет через явный post-commit `remember`. Второго
+  пула-соединения и READ COMMITTED fill-проверки нет.
 - В `CommandsService.applyBatch` финальная ревизия читается в той же
   транзакции после всех записей, а итоговый in-memory aggregate кладётся в
   кэш только после успешного `BoardWriteService.run` — до публикации
@@ -758,7 +760,8 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   держится на триггерах 200.6. Инвариант блокировок: **user-membership
   lock → sorted board locks**. Его берут все пути accepted-membership
   (`InvitationsService.accept`, `createBoard`, admin add и admin accept,
-  board import), `revokeApiTokens` (user keys → один статический набор
+  board import, demo provisioning), `revokeApiTokens` (user keys → один
+  статический набор
   `ApiToken.boardId` + accepted memberships + claim-доски, без late-loop) и
   удаление аккаунта (user key до чтения membership/claims, post-lock набор
   вложений и recount). `sweepClaims` — по доске и чанками по 100.
@@ -768,21 +771,22 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   санитизируется.
 - Тесты: `backend/src/boards/board-aggregate-cache.spec.ts` (LRU по
   entries/bytes, disabled=0, несовпадение ревизии, stale set, deep-clone,
-  счётчики, oversize), `board-aggregate-loader.spec.ts` (miss не заполняет
-  кэш; fill только через `remember`), unit на user/board lock order,
-  `revokeApiTokens` (один sorted set, releaseUserClaims), `sweepClaims`
-  (чанки + ожидание in-flight writer) и
+  счётчики, oversize), `board-aggregate-loader.spec.ts` (miss без snapshot
+  не заполняет; snapshot/loadFresh заполняет; hit из `remember`), unit на
+  user/board lock order, demo membership locks, `revokeApiTokens` (один
+  sorted set, releaseUserClaims, fail-closed code), `sweepClaims` (чанки +
+  ожидание in-flight writer) и
   `backend/test/task-200-10-aggregate-cache.e2e-spec.ts` (вторая команда
-  без aggregate-`SELECT`, read-miss без fill, паритет кэша и свежей
-  загрузки на add/update/move/archive/delete card/label/checklist/column/
-  board, duplicate, restores/order/crafted payload, coherency внешних
-  писателей, membership-lock wait, lapsed-claim sweep, account schedule и
-  две реплики).
+  без aggregate-`SELECT`, read/plan snapshot miss заполняет, обычный read
+  miss — нет, паритет кэша и свежей загрузки на add/update/move/archive/
+  delete card/label/checklist/column/board, duplicate, restores/order/
+  crafted payload, coherency внешних писателей, membership-lock wait,
+  lapsed-claim sweep, account schedule, post-lock attachment re-read и две
+  реплики).
 - **Ограничение:** заявленные в DoD «5–10× throughput» здесь не
   измерялись; это остаётся замером 200.14. Кэш экономит 4 aggregate-запроса
   на команду при попадании, но на запись добавляет пересборку затронутых
-  карточек и колонок (2–3 узких запроса) и внешнюю проверку ревизии на
-  промахе.
+  карточек и колонок (2–3 узких запроса).
 
 ---
 

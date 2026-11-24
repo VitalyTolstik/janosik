@@ -27,14 +27,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   crafted ghost/archived ids in a `RESTORE_*` payload never enter the cache.
   Board-lock coverage uses one global order, user-membership lock → sorted
   board locks: every accepted-membership path (`InvitationsService.accept`,
-  board create/import, admin add/accept), `sweepClaims` (chunked per board
+  board create/import, admin add/accept, demo provisioning), `sweepClaims`
+  (chunked per board
   and serialized with an in-flight writer), account erasure (user key before
   membership/claim/attachment reads; post-lock attachment recount) and token
   revocation/account schedule (one static sorted set of token scope,
-  accepted memberships and claim boards; no late-lock loop). The cache is
-  warmed only by the command transaction’s post-commit `remember`; a read or
-  plan miss loads from the DB and does not fill, so there is no second pooled
-  connection and no READ COMMITTED fill window. A repaired or
+  accepted memberships and claim boards; no late-lock loop). The cache warms
+  from the command transaction’s post-commit `remember` and from misses made
+  inside a REPEATABLE READ snapshot (`getAggregateWithSeq`’s own transaction
+  and `loadFresh` for plans/approvals); an ordinary read miss does not fill.
+  There is no second pooled connection or READ COMMITTED fill check. A
+  repaired or
   cleared workflow drops the sticky `workflowInvalid` flag, and
   `attachmentCount` follows the blob owner when a description embeds another
   card's upload. Bounds are LRU entries and approximate JSON bytes
