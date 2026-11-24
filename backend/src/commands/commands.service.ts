@@ -527,16 +527,12 @@ export class CommandsService {
     board: BoardRow,
     actions: BoardAction[],
     targeted: boolean,
-    cacheOnMiss = true,
   ): Promise<BoardAggregate | null> {
     if (!targeted) {
       // TASK-200.10: the revision from the row we already hold validates the
-      // process cache. Inside the write transaction a miss is deliberately
-      // not stored — only the post-commit result is known to be committed.
-      return this.boardAggregates.load(client, boardId, {
-        board,
-        cacheOnMiss,
-      });
+      // process cache. A miss loads from the DB and is never stored here;
+      // only the post-commit `remember` fills the cache.
+      return this.boardAggregates.load(client, boardId, { board });
     }
     const loaded = await loadTargetedBoardAggregate(client, boardId, {
       board,
@@ -962,9 +958,6 @@ export class CommandsService {
             board,
             fresh.map((entry) => entry.action),
             options.targeted === true,
-            // A miss here may observe an uncommitted revision (earlier
-            // commands of this batch); cache only after `run` resolves.
-            false,
           );
           if (aggregate === null) {
             throw new NotFoundException("Board not found");
@@ -1358,11 +1351,7 @@ export class CommandsService {
     client: Prisma.TransactionClient | PrismaService = this.prisma,
     options: { exemptRestoreLimits?: boolean } = {},
   ): Promise<InversePreconditionFailure[]> {
-    let board = await this.boardAggregates.load(client, boardId, {
-      // Called with a write transaction on the revert path; a miss may see
-      // uncommitted revisions and must not be cached.
-      cacheOnMiss: false,
-    });
+    let board = await this.boardAggregates.load(client, boardId);
     if (board === null) return [];
     const currentVersion = await this.latestSeq(boardId, client);
     const failures: InversePreconditionFailure[] = [];

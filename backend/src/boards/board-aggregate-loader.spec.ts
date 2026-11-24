@@ -1,6 +1,5 @@
 import type { Board as BoardRow, Prisma } from "@prisma/client";
 import type { BoardAggregate } from "@janosik/shared";
-import type { PrismaService } from "@/common/prisma/prisma.service";
 import * as aggregateModule from "./board-aggregate";
 import { BoardAggregateCacheService } from "./board-aggregate-cache";
 import { BoardAggregateLoader } from "./board-aggregate-loader";
@@ -49,41 +48,35 @@ describe("BoardAggregateLoader", () => {
   afterEach(() => loadSpy.mockReset());
   afterAll(() => loadSpy.mockRestore());
 
-  it("does not store a miss when cacheOnMiss is false", async () => {
+  it("loads a miss without filling the cache", async () => {
     const cache = new BoardAggregateCacheService(BOUNDS);
     const loader = new BoardAggregateLoader(cache);
     const db = dbDouble();
     const board = boardRow(5n);
     loadSpy.mockResolvedValue({ board: aggregate(), revision: 5n });
 
-    await expect(
-      loader.load(db, "board-1", { board, cacheOnMiss: false }),
-    ).resolves.toEqual(aggregate());
+    await expect(loader.load(db, "board-1", { board })).resolves.toEqual(
+      aggregate(),
+    );
     expect(loadSpy).toHaveBeenCalledWith(db, "board-1", { board });
     expect(cache.revisionOf("board-1")).toBeNull();
-    // A miss inside a write transaction must not even run the consistency
-    // check — the caller caches explicitly after commit instead.
+    // No revision re-read / second connection on the read path at all.
     expect(db.board.findUnique).not.toHaveBeenCalled();
   });
 
-  it("stores only when the revision did not move during the load", async () => {
+  it("does not fill on a hint-only miss or a no-hint miss", async () => {
     const cache = new BoardAggregateCacheService(BOUNDS);
     const loader = new BoardAggregateLoader(cache);
     const db = dbDouble();
-    const board = boardRow(5n);
     loadSpy.mockResolvedValue({ board: aggregate(), revision: 5n });
 
-    (db.board.findUnique as jest.Mock).mockResolvedValueOnce({
-      aggregateRevision: 6n,
-    });
-    await loader.load(db, "board-1", { board });
+    await loader.load(db, "board-1", { revision: 5n });
     expect(cache.revisionOf("board-1")).toBeNull();
 
-    (db.board.findUnique as jest.Mock).mockResolvedValueOnce({
-      aggregateRevision: 5n,
-    });
-    await loader.load(db, "board-1", { board });
-    expect(cache.revisionOf("board-1")).toBe(5n);
+    (db.board.findFirst as jest.Mock).mockResolvedValue(boardRow(5n));
+    await loader.load(db, "board-1");
+    expect(cache.revisionOf("board-1")).toBeNull();
+    expect(loadSpy).toHaveBeenCalledTimes(2);
   });
 
   it("serves a hit without calling the primitive and returns a clone", async () => {
@@ -99,25 +92,6 @@ describe("BoardAggregateLoader", () => {
     expect(loaded?.revision).toBe(7n);
     expect(loaded?.board.cards["card-1"]!.title).toBe("One");
     expect(loadSpy).not.toHaveBeenCalled();
-  });
-
-  it("runs the fill check through the injected reader, not the caller's transaction", async () => {
-    const cache = new BoardAggregateCacheService(BOUNDS);
-    const external = {
-      board: {
-        findUnique: jest.fn().mockResolvedValue({ aggregateRevision: 5n }),
-      },
-    } as unknown as PrismaService;
-    const loader = new BoardAggregateLoader(cache, external);
-    const db = dbDouble();
-    const board = boardRow(5n);
-    loadSpy.mockResolvedValue({ board: aggregate(), revision: 5n });
-
-    await loader.load(db, "board-1", { board });
-
-    expect(external.board.findUnique).toHaveBeenCalledTimes(1);
-    expect(db.board.findUnique).not.toHaveBeenCalled();
-    expect(cache.revisionOf("board-1")).toBe(5n);
   });
 
   it("remembers a post-commit aggregate the command path hands over", () => {

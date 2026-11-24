@@ -1,7 +1,6 @@
-import { Injectable, Optional } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import type { Board as BoardRow, Prisma } from "@prisma/client";
 import type { BoardAggregate } from "@janosik/shared";
-import { PrismaService } from "@/common/prisma/prisma.service";
 import { loadBoardAggregateWithRevision } from "./board-aggregate";
 import { BoardAggregateCacheService } from "./board-aggregate-cache";
 
@@ -18,15 +17,6 @@ export interface BoardAggregateLoadOptions {
    * a miss loads the full row itself.
    */
   revision?: bigint;
-  /**
-   * Store a miss. The command path and `inspectInversePreconditions` (a
-   * revert preview) set this to false: a load inside a write transaction,
-   * after commands could have run, may observe an uncommitted revision. That
-   * revision is safe to *read* under the board lock but must only be cached
-   * after `BoardWriteService.run` resolves, which the command service does
-   * explicitly.
-   */
-  cacheOnMiss?: boolean;
 }
 
 export interface LoadedBoardAggregate {
@@ -38,26 +28,19 @@ export interface LoadedBoardAggregate {
  * TASK-200.10: the cached front door for full board aggregates.
  *
  * `loadBoardAggregate`/`loadBoardAggregateWithRevision` stay the uncached
- * primitives; this service checks the revision-keyed cache first and fills it
- * on a miss. Callers that already hold a `Board` row pass it in, so a cache
- * hit costs no query at all; callers with only the revision from a narrow
- * policy read can skip the aggregate queries on a hit too.
+ * primitives; this service checks the revision-keyed cache and, on a miss,
+ * loads without storing. The cache is filled **only** by the command path's
+ * explicit `remember` after `BoardWriteService.run` commits. That removes the
+ * separate-connection fill check and the READ COMMITTED/uncommitted-write
+ * window it tried to police: reads, plans and approvals are pure consumers.
  *
- * Nothing here is required for correctness: a miss falls through to the same
- * queries as before. The cache is an optimization and must never fail a
- * request; `set` swallows an unserializable value, and the fill's revision
- * check runs through a separate client (when available) so a failed check
- * cannot abort the caller's transaction.
+ * Callers that already hold a `Board` row pass it in, so a cache hit costs no
+ * query at all; callers with only the revision from a narrow policy read can
+ * skip the aggregate queries on a hit too.
  */
 @Injectable()
 export class BoardAggregateLoader {
-  constructor(
-    private readonly cache: BoardAggregateCacheService,
-    // Optional only for direct-construction unit tests. In Nest the global
-    // `PrismaModule` supplies it; it keeps the revision check outside a
-    // caller's transaction (a failed statement there would abort it).
-    @Optional() private readonly revisionReader?: PrismaService,
-  ) {}
+  constructor(private readonly cache: BoardAggregateCacheService) {}
 
   /** `false` when the configured bounds disable storage (0 entries/bytes). */
   get enabled(): boolean {
@@ -77,7 +60,7 @@ export class BoardAggregateLoader {
   /**
    * The aggregate plus the revision it was built from. On a cache hit both
    * come from the entry; on a miss the revision is whatever the board row in
-   * this transaction says (never the caller's hint).
+   * this transaction says (never the caller's hint). A miss is not stored.
    */
   async loadWithRevision(
     db: Prisma.TransactionClient,
@@ -91,29 +74,20 @@ export class BoardAggregateLoader {
     }
 
     if (options.board !== undefined) {
-      const loaded = await loadBoardAggregateWithRevision(db, boardId, {
+      return loadBoardAggregateWithRevision(db, boardId, {
         board: options.board,
       });
-      if (loaded !== null && options.cacheOnMiss !== false) {
-        await this.fillCache(db, boardId, loaded);
-      }
-      return loaded;
     }
 
     if (hint !== undefined) {
       // A narrow policy read gave us the revision but not the row. A miss
       // re-reads the full row exactly like the uncached primitive did.
-      const loaded = await loadBoardAggregateWithRevision(db, boardId);
-      if (loaded !== null && options.cacheOnMiss !== false) {
-        await this.fillCache(db, boardId, loaded);
-      }
-      return loaded;
+      return loadBoardAggregateWithRevision(db, boardId);
     }
 
     // No hint: read the row once, then either answer from the cache or hand
-    // that same row to the primitive. A hit costs this one SELECT; a miss is
-    // board SELECT + the four aggregate queries, plus `fillCache`'s revision
-    // check below before anything is stored.
+    // that same row to the primitive. A hit costs one SELECT; a miss is board
+    // SELECT + the four aggregate queries and is not cached here.
     const board = await db.board.findFirst({
       where: { id: boardId, deletedAt: null },
     });
@@ -122,45 +96,7 @@ export class BoardAggregateLoader {
     if (cached !== null) {
       return { board: cached, revision: board.aggregateRevision };
     }
-    const loaded = await loadBoardAggregateWithRevision(db, boardId, {
-      board,
-    });
-    if (loaded !== null && options.cacheOnMiss !== false) {
-      await this.fillCache(db, boardId, loaded);
-    }
-    return loaded;
-  }
-
-  /**
-   * Store a miss, but only when the revision did not move while the
-   * aggregate was loading. Outside a REPEATABLE READ transaction the board
-   * row and the four aggregate queries are separate READ COMMITTED
-   * snapshots: a command committing in between would make the content newer
-   * than `loaded.revision`, and serving it later under that key could skip a
-   * delta. The check reads through `PrismaService` when it is available, so
-   * a failure is truly advisory and cannot abort a caller's transaction; a
-   * direct-construction test without that provider falls back to the passed
-   * client. A cache hit returns before this method runs.
-   */
-  private async fillCache(
-    db: Prisma.TransactionClient,
-    boardId: string,
-    loaded: LoadedBoardAggregate,
-  ): Promise<void> {
-    if (!this.cache.enabled) return;
-    try {
-      const reader = this.revisionReader ?? db;
-      const current = await reader.board.findUnique({
-        where: { id: boardId },
-        select: { aggregateRevision: true },
-      });
-      if (current?.aggregateRevision === loaded.revision) {
-        this.cache.set(boardId, loaded.revision, loaded.board);
-      }
-    } catch {
-      // The cache is advisory: a failed consistency check must never turn a
-      // successful read into an error. The next load simply retries.
-    }
+    return loadBoardAggregateWithRevision(db, boardId, { board });
   }
 
   /**
