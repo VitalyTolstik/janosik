@@ -8,9 +8,9 @@ import { StorageService } from "@/attachments/storage.service";
 import { BoardsService } from "@/boards/boards.service";
 import {
   deleteCommentActivitySnapshots,
-  lockBoardWrites,
   verifyCommentHistory,
 } from "@/comments/comment-history";
+import { lockBoardWrites, lockUserMemberships } from "@/common/board-locks";
 import { revokeApiTokens } from "@/auth/token-revocation";
 import { deleteMentionAttentionForComments } from "@/notifications/mention-attention";
 
@@ -131,10 +131,13 @@ export class AccountDeletionService {
       },
     });
     // TASK-200.10 review: same board-lock set as every other revocation
-    // (token scope + unscoped memberships + claim boards). Replacing the old
-    // direct `apiToken.updateMany` + unlocked `releaseClaims` keeps a command
-    // from caching a revision that misses this claim cleanup.
-    await revokeApiTokens(tx, { userId, revokedAt: null }, now);
+    // (user membership → scoped boards → claim boards), with browser/legacy
+    // `claimedBy` claims released too. This must run even when every token
+    // is already revoked or deleted, so `userIds` supplies the user key.
+    await revokeApiTokens(tx, { userId }, now, {
+      releaseUserClaims: true,
+      userIds: [userId],
+    });
     await tx.securityAuditLog.create({
       data: {
         userId,
@@ -411,6 +414,10 @@ export class AccountDeletionService {
           // takes on `User` through `CommentRevision.editorId`. A plain
           // `FOR UPDATE` here deadlocked with that writer (40P01).
           await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR NO KEY UPDATE`;
+          // Global lock order: user membership → boards. Membership
+          // acceptance paths take the same key, so the membership set read
+          // below cannot gain a board while this erasure runs.
+          await lockUserMemberships(tx, [userId]);
           if (dueCutoff !== undefined) {
             const current = await tx.user.findUnique({
               where: { id: userId },
@@ -473,7 +480,7 @@ export class AccountDeletionService {
             where: { uploadedById: userId },
             select: { cardId: true },
           });
-          const attachmentCardIds = [
+          const preLockAttachmentCardIds = [
             ...new Set(attachmentCards.map((row) => row.cardId)),
           ];
           await tx.agentSession.deleteMany({ where: { userId } });
@@ -541,9 +548,9 @@ export class AccountDeletionService {
                   },
                   select: { column: { select: { boardId: true } } },
                 }),
-                attachmentCardIds.length > 0
+                preLockAttachmentCardIds.length > 0
                   ? tx.card.findMany({
-                      where: { id: { in: attachmentCardIds } },
+                      where: { id: { in: preLockAttachmentCardIds } },
                       select: { column: { select: { boardId: true } } },
                     })
                   : Promise.resolve([]),
@@ -591,28 +598,23 @@ export class AccountDeletionService {
           const discoveredCardBoards = (await cardBoardIds()).filter(
             (boardId) => !lockedBoardIds.has(boardId),
           );
-          // A membership accepted between the pre-read and the lock must not
-          // escape the lock set; retry the whole erasure with a fresh read.
-          const lateMemberships = (
-            await tx.boardMember.findMany({
-              where: { userId, acceptedAt: { not: null } },
-              select: { boardId: true },
-            })
-          )
-            .map((row) => row.boardId)
-            .filter((boardId) => !lockedBoardIds.has(boardId));
+          // TASK-200.10 final coherence: re-derive the attachment set after
+          // the locks. Late attachments on already-locked boards are included
+          // and recounted; a genuinely new board (which would need a
+          // membership acceptance fenced by the user lock) retries instead
+          // of using a stale set.
           const attachmentCardsAfter = await tx.attachment.findMany({
             where: { uploadedById: userId },
             select: { cardId: true },
           });
-          const lateAttachmentCardIds = [
+          const attachmentCardIds = [
             ...new Set(attachmentCardsAfter.map((row) => row.cardId)),
-          ].filter((cardId) => !attachmentCardIds.includes(cardId));
-          const lateAttachmentBoards =
-            lateAttachmentCardIds.length > 0
+          ];
+          const unlockedAttachmentBoards =
+            attachmentCardIds.length > 0
               ? (
                   await tx.card.findMany({
-                    where: { id: { in: lateAttachmentCardIds } },
+                    where: { id: { in: attachmentCardIds } },
                     select: { column: { select: { boardId: true } } },
                   })
                 )
@@ -622,16 +624,13 @@ export class AccountDeletionService {
           if (
             discovered.length > 0 ||
             discoveredCardBoards.length > 0 ||
-            lateMemberships.length > 0 ||
-            lateAttachmentBoards.length > 0
+            unlockedAttachmentBoards.length > 0
           ) {
             throw new EraseLockOrderRetry();
           }
           const authoredIds = authoredComments.map((row) => row.id);
 
-          // TASK-200.10 review: the recount happens in the same transaction
-          // and under the board locks, using the card ids the transaction
-          // itself read (not the pre-lock `blobs` snapshot).
+          // Recount exactly the post-lock set, under the user+board locks.
           await tx.attachment.deleteMany({ where: { uploadedById: userId } });
           for (const cardId of attachmentCardIds) {
             const live = await tx.attachment.count({
