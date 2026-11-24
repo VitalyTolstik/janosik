@@ -113,7 +113,7 @@ export function ColumnRail({
       className="column-rail-scroll flex w-full min-w-0 max-w-full shrink-0 touch-pan-x snap-x flex-nowrap items-stretch gap-0 overflow-x-auto overscroll-x-contain scroll-px-3 border-b border-border/80 px-3 max-md:scroll-px-1.5 max-md:px-1.5"
     >
       {columns.length === 0 ? (
-        <p className="px-2 py-3 text-[11px] text-muted-foreground">
+        <p className="px-2 py-3 text-ui-body text-muted-foreground">
           {t("workflow.empty.columns")}
         </p>
       ) : null}
@@ -155,15 +155,15 @@ export function ColumnRail({
                 style={{ background: accent }}
               />
               <span className="flex min-w-0 flex-col gap-px">
-                <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold leading-4">
+                <span className="flex min-w-0 items-center gap-1.5 text-ui-label font-semibold leading-4">
                   <ColumnDot color={accent} size={5} />
                   <span className="truncate">{column.title}</span>
                 </span>
-                <span className="truncate text-[11px] leading-4 text-muted-foreground">
+                <span className="truncate text-ui-meta leading-4 text-muted-foreground">
                   {t("workflow.rail.rules", { count: rulesCount })}
                 </span>
               </span>
-              <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
+              <span className="ml-auto shrink-0 font-mono text-ui-meta text-muted-foreground">
                 {cardCount}
               </span>
             </button>

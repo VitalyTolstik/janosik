@@ -96,7 +96,7 @@ export function TransitionList({
           })}
           asideTestId={`${testIdPrefix}-rules-count`}
         />
-        <p className="max-w-[58ch] text-[11px] leading-[1.5] text-muted-foreground">
+        <p className="max-w-[58ch] text-ui-body leading-[1.5] text-muted-foreground">
           {t("workflow.listHint")}
         </p>
       </div>
@@ -163,12 +163,12 @@ export function TransitionList({
                 className="flex min-w-0 flex-1 items-center gap-[7px] rounded-md px-[7px] py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover max-md:gap-1.5"
               >
                 <ColumnDot color={accent} size={7} />
-                <span className="shrink-0 whitespace-nowrap text-xs font-semibold leading-4 text-foreground">
+                <span className="shrink-0 whitespace-nowrap text-ui-label font-semibold leading-4 text-foreground">
                   {column.title}
                 </span>{" "}
                 <span
                   className={cn(
-                    "shrink-0 rounded-[3px] px-1 py-px text-[11px] leading-4",
+                    "shrink-0 rounded-[3px] px-1 py-px text-ui-micro leading-4",
                     direction === "forward"
                       ? "bg-success/15 text-(--chip-green)"
                       : "bg-warning/15 text-(--chip-warning)",
@@ -176,7 +176,7 @@ export function TransitionList({
                 >
                   {directionLabel}
                 </span>{" "}
-                <span className="ml-auto hidden min-w-0 truncate text-right text-[11px] leading-4 text-muted-foreground md:block">
+                <span className="ml-auto hidden min-w-0 truncate text-right text-ui-meta leading-4 text-muted-foreground md:block">
                   {transition ? (
                     <>
                       {summary}
@@ -216,7 +216,7 @@ export function TransitionList({
                   })}
                   data-testid={`${testIdPrefix}-allow-${column.id}`}
                   onClick={() => onAllow(column.id)}
-                  className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded border border-dashed border-muted-foreground/25 px-1.5 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                  className="inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded border border-dashed border-muted-foreground/25 px-1.5 text-ui-label text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
                 >
                   <Plus className="h-3 w-3" aria-hidden />
                   {t("workflow.allow")}
@@ -229,7 +229,7 @@ export function TransitionList({
 
       {columns.length < 2 ? (
         <p
-          className="rounded-md border border-border/60 bg-card/30 px-2.5 py-2 text-[11px] text-muted-foreground"
+          className="rounded-md border border-border/60 bg-card/30 px-2.5 py-2 text-ui-body text-muted-foreground"
           data-testid={`${testIdPrefix}-empty-columns`}
         >
           {t("workflow.empty.columns")}
@@ -237,7 +237,7 @@ export function TransitionList({
       ) : null}
 
       {destinations.length > 0 && sourceTransitions.length === 0 ? (
-        <p className="text-[11px] leading-4 text-muted-foreground">
+        <p className="text-ui-body leading-4 text-muted-foreground">
           {t("workflow.empty.rules")}
         </p>
       ) : null}

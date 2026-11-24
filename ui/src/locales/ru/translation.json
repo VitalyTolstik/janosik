@@ -1859,6 +1859,7 @@
   "board.settings.agents.changeDestructiveMode": "Изменить режим разрушительных действий",
   "board.settings.agents.coveredByMode": "Покрыто режимом «Разрушительные действия»: {{mode}}",
   "board.settings.agents.coveredStatus": "Покрыто · {{mode}}",
+  "board.settings.agents.coveredStatusShort": "Покрыто",
   "board.settings.agents.openLive": "Открыть Live",
   "board.settings.agents.safeDefaults": "Безопасные значения действуют, пока не задано иное",
   "board.settings.agents.customPolicy": "Пользовательская политика",

@@ -140,20 +140,20 @@ export function BoardSettingsShell({
           <div className="min-w-0 flex-1">
             <p
               aria-hidden
-              className="m-0 mb-0.5 text-[11px] font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground"
+              className="m-0 mb-0.5 text-ui-micro font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground"
             >
               {t("board.settings.title")}
             </p>
-            <DialogTitle className="m-0 font-agent-display text-[17px] font-bold leading-[1.25] tracking-[-0.025em] max-md:text-base">
+            <DialogTitle className="m-0 font-agent-display text-ui-title font-bold leading-[1.25] tracking-[-0.025em]">
               <span className="sr-only">{t("board.settings.title")}: </span>
               {title}
             </DialogTitle>
-            <DialogDescription className="m-0 mt-0.5 text-[11px] leading-[1.45] text-muted-foreground">
+            <DialogDescription className="m-0 mt-0.5 text-ui-label leading-[1.45] text-muted-foreground">
               {subtitle}
             </DialogDescription>
           </div>
           <span
-            className="hidden items-center gap-[5px] whitespace-nowrap text-[11px] text-muted-foreground min-[720px]:inline-flex"
+            className="hidden items-center gap-[5px] whitespace-nowrap text-ui-meta text-muted-foreground min-[720px]:inline-flex"
             data-testid="board-settings-save-state"
           >
             <span
@@ -188,7 +188,7 @@ export function BoardSettingsShell({
             className="shrink-0 border-b border-border bg-[color-mix(in_oklab,var(--background)_22%,var(--popover))] p-[5px_8px] max-md:min-h-[46px] md:flex md:w-[194px] md:flex-col md:border-b-0 md:border-r md:p-[12px_9px]"
             data-testid="board-settings-rail"
           >
-            <p className="hidden px-2 pb-[7px] text-[11px] font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground md:block">
+            <p className="hidden px-2 pb-[7px] text-ui-micro font-[650] uppercase leading-[1.45] tracking-[0.08em] text-muted-foreground md:block">
               {t("board.settings.shell.settings")}
             </p>
             <nav
@@ -216,7 +216,7 @@ export function BoardSettingsShell({
                     onKeyDown={(event) => moveSection(event, index)}
                     data-testid={`board-settings-${entry.id}`}
                     className={cn(
-                      "flex min-h-9 w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-[6px] border border-transparent px-[9px] text-left text-[11px] font-[550] leading-[1.45] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none md:min-h-[38px] md:w-full md:whitespace-normal md:px-2 md:text-[12px]",
+                      "flex min-h-9 w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-[6px] border border-transparent px-[9px] text-left text-ui-label font-[550] leading-[1.45] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none md:min-h-[38px] md:w-full md:whitespace-normal md:px-2",
                       active &&
                         "border-border bg-popover text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-popover",
                     )}
@@ -224,7 +224,7 @@ export function BoardSettingsShell({
                     <Icon className="h-3.5 w-3.5" aria-hidden />
                     {entry.label}
                     {entry.badge ? (
-                      <span className="ml-auto inline-flex h-[17px] min-w-[17px] shrink-0 items-center justify-center rounded-full bg-warning px-1 text-[11px] font-extrabold leading-none tabular-nums text-[#1b1305] shadow-[0_0_0_1px_color-mix(in_oklab,var(--warning)_20%,transparent)]">
+                      <span className="ml-auto inline-flex h-[17px] min-w-[17px] shrink-0 items-center justify-center rounded-full bg-warning px-1 text-ui-micro font-extrabold leading-none tabular-nums text-[#1b1305] shadow-[0_0_0_1px_color-mix(in_oklab,var(--warning)_20%,transparent)]">
                         {entry.badge}
                       </span>
                     ) : null}
@@ -232,8 +232,8 @@ export function BoardSettingsShell({
                 );
               })}
             </nav>
-            <p className="mt-4 hidden border-t border-border px-2 pt-2.5 text-[11px] leading-[1.55] text-muted-foreground md:block">
-              <b className="mb-0.5 block text-[11px] font-semibold text-foreground">
+            <p className="mt-4 hidden border-t border-border px-2 pt-2.5 text-ui-label leading-[1.55] text-muted-foreground md:block">
+              <b className="mb-0.5 block text-ui-label font-semibold text-foreground">
                 {t("board.settings.shell.noteTitle")}
               </b>
               {t("board.settings.shell.hint")}

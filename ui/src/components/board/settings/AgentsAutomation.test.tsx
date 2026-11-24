@@ -690,7 +690,7 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     expect(scroll.className).toContain("overflow-x-hidden");
     expect(scroll.className).toContain("max-md:px-2.5");
     expect(screen.getByTestId("agent-policy-require-list").className).toContain(
-      "sm:grid-cols-2",
+      "lg:grid-cols-2",
     );
     expect(screen.getByTestId("agents-automation-footer").className).toContain(
       "max-md:flex-col",

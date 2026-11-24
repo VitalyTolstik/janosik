@@ -94,14 +94,14 @@ export function TransitionInspector({
       className="flex min-w-0 flex-col gap-2.5 border-t border-border bg-card/20 px-4 pb-4 pt-4 motion-reduce:transition-none lg:border-l lg:border-t-0"
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] leading-4 text-muted-foreground">
+        <span className="text-ui-meta leading-4 text-muted-foreground">
           {t("workflow.inspectorTitle")}
         </span>
         <div className="flex items-center gap-2">
           {selected ? (
             <span
               className={cn(
-                "inline-flex items-center gap-1 text-[11px] leading-4",
+                "inline-flex items-center gap-1 text-ui-meta leading-4",
                 active ? "text-success" : "text-muted-foreground",
               )}
             >
@@ -145,10 +145,10 @@ export function TransitionInspector({
         {!selected ? (
           <div className="flex flex-col items-start gap-1.5 px-0.5 py-3 text-muted-foreground">
             <Workflow className="h-4 w-4 text-muted-foreground" aria-hidden />
-            <p className="text-xs leading-[1.45] text-muted-foreground">
+            <p className="text-ui-body leading-[1.45] text-muted-foreground">
               {t("workflow.ruleEmptyTitle")}
             </p>
-            <span className="text-[11px] leading-[1.45] text-muted-foreground">
+            <span className="text-ui-label leading-[1.45] text-muted-foreground">
               {t("workflow.ruleEmpty")}
             </span>
           </div>
@@ -156,13 +156,13 @@ export function TransitionInspector({
           <>
             <div className="flex items-start justify-between gap-2.5 border-b border-border/65 pb-2.5">
               <div className="min-w-0">
-                <span className="mb-1 block text-[11px] leading-4 text-muted-foreground">
+                <span className="mb-1 block text-ui-meta leading-4 text-muted-foreground">
                   {selected.fromColumnId === null
                     ? t("workflow.ruleGlobalKicker")
                     : t("workflow.ruleKicker")}
                 </span>
                 <h3
-                  className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px] font-semibold leading-[1.3] tracking-[-0.01em] text-foreground"
+                  className="flex min-w-0 flex-wrap items-center gap-1.5 text-ui-heading font-semibold leading-[1.3] tracking-[-0.01em] text-foreground"
                   data-testid={`${testIdPrefix}-inspector-title`}
                 >
                   {fromColumn ? (
@@ -205,7 +205,7 @@ export function TransitionInspector({
             </div>
 
             {selected.fromColumnId === null ? (
-              <label className="block text-[11px] text-muted-foreground">
+              <label className="block text-ui-label text-muted-foreground">
                 {t("workflow.globalTarget")}
                 <SelectField
                   value={selected.toColumnId}
@@ -215,7 +215,7 @@ export function TransitionInspector({
                   onChange={(next) =>
                     updateTransition(selected.id, { toColumnId: next })
                   }
-                  className="mt-1 h-8 px-2 text-[13px]"
+                  className="mt-1 h-8 px-2 text-ui-body"
                   options={columns.map((column) => ({
                     value: column.id,
                     label: column.title,
@@ -225,7 +225,7 @@ export function TransitionInspector({
             ) : null}
 
             <fieldset className="min-w-0">
-              <legend className="mb-1.5 text-[11px] leading-4 text-muted-foreground">
+              <legend className="mb-1.5 text-ui-meta leading-4 text-muted-foreground">
                 {t("workflow.roles")}
               </legend>
               <div className="flex flex-wrap gap-1.5">
@@ -248,7 +248,7 @@ export function TransitionInspector({
             </fieldset>
 
             <fieldset className="min-w-0">
-              <legend className="mb-1.5 text-[11px] leading-4 text-muted-foreground">
+              <legend className="mb-1.5 text-ui-meta leading-4 text-muted-foreground">
                 {t("workflow.conditionsShort")}
               </legend>
               <div className="flex flex-col gap-0.5">
@@ -292,10 +292,10 @@ export function TransitionInspector({
                     toggleReverse(selected, checked)
                   }
                 >
-                  <span className="block text-[11px] leading-[1.35]">
+                  <span className="block text-ui-body leading-[1.35]">
                     {t("workflow.reverseShort")}
                   </span>
-                  <span className="mt-px block text-[11px] leading-[1.4] text-muted-foreground">
+                  <span className="mt-px block text-ui-meta leading-[1.4] text-muted-foreground">
                     {t("workflow.reverseHintShort")}
                   </span>
                 </WorkflowCheck>
@@ -304,10 +304,10 @@ export function TransitionInspector({
 
             <div className="flex items-center justify-between gap-2.5 border-t border-border/60 pt-2.5">
               <span className="min-w-0">
-                <span className="block text-[11px] leading-[1.35]">
+                <span className="block text-ui-body leading-[1.35]">
                   {t("workflow.enabledShort")}
                 </span>
-                <span className="mt-px block text-[11px] leading-[1.4] text-muted-foreground">
+                <span className="mt-px block text-ui-meta leading-[1.4] text-muted-foreground">
                   {t("workflow.enabledHintShort")}
                 </span>
               </span>
@@ -324,7 +324,7 @@ export function TransitionInspector({
 
             <div className="rounded-md border border-border/75 bg-card/50 px-2.5 py-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="shrink-0 text-[11px] leading-4 text-muted-foreground">
+                <span className="shrink-0 text-ui-meta leading-4 text-muted-foreground">
                   {t("workflow.preview")}
                 </span>
                 {cardList.length > 0 ? (
@@ -333,21 +333,21 @@ export function TransitionInspector({
                     onChange={setPreviewCardId}
                     ariaLabel={t("workflow.previewCard")}
                     testId={`${testIdPrefix}-preview-card`}
-                    className="h-7 w-[11.5rem] min-w-0 border-transparent bg-transparent px-1.5 text-[13px] hover:border-border/60"
+                    className="h-7 w-[11.5rem] min-w-0 border-transparent bg-transparent px-1.5 text-ui-body hover:border-border/60"
                     options={cardList.map((card) => ({
                       value: card.id,
                       label: card.title,
                     }))}
                   />
                 ) : (
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-ui-meta text-muted-foreground">
                     {t("workflow.previewNoCards")}
                   </span>
                 )}
               </div>
 
               <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap text-[11px] text-foreground">
+                <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap text-ui-meta text-foreground">
                   {fromColumn ? (
                     <ColumnDot
                       color={columnAccent(fromColumn, fromIndex)}
@@ -367,16 +367,16 @@ export function TransitionInspector({
                 </span>
 
                 {!previewCard ? (
-                  <span className="text-[11px] leading-[1.3] text-muted-foreground">
+                  <span className="text-ui-meta leading-[1.3] text-muted-foreground">
                     {t("workflow.previewNoCards")}
                   </span>
                 ) : !previewFrom ? (
-                  <span className="text-[11px] leading-[1.3] text-muted-foreground">
+                  <span className="text-ui-meta leading-[1.3] text-muted-foreground">
                     {t("workflow.previewNoCard")}
                   </span>
                 ) : reason === null ? (
                   <span
-                    className="inline-flex min-w-0 items-center gap-1 text-[11px] leading-[1.3] text-success"
+                    className="inline-flex min-w-0 items-center gap-1 text-ui-meta leading-[1.3] text-success"
                     data-testid={`${testIdPrefix}-preview-result`}
                   >
                     <Check className="h-3 w-3 shrink-0" aria-hidden />
@@ -384,7 +384,7 @@ export function TransitionInspector({
                   </span>
                 ) : (
                   <span
-                    className="inline-flex min-w-0 items-center gap-1 text-[11px] leading-[1.3] text-(--chip-warning)"
+                    className="inline-flex min-w-0 items-center gap-1 text-ui-meta leading-[1.3] text-(--chip-warning)"
                     data-testid={`${testIdPrefix}-preview-result`}
                   >
                     <Lock className="h-3 w-3 shrink-0" aria-hidden />
