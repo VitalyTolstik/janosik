@@ -1,0 +1,235 @@
+import axe from "axe-core";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { describe, expect, it, vi } from "vitest";
+
+import type { BoardStarterLocale, BoardTemplateId } from "@janosik/shared";
+
+import { TemplatePickerDialog } from "@/components/board/TemplatePickerDialog";
+import { I18nProvider } from "@/i18n";
+import { generateBoardName } from "@/utils/board-name";
+import { BOARD_TEMPLATES } from "@janosik/shared";
+
+function Harness({
+  initialName = "",
+  existingTitles = [],
+  startOpen = true,
+  createBoard = vi.fn(async () => "board-new"),
+  onOpenBoard = vi.fn(),
+  onOpenChange = vi.fn(),
+}: {
+  initialName?: string;
+  existingTitles?: string[];
+  startOpen?: boolean;
+  createBoard?: (
+    name: string,
+    template: BoardTemplateId,
+    locale: BoardStarterLocale,
+  ) => Promise<string | null>;
+  onOpenBoard?: (boardId: string) => void;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [open, setOpen] = useState(startOpen);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Trigger
+      </button>
+      <TemplatePickerDialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          onOpenChange(next);
+        }}
+        existingTitles={existingTitles}
+        initialName={initialName}
+        createBoard={createBoard}
+        onOpenBoard={onOpenBoard}
+      />
+    </>
+  );
+}
+
+describe("TemplatePickerDialog", () => {
+  it("opens on Product launch with a generated name and live preview", async () => {
+    render(
+      <I18nProvider>
+        <Harness />
+      </I18nProvider>,
+    );
+
+    const picker = await screen.findByTestId("template-picker");
+    const product = within(picker).getByRole("button", {
+      name: /Product launch/,
+    });
+    expect(product).toHaveAttribute("aria-pressed", "true");
+    const name = within(picker).getByLabelText("Board name");
+    expect((name as HTMLInputElement).value).toMatch(/^Product launch — /);
+    expect(
+      within(picker).getByRole("region", { name: /Preview: Product launch/ }),
+    ).toBeVisible();
+    expect(
+      within(picker).getAllByText("Write the launch brief").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(picker).getAllByText("Brief checklist").length,
+    ).toBeGreaterThan(0);
+    await waitFor(() => expect(product).toHaveFocus());
+  });
+
+  it("changes the auto name with the template, then preserves a manual name", async () => {
+    render(
+      <I18nProvider>
+        <Harness />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Board name");
+
+    await userEvent.click(
+      within(picker).getByRole("button", { name: /Sprint board/ }),
+    );
+    expect((name as HTMLInputElement).value).toMatch(
+      /^Sprint board \d{4}-W\d{2}$/,
+    );
+    await waitFor(() =>
+      expect(
+        within(picker).getByText(/selected\. Preview updated\./),
+      ).toBeInTheDocument(),
+    );
+
+    await userEvent.clear(name);
+    await userEvent.type(name, "Q1 website redesign");
+    expect(within(picker).getByText("Edited by you")).toBeVisible();
+
+    await userEvent.click(
+      within(picker).getByRole("button", { name: /Bug tracker/ }),
+    );
+    expect((name as HTMLInputElement).value).toBe("Q1 website redesign");
+
+    await userEvent.click(
+      within(picker).getByRole("button", { name: "Regenerate" }),
+    );
+    expect((name as HTMLInputElement).value).toBe("Bug tracker");
+    expect(within(picker).getByText("Auto-generated")).toBeVisible();
+  });
+
+  it("navigates the gallery with the arrow keys", async () => {
+    render(
+      <I18nProvider>
+        <Harness />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const product = within(picker).getByRole("button", {
+      name: /Product launch/,
+    });
+    const sprint = within(picker).getByRole("button", {
+      name: /Sprint board/,
+    });
+    await waitFor(() => expect(product).toHaveFocus());
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(sprint).toHaveAttribute("aria-pressed", "true");
+    expect(sprint).toHaveFocus();
+    await userEvent.keyboard("{Home}");
+    expect(product).toHaveAttribute("aria-pressed", "true");
+    expect(product).toHaveFocus();
+  });
+
+  it("creates with Cmd/Ctrl+Enter and opens the success state", async () => {
+    const createBoard = vi.fn(
+      async (
+        name: string,
+        _template: BoardTemplateId,
+        _locale: BoardStarterLocale,
+      ): Promise<string | null> => {
+        expect(name).toBe("My launch");
+        return "board-new";
+      },
+    );
+    const onOpenBoard = vi.fn();
+    render(
+      <I18nProvider>
+        <Harness createBoard={createBoard} onOpenBoard={onOpenBoard} />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Board name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "My launch");
+
+    fireEvent.keyDown(picker, { ctrlKey: true, key: "Enter" });
+
+    expect(await screen.findByText("Board created")).toBeVisible();
+    expect(createBoard).toHaveBeenCalledWith(
+      "My launch",
+      "product-launch",
+      "en",
+    );
+    const createdName = (await screen.findByText("My launch")) as HTMLElement;
+    expect(createdName).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Open board" }));
+    expect(onOpenBoard).toHaveBeenCalledWith("board-new");
+  });
+
+  it("dedupes the auto name against archived titles", async () => {
+    const existing = generateBoardName(
+      BOARD_TEMPLATES[0]!,
+      "en",
+      new Date(),
+      [],
+    ).name;
+    render(
+      <I18nProvider>
+        <Harness existingTitles={[existing]} />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Board name");
+    expect((name as HTMLInputElement).value).toMatch(/\(2\)$/);
+    expect(within(picker).getByText(/added \(2\)/)).toBeInTheDocument();
+  });
+
+  it("closes on Escape and returns focus to the opener", async () => {
+    render(
+      <I18nProvider>
+        <Harness startOpen={false} />
+      </I18nProvider>,
+    );
+    const trigger = screen.getByRole("button", { name: "Trigger" });
+    trigger.focus();
+    await userEvent.click(trigger);
+    const picker = await screen.findByTestId("template-picker");
+    await waitFor(() =>
+      expect(
+        within(picker).getByRole("button", { name: /Product launch/ }),
+      ).toHaveFocus(),
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("template-picker")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("has no axe violations in the picker", async () => {
+    render(
+      <I18nProvider>
+        <Harness />
+      </I18nProvider>,
+    );
+    await screen.findByTestId("template-picker");
+    const results = await axe.run(document.body, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(results.violations).toEqual([]);
+  });
+});
