@@ -59,6 +59,9 @@ export const MAINTENANCE_JOBS = [
   "sweep-attention",
 ] as const;
 
+/** Rows per `BoardWriteService` transaction in the lapsed-claim sweep. */
+const CLAIM_SWEEP_CHUNK = 100;
+
 export type MaintenanceJobName = (typeof MAINTENANCE_JOBS)[number] | "all";
 
 /**
@@ -855,51 +858,61 @@ export class MaintenanceService {
 
     let cleared = 0;
     for (const [boardId, boardCards] of byBoard) {
-      const outcome = await this.boardWrite.run(boardId, async (tx) => {
-        const notifications: Array<{
-          boardId: string;
-          cardId: string;
-          cardTitle: string;
-          claimedBy: string | null;
-          agentName: string | null;
-          leaseUntil: Date;
-        }> = [];
-        let count = 0;
-        for (const card of boardCards) {
-          const leaseUntil = card.leaseUntil;
-          if (leaseUntil === null) continue;
-          const result = await tx.card.updateMany({
-            where: { id: card.id, leaseUntil: { lte: now } },
-            data: {
-              claimedBy: null,
-              claimedByTokenId: null,
-              claimedBySessionId: null,
-              leaseUntil: null,
-            },
-          });
-          if (result.count === 0) continue;
-          count += result.count;
-          const session =
-            card.claimedBySessionId === null
-              ? null
-              : await tx.agentSession.findUnique({
-                  where: { id: card.claimedBySessionId },
-                  select: { name: true, clientName: true },
-                });
-          notifications.push({
-            boardId,
-            cardId: card.id,
-            cardTitle: card.title,
-            claimedBy: card.claimedBy,
-            agentName: session?.name ?? session?.clientName ?? null,
-            leaseUntil,
-          });
+      // One board can hold an unbounded number of lapsed leases. Chunk so no
+      // single `BoardWriteService.run` approaches its 15 s transaction cap;
+      // each chunk commits and only then raises its attention rows.
+      for (
+        let start = 0;
+        start < boardCards.length;
+        start += CLAIM_SWEEP_CHUNK
+      ) {
+        const chunk = boardCards.slice(start, start + CLAIM_SWEEP_CHUNK);
+        const outcome = await this.boardWrite.run(boardId, async (tx) => {
+          const notifications: Array<{
+            boardId: string;
+            cardId: string;
+            cardTitle: string;
+            claimedBy: string | null;
+            agentName: string | null;
+            leaseUntil: Date;
+          }> = [];
+          let count = 0;
+          for (const card of chunk) {
+            const leaseUntil = card.leaseUntil;
+            if (leaseUntil === null) continue;
+            const result = await tx.card.updateMany({
+              where: { id: card.id, leaseUntil: { lte: now } },
+              data: {
+                claimedBy: null,
+                claimedByTokenId: null,
+                claimedBySessionId: null,
+                leaseUntil: null,
+              },
+            });
+            if (result.count === 0) continue;
+            count += result.count;
+            const session =
+              card.claimedBySessionId === null
+                ? null
+                : await tx.agentSession.findUnique({
+                    where: { id: card.claimedBySessionId },
+                    select: { name: true, clientName: true },
+                  });
+            notifications.push({
+              boardId,
+              cardId: card.id,
+              cardTitle: card.title,
+              claimedBy: card.claimedBy,
+              agentName: session?.name ?? session?.clientName ?? null,
+              leaseUntil,
+            });
+          }
+          return { count, notifications };
+        });
+        cleared += outcome.count;
+        for (const notification of outcome.notifications) {
+          await this.attention.notifyClaimExpired(notification);
         }
-        return { count, notifications };
-      });
-      cleared += outcome.count;
-      for (const notification of outcome.notifications) {
-        await this.attention.notifyClaimExpired(notification);
       }
     }
     return cleared;

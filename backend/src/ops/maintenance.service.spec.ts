@@ -1,5 +1,5 @@
 import type { PrismaService } from "@/common/prisma/prisma.service";
-import type { BoardWriteService } from "@/common/board-write.service";
+import { BoardWriteService } from "@/common/board-write.service";
 import type { StorageService } from "@/attachments/storage.service";
 import type { AccountDeletionService } from "@/users/account-deletion.service";
 import type { OpsSettingsService } from "./ops-settings.service";
@@ -252,6 +252,97 @@ describe("MaintenanceService", () => {
     (prisma.card.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
     expect(await service.sweepClaims()).toBe(0);
     expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("chunks a board's lapsed claims into bounded writer transactions", async () => {
+    const prisma = makePrisma();
+    const leaseUntil = new Date(Date.now() - 60_000);
+    (prisma.card.findMany as jest.Mock).mockResolvedValue(
+      Array.from({ length: 101 }, (_, index) => ({
+        id: `card-${index}`,
+        title: `Task ${index}`,
+        claimedBy: "user-1",
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil,
+        column: { boardId: "board-1" },
+      })),
+    );
+    (prisma.card.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const notify = jest.fn().mockResolvedValue(undefined);
+    (
+      attentionMock as unknown as { notifyClaimExpired: jest.Mock }
+    ).notifyClaimExpired = notify;
+    boardWriteMock.run.mockImplementation(
+      async (
+        _boardId: string,
+        fn: (tx: unknown) => Promise<unknown>,
+      ): Promise<unknown> => fn(prisma),
+    );
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+      boardWriteMock,
+    );
+
+    expect(await service.sweepClaims()).toBe(101);
+    // 100 + 1: one board cannot hold a writer transaction past its timeout.
+    expect(boardWriteMock.run).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenCalledTimes(101);
+  });
+
+  it("waits for an in-flight board write before clearing a lapsed claim", async () => {
+    const prisma = makePrisma();
+    const leaseUntil = new Date(Date.now() - 60_000);
+    (prisma.card.findMany as jest.Mock).mockResolvedValueOnce([
+      {
+        id: "card-1",
+        title: "Task",
+        claimedBy: "user-1",
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil,
+        column: { boardId: "board-1" },
+      },
+    ]);
+    (prisma.card.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    const boardWrite = new BoardWriteService(prisma);
+    const service = new MaintenanceService(
+      prisma,
+      storageMock,
+      opsMock,
+      accountDeletionMock,
+      attentionMock,
+      approvalsMock,
+      boardWrite,
+    );
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = boardWrite.run("board-1", async () => {
+      entered();
+      await gate;
+    });
+    await started;
+
+    const sweep = service.sweepClaims();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(prisma.card.updateMany).not.toHaveBeenCalled();
+
+    release();
+    await held;
+    await expect(sweep).resolves.toBe(1);
+    expect(prisma.card.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("sweeps expired idempotency records (TASK-166.4)", async () => {
