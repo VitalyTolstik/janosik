@@ -41,7 +41,6 @@ import {
   COVER_GRADIENT_CSS,
   DEFAULT_CARD_PRIORITY,
   LABEL_COLORS,
-  LABEL_COLOR_CHIP,
   LABEL_COLOR_DOT,
   LIMITS,
 } from "@janosik/shared";
@@ -635,8 +634,8 @@ function LabelsSub({
                 onClick={() => setColor(entry)}
                 data-testid={`ctx-label-color-${entry}`}
                 className={cn(
-                  "size-4 rounded-full transition-shadow",
-                  LABEL_COLOR_CHIP[entry],
+                  "size-4 rounded-full border border-black/10 transition-shadow dark:border-white/15",
+                  LABEL_COLOR_DOT[entry],
                   color === entry &&
                     "ring-2 ring-ring ring-offset-1 ring-offset-popover",
                 )}
