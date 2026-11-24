@@ -1,5 +1,6 @@
 import type { Board as BoardRow, Prisma } from "@prisma/client";
 import type { BoardAggregate } from "@janosik/shared";
+import type { PrismaService } from "@/common/prisma/prisma.service";
 import * as aggregateModule from "./board-aggregate";
 import { BoardAggregateCacheService } from "./board-aggregate-cache";
 import { BoardAggregateLoader } from "./board-aggregate-loader";
@@ -98,6 +99,25 @@ describe("BoardAggregateLoader", () => {
     expect(loaded?.revision).toBe(7n);
     expect(loaded?.board.cards["card-1"]!.title).toBe("One");
     expect(loadSpy).not.toHaveBeenCalled();
+  });
+
+  it("runs the fill check through the injected reader, not the caller's transaction", async () => {
+    const cache = new BoardAggregateCacheService(BOUNDS);
+    const external = {
+      board: {
+        findUnique: jest.fn().mockResolvedValue({ aggregateRevision: 5n }),
+      },
+    } as unknown as PrismaService;
+    const loader = new BoardAggregateLoader(cache, external);
+    const db = dbDouble();
+    const board = boardRow(5n);
+    loadSpy.mockResolvedValue({ board: aggregate(), revision: 5n });
+
+    await loader.load(db, "board-1", { board });
+
+    expect(external.board.findUnique).toHaveBeenCalledTimes(1);
+    expect(db.board.findUnique).not.toHaveBeenCalled();
+    expect(cache.revisionOf("board-1")).toBe(5n);
   });
 
   it("remembers a post-commit aggregate the command path hands over", () => {

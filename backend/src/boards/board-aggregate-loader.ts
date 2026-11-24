@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import type { Board as BoardRow, Prisma } from "@prisma/client";
 import type { BoardAggregate } from "@janosik/shared";
+import { PrismaService } from "@/common/prisma/prisma.service";
 import { loadBoardAggregateWithRevision } from "./board-aggregate";
 import { BoardAggregateCacheService } from "./board-aggregate-cache";
 
@@ -18,11 +19,12 @@ export interface BoardAggregateLoadOptions {
    */
   revision?: bigint;
   /**
-   * Store a miss. Only the command path sets this to false: a load that
-   * happens inside a write transaction, after commands could have run, may
-   * observe an uncommitted revision. That revision is safe to *read* under
-   * the board lock but must only be cached after `BoardWriteService.run`
-   * resolves, which the command service does explicitly.
+   * Store a miss. The command path and `inspectInversePreconditions` (a
+   * revert preview) set this to false: a load inside a write transaction,
+   * after commands could have run, may observe an uncommitted revision. That
+   * revision is safe to *read* under the board lock but must only be cached
+   * after `BoardWriteService.run` resolves, which the command service does
+   * explicitly.
    */
   cacheOnMiss?: boolean;
 }
@@ -43,11 +45,19 @@ export interface LoadedBoardAggregate {
  *
  * Nothing here is required for correctness: a miss falls through to the same
  * queries as before. The cache is an optimization and must never fail a
- * request, which is why `set` swallows an unserializable value.
+ * request; `set` swallows an unserializable value, and the fill's revision
+ * check runs through a separate client (when available) so a failed check
+ * cannot abort the caller's transaction.
  */
 @Injectable()
 export class BoardAggregateLoader {
-  constructor(private readonly cache: BoardAggregateCacheService) {}
+  constructor(
+    private readonly cache: BoardAggregateCacheService,
+    // Optional only for direct-construction unit tests. In Nest the global
+    // `PrismaModule` supplies it; it keeps the revision check outside a
+    // caller's transaction (a failed statement there would abort it).
+    @Optional() private readonly revisionReader?: PrismaService,
+  ) {}
 
   /** `false` when the configured bounds disable storage (0 entries/bytes). */
   get enabled(): boolean {
@@ -127,8 +137,10 @@ export class BoardAggregateLoader {
    * row and the four aggregate queries are separate READ COMMITTED
    * snapshots: a command committing in between would make the content newer
    * than `loaded.revision`, and serving it later under that key could skip a
-   * delta. One cheap revision check on the miss path keeps the cache honest;
-   * a cache hit returns before this method runs.
+   * delta. The check reads through `PrismaService` when it is available, so
+   * a failure is truly advisory and cannot abort a caller's transaction; a
+   * direct-construction test without that provider falls back to the passed
+   * client. A cache hit returns before this method runs.
    */
   private async fillCache(
     db: Prisma.TransactionClient,
@@ -137,7 +149,8 @@ export class BoardAggregateLoader {
   ): Promise<void> {
     if (!this.cache.enabled) return;
     try {
-      const current = await db.board.findUnique({
+      const reader = this.revisionReader ?? db;
+      const current = await reader.board.findUnique({
         where: { id: boardId },
         select: { aggregateRevision: true },
       });
