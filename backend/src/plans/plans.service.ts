@@ -300,18 +300,12 @@ export class PlansService {
   }
 
   private async loadContext(boardId: string): Promise<PlanContext> {
-    const row = await this.prisma.board.findFirst({
-      where: { id: boardId, deletedAt: null },
-      // TASK-200.10: the revision rides along on the policy read, so a cache
-      // hit needs no aggregate query and a miss costs no extra SELECT.
-      select: { agentPolicy: true, aggregateRevision: true },
-    });
-    if (row === null) throw new NotFoundException("Board not found");
-    const board = await this.boardAggregates.load(this.prisma, boardId, {
-      revision: row.aggregateRevision,
-    });
+    // TASK-200.10: one REPEATABLE READ snapshot for the board row and the
+    // aggregate. A snapshot miss warms the cache; a policy row read outside
+    // the aggregate could otherwise race that snapshot.
+    const board = await this.boardAggregates.loadFresh(boardId);
     if (board === null) throw new NotFoundException("Board not found");
-    return { board, policy: readBoardAgentPolicy(row.agentPolicy) };
+    return { board, policy: readBoardAgentPolicy(board.agentPolicy) };
   }
 
   /**

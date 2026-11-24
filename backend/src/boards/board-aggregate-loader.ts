@@ -1,6 +1,8 @@
-import { Injectable } from "@nestjs/common";
-import type { Board as BoardRow, Prisma } from "@prisma/client";
+import { Injectable, Optional } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import type { Board as BoardRow } from "@prisma/client";
 import type { BoardAggregate } from "@janosik/shared";
+import { PrismaService } from "@/common/prisma/prisma.service";
 import { loadBoardAggregateWithRevision } from "./board-aggregate";
 import { BoardAggregateCacheService } from "./board-aggregate-cache";
 
@@ -17,6 +19,15 @@ export interface BoardAggregateLoadOptions {
    * a miss loads the full row itself.
    */
   revision?: bigint;
+  /**
+   * TASK-200.10: the caller is already inside a REPEATABLE READ snapshot
+   * that contains both the board row and every aggregate query. A miss may
+   * be stored under `loaded.revision` directly — no second connection or
+   * post-load revision check is needed. Only snapshot-scoped readers
+   * (`BoardsService.getAggregateWithSeq`'s own transaction and
+   * `loadFresh`) set this; the command path stores explicitly after commit.
+   */
+  snapshot?: boolean;
 }
 
 export interface LoadedBoardAggregate {
@@ -29,10 +40,11 @@ export interface LoadedBoardAggregate {
  *
  * `loadBoardAggregate`/`loadBoardAggregateWithRevision` stay the uncached
  * primitives; this service checks the revision-keyed cache and, on a miss,
- * loads without storing. The cache is filled **only** by the command path's
- * explicit `remember` after `BoardWriteService.run` commits. That removes the
- * separate-connection fill check and the READ COMMITTED/uncommitted-write
- * window it tried to police: reads, plans and approvals are pure consumers.
+ * loads without storing unless the caller declares a REPEATABLE READ snapshot
+ * (`snapshot: true`) or uses `loadFresh`. The command path stores explicitly
+ * after `BoardWriteService.run` commits. There is no second connection and no
+ * post-load revision check: snapshot callers already read the board row and
+ * every aggregate query in one snapshot.
  *
  * Callers that already hold a `Board` row pass it in, so a cache hit costs no
  * query at all; callers with only the revision from a narrow policy read can
@@ -40,7 +52,12 @@ export interface LoadedBoardAggregate {
  */
 @Injectable()
 export class BoardAggregateLoader {
-  constructor(private readonly cache: BoardAggregateCacheService) {}
+  constructor(
+    private readonly cache: BoardAggregateCacheService,
+    // Optional only for direct-construction unit tests. In Nest the global
+    // `PrismaModule` supplies it for the snapshot `loadFresh` transaction.
+    @Optional() private readonly prisma?: PrismaService,
+  ) {}
 
   /** `false` when the configured bounds disable storage (0 entries/bytes). */
   get enabled(): boolean {
@@ -74,20 +91,25 @@ export class BoardAggregateLoader {
     }
 
     if (options.board !== undefined) {
-      return loadBoardAggregateWithRevision(db, boardId, {
+      const loaded = await loadBoardAggregateWithRevision(db, boardId, {
         board: options.board,
       });
+      return this.cacheSnapshot(boardId, loaded, options.snapshot === true);
     }
 
     if (hint !== undefined) {
       // A narrow policy read gave us the revision but not the row. A miss
       // re-reads the full row exactly like the uncached primitive did.
-      return loadBoardAggregateWithRevision(db, boardId);
+      return this.cacheSnapshot(
+        boardId,
+        await loadBoardAggregateWithRevision(db, boardId),
+        options.snapshot === true,
+      );
     }
 
     // No hint: read the row once, then either answer from the cache or hand
     // that same row to the primitive. A hit costs one SELECT; a miss is board
-    // SELECT + the four aggregate queries and is not cached here.
+    // SELECT + the four aggregate queries and is stored only for a snapshot.
     const board = await db.board.findFirst({
       where: { id: boardId, deletedAt: null },
     });
@@ -96,7 +118,44 @@ export class BoardAggregateLoader {
     if (cached !== null) {
       return { board: cached, revision: board.aggregateRevision };
     }
-    return loadBoardAggregateWithRevision(db, boardId, { board });
+    return this.cacheSnapshot(
+      boardId,
+      await loadBoardAggregateWithRevision(db, boardId, { board }),
+      options.snapshot === true,
+    );
+  }
+
+  /**
+   * TASK-200.10: read through a dedicated REPEATABLE READ transaction. The
+   * board row and all aggregate queries share one snapshot, so a miss can be
+   * cached without any post-load revision query or a second pooled
+   * connection. Plans, approvals and the legacy read path use this; a cache
+   * hit returns before the transaction body would need the queries.
+   */
+  async loadFresh(boardId: string): Promise<BoardAggregate | null> {
+    if (this.prisma === undefined) {
+      throw new Error("BoardAggregateLoader.loadFresh needs PrismaService");
+    }
+    return this.prisma.$transaction(
+      async (tx) => {
+        const loaded = await this.loadWithRevision(tx, boardId, {
+          snapshot: true,
+        });
+        return loaded === null ? null : loaded.board;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
+  private cacheSnapshot(
+    boardId: string,
+    loaded: LoadedBoardAggregate | null,
+    snapshot: boolean,
+  ): LoadedBoardAggregate | null {
+    if (loaded !== null && snapshot) {
+      this.cache.set(boardId, loaded.revision, loaded.board);
+    }
+    return loaded;
   }
 
   /**

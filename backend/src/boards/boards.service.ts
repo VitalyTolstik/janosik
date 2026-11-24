@@ -1081,13 +1081,19 @@ export class BoardsService {
     tx?: Prisma.TransactionClient,
     budget?: { maxWaitMs?: number; timeoutMs?: number },
   ): Promise<{ board: BoardAggregate; seq: number; revision: bigint }> {
-    const read = async (reader: Prisma.TransactionClient) => {
+    const read = async (
+      reader: Prisma.TransactionClient,
+      snapshot: boolean,
+    ) => {
       // TASK-200.10: a revision-keyed hit is valid in this REPEATABLE READ
       // snapshot — the loader confirms the revision from the board row it
       // reads in the same transaction, so it is never newer than the seq.
+      // A miss from our own snapshot may warm the cache; a caller-supplied
+      // READ COMMITTED transaction must not.
       const loaded = await this.boardAggregates.loadWithRevision(
         reader,
         boardId,
+        { snapshot },
       );
       if (!loaded) throw new NotFoundException("Board not found");
       const max = await reader.command.aggregate({
@@ -1102,8 +1108,8 @@ export class BoardsService {
     };
     // A caller supplying a transaction holds the board write lock.
     return tx
-      ? read(tx)
-      : this.prisma.$transaction(read, {
+      ? read(tx, false)
+      : this.prisma.$transaction((reader) => read(reader, true), {
           isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
           // TASK-200.6: the HTTP read path passes its budget. Without these,
           // a saturated pool or a slow aggregate surfaced as P2028 → 500

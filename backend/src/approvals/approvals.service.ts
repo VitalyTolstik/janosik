@@ -84,12 +84,11 @@ export class ApprovalsService {
     dto: CreateApprovalDto,
   ): Promise<ApprovalRequestDto> {
     this.requirePat(principal, "create");
-    const board = await this.board(boardId);
-    const policy = readBoardAgentPolicy(board.agentPolicy);
-    const aggregate = await this.boardAggregates.load(this.prisma, boardId, {
-      revision: board.aggregateRevision,
-    });
+    // TASK-200.10: board policy and aggregate come from one REPEATABLE READ
+    // snapshot; a miss warms the cache safely.
+    const aggregate = await this.boardAggregates.loadFresh(boardId);
     if (aggregate === null) throw this.boardNotFound();
+    const policy = readBoardAgentPolicy(aggregate.agentPolicy);
 
     const plan = normalizeApprovalPlan(dto.plan, boardId);
     await this.assertPlanLimitsForUser(

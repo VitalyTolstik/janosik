@@ -1,5 +1,6 @@
 import type { Board as BoardRow, Prisma } from "@prisma/client";
 import type { BoardAggregate } from "@janosik/shared";
+import type { PrismaService } from "@/common/prisma/prisma.service";
 import * as aggregateModule from "./board-aggregate";
 import { BoardAggregateCacheService } from "./board-aggregate-cache";
 import { BoardAggregateLoader } from "./board-aggregate-loader";
@@ -77,6 +78,49 @@ describe("BoardAggregateLoader", () => {
     await loader.load(db, "board-1");
     expect(cache.revisionOf("board-1")).toBeNull();
     expect(loadSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("fills a miss only when the caller declares a snapshot", async () => {
+    const cache = new BoardAggregateCacheService(BOUNDS);
+    const loader = new BoardAggregateLoader(cache);
+    const db = dbDouble();
+    const board = boardRow(5n);
+    loadSpy.mockResolvedValue({ board: aggregate(), revision: 5n });
+
+    await loader.load(db, "board-1", { board, snapshot: true });
+    expect(cache.revisionOf("board-1")).toBe(5n);
+
+    cache.clear();
+    await loader.load(db, "board-1", { board });
+    expect(cache.revisionOf("board-1")).toBeNull();
+  });
+
+  it("loadFresh reads in a RepeatableRead transaction and warms the cache", async () => {
+    const cache = new BoardAggregateCacheService(BOUNDS);
+    const db = dbDouble();
+    (db.board.findFirst as jest.Mock).mockResolvedValue(boardRow(5n));
+    loadSpy.mockResolvedValue({ board: aggregate(), revision: 5n });
+    const prisma = {
+      $transaction: jest.fn(
+        async (fn: (client: unknown) => Promise<unknown>, _options: unknown) =>
+          fn(db),
+      ),
+    } as unknown as PrismaService;
+    const loader = new BoardAggregateLoader(cache, prisma);
+
+    await expect(loader.loadFresh("board-1")).resolves.toEqual(aggregate());
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ isolationLevel: "RepeatableRead" }),
+    );
+    expect(cache.revisionOf("board-1")).toBe(5n);
+
+    loadSpy.mockClear();
+    const hit = await loader.loadWithRevision(dbDouble(), "board-1", {
+      revision: 5n,
+    });
+    expect(hit?.board).toEqual(aggregate());
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 
   it("serves a hit without calling the primitive and returns a clone", async () => {
