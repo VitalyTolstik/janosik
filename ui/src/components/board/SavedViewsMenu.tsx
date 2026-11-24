@@ -741,7 +741,7 @@ function SavedViewsPanel({
                 <li
                   key={saved.name}
                   data-view-name={saved.name}
-                  className="flex min-h-11 items-center gap-1 rounded-lg border border-border/60 bg-card/40 p-1"
+                  className="relative flex min-h-11 items-center gap-1 rounded-lg border border-border/60 bg-card/40 p-1"
                 >
                   {renaming ? (
                     <form
@@ -818,7 +818,7 @@ function SavedViewsPanel({
                       onKeyDown={(event) =>
                         confirmWithEscape(event, saved.name)
                       }
-                      className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1"
+                      className="flex min-w-0 flex-1 items-center gap-1"
                     >
                       {/* Keep the row's identity visible; only the actions
                         become the compact confirm pair. The question stays in
@@ -826,7 +826,7 @@ function SavedViewsPanel({
                       <span role="alert" className="sr-only">
                         {t("savedViews.deleteConfirm", { name: saved.name })}
                       </span>
-                      <span className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-1 py-1.5">
+                      <span className="box-border flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pr-24 pl-2 lg:pr-[76px]">
                         <Bookmark
                           className="h-4 w-4 shrink-0 text-muted-foreground"
                           aria-hidden
@@ -840,7 +840,7 @@ function SavedViewsPanel({
                           </span>
                         </span>
                       </span>
-                      <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-border/70 bg-background/60 p-0.5 shadow-sm">
+                      <div className="absolute right-1 top-1/2 flex shrink-0 -translate-y-1/2 items-center gap-0.5 rounded-xl border border-border/70 bg-background/60 p-0.5 shadow-sm">
                         <Button
                           autoFocus
                           type="button"
