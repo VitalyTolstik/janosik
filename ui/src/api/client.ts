@@ -959,6 +959,7 @@ export class ApiClient {
       template?: BoardTemplateSelection;
       templateLocale?: BoardStarterLocale;
       templateDate?: string;
+      templateUtcOffsetMinutes?: number;
     },
   ): Promise<BoardAggregate> {
     return this.requestIdempotent<BoardAggregate>("/boards", {

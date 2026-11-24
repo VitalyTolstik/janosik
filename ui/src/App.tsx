@@ -142,6 +142,7 @@ export function NoBoardRoute() {
     template: BoardTemplateId,
     _locale: BoardStarterLocale,
     templateDate: string,
+    templateUtcOffsetMinutes: number,
   ): Promise<TemplateCreateOutcome> => {
     // This path must not early-return on `canCreate`: the generated name is
     // already valid and the empty-state field is intentionally untouched.
@@ -149,7 +150,7 @@ export function NoBoardRoute() {
     return new Promise<TemplateCreateOutcome>((resolve) => {
       const result = addBoard(
         name,
-        { template, templateLocale, templateDate },
+        { template, templateLocale, templateDate, templateUtcOffsetMinutes },
         () => resolve({ code: "template_unavailable" }),
       );
       if (result !== null && typeof result === "object") {
@@ -228,7 +229,7 @@ export function NoBoardRoute() {
               disabled={!canPickExample}
               onClick={() => setPickerOpen(true)}
               data-testid="empty-create-template"
-              className="inline-flex h-11 flex-[1.25] items-center justify-center gap-2 rounded-lg bg-action-primary px-3.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-action-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-action-primary px-3.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
               <Sparkles className="h-4 w-4" aria-hidden />
               {t("board.firstRun.starterCta")}
@@ -237,7 +238,7 @@ export function NoBoardRoute() {
               type="submit"
               disabled={!canCreate}
               data-testid="empty-create-board"
-              className="inline-flex h-11 flex-[0.9] items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+              className="inline-flex h-11 min-w-[234px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
               {busy === "empty" ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -340,7 +341,7 @@ function BoardShell() {
               type="button"
               data-testid="sync-retry"
               onClick={() => window.location.reload()}
-              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-action-primary/90"
+              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8]"
             >
               {t("sync.retry")}
             </button>

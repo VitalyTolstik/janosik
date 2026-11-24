@@ -66,24 +66,28 @@ function MiniBoard({
   template,
   locale,
   templateDate,
+  templateUtcOffsetMinutes,
   maxCards = 2,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
   templateDate: string;
+  templateUtcOffsetMinutes: number;
   maxCards?: number;
 }) {
   const copy = template.copy[locale];
+  const { t } = useI18n();
   return (
     <div
-      className="template-mini-board mt-3.5"
+      className="template-mini-board mt-3.5 rounded-[9px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       style={
         {
           "--template-cols": copy.columns.length,
         } as CSSProperties
       }
       role="group"
-      aria-label={copy.name}
+      tabIndex={0}
+      aria-label={`${t("board.templatePicker.preview")}: ${copy.name}`}
     >
       {copy.columns.map((column) => (
         <div
@@ -103,6 +107,7 @@ function MiniBoard({
               card={card}
               locale={locale}
               templateDate={templateDate}
+              templateUtcOffsetMinutes={templateUtcOffsetMinutes}
             />
           ))}
         </div>
@@ -116,16 +121,26 @@ function MiniCard({
   card,
   locale,
   templateDate,
+  templateUtcOffsetMinutes,
 }: {
   template: BoardTemplate;
   card: BoardTemplateCardCopy;
   locale: BoardStarterLocale;
   templateDate: string;
+  templateUtcOffsetMinutes: number;
 }) {
   const copy = template.copy[locale];
   const due =
     typeof card.dueInDays === "number"
-      ? formatDateOnly(templateDueDate(templateDate, card.dueInDays), locale)
+      ? formatDateOnly(
+          templateDueDate(
+            templateDate,
+            card.dueInDays,
+            templateUtcOffsetMinutes,
+          ),
+          locale,
+          templateUtcOffsetMinutes,
+        )
       : "";
   return (
     <div className="mt-[5px] rounded-[7px] border border-border bg-card p-[7px] shadow-sm first:mt-0">
@@ -182,10 +197,12 @@ function SampleCard({
   template,
   locale,
   templateDate,
+  templateUtcOffsetMinutes,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
   templateDate: string;
+  templateUtcOffsetMinutes: number;
 }) {
   const { t } = useI18n();
   const copy = template.copy[locale];
@@ -194,7 +211,15 @@ function SampleCard({
   if (!card) return null;
   const due =
     typeof card.dueInDays === "number"
-      ? formatDateOnly(templateDueDate(templateDate, card.dueInDays), locale)
+      ? formatDateOnly(
+          templateDueDate(
+            templateDate,
+            card.dueInDays,
+            templateUtcOffsetMinutes,
+          ),
+          locale,
+          templateUtcOffsetMinutes,
+        )
       : "";
 
   return (
@@ -294,10 +319,12 @@ export function TemplatePreview({
   template,
   locale,
   templateDate,
+  templateUtcOffsetMinutes,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
   templateDate: string;
+  templateUtcOffsetMinutes: number;
 }) {
   const { t } = useI18n();
   const copy = template.copy[locale];
@@ -351,11 +378,13 @@ export function TemplatePreview({
         template={template}
         locale={locale}
         templateDate={templateDate}
+        templateUtcOffsetMinutes={templateUtcOffsetMinutes}
       />
       <SampleCard
         template={template}
         locale={locale}
         templateDate={templateDate}
+        templateUtcOffsetMinutes={templateUtcOffsetMinutes}
       />
 
       <div className="mt-3 grid grid-cols-2 gap-x-[18px] gap-y-2.5 border-t border-border pt-[11px] max-[620px]:grid-cols-1">
@@ -439,11 +468,13 @@ export function TemplateMiniBoard({
   template,
   locale,
   templateDate,
+  templateUtcOffsetMinutes,
   maxCards,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
   templateDate: string;
+  templateUtcOffsetMinutes: number;
   maxCards?: number;
 }) {
   return (
@@ -451,6 +482,7 @@ export function TemplateMiniBoard({
       template={template}
       locale={locale}
       templateDate={templateDate}
+      templateUtcOffsetMinutes={templateUtcOffsetMinutes}
       maxCards={maxCards}
     />
   );

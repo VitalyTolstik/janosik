@@ -256,6 +256,8 @@ export interface AddBoardOptions {
   templateLocale?: BoardStarterLocale;
   /** The client's local creation date, used for deterministic due offsets. */
   templateDate?: string;
+  /** The client's UTC offset (`-getTimezoneOffset()`) at creation. */
+  templateUtcOffsetMinutes?: number;
 }
 
 /**
@@ -2876,6 +2878,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           createId,
           now,
           options.templateDate,
+          options.templateUtcOffsetMinutes ?? 0,
         );
         columns = plan.columns.map((column) => ({
           id: column.id,

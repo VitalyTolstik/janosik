@@ -112,12 +112,14 @@ describe("ApiClient — REST idempotency (TASK-180.2 M17)", () => {
       template: "product-launch",
       templateLocale: "en",
       templateDate: "2026-11-24",
+      templateUtcOffsetMinutes: 840,
     });
     expect(bodies[0]).toEqual({
       title: "Launch",
       template: "product-launch",
       templateLocale: "en",
       templateDate: "2026-11-24",
+      templateUtcOffsetMinutes: 840,
     });
   });
 

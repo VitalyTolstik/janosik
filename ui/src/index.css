@@ -1858,17 +1858,31 @@ html.light [data-testid="public-avatar"].bg-slate {
   scrollbar-color: var(--border) transparent;
 }
 
-/* The preview owns the full 730 px content width at 1440 (gallery 338 +
-   padding), matching the prototype's mini-board columns. The wheel, trackpad
-   and keyboard still scroll; only the layout-consuming scrollbar gutter is
-   removed. */
+/* The preview keeps the full 730 px content width at 1440 (gallery 338 +
+   zero layout gutter). A thin, contrast-checked scrollbar stays visible as
+   the affordance that the sample card continues below the fold. */
 .template-preview-scroll {
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 60%, transparent)
+    transparent;
 }
 
 .template-preview-scroll::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  width: 8px;
+  height: 8px;
+}
+
+.template-preview-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.template-preview-scroll::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+}
+
+.template-preview-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
 }
 
 @media (max-width: 620px) {

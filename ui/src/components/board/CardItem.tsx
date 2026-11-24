@@ -556,9 +556,9 @@ function CardItemView({
                 style={{ background: coverBackground(card.cover) }}
               />
             ) : null}
-            {/* First line: the title owns ~75% of the tile on desktop; below
-          `md`, a labelled card drops it to half so the label chips keep a
-          readable lane (single line, fade at the cut). TASK-177.18 (U-07). */}
+            {/* First line: the title. A labelled card keeps the due badge on
+          this line so the label chips get a full-width line of their own;
+          unlabelled cards keep the original second due row. */}
             <div className="flex h-5 shrink-0 items-center gap-2">
               {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
             can't blow out the tile's intrinsic width. The full text stays in
@@ -568,44 +568,48 @@ function CardItemView({
                 ref={titleRef}
                 title={titleClamped ? card.title : undefined}
                 className={cn(
-                  "w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
-                  // TASK-177.18: only a labelled card needs the wider label
-                  // lane. `max-md` also covers 640–767 px tablets, where the
-                  // card is still phone-width; 1440 keeps the 75/25 design.
-                  labels.length > 0 && "max-md:w-1/2",
+                  "truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
+                  labels.length > 0 ? "min-w-0 flex-1" : "w-3/4 shrink-0",
                 )}
                 data-testid="card-title"
               >
                 <HighlightedText text={card.title} query={highlight ?? ""} />
               </p>
+              {labels.length > 0 && hasDueDate ? (
+                <DueBadge dueDate={card.dueDate as number} />
+              ) : null}
+            </div>
+            {labels.length > 0 ? (
               <div
                 data-testid="card-labels"
-                className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_80%,transparent)]"
+                aria-label={labels.map((label) => label.name).join(", ")}
+                className="flex h-[19px] shrink-0 flex-wrap content-center items-center gap-1 overflow-hidden"
               >
                 {labels.map((label) => (
                   <span
                     key={label.id}
                     title={label.name}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                       LABEL_COLOR_CHIP[label.color],
                     )}
                   >
                     <span
-                      className="h-1.5 w-1.5 rounded-full bg-current"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-current"
                       aria-hidden
                     />
-                    {label.name}
+                    <span className="min-w-0 truncate">{label.name}</span>
                   </span>
                 ))}
               </div>
-            </div>
-            {/* Due row: only the date badge. */}
-            <div className="flex h-5 shrink-0 items-center overflow-hidden">
-              {hasDueDate ? (
-                <DueBadge dueDate={card.dueDate as number} />
-              ) : null}
-            </div>
+            ) : (
+              /* Due row: only the date badge. */
+              <div className="flex h-5 shrink-0 items-center overflow-hidden">
+                {hasDueDate ? (
+                  <DueBadge dueDate={card.dueDate as number} />
+                ) : null}
+              </div>
+            )}
             {/* Last line: meta badges (description presence, linked cards,
           checklist progress) on the left, the priority beside the assignee's
           avatar on the right. No overflow clipping here — the 24px avatar

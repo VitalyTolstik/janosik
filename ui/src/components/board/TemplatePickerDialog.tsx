@@ -69,6 +69,7 @@ interface TemplatePickerDialogProps {
     templateId: BoardTemplateId,
     locale: BoardStarterLocale,
     templateDate: string,
+    templateUtcOffsetMinutes: number,
   ) => Promise<TemplateCreateOutcome> | TemplateCreateOutcome;
   /** Version-skew fallback: create a plain board with the current draft name. */
   createEmptyBoard: (name: string) => Promise<string | null> | string | null;
@@ -117,6 +118,7 @@ export function TemplatePickerDialog({
 
   const template = boardTemplateById(selectedId) ?? BOARD_TEMPLATES[0]!;
   const templateDate = templateDateString(now);
+  const templateUtcOffsetMinutes = -now.getTimezoneOffset();
   const generated = useMemo(
     () => generateBoardName(template, lang, now, existingTitles),
     [template, lang, now, existingTitles],
@@ -233,6 +235,7 @@ export function TemplatePickerDialog({
         selectedId,
         locale,
         templateDate,
+        templateUtcOffsetMinutes,
       );
       if (outcome !== null && typeof outcome === "object") {
         setVersionSkew(true);
@@ -358,13 +361,13 @@ export function TemplatePickerDialog({
         }}
         className={cn(
           "h-[min(672px,calc(100dvh-2rem))] w-[min(1110px,calc(100vw-2rem))] max-w-[1110px] gap-0 overflow-hidden rounded-[18px] border-border-strong bg-surface p-0 pt-0 pr-0 pb-0 pl-0 shadow-[0_40px_110px_-40px_rgb(0_0_0/0.9),0_2px_12px_rgb(0_0_0/0.3)] sm:rounded-[18px]",
-          "max-[900px]:h-[min(720px,calc(100dvh-1.5rem))] max-[900px]:w-[calc(100vw-1.5rem)]",
+          "max-[900px]:h-[min(700px,calc(100dvh-1.5rem))] max-[900px]:w-[calc(100vw-1.5rem)]",
           "max-[620px]:h-dvh max-[620px]:max-h-dvh max-[620px]:w-screen max-[620px]:max-w-none max-[620px]:rounded-none max-[620px]:border-0",
           "max-[620px]:pt-[env(safe-area-inset-top)] max-[620px]:pr-[env(safe-area-inset-right)] max-[620px]:pb-[env(safe-area-inset-bottom)] max-[620px]:pl-[env(safe-area-inset-left)]",
         )}
       >
         {created && createdTemplate ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface p-6 max-[620px]:justify-start max-[620px]:p-5">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface p-6 max-[620px]:justify-start max-[620px]:p-[20px_12px]">
             <div className="m-auto flex w-full max-w-[900px] flex-col items-center text-center max-[620px]:m-0">
               <span className="mb-2.5 grid h-[54px] w-[54px] place-items-center rounded-full border border-success/30 bg-success/15 text-success">
                 <Check aria-hidden className="h-[25px] w-[25px]" />
@@ -379,7 +382,7 @@ export function TemplatePickerDialog({
               >
                 {t("board.templatePicker.createdTitle")}
               </DialogTitle>
-              <p className="mb-1 max-w-[620px] text-base font-semibold tracking-[-0.01em] text-foreground">
+              <p className="mb-1 max-w-[620px] text-base font-semibold tracking-[-0.01em] text-foreground max-[620px]:text-[14px]">
                 {created.name}
               </p>
               <DialogDescription className="max-w-[520px] text-[11.5px] text-muted-foreground">
@@ -391,6 +394,7 @@ export function TemplatePickerDialog({
                   template={createdTemplate}
                   locale={locale}
                   templateDate={templateDate}
+                  templateUtcOffsetMinutes={templateUtcOffsetMinutes}
                 />
               </div>
               <div className="mt-4 flex flex-wrap justify-center gap-1.5 max-[620px]:w-full">
@@ -398,7 +402,7 @@ export function TemplatePickerDialog({
                   type="button"
                   data-testid="template-open-board"
                   onClick={openCreatedBoard}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-action-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-action-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface max-[620px]:flex-1"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-action-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface max-[620px]:flex-1"
                 >
                   <ArrowRight aria-hidden className="h-4 w-4" />
                   {t("board.templatePicker.openBoard")}
@@ -430,7 +434,7 @@ export function TemplatePickerDialog({
                 disabled={busy}
                 aria-label={t("board.templatePicker.close")}
                 title={t("board.templatePicker.close")}
-                className="grid h-[31px] w-[31px] shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50 max-[620px]:h-11 max-[620px]:w-11"
+                className="grid h-[31px] w-[31px] shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50 max-[900px]:h-11 max-[900px]:w-11"
               >
                 <X aria-hidden className="h-[15px] w-[15px]" />
               </button>
@@ -438,7 +442,7 @@ export function TemplatePickerDialog({
 
             <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] max-[900px]:grid-rows-[auto_minmax(0,1fr)] min-[901px]:grid-cols-[338px_minmax(0,1fr)] min-[901px]:grid-rows-1">
               <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-background/40 p-3 max-[900px]:border-b max-[900px]:p-2.5 max-[620px]:p-2">
-                <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] text-[9.5px] font-bold uppercase tracking-[0.09em] text-muted-foreground max-[900px]:pb-1.5">
+                <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] pt-[2px] text-[9.5px] font-bold uppercase tracking-[0.09em] text-muted-foreground max-[900px]:pb-1.5">
                   <span>{t("board.templatePicker.examples")}</span>
                   <span className="font-medium normal-case tracking-normal">
                     {t("board.templatePicker.curated")}
@@ -467,7 +471,7 @@ export function TemplatePickerDialog({
                         onClick={() => selectTemplate(item)}
                         onKeyDown={(event) => onGalleryKeyDown(event, index)}
                         className={cn(
-                          "grid w-full grid-cols-[32px_minmax(0,1fr)_17px] items-start gap-2 rounded-[9px] border px-2 py-2 text-left text-foreground transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60",
+                          "grid w-full grid-cols-[32px_minmax(0,1fr)_17px] items-start gap-2 rounded-[9px] border px-2 py-[7.75px] text-left text-foreground transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60",
                           selected
                             ? "border-primary/45 bg-card shadow-sm ring-2 ring-primary/15"
                             : "border-transparent hover:bg-hover",
@@ -538,33 +542,41 @@ export function TemplatePickerDialog({
                 </div>
               </aside>
 
-              <section
-                aria-label={`${t("board.templatePicker.preview")}: ${template.copy[locale].name}`}
-                tabIndex={0}
-                className="template-preview-scroll min-w-0 overflow-y-auto overflow-x-hidden bg-surface pb-[22px] pl-5 pr-5 pt-[22px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[900px]:p-[15px_16px_18px] max-[620px]:p-3"
-              >
-                <TemplatePreview
-                  template={template}
-                  locale={locale}
-                  templateDate={templateDate}
+              <div className="relative min-h-0 min-w-0">
+                <section
+                  aria-label={`${t("board.templatePicker.preview")}: ${template.copy[locale].name}`}
+                  tabIndex={0}
+                  className="template-preview-scroll h-full min-w-0 overflow-y-auto overflow-x-hidden bg-surface pb-[22px] pl-5 pr-5 pt-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[900px]:p-[15px_16px_18px] max-[620px]:p-3"
+                >
+                  <TemplatePreview
+                    template={template}
+                    locale={locale}
+                    templateDate={templateDate}
+                    templateUtcOffsetMinutes={templateUtcOffsetMinutes}
+                  />
+                </section>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-surface via-surface/70 to-transparent"
                 />
-              </section>
+              </div>
             </div>
 
             {error || versionSkew ? (
               <div
                 role="alert"
-                className="mx-5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-[11px] leading-[1.45] text-danger max-[620px]:mx-3"
+                className="mx-5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-[11px] leading-[1.45] text-(--agent-tone-danger) max-[620px]:mx-3"
               >
                 <span className="min-w-0 flex-1">
-                  {versionSkew ? t("board.templatePicker.versionSkew") : error}
+                  {error ||
+                    (versionSkew ? t("board.templatePicker.versionSkew") : "")}
                 </span>
                 {versionSkew ? (
                   <button
                     type="button"
                     onClick={() => void createPlainBoard()}
                     disabled={busy}
-                    className="inline-flex h-9 shrink-0 items-center rounded-md border border-current px-2.5 font-semibold transition-colors hover:bg-danger/10 disabled:pointer-events-none disabled:opacity-50"
+                    className="inline-flex h-11 shrink-0 items-center rounded-md border border-current px-2.5 font-semibold transition-colors hover:bg-danger/10 disabled:pointer-events-none disabled:opacity-50"
                   >
                     {t("board.templatePicker.createEmptyFallback")}
                   </button>
@@ -572,7 +584,7 @@ export function TemplatePickerDialog({
               </div>
             ) : null}
 
-            <footer className="flex shrink-0 flex-wrap items-end gap-3.5 border-t border-border bg-card px-[18px] py-3 max-[620px]:gap-2 max-[620px]:p-[9px_11px]">
+            <footer className="flex shrink-0 flex-wrap items-end gap-3.5 border-t border-border bg-card px-[18px] py-3 max-[900px]:py-[9px] max-[620px]:gap-2 max-[620px]:p-[9px_11px]">
               <div className="min-w-0 flex-1 max-[620px]:basis-full">
                 <div className="mb-1 flex items-center gap-1.5">
                   <label
@@ -621,7 +633,7 @@ export function TemplatePickerDialog({
                       setError("");
                       setVersionSkew(false);
                     }}
-                    className="h-[37px] min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 disabled:opacity-60 max-[620px]:h-11 max-[620px]:text-base"
+                    className="h-[37px] min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 disabled:opacity-60 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:text-base"
                   />
                   <button
                     type="button"
@@ -629,7 +641,7 @@ export function TemplatePickerDialog({
                     disabled={busy}
                     title={t("board.templatePicker.regenerate")}
                     aria-label={t("board.templatePicker.regenerate")}
-                    className="inline-flex h-[37px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-[10.5px] font-[620] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:h-11 max-[620px]:w-11 max-[620px]:px-0"
+                    className="inline-flex h-[37px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-[10.5px] font-[620] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:w-11 max-[620px]:px-0"
                   >
                     <RefreshCw aria-hidden className="h-3 w-3" />
                     <span className="max-[620px]:hidden">
@@ -666,7 +678,7 @@ export function TemplatePickerDialog({
                   type="button"
                   onClick={requestClose}
                   disabled={busy}
-                  className="inline-flex h-[37px] items-center justify-center rounded-lg px-3.5 text-xs font-[650] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:h-11 max-[620px]:flex-none"
+                  className="inline-flex h-[37px] items-center justify-center rounded-lg px-3.5 text-xs font-[650] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:flex-none"
                 >
                   {t("board.templatePicker.cancel")}
                 </button>
@@ -676,7 +688,7 @@ export function TemplatePickerDialog({
                   disabled={busy}
                   aria-busy={busy || undefined}
                   data-testid="template-create-board"
-                  className="inline-flex h-[37px] items-center justify-center gap-2 rounded-lg bg-action-primary px-6 text-xs font-[650] text-primary-foreground shadow-sm transition-colors hover:bg-action-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-80 max-[620px]:h-11 max-[620px]:flex-1"
+                  className="inline-flex h-[37px] items-center justify-center gap-2 rounded-lg bg-action-primary px-6 text-xs font-[650] text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-80 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:flex-1"
                 >
                   {busy ? (
                     <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />

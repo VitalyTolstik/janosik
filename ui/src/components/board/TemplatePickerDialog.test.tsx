@@ -37,6 +37,7 @@ function Harness({
     template: BoardTemplateId,
     locale: BoardStarterLocale,
     templateDate: string,
+    templateUtcOffsetMinutes: number,
   ) => Promise<TemplateCreateOutcome> | TemplateCreateOutcome;
   createEmptyBoard?: (name: string) => Promise<string | null> | string | null;
   onOpenBoard?: (boardId: string) => void;
@@ -102,6 +103,46 @@ describe("TemplatePickerDialog", () => {
     const count = picker.querySelector("#template-name-count");
     expect(count).toHaveAttribute("aria-live", "polite");
     expect(count).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("makes the scrollable preview mini-board keyboard focusable", async () => {
+    render(
+      <I18nProvider>
+        <Harness />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const miniBoard = picker.querySelector(".template-mini-board");
+    expect(miniBoard).toHaveAttribute("tabindex", "0");
+    expect(miniBoard).toHaveAttribute("aria-label", "Preview: Product launch");
+  });
+
+  it("shows the fallback create error without hiding the fallback", async () => {
+    const createBoard = vi.fn(
+      async () => ({ code: "template_unavailable" }) as const,
+    );
+    const createEmptyBoard = vi.fn(async () => null);
+    render(
+      <I18nProvider>
+        <Harness
+          createBoard={createBoard}
+          createEmptyBoard={createEmptyBoard}
+        />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    fireEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(
+      await screen.findByText(/isn’t available in this version/),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Create empty board" }));
+    expect(
+      await screen.findByText("The board could not be created. Try again."),
+    ).toBeVisible();
+    // The fallback remains available for a retry.
+    expect(
+      screen.getByRole("button", { name: "Create empty board" }),
+    ).toBeVisible();
   });
 
   it("offers the empty-board fallback when a template is unavailable", async () => {
@@ -205,6 +246,7 @@ describe("TemplatePickerDialog", () => {
         _template: BoardTemplateId,
         _locale: BoardStarterLocale,
         _templateDate: string,
+        _templateUtcOffsetMinutes: number,
       ): Promise<TemplateCreateOutcome> => {
         expect(name).toBe("My launch");
         return "board-new";
@@ -229,6 +271,7 @@ describe("TemplatePickerDialog", () => {
       "product-launch",
       "en",
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      expect.any(Number),
     );
     const createdName = (await screen.findByText("My launch")) as HTMLElement;
     expect(createdName).toBeVisible();
