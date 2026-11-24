@@ -85,10 +85,10 @@ function face(): HTMLElement {
 }
 
 describe("CardItem compact face (TASK-142)", () => {
-  it("renders a single-line 48px tile instead of the 92px full tile", () => {
+  it("renders a single-line 48px tile instead of the 112px full tile", () => {
     renderCard(richCard, { compact: true });
     expect(face().className).toContain("h-12");
-    expect(face().className).not.toContain("h-[92px]");
+    expect(face().className).not.toContain("h-[112px]");
   });
 
   it("keeps the swarm-readable signal", () => {

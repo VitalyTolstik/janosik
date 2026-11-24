@@ -107,10 +107,10 @@ interface CardItemProps {
 }
 
 /**
- * True while the title is visually clipped by `truncate` (scrollWidth
- * exceeds the clipped clientWidth). Mirrors Jira's behaviour: the native
- * `title` tooltip appears only when something is actually hidden — no
- * tooltip noise on short titles.
+ * True while the title is visually clipped by `line-clamp` (a line or a
+ * line's tail is hidden). Mirrors Jira's behaviour: the native `title`
+ * tooltip appears only when something is actually hidden — no tooltip
+ * noise on short titles.
  */
 function useClamped(
   enabled = true,
@@ -147,11 +147,10 @@ const seenCardIds = new Set<string>();
  * with the drag layer that @dnd-kit applies on top of it.
  *
  * The face is a fixed-size uniform grid tile (owner's call): every card
- * shares the same width and height regardless of content. Three rows —
- * the title (~75% of the width on desktop, half below `md` when the card
- * has labels so a chip stays readable) shares the first line with the
- * labels (clipped in the remainder), the due date owns the second, and
- * the third packs the meta badges (description / linked cards /
+ * shares the same width and height regardless of content. Four rows —
+ * the title spans two lines and keeps the due badge beside it, the label
+ * chips own the third (or the due badge when there are no labels), and
+ * the fourth packs the meta badges (description / linked cards /
  * checklists) against the priority and the assignee's avatar. Empty
  * slots keep their space so all cards line up.
  *
@@ -319,7 +318,7 @@ function CardItemView({
           "group relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
           compact
             ? "flex h-12 items-center gap-2 px-3"
-            : "flex h-[92px] flex-col gap-1 px-3 py-2",
+            : "flex h-[112px] flex-col gap-1 px-3 py-2",
           (selectionMode || selected) && "pl-9 max-lg:pl-12",
           selected &&
             "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/40",
@@ -556,10 +555,10 @@ function CardItemView({
                 style={{ background: coverBackground(card.cover) }}
               />
             ) : null}
-            {/* First line: the title. A labelled card keeps the due badge on
-          this line so the label chips get a full-width line of their own;
+            {/* First two lines: the title. A labelled card keeps the due badge
+          beside it so the label chips get a full-width line of their own;
           unlabelled cards keep the original second due row. */}
-            <div className="flex h-5 shrink-0 items-center gap-2">
+            <div className="flex min-h-10 shrink-0 items-start gap-2">
               {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
             can't blow out the tile's intrinsic width. The full text stays in
             the accessibility tree and a native `title` tooltip surfaces it,
@@ -568,7 +567,7 @@ function CardItemView({
                 ref={titleRef}
                 title={titleClamped ? card.title : undefined}
                 className={cn(
-                  "truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
+                  "line-clamp-2 break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
                   labels.length > 0 ? "min-w-0 flex-1" : "w-3/4 shrink-0",
                 )}
                 data-testid="card-title"

@@ -37,7 +37,7 @@ describe("Skeleton", () => {
       expect(bar).toHaveClass("janosik-skeleton");
     }
     expect(bars[0]).toHaveAttribute("style", "width: 32px; height: 32px;");
-    expect(bars[1]).toHaveClass("h-[92px]", "rounded-xl");
+    expect(bars[1]).toHaveClass("h-[112px]", "rounded-xl");
     expect(bars[2]).toHaveClass("h-10");
     expect(bars[3]).toHaveClass("h-40");
   });

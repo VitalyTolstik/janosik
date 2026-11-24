@@ -1062,7 +1062,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
     renderBoard();
 
     const full = screen.getAllByTestId("card-title")[0].closest("article");
-    expect(full?.className).toContain("h-[92px]");
+    expect(full?.className).toContain("h-[112px]");
 
     // Radix DropdownMenu opens on pointerdown, not click.
     fireEvent.pointerDown(screen.getByTestId("board-display-menu"), {
@@ -1073,7 +1073,7 @@ describe("TableView interactivity (TASK-14.1)", () => {
     await waitFor(() => {
       const compact = screen.getAllByTestId("card-title")[0].closest("article");
       expect(compact?.className).toContain("h-12");
-      expect(compact?.className).not.toContain("h-[92px]");
+      expect(compact?.className).not.toContain("h-[112px]");
     });
     expect(localStorage.getItem("janosik-board-density")).toBe("compact");
     expect(document.documentElement.dataset.density).toBe("compact");

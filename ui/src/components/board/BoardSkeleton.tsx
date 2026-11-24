@@ -4,7 +4,7 @@ import { useI18n } from "@/i18n";
 /**
  * First-paint board shell (SKELETON-AUDIT §4.2). The geometry follows the
  * real shell — `Header` is h-14, `BoardSection` pads px-4/pt-4/sm:px-6,
- * `ColumnView` is w-[80vw]/sm:w-72 and a full card is h-[92px] — so replacing
+ * `ColumnView` is w-[80vw]/sm:w-72 and a full card is h-[112px] — so replacing
  * this block with the board does not shift the page.
  */
 export function BoardShellSkeleton() {

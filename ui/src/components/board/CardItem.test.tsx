@@ -54,13 +54,13 @@ describe("CardItem title clamping", () => {
     expect(screen.getByTestId("card-title")).not.toHaveAttribute("title");
   });
 
-  it("truncates to a single line (CSS is in place)", () => {
+  it("clamps the title to two lines (CSS is in place)", () => {
     renderCard({
       ...baseCard,
       title: Array.from({ length: 60 }, (_, i) => `word-${i}`).join(" "),
     });
     const title = screen.getByTestId("card-title");
-    expect(title.className).toContain("truncate");
+    expect(title.className).toContain("line-clamp-2");
     expect(title.className).toContain("[overflow-wrap:anywhere]");
   });
 
@@ -75,7 +75,7 @@ describe("CardItem fixed tile layout", () => {
   it("renders every card at the same fixed size", () => {
     renderCard();
     const card = screen.getByTestId("card-title").closest("article");
-    expect(card?.className).toContain("h-[92px]");
+    expect(card?.className).toContain("h-[112px]");
     expect(card?.className).toContain("flex-col");
   });
 
