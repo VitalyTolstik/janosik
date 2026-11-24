@@ -60,6 +60,38 @@ body.janosik-touch-dragging {
   --font-agent-surface:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+
+  /* -------------------------------------------------------------------------
+   * Semantic UI type scale (TASK-200, owner request).
+   *
+   * 14 px is the default readable size for the app: sentences, descriptions,
+   * form values, menu items and buttons. The smaller steps are deliberate
+   * exceptions, not a second body size:
+   *
+   *   ui-title   17 px — dialog/section titles (display face where supported)
+   *   ui-heading 15 px — in-dialog section headings, empty-state titles
+   *   ui-body    14 px — default body, labels, inputs, buttons, menu items
+   *   ui-label   13 px — compact control labels and dense table/menu text
+   *   ui-meta    12 px — metadata, badges, counters, timestamps
+   *   ui-micro   11 px — uppercase micro-labels and dense badge chips ONLY
+   *
+   * Never use `ui-micro` for a sentence, menu item, table cell or button.
+   * The scale is intentionally expressed through `text-ui-*` utilities so a
+   * surface can be audited by class name instead of raw `text-[Npx]` values.
+   * ---------------------------------------------------------------------- */
+  --text-ui-title: 1.0625rem;
+  --text-ui-title--line-height: 1.3;
+  --text-ui-heading: 0.9375rem;
+  --text-ui-heading--line-height: 1.4;
+  --text-ui-body: 0.875rem;
+  --text-ui-body--line-height: 1.5;
+  --text-ui-label: 0.8125rem;
+  --text-ui-label--line-height: 1.45;
+  --text-ui-meta: 0.75rem;
+  --text-ui-meta--line-height: 1.4;
+  --text-ui-micro: 0.6875rem;
+  --text-ui-micro--line-height: 1.35;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -380,6 +412,10 @@ html.light {
 
   body {
     @apply bg-background text-foreground font-sans;
+    /* TASK-200: the app default is 14 px, not the browser's 16 px. Surfaces
+       that do not set a size inherit the readable body step. */
+    font-size: var(--text-ui-body);
+    line-height: var(--text-ui-body--line-height);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
