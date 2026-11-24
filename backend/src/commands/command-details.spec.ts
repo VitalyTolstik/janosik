@@ -1,5 +1,10 @@
 import type { Board, BoardAction, Card } from "@janosik/shared";
-import { commandDetails } from "@/commands/command-details";
+import {
+  capCommandDetails,
+  COMMAND_DETAILS_MAX_BYTES,
+  COMMAND_DETAIL_TEXT_MAX,
+  commandDetails,
+} from "@/commands/command-details";
 
 /**
  * The display snapshot the history feed renders (TASK-37): pure before →
@@ -40,7 +45,7 @@ function makeBoard(card: Card = makeCard()): Board {
 const base = { boardId: "board-1", at: AT } as const;
 
 describe("commandDetails", () => {
-  it("preserves a change at the end of a long card order", () => {
+  it("preserves a change at the end of a long card order within the size cap", () => {
     const before = makeBoard();
     const after = makeBoard();
     const ids = Array.from({ length: 100 }, (_, index) => `card-${index}`);
@@ -57,10 +62,41 @@ describe("commandDetails", () => {
       cardIds: after.columns[0]!.cardIds,
     } as BoardAction;
     const change = commandDetails(action, before, after)?.changes?.[0];
-    expect(change?.from?.length).toBeGreaterThan(10000);
-    expect(change?.to?.endsWith(before.cards["card-98"]!.title)).toBe(true);
+    // TASK-200.11: a snapshot is bounded, but the head+tail clip keeps the
+    // changed tail visible instead of freezing two identical prefixes.
+    expect(change?.from?.length).toBeLessThanOrEqual(1_025);
+    expect(change?.to?.length).toBeLessThanOrEqual(1_025);
     expect(change?.from).not.toBe(change?.to);
+    expect(change?.to?.endsWith(before.cards["card-98"]!.title)).toBe(true);
   });
+  it("keeps a middle card-order reorder visible after clipping", () => {
+    const before = makeBoard();
+    const after = makeBoard();
+    const ids = Array.from({ length: 100 }, (_, index) => `card-${index}`);
+    for (const id of ids) {
+      before.cards[id] = makeCard({ id, title: `${id}-${"x".repeat(120)}` });
+      after.cards[id] = before.cards[id]!;
+    }
+    before.columns[0]!.cardIds = ids;
+    after.columns[0]!.cardIds = [...ids];
+    [after.columns[0]!.cardIds[49], after.columns[0]!.cardIds[50]] = [
+      after.columns[0]!.cardIds[50]!,
+      after.columns[0]!.cardIds[49]!,
+    ];
+    const action = {
+      ...base,
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: "col-1",
+      cardIds: after.columns[0]!.cardIds,
+    } as BoardAction;
+    const change = commandDetails(action, before, after)?.changes?.[0];
+    expect(change?.field).toBe("cardOrder");
+    expect(change?.from).not.toBe(change?.to);
+    expect(change?.from).toContain("card-49");
+    expect(change?.to).toContain("card-50");
+    expect(change?.from?.length).toBeLessThanOrEqual(1_025);
+  });
+
   it("freezes the card order before and after a reorder", () => {
     const before = makeBoard();
     const after = makeBoard();
@@ -634,5 +670,52 @@ describe("commandDetails", () => {
     for (const action of actions) {
       expect(commandDetails(action, before, after)).toBeNull();
     }
+  });
+
+  describe("TASK-200.11 size caps", () => {
+    it("clips a 64k description edit to a bounded, still-different pair", () => {
+      const from = `${"a".repeat(40_000)}BEFORE${"b".repeat(20_000)}`;
+      const to = `${"a".repeat(40_000)}AFTER${"b".repeat(20_000)}`;
+      const before = makeBoard(makeCard({ description: from }));
+      const after = makeBoard(makeCard({ description: to }));
+      const action = {
+        ...base,
+        type: "UPDATE_CARD",
+        cardId: "card-1",
+        description: to,
+      } as BoardAction;
+      const changes = commandDetails(action, before, after)?.changes ?? [];
+      expect(changes).toHaveLength(1);
+      const change = changes[0]!;
+      expect(change.field).toBe("description");
+      expect(change.from?.length).toBeLessThanOrEqual(
+        COMMAND_DETAIL_TEXT_MAX + 1,
+      );
+      expect(change.to?.length).toBeLessThanOrEqual(
+        COMMAND_DETAIL_TEXT_MAX + 1,
+      );
+      expect(change.from).not.toBe(change.to);
+      expect(change.from).toContain("…");
+    });
+
+    it("keeps the serialized snapshot under the byte ceiling", () => {
+      // 16 changes × two 4 096-character strings is ~128 KB before the cap:
+      // the loop shrinks strings and then the change list until it fits.
+      const huge = {
+        detail: "d".repeat(4_096),
+        changes: Array.from({ length: 16 }, (_, index) => ({
+          field: `field-${index}`,
+          from: "f".repeat(4_096),
+          to: "t".repeat(4_096),
+        })),
+      };
+      const capped = capCommandDetails(huge);
+      expect(capped).not.toBeNull();
+      expect(
+        Buffer.byteLength(JSON.stringify(capped), "utf8"),
+      ).toBeLessThanOrEqual(COMMAND_DETAILS_MAX_BYTES);
+      expect(capped?.changes?.length).toBeGreaterThan(0);
+      expect(capped?.changes?.[0]?.from?.length).toBeLessThan(4_096);
+    });
   });
 });

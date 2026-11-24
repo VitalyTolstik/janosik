@@ -11,6 +11,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { RealtimeService } from "@/realtime/realtime.service";
 import { SseFrameStore } from "@/realtime/sse-frames";
 import { sseTiming } from "@/realtime/sse-timing";
+import { wipeAll } from "./support/wipe";
 
 const OWNER_EMAIL = "events-owner@example.com";
 const MEMBER_EMAIL = "events-member@example.com";
@@ -980,12 +981,12 @@ describe("Board events SSE (e2e)", () => {
 
     // Simulate a row written before ingress stamping: the action was stored
     // exactly as sent, without `boardId`.
-    const stored = await prisma.command.findUniqueOrThrow({
+    const stored = await prisma.command.findFirstOrThrow({
       where: { id: commandId },
     });
     const payload = { ...(stored.payload as Record<string, unknown>) };
     delete payload.boardId;
-    await prisma.command.update({
+    await prisma.command.updateMany({
       where: { id: commandId },
       data: { payload: payload as Prisma.InputJsonValue },
     });
@@ -1503,23 +1504,6 @@ describe("Board events SSE (e2e)", () => {
   }, 30_000);
 
   async function wipe(db: PrismaService): Promise<void> {
-    await db.attachment.deleteMany();
-    await db.cardLink.deleteMany();
-    await db.cardLabel.deleteMany();
-    await db.checklistItem.deleteMany();
-    await db.checklist.deleteMany();
-    await db.commentRevision.deleteMany();
-    await db.comment.deleteMany();
-    await db.activity.deleteMany();
-    await db.command.deleteMany();
-    await db.card.deleteMany();
-    await db.column.deleteMany();
-    await db.label.deleteMany();
-    await db.boardMember.deleteMany();
-    await db.boardShare.deleteMany();
-    await db.board.deleteMany();
-    await db.apiToken.deleteMany();
-    await db.refreshToken.deleteMany();
-    await db.user.deleteMany();
+    await wipeAll(db);
   }
 });

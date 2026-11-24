@@ -31,6 +31,7 @@ import {
   readBoardWorkflow,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { commandDetailMap } from "@/commands/command-detail-store";
 import {
   isCommentActivity,
   visibleActivityIdPage,
@@ -1771,6 +1772,11 @@ export class AdminEntitiesService {
       const row = activityById.get(id);
       return row ? [row] : [];
     });
+    const details = await commandDetailMap(
+      this.prisma,
+      card.column.boardId,
+      commands.map((command) => command.id),
+    );
 
     const timeline = [
       ...activity.map((entry) => ({
@@ -1792,7 +1798,9 @@ export class AdminEntitiesService {
         actorId: entry.actorId,
         actorEmail: entry.actor.email,
         auditId: null,
-        details: (entry.details as Record<string, unknown> | null) ?? null,
+        details:
+          (details.get(entry.id) as Record<string, unknown> | undefined) ??
+          null,
         createdAt: entry.createdAt.getTime(),
       })),
     ]
@@ -2279,7 +2287,6 @@ const COMMAND_SELECT = {
   id: true,
   type: true,
   seq: true,
-  details: true,
   payload: true,
   createdAt: true,
   boardId: true,

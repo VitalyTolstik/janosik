@@ -22,6 +22,8 @@ export const BOARD_CLEANUP_FAILED_ACTION = "board.cleanup_failed";
 export const BOARD_CLEANUP_RECOVERED_ACTION = "board.cleanup_recovered";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Bounded command/key/detail pages during account erasure (TASK-200.11). */
+const ACCOUNT_COMMAND_PURGE_CHUNK = 500;
 
 /**
  * A board appeared between the pre-lock candidate read and the sorted board
@@ -696,16 +698,30 @@ export class AccountDeletionService {
           await deleteMentionAttentionForComments(tx, authoredIds);
           await tx.comment.deleteMany({ where: { authorId: userId } });
           await tx.activity.deleteMany({ where: { actorId: userId } });
-          // ADR §6.14 purge order: preimages → commands → runs. The preimage
-          // table has no actor column, so resolve the user's commands in SQL
-          // before the command rows disappear.
-          await tx.$executeRaw`
-        DELETE FROM "CommandPreimage"
-        WHERE "commandId" IN (
-          SELECT "id" FROM "Command" WHERE "actorId" = ${userId}
-        )
-      `;
-          await tx.command.deleteMany({ where: { actorId: userId } });
+          // ADR §6.14 purge order: preimages → details → keys → commands →
+          // runs. The preimage table has no actor column, so resolve command
+          // ids in bounded pages while the rows still exist. TASK-200.11 also
+          // deletes the registry/display rows in those same pages.
+          for (;;) {
+            const page = await tx.command.findMany({
+              where: { actorId: userId },
+              select: { id: true },
+              take: ACCOUNT_COMMAND_PURGE_CHUNK,
+            });
+            if (page.length === 0) break;
+            const ids = page.map((row) => row.id);
+            await tx.commandPreimage.deleteMany({
+              where: { commandId: { in: ids } },
+            });
+            await tx.commandDetail.deleteMany({
+              where: { commandId: { in: ids } },
+            });
+            await tx.commandKey.deleteMany({ where: { id: { in: ids } } });
+            await tx.command.deleteMany({
+              where: { id: { in: ids }, actorId: userId },
+            });
+            if (page.length < ACCOUNT_COMMAND_PURGE_CHUNK) break;
+          }
           await tx.agentRun.deleteMany({ where: { actorId: userId } });
           await tx.boardMember.deleteMany({ where: { userId } });
           await tx.boardMember.updateMany({

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DEFAULT_BOARD_AGENT_POLICY } from "@janosik/shared";
+import type { Prisma } from "@prisma/client";
 import request from "supertest";
 import { AppModule } from "@/app.module";
 import "@/config/env";
@@ -134,16 +135,27 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
   }
 
   async function fingerprintOf(commandId: string): Promise<string> {
-    const row = await prisma.command.findUniqueOrThrow({
-      where: { id: commandId },
-      select: { details: true },
+    const row = await prisma.commandDetail.findFirstOrThrow({
+      where: { commandId },
+      select: { data: true },
     });
-    const fingerprint = (row.details as { intentFingerprint?: string })
+    const fingerprint = (row.data as { intentFingerprint?: string })
       .intentFingerprint;
     if (typeof fingerprint !== "string") {
       throw new Error("command has no intent fingerprint");
     }
     return fingerprint;
+  }
+
+  async function setIntentDetail(
+    commandId: string,
+    boardId: string,
+    data: Prisma.InputJsonValue,
+  ): Promise<void> {
+    await prisma.commandDetail.deleteMany({ where: { commandId } });
+    await prisma.commandDetail.create({
+      data: { commandId, boardId, createdAt: new Date(), data },
+    });
   }
 
   async function createPat(
@@ -408,12 +420,12 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       claimId,
     ).expect(200);
     expect(load).not.toHaveBeenCalled();
-    const storedClaim = await prisma.command.findUniqueOrThrow({
-      where: { id: claimId },
-      select: { details: true },
+    const storedClaim = await prisma.commandDetail.findFirstOrThrow({
+      where: { commandId: claimId },
+      select: { data: true },
     });
     expect(
-      (storedClaim.details as { intentFingerprint?: string }).intentFingerprint,
+      (storedClaim.data as { intentFingerprint?: string }).intentFingerprint,
     ).toMatch(/^v2:/);
     // A foreign release must not change what the replayed command reports.
     await command(boardId, {
@@ -544,10 +556,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     await claim(boardId, legacyCard, { leaseMs: 60_000 }, pat, legacyId).expect(
       200,
     );
-    await prisma.command.update({
-      where: { id: legacyId },
-      data: { details: {} },
-    });
+    await setIntentDetail(legacyId, boardId, {});
     await claim(boardId, legacyCard, { leaseMs: 60_000 }, pat, legacyId).expect(
       200,
     );
@@ -578,10 +587,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
     const v1Id = randomUUID();
     await claim(boardId, v1Card, { leaseMs: 60_000 }, pat, v1Id).expect(200);
     const v1Fingerprint = (await fingerprintOf(v1Id)).slice(3);
-    await prisma.command.update({
-      where: { id: v1Id },
-      data: { details: { intentFingerprint: v1Fingerprint } },
-    });
+    await setIntentDetail(v1Id, boardId, { intentFingerprint: v1Fingerprint });
     await claim(boardId, v1Card, { leaseMs: 60_000 }, pat, v1Id).expect(200);
     const v1Different = await claim(
       boardId,
@@ -604,9 +610,8 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       v1PatchId,
     ).expect(200);
     const v1PatchFingerprint = (await fingerprintOf(v1PatchId)).slice(3);
-    await prisma.command.update({
-      where: { id: v1PatchId },
-      data: { details: { intentFingerprint: v1PatchFingerprint } },
+    await setIntentDetail(v1PatchId, boardId, {
+      intentFingerprint: v1PatchFingerprint,
     });
     await patch(
       boardId,
@@ -628,9 +633,8 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       v1MoveId,
     ).expect(200);
     const v1MoveFingerprint = (await fingerprintOf(v1MoveId)).slice(3);
-    await prisma.command.update({
-      where: { id: v1MoveId },
-      data: { details: { intentFingerprint: v1MoveFingerprint } },
+    await setIntentDetail(v1MoveId, boardId, {
+      intentFingerprint: v1MoveFingerprint,
     });
     await move(
       boardId,
@@ -649,10 +653,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
       legacyMoveId,
     ).expect(200);
-    await prisma.command.update({
-      where: { id: legacyMoveId },
-      data: { details: {} },
-    });
+    await setIntentDetail(legacyMoveId, boardId, {});
     await move(
       boardId,
       legacyMoveCard,
@@ -680,10 +681,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       pat,
       legacyPatchId,
     ).expect(200);
-    await prisma.command.update({
-      where: { id: legacyPatchId },
-      data: { details: {} },
-    });
+    await setIntentDetail(legacyPatchId, boardId, {});
     // A legacy row cannot prove the old expectedDescription; refuse rather
     // than replay the compare-and-set unsafely.
     await patch(
@@ -943,7 +941,7 @@ describe("Card entity CAS and targeted intents (e2e)", () => {
       refused.body.approvalId,
     ).expect(200);
     expect(applied.body.columnId).toBe(doingId);
-    const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+    const preimage = await prisma.commandPreimage.findFirstOrThrow({
       where: { commandId },
     });
     expect(preimage.runId).not.toBeNull();

@@ -35,6 +35,7 @@ import {
   PatchCardIntentDto,
 } from "./dto/card-intent.dto";
 import { CommandsService } from "./commands.service";
+import { commandDetailMap } from "./command-detail-store";
 import { loadTargetedBoardAggregate } from "./targeted-board";
 
 /** The authenticated caller attributes the command transport resolved. */
@@ -54,7 +55,6 @@ interface StoredIntentCommand {
   payload: Prisma.JsonValue;
   result: Prisma.JsonValue;
   runId: string | null;
-  details: Prisma.JsonValue;
 }
 
 interface ReplayedCommand {
@@ -514,7 +514,7 @@ export class CardIntentsService {
     legacyMatches: (payload: Record<string, unknown>) => boolean,
   ): Promise<ReplayedCommand | null> {
     if (commandId === undefined) return null;
-    const row = (await this.prisma.command.findUnique({
+    const row = (await this.prisma.command.findFirst({
       where: { id: commandId },
       select: {
         boardId: true,
@@ -522,7 +522,6 @@ export class CardIntentsService {
         payload: true,
         result: true,
         runId: true,
-        details: true,
       },
     })) as StoredIntentCommand | null;
     if (row === null) return null;
@@ -534,8 +533,9 @@ export class CardIntentsService {
         conflict: "id",
       });
     }
+    const detailMap = await commandDetailMap(this.prisma, boardId, [commandId]);
+    const details = asRecord(detailMap.get(commandId) ?? null);
     const payload = asRecord(row.payload);
-    const details = asRecord(row.details);
     const storedFingerprint = details?.intentFingerprint;
     // `2b175874` wrote the same hash JSON without the `v2:` prefix, so a bare
     // hash still proves the full intent exactly. Only genuinely fingerprint-

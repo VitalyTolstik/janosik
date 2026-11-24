@@ -1190,7 +1190,7 @@ describe("Admin addressable filters (e2e)", () => {
     const otherUser = "filter-email-only";
 
     beforeAll(async () => {
-      const command = await prisma.command.findUniqueOrThrow({
+      const command = await prisma.command.findFirstOrThrow({
         where: { id: "command-a-1" },
       });
       const auditEvent = {

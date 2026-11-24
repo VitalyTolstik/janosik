@@ -1,5 +1,5 @@
 import type { ActivityChange, Board, BoardAction, Card } from "@janosik/shared";
-import { cardOf, DEFAULT_CARD_PRIORITY, LIMITS } from "@janosik/shared";
+import { cardOf, DEFAULT_CARD_PRIORITY } from "@janosik/shared";
 
 /**
  * The display snapshot stored on a `Command` row (TASK-37) and rendered by
@@ -16,18 +16,131 @@ export interface CommandDetails {
 
 /**
  * Snapshots are for reading, not for storage — clip the ones that slipped
- * past the UI clamp. The bar is the description limit, not a display size:
- * a clipped pair hides the actual change (two identical truncated walls)
- * and a change beyond the cut would freeze as no change at all. The feed
- * collapses context and highlights the changed fragment on render.
+ * past the UI clamp. TASK-200.11 lowers the bar from the 64 000-character
+ * description limit to a bounded history snapshot: a per-keystroke edit of a
+ * long document used to freeze two 64k walls into every command row (and,
+ * before partitioning, into the board's 30-day command log). The feed only
+ * renders a context window around the changed fragment, so 1 024 characters
+ * keep the useful part; the ellipsis marks the cut. Description pairs get a
+ * window centred on the first difference; other long strings keep head and
+ * tail.
  */
-const SNAPSHOT_MAX = LIMITS.description;
+export const COMMAND_DETAIL_TEXT_MAX = 1_024;
+/**
+ * Hard ceiling for one side-table blob. The per-field clamp above already
+ * bounds ordinary diffs; this catches hand-built/legacy shapes (a long
+ * `cardOrder`, a future action with many changes) before they reach the
+ * side table. 16 KiB is a worst-case bound, not an inline target: JSONB above
+ * roughly 2 KiB is TOAST-compressed by PostgreSQL, and the command's action
+ * payload is separate and still required for replay.
+ */
+export const COMMAND_DETAILS_MAX_BYTES = 16 * 1_024;
+/** More changes than any current action emits; a guard against new ones. */
+export const COMMAND_DETAIL_MAX_CHANGES = 16;
+
+function clippedTo(value: string | null, limit: number): string | null {
+  if (value === null || value.length <= limit) return value;
+  // Keep both ends: a cardOrder or a long document usually changes near the
+  // start or the end, and a prefix-only clip can make two different walls
+  // freeze as the same string. One character is reserved for the ellipsis.
+  const room = Math.max(limit - 1, 0);
+  const head = Math.ceil(room * 0.7);
+  const tail = room - head;
+  return `${value.slice(0, head)}…${tail > 0 ? value.slice(value.length - tail) : ""}`;
+}
 
 function clip(value: string | null): string | null {
-  if (value === null) return null;
-  return value.length > SNAPSHOT_MAX
-    ? `${value.slice(0, SNAPSHOT_MAX)}…`
-    : value;
+  return clippedTo(value, COMMAND_DETAIL_TEXT_MAX);
+}
+
+/**
+ * Clip a from/to pair around the first difference. A prefix-only clip (or a
+ * plain head+tail clip) can freeze a middle edit of a long description as two
+ * identical walls; the history feed then has nothing to show. Keep a context
+ * window centred on the first differing character, with an ellipsis on each
+ * side that was cut. Short pairs are returned as-is.
+ */
+function clipPair(
+  from: string | null,
+  to: string | null,
+): [string | null, string | null] {
+  const max = COMMAND_DETAIL_TEXT_MAX;
+  if (
+    from === null ||
+    to === null ||
+    (from.length <= max && to.length <= max)
+  ) {
+    return [clip(from), clip(to)];
+  }
+  const shared = Math.min(from.length, to.length);
+  let prefix = 0;
+  while (prefix < shared && from[prefix] === to[prefix]) prefix += 1;
+  const context = Math.floor((max - 2) / 2);
+  const window = (value: string): string => {
+    if (value.length <= max) return value;
+    const start = Math.max(0, prefix - context);
+    const room = max - (start > 0 ? 1 : 0);
+    const end = Math.min(value.length, start + room);
+    const cutEnd = end < value.length;
+    const body = value.slice(start, end - (cutEnd ? 1 : 0));
+    return `${start > 0 ? "…" : ""}${body}${cutEnd ? "…" : ""}`;
+  };
+  return [window(from), window(to)];
+}
+
+function withLimit(
+  details: CommandDetails,
+  textLimit: number,
+  changeLimit: number,
+): CommandDetails {
+  const changes =
+    details.changes === undefined
+      ? undefined
+      : details.changes.slice(0, changeLimit).map((change) => ({
+          ...change,
+          from: clippedTo(change.from, textLimit),
+          to: clippedTo(change.to, textLimit),
+        }));
+  return {
+    ...(details.detail !== undefined
+      ? { detail: clippedTo(details.detail, textLimit) ?? "" }
+      : {}),
+    ...(changes === undefined ? {} : { changes }),
+  };
+}
+
+/**
+ * Enforce `COMMAND_DETAILS_MAX_BYTES` without losing the shape: shrink every
+ * string step by step, then the change list. Deterministic, so a replay of
+ * the same action freezes exactly the same snapshot.
+ */
+export function capCommandDetails(
+  details: CommandDetails | null,
+): CommandDetails | null {
+  if (details === null) return null;
+  const size = (value: CommandDetails): number =>
+    Buffer.byteLength(JSON.stringify(value), "utf8");
+  for (const limit of [
+    COMMAND_DETAIL_TEXT_MAX,
+    512,
+    256,
+    128,
+    64,
+    32,
+    16,
+    8,
+    4,
+    2,
+    1,
+  ]) {
+    const candidate = withLimit(details, limit, COMMAND_DETAIL_MAX_CHANGES);
+    if (size(candidate) <= COMMAND_DETAILS_MAX_BYTES) return candidate;
+  }
+  for (let count = COMMAND_DETAIL_MAX_CHANGES - 1; count >= 0; count -= 1) {
+    const candidate = withLimit(details, 1, count);
+    if (size(candidate) <= COMMAND_DETAILS_MAX_BYTES) return candidate;
+  }
+  return { detail: "", changes: [] };
 }
 
 function columnTitle(board: Board, cardId: string): string | null {
@@ -71,6 +184,14 @@ export function commandDetails(
   before: Board,
   after: Board,
 ): CommandDetails | null {
+  return capCommandDetails(uncappedCommandDetails(action, before, after));
+}
+
+function uncappedCommandDetails(
+  action: BoardAction,
+  before: Board,
+  after: Board,
+): CommandDetails | null {
   switch (action.type) {
     case "UPDATE_CARD": {
       const from = cardOf(before, action.cardId);
@@ -90,10 +211,11 @@ export function commandDetails(
         action.description !== undefined &&
         fromDescription !== toDescription
       ) {
+        const [fromClip, toClip] = clipPair(fromDescription, toDescription);
         changes.push({
           field: "description",
-          from: clip(fromDescription),
-          to: clip(toDescription),
+          from: fromClip,
+          to: toClip,
         });
       }
       return changes.length > 0 ? { changes } : null;
@@ -220,14 +342,15 @@ export function commandDetails(
         ids.map((id) => board.cards[id]?.title ?? id).join(", ");
       const from = names(before, previous?.cardIds ?? []);
       const to = names(after, current?.cardIds ?? []);
+      const [fromClip, toClip] = clipPair(from, to);
       return {
         detail: clip(current?.title ?? previous?.title ?? null) ?? undefined,
         ...(from === to
           ? {}
           : {
-              // Column size and card titles are already bounded by LIMITS.
-              // Truncating here would hide changes near the end of the order.
-              changes: [{ field: "cardOrder", from, to }],
+              // Clip around the first reordered pair, not just the prefix:
+              // a reorder in the middle of a long column must stay visible.
+              changes: [{ field: "cardOrder", from: fromClip, to: toClip }],
             }),
       };
     }
@@ -424,16 +547,20 @@ export function commandDetails(
       // A list reads as its items joined inline; an empty (or cleared) list
       // is `null` — the same "—" the rest of the feed uses.
       const render = (list: string[] | undefined): string | null =>
-        list && list.length > 0 ? clip(list.join("; ")) : null;
+        list && list.length > 0 ? list.join("; ") : null;
       if (
         action.acceptanceCriteria !== undefined &&
         (from.acceptanceCriteria ?? []).join("; ") !==
           (to.acceptanceCriteria ?? []).join("; ")
       ) {
+        const [fromClip, toClip] = clipPair(
+          render(from.acceptanceCriteria),
+          render(to.acceptanceCriteria),
+        );
         changes.push({
           field: "acceptanceCriteria",
-          from: render(from.acceptanceCriteria),
-          to: render(to.acceptanceCriteria),
+          from: fromClip,
+          to: toClip,
         });
       }
       if (
@@ -441,10 +568,14 @@ export function commandDetails(
         (from.definitionOfDone ?? []).join("; ") !==
           (to.definitionOfDone ?? []).join("; ")
       ) {
+        const [fromClip, toClip] = clipPair(
+          render(from.definitionOfDone),
+          render(to.definitionOfDone),
+        );
         changes.push({
           field: "definitionOfDone",
-          from: render(from.definitionOfDone),
-          to: render(to.definitionOfDone),
+          from: fromClip,
+          to: toClip,
         });
       }
       return changes.length > 0 ? { changes } : null;

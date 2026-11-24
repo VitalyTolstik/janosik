@@ -119,6 +119,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   resolve a card id only as an own property, so `?card=constructor` stays
   inert. Browser e2e skeleton, resync and deep-link waits follow the summary
   route instead of the legacy aggregate.
+
+- TASK-200.11 CI follow-up: the browser e2e legacy-watch fixture clears the
+  `CommandDetail` side row instead of the removed `Command.details` column, so
+  the Watch feed is still tested against a command without a display snapshot.
+  The self-host smoke recreates the database before replaying its `pg_dump
+  --clean` backup: PostgreSQL cannot drop an inherited partition constraint
+  (`Command_default_pkey`, …) on the live partitioned schema, while those
+  statements are no-ops in a fresh database.
+
 - TASK-200.12 review hardening. The scaled nginx proxy now mounts a full
   `deploy/scale/nginx-main.conf` with `worker_connections 65536` and
   `worker_rlimit_nofile 131072` (the stock 1024 would cap the documented
@@ -235,6 +244,112 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reconnect catch-up and keep-alive timing. The 3 000-connection CPU/p95 targets were **not**
   measured in this task, and the public share stream still uses Nest `@Sse`
   (separate projection surface, documented in the runbooks).
+
+- TASK-200.11 schema recheck: cross-partition `Command.createdAt` moves now
+  keep the global key and display detail. Migration
+  `20261123134000_task_200_11_command_key_move` upserts the key for the same
+  board (a different board still raises 23505), moves both
+  `CommandKey.createdAt` and `CommandDetail.createdAt` on an update, and
+  replaces the immediate key delete trigger with a deferred detail cleanup;
+  `CommandDetail` loses the registry FK in favour of a required `boardId`
+  column and a `(boardId, commandId)` index. The unpartitioned registry is no
+  longer deleted inline by a month DDL: `sweep-commands` drains only keys with
+  `NOT EXISTS (Command id+board)` in bounded chunks, and
+  `readCommandLogStats` exposes its rows, size, dead tuples and vacuum times
+  (`registry`) while `defaultRows` stays an exact count. The admin
+  throttle/demo suite now covers moving a command's month and preserving its
+  key/detail; the task doc adds the exact default-partition
+  detach/move/reattach runbook, an intermediate duplicate-id cleanup runbook,
+  and registry/WAL sizing. Purge/erasure paths now delete board/actor-scoped
+  `CommandKey`/`CommandDetail` rows with their commands (account deletion,
+  board purge and demo purge), and the `events`, `commands-undo` and
+  `admin-throttle-demo` wipes use the shared `wipeAll` plus a fixed-id
+  after-wipe regression. The DB guarantee is documented as cross-board
+  uniqueness; same-board duplicates of a live id are rejected by the
+  application pre-check, while a raw same-board INSERT is not blocked by the
+  move-compatible upsert. Default partitions and registry keys are the
+  chunk-drained rows; everything else is month DDL. Migration
+  `20261123135000_task_200_11_command_key_board_index` adds the board-scoped
+  registry index; it builds inline only for a sub-1M-row/sub-64MiB registry
+  (5 s `lock_timeout`), uses physical size so stale `reltuples` cannot force a
+  blocking build, and otherwise defers to `ensure-command-key-index`, which runs
+  first in the maintenance order and uses `CREATE INDEX CONCURRENTLY` outside a
+  transaction (index/WAL space, quiet window, no blocking writes). Account/board/demo purges page command ids and delete
+  preimages/details/keys in bounded statements (the board purge also has
+  bounded defensive key/detail orphan passes), preserving the 5-minute board
+  transaction budget; the account e2e includes a preimage.
+
+- TASK-200.11 ops review follow-up: restore global commandId uniqueness,
+  make month retention lock-safe, and bound the sweep honestly. An
+  unpartitioned `CommandKey` registry (id PK, boardId, createdAt) is claimed by
+  a BEFORE INSERT trigger in the command transaction, moved on `createdAt`
+  updates, released by the delete trigger or the month-drop helper, and
+  backfilled by migration `20261123132000_task_200_11_command_key_registry`;
+  a cross-board collision now answers `409 id_conflict` instead of a duplicate
+  command, `CommandDetail` references the registry (`ON DELETE CASCADE`) and
+  detail reads are board-scoped. A batch with the same commandId twice is
+  rejected before the transaction. Migration
+  `20261123133000_task_200_11_safe_partition_drop` makes
+  `janosik_drop_command_partition` lock Command → CommandDetail → pre-images
+  with a 2 s timeout (returns -1 so the service retries), releases the month's
+  keys, and makes `janosik_ensure_command_partition` return
+  `skipped:<default>=<n>` instead of failing 23514 when a default partition
+  holds the requested month; the maintenance `ensure` job reports skips,
+  filters months already outside retention, and `run("all")` isolates a failed
+  job so later sweeps still run. The command log gets a 1M-row/table/run
+  drain budget (24M/day, above 50 commands/s × 30 days), `defaultRows` is an
+  exact count while partition rows stay planner estimates, the unused detail
+  `createdAt` index is dropped, pre-images use the command clock, legacy
+  details are copied uncapped (documented), snapshot caps/TOAST/payload limits
+  and the full-transaction downtime are documented, and `clipPair` preserves
+  middle card-order/task-spec edits. The e2e wipe includes
+  Command/CommandDetail/CommandKey; tests cover cross-board concurrency,
+  duplicate batches, concurrent read+drop, default-partition skip, all
+  Command indexes/FKs, real-PostgreSQL observability, and the migration script
+  is wired into CI and loads `backend/.env`/`TEST_DATABASE_URL`.
+
+- TASK-200.11 partitioned command log and a heat-aware detail side table. The
+  `Command` table is now a monthly `RANGE (createdAt)` partitioned table
+  (`Command_YYYYMM` plus a default), and `CommandPreimage` follows the same
+  scheme; retention drops a whole expired month instead of deleting millions
+  of rows. Because PostgreSQL requires every unique constraint on a
+  partitioned table to contain the partition key, the primary key is
+  `(id, createdAt)`; commandId idempotency is still resolved inside the
+  serialized per-board write transaction, and no same-board retry can insert a
+  second row. Heavy display snapshots (`details`) move to the new
+  `CommandDetail` side table, read in batches by `commandId`; a partitioned→
+  partitioned FK would make monthly `DROP TABLE` impossible, so the writer
+  inserts both rows in one transaction, an `AFTER DELETE` trigger removes the
+  side row on any row delete, and retention drops the detail partition first.
+  Description/detail snapshots are capped at 1 024 characters per side and
+  16 KiB serialized (previously a 64 000-character description edit froze two
+  64k walls per command), with diff-aware clipping for description edits.
+  New maintenance job `ensure-command-partitions` pre-creates the previous,
+  current and next three UTC months through
+  `janosik_ensure_command_partition(date)`; `sweep-commands` uses
+  `janosik_drop_command_partition(date)` for whole months and keeps the
+  chunked delete for the partial current/default partitions. Agent and human
+  commands share the retention window because a shorter agent window would
+  strand `AgentRun` rollback; operators can lower the global knob.
+  `GET /admin/observability` gains a `commandLog` section with per-partition
+  estimated rows, bytes, dead tuples and vacuum/autovacuum timestamps
+  (`pg_class.reltuples`, never `count(*)`) plus a `defaultRows` warning
+  counter. Two migrations —
+  `20261123130000_task_200_11_command_log_partitioning` and
+  `20261123131000_task_200_11_command_details_side_table` —
+  rename the old tables aside, copy, verify exact command/detail/pre-image
+  counts, build the per-partition indexes, transfer the shared
+  `Command_seq_seq`, drop the legacy tables, and have a documented
+  backup-restore rollback and 2×-disk pre-check. Replay/resync
+  (`deltaSince`/`resync`), undo pre-images, admin command/timeline queries and
+  the TASK-200.4/200.6/200.7 paths keep their contracts; `events`, `runs`,
+  `admin` and `commands-*` suites run on the partitioned schema. New tests
+  cover the caps, UTC partition naming/expiry, ensure/drop jobs, routing,
+  pruning, trigger deletion, whole-month retention, PK/index shape and an
+  empty-plus-existing-data migration check. Design, migration/rollback and
+  the 30-day size plan: `docs/TASK-200.11-command-log-partitioning.md`;
+  self-hosting retention notes are updated in EN/RU.
+
 - TASK-200.8 shared MCP Streamable HTTP gateway. `@janosik/mcp` now ships a
   separate `janosik-mcp-http` binary and `ghcr.io/vitalytolstik/janosik-mcp`
   image that serve many MCP sessions from one Node process instead of one

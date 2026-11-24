@@ -455,7 +455,7 @@ describe("Agent runs and rollback (e2e)", () => {
         { token: workerToken },
       ).expect(200);
       const runId = (created.body as CommandBatchResponse).runId!;
-      const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+      const preimage = await prisma.commandPreimage.findFirstOrThrow({
         where: { commandId: noopCommandId },
       });
       const data = preimage.data as {
@@ -520,7 +520,7 @@ describe("Agent runs and rollback (e2e)", () => {
       where: { runId },
       select: { commandId: true, data: true },
     });
-    await prisma.commandPreimage.update({
+    await prisma.commandPreimage.updateMany({
       where: { commandId: stored.commandId },
       data: {
         data: {
@@ -605,11 +605,11 @@ describe("Agent runs and rollback (e2e)", () => {
       apiTokenId: trustedTokenId,
       commandCount: 1,
     });
-    const commandRow = await prisma.command.findUniqueOrThrow({
+    const commandRow = await prisma.command.findFirstOrThrow({
       where: { id: commandId },
     });
     expect(commandRow.runId).toBe(run.id);
-    const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+    const preimage = await prisma.commandPreimage.findFirstOrThrow({
       where: { commandId },
     });
     expect(preimage.runId).toBe(run.id);
@@ -1317,7 +1317,7 @@ describe("Agent runs and rollback (e2e)", () => {
         [`column:${columnId}`]: expect.any(Number),
       }),
     );
-    const preimage = await prisma.commandPreimage.findUniqueOrThrow({
+    const preimage = await prisma.commandPreimage.findFirstOrThrow({
       where: { commandId: duplicateCommandId },
     });
     const data = preimage.data as {
@@ -1350,7 +1350,7 @@ describe("Agent runs and rollback (e2e)", () => {
         data.entities.find((entity) => entity.touch === touch),
       ).toMatchObject({ exists: false, postVersion: expect.any(Number) });
     }
-    const duplicateCommand = await prisma.command.findUniqueOrThrow({
+    const duplicateCommand = await prisma.command.findFirstOrThrow({
       where: { id: duplicateCommandId },
       select: { touches: true },
     });
@@ -1735,7 +1735,7 @@ describe("Agent runs and rollback (e2e)", () => {
     expect(rows).toHaveLength(2);
     // Simulate retention/demo cleanup dropping one member: the pre-image for
     // it may still exist, but the run is no longer the set it applied.
-    await prisma.command.delete({ where: { id: rows[0]!.id } });
+    await prisma.command.deleteMany({ where: { id: rows[0]!.id } });
 
     const expired = await preview(runId).expect(409);
     expect(expired.body).toMatchObject({

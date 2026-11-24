@@ -17,6 +17,7 @@ import { BoardWriteService } from "@/common/board-write.service";
 import { withBoardWriteContext } from "@/common/request-context";
 import { BoardsService } from "@/boards/boards.service";
 import { CommandsService } from "@/commands/commands.service";
+import { commandKeyBoardIndexState } from "@/commands/command-key-index";
 import { CommentsService } from "@/comments/comments.service";
 import { deleteCommentActivitySnapshots } from "@/comments/comment-history";
 import { FeatureFlagsService } from "@/ops/feature-flags.service";
@@ -31,6 +32,8 @@ const LABELS: Array<{ name: string; color: string }> = [
   { name: "backend", color: "blue" },
   { name: "urgent", color: "orange" },
 ];
+/** Bounded command/key/detail pages during demo cleanup (TASK-200.11). */
+const DEMO_COMMAND_PURGE_CHUNK = 500;
 const SUMMARIES = [
   "Починить вёрстку карточки на мобиле",
   "Добавить фильтр по меткам",
@@ -926,7 +929,72 @@ export class DemoService implements OnModuleDestroy {
         });
       }
       await tx.activity.deleteMany({ where: { boardId, actorId: demoUsers } });
-      await tx.command.deleteMany({ where: { boardId, actorId: demoUsers } });
+      // TASK-200.11: page the command log so detail/key deletes stay bounded;
+      // only demo actors' commands are removed, real rows on a configured
+      // board keep their keys.
+      for (;;) {
+        const page = await tx.command.findMany({
+          where: { boardId, actorId: demoUsers },
+          select: { id: true },
+          take: DEMO_COMMAND_PURGE_CHUNK,
+        });
+        if (page.length === 0) break;
+        const ids = page.map((row) => row.id);
+        await tx.commandDetail.deleteMany({
+          where: { commandId: { in: ids } },
+        });
+        await tx.commandKey.deleteMany({ where: { id: { in: ids } } });
+        await tx.command.deleteMany({
+          where: { id: { in: ids }, boardId, actorId: demoUsers },
+        });
+        if (page.length < DEMO_COMMAND_PURGE_CHUNK) break;
+      }
+      // Bounded board-orphan cleanup for legacy demo rows whose command was
+      // already gone; real commands on a configured shared board keep their
+      // key/detail.
+      for (;;) {
+        const removed = await tx.$executeRaw`
+          WITH victims AS (
+            SELECT DISTINCT d."commandId"
+              FROM "CommandDetail" d
+             WHERE d."boardId" = ${boardId}
+               AND NOT EXISTS (
+                 SELECT 1 FROM "Command" c
+                  WHERE c."id" = d."commandId" AND c."boardId" = d."boardId"
+               )
+             LIMIT ${DEMO_COMMAND_PURGE_CHUNK}
+          )
+          DELETE FROM "CommandDetail" d
+           USING victims v
+           WHERE d."commandId" = v."commandId" AND d."boardId" = ${boardId}
+        `;
+        if (removed === 0) break;
+      }
+      const keyIndexState = await commandKeyBoardIndexState(tx);
+      if (keyIndexState === "valid") {
+        for (;;) {
+          const removed = await tx.$executeRaw`
+            WITH victims AS (
+              SELECT k."id"
+                FROM "CommandKey" k
+               WHERE k."boardId" = ${boardId}
+                 AND NOT EXISTS (
+                   SELECT 1 FROM "Command" c
+                    WHERE c."id" = k."id" AND c."boardId" = k."boardId"
+                 )
+               LIMIT ${DEMO_COMMAND_PURGE_CHUNK}
+            )
+            DELETE FROM "CommandKey" k
+             USING victims v
+             WHERE k."id" = v."id" AND k."boardId" = ${boardId}
+          `;
+          if (removed === 0) break;
+        }
+      } else {
+        this.logger.warn(
+          `demo purge: CommandKey_boardId_idx is ${keyIndexState}; skipping the board key orphan pass`,
+        );
+      }
       // Keep recorded parents when other users have added dependent rows.
       const { count: removedCards } = await tx.card.deleteMany({
         where: {

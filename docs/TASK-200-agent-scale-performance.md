@@ -810,6 +810,16 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `backend/prisma/schema.prisma`, миграции,
 `backend/src/ops/maintenance.service.ts`, `backend/src/commands/*`.
 
+**Реализовано:** месячные RANGE-партиции по `createdAt` для `Command`,
+`CommandDetail` и `CommandPreimage`; глобальная уникальность commandId через
+непартиционированный `CommandKey`; тяжёлые `details` вынесены в side-таблицу
+с капом 16 КиБ (строки — 1 024 символа); retention удаляет целый месяц через
+`DROP TABLE` с блокировками в порядке чтения и retry; `ensure-command-partitions`
+пропускает месяцы с default-строками и не пересоздаёт истёкшие; observability
+показывает размер/dead tuples/vacuum по партициям и точный `defaultRows`.
+Дизайн, миграции, rollback и план объёма:
+[`TASK-200.11-command-log-partitioning.md`](TASK-200.11-command-log-partitioning.md).
+
 ---
 
 ### 200.12 — Реплики API + nginx/Caddy (P1, production prerequisite)

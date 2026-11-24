@@ -96,6 +96,7 @@ import {
   parentageConflict,
 } from "./entity-parentage";
 import { commandDetails } from "./command-details";
+import { commandDetailMap } from "./command-detail-store";
 import {
   actionFingerprint,
   actionFingerprintWithoutRestoreAssignee,
@@ -127,13 +128,30 @@ function commandDetail(details: Prisma.JsonValue | null): string | undefined {
 }
 
 /**
+ * TASK-200.11: `CommandKey.id` is the global uniqueness guard. A concurrent
+ * request that uses the same client commandId on another board (or the same
+ * board through a bypassed pre-check) trips the registry primary key. Postgres
+ * reports 23505; Prisma surfaces it as P2002, or P2010 with the SQLSTATE in
+ * `meta.code` when a trigger raises it. Both mean the same thing to the client:
+ * an id conflict, never a 500.
+ */
+function isCommandIdConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown; meta?: { code?: unknown } };
+  return (
+    candidate.code === "P2002" ||
+    (candidate.code === "P2010" && candidate.meta?.code === "23505")
+  );
+}
+
+/**
  * Command-log transport (§7.4, TASK-26).
  *
  * The server replays the *same* `boardReducer` the client uses, writes the
  * command row and mirrors the resulting board into the normalized tables
- * through per-action writers (§7.4.1 variant В). `commandId` is the primary
- * key, so a retry returns the stored `result` without a second entity or a
- * second `seq`.
+ * through per-action writers (§7.4.1 variant В). `commandId` is the global
+ * idempotency key (`CommandKey`), so a retry returns the stored `result`
+ * without a second entity or a second `seq`.
  *
  * `SUPPORTED_ACTIONS` is the command surface the reducer and the writers
  * understand: board-scoped columns, cards, labels, checklists (TASK-26/27)
@@ -183,7 +201,6 @@ const DELTA_SELECT = {
   agentName: true,
   payload: true,
   touches: true,
-  details: true,
 } as const;
 type DeltaRow = Prisma.CommandGetPayload<{ select: typeof DELTA_SELECT }>;
 
@@ -698,6 +715,20 @@ export class CommandsService {
     // passes the membership role resolved by `MembershipGuard`; internal
     // callers (the master panel, demo seeding) act as an ADMIN.
     const actorRole: Role = options.actorRole ?? Role.ADMIN;
+    // A batch is a set of distinct client commandIds. The partition swap no
+    // longer lets the Command PK catch a duplicate pair in the same batch, so
+    // reject it here, before the board lock and before either entry can insert.
+    const batchIds = new Set<string>();
+    for (const dto of dtos) {
+      if (batchIds.has(dto.commandId)) {
+        throw new BadRequestException({
+          message: "duplicate commandId in one batch",
+          field: "commandIds",
+          code: "idempotency_conflict",
+        });
+      }
+      batchIds.add(dto.commandId);
+    }
     // Validate every command *before* the board lock (TASK-147 follow-up): an
     // oversized or malformed command is a cheap 400/413, not megabytes
     // serialized through the board writer.
@@ -1155,6 +1186,7 @@ export class CommandsService {
               boardId,
               runId,
               data: preimage,
+              createdAt: outcome.createdAt,
             });
           }
           responses.push(outcome.response);
@@ -1611,6 +1643,7 @@ export class CommandsService {
     touches: string[];
     prevSeq: number;
     board: Board;
+    createdAt: Date;
   }> {
     const {
       boardId,
@@ -1692,6 +1725,9 @@ export class CommandsService {
     // Freeze the display diff while both aggregates are in hand (TASK-37)
     // — the history feed reads it back; the payload stays a pure action.
     const details = changed ? commandDetails(action, board, after) : null;
+    // TASK-200.7 stores the targeted-intent fingerprint in the display
+    // snapshot; TASK-200.11 keeps that snapshot in the partitioned side table
+    // and shares one clock with the command partition key.
     const storedDetails =
       details !== null || params.intentFingerprint !== undefined
         ? {
@@ -1701,26 +1737,47 @@ export class CommandsService {
               : {}),
           }
         : null;
+    const createdAt = new Date();
 
-    const created = await tx.command.create({
-      data: {
-        id: dto.commandId,
-        boardId,
-        actorId,
-        actorType,
-        apiTokenId: attribution.apiTokenId,
-        agentSessionId: attribution.agentSessionId,
-        runId: attribution.runId,
-        agentName: attribution.agentName,
-        type: action.type,
-        payload: jsonSafe(action),
-        result: {},
-        ...(storedDetails !== null
-          ? { details: jsonSafe(storedDetails) as Prisma.InputJsonValue }
-          : {}),
-        touches: [],
-      },
-    });
+    const created = await tx.command
+      .create({
+        data: {
+          id: dto.commandId,
+          boardId,
+          actorId,
+          actorType,
+          apiTokenId: attribution.apiTokenId,
+          agentSessionId: attribution.agentSessionId,
+          runId: attribution.runId,
+          agentName: attribution.agentName,
+          type: action.type,
+          payload: jsonSafe(action),
+          result: {},
+          touches: [],
+          createdAt,
+        },
+      })
+      .catch((error: unknown) => {
+        if (isCommandIdConflict(error)) {
+          throw new ConflictException({
+            message: "commandId already used on another board",
+            field: "commandId",
+            code: "id_conflict",
+            conflict: "id",
+          });
+        }
+        throw error;
+      });
+    if (storedDetails !== null) {
+      await tx.commandDetail.create({
+        data: {
+          commandId: created.id,
+          boardId,
+          createdAt,
+          data: jsonSafe(storedDetails) as Prisma.InputJsonValue,
+        },
+      });
+    }
     const seq = Number(created.seq);
 
     // TASK-200.9: snapshot the label's assignments inside this transaction
@@ -1760,15 +1817,24 @@ export class CommandsService {
       ...(labelPreimage !== null ? { preimage: labelPreimage } : {}),
     };
 
-    await tx.command.update({
-      where: { id: created.id },
+    const updated = await tx.command.updateMany({
+      where: { id: created.id, createdAt },
       data: {
         payload: jsonSafe(action),
         result: jsonSafe(response),
         touches,
       },
     });
-    return { response, touches, prevSeq: currentVersion, board: after };
+    if (updated.count !== 1) {
+      throw new Error("Command row disappeared during apply");
+    }
+    return {
+      response,
+      touches,
+      prevSeq: currentVersion,
+      board: after,
+      createdAt,
+    };
   }
 
   /**
@@ -1845,9 +1911,19 @@ export class CommandsService {
         select: DELTA_SELECT,
       });
       const truncated = rows.length > max;
+      const page = truncated ? rows.slice(0, max) : rows;
+      const details = await commandDetailMap(
+        client,
+        boardId,
+        page.map((row) => row.id),
+      );
       return {
-        entries: (truncated ? rows.slice(0, max) : rows).map((row) =>
-          this.deltaEntry(boardId, row),
+        entries: page.map((row) =>
+          this.deltaEntry(
+            boardId,
+            row,
+            commandDetail(details.get(row.id) ?? null),
+          ),
         ),
         resync: truncated,
       };
@@ -1887,20 +1963,29 @@ export class CommandsService {
       const countNumber = Number(count);
       // Logical bytes, not compressed `pg_column_size`: repeated 64 KiB text
       // must not look tiny. Detoasting is bounded to the sample window only,
-      // and a 1.25 variance factor covers later rows that are larger.
+      // and a 1.25 variance factor covers later rows that are larger. The
+      // display detail lives in `CommandDetail` (TASK-200.11); the correlated
+      // subquery reads at most one row so a moved/duplicated id cannot inflate
+      // the sample.
       const [sample] = await client.$queryRaw<
         Array<{ sampled: bigint; bytes: bigint }>
       >(
         Prisma.sql`SELECT COUNT(*)::bigint AS "sampled",
             COALESCE(SUM(
               octet_length("payload"::text) +
-              COALESCE(octet_length("details"::text), 0) +
+              COALESCE(octet_length("detail"::text), 0) +
               COALESCE(octet_length(array_to_string("touches", ',')), 0)
             ), 0)::bigint AS "bytes"
           FROM (
-            SELECT "payload", "details", "touches"
-            FROM "Command" WHERE ${whereSql}
-            ORDER BY "seq" ASC LIMIT ${CATCH_UP_SAMPLE_ROWS}
+            SELECT c."payload", c."touches",
+              (
+                SELECT d."data" FROM "CommandDetail" d
+                WHERE d."commandId" = c."id"
+                  AND d."createdAt" = c."createdAt"
+                LIMIT 1
+              ) AS "detail"
+            FROM "Command" c WHERE ${whereSql}
+            ORDER BY c."seq" ASC LIMIT ${CATCH_UP_SAMPLE_ROWS}
           ) AS "sample"`,
       );
       const sampled = Number(sample?.sampled ?? 0n);
@@ -1933,8 +2018,17 @@ export class CommandsService {
         // The log changed under the estimate (e.g. retention ran): losing a
         // row silently is worse than a resync.
         if (rows.length === 0) return { entries: [], resync: true };
+        const details = await commandDetailMap(
+          client,
+          boardId,
+          rows.map((row) => row.id),
+        );
         for (const row of rows) {
-          const entry = this.deltaEntry(boardId, row);
+          const entry = this.deltaEntry(
+            boardId,
+            row,
+            commandDetail(details.get(row.id) ?? null),
+          );
           usedBytes += Buffer.byteLength(JSON.stringify(entry), "utf8") + 64;
           if (usedBytes > maxBytes) return { entries: [], resync: true };
           if (usedBytes > reservedBytes) {
@@ -1974,8 +2068,11 @@ export class CommandsService {
     }
   }
 
-  private deltaEntry(boardId: string, row: DeltaRow): CommandDeltaEntry {
-    const detail = commandDetail(row.details);
+  private deltaEntry(
+    boardId: string,
+    row: DeltaRow,
+    detail: string | undefined,
+  ): CommandDeltaEntry {
     return {
       seq: Number(row.seq),
       // Rows written before ingress stamping may lack `boardId`; replay them
