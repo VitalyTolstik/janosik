@@ -69,12 +69,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@seriousme/openapi-schema-validator": "^2.11.0",
+    "@seriousme/openapi-schema-validator": "^2.12.0",
     "eslint": "^10.13.0",
-    "globals": "^17.13.0",
+    "globals": "^17.14.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
-    "prettier": "^3.9.6",
+    "prettier": "^3.10.1",
     "prettier-plugin-astro": "^1.1.2",
     "tsx": "^4.20.6"
   }
