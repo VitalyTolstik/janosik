@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from "class-validator";
 import {
@@ -33,4 +34,13 @@ export class CreateBoardDto {
   @IsOptional()
   @IsIn(BOARD_STARTER_LOCALES)
   templateLocale?: BoardStarterLocale;
+
+  /**
+   * The client's local creation date (`YYYY-MM-DD`). Due offsets are counted
+   * from this calendar date at 12:00 UTC, so browser preview and API creation
+   * cannot disagree because they run in different timezones.
+   */
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  templateDate?: string;
 }

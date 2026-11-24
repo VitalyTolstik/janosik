@@ -37,38 +37,75 @@ export interface BoardTemplatePlan {
   cards: BoardTemplatePlanCard[];
 }
 
-/** Days are counted from local noon so a DST change cannot shift a due date. */
-export function templateDueDate(now: number, dueInDays: number): number {
-  const date = new Date(now);
-  date.setHours(12, 0, 0, 0);
-  date.setDate(date.getDate() + dueInDays);
-  return date.getTime();
+/**
+ * A `YYYY-MM-DD` calendar date. `utc` is for the server's safe default; the
+ * UI passes the user's local creation date explicitly.
+ */
+export function templateDateString(date: Date, utc = false): string {
+  const year = utc ? date.getUTCFullYear() : date.getFullYear();
+  const month = (utc ? date.getUTCMonth() : date.getMonth()) + 1;
+  const day = utc ? date.getUTCDate() : date.getDate();
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function isValidTemplateDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year < 1970 || year > 9999) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+/**
+ * Days are counted from an explicit calendar date at 12:00 UTC, so the
+ * preview (browser) and creation (API) cannot disagree because the two
+ * processes run in different local timezones or on different sides of DST.
+ */
+export function templateDueDate(
+  templateDate: string,
+  dueInDays: number,
+): number {
+  if (!isValidTemplateDate(templateDate)) {
+    throw new Error(`Invalid template date: ${templateDate}`);
+  }
+  const [year, month, day] = templateDate.split("-").map(Number);
+  return Date.UTC(year, month - 1, day + dueInDays, 12, 0, 0, 0);
 }
 
 /**
  * Build one template with caller-generated ids.
  *
  * `now` is captured once (the dialog freezes it when it opens) so switching
- * templates in the picker cannot move a due date between previews.
+ * templates in the picker cannot move a due date between previews. When
+ * `templateDate` is omitted, the server falls back to its UTC calendar date;
+ * the UI always sends the user's explicit local date.
  */
 export function boardTemplatePlan(
   templateId: BoardTemplateId,
   locale: BoardStarterLocale,
   newId: () => string,
   now = Date.now(),
+  templateDate = templateDateString(new Date(now), true),
 ): BoardTemplatePlan {
   const template = boardTemplateById(templateId);
   if (!template) {
     throw new Error(`Unknown board template: ${templateId}`);
   }
-  return buildPlan(template, locale, newId, now);
+  if (!isValidTemplateDate(templateDate)) {
+    throw new Error(`Invalid template date: ${templateDate}`);
+  }
+  return buildPlan(template, locale, newId, templateDate);
 }
 
 function buildPlan(
   template: BoardTemplate,
   locale: BoardStarterLocale,
   newId: () => string,
-  now: number,
+  templateDate: string,
 ): BoardTemplatePlan {
   const copy = template.copy[locale] ?? template.copy.en;
   const labelEntries = Object.entries(copy.labels);
@@ -104,7 +141,7 @@ function buildPlan(
           .filter((value): value is string => value !== undefined),
         ...(card.desc ? { description: card.desc } : {}),
         ...(typeof card.dueInDays === "number"
-          ? { dueDate: templateDueDate(now, card.dueInDays) }
+          ? { dueDate: templateDueDate(templateDate, card.dueInDays) }
           : {}),
         checklists: card.checklist
           ? [

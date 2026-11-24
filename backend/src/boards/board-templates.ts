@@ -22,8 +22,15 @@ export function boardTemplateCommands(
   templateId: BoardTemplateId,
   locale: BoardStarterLocale,
   now = Date.now(),
+  templateDate?: string,
 ): CreateCommandDto[] {
-  const plan = boardTemplatePlan(templateId, locale, randomUUID, now);
+  const plan = boardTemplatePlan(
+    templateId,
+    locale,
+    randomUUID,
+    now,
+    templateDate,
+  );
   const command = (action: Record<string, unknown>): CreateCommandDto => ({
     commandId: randomUUID(),
     action: { boardId, at: now, ...action },

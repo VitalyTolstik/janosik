@@ -45,6 +45,7 @@ import {
   READY_WORK_LIMIT_DEFAULT,
   READY_WORK_LIMIT_MAX,
   READY_WORK_WAIT_MAX_MS,
+  isValidTemplateDate,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
@@ -242,6 +243,21 @@ export class BoardsController {
         field: "templateLocale",
       });
     }
+    if (template === undefined && dto.templateDate !== undefined) {
+      throw new BadRequestException({
+        message: "templateDate requires a template",
+        field: "templateDate",
+      });
+    }
+    if (
+      dto.templateDate !== undefined &&
+      !isValidTemplateDate(dto.templateDate)
+    ) {
+      throw new BadRequestException({
+        message: "templateDate must be a valid YYYY-MM-DD date",
+        field: "templateDate",
+      });
+    }
     const outcome = await this.idempotency.run({
       scope: "create_board",
       key: normalizeIdempotencyKey(rawKey),
@@ -249,7 +265,13 @@ export class BoardsController {
       requestHash: hashIdempotentRequest({
         title: dto.title,
         // Old clients that omit the template keep their previous hash.
-        ...(template ? { template, locale: dto.templateLocale ?? "en" } : {}),
+        ...(template
+          ? {
+              template,
+              locale: dto.templateLocale ?? "en",
+              date: dto.templateDate ?? null,
+            }
+          : {}),
       }),
       run: async () => {
         const board = await this.boards.createBoard(user.id, dto, principal);
@@ -265,7 +287,13 @@ export class BoardsController {
         const templateCommands =
           template === "starter"
             ? boardStarterCommands(board.id, templateLocale)
-            : boardTemplateCommands(board.id, template, templateLocale);
+            : boardTemplateCommands(
+                board.id,
+                template,
+                templateLocale,
+                Date.now(),
+                dto.templateDate,
+              );
         try {
           await this.commands.applyBatch(board.id, user.id, templateCommands, {
             actorType: actorTypeOf(principal),

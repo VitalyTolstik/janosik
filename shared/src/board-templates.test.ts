@@ -8,6 +8,9 @@ import {
   boardTemplateCounts,
   boardTemplateLabelColor,
   boardTemplatePlan,
+  templateDateString,
+  templateDueDate,
+  isValidTemplateDate,
   isBoardCreateTemplate,
   isBoardTemplateId,
 } from "./index";
@@ -88,7 +91,7 @@ describe("board templates catalog", () => {
 
   it("builds a plan within the 100-command batch and the 80-command guard", () => {
     for (const id of BOARD_TEMPLATE_IDS) {
-      const plan = boardTemplatePlan(id, "en", ids(), FIXED_NOW);
+      const plan = boardTemplatePlan(id, "en", ids(), FIXED_NOW, "2026-11-24");
       expect(plan.columns).toHaveLength(
         boardTemplateById(id)!.copy.en.columns.length,
       );
@@ -104,7 +107,7 @@ describe("board templates catalog", () => {
 
   it("uses unique ids and links labels, cards and checklists", () => {
     for (const id of BOARD_TEMPLATE_IDS) {
-      const plan = boardTemplatePlan(id, "ru", ids(), FIXED_NOW);
+      const plan = boardTemplatePlan(id, "ru", ids(), FIXED_NOW, "2026-11-24");
       const allIds = [
         ...plan.columns.map((column) => column.id),
         ...plan.labels.map((label) => label.id),
@@ -142,5 +145,36 @@ describe("board templates catalog", () => {
     expect(isBoardCreateTemplate("bug-tracker")).toBe(true);
     expect(isBoardCreateTemplate("unknown")).toBe(false);
     expect(isBoardCreateTemplate(null)).toBe(false);
+  });
+
+  it("anchors due dates to an explicit calendar date, not process TZ", () => {
+    expect(isValidTemplateDate("2026-11-24")).toBe(true);
+    expect(isValidTemplateDate("2026-02-31")).toBe(false);
+    expect(isValidTemplateDate("24-11-2026")).toBe(false);
+    expect(templateDateString(new Date(2026, 10, 24, 23, 59), false)).toBe(
+      "2026-11-24",
+    );
+    expect(templateDueDate("2026-11-24", 2)).toBe(
+      Date.UTC(2026, 10, 26, 12, 0, 0, 0),
+    );
+
+    const dueDates = () =>
+      boardTemplatePlan(
+        "product-launch",
+        "en",
+        ids(),
+        FIXED_NOW,
+        "2026-11-24",
+      ).cards.map((card) => card.dueDate);
+    const baseline = dueDates();
+    const previousTz = process.env.TZ;
+    try {
+      process.env.TZ = "Pacific/Kiritimati";
+      expect(dueDates()).toEqual(baseline);
+      process.env.TZ = "America/Los_Angeles";
+      expect(dueDates()).toEqual(baseline);
+    } finally {
+      process.env.TZ = previousTz;
+    }
   });
 });

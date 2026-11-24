@@ -228,6 +228,7 @@ describe("Boards API (e2e)", () => {
           title: "Launch plan — Nov 24",
           template: "product-launch",
           templateLocale: "en",
+          templateDate: "2026-11-24",
         })
         .expect(201);
 
@@ -254,7 +255,7 @@ describe("Boards API (e2e)", () => {
       );
       expect(brief?.labelIds).toHaveLength(2);
       expect(brief?.description).toContain("one-line promise");
-      expect(brief?.dueDate).toEqual(expect.any(Number));
+      expect(brief?.dueDate).toBe(Date.UTC(2026, 10, 26, 12, 0, 0, 0));
       expect(brief?.checklists?.[0]?.title).toBe("Brief checklist");
       expect(brief?.checklists?.[0]?.items).toHaveLength(4);
 
@@ -369,6 +370,20 @@ describe("Boards API (e2e)", () => {
         .post("/api/v1/boards")
         .set(auth(adminToken))
         .send({ title: "Bad locale", template: null, templateLocale: "ru" })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Bad date",
+          template: "sprint",
+          templateDate: "2026-02-31",
+        })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({ title: "Date without template", templateDate: "2026-11-24" })
         .expect(400);
     });
 
