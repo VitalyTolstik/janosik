@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentPropsWithoutRef,
   type KeyboardEvent,
 } from "react";
 import {
@@ -75,6 +76,13 @@ interface TemplatePickerDialogProps {
   createEmptyBoard: (name: string) => Promise<string | null> | string | null;
   /** Called by the success CTA; the parent navigates to the new board. */
   onOpenBoard: (boardId: string) => void;
+  /**
+   * Overrides Radix's focus return when the opener is not a stable element
+   * (e.g. a control inside a popover that closed to open this dialog).
+   */
+  onCloseAutoFocus?: ComponentPropsWithoutRef<
+    typeof DialogContent
+  >["onCloseAutoFocus"];
 }
 
 type NameMode = "auto" | "manual" | "empty";
@@ -95,6 +103,7 @@ export function TemplatePickerDialog({
   createBoard,
   createEmptyBoard,
   onOpenBoard,
+  onCloseAutoFocus,
 }: TemplatePickerDialogProps) {
   const { t, lang } = useI18n();
   const locale: BoardStarterLocale = lang.startsWith("ru") ? "ru" : "en";
@@ -359,6 +368,7 @@ export function TemplatePickerDialog({
         onInteractOutside={(event) => {
           if (busy) event.preventDefault();
         }}
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "h-[min(672px,calc(100dvh-2rem))] w-[min(1110px,calc(100vw-2rem))] max-w-[1110px] gap-0 overflow-hidden rounded-[18px] border-border-strong bg-surface p-0 pt-0 pr-0 pb-0 pl-0 shadow-[0_40px_110px_-40px_rgb(0_0_0/0.9),0_2px_12px_rgb(0_0_0/0.3)] sm:rounded-[18px]",
           "max-[900px]:h-[min(700px,calc(100dvh-1.5rem))] max-[900px]:w-[calc(100vw-1.5rem)]",

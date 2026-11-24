@@ -9,12 +9,17 @@ import {
   LogOut,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 
 import { BoardListSkeleton } from "@/components/board/BoardSkeleton";
+import {
+  TemplatePickerDialog,
+  type TemplateCreateOutcome,
+} from "@/components/board/TemplatePickerDialog";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -33,7 +38,11 @@ import { api, isApiEnabled } from "@/api/client";
 import { useBoard } from "@/store/BoardContext";
 import { routes } from "@/routes";
 import { boardColor } from "@/utils/board-color";
-import type { Board } from "@janosik/shared";
+import type {
+  Board,
+  BoardStarterLocale,
+  BoardTemplateId,
+} from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { LimitCounter } from "@/components/ui/limit-counter";
 
@@ -47,8 +56,9 @@ import { LimitCounter } from "@/components/ui/limit-counter";
  * action reads as an access level, not a glitch. Archiving (Trello's "close
  * board") replaced deletion for active boards — archived boards drop into a
  * dedicated section at the bottom where they can be restored or deleted for
- * good. Creating is a footer row that turns into an inline input (Trello's
- * pattern) and navigates to the new board.
+ * good. Quick-create in the footer starts with the shared template gallery;
+ * an empty board is a separate name-gated inline form (Trello's pattern) that
+ * only navigates once the user explicitly submits a name.
  */
 
 function boardInitial(title: string): string {
@@ -68,45 +78,113 @@ export function BoardSwitcher({
 }: {
   archivedEntry?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const { boards, addBoard } = useBoard();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerName, setPickerName] = useState("");
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const templateLocale: BoardStarterLocale = lang.startsWith("ru")
+    ? "ru"
+    : "en";
+  const existingTitles = useMemo(
+    () => boards.map((entry) => entry.title),
+    [boards],
+  );
+
+  const startWithExample = () => {
+    // The dialog is rendered as a sibling of the popover, so closing the
+    // popover in the same commit cannot unmount it. Both layers never share
+    // a DOM state: the dialog outlives the popover and owns the focus trap.
+    setPickerName("");
+    setOpen(false);
+    setPickerOpen(true);
+  };
+
+  const createFromTemplate = (
+    name: string,
+    template: BoardTemplateId,
+    _locale: BoardStarterLocale,
+    templateDate: string,
+    templateUtcOffsetMinutes: number,
+  ): Promise<TemplateCreateOutcome> => {
+    return new Promise<TemplateCreateOutcome>((resolve) => {
+      const result = addBoard(
+        name,
+        { template, templateLocale, templateDate, templateUtcOffsetMinutes },
+        () => resolve({ code: "template_unavailable" }),
+      );
+      if (result !== null && typeof result === "object") {
+        void result.then(resolve);
+        return;
+      }
+      resolve(result);
+    });
+  };
+
+  const createEmptyFromPicker = (name: string) => addBoard(name);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant={archivedEntry ? "outline" : "ghost"}
-          size={archivedEntry ? "sm" : "icon"}
-          aria-label={t(
-            archivedEntry ? "board.switcher.archived" : "board.switcher.aria",
-          )}
-          aria-expanded={open}
-          className={cn(
-            "shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground",
-            archivedEntry
-              ? "gap-2"
-              : "h-8 w-6 max-[720.98px]:h-11 max-[720.98px]:w-11",
-          )}
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            ref={triggerRef}
+            variant={archivedEntry ? "outline" : "ghost"}
+            size={archivedEntry ? "sm" : "icon"}
+            aria-label={t(
+              archivedEntry ? "board.switcher.archived" : "board.switcher.aria",
+            )}
+            aria-expanded={open}
+            className={cn(
+              "shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground",
+              archivedEntry
+                ? "gap-2"
+                : "h-8 w-6 max-[720.98px]:h-11 max-[720.98px]:w-11",
+            )}
+          >
+            {archivedEntry ? t("board.switcher.archived") : null}
+            <ChevronDown size={16} className={open ? "rotate-180" : ""} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          aria-label={t("board.switcher.aria")}
+          align="start"
+          sideOffset={8}
+          collisionPadding={12}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
         >
-          {archivedEntry ? t("board.switcher.archived") : null}
-          <ChevronDown size={16} className={open ? "rotate-180" : ""} />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        aria-label={t("board.switcher.aria")}
-        align="start"
-        sideOffset={8}
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
-      >
-        {/* All draft state (search, inline create, keyboard cursor, pending
-            confirms) lives in this panel. Radix unmounts `PopoverContent`
-            when the popover closes, so every open mounts a clean panel —
-            reset by remount, never imperatively in `onOpenChange`
-            (AGENT.md). */}
-        <BoardSwitcherPanel open={open} onClose={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
+          {/* All draft state (search, inline create, keyboard cursor, pending
+              confirms) lives in this panel. Radix unmounts `PopoverContent`
+              when the popover closes, so every open mounts a clean panel —
+              reset by remount, never imperatively in `onOpenChange`
+              (AGENT.md). */}
+          <BoardSwitcherPanel
+            open={open}
+            onClose={() => setOpen(false)}
+            onStartExample={startWithExample}
+          />
+        </PopoverContent>
+      </Popover>
+      <TemplatePickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        existingTitles={existingTitles}
+        initialName={pickerName}
+        createBoard={createFromTemplate}
+        createEmptyBoard={createEmptyFromPicker}
+        onOpenBoard={(boardId) => navigate(routes.board(boardId))}
+        onCloseAutoFocus={(event) => {
+          // The opener lives in the popover, which is already unmounted.
+          // Return focus to the header switcher trigger instead of <body>.
+          event.preventDefault();
+          triggerRef.current?.focus();
+        }}
+      />
+    </>
   );
 }
 
@@ -115,9 +193,15 @@ interface BoardSwitcherPanelProps {
   open: boolean;
   /** Closes the surrounding popover (used after navigating/creating). */
   onClose: () => void;
+  /** Closes the popover and opens the shared template gallery. */
+  onStartExample: () => void;
 }
 
-function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
+function BoardSwitcherPanel({
+  open,
+  onClose,
+  onStartExample,
+}: BoardSwitcherPanelProps) {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
@@ -170,6 +254,7 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const createRef = useRef<HTMLInputElement | null>(null);
+  const emptyButtonRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Only active boards are switchable/navigable; archived ones live in
@@ -238,7 +323,22 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
     navigate(routes.board(target.id));
   };
 
-  const handleCreate = () => {
+  const canCreateEmpty = createDraft.trim().length > 0;
+
+  const startEmptyCreate = () => {
+    // A search query is an explicit name: keep it as a starting point, but
+    // still require the user to submit the name-gated empty-board form.
+    setCreateDraft(queryTrimmed.slice(0, LIMITS.boardTitle));
+    setCreating(true);
+  };
+
+  const cancelEmptyCreate = () => {
+    setCreating(false);
+    setCreateDraft("");
+    window.requestAnimationFrame(() => emptyButtonRef.current?.focus());
+  };
+
+  const handleCreateEmpty = () => {
     const title = createDraft.trim();
     if (!title) return;
     void createBoard(title);
@@ -319,9 +419,11 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
   }, [highlighted, highlightedBoard?.id]);
 
   const queryTrimmed = query.trim();
-  const showCreateAsNamed = queryTrimmed.length > 0;
-  const titleTooLong = queryTrimmed.length > LIMITS.boardTitle;
-  const titleLimitId = `${gridId}-title-limit`;
+  const namedEmptyLabel =
+    queryTrimmed.length > 0 && queryTrimmed.length <= LIMITS.boardTitle
+      ? queryTrimmed
+      : "";
+  const emptyHintId = `${gridId}-empty-name-hint`;
 
   return (
     <>
@@ -745,72 +847,108 @@ function BoardSwitcherPanel({ open, onClose }: BoardSwitcherPanelProps) {
         ) : null}
       </div>
 
-      {/* Create row */}
+      {/* Create actions: templates are the primary quick-create; an empty
+          board is a separate, explicitly name-gated path. */}
       <div className="border-t p-1.5">
         {creating ? (
-          <div className="relative flex items-center gap-2 rounded-lg px-2 py-1 ring-1 ring-primary/30">
-            <Plus size={15} className="shrink-0 text-primary" />
-            <input
-              name="board-create"
-              ref={createRef}
-              value={createDraft}
-              maxLength={LIMITS.boardTitle}
-              onChange={(e) => setCreateDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleCreate();
-                } else if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setCreating(false);
-                  setCreateDraft("");
-                }
-              }}
-              placeholder={t("board.switcher.newPlaceholder")}
-              aria-label={t("board.switcher.newPlaceholder")}
-              autoFocus
-              className="h-7 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-            <LimitCounter
-              length={createDraft.length}
-              limit={LIMITS.boardTitle}
-              position="below"
-              className="left-6"
-              testId="switcher-create-limit"
-            />
-          </div>
-        ) : (
-          <button
-            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
-            disabled={titleTooLong}
-            aria-describedby={titleTooLong ? titleLimitId : undefined}
-            onClick={() => {
-              if (queryTrimmed) {
-                createBoard(queryTrimmed);
-              } else {
-                setCreating(true);
-              }
+          <form
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleCreateEmpty();
             }}
+            className="rounded-lg px-2 py-1.5 ring-1 ring-primary/30"
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border">
-              <Plus size={15} />
-            </span>
-            <span className="truncate">
-              {showCreateAsNamed
-                ? t("board.switcher.createWithName", { name: queryTrimmed })
-                : t("board.switcher.new")}
-            </span>
-          </button>
+            <div className="flex items-center gap-2">
+              <Plus size={15} className="shrink-0 text-primary" />
+              <input
+                name="board-create"
+                ref={createRef}
+                value={createDraft}
+                maxLength={LIMITS.boardTitle}
+                onChange={(e) => setCreateDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    cancelEmptyCreate();
+                  }
+                }}
+                placeholder={t("board.switcher.newPlaceholder")}
+                aria-label={t("board.switcher.newPlaceholder")}
+                aria-describedby={emptyHintId}
+                autoFocus
+                className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground max-[720.98px]:h-11 max-[720.98px]:text-base"
+              />
+              <button
+                type="submit"
+                data-testid="switcher-create-empty-submit"
+                aria-label={t("board.firstRun.emptyCta")}
+                disabled={!canCreateEmpty}
+                className="inline-flex h-7 shrink-0 items-center justify-center rounded-md bg-action-primary px-2.5 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 max-[720.98px]:h-11 max-[720.98px]:px-3 max-[720.98px]:text-xs"
+              >
+                {t("board.switcher.createEmptySubmit")}
+              </button>
+              <button
+                type="button"
+                aria-label={t("common.cancel")}
+                onClick={cancelEmptyCreate}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-[720.98px]:h-11 max-[720.98px]:w-11"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2 max-[720.98px]:mt-1.5">
+              <p
+                id={emptyHintId}
+                className="min-w-0 flex-1 truncate text-[10px] leading-[1.4] text-muted-foreground"
+              >
+                {canCreateEmpty
+                  ? t("board.switcher.emptyReadyHint")
+                  : t("board.switcher.emptyNameHint")}
+              </p>
+              <LimitCounter
+                length={createDraft.length}
+                limit={LIMITS.boardTitle}
+                className="shrink-0"
+                testId="switcher-create-limit"
+              />
+            </div>
+          </form>
+        ) : (
+          <div className="flex flex-col gap-0.5">
+            <button
+              type="button"
+              data-testid="switcher-create-template"
+              onClick={onStartExample}
+              className="flex min-h-8 w-full items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.06] px-2 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:border-primary/35 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring max-[720.98px]:min-h-11"
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+                <Sparkles size={15} aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {t("board.firstRun.starterCta")}
+              </span>
+            </button>
+            <button
+              ref={emptyButtonRef}
+              type="button"
+              data-testid="switcher-create-empty"
+              onClick={startEmptyCreate}
+              className="flex min-h-7 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-[720.98px]:min-h-11"
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
+                <Plus size={15} aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {namedEmptyLabel
+                  ? t("board.switcher.createEmptyWithName", {
+                      name: namedEmptyLabel,
+                    })
+                  : t("board.firstRun.emptyCta")}
+              </span>
+            </button>
+          </div>
         )}
-        {titleTooLong && !creating ? (
-          <p
-            id={titleLimitId}
-            role="status"
-            className="px-2 pb-1 text-xs text-muted-foreground"
-          >
-            {t("board.switcher.titleTooLong", { limit: LIMITS.boardTitle })}
-          </p>
-        ) : null}
       </div>
     </>
   );
