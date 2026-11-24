@@ -27,7 +27,7 @@ export interface SkeletonProps extends HTMLAttributes<HTMLDivElement> {
 const VARIANT_CLASS: Record<Exclude<SkeletonVariant, "text">, string> = {
   block: "h-4 w-full rounded-md",
   circle: "h-8 w-8 rounded-full",
-  card: "h-[92px] w-full rounded-xl",
+  card: "h-[112px] w-full rounded-xl",
   row: "h-10 w-full rounded-md",
   chart: "h-40 w-full rounded-lg",
 };

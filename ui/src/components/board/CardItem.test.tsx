@@ -54,13 +54,13 @@ describe("CardItem title clamping", () => {
     expect(screen.getByTestId("card-title")).not.toHaveAttribute("title");
   });
 
-  it("truncates to a single line (CSS is in place)", () => {
+  it("clamps the title to two lines (CSS is in place)", () => {
     renderCard({
       ...baseCard,
       title: Array.from({ length: 60 }, (_, i) => `word-${i}`).join(" "),
     });
     const title = screen.getByTestId("card-title");
-    expect(title.className).toContain("truncate");
+    expect(title.className).toContain("line-clamp-2");
     expect(title.className).toContain("[overflow-wrap:anywhere]");
   });
 
@@ -75,11 +75,11 @@ describe("CardItem fixed tile layout", () => {
   it("renders every card at the same fixed size", () => {
     renderCard();
     const card = screen.getByTestId("card-title").closest("article");
-    expect(card?.className).toContain("h-[92px]");
+    expect(card?.className).toContain("h-[112px]");
     expect(card?.className).toContain("flex-col");
   });
 
-  it("shares the first line between the title (75%) and the labels (25%)", () => {
+  it("gives labelled cards a full-width, non-clipping label line", () => {
     renderCard(
       baseCard,
       Array.from({ length: 6 }, (_, i) => ({
@@ -90,17 +90,13 @@ describe("CardItem fixed tile layout", () => {
     );
     const title = screen.getByTestId("card-title");
     const labels = screen.getByTestId("card-labels");
-    // Same row container: the labels sit beside the title, not below it.
-    expect(title.parentElement).toBe(labels.parentElement);
-    expect(title.className).toContain("w-3/4");
-    // TASK-177.18 (U-07): a labelled card gives the chips half the row up to
-    // the `md` breakpoint instead of the desktop quarter, so the first name
-    // stays readable on phones and 640–767 px tablets.
-    expect(title.className).toContain("max-md:w-1/2");
-    expect(title.className).toContain("truncate");
-    // The label quarter stays on one clipped line.
-    expect(labels.className).toContain("whitespace-nowrap");
-    expect(labels.className).toContain("overflow-hidden");
+    // The title keeps the first line; labels get their own full-width row so
+    // names wrap/ellipsize as whole chips instead of being cut mid-word.
+    expect(title.parentElement).not.toBe(labels.parentElement);
+    expect(title.className).toContain("min-w-0");
+    expect(title.className).toContain("flex-1");
+    expect(labels.className).toContain("flex-wrap");
+    expect(labels.className).not.toContain("whitespace-nowrap");
     expect(labels.children.length).toBe(6);
   });
 
@@ -110,6 +106,7 @@ describe("CardItem fixed tile layout", () => {
     expect(title.className).toContain("w-3/4");
     // No label lane to protect, so the phone face must not reserve one.
     expect(title.className).not.toContain("max-md:w-1/2");
+    expect(screen.queryByTestId("card-labels")).toBeNull();
   });
 
   it("renders the medium priority badge (the default is no longer hidden)", () => {
@@ -163,7 +160,7 @@ describe("CardItem fixed tile layout", () => {
                     description: "Body",
                   }}
                   boardId="b-1"
-                  labels={[]}
+                  labels={[{ id: "l-1", name: "Strategy", color: "blue" }]}
                 />
               </AuthContext.Provider>
             </UserProfileProvider>
@@ -180,10 +177,11 @@ describe("CardItem fixed tile layout", () => {
         child.contains(el as Node),
       );
     };
-    // First line: the labels share the title's row.
-    expect(rowOf("card-labels")).toBe(rowOf("card-title"));
-    // Second line: only the due badge.
-    expect(rowOf("card-due-badge")).not.toBe(rowOf("card-title"));
+    // First line: the title shares the row with the due badge on a labelled
+    // card, freeing a full-width row for the label chips.
+    expect(rowOf("card-due-badge")).toBe(rowOf("card-title"));
+    // Second line: the label chips.
+    expect(rowOf("card-labels")).not.toBe(rowOf("card-title"));
     // Third line: meta badges and the priority + assignee pair together.
     const meta = rowOf("card-description-badge");
     expect(meta).toBe(rowOf("card-priority-badge"));
@@ -352,20 +350,19 @@ describe("CardItem hover duplicate (column limits)", () => {
     const duplicate = screen
       .getByRole("button", { name: "Duplicate card" })
       .closest("span");
-    // `top-8` is the due row; the old `top-1.5` put both buttons over the
-    // label chips in the first row at 390 px.
+    // `top-8` is the second row, where the label chips are left-aligned; the
+    // old `top-1.5` put both buttons over the title/label line at 390 px.
     expect(archive.className).toContain("top-8");
     expect(archive.className).not.toContain("top-1.5");
     expect(duplicate?.className).toContain("top-8");
     expect(duplicate?.className).not.toContain("top-1.5");
 
-    // The label chips still share the title row, and the buttons are not in
-    // that row — a hover can no longer cover the label.
+    // Labels own their own row; the hover buttons are not inside it.
     const labels = screen.getByTestId("card-labels");
-    expect(screen.getByTestId("card-title").parentElement).toBe(
+    expect(screen.getByTestId("card-title").parentElement).not.toBe(
       labels.parentElement,
     );
-    expect(labels.parentElement?.contains(archive)).toBe(false);
+    expect(labels.contains(archive)).toBe(false);
   });
 
   it("enables the hover duplicate while the column has room", () => {

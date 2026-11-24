@@ -32,6 +32,7 @@ import type {
   BoardShareDto,
   BoardStarterLocale,
   BoardSummary,
+  BoardTemplateSelection,
   CommandRequest,
   CommandResponse,
   CommentDto,
@@ -954,7 +955,12 @@ export class ApiClient {
 
   createBoard(
     title: string,
-    options?: { template?: "starter"; templateLocale?: BoardStarterLocale },
+    options?: {
+      template?: BoardTemplateSelection;
+      templateLocale?: BoardStarterLocale;
+      templateDate?: string;
+      templateUtcOffsetMinutes?: number;
+    },
   ): Promise<BoardAggregate> {
     return this.requestIdempotent<BoardAggregate>("/boards", {
       method: "POST",

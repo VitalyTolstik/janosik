@@ -157,12 +157,30 @@ export function formatDate(
   }
 }
 
-/** Locale-aware short date-only formatter, e.g. "Sep 10" — for badges. */
-export function formatDateOnly(timestamp: number, lang: string): string {
+/**
+ * Locale-aware short date-only formatter, e.g. "Sep 10" — for badges.
+ *
+ * With `utcOffsetMinutes`, the calendar date is rendered in that fixed UTC
+ * offset instead of the viewer's process timezone. The template preview uses
+ * it so a due date anchored to the creator's local noon cannot drift a day
+ * when the browser runs in UTC+12…+14.
+ */
+export function formatDateOnly(
+  timestamp: number,
+  lang: string,
+  utcOffsetMinutes?: number,
+): string {
+  const locale = lang.startsWith("ru") ? "ru-RU" : "en-US";
   try {
-    return new Date(timestamp).toLocaleDateString(
-      lang.startsWith("ru") ? "ru-RU" : "en-US",
-      { day: "numeric", month: "short" },
+    if (utcOffsetMinutes === undefined) {
+      return new Date(timestamp).toLocaleDateString(locale, {
+        day: "numeric",
+        month: "short",
+      });
+    }
+    return new Date(timestamp + utcOffsetMinutes * 60_000).toLocaleDateString(
+      locale,
+      { day: "numeric", month: "short", timeZone: "UTC" },
     );
   } catch {
     return new Date(timestamp).toLocaleDateString();

@@ -8,11 +8,11 @@ import {
 } from "react";
 
 /**
- * One rendered gap row: an 8px AddCardZone followed by the 92px card tile.
+ * One rendered gap row: an 8px AddCardZone followed by the 112px card tile.
  * Both are fixed-size, so the virtual list can compute exact offsets without
  * measuring every card (TASK-139).
  */
-export const CARD_ROW_HEIGHT = 100;
+export const CARD_ROW_HEIGHT = 120;
 
 /**
  * The compact face (TASK-142) is a 48px single-line tile, so its row is

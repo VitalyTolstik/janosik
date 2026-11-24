@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -88,6 +94,8 @@ describe("App first run", () => {
     const name = screen.getByTestId("empty-board-name");
     const create = screen.getByTestId("empty-create-board");
     expect(create).toBeDisabled();
+    // The example path does not require the name; the empty board still does.
+    expect(screen.getByTestId("empty-create-template")).toBeEnabled();
 
     await userEvent.type(name, "Launch plan");
     await userEvent.click(create);
@@ -103,35 +111,75 @@ describe("App first run", () => {
     );
   });
 
-  it("offers an example with columns, a welcome card and a checklist", async () => {
+  it("opens the template picker without a name and creates the example", async () => {
     seedArchivedBoard();
     render(<App router={createAppRouter()} />);
 
-    await userEvent.type(
-      await screen.findByTestId("empty-board-name"),
-      "Launch plan",
-    );
-    await userEvent.click(screen.getByTestId("empty-create-template"));
+    const example = await screen.findByTestId("empty-create-template");
+    expect(example).toBeEnabled();
+    await userEvent.click(example);
+
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Board name");
+    expect((name as HTMLInputElement).value).toMatch(/^Product launch — /);
+    expect(
+      within(picker).getByRole("button", { name: /Product launch/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(await screen.findByText("Board created")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Open board" }));
 
     await waitFor(() => expect(window.location.pathname).toMatch(/^\/board\//));
     await waitFor(() => {
-      const board = storedBoards().find(
-        (candidate) => candidate.title === "Launch plan",
+      const board = storedBoards().find((candidate) =>
+        candidate.title.startsWith("Product launch — "),
       );
       expect(board?.columns.map((column) => column.title)).toEqual([
-        "To do",
-        "In progress",
-        "Done",
+        "Strategy",
+        "Build",
+        "Launch prep",
+        "Shipped",
       ]);
-      const card = Object.values(board?.cards ?? {})[0];
-      expect(card?.title).toBe("Welcome to your board");
-      expect(card?.checklists?.[0]?.title).toBe("First steps");
-      expect(card?.checklists?.[0]?.items.map((item) => item.text)).toEqual([
-        "Rename the board to your project",
-        "Add your first real card",
-        "Invite a teammate",
-      ]);
+      const cards = Object.values(board?.cards ?? {});
+      expect(cards).toHaveLength(7);
+      const brief = cards.find(
+        (card) => card.title === "Write the launch brief",
+      );
+      expect(brief?.checklists?.[0]?.title).toBe("Brief checklist");
+      expect(brief?.checklists?.[0]?.items).toHaveLength(4);
     });
+  });
+
+  it("keeps a manual name when switching templates and regenerates it", async () => {
+    seedArchivedBoard();
+    render(<App router={createAppRouter()} />);
+
+    await userEvent.click(await screen.findByTestId("empty-create-template"));
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Board name");
+
+    await userEvent.click(
+      within(picker).getByRole("button", { name: /Sprint board/ }),
+    );
+    expect((name as HTMLInputElement).value).toMatch(
+      /^Sprint board \d{4}-W\d{2}$/,
+    );
+
+    await userEvent.clear(name);
+    await userEvent.type(name, "Q1 website redesign");
+    expect(within(picker).getByText("Edited by you")).toBeVisible();
+
+    await userEvent.click(
+      within(picker).getByRole("button", { name: /Bug tracker/ }),
+    );
+    expect((name as HTMLInputElement).value).toBe("Q1 website redesign");
+
+    await userEvent.click(
+      within(picker).getByRole("button", { name: "Regenerate" }),
+    );
+    expect((name as HTMLInputElement).value).toBe("Bug tracker");
+    expect(within(picker).getByText("Auto-generated")).toBeVisible();
   });
 
   it("creates only one board when submit fires twice", async () => {
@@ -236,7 +284,7 @@ describe("App first run", () => {
     );
   });
 
-  it("builds the Russian starter in the offline store", async () => {
+  it("builds the Russian example in the offline store", async () => {
     seedArchivedBoard();
     await ensureLocale("ru");
     const i18n = defaultI18n.cloneInstance({ lng: "ru" });
@@ -256,26 +304,33 @@ describe("App first run", () => {
       </ThemeProvider>,
     );
 
-    await userEvent.type(
-      await screen.findByTestId("empty-board-name"),
-      "Запуск",
+    await userEvent.click(await screen.findByTestId("empty-create-template"));
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Название доски");
+    expect((name as HTMLInputElement).value).toMatch(/^Запуск продукта — /);
+
+    await userEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(await screen.findByText("Доска создана")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Открыть доску" }),
     );
-    await userEvent.click(screen.getByTestId("empty-create-template"));
 
     await waitFor(() => {
-      const board = storedBoards().find(
-        (candidate) => candidate.title === "Запуск",
+      const board = storedBoards().find((candidate) =>
+        candidate.title.startsWith("Запуск продукта — "),
       );
       expect(board?.columns.map((column) => column.title)).toEqual([
-        "Сделать",
-        "В работе",
-        "Готово",
+        "Стратегия",
+        "Подготовка",
+        "Перед запуском",
+        "Выпущено",
       ]);
-      const card = Object.values(board?.cards ?? {})[0];
-      expect(card?.title).toBe("Добро пожаловать на доску");
-      expect(card?.checklists?.[0]?.items[0]?.text).toBe(
-        "Переименуйте доску под свой проект",
-      );
+      const cards = Object.values(board?.cards ?? {});
+      expect(cards).toHaveLength(7);
+      expect(
+        cards.find((card) => card.title === "Написать бриф запуска")
+          ?.checklists?.[0]?.title,
+      ).toBe("Чек-лист брифа");
     });
   });
 });

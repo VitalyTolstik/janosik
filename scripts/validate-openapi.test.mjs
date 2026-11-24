@@ -6,6 +6,7 @@ import {
   ATTENTION_NOTIFICATION_TYPES,
   USER_DATA_EXPORT_STATUSES,
 } from "../shared/src/api.ts";
+import { BOARD_TEMPLATE_IDS } from "../shared/src/board-templates.ts";
 import {
   OpenApiLintError,
   lintSpec,
@@ -17,6 +18,22 @@ test("the published contract is valid OpenAPI 3.1", async () => {
   assert.equal(spec.openapi, "3.1.0");
   assert.ok(operationIds.length >= 40);
   assert.equal(new Set(operationIds).size, operationIds.length);
+});
+
+test("keeps CreateBoardRequest in sync with the first-run template catalog", async () => {
+  const { spec } = await validateOpenApi();
+  const schema = spec.components.schemas.CreateBoardRequest;
+  assert.deepEqual(schema.properties.template.enum, [
+    ...BOARD_TEMPLATE_IDS,
+    "starter",
+  ]);
+  assert.match(schema.properties.templateLocale.description, /any template/i);
+  assert.equal(
+    schema.properties.templateDate.pattern,
+    "^\\d{4}-\\d{2}-\\d{2}$",
+  );
+  assert.equal(schema.properties.templateUtcOffsetMinutes.minimum, -840);
+  assert.equal(schema.properties.templateUtcOffsetMinutes.maximum, 840);
 });
 
 test("publishes the same error codes as the shared contract and describes token PATCH", async () => {

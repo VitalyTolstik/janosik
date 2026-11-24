@@ -78,7 +78,8 @@ describe("column card windowing (TASK-139)", () => {
     render(boardTree());
 
     const titles = screen.getAllByTestId("card-title");
-    expect(titles).toHaveLength(8);
+    // 360px initial viewport / 120px row + 4 overscan rows = 7 mounted cards.
+    expect(titles).toHaveLength(7);
     expect(titles[0]).toHaveTextContent("Card 0");
     expect(titles.length).toBeLessThan(CARDS);
     expect(screen.queryByText(`Card ${CARDS - 1}`)).toBeNull();

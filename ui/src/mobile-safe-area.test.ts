@@ -214,9 +214,15 @@ describe("mobile safe areas (TASK-177.18)", () => {
     );
   });
 
-  it("gives the card labels a readable lane clear of the hover actions", () => {
-    // Only labelled cards need the wider lane; no-label cards keep 75%.
-    expect(cardItem).toContain('labels.length > 0 && "max-md:w-1/2"');
+  it("gives the card labels a full-width lane clear of the hover actions", () => {
+    // Labelled cards give the title the whole row and move the label chips to
+    // a dedicated line below it; no-label cards keep the original 75% title.
+    expect(cardItem).toContain(
+      'labels.length > 0 ? "min-w-0 flex-1" : "w-3/4 shrink-0"',
+    );
+    expect(cardItem).toContain(
+      "flex h-[19px] shrink-0 flex-wrap content-center items-center gap-1 overflow-hidden",
+    );
     // The hover quick-action wrappers moved from the title/label row (`top-1.5`)
     // to the due row. The foreign-change dot keeps its own top-1.5 corner.
     expect(cardItem).toContain(

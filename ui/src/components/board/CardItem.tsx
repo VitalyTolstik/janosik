@@ -107,10 +107,10 @@ interface CardItemProps {
 }
 
 /**
- * True while the title is visually clipped by `truncate` (scrollWidth
- * exceeds the clipped clientWidth). Mirrors Jira's behaviour: the native
- * `title` tooltip appears only when something is actually hidden — no
- * tooltip noise on short titles.
+ * True while the title is visually clipped by `line-clamp` (a line or a
+ * line's tail is hidden). Mirrors Jira's behaviour: the native `title`
+ * tooltip appears only when something is actually hidden — no tooltip
+ * noise on short titles.
  */
 function useClamped(
   enabled = true,
@@ -147,11 +147,10 @@ const seenCardIds = new Set<string>();
  * with the drag layer that @dnd-kit applies on top of it.
  *
  * The face is a fixed-size uniform grid tile (owner's call): every card
- * shares the same width and height regardless of content. Three rows —
- * the title (~75% of the width on desktop, half below `md` when the card
- * has labels so a chip stays readable) shares the first line with the
- * labels (clipped in the remainder), the due date owns the second, and
- * the third packs the meta badges (description / linked cards /
+ * shares the same width and height regardless of content. Four rows —
+ * the title spans two lines and keeps the due badge beside it, the label
+ * chips own the third (or the due badge when there are no labels), and
+ * the fourth packs the meta badges (description / linked cards /
  * checklists) against the priority and the assignee's avatar. Empty
  * slots keep their space so all cards line up.
  *
@@ -319,7 +318,7 @@ function CardItemView({
           "group relative cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-card shadow-sm transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-md",
           compact
             ? "flex h-12 items-center gap-2 px-3"
-            : "flex h-[92px] flex-col gap-1 px-3 py-2",
+            : "flex h-[112px] flex-col gap-1 px-3 py-2",
           (selectionMode || selected) && "pl-9 max-lg:pl-12",
           selected &&
             "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/40",
@@ -556,10 +555,10 @@ function CardItemView({
                 style={{ background: coverBackground(card.cover) }}
               />
             ) : null}
-            {/* First line: the title owns ~75% of the tile on desktop; below
-          `md`, a labelled card drops it to half so the label chips keep a
-          readable lane (single line, fade at the cut). TASK-177.18 (U-07). */}
-            <div className="flex h-5 shrink-0 items-center gap-2">
+            {/* First two lines: the title. A labelled card keeps the due badge
+          beside it so the label chips get a full-width line of their own;
+          unlabelled cards keep the original second due row. */}
+            <div className="flex min-h-10 shrink-0 items-start gap-2">
               {/* `overflow-wrap:anywhere` (not just break-words) so a pasted URL
             can't blow out the tile's intrinsic width. The full text stays in
             the accessibility tree and a native `title` tooltip surfaces it,
@@ -568,57 +567,61 @@ function CardItemView({
                 ref={titleRef}
                 title={titleClamped ? card.title : undefined}
                 className={cn(
-                  "w-3/4 shrink-0 truncate break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
-                  // TASK-177.18: only a labelled card needs the wider label
-                  // lane. `max-md` also covers 640–767 px tablets, where the
-                  // card is still phone-width; 1440 keeps the 75/25 design.
-                  labels.length > 0 && "max-md:w-1/2",
+                  "line-clamp-2 break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
+                  labels.length > 0 ? "min-w-0 flex-1" : "w-3/4 shrink-0",
                 )}
                 data-testid="card-title"
               >
                 <HighlightedText text={card.title} query={highlight ?? ""} />
               </p>
+              {labels.length > 0 && hasDueDate ? (
+                <DueBadge dueDate={card.dueDate as number} />
+              ) : null}
+            </div>
+            {labels.length > 0 ? (
               <div
                 data-testid="card-labels"
-                className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap [mask-image:linear-gradient(to_right,black_80%,transparent)]"
+                aria-label={labels.map((label) => label.name).join(", ")}
+                className="flex h-[19px] shrink-0 flex-wrap content-center items-center gap-1 overflow-hidden"
               >
                 {labels.map((label) => (
                   <span
                     key={label.id}
                     title={label.name}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                       LABEL_COLOR_CHIP[label.color],
                     )}
                   >
                     <span
-                      className="h-1.5 w-1.5 rounded-full bg-current"
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-current"
                       aria-hidden
                     />
-                    {label.name}
+                    <span className="min-w-0 truncate">{label.name}</span>
                   </span>
                 ))}
               </div>
-            </div>
-            {/* Due row: only the date badge. */}
-            <div className="flex h-5 shrink-0 items-center overflow-hidden">
-              {hasDueDate ? (
-                <DueBadge dueDate={card.dueDate as number} />
-              ) : null}
-            </div>
+            ) : (
+              /* Due row: only the date badge. */
+              <div className="flex h-5 shrink-0 items-center overflow-hidden">
+                {hasDueDate ? (
+                  <DueBadge dueDate={card.dueDate as number} />
+                ) : null}
+              </div>
+            )}
             {/* Last line: meta badges (description presence, linked cards,
           checklist progress) on the left, the priority beside the assignee's
           avatar on the right. No overflow clipping here — the 24px avatar
           was getting shaved by sub-pixel rounding; the card's own clip plus
           the padding absorb any stray pixel. */}
             <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                 {hasDescription ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
-                          "inline-flex h-5 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-(--tab-text)",
+                          "inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-muted-foreground transition-colors group-hover:border-primary/40 group-hover:text-(--tab-text)",
                           descriptionOnly &&
                             "border-primary/40 bg-primary/10 text-(--tab-text)",
                         )}
@@ -637,9 +640,10 @@ function CardItemView({
                     </TooltipContent>
                   </Tooltip>
                 ) : null}
-                {/* Linked-cards badges (TASK-46): both the red "Blocked" marker
+                {/* Linked-cards badges (TASK-46): both the red blocker icon
               and the link count open the linked-cards popover instead of
-              bubbling into the card dialog. */}
+              bubbling into the card dialog. The blocker is icon-only on the
+              card face so the meta row does not crowd the priority. */}
                 {linkFacts ? (
                   <LinkedCardsPopover
                     boardId={boardId}
@@ -652,7 +656,7 @@ function CardItemView({
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
-                          "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                          "inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
                           done === total
                             ? "border-success/40 bg-success/10 text-(--chip-green)"
                             : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-(--tab-text)",

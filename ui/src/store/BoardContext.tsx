@@ -22,11 +22,13 @@ import {
   BOARD_CARD_PAGE_LIMIT_MAX,
   boardReducer,
   boardStarterPlan,
+  boardTemplatePlan,
   LIMITS,
   serializeExport,
   type BoardAction,
   type BoardStarterLocale,
   type BoardState,
+  type BoardTemplateSelection,
   type ColumnSortBy,
   type UpdateCardAction,
 } from "@janosik/shared";
@@ -248,10 +250,14 @@ interface BoardAccessValue {
   role: BoardRole | undefined;
 }
 
-/** TASK-177.16 first-run choice: empty board or the example starter. */
+/** TASK-177.16 first-run choice: empty board, the legacy starter or a template. */
 export interface AddBoardOptions {
-  template?: "starter";
+  template?: BoardTemplateSelection;
   templateLocale?: BoardStarterLocale;
+  /** The client's local creation date, used for deterministic due offsets. */
+  templateDate?: string;
+  /** The client's UTC offset (`-getTimezoneOffset()`) at creation. */
+  templateUtcOffsetMinutes?: number;
 }
 
 /**
@@ -407,6 +413,8 @@ interface BoardActionsValue {
   addBoard: (
     title: string,
     options?: AddBoardOptions,
+    /** Called instead of the generic toast for a template contract 400. */
+    onTemplateContractError?: (error: unknown) => void,
   ) => string | null | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void | Promise<void>;
@@ -454,6 +462,12 @@ interface BoardActionsValue {
    * queue (U-3). Returns the unregister function.
    */
   registerDraftFlush: (flush: () => void) => () => void;
+  /**
+   * Keep the home route on screen after the first board appears. The
+   * first-run picker needs one moment to show its success panel before the
+   * provider's usual "home → first board" redirect takes over.
+   */
+  setHomeRedirectPaused: (paused: boolean) => void;
 }
 
 /** The full surface, as `useBoard()` hands it out. */
@@ -512,6 +526,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     serverMode ? "loading" : "ready",
   );
   const [pendingBoardCount, setPendingBoardCount] = useState(0);
+  const [homeRedirectPaused, setHomeRedirectPaused] = useState(false);
   const [readModelPartialBoards, setReadModelPartialBoards] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -1357,6 +1372,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     // way: redirecting then would drop a `?card=` deep link (the URL is
     // replaced before the board it points at has loaded).
     if (syncStatus !== "ready") return;
+    // The first-run picker holds the home route while it shows the created
+    // board's success panel; closing it resumes the redirect.
+    if (homeRedirectPaused && location.pathname === routes.home) return;
     const routed = routeBoardId
       ? state.find((b) => b.id === routeBoardId)
       : undefined;
@@ -1385,6 +1403,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     navigate,
     cardParam,
     syncStatus,
+    homeRedirectPaused,
     toast,
     t,
   ]);
@@ -2709,6 +2728,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (
       title: string,
       options?: AddBoardOptions,
+      onTemplateContractError?: (error: unknown) => void,
     ): string | null | Promise<string | null> => {
       const resolved = title.trim();
       if (resolved.length === 0) return null;
@@ -2721,6 +2741,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
           } catch (error) {
+            // New UI against an older server (or an unknown template ID):
+            // keep the generic sync toast out of the way and let the picker
+            // offer the empty-board fallback.
+            if (
+              onTemplateContractError &&
+              options?.template !== undefined &&
+              error instanceof ApiError &&
+              error.status === 400
+            ) {
+              onTemplateContractError(error);
+              return null;
+            }
             // The starter board exists but its response was ambiguous. Open
             // that board instead of leaving the form to mint a second one.
             if (error instanceof ApiError) {
@@ -2810,6 +2842,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       const now = Date.now();
       let columns: Board["columns"] = [];
       let cards: Board["cards"] = {};
+      let labels: Board["labels"] = [];
       if (options?.template === "starter") {
         const plan = boardStarterPlan(options.templateLocale ?? "en", createId);
         columns = plan.columns.map((column, index) => ({
@@ -2836,6 +2869,47 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             updatedAt: now,
           },
         };
+      } else if (options?.template !== undefined) {
+        // The same shared plan the server turns into commands, so offline
+        // examples have the same columns, labels, cards and checklists.
+        const plan = boardTemplatePlan(
+          options.template,
+          options.templateLocale ?? "en",
+          createId,
+          now,
+          options.templateDate,
+          options.templateUtcOffsetMinutes ?? 0,
+        );
+        columns = plan.columns.map((column) => ({
+          id: column.id,
+          title: column.title,
+          cardIds: column.cardIds,
+          createdAt: now,
+        }));
+        labels = plan.labels;
+        cards = Object.fromEntries(
+          plan.cards.map((card) => [
+            card.id,
+            {
+              id: card.id,
+              title: card.title,
+              ...(card.description ? { description: card.description } : {}),
+              ...(card.dueDate ? { dueDate: card.dueDate } : {}),
+              labelIds: card.labelIds,
+              checklists: card.checklists.map((checklist) => ({
+                id: checklist.id,
+                title: checklist.title,
+                items: checklist.items.map((item) => ({
+                  id: item.id,
+                  text: item.text,
+                  done: false,
+                })),
+              })),
+              createdAt: now,
+              updatedAt: now,
+            },
+          ]),
+        );
       }
       apply({
         type: "ADD_BOARD",
@@ -2844,7 +2918,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           title: resolved,
           columns,
           cards,
-          labels: [],
+          labels,
           createdAt: now,
           updatedAt: now,
         },
@@ -2943,6 +3017,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       refreshBoards: hydrateBoards,
       dismissDataIssue,
       registerDraftFlush,
+      setHomeRedirectPaused,
     }),
     [
       dispatch,
@@ -2965,6 +3040,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       hydrateBoards,
       dismissDataIssue,
       registerDraftFlush,
+      setHomeRedirectPaused,
     ],
   );
 
@@ -3613,6 +3689,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     refreshBoards: () => Promise.resolve(),
     dismissDataIssue: noop,
     registerDraftFlush: () => noop,
+    setHomeRedirectPaused: noop,
   };
 }
 

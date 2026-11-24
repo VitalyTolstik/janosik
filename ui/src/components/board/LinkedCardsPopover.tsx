@@ -72,8 +72,10 @@ export function LinkedCardsPopover({
 }
 
 /**
- * The red "Blocked" badge — a second trigger into the same list: the
- * blocker is just one of the relations the popover already renders.
+ * The red blocker icon — a second trigger into the same list: the blocker
+ * is just one of the relations the popover already renders. The board card
+ * shows the icon only; the wording stays in the tooltip and the popover so
+ * the card's meta row has room for the link count, checklist and priority.
  */
 function BlockedBadgeTrigger() {
   const { t } = useI18n();
@@ -85,14 +87,13 @@ function BlockedBadgeTrigger() {
             type="button"
             aria-label={t("card.links.blockedTooltip")}
             data-testid="card-blocked-badge"
-            className="inline-flex h-5 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-1.5 text-[11px] font-semibold text-(--chip-red) transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger/10 text-(--chip-red) transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/50"
             onClick={(event) => {
               // Don't let the click open the card dialog.
               event.stopPropagation();
             }}
           >
             <Ban className="h-3 w-3" aria-hidden />
-            {t("card.links.blockedBadge")}
           </button>
         </PopoverTrigger>
       </TooltipTrigger>
@@ -111,7 +112,7 @@ function CountBadgeTrigger({ degree }: { degree: number }) {
             type="button"
             aria-label={t("card.links.badgeTooltip", { count: degree })}
             data-testid="card-links-badge"
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:border-primary/40 group-hover:text-primary"
+            className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:border-primary/40 group-hover:text-primary"
             onClick={(event) => {
               // Don't let the click open the card dialog.
               event.stopPropagation();
