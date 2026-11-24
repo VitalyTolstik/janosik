@@ -649,17 +649,16 @@ describe("bulk card actions", () => {
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
   });
 
-  it("deletes selected cards after confirmation and restores one with undo", async () => {
+  it("deletes selected cards after inline confirmation and restores one with undo", async () => {
     const user = userEvent.setup();
     tree(<SelectionHarness />);
     await enterSelectionMode(user);
     await selectByClick(user, "Charlie");
 
     await user.click(screen.getByTestId("bulk-delete"));
-    const confirm = screen.getByRole("dialog", {
-      name: "Delete 1 selected card?",
-    });
-    await user.click(within(confirm).getByRole("button", { name: "Delete" }));
+    // No modal: the trash arms a red check and a cancel icon in place.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("bulk-delete-confirm"));
 
     await waitFor(() =>
       expect(screen.queryByText("Charlie")).not.toBeInTheDocument(),
@@ -674,6 +673,53 @@ describe("bulk card actions", () => {
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     await waitFor(() => expect(screen.getByText("Charlie")).toBeVisible());
+  });
+
+  it("cancels an armed inline delete without touching the cards", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Charlie");
+
+    await user.click(screen.getByTestId("bulk-delete"));
+    await user.click(screen.getByTestId("bulk-delete-cancel"));
+
+    expect(screen.getByTestId("bulk-delete")).toBeInTheDocument();
+    expect(screen.getByText("Charlie")).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("creates a label from the bulk label menu", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Charlie");
+
+    await user.click(screen.getByTestId("bulk-label"));
+    await user.click(screen.getByTestId("bulk-new-label-trigger"));
+    await user.type(screen.getByPlaceholderText("Label name"), "Urgent");
+    await user.click(screen.getByTestId("bulk-create-label"));
+
+    await user.click(screen.getByTestId("bulk-label"));
+    expect(
+      await screen.findByRole("menuitemcheckbox", { name: /Urgent/ }),
+    ).toBeVisible();
+  });
+
+  it("creates a column from the bulk move menu", async () => {
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Charlie");
+
+    await user.click(screen.getByTestId("bulk-move"));
+    await user.click(screen.getByTestId("bulk-new-column-trigger"));
+    await user.type(screen.getByPlaceholderText("Column title…"), "New lane");
+    await user.click(screen.getByTestId("bulk-create-column"));
+
+    expect(
+      await screen.findByRole("group", { name: "New lane" }),
+    ).toBeInTheDocument();
   });
 
   it("reports a partial WIP failure per card and keeps the successful move", async () => {
@@ -1277,7 +1323,9 @@ describe("bulk card actions", () => {
     await selectByClick(user, "Alpha");
     expect(screen.getByTestId("bulk-count")).toHaveTextContent("Выбрано: 1");
     expect(screen.getByTestId("bulk-archive")).toHaveTextContent("В архив");
-    expect(screen.getByTestId("bulk-clear")).toHaveTextContent("Снять выбор");
+    expect(screen.getByTestId("bulk-clear")).toHaveAccessibleName(
+      "Снять выбор",
+    );
   });
 
   it("keeps 44 px targets on the bulk controls", async () => {

@@ -213,14 +213,14 @@ export function SavedViewsMenu({
               aria-label={label}
               data-testid="saved-views-menu"
               disabled={disabled}
-              className="shrink-0 text-muted-foreground hover:text-foreground max-lg:h-11 max-lg:w-11"
+              className="shrink-0 text-muted-foreground transition-colors hover:bg-warning/15 hover:text-(--agent-tone-warning) max-lg:h-11 max-lg:w-11"
             >
               <span className="relative">
                 <Bookmark className="h-5 w-5" aria-hidden />
                 {count > 0 && (
                   <span
                     aria-hidden
-                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-action-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground"
+                    className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-action-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground shadow-sm ring-2 ring-background"
                     data-testid="saved-views-count-badge"
                   >
                     {count}

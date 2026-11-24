@@ -281,7 +281,7 @@ interface BoardActionsValue {
    */
   roleOf: (boardId: string) => BoardRole | undefined;
   /* Convenience actions */
-  addColumn: (title: string) => void;
+  addColumn: (title: string) => string;
   renameBoard: (title: string) => void;
   renameColumn: (columnId: string, title: string) => void;
   deleteColumn: (columnId: string) => void;
@@ -3094,13 +3094,16 @@ function createBoardActions(
     Array.from({ length: n }, () => createId());
 
   return {
-    addColumn: (title: string) =>
+    addColumn: (title: string) => {
+      const newColumnId = createId();
       dispatch({
         type: "ADD_COLUMN",
-        newColumnId: createId(),
+        newColumnId,
         title,
         at: Date.now(),
-      }),
+      });
+      return newColumnId;
+    },
     renameBoard: (title: string) =>
       dispatch({ type: "RENAME_BOARD", title, at: Date.now() }),
     renameColumn: (columnId: string, title: string) =>
@@ -3556,7 +3559,7 @@ function createReadOnlyBoardActions(): BoardActionsValue {
     retryReadModel: noop,
     startArchiveBatch: () => false,
     roleOf: () => "VIEWER",
-    addColumn: noop,
+    addColumn: () => "",
     renameBoard: noop,
     renameColumn: noop,
     deleteColumn: noop,
