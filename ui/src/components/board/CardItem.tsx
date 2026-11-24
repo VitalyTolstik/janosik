@@ -355,7 +355,10 @@ function CardItemView({
                   ? t("bulk.deselectCard", { title: card.title })
                   : t("bulk.selectCard", { title: card.title })
               }
-              className="h-4 w-4 bg-card"
+              // The unchecked box needs to sit on the card; a selected one
+              // must keep the checked `bg-primary` fill, otherwise the white
+              // check disappears against the card background.
+              className={cn("h-4 w-4", !selected && "bg-card")}
               onCheckedChange={() => undefined}
               onClick={(event) => {
                 event.stopPropagation();

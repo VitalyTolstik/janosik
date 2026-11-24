@@ -569,3 +569,39 @@ describe("assignee badge (TASK-49)", () => {
     expect(screen.queryByTestId("card-assignee")).toBeNull();
   });
 });
+
+describe("CardItem selection checkbox", () => {
+  function renderSelectable(selected: boolean) {
+    return render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={baseCard}
+            labels={[]}
+            selectionMode
+            selected={selected}
+            onToggleSelect={vi.fn()}
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+  }
+
+  it("keeps the checked primary fill, so the white check stays visible", () => {
+    renderSelectable(true);
+    const checkbox = screen.getByRole("checkbox", {
+      name: "Deselect Short title",
+    });
+    expect(checkbox).toHaveClass("bg-primary");
+    expect(checkbox).not.toHaveClass("bg-card");
+  });
+
+  it("keeps the unchecked box opaque on the card", () => {
+    renderSelectable(false);
+    const checkbox = screen.getByRole("checkbox", {
+      name: "Select Short title",
+    });
+    expect(checkbox).toHaveClass("bg-card");
+    expect(checkbox).not.toHaveClass("bg-primary");
+  });
+});
