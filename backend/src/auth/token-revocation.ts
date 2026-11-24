@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { lockBoardWrites, lockUserMemberships } from "@/common/board-locks";
 
@@ -68,9 +69,27 @@ export async function revokeApiTokens(
   // until this transaction ends.
   await lockUserMemberships(tx, userIds);
 
-  const tokenIds = tokens.map((token) => token.id);
+  // Re-select after the user locks: a token created while we were locking
+  // must not escape the static board set. Same `where`; owners can only be
+  // the same users (or `userIds` supplied by the account path).
+  const activeTokens =
+    tokens.length === 0
+      ? tokens
+      : await tx.apiToken.findMany({
+          where,
+          select: { id: true, userId: true, boardId: true },
+        });
+  const effectiveUserIds = [
+    ...new Set([...userIds, ...activeTokens.map((token) => token.userId)]),
+  ].sort();
+  const newUserIds = effectiveUserIds.filter((id) => !userIds.includes(id));
+  if (newUserIds.length > 0) {
+    await lockUserMemberships(tx, newUserIds);
+  }
+
+  const tokenIds = activeTokens.map((token) => token.id);
   const memberships = await tx.boardMember.findMany({
-    where: { userId: { in: userIds }, acceptedAt: { not: null } },
+    where: { userId: { in: effectiveUserIds }, acceptedAt: { not: null } },
     select: { boardId: true },
   });
   const claimBoardIds = async (): Promise<string[]> => {
@@ -84,13 +103,13 @@ export async function revokeApiTokens(
   const userClaimBoardIds = options.releaseUserClaims
     ? (
         await tx.card.findMany({
-          where: { claimedBy: { in: userIds } },
+          where: { claimedBy: { in: effectiveUserIds } },
           select: { column: { select: { boardId: true } } },
         })
       ).map((card) => card.column.boardId)
     : [];
   const boardIds = new Set<string>([
-    ...tokens
+    ...activeTokens
       .map((token) => token.boardId)
       .filter((boardId): boardId is string => boardId !== null),
     ...memberships.map((membership) => membership.boardId),
@@ -112,7 +131,7 @@ export async function revokeApiTokens(
   const lateUserClaimBoards = options.releaseUserClaims
     ? (
         await tx.card.findMany({
-          where: { claimedBy: { in: userIds } },
+          where: { claimedBy: { in: effectiveUserIds } },
           select: { column: { select: { boardId: true } } },
         })
       )
@@ -120,12 +139,13 @@ export async function revokeApiTokens(
         .filter((boardId) => !boardIds.has(boardId))
     : [];
   if (lateClaimBoards.length > 0 || lateUserClaimBoards.length > 0) {
-    throw new Error(
-      `token revocation lock set changed after locking: ${[
-        ...lateClaimBoards,
-        ...lateUserClaimBoards,
-      ].join(",")}`,
-    );
+    // Fail closed: a Card write on a board outside the static set would be
+    // exactly the unlocked writer this task removes. The caller may retry.
+    throw new ServiceUnavailableException({
+      message: "Board lock set changed during token revocation; retry",
+      code: "board_lock_set_incomplete",
+      retryable: true,
+    });
   }
 
   const revoked =
@@ -154,7 +174,7 @@ export async function revokeApiTokens(
     claimOwners.push({ claimedByTokenId: { in: tokenIds } });
   }
   if (options.releaseUserClaims) {
-    claimOwners.push({ claimedBy: { in: userIds } });
+    claimOwners.push({ claimedBy: { in: effectiveUserIds } });
   }
   if (claimOwners.length > 0) {
     await tx.card.updateMany({

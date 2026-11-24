@@ -93,6 +93,39 @@ describe("revokeApiTokens board locks", () => {
     ]);
   });
 
+  it("locks every token owner's user key before one board set", async () => {
+    const tx = txDouble({
+      tokens: [
+        { id: "token-a", userId: "user-b", boardId: "board-1" },
+        { id: "token-b", userId: "user-a", boardId: "board-2" },
+      ],
+    });
+
+    await revokeApiTokens(tx, { id: { in: ["token-a", "token-b"] } });
+
+    expect(lockKeys(tx)).toEqual([
+      "user-memberships:user-a",
+      "user-memberships:user-b",
+      "board-1",
+      "board-2",
+    ]);
+  });
+
+  it("fails closed with a retryable code if a claim board appears late", async () => {
+    const tx = txDouble({
+      tokens: [{ id: "token-1", userId: "user-1", boardId: "board-a" }],
+      claimBatches: [[], [claim("board-z")]],
+    });
+
+    await expect(revokeApiTokens(tx, { id: "token-1" })).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: "board_lock_set_incomplete",
+        retryable: true,
+      }),
+    });
+    expect(tx.card.updateMany).not.toHaveBeenCalled();
+  });
+
   it("releases browser claims with no active token rows when asked", async () => {
     const tx = txDouble({
       tokens: [],
