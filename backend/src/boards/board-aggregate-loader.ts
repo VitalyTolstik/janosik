@@ -77,7 +77,8 @@ export class BoardAggregateLoader {
   /**
    * The aggregate plus the revision it was built from. On a cache hit both
    * come from the entry; on a miss the revision is whatever the board row in
-   * this transaction says (never the caller's hint). A miss is not stored.
+   * this transaction says (never the caller's hint). A miss is stored only
+   * when the caller proved a REPEATABLE READ snapshot (`snapshot: true`).
    */
   async loadWithRevision(
     db: Prisma.TransactionClient,
