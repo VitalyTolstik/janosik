@@ -25,13 +25,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rebuilt from live non-archived rows while all `column.cardIds` are
   sanitized against the card map. Client-supplied `activity`/`links` and
   crafted ghost/archived ids in a `RESTORE_*` payload never enter the cache.
-  Board-lock coverage was extended to the known live-content writers outside
-  a command transaction: `sweepClaims` groups by board and chunks its claims,
-  account erasure locks memberships/assignments/claims/attachment cards, and
-  token revocation plus the account-deletion schedule lock token scope,
-  unscoped memberships and claim boards before clearing claims. A fill
-  re-checks the revision through a separate reader and skips storage when it
-  moved; that check cannot abort the caller's transaction. A repaired or
+  Board-lock coverage uses one global order, user-membership lock → sorted
+  board locks: every accepted-membership path (`InvitationsService.accept`,
+  board create/import, admin add/accept), `sweepClaims` (chunked per board
+  and serialized with an in-flight writer), account erasure (user key before
+  membership/claim/attachment reads; post-lock attachment recount) and token
+  revocation/account schedule (one static sorted set of token scope,
+  accepted memberships and claim boards; no late-lock loop). The cache is
+  warmed only by the command transaction’s post-commit `remember`; a read or
+  plan miss loads from the DB and does not fill, so there is no second pooled
+  connection and no READ COMMITTED fill window. A repaired or
   cleared workflow drops the sticky `workflowInvalid` flag, and
   `attachmentCount` follows the blob owner when a description embeds another
   card's upload. Bounds are LRU entries and approximate JSON bytes

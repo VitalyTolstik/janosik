@@ -717,13 +717,11 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 - `BoardAggregateLoader` — кэширующий вход для команд, планов, approvals
   и legacy-чтения `GET /boards/:id`. Если `Board` уже прочитан, ревизия
   берётся из него (лишнего `SELECT` на попадании нет); узкие policy-чтения
-  передают только `aggregateRevision`. На промахе ревизия перечитывается
-  через отдельный `PrismaService` вне транзакции вызывающего (в
-  direct-construction тестах — через переданный клиент) и запись
-  выполняется только если она не сдвинулась: это закрывает READ COMMITTED
-  окно между строкой доски и четырьмя aggregate-запросами. Неудачная
-  проверка означает только пропуск записи в кэш и не может прервать
-  транзакцию вызывающего.
+  передают только `aggregateRevision`. **Промах загружает из БД и не
+  кэширует**: кэш наполняется только явным post-commit `remember` из
+  `CommandsService.applyBatch`. Поэтому нет ни второго пула-соединения, ни
+  READ COMMITTED/незакоммиченного окна, которое пыталась закрыть прежняя
+  fill-проверка; чтения, планы и approvals — только потребители.
 - В `CommandsService.applyBatch` финальная ревизия читается в той же
   транзакции после всех записей, а итоговый in-memory aggregate кладётся в
   кэш только после успешного `BoardWriteService.run` — до публикации
@@ -757,25 +755,29 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   отдаётся, следующая загрузка содержит новые данные; две независимые
   пары loader/cache имитируют реплики (писатель R+1, читатель на R
   промахивается и перечитывает). Ручной инвалидации нет — корректность
-  держится на триггерах 200.6. Card-писатели вне командной транзакции
-  берут board-writer lock адресно: `sweepClaims` — по доске и чанками по
-  100, удаление аккаунта — по доскам membership/assignee/claims/вложений,
-  отзыв токена и schedule-путь — по `ApiToken.boardId`, accepted
-  membership unscoped-токена и текущим claim-доскам до очистки claim.
+  держится на триггерах 200.6. Инвариант блокировок: **user-membership
+  lock → sorted board locks**. Его берут все пути accepted-membership
+  (`InvitationsService.accept`, `createBoard`, admin add и admin accept,
+  board import), `revokeApiTokens` (user keys → один статический набор
+  `ApiToken.boardId` + accepted memberships + claim-доски, без late-loop) и
+  удаление аккаунта (user key до чтения membership/claims, post-lock набор
+  вложений и recount). `sweepClaims` — по доске и чанками по 100.
   `SET_BOARD_WORKFLOW` (set/clear, включая equal) снимает
   `workflowInvalid`; карточка-владелец description-embed пересобирается по
   `attachmentCount`; crafted `RESTORE_COLUMN` с ghost/archived id
   санитизируется.
 - Тесты: `backend/src/boards/board-aggregate-cache.spec.ts` (LRU по
   entries/bytes, disabled=0, несовпадение ревизии, stale set, deep-clone,
-  счётчики, oversize), `board-aggregate-loader.spec.ts`
-  (`cacheOnMiss:false`, внешняя проверка ревизии), unit на board-lock
-  `revokeApiTokens`/`sweepClaims` и
+  счётчики, oversize), `board-aggregate-loader.spec.ts` (miss не заполняет
+  кэш; fill только через `remember`), unit на user/board lock order,
+  `revokeApiTokens` (один sorted set, releaseUserClaims), `sweepClaims`
+  (чанки + ожидание in-flight writer) и
   `backend/test/task-200-10-aggregate-cache.e2e-spec.ts` (вторая команда
-  без aggregate-`SELECT`, паритет кэша и свежей загрузки на
-  add/update/move/archive/delete card/label/checklist/column/board,
-  duplicate, restores/order/crafted payload, coherency внешних писателей,
-  lapsed-claim sweep, account schedule и две реплики).
+  без aggregate-`SELECT`, read-miss без fill, паритет кэша и свежей
+  загрузки на add/update/move/archive/delete card/label/checklist/column/
+  board, duplicate, restores/order/crafted payload, coherency внешних
+  писателей, membership-lock wait, lapsed-claim sweep, account schedule и
+  две реплики).
 - **Ограничение:** заявленные в DoD «5–10× throughput» здесь не
   измерялись; это остаётся замером 200.14. Кэш экономит 4 aggregate-запроса
   на команду при попадании, но на запись добавляет пересборку затронутых

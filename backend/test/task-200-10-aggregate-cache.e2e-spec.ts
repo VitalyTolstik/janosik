@@ -13,6 +13,7 @@ import {
 } from "@/boards/board-aggregate-cache";
 import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import { setupApp } from "@/common/app-setup";
+import { BoardWriteService } from "@/common/board-write.service";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { AccountDeletionService } from "@/users/account-deletion.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
@@ -198,8 +199,8 @@ describe("Board aggregate cache (e2e)", () => {
   /**
    * An out-of-band writer (comment, attachment, session end, direct admin
    * restore) moves the revision without going through the command cache path.
-   * The old entry must no longer be served, and the next load must miss,
-   * query and cache the new revision.
+   * The old entry must no longer be served; a read reloads but does **not**
+   * fill the cache — only the next command commit does.
    */
   async function expectReloadAfterExternalWrite(
     boardId: string,
@@ -224,7 +225,7 @@ describe("Board aggregate cache (e2e)", () => {
       boardId,
     );
     expect(reloaded?.board).toEqual(fresh!.board);
-    expect(cache.revisionOf(boardId)).toBe(after);
+    expect(cache.revisionOf(boardId)).not.toBe(after);
     return after;
   }
 
@@ -282,6 +283,12 @@ describe("Board aggregate cache (e2e)", () => {
     }
 
     cache.clear();
+    load.mockClear();
+
+    // A read miss loads but deliberately does not warm the cache.
+    const readMiss = await loader.loadWithRevision(prisma, boardId);
+    expect(readMiss?.revision).toBe(await revision(boardId));
+    expect(cache.revisionOf(boardId)).toBeNull();
     load.mockClear();
 
     await command(boardId, {
@@ -587,9 +594,11 @@ describe("Board aggregate cache (e2e)", () => {
       })
       .expect(201);
 
-    // Let the loader pick up the out-of-band attachment revision first.
+    // Let the loader pick up the out-of-band attachment revision first, then
+    // a command commit warms the cache (reads deliberately do not fill).
     const loaded = await loader.loadWithRevision(prisma, boardId);
     expect(loaded?.board.cards[cardId]?.attachmentCount).toBe(1);
+    await command(boardId, { type: "TOUCH_CARD", cardId });
     await expectCacheMatchesDatabase(boardId, "before duplicate");
 
     const copyId = randomUUID();
@@ -1172,6 +1181,92 @@ describe("Board aggregate cache (e2e)", () => {
     ).toBeUndefined();
   });
 
+  it("serializes invitation acceptance on the user-membership lock", async () => {
+    const registration = await server()
+      .post("/api/v1/auth/register")
+      .send({
+        email: "membership-lock@example.com",
+        password: PASSWORD,
+        displayName: "Membership lock",
+      })
+      .expect(201);
+    const inviteeToken = registration.body.accessToken as string;
+    const inviteeId = registration.body.user.id as string;
+    const boardId = await createBoard("Membership lock board");
+    const otherBoardId = await createBoard("Membership lock holder");
+    await server()
+      .post(`/api/v1/boards/${boardId}/members`)
+      .set(auth(session))
+      .send({ email: "membership-lock@example.com", role: "MEMBER" })
+      .expect(201);
+    const invitationId = await server()
+      .get("/api/v1/invitations")
+      .set(auth(inviteeToken))
+      .expect(200)
+      .then(
+        (res) =>
+          res.body.find((row: { boardId: string }) => row.boardId === boardId)
+            .id as string,
+      );
+
+    const boardWrite = app.get(BoardWriteService);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    // Hold the invitee's user key from a *different* board, so acceptance
+    // cannot be waiting merely on this board's in-process queue.
+    const held = boardWrite.run(
+      otherBoardId,
+      async () => {
+        entered();
+        await gate;
+      },
+      undefined,
+      { lockUserId: inviteeId },
+    );
+    await started;
+
+    const accept = server()
+      .post(`/api/v1/invitations/${invitationId}/accept`)
+      .set(auth(inviteeToken));
+    let settled = false;
+    void accept.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(settled).toBe(false);
+    expect(
+      (
+        await prisma.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: inviteeId } },
+          select: { acceptedAt: true },
+        })
+      )?.acceptedAt,
+    ).toBeNull();
+
+    release();
+    await held;
+    await accept.expect(200);
+    expect(
+      (
+        await prisma.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: inviteeId } },
+          select: { acceptedAt: true },
+        })
+      )?.acceptedAt,
+    ).not.toBeNull();
+  });
+
   it("reloads the cache when account schedule revokes a scoped token", async () => {
     const registration = await server()
       .post("/api/v1/auth/register")
@@ -1231,6 +1326,67 @@ describe("Board aggregate cache (e2e)", () => {
     ).toBe(0);
   });
 
+  it("recounts attachment badges in the account-erasure transaction", async () => {
+    const registration = await server()
+      .post("/api/v1/auth/register")
+      .send({
+        email: "erased-attachments@example.com",
+        password: PASSWORD,
+        displayName: "Erased attachments",
+      })
+      .expect(201);
+    const userToken = registration.body.accessToken as string;
+    const userId = registration.body.user.id as string;
+    const boardId = await server()
+      .post("/api/v1/boards")
+      .set(auth(userToken))
+      .send({ title: "Erased attachments board" })
+      .expect(201)
+      .then((res) => res.body.id as string);
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    await command(
+      boardId,
+      { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+      { token: userToken },
+    );
+    await command(
+      boardId,
+      { type: "ADD_CARD", newCardId: cardId, columnId, title: "Has file" },
+      { token: userToken },
+    );
+    await server()
+      .post(`/api/v1/cards/${cardId}/attachments`)
+      .set(auth(userToken))
+      .attach("file", PDF, {
+        filename: "erased.pdf",
+        contentType: "application/pdf",
+      })
+      .expect(201);
+    expect(
+      (
+        await prisma.card.findUniqueOrThrow({
+          where: { id: cardId },
+          select: { attachmentCount: true },
+        })
+      ).attachmentCount,
+    ).toBe(1);
+
+    await app.get(AccountDeletionService).deleteAccount(userId);
+
+    expect(
+      (
+        await prisma.card.findUniqueOrThrow({
+          where: { id: cardId },
+          select: { attachmentCount: true },
+        })
+      ).attachmentCount,
+    ).toBe(0);
+    expect(
+      await prisma.attachment.count({ where: { uploadedById: userId } }),
+    ).toBe(0);
+  });
+
   it("reloads after a comment, an attachment, a session end and an admin restore", async () => {
     const boardId = await createBoard("Coherency board");
     const columnId = randomUUID();
@@ -1267,7 +1423,9 @@ describe("Board aggregate cache (e2e)", () => {
     ).toBe(ownerId);
 
     // ---- attachment: attachmentCount changes outside the command log ------
-    before = await expectCacheMatchesDatabase(boardId, "before attachment");
+    // The comment read above deliberately did not warm the cache; the next
+    // command will.
+    before = await revision(boardId);
     await server()
       .post(`/api/v1/cards/${cardId}/attachments`)
       .set(auth(session))
@@ -1448,6 +1606,8 @@ describe("Board aggregate cache (e2e)", () => {
     const revisionBefore = await revision(boardId);
     expect(readerFirst?.revision).toBe(revisionBefore);
     expect(readerFirst?.board.cards[cardId]!.title).toBe("Before");
+    // Simulate the command commit that warmed this replica's cache at R.
+    reader.remember(boardId, revisionBefore, readerFirst!.board);
 
     // The writer replica (or the command process) commits a newer revision.
     await command(boardId, {
@@ -1461,15 +1621,19 @@ describe("Board aggregate cache (e2e)", () => {
     const writerLoad = await writer.loadWithRevision(prisma, boardId);
     expect(writerLoad?.revision).toBe(revisionAfter);
     expect(writerLoad?.board.cards[cardId]!.title).toBe("After");
+    // A read miss does not fill; the writer only caches when a command
+    // commits on that replica.
+    expect(writerCache.revisionOf(boardId)).toBeNull();
+    writer.remember(boardId, revisionAfter, writerLoad!.board);
     expect(writerCache.revisionOf(boardId)).toBe(revisionAfter);
 
-    // The reader still holds R. Serving R for R+1 is impossible by key; the
-    // loader reads the board row in its own snapshot, misses, and reloads.
+    // The reader still holds the old command-warmed R. Serving R for R+1 is
+    // impossible by key; its read misses and reloads without filling.
     expect(readerCache.revisionOf(boardId)).toBe(revisionBefore);
     expect(readerCache.get(boardId, revisionAfter)).toBeNull();
     const readerSecond = await reader.loadWithRevision(prisma, boardId);
     expect(readerSecond?.revision).toBe(revisionAfter);
     expect(readerSecond?.board.cards[cardId]!.title).toBe("After");
-    expect(readerCache.revisionOf(boardId)).toBe(revisionAfter);
+    expect(readerCache.revisionOf(boardId)).toBe(revisionBefore);
   });
 });
