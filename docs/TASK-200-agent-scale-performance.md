@@ -717,10 +717,13 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 - `BoardAggregateLoader` — кэширующий вход для команд, планов, approvals
   и legacy-чтения `GET /boards/:id`. Если `Board` уже прочитан, ревизия
   берётся из него (лишнего `SELECT` на попадании нет); узкие policy-чтения
-  передают только `aggregateRevision`. На промахе после загрузки
-  перечитывается ревизия и запись выполняется только если она не
-  сдвинулась (защита от READ COMMITTED гонки между строкой доски и четырьмя
-  aggregate-запросами).
+  передают только `aggregateRevision`. На промахе ревизия перечитывается
+  через отдельный `PrismaService` вне транзакции вызывающего (в
+  direct-construction тестах — через переданный клиент) и запись
+  выполняется только если она не сдвинулась: это закрывает READ COMMITTED
+  окно между строкой доски и четырьмя aggregate-запросами. Неудачная
+  проверка означает только пропуск записи в кэш и не может прервать
+  транзакцию вызывающего.
 - В `CommandsService.applyBatch` финальная ревизия читается в той же
   транзакции после всех записей, а итоговый in-memory aggregate кладётся в
   кэш только после успешного `BoardWriteService.run` — до публикации
@@ -730,13 +733,17 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 - Reducer не содержит серверных атрибутов карточки (`lastActorId`,
   `claimedByTokenId`/`claimedBySessionId`, `attachmentCount`,
   `archivedAt`/`archivedFromColumnId`, `updatedAt`), а `RESTORE_*`-payload
-  может нести клиентские `activity`/`links`. Перед кэшированием каждая
+  может нести клиентские `activity`/`links` (включая crafted
+  `column.cardIds` с ghost/archived id). Перед кэшированием каждая
   затронутая карточка **пересобирается из БД** тем же `toCard` +
   labels/checklists/items/links, что и полная загрузка; несуществующие
-  карточки удаляются. Поэтому клиентские `activity`/произвольные `links`
-  никогда не попадают в кэш, а попадание совпадает со свежей загрузкой
-  (включая duplicate/restore и счётчик вложений карточки-владельца при
-  описании с чужим embed).
+  карточки удаляются. Затронутые колонки пересобираются по живым
+  non-archived `Card` в порядке `position`, а все `column.cardIds`
+  санитизируются против `board.cards`. Поэтому клиентские
+  `activity`/`links`/ghost id никогда не попадают в кэш, а запись на
+  совпавшей ревизии отражает закоммиченное состояние этой ревизии
+  (включая duplicate/restore, column order и счётчик вложений
+  карточки-владельца при описании с чужим embed).
 - Границы: LRU по числу записей и приблизительному размеру
   (`JSON.stringify` + 256 байт на запись, считается только при записи);
   по умолчанию 32 записи / 32 МиБ на процесс, `0` в
@@ -750,23 +757,30 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   отдаётся, следующая загрузка содержит новые данные; две независимые
   пары loader/cache имитируют реплики (писатель R+1, читатель на R
   промахивается и перечитывает). Ручной инвалидации нет — корректность
-  держится на триггерах 200.6. Live-content писатели вне команд
-  (`MaintenanceService.sweepClaims`, удаление аккаунта) берут тот же
-  board-writer lock до записи Card, иначе команда могла бы закэшировать
-  ревизию, не содержащую их изменений. `SET_BOARD_WORKFLOW` (set/clear,
-  включая equal) снимает `workflowInvalid`; карточка-владелец
-  description-embed пересобирается по `attachmentCount`.
+  держится на триггерах 200.6. Card-писатели вне командной транзакции
+  берут board-writer lock адресно: `sweepClaims` — по доске и чанками по
+  100, удаление аккаунта — по доскам membership/assignee/claims/вложений,
+  отзыв токена и schedule-путь — по `ApiToken.boardId`, accepted
+  membership unscoped-токена и текущим claim-доскам до очистки claim.
+  `SET_BOARD_WORKFLOW` (set/clear, включая equal) снимает
+  `workflowInvalid`; карточка-владелец description-embed пересобирается по
+  `attachmentCount`; crafted `RESTORE_COLUMN` с ghost/archived id
+  санитизируется.
 - Тесты: `backend/src/boards/board-aggregate-cache.spec.ts` (LRU по
   entries/bytes, disabled=0, несовпадение ревизии, stale set, deep-clone,
-  счётчики, oversize) и
+  счётчики, oversize), `board-aggregate-loader.spec.ts`
+  (`cacheOnMiss:false`, внешняя проверка ревизии), unit на board-lock
+  `revokeApiTokens`/`sweepClaims` и
   `backend/test/task-200-10-aggregate-cache.e2e-spec.ts` (вторая команда
   без aggregate-`SELECT`, паритет кэша и свежей загрузки на
   add/update/move/archive/delete card/label/checklist/column/board,
-  duplicate, coherency внешних писателей, две реплики).
+  duplicate, restores/order/crafted payload, coherency внешних писателей,
+  lapsed-claim sweep, account schedule и две реплики).
 - **Ограничение:** заявленные в DoD «5–10× throughput» здесь не
   измерялись; это остаётся замером 200.14. Кэш экономит 4 aggregate-запроса
-  на команду при попадании, но добавляет один узкий запрос атрибутов
-  затронутых карточек на запись и один `SELECT` ревизии на промахе.
+  на команду при попадании, но на запись добавляет пересборку затронутых
+  карточек и колонок (2–3 узких запроса) и внешнюю проверку ревизии на
+  промахе.
 
 ---
 

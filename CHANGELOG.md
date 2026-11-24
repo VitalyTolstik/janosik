@@ -21,15 +21,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Reducer-only gaps in server attribution (`lastActorId`, claim token/session,
   `attachmentCount`, archive stamps, `updatedAt`) are closed by rebuilding
   each card a batch touched from the database with the same `toCard` mapping
-  (labels, checklists/items, link rows). That also means client-supplied
-  `activity`/`links` in a `RESTORE_*` payload never enter the cache, and a hit
-  matches a fresh load. Out-of-band live-content writers now take the same
-  per-board writer lock (`sweepClaims` groups by board; account erasure locks
-  every board whose card it clears/assigns/recounts), so a command cannot
-  cache a revision that misses their write. A repaired or cleared workflow
-  drops the sticky `workflowInvalid` flag, and `attachmentCount` follows the
-  blob owner when a description embeds another card's upload. Bounds are LRU
-  entries and approximate JSON bytes
+  (labels, checklists/items, link rows), and every touched column's order is
+  rebuilt from live non-archived rows while all `column.cardIds` are
+  sanitized against the card map. Client-supplied `activity`/`links` and
+  crafted ghost/archived ids in a `RESTORE_*` payload never enter the cache.
+  Board-lock coverage was extended to the known live-content writers outside
+  a command transaction: `sweepClaims` groups by board and chunks its claims,
+  account erasure locks memberships/assignments/claims/attachment cards, and
+  token revocation plus the account-deletion schedule lock token scope,
+  unscoped memberships and claim boards before clearing claims. A fill
+  re-checks the revision through a separate reader and skips storage when it
+  moved; that check cannot abort the caller's transaction. A repaired or
+  cleared workflow drops the sticky `workflowInvalid` flag, and
+  `attachmentCount` follows the blob owner when a description embeds another
+  card's upload. Bounds are LRU entries and approximate JSON bytes
   (default 32 / 32 MiB per process; `BOARD_AGGREGATE_CACHE_ENTRIES` /
   `BOARD_AGGREGATE_CACHE_BYTES`, `0` disables); a store pays one
   `JSON.stringify` + `structuredClone` and a hit one clone. Unit and e2e

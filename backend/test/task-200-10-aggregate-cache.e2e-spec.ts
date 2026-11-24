@@ -14,6 +14,7 @@ import {
 import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
+import { AccountDeletionService } from "@/users/account-deletion.service";
 import { MaintenanceService } from "@/ops/maintenance.service";
 import { wipeAll } from "./support/wipe";
 
@@ -766,6 +767,27 @@ describe("Board aggregate cache (e2e)", () => {
     });
     await expectCacheMatchesDatabase(boardId, "after checklist restore");
 
+    const beforeItem = (await loader.loadWithRevision(
+      prisma,
+      boardId,
+    ))!.board.cards[cardId]!.checklists!.find((row) => row.id === checklistId)!
+      .items[0]!;
+    await command(boardId, {
+      type: "DELETE_CHECKLIST_ITEM",
+      cardId,
+      checklistId,
+      itemId: beforeItem.id,
+    });
+    await expectCacheMatchesDatabase(boardId, "after checklist item delete");
+    await command(boardId, {
+      type: "RESTORE_CHECKLIST_ITEM",
+      cardId,
+      checklistId,
+      item: beforeItem,
+      index: 0,
+    });
+    await expectCacheMatchesDatabase(boardId, "after checklist item restore");
+
     const secondChecklist = randomUUID();
     await command(boardId, {
       type: "ADD_CHECKLIST",
@@ -805,6 +827,150 @@ describe("Board aggregate cache (e2e)", () => {
       (await loader.loadWithRevision(prisma, boardId))!.board.cards[copyCardId]!
         .archivedAt,
     ).toBeUndefined();
+  });
+
+  it("keeps parity for column order, bulk restore, orphan restore and a crafted column payload", async () => {
+    const boardId = await createBoard("Column order parity");
+    const firstColumn = randomUUID();
+    const secondColumn = randomUUID();
+    const firstCard = randomUUID();
+    const secondCard = randomUUID();
+    const thirdCard = randomUUID();
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: firstColumn,
+      title: "Alpha",
+    });
+    await command(boardId, {
+      type: "ADD_COLUMN",
+      newColumnId: secondColumn,
+      title: "Beta",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: firstCard,
+      columnId: firstColumn,
+      title: "Bravo",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: secondCard,
+      columnId: firstColumn,
+      title: "Alpha",
+    });
+    await command(boardId, {
+      type: "ADD_CARD",
+      newCardId: thirdCard,
+      columnId: secondColumn,
+      title: "Third",
+    });
+
+    await command(boardId, {
+      type: "SORT_COLUMN",
+      columnId: firstColumn,
+      sortBy: "title",
+    });
+    await expectCacheMatchesDatabase(boardId, "after sort column");
+    await command(boardId, {
+      type: "SET_COLUMN_CARD_ORDER",
+      columnId: firstColumn,
+      cardIds: [firstCard, secondCard],
+    });
+    await expectCacheMatchesDatabase(boardId, "after explicit column order");
+
+    await command(boardId, {
+      type: "ARCHIVE_COLUMN_CARDS",
+      columnId: secondColumn,
+    });
+    await expectCacheMatchesDatabase(boardId, "after bulk archive");
+    const archivedThird = (await loader.loadWithRevision(prisma, boardId))!
+      .board.cards[thirdCard]!;
+    const liveThird = {
+      ...archivedThird,
+    };
+    delete liveThird.archivedAt;
+    delete liveThird.archivedFromColumnId;
+    await command(boardId, {
+      type: "RESTORE_COLUMN_CARDS",
+      columnId: secondColumn,
+      cardIds: [thirdCard],
+      cards: [liveThird],
+    });
+    await expectCacheMatchesDatabase(boardId, "after RESTORE_COLUMN_CARDS");
+    expect(
+      (await loader.loadWithRevision(prisma, boardId))!.board.cards[thirdCard]!
+        .archivedAt,
+    ).toBeUndefined();
+
+    // Archive it again, then restore the card without naming its column: the
+    // writer parks it in the invisible orphan column while the aggregate
+    // keeps it in `cards` only.
+    await command(boardId, {
+      type: "ARCHIVE_COLUMN_CARDS",
+      columnId: secondColumn,
+    });
+    const archivedAgain = (await loader.loadWithRevision(prisma, boardId))!
+      .board.cards[thirdCard]!;
+    await command(boardId, {
+      type: "RESTORE_COLUMN_CARDS",
+      columnId: secondColumn,
+      cardIds: [],
+      cards: [archivedAgain],
+    });
+    await expectCacheMatchesDatabase(boardId, "after orphan-column restore");
+    const orphaned = (await loader.loadWithRevision(prisma, boardId))!.board;
+    expect(orphaned.cards[thirdCard]!.archivedAt).toEqual(expect.any(Number));
+    expect(
+      orphaned.columns.find((column) => column.id === secondColumn)?.cardIds,
+    ).toEqual([]);
+
+    // A crafted RESTORE_COLUMN: a ghost id and an archived payload card in
+    // `column.cardIds` are not part of a fresh aggregate.
+    const beforeDelete = (await loader.loadWithRevision(prisma, boardId))!
+      .board;
+    const doomedColumn = beforeDelete.columns.find(
+      (column) => column.id === firstColumn,
+    )!;
+    const doomedCards = doomedColumn.cardIds.map(
+      (id) => beforeDelete.cards[id]!,
+    );
+    await command(boardId, { type: "DELETE_COLUMN", columnId: firstColumn });
+    await expectCacheMatchesDatabase(boardId, "before crafted restore");
+
+    const ghostId = randomUUID();
+    const archivedCardId = randomUUID();
+    const now = Date.now();
+    const archivedCard = {
+      id: archivedCardId,
+      title: "Should stay archived",
+      labelIds: [],
+      createdAt: now,
+      updatedAt: now,
+      archivedAt: now,
+    };
+    await command(boardId, {
+      type: "RESTORE_COLUMN",
+      column: {
+        ...doomedColumn,
+        cardIds: [archivedCardId, ghostId, ...doomedColumn.cardIds],
+      },
+      index: 0,
+      cards: [...doomedCards, archivedCard],
+    });
+    await expectCacheMatchesDatabase(boardId, "after crafted column restore");
+
+    const restored = (await loader.loadWithRevision(prisma, boardId))!.board;
+    expect(
+      restored.columns.find((column) => column.id === firstColumn),
+    ).toMatchObject({ cardIds: doomedColumn.cardIds });
+    expect(restored.cards[ghostId]).toBeUndefined();
+    expect(restored.cards[archivedCardId]!.archivedAt).toEqual(now);
+    expect(
+      restored.columns
+        .find((column) => column.id === firstColumn)!
+        .cardIds.includes(archivedCardId),
+    ).toBe(false);
+    expect(await prisma.card.count({ where: { id: ghostId } })).toBe(0);
   });
 
   it("keeps parity for touch, task spec and claim commands", async () => {
@@ -1004,6 +1170,65 @@ describe("Board aggregate cache (e2e)", () => {
     expect(
       cache.get(boardId, await revision(boardId))!.cards[cardId]!.claimedBy,
     ).toBeUndefined();
+  });
+
+  it("reloads the cache when account schedule revokes a scoped token", async () => {
+    const registration = await server()
+      .post("/api/v1/auth/register")
+      .send({
+        email: "scheduled-cache@example.com",
+        password: PASSWORD,
+        displayName: "Scheduled",
+      })
+      .expect(201);
+    const userToken = registration.body.accessToken as string;
+    const userId = registration.body.user.id as string;
+    const boardId = await server()
+      .post("/api/v1/boards")
+      .set(auth(userToken))
+      .send({ title: "Scheduled board" })
+      .expect(201)
+      .then((res) => res.body.id as string);
+    const columnId = randomUUID();
+    const cardId = randomUUID();
+    await command(
+      boardId,
+      { type: "ADD_COLUMN", newColumnId: columnId, title: "Todo" },
+      { token: userToken },
+    );
+    await command(
+      boardId,
+      { type: "ADD_CARD", newCardId: cardId, columnId, title: "Claimed" },
+      { token: userToken },
+    );
+    const pat = await server()
+      .post("/api/v1/users/me/tokens")
+      .set(auth(userToken))
+      .send({ name: "scheduled-writer", boardId, scopePreset: "admin" })
+      .expect(201)
+      .then((res) => res.body.token as string);
+    await command(
+      boardId,
+      {
+        type: "CLAIM_CARD",
+        cardId,
+        claimedBy: userId,
+        leaseUntil: Date.now() + 900_000,
+      },
+      { token: pat },
+    );
+    const before = await expectCacheMatchesDatabase(boardId, "before schedule");
+
+    await app.get(AccountDeletionService).schedule(userId, userId);
+
+    await expectReloadAfterExternalWrite(boardId, "after schedule", before);
+    const reloaded = (await loader.loadWithRevision(prisma, boardId))!.board;
+    expect(reloaded.cards[cardId]!.claimedBy).toBeUndefined();
+    expect(
+      await prisma.apiToken.count({
+        where: { userId, revokedAt: null },
+      }),
+    ).toBe(0);
   });
 
   it("reloads after a comment, an attachment, a session end and an admin restore", async () => {
