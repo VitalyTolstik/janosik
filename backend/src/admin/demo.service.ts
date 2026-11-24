@@ -342,6 +342,32 @@ export class DemoService implements OnModuleDestroy {
     return this.status();
   }
 
+  /** Upsert all demo-agent memberships under their sorted user locks. */
+  private async provisionMemberships(
+    boardId: string,
+    userIds: readonly string[],
+  ): Promise<void> {
+    await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        for (const userId of userIds) {
+          await tx.boardMember.upsert({
+            where: { boardId_userId: { boardId, userId } },
+            create: {
+              boardId,
+              userId,
+              role: Role.MEMBER,
+              acceptedAt: new Date(),
+            },
+            update: { acceptedAt: new Date(), role: Role.MEMBER },
+          });
+        }
+      },
+      undefined,
+      { lockUserIds: userIds },
+    );
+  }
+
   private async provision(
     manifest: DemoManifest,
     columns: Record<string, string>,
@@ -372,14 +398,10 @@ export class DemoService implements OnModuleDestroy {
       );
     }
 
-    // 3. Membership for every demo agent (idempotent).
-    for (const userId of manifest.userIds) {
-      await this.prisma.boardMember.upsert({
-        where: { boardId_userId: { boardId, userId } },
-        create: { boardId, userId, role: Role.MEMBER, acceptedAt: new Date() },
-        update: { acceptedAt: new Date(), role: Role.MEMBER },
-      });
-    }
+    // 3. Membership for every demo agent (idempotent). The upsert makes an
+    // accepted member, so it takes the same user-membership keys as
+    // invitation accept/board create before the board lock.
+    await this.provisionMemberships(boardId, manifest.userIds);
 
     // 3b. Live observation share (TASK-58): the whole point of replacing the
     //     watcher account — open `/s/<token>` with no login and watch the

@@ -131,11 +131,15 @@ export class BoardWriteService {
     boardId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
     pause?: AgentPauseGate,
-    options: { lockUserId?: string } = {},
+    options: { lockUserId?: string; lockUserIds?: readonly string[] } = {},
   ): Promise<T> {
     const membership = currentBoardWriteContext();
+    const userIds = [
+      ...(options.lockUserId !== undefined ? [options.lockUserId] : []),
+      ...(options.lockUserIds ?? []),
+    ];
     return this.enqueue(boardId, () =>
-      this.attempt(boardId, fn, pause, membership, options.lockUserId),
+      this.attempt(boardId, fn, pause, membership, userIds),
     );
   }
 
@@ -163,18 +167,18 @@ export class BoardWriteService {
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
     pause?: AgentPauseGate,
     membership?: ReturnType<typeof currentBoardWriteContext>,
-    lockUserId?: string,
+    lockUserIds: readonly string[] = [],
   ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.prisma.$transaction(
           async (tx) => {
-            // Global lock order: user membership → board. A membership
+            // Global lock order: user membership(s) → board. A membership
             // acceptance races every board-scoped writer; taking the user
-            // key first makes the accepted-membership set stable for the
+            // keys first makes the accepted-membership set stable for the
             // transaction that follows.
-            if (lockUserId !== undefined) {
-              await lockUserMemberships(tx, [lockUserId]);
+            if (lockUserIds.length > 0) {
+              await lockUserMemberships(tx, lockUserIds);
             }
             // Take the per-board lock before any row lock, so every writer
             // acquires locks in the same order (board → children).
