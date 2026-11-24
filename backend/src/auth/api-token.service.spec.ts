@@ -30,6 +30,7 @@ const prismaMock = {
   approvalRequest: { updateMany: jest.fn() },
   boardMember: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
   },
   user: { findUnique: jest.fn() },
   $executeRaw: jest.fn(),
@@ -49,7 +50,7 @@ const prismaMock = {
   agentSession: Record<"updateMany" | "findMany", jest.Mock>;
   card: Record<"updateMany" | "findMany", jest.Mock>;
   approvalRequest: Record<"updateMany", jest.Mock>;
-  boardMember: Record<"findUnique", jest.Mock>;
+  boardMember: Record<"findUnique" | "findMany", jest.Mock>;
   user: Record<"findUnique", jest.Mock>;
   $executeRaw: jest.Mock;
   $queryRaw: jest.Mock;
@@ -126,6 +127,7 @@ describe("ApiTokenService", () => {
     prismaMock.apiToken.findMany.mockResolvedValue([]);
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.card.findMany.mockResolvedValue([]);
+    prismaMock.boardMember.findMany.mockResolvedValue([]);
     prismaMock.$executeRaw.mockResolvedValue(1);
     prismaMock.$queryRaw.mockResolvedValue([]);
     prismaMock.user.findUnique.mockResolvedValue(makeUser());
@@ -582,7 +584,7 @@ describe("ApiTokenService", () => {
         data: { status: "cancelled", decidedAt: expect.any(Date) },
       });
       expect(prismaMock.card.updateMany).toHaveBeenCalledWith({
-        where: { claimedByTokenId: { in: ["token-1"] } },
+        where: { OR: [{ claimedByTokenId: { in: ["token-1"] } }] },
         data: {
           claimedBy: null,
           claimedByTokenId: null,

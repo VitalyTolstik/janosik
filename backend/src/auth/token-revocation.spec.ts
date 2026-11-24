@@ -11,6 +11,7 @@ function txDouble(options: {
   tokens: Array<{ id: string; userId: string; boardId: string | null }>;
   memberships?: Array<{ boardId: string }>;
   claimBatches?: Array<Array<ReturnType<typeof claim>>>;
+  userClaimBoards?: string[];
 }) {
   let claimsRead = 0;
   const batches = options.claimBatches ?? [[]];
@@ -23,7 +24,14 @@ function txDouble(options: {
       findMany: jest.fn().mockResolvedValue(options.memberships ?? []),
     },
     card: {
-      findMany: jest.fn().mockImplementation(() => {
+      findMany: jest.fn().mockImplementation((args: unknown) => {
+        // `releaseUserClaims` reads `{ claimedBy: { in: userIds } }`.
+        const where = (args as { where?: { claimedBy?: unknown } }).where ?? {};
+        if (where.claimedBy !== undefined) {
+          return Promise.resolve(
+            (options.userClaimBoards ?? []).map((boardId) => claim(boardId)),
+          );
+        }
         const batch = batches[Math.min(claimsRead, batches.length - 1)] ?? [];
         claimsRead += 1;
         return Promise.resolve(batch);
@@ -40,50 +48,72 @@ function txDouble(options: {
   };
 }
 
-function lockedBoards(tx: ReturnType<typeof txDouble>): string[] {
+function lockKeys(tx: ReturnType<typeof txDouble>): string[] {
   return tx.$executeRaw.mock.calls.map((call) => call[1] as string);
 }
 
+function boardLocks(tx: ReturnType<typeof txDouble>): string[] {
+  return lockKeys(tx).filter((key) => !key.startsWith("user-memberships:"));
+}
+
 describe("revokeApiTokens board locks", () => {
-  it("locks an unscoped token's membership boards even without a claim", async () => {
+  it("takes the user lock before one sorted static board-lock set", async () => {
     const tx = txDouble({
       tokens: [{ id: "token-1", userId: "user-1", boardId: null }],
       memberships: [{ boardId: "board-b" }, { boardId: "board-a" }],
+      claimBatches: [[claim("board-c")], [claim("board-c")]],
     });
 
     await revokeApiTokens(tx, { id: "token-1" });
 
-    expect(lockedBoards(tx)).toEqual(["board-a", "board-b"]);
+    expect(lockKeys(tx)[0]).toBe("user-memberships:user-1");
+    expect(boardLocks(tx)).toEqual(["board-a", "board-b", "board-c"]);
     expect(tx.boardMember.findMany).toHaveBeenCalledWith({
       where: { userId: { in: ["user-1"] }, acceptedAt: { not: null } },
       select: { boardId: true },
     });
-    // Every lock must be in place before the first Card write.
     const lastLock = Math.max(...tx.$executeRaw.mock.invocationCallOrder);
     expect(tx.card.updateMany.mock.invocationCallOrder[0]).toBeGreaterThan(
       lastLock,
     );
   });
 
-  it("locks the board a scoped token is bound to", async () => {
+  it("includes a scoped token board and its current claim board once", async () => {
     const tx = txDouble({
       tokens: [{ id: "token-1", userId: "user-1", boardId: "board-a" }],
+      claimBatches: [[claim("board-z")], [claim("board-z")]],
     });
 
     await revokeApiTokens(tx, { id: "token-1" });
 
-    expect(lockedBoards(tx)).toEqual(["board-a"]);
-    expect(tx.boardMember.findMany).not.toHaveBeenCalled();
+    expect(lockKeys(tx)).toEqual([
+      "user-memberships:user-1",
+      "board-a",
+      "board-z",
+    ]);
   });
 
-  it("adds a claim board discovered after the first lock pass", async () => {
+  it("releases browser claims with no active token rows when asked", async () => {
     const tx = txDouble({
-      tokens: [{ id: "token-1", userId: "user-1", boardId: "board-a" }],
-      claimBatches: [[], [claim("board-z")], [claim("board-z")]],
+      tokens: [],
+      memberships: [{ boardId: "board-a" }],
+      userClaimBoards: ["board-a"],
     });
 
-    await revokeApiTokens(tx, { id: "token-1" });
+    await revokeApiTokens(tx, { userId: "user-1" }, new Date(), {
+      releaseUserClaims: true,
+      userIds: ["user-1"],
+    });
 
-    expect(lockedBoards(tx)).toEqual(["board-a", "board-z"]);
+    expect(lockKeys(tx)).toEqual(["user-memberships:user-1", "board-a"]);
+    expect(tx.card.updateMany).toHaveBeenCalledWith({
+      where: { OR: [{ claimedBy: { in: ["user-1"] } }] },
+      data: {
+        claimedBy: null,
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil: null,
+      },
+    });
   });
 });

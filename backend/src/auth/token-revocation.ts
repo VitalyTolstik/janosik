@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { lockBoardWrites } from "@/comments/comment-history";
+import { lockBoardWrites, lockUserMemberships } from "@/common/board-locks";
 
 /** What a revocation pass changed. */
 export interface ApiTokenRevocationResult {
@@ -9,22 +9,33 @@ export interface ApiTokenRevocationResult {
   revokedCount: number;
 }
 
+export interface RevokeApiTokensOptions {
+  /**
+   * Also clear claims held by the token owners as browser/legacy
+   * `Card.claimedBy` rows. Account scheduling uses this so an account with
+   * only already-revoked tokens still loses its claims.
+   */
+  releaseUserClaims?: boolean;
+  /**
+   * User ids for the lock/cleanup set when the token selector matches no
+   * rows (e.g. an account whose tokens were all revoked/deleted). Required
+   * together with `releaseUserClaims` for that case.
+   */
+  userIds?: readonly string[];
+}
+
 /**
  * Revoke personal API tokens and close everything they own (TASK-166.3):
  * stamp `revokedAt`, cancel open sessions, and release claims held by the
- * token. Legacy claims without `claimedByTokenId` wait for their lease.
+ * token. Legacy claims without `claimedByTokenId` wait for their lease
+ * unless the caller asks to release user claims too.
  *
- * Claims are released under the same per-board advisory locks as board
- * writers. A command queued before the revoke therefore either commits and
- * is then cleaned up, or acquires the lock after the revoke and is rejected
- * by its in-transaction token/session check. Without the locks, a claim
- * released here could be recreated by a writer already waiting on the board.
- *
- * The lock set is broader than the current claim boards: every board the
- * token is scoped to, every accepted membership of an unscoped token's user
- * (the boards it can claim on), and any existing claim board. The claim set
- * is re-read after locking and any late board is added in a bounded loop, so
- * a concurrent claim cannot slip in before `Card` is updated.
+ * TASK-200.10 final coherence: every lock is acquired before the first read
+ * of memberships/claims. The global order is user-membership lock(s) → one
+ * sorted board-lock set. Accepted memberships are fenced by the user lock,
+ * so a command cannot create a new claim on an unlocked board while this
+ * transaction runs; the claim re-read after the locks is a guard, not a
+ * late-lock pass.
  *
  * The caller supplies its own transaction so password reset/change and OAuth
  * takeover can revoke keys atomically with the credential change.
@@ -33,86 +44,128 @@ export async function revokeApiTokens(
   tx: Prisma.TransactionClient,
   where: Prisma.ApiTokenWhereInput,
   at: Date = new Date(),
+  options: RevokeApiTokensOptions = {},
 ): Promise<ApiTokenRevocationResult> {
   const tokens = await tx.apiToken.findMany({
     where,
     select: { id: true, userId: true, boardId: true },
   });
-  if (tokens.length === 0) return { tokenIds: [], revokedCount: 0 };
-  const tokenIds = tokens.map((token) => token.id);
+  const userIds = [
+    ...new Set([
+      ...tokens.map((token) => token.userId),
+      ...(options.userIds ?? []),
+    ]),
+  ];
+  if (tokens.length === 0 && !options.releaseUserClaims) {
+    return { tokenIds: [], revokedCount: 0 };
+  }
+  if (userIds.length === 0) {
+    return { tokenIds: tokens.map((token) => token.id), revokedCount: 0 };
+  }
 
-  /** Boards whose cards currently name one of these tokens. */
+  // User keys first, before any BoardMember/Card read. Every membership
+  // acceptance path takes the same key, so the set read below is complete
+  // until this transaction ends.
+  await lockUserMemberships(tx, userIds);
+
+  const tokenIds = tokens.map((token) => token.id);
+  const memberships = await tx.boardMember.findMany({
+    where: { userId: { in: userIds }, acceptedAt: { not: null } },
+    select: { boardId: true },
+  });
   const claimBoardIds = async (): Promise<string[]> => {
+    if (tokenIds.length === 0) return [];
     const claims = await tx.card.findMany({
       where: { claimedByTokenId: { in: tokenIds } },
       select: { column: { select: { boardId: true } } },
     });
     return claims.map((card) => card.column.boardId);
   };
-
-  const boardIds = new Set<string>(
-    tokens
+  const userClaimBoardIds = options.releaseUserClaims
+    ? (
+        await tx.card.findMany({
+          where: { claimedBy: { in: userIds } },
+          select: { column: { select: { boardId: true } } },
+        })
+      ).map((card) => card.column.boardId)
+    : [];
+  const boardIds = new Set<string>([
+    ...tokens
       .map((token) => token.boardId)
       .filter((boardId): boardId is string => boardId !== null),
-  );
-  // An unscoped token can claim on any board its user belongs to. Scoped
-  // tokens cannot leave their board, so only unscoped tokens' users need
-  // their accepted membership boards in the lock set.
-  const unscopedUserIds = [
-    ...new Set(
-      tokens
-        .filter((token) => token.boardId === null)
-        .map((token) => token.userId),
-    ),
-  ];
-  if (unscopedUserIds.length > 0) {
-    const memberships = await tx.boardMember.findMany({
-      where: { userId: { in: unscopedUserIds }, acceptedAt: { not: null } },
-      select: { boardId: true },
-    });
-    for (const membership of memberships) boardIds.add(membership.boardId);
-  }
-  for (const boardId of await claimBoardIds()) boardIds.add(boardId);
+    ...memberships.map((membership) => membership.boardId),
+    ...(await claimBoardIds()),
+    ...userClaimBoardIds,
+  ]);
 
-  // Acquire in sorted order (lockBoardWrites sorts internally) before the
-  // first Card write. Re-check claims after the lock: a command that was
-  // already in flight can have moved a claim to another board. The bound
-  // keeps a pathological mover from looping forever; scoped/membership
-  // boards above already cover every board the token could newly claim on.
+  // One static sorted set. No late lock loop: membership acceptance is
+  // fenced by the user lock, and a scoped token cannot claim outside its
+  // board.
   await lockBoardWrites(tx, boardIds);
-  for (let pass = 0; pass < 5; pass += 1) {
-    const discovered = (await claimBoardIds()).filter(
-      (boardId) => !boardIds.has(boardId),
+
+  // Post-lock guard. Under the locks every current claim board must already
+  // be in the set; a foreign writer that bypassed every lock is the only way
+  // this can trip.
+  const lateClaimBoards = (await claimBoardIds()).filter(
+    (boardId) => !boardIds.has(boardId),
+  );
+  const lateUserClaimBoards = options.releaseUserClaims
+    ? (
+        await tx.card.findMany({
+          where: { claimedBy: { in: userIds } },
+          select: { column: { select: { boardId: true } } },
+        })
+      )
+        .map((card) => card.column.boardId)
+        .filter((boardId) => !boardIds.has(boardId))
+    : [];
+  if (lateClaimBoards.length > 0 || lateUserClaimBoards.length > 0) {
+    throw new Error(
+      `token revocation lock set changed after locking: ${[
+        ...lateClaimBoards,
+        ...lateUserClaimBoards,
+      ].join(",")}`,
     );
-    if (discovered.length === 0) break;
-    await lockBoardWrites(tx, discovered);
-    for (const boardId of discovered) boardIds.add(boardId);
   }
 
-  const revoked = await tx.apiToken.updateMany({
-    where: { id: { in: tokenIds }, revokedAt: null },
-    data: { revokedAt: at },
-  });
-  await tx.agentSession.updateMany({
-    where: { apiTokenId: { in: tokenIds }, endedAt: null },
-    data: { status: "cancelled", endedAt: at, endReason: "cancelled" },
-  });
-  await tx.approvalRequest.updateMany({
-    where: {
-      requestedByTokenId: { in: tokenIds },
-      status: { in: ["pending", "approved"] },
-      expiresAt: { gt: at },
-    },
-    data: { status: "cancelled", decidedAt: at },
-  });
-  await tx.card.updateMany({
-    where: { claimedByTokenId: { in: tokenIds } },
-    data: {
-      claimedBy: null,
-      claimedByTokenId: null,
-      claimedBySessionId: null,
-      leaseUntil: null,
-    },
-  });
+  const revoked =
+    tokenIds.length === 0
+      ? { count: 0 }
+      : await tx.apiToken.updateMany({
+          where: { id: { in: tokenIds }, revokedAt: null },
+          data: { revokedAt: at },
+        });
+  if (tokenIds.length > 0) {
+    await tx.agentSession.updateMany({
+      where: { apiTokenId: { in: tokenIds }, endedAt: null },
+      data: { status: "cancelled", endedAt: at, endReason: "cancelled" },
+    });
+    await tx.approvalRequest.updateMany({
+      where: {
+        requestedByTokenId: { in: tokenIds },
+        status: { in: ["pending", "approved"] },
+        expiresAt: { gt: at },
+      },
+      data: { status: "cancelled", decidedAt: at },
+    });
+  }
+  const claimOwners: Prisma.CardWhereInput[] = [];
+  if (tokenIds.length > 0) {
+    claimOwners.push({ claimedByTokenId: { in: tokenIds } });
+  }
+  if (options.releaseUserClaims) {
+    claimOwners.push({ claimedBy: { in: userIds } });
+  }
+  if (claimOwners.length > 0) {
+    await tx.card.updateMany({
+      where: { OR: claimOwners },
+      data: {
+        claimedBy: null,
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil: null,
+      },
+    });
+  }
   return { tokenIds, revokedCount: revoked.count };
 }
