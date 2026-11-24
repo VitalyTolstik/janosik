@@ -1213,6 +1213,21 @@ export function BulkActionBar() {
           {deleteArmed ? (
             <div className="flex items-center gap-1">
               <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                data-testid="bulk-delete-cancel"
+                className="h-9 w-9 max-lg:h-11 max-lg:w-11"
+                aria-label={t("common.cancel")}
+                title={t("common.cancel")}
+                onClick={() => {
+                  setDeleteArmed(false);
+                  deleteTriggerRef.current?.focus();
+                }}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
                 ref={deleteConfirmRef}
                 type="button"
                 variant="destructive"
@@ -1230,21 +1245,6 @@ export function BulkActionBar() {
                 }}
               >
                 <Check className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                data-testid="bulk-delete-cancel"
-                className="h-9 w-9 max-lg:h-11 max-lg:w-11"
-                aria-label={t("common.cancel")}
-                title={t("common.cancel")}
-                onClick={() => {
-                  setDeleteArmed(false);
-                  deleteTriggerRef.current?.focus();
-                }}
-              >
-                <X className="h-4 w-4" aria-hidden />
               </Button>
             </div>
           ) : (

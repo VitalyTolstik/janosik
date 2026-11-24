@@ -1,4 +1,4 @@
-import { Bookmark, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bookmark, Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -111,8 +111,6 @@ const DRIFT_TOAST_KEY = "saved-views-drift";
  */
 const PRIMARY_ACTION_CLASS =
   "!bg-[var(--action-primary)] hover:!bg-[color-mix(in_oklab,var(--action-primary)_92%,#000)]";
-const DANGER_ACTION_CLASS =
-  "!bg-[var(--action-danger)] hover:!bg-[color-mix(in_oklab,var(--action-danger)_92%,#000)]";
 
 type PanelError = SavedViewError | SavedViewsWriteError;
 type Mode =
@@ -820,35 +818,54 @@ function SavedViewsPanel({
                       onKeyDown={(event) =>
                         confirmWithEscape(event, saved.name)
                       }
-                      className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-1 py-1"
+                      className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1"
                     >
-                      <span role="alert" className="min-w-0 text-sm">
+                      {/* Keep the row's identity visible; only the actions
+                        become the compact confirm pair. The question stays in
+                        the accessibility tree. */}
+                      <span role="alert" className="sr-only">
                         {t("savedViews.deleteConfirm", { name: saved.name })}
                       </span>
-                      <div className="flex shrink-0 items-center gap-1">
+                      <span className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-1 py-1.5">
+                        <Bookmark
+                          className="h-4 w-4 shrink-0 text-muted-foreground"
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">
+                            {saved.name}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {projectionLabel(saved)}
+                          </span>
+                        </span>
+                      </span>
+                      <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-border/70 bg-background/60 p-0.5 shadow-sm">
                         <Button
                           autoFocus
                           type="button"
-                          size="sm"
-                          variant="destructive"
+                          size="icon"
+                          variant="ghost"
                           disabled={writeBlocked}
                           aria-label={t("savedViews.deleteConfirmAction", {
                             name: saved.name,
                           })}
                           onClick={() => deleteView(saved.name)}
-                          className={`h-11 lg:h-8 ${DANGER_ACTION_CLASS}`}
+                          className="h-11 w-11 rounded-lg text-danger hover:bg-danger/10 hover:text-danger lg:h-8 lg:w-8"
                           data-testid="saved-views-confirm-delete"
                         >
-                          {t("savedViews.delete")}
+                          <Check className="h-4 w-4" aria-hidden />
                         </Button>
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon"
                           variant="ghost"
+                          aria-label={t("savedViews.cancel")}
+                          title={t("savedViews.cancel")}
                           onClick={() => cancelDelete(saved.name)}
-                          className="h-11 lg:h-8"
+                          className="h-11 w-11 rounded-lg text-muted-foreground lg:h-8 lg:w-8"
                         >
-                          {t("savedViews.cancel")}
+                          <X className="h-4 w-4" aria-hidden />
                         </Button>
                       </div>
                     </div>
