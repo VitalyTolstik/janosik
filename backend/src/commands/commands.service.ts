@@ -627,6 +627,52 @@ export class CommandsService {
   }
 
   /**
+   * TASK-200.10 review: a `RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` payload can
+   * list ghost or archived ids in `column.cardIds`; the reducer installs them,
+   * while a fresh load derives the column from live, non-archived cards. For
+   * every touched column, replace `cardIds` with the persisted rows in
+   * `position` order, then sanitize all columns against the rebuilt card map.
+   */
+  private async rebuildTouchedColumns(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    board: BoardAggregate,
+    columnIds: ReadonlySet<string>,
+  ): Promise<void> {
+    if (columnIds.size > 0) {
+      const rows = await tx.card.findMany({
+        where: {
+          columnId: { in: [...columnIds] },
+          deletedAt: null,
+          archivedAt: null,
+          column: { boardId },
+        },
+        select: { id: true, columnId: true },
+        orderBy: { position: "asc" },
+      });
+      const byColumn = new Map<string, string[]>();
+      for (const row of rows) {
+        const list = byColumn.get(row.columnId) ?? [];
+        list.push(row.id);
+        byColumn.set(row.columnId, list);
+      }
+      for (const column of board.columns) {
+        if (!columnIds.has(column.id)) continue;
+        column.cardIds = byColumn.get(column.id) ?? [];
+      }
+    }
+    // The reducer can also retain a client-supplied id in an untouched
+    // column; a fresh load never does. Drop anything absent from `cards` or
+    // already archived.
+    for (const column of board.columns) {
+      column.cardIds = column.cardIds.filter((id) => {
+        const card = board.cards[id];
+        return card !== undefined && card.archivedAt === undefined;
+      });
+    }
+  }
+
+  /**
    * Apply several commands to one board in a single transaction (TASK-160):
    * one board lock, one aggregate load, one set of pre-checks for the whole
    * batch. Commands are applied in order against a running in-memory
@@ -1048,6 +1094,7 @@ export class CommandsService {
         const responses: CommandResponse[] = [];
         const events: InternalCommandEvent[] = [];
         const touchedCards = new Set<string>();
+        const touchedColumns = new Set<string>();
         for (const entry of prepared) {
           const existing = existingById.get(entry.dto.commandId);
           if (existing) {
@@ -1122,6 +1169,8 @@ export class CommandsService {
           for (const touched of outcome.touches) {
             if (touched.startsWith("card:")) {
               touchedCards.add(touched.slice("card:".length));
+            } else if (touched.startsWith("column:")) {
+              touchedColumns.add(touched.slice("column:".length));
             }
           }
           // Collected here, published by the caller only after the commit: a
@@ -1173,6 +1222,12 @@ export class CommandsService {
           // Reducer state + fully normalized touched cards = the fresh-read
           // shape; the rebuild also drops client-only `activity`/`links`.
           await this.rebuildTouchedCards(tx, boardId, running, touchedCards);
+          await this.rebuildTouchedColumns(
+            tx,
+            boardId,
+            running,
+            touchedColumns,
+          );
           const finalRow = await tx.board.findUnique({
             where: { id: boardId },
             select: { aggregateRevision: true },
