@@ -764,7 +764,13 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
   статический набор
   `ApiToken.boardId` + accepted memberships + claim-доски, без late-loop) и
   удаление аккаунта (user key до чтения membership/claims, post-lock набор
-  вложений и recount). `sweepClaims` — по доске и чанками по 100.
+  вложений и recount). Интерактивный token DELETE использует kill-first:
+  отдельная транзакция `killOnly` без user/board lock ставит `revokedAt`,
+  отменяет сессии/approvals и коммитится; затем `releaseRevokedTokenClaims`
+  без claims сразу возвращается, иначе сортированно блокирует только
+  текущие claim-доски и очищает карточки только на них. Claim, появившийся
+  после этого на другой доске, не пишется без блокировки и остаётся до
+  истечения lease. `sweepClaims` — по доске и чанками по 100.
   `SET_BOARD_WORKFLOW` (set/clear, включая equal) снимает
   `workflowInvalid`; карточка-владелец description-embed пересобирается по
   `attachmentCount`; crafted `RESTORE_COLUMN` с ghost/archived id

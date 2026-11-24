@@ -557,6 +557,9 @@ describe("ApiTokenService", () => {
       prismaMock.apiToken.findFirst.mockResolvedValue(makeToken());
       prismaMock.apiToken.findMany.mockResolvedValue([{ id: "token-1" }]);
       prismaMock.apiToken.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.card.findMany.mockResolvedValue([
+        { column: { boardId: "board-1" } },
+      ]);
 
       await service.revoke("user-1", "token-1");
 
@@ -583,8 +586,13 @@ describe("ApiTokenService", () => {
         },
         data: { status: "cancelled", decidedAt: expect.any(Date) },
       });
+      // Cleanup is a second transaction that locks the claimed board and
+      // scopes the clear to it.
       expect(prismaMock.card.updateMany).toHaveBeenCalledWith({
-        where: { OR: [{ claimedByTokenId: { in: ["token-1"] } }] },
+        where: {
+          claimedByTokenId: { in: ["token-1"] },
+          column: { boardId: { in: ["board-1"] } },
+        },
         data: {
           claimedBy: null,
           claimedByTokenId: null,

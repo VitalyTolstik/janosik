@@ -31,7 +31,7 @@ import { forgetPat, rememberValidPat } from "@/common/throttle-tracker";
 import { AUTH_USER_SELECT, toAuthUser } from "./auth-user.mapper";
 import type { AuthUser } from "./auth.types";
 import { securityStamp } from "./security-stamp";
-import { revokeApiTokens } from "./token-revocation";
+import { revokeApiTokens, releaseRevokedTokenClaims } from "./token-revocation";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -528,18 +528,27 @@ export class ApiTokenService {
     if (!token) {
       throw new NotFoundException("API token not found");
     }
-    // TASK-166.3 kill semantics: revoke is the irreversible stop. The shared
-    // helper cancels the token's open sessions, releases the claims it holds
-    // under the board locks (legacy claims without `claimedByTokenId` wait
-    // for their lease) and stamps the token. Open PAT SSE closes on its next
-    // keep-alive because `isActive` sees the revocation; there is no separate
-    // kill endpoint.
+    // TASK-166.3 kill semantics: revoke is the irreversible stop. Commit
+    // `revokedAt`, session/approval cancellation in one lock-free
+    // transaction first; only then run the separate claim-cleanup pass. A
+    // board writer holding the board lock therefore cannot delay the kill,
+    // and a queued PAT command sees the revocation on release. Open PAT SSE
+    // closes on its next keep-alive because `isActive` sees the revocation;
+    // there is no separate kill endpoint.
     const result = await this.prisma.$transaction((tx) =>
-      revokeApiTokens(tx, { id: tokenId, userId }),
+      revokeApiTokens(tx, { id: tokenId, userId }, undefined, {
+        killOnly: true,
+      }),
     );
     // Invalidate even when the row was already revoked: another replica may
     // still hold a positive entry from before its own invalidation.
     this.hotPathCache.invalidatePat(tokenId);
+    // Claims are released after the kill committed. The first query returns
+    // without board locks when the token holds none, so DELETE never waits
+    // on a board lock it does not need.
+    await this.prisma.$transaction((tx) =>
+      releaseRevokedTokenClaims(tx, result.tokenIds),
+    );
     if (result.revokedCount > 0) {
       await this.securityAudit.record({
         userId,

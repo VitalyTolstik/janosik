@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { revokeApiTokens } from "./token-revocation";
+import { releaseRevokedTokenClaims, revokeApiTokens } from "./token-revocation";
 
 type Tx = Prisma.TransactionClient;
 
@@ -43,6 +43,7 @@ function txDouble(options: {
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
   return tx as unknown as Tx & {
+    apiToken: { findMany: jest.Mock; updateMany: jest.Mock };
     card: { findMany: jest.Mock; updateMany: jest.Mock };
     $executeRaw: jest.Mock;
   };
@@ -148,5 +149,62 @@ describe("revokeApiTokens board locks", () => {
         leaseUntil: null,
       },
     });
+  });
+
+  it("killOnly takes no locks and clears no claims", async () => {
+    const tx = txDouble({
+      tokens: [{ id: "token-1", userId: "user-1", boardId: "board-a" }],
+      claimBatches: [[claim("board-a")], [claim("board-a")]],
+    });
+
+    const result = await revokeApiTokens(tx, { id: "token-1" }, new Date(), {
+      killOnly: true,
+    });
+
+    expect(result).toEqual({ tokenIds: ["token-1"], revokedCount: 1 });
+    expect(lockKeys(tx)).toEqual([]);
+    expect(tx.apiToken.updateMany).toHaveBeenCalled();
+    expect(tx.agentSession.updateMany).toHaveBeenCalled();
+    expect(tx.approvalRequest.updateMany).toHaveBeenCalled();
+    expect(tx.card.findMany).not.toHaveBeenCalled();
+    expect(tx.card.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("claim cleanup locks the claimed board and scopes the clear", async () => {
+    const tx = txDouble({
+      tokens: [],
+      claimBatches: [[claim("board-b")], [claim("board-b")]],
+    });
+
+    await expect(releaseRevokedTokenClaims(tx, ["token-1"])).resolves.toEqual({
+      lockedBoardIds: ["board-b"],
+      cleared: 0,
+    });
+
+    expect(lockKeys(tx)).toEqual(["board-b"]);
+    expect(tx.card.findMany).toHaveBeenCalledTimes(2);
+    expect(tx.card.updateMany).toHaveBeenCalledWith({
+      where: {
+        claimedByTokenId: { in: ["token-1"] },
+        column: { boardId: { in: ["board-b"] } },
+      },
+      data: {
+        claimedBy: null,
+        claimedByTokenId: null,
+        claimedBySessionId: null,
+        leaseUntil: null,
+      },
+    });
+  });
+
+  it("claim cleanup returns before any lock when the token holds no claim", async () => {
+    const tx = txDouble({ tokens: [], claimBatches: [[]] });
+
+    await expect(releaseRevokedTokenClaims(tx, ["token-1"])).resolves.toEqual({
+      lockedBoardIds: [],
+      cleared: 0,
+    });
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.card.updateMany).not.toHaveBeenCalled();
   });
 });

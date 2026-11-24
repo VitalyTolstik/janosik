@@ -32,7 +32,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and serialized with an in-flight writer), account erasure (user key before
   membership/claim/attachment reads; post-lock attachment recount) and token
   revocation/account schedule (one static sorted set of token scope,
-  accepted memberships and claim boards; no late-lock loop). The cache warms
+  accepted memberships and claim boards; no late-lock loop). Interactive
+  token DELETE is kill-first: a lock-free `killOnly` transaction stamps
+  `revokedAt` and cancels sessions/approvals, then a separate cleanup locks
+  only the currently claimed boards (returning before any lock when there is
+  no claim); a claim appearing later on another board waits for lease expiry.
+  The cache warms
   from the command transaction’s post-commit `remember` and from misses made
   inside a REPEATABLE READ snapshot (`getAggregateWithSeq`’s own transaction
   and `loadFresh` for plans/approvals); an ordinary read miss does not fill.
