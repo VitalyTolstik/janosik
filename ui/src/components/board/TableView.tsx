@@ -926,7 +926,7 @@ function TableRowBody({
                       ? t("bulk.deselectCard", { title: card.title })
                       : t("bulk.selectCard", { title: card.title })
                   }
-                  className="bg-card"
+                  className={cn(!selected && "bg-card")}
                   onCheckedChange={() => undefined}
                   onClick={(event) => {
                     event.stopPropagation();

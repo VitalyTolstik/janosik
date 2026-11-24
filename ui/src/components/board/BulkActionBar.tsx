@@ -1,8 +1,10 @@
 import {
   Archive,
+  Check,
   ListChecks,
   LoaderCircle,
   MoveRight,
+  Plus,
   Tag,
   Trash2,
   UserRound,
@@ -21,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
@@ -105,7 +108,7 @@ export function BoardSelectionToggle() {
  * reports and the existing undo/rollback semantics.
  */
 export function BulkActionBar() {
-  const { board, dispatch, roleOf } = useBoard();
+  const { board, dispatch, roleOf, addColumn, addLabel } = useBoard();
   const selection = useCardSelection();
   const { t, tp } = useI18n();
   const toast = useToast();
@@ -124,7 +127,15 @@ export function BulkActionBar() {
     cancelled: boolean;
   } | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  // Destructive delete is armed in place: the trash turns into a red check
+  // and a cancel icon. No modal, one deliberate second click.
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
+  const [columnCreating, setColumnCreating] = useState(false);
+  const [columnDraft, setColumnDraft] = useState("");
+  const [labelCreating, setLabelCreating] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
   const [liveMessage, setLiveMessage] = useState("");
   const [countAnnouncement, setCountAnnouncement] = useState<{
     count: number;
@@ -134,6 +145,8 @@ export function BulkActionBar() {
   const cancelRef = useRef(false);
   const aliveRef = useRef(true);
   const barRef = useRef<HTMLElement | null>(null);
+  const deleteConfirmRef = useRef<HTMLButtonElement>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const wasVisibleRef = useRef(false);
   const boardIdRef = useRef(board?.id);
   const shouldRestoreFocusRef = useRef(false);
@@ -247,6 +260,16 @@ export function BulkActionBar() {
       root.style.removeProperty("--janosik-bulk-bar-inset");
     };
   }, [board?.id, visible]);
+
+  // A changed selection or board means the armed delete no longer names what
+  // the user saw when they armed it.
+  useEffect(() => {
+    setDeleteArmed(false);
+  }, [board?.id, selection.count]);
+
+  useEffect(() => {
+    if (deleteArmed) deleteConfirmRef.current?.focus();
+  }, [deleteArmed]);
 
   const resetResults = useCallback(() => {
     setFailures((previous) => (previous.length === 0 ? previous : []));
@@ -636,6 +659,24 @@ export function BulkActionBar() {
     report("delete", result, true);
   }, [board?.cards, report, runAction, runBatch, selection.selectedIds, t]);
 
+  const createColumn = useCallback(() => {
+    const title = columnDraft.trim();
+    if (!title) return;
+    addColumn(title);
+    setColumnDraft("");
+    setColumnCreating(false);
+    setMoveOpen(false);
+  }, [addColumn, columnDraft]);
+
+  const createLabel = useCallback(() => {
+    const name = labelDraft.trim();
+    if (!name) return;
+    addLabel({ id: createId(), name, color: "brand" });
+    setLabelDraft("");
+    setLabelCreating(false);
+    setLabelOpen(false);
+  }, [addLabel, labelDraft]);
+
   const applyLabel = useCallback(
     async (label: Label) => {
       const currentBoard = board;
@@ -822,7 +863,16 @@ export function BulkActionBar() {
             : t("bulk.selectAll")}
         </Button>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <DropdownMenu>
+          <DropdownMenu
+            open={moveOpen}
+            onOpenChange={(next) => {
+              setMoveOpen(next);
+              if (!next) {
+                setColumnCreating(false);
+                setColumnDraft("");
+              }
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
@@ -859,10 +909,82 @@ export function BulkActionBar() {
                   </span>
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuSeparator />
+              {columnCreating ? (
+                <div
+                  className="space-y-1.5 p-1.5"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <Input
+                    autoFocus
+                    name="bulk-new-column"
+                    value={columnDraft}
+                    maxLength={LIMITS.columnTitle}
+                    onChange={(event) => setColumnDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        createColumn();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setColumnCreating(false);
+                        setColumnDraft("");
+                      }
+                    }}
+                    placeholder={t("column.placeholder")}
+                    className="h-8"
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      data-testid="bulk-create-column"
+                      onClick={createColumn}
+                      disabled={!columnDraft.trim()}
+                    >
+                      {t("column.add")}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={t("common.cancel")}
+                      onClick={() => {
+                        setColumnCreating(false);
+                        setColumnDraft("");
+                      }}
+                      className="h-7 w-7"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <DropdownMenuItem
+                  data-testid="bulk-new-column-trigger"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setColumnCreating(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  {t("column.add")}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <DropdownMenu>
+          <DropdownMenu
+            open={labelOpen}
+            onOpenChange={(next) => {
+              setLabelOpen(next);
+              if (!next) {
+                setLabelCreating(false);
+                setLabelDraft("");
+              }
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
@@ -925,6 +1047,70 @@ export function BulkActionBar() {
                     </DropdownMenuCheckboxItem>
                   );
                 })
+              )}
+              <DropdownMenuSeparator />
+              {labelCreating ? (
+                <div
+                  className="space-y-1.5 p-1.5"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <Input
+                    autoFocus
+                    name="bulk-new-label"
+                    value={labelDraft}
+                    maxLength={LIMITS.labelName}
+                    onChange={(event) => setLabelDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        createLabel();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setLabelCreating(false);
+                        setLabelDraft("");
+                      }
+                    }}
+                    placeholder={t("label.namePlaceholder")}
+                    className="h-8"
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      data-testid="bulk-create-label"
+                      onClick={createLabel}
+                      disabled={!labelDraft.trim()}
+                    >
+                      {t("label.create")}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={t("common.cancel")}
+                      onClick={() => {
+                        setLabelCreating(false);
+                        setLabelDraft("");
+                      }}
+                      className="h-7 w-7"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <DropdownMenuItem
+                  data-testid="bulk-new-label-trigger"
+                  disabled={labels.length >= LIMITS.labelsPerBoard}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    setLabelCreating(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" aria-hidden />
+                  {t("label.new")}
+                </DropdownMenuItem>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1024,20 +1210,60 @@ export function BulkActionBar() {
             <Archive className="h-3.5 w-3.5" aria-hidden />
             {t("bulk.archive")}
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            data-testid="bulk-delete"
-            className={cn(ACTION_BUTTON, "gap-1.5")}
-            disabled={
-              !selection.enabled || busy !== null || selection.count === 0
-            }
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden />
-            {t("bulk.delete")}
-          </Button>
+          {deleteArmed ? (
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                data-testid="bulk-delete-cancel"
+                className="h-9 w-9 max-lg:h-11 max-lg:w-11"
+                aria-label={t("common.cancel")}
+                title={t("common.cancel")}
+                onClick={() => {
+                  setDeleteArmed(false);
+                  deleteTriggerRef.current?.focus();
+                }}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button
+                ref={deleteConfirmRef}
+                type="button"
+                variant="destructive"
+                size="icon"
+                data-testid="bulk-delete-confirm"
+                className="h-9 w-9 max-lg:h-11 max-lg:w-11"
+                aria-label={tp("bulk.deleteTitle", displayedCount)}
+                title={tp("bulk.deleteTitle", displayedCount)}
+                disabled={
+                  !selection.enabled || busy !== null || selection.count === 0
+                }
+                onClick={() => {
+                  setDeleteArmed(false);
+                  void deleteSelected();
+                }}
+              >
+                <Check className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              ref={deleteTriggerRef}
+              type="button"
+              variant="destructive"
+              size="sm"
+              data-testid="bulk-delete"
+              className={cn(ACTION_BUTTON, "gap-1.5")}
+              disabled={
+                !selection.enabled || busy !== null || selection.count === 0
+              }
+              onClick={() => setDeleteArmed(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+              {t("bulk.delete")}
+            </Button>
+          )}
           {hasResults && busy === null ? (
             <Button
               type="button"
@@ -1051,13 +1277,19 @@ export function BulkActionBar() {
               {t("bulk.dismissResults")}
             </Button>
           ) : null}
-          {busy !== null || selection.enabled ? (
+          {busy !== null || (selection.enabled && !deleteArmed) ? (
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size={busy !== null ? "sm" : "icon"}
               data-testid="bulk-clear"
-              className={cn(ACTION_BUTTON, "gap-1.5")}
+              className={cn(
+                busy !== null
+                  ? cn(ACTION_BUTTON, "gap-1.5")
+                  : "h-9 w-9 max-lg:h-11 max-lg:w-11",
+              )}
+              aria-label={busy !== null ? t("bulk.cancel") : t("bulk.clear")}
+              title={busy !== null ? t("bulk.cancel") : t("bulk.clear")}
               disabled={
                 busy === null && selection.count === 0 && !selection.mode
               }
@@ -1068,14 +1300,16 @@ export function BulkActionBar() {
               }}
             >
               {busy !== null ? (
-                <LoaderCircle
-                  className="h-3.5 w-3.5 animate-spin"
-                  aria-hidden
-                />
+                <>
+                  <LoaderCircle
+                    className="h-3.5 w-3.5 animate-spin"
+                    aria-hidden
+                  />
+                  {t("bulk.cancel")}
+                </>
               ) : (
-                <X className="h-3.5 w-3.5" aria-hidden />
+                <X className="h-4 w-4" aria-hidden />
               )}
-              {busy !== null ? t("bulk.cancel") : t("bulk.clear")}
             </Button>
           ) : null}
         </div>
@@ -1147,16 +1381,6 @@ export function BulkActionBar() {
         description={tp("bulk.archiveDescription", selection.count)}
         confirmLabel={t("bulk.archive")}
         onConfirm={() => void archiveSelected()}
-        onClosed={() => barRef.current?.focus()}
-      />
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={tp("bulk.deleteTitle", selection.count)}
-        description={tp("bulk.deleteDescription", selection.count)}
-        confirmLabel={t("bulk.delete")}
-        destructive
-        onConfirm={() => void deleteSelected()}
         onClosed={() => barRef.current?.focus()}
       />
     </section>
