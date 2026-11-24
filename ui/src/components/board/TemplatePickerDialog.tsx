@@ -133,9 +133,7 @@ export function TemplatePickerDialog({
   const deduped = nameMode === "manual" ? duplicateManual : generated.deduped;
 
   // A fresh draft per opening. The displayed auto name is derived, so this
-  // effect only resets the manual draft and the frozen date. A controlled
-  // dialog opening is an external event, not derived render state.
-  /* eslint-disable react-hooks/set-state-in-effect -- reset a draft when the controlled dialog opens */
+  // effect only resets the manual draft and the frozen date.
   useEffect(() => {
     if (!open) {
       wasOpen.current = false;
@@ -145,6 +143,7 @@ export function TemplatePickerDialog({
     wasOpen.current = true;
     const openedAt = new Date();
     const seeded = initialName.trim();
+    // Opening a controlled dialog is an external event; this resets its draft.
     setNow(openedAt);
     setSelectedId("product-launch");
     setCreated(null);
@@ -155,7 +154,6 @@ export function TemplatePickerDialog({
     setNameValue(seeded);
     setNameMode(seeded.length > 0 ? "manual" : "auto");
   }, [open, initialName]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (created) successTitleRef.current?.focus();
