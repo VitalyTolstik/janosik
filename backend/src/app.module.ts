@@ -16,6 +16,7 @@ import { PrismaModule } from "@/common/prisma/prisma.module";
 import { SecurityAuditModule } from "@/common/security-audit/security-audit.module";
 import { BoardWriteModule } from "@/common/board-write.module";
 import { HotPathCacheModule } from "@/common/hot-path-cache.module";
+import { BoardAggregateCacheModule } from "@/boards/board-aggregate-cache.module";
 import { IdempotencyModule } from "@/common/idempotency.module";
 import { TrafficModule } from "@/common/traffic.module";
 import { HealthModule } from "@/health/health.module";
@@ -71,6 +72,7 @@ const sharedThrottler = createSharedThrottlerStorage();
     }),
     PrismaModule,
     HotPathCacheModule,
+    BoardAggregateCacheModule,
     SecurityAuditModule,
     BoardWriteModule,
     IdempotencyModule,

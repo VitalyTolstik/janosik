@@ -14,6 +14,7 @@ import { PrismaService } from "@/common/prisma/prisma.service";
 import { markGuaranteedRollback, rollbackOnThrow } from "./rollback-certainty";
 import { assertAgentRule, LIFECYCLE_ACTIONS } from "@/auth/token-scope";
 import { currentBoardWriteContext } from "./request-context";
+import { lockUserMemberships } from "./board-locks";
 
 /**
  * How many times a transaction that lost a race is replayed from scratch.
@@ -130,10 +131,15 @@ export class BoardWriteService {
     boardId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
     pause?: AgentPauseGate,
+    options: { lockUserId?: string; lockUserIds?: readonly string[] } = {},
   ): Promise<T> {
     const membership = currentBoardWriteContext();
+    const userIds = [
+      ...(options.lockUserId !== undefined ? [options.lockUserId] : []),
+      ...(options.lockUserIds ?? []),
+    ];
     return this.enqueue(boardId, () =>
-      this.attempt(boardId, fn, pause, membership),
+      this.attempt(boardId, fn, pause, membership, userIds),
     );
   }
 
@@ -161,13 +167,21 @@ export class BoardWriteService {
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
     pause?: AgentPauseGate,
     membership?: ReturnType<typeof currentBoardWriteContext>,
+    lockUserIds: readonly string[] = [],
   ): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.prisma.$transaction(
           async (tx) => {
-            // Take the per-board lock first, before any row lock, so every
-            // writer acquires locks in the same order (board → children).
+            // Global lock order: user membership(s) → board. A membership
+            // acceptance races every board-scoped writer; taking the user
+            // keys first makes the accepted-membership set stable for the
+            // transaction that follows.
+            if (lockUserIds.length > 0) {
+              await lockUserMemberships(tx, lockUserIds);
+            }
+            // Take the per-board lock before any row lock, so every writer
+            // acquires locks in the same order (board → children).
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
             // TASK-166.3: the second pause read happens under the lock. A
             // pause committed before this point refuses the write; a pause

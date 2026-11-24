@@ -8,6 +8,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- TASK-200.10 per-board aggregate cache: `CommandsService`, plans, approvals
+  and the legacy `GET /boards/:id` now share one process-wide LRU of full
+  `BoardAggregate` snapshots, keyed and validated by
+  `Board.aggregateRevision`. A command records the revision it committed in
+  the same transaction and stores the final in-memory aggregate only after
+  the board write resolves, so consecutive commands on one board skip the
+  four aggregate `SELECT`s; a missed or stale revision always falls back to
+  the uncached loader. Out-of-band writers (comments, attachments,
+  claims/session end, admin restores) invalidate implicitly through the
+  TASK-200.6 revision triggers — no Redis message is required for correctness.
+  Reducer-only gaps in server attribution (`lastActorId`, claim token/session,
+  `attachmentCount`, archive stamps, `updatedAt`) are closed by rebuilding
+  each card a batch touched from the database with the same `toCard` mapping
+  (labels, checklists/items, link rows), and every touched column's order is
+  rebuilt from live non-archived rows while all `column.cardIds` are
+  sanitized against the card map. Client-supplied `activity`/`links` and
+  crafted ghost/archived ids in a `RESTORE_*` payload never enter the cache.
+  Board-lock coverage uses one global order, user-membership lock → sorted
+  board locks: every accepted-membership path (`InvitationsService.accept`,
+  board create/import, admin add/accept, demo provisioning), `sweepClaims`
+  (chunked per board
+  and serialized with an in-flight writer), account erasure (user key before
+  membership/claim/attachment reads; post-lock attachment recount) and token
+  revocation/account schedule (one static sorted set of token scope,
+  accepted memberships and claim boards; no late-lock loop). Interactive
+  token DELETE is kill-first: a lock-free `killOnly` transaction stamps
+  `revokedAt` and cancels sessions/approvals, then a separate cleanup locks
+  only the currently claimed boards (returning before any lock when there is
+  no claim); a claim appearing later on another board waits for lease expiry.
+  The cache warms
+  from the command transaction’s post-commit `remember` and from misses made
+  inside a REPEATABLE READ snapshot (`getAggregateWithSeq`’s own transaction
+  and `loadFresh` for plans/approvals); an ordinary read miss does not fill.
+  There is no second pooled connection or READ COMMITTED fill check. A
+  repaired or
+  cleared workflow drops the sticky `workflowInvalid` flag, and
+  `attachmentCount` follows the blob owner when a description embeds another
+  card's upload. Bounds are LRU entries and approximate JSON bytes
+  (default 32 / 32 MiB per process; `BOARD_AGGREGATE_CACHE_ENTRIES` /
+  `BOARD_AGGREGATE_CACHE_BYTES`, `0` disables); a store pays one
+  `JSON.stringify` + `structuredClone` and a hit one clone. Unit and e2e
+  coverage includes eviction, disabled mode, stale sets, clone isolation,
+  command-path hits, parity across card/label/checklist/column/board actions
+  and restores, external-writer coherency and two-replica reads. Throughput is
+  not claimed here; TASK-200.14 remains the measurement gate.
 - TASK-200.9 board read model v1: `GET /boards/:id/summary`,
   `GET /boards/:id/cards` and `GET /boards/:id/cards/:cardId`. The summary
   returns board metadata, labels, columns with their complete ordered

@@ -45,6 +45,7 @@ import {
   isTransactionTimeout,
 } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
+import { lockUserMemberships } from "@/common/board-locks";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import {
   beforeWrite,
@@ -55,11 +56,8 @@ import {
 import { AttentionService } from "@/notifications/attention.service";
 import { deleteBoardMentionAttention } from "@/notifications/mention-attention";
 import { RealtimeService } from "@/realtime/realtime.service";
-import {
-  loadBoardAggregateWithRevision,
-  toBoardSummary,
-  toMemberDto,
-} from "./board-aggregate";
+import { toBoardSummary, toMemberDto } from "./board-aggregate";
+import { BoardAggregateLoader } from "./board-aggregate-loader";
 import {
   assertBoardExportSize,
   assertBoardQuota,
@@ -138,6 +136,7 @@ export class BoardsService {
     private readonly realtime: RealtimeService,
     private readonly attention: AttentionService,
     private readonly securityAudit: SecurityAuditService,
+    private readonly boardAggregates: BoardAggregateLoader,
   ) {}
 
   /**
@@ -418,6 +417,10 @@ export class BoardsService {
             // one per-account advisory lock, so two parallel creates cannot both
             // slip past an operator cap.
             await lockBoardQuota(tx, userId);
+            // TASK-200.10: this path accepts the user as a member below;
+            // take the user-membership key before the membership insert so
+            // token revocation/account erasure cannot miss the board.
+            await lockUserMemberships(tx, [userId]);
             await assertAgentTokenCanWriteInTransaction(tx, principal);
             await assertBoardQuota(tx, userId, 1);
             const created = await tx.board.create({
@@ -1078,8 +1081,20 @@ export class BoardsService {
     tx?: Prisma.TransactionClient,
     budget?: { maxWaitMs?: number; timeoutMs?: number },
   ): Promise<{ board: BoardAggregate; seq: number; revision: bigint }> {
-    const read = async (reader: Prisma.TransactionClient) => {
-      const loaded = await loadBoardAggregateWithRevision(reader, boardId);
+    const read = async (
+      reader: Prisma.TransactionClient,
+      snapshot: boolean,
+    ) => {
+      // TASK-200.10: a revision-keyed hit is valid in this REPEATABLE READ
+      // snapshot — the loader confirms the revision from the board row it
+      // reads in the same transaction, so it is never newer than the seq.
+      // A miss from our own snapshot may warm the cache; a caller-supplied
+      // READ COMMITTED transaction must not.
+      const loaded = await this.boardAggregates.loadWithRevision(
+        reader,
+        boardId,
+        { snapshot },
+      );
       if (!loaded) throw new NotFoundException("Board not found");
       const max = await reader.command.aggregate({
         where: { boardId },
@@ -1093,8 +1108,8 @@ export class BoardsService {
     };
     // A caller supplying a transaction holds the board write lock.
     return tx
-      ? read(tx)
-      : this.prisma.$transaction(read, {
+      ? read(tx, false)
+      : this.prisma.$transaction((reader) => read(reader, true), {
           isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
           // TASK-200.6: the HTTP read path passes its budget. Without these,
           // a saturated pool or a slow aggregate surfaced as P2028 → 500
@@ -1832,6 +1847,10 @@ export class BoardsService {
         async (tx) =>
           rollbackOnThrow(async () => {
             await lockBoardQuota(tx, userId);
+            // TASK-200.10: this path accepts the user as a member below;
+            // take the user-membership key before the membership insert so
+            // token revocation/account erasure cannot miss the board.
+            await lockUserMemberships(tx, [userId]);
             await assertAgentTokenCanWriteInTransaction(tx, principal);
             await assertBoardQuota(tx, userId, boards.length);
             const ids: string[] = [];

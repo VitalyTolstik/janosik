@@ -43,6 +43,7 @@ const prismaMock = {
   agentSession: { updateMany: jest.fn() },
   approvalRequest: { updateMany: jest.fn() },
   card: { findMany: jest.fn(), updateMany: jest.fn() },
+  boardMember: { findMany: jest.fn() },
   $executeRaw: jest.fn(),
   $queryRaw: jest.fn(),
   emailVerificationCode: { deleteMany: jest.fn(), create: jest.fn() },
@@ -61,6 +62,7 @@ const prismaMock = {
   passwordResetToken: Record<"deleteMany", jest.Mock>;
   agentSession: Record<"updateMany", jest.Mock>;
   card: Record<"findMany" | "updateMany", jest.Mock>;
+  boardMember: Record<"findMany", jest.Mock>;
   $executeRaw: jest.Mock;
   $queryRaw: jest.Mock;
   emailVerificationCode: Record<"deleteMany" | "create", jest.Mock>;
@@ -183,6 +185,7 @@ describe("AuthService", () => {
     prismaMock.apiToken.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.card.findMany.mockResolvedValue([]);
     prismaMock.card.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.boardMember.findMany.mockResolvedValue([]);
     prismaMock.agentSession.updateMany.mockResolvedValue({ count: 0 });
     prismaMock.$executeRaw.mockResolvedValue(1);
     prismaMock.$transaction.mockImplementation(

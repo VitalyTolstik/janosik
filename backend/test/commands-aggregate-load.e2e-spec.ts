@@ -31,7 +31,7 @@ describe("Command aggregate loads (e2e)", () => {
   let columnId: string;
   let cardId: string;
 
-  const load = jest.spyOn(boardAggregate, "loadBoardAggregate");
+  const load = jest.spyOn(boardAggregate, "loadBoardAggregateWithRevision");
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({

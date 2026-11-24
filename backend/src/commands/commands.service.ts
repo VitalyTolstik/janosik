@@ -13,6 +13,7 @@ import type {
   Board,
   BoardAction,
   BoardScopedAction,
+  CardLink,
   Checklist,
   CommandDeltaEntry,
   CommandResponse,
@@ -28,6 +29,7 @@ import {
   evaluateCardTransition,
   evaluateTransition,
   hasLinkedPair,
+  isCardLinkType,
   LIMITS,
   MAX_COMMAND_BYTES,
   readBoardWorkflow,
@@ -49,10 +51,9 @@ import {
   planFromPreparedCommands,
   type PlanRequirement,
 } from "@/approvals/approval-plan";
-import {
-  emptyBoardAggregate,
-  loadBoardAggregate,
-} from "@/boards/board-aggregate";
+import { emptyBoardAggregate, toCard } from "@/boards/board-aggregate";
+import type { CardWithRelations } from "@/boards/board-aggregate";
+import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import {
   loadTargetedBoardAggregate,
   targetedCardIds,
@@ -487,6 +488,7 @@ export class CommandsService {
     private readonly boardWrite: BoardWriteService,
     private readonly realtime: RealtimeService,
     private readonly approvals: ApprovalsService,
+    private readonly boardAggregates: BoardAggregateLoader,
     @Optional() private readonly attention?: AttentionService,
     @Optional()
     private readonly catchUpBudget: CatchUpBudget = processCatchUpBudget,
@@ -544,7 +546,10 @@ export class CommandsService {
     targeted: boolean,
   ): Promise<BoardAggregate | null> {
     if (!targeted) {
-      return loadBoardAggregate(client, boardId, { board });
+      // TASK-200.10: the revision from the row we already hold validates the
+      // process cache. A miss loads from the DB and is never stored here;
+      // only the post-commit `remember` fills the cache.
+      return this.boardAggregates.load(client, boardId, { board });
     }
     const loaded = await loadTargetedBoardAggregate(client, boardId, {
       board,
@@ -552,6 +557,132 @@ export class CommandsService {
       indexColumnIds: targetedIndexColumnIds(actions),
     });
     return loaded?.board ?? null;
+  }
+
+  /**
+   * TASK-200.10 review: a command's in-memory reducer result is not the same
+   * as the row a fresh aggregate read returns. Writers normalize (and in
+   * `RESTORE_*` ignore) client-supplied fields such as `activity`, `links`,
+   * claim attribution and the denormalized attachment badge; a cached
+   * `running` board would therefore leak client-controlled state or carry a
+   * stale count. Rebuild every card the batch touched from the database with
+   * the same mapping as a full load (`toCard` + label/checklist/link rows),
+   * replace it in the aggregate, and drop cards that no longer exist.
+   *
+   * Two queries per batch (cards with relations + their outgoing links), not
+   * per card; untouched cards keep the snapshot they were loaded from.
+   */
+  private async rebuildTouchedCards(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    board: BoardAggregate,
+    cardIds: ReadonlySet<string>,
+  ): Promise<void> {
+    if (cardIds.size === 0) return;
+    const ids = [...cardIds];
+    const [rows, links] = await Promise.all([
+      tx.card.findMany({
+        where: {
+          id: { in: ids },
+          deletedAt: null,
+          column: { boardId },
+        },
+        include: {
+          labels: true,
+          checklists: {
+            where: { deletedAt: null },
+            orderBy: { position: "asc" },
+            include: {
+              items: {
+                where: { deletedAt: null },
+                orderBy: { position: "asc" },
+              },
+            },
+          },
+        },
+      }),
+      tx.cardLink.findMany({
+        where: { boardId, fromCardId: { in: ids }, deletedAt: null },
+        orderBy: [{ position: "asc" }, { id: "asc" }],
+      }),
+    ]);
+
+    // Same filter and grouping as `loadBoardAggregateWithRevision`.
+    const linksBySource = new Map<string, CardLink[]>();
+    for (const link of links) {
+      if (!isCardLinkType(link.type)) continue;
+      const list = linksBySource.get(link.fromCardId) ?? [];
+      list.push({
+        id: link.id,
+        type: link.type,
+        targetCardId: link.toCardId,
+      });
+      linksBySource.set(link.fromCardId, list);
+    }
+    const boardLabelIds = new Set(board.labels.map((label) => label.id));
+    for (const row of rows) {
+      board.cards[row.id] = toCard(
+        row as CardWithRelations,
+        boardLabelIds,
+        linksBySource.get(row.id),
+      );
+    }
+
+    const found = new Set(rows.map((row) => row.id));
+    for (const cardId of ids) {
+      if (found.has(cardId)) continue;
+      delete board.cards[cardId];
+      for (const column of board.columns) {
+        const index = column.cardIds.indexOf(cardId);
+        if (index !== -1) column.cardIds.splice(index, 1);
+      }
+    }
+  }
+
+  /**
+   * TASK-200.10 review: a `RESTORE_COLUMN`/`RESTORE_COLUMN_CARDS` payload can
+   * list ghost or archived ids in `column.cardIds`; the reducer installs them,
+   * while a fresh load derives the column from live, non-archived cards. For
+   * every touched column, replace `cardIds` with the persisted rows in
+   * `position` order, then sanitize all columns against the rebuilt card map.
+   */
+  private async rebuildTouchedColumns(
+    tx: Prisma.TransactionClient,
+    boardId: string,
+    board: BoardAggregate,
+    columnIds: ReadonlySet<string>,
+  ): Promise<void> {
+    if (columnIds.size > 0) {
+      const rows = await tx.card.findMany({
+        where: {
+          columnId: { in: [...columnIds] },
+          deletedAt: null,
+          archivedAt: null,
+          column: { boardId },
+        },
+        select: { id: true, columnId: true },
+        orderBy: { position: "asc" },
+      });
+      const byColumn = new Map<string, string[]>();
+      for (const row of rows) {
+        const list = byColumn.get(row.columnId) ?? [];
+        list.push(row.id);
+        byColumn.set(row.columnId, list);
+      }
+      for (const column of board.columns) {
+        if (!columnIds.has(column.id)) continue;
+        column.cardIds = byColumn.get(column.id) ?? [];
+      }
+    }
+    // The reducer can also retain a client-supplied id in an untouched
+    // column; a fresh load never does. Drop anything absent from `cards` or
+    // already archived.
+    for (const column of board.columns) {
+      column.cardIds = column.cardIds.filter((id) => {
+        const card = board.cards[id];
+        return card !== undefined && card.archivedAt === undefined;
+      });
+    }
   }
 
   /**
@@ -759,6 +890,8 @@ export class CommandsService {
         runId: string | null;
         createdRun: boolean;
         freshCommandIds: string[];
+        finalBoard: BoardAggregate | null;
+        finalRevision: bigint | null;
       }> => {
         // The board write lock (BoardWriteService) already serializes every
         // command on this board — the `ifMatch` checks below see each
@@ -984,6 +1117,8 @@ export class CommandsService {
 
         const responses: CommandResponse[] = [];
         const events: InternalCommandEvent[] = [];
+        const touchedCards = new Set<string>();
+        const touchedColumns = new Set<string>();
         for (const entry of prepared) {
           const existing = existingById.get(entry.dto.commandId);
           if (existing) {
@@ -1056,6 +1191,13 @@ export class CommandsService {
           }
           responses.push(outcome.response);
           running = outcome.board;
+          for (const touched of outcome.touches) {
+            if (touched.startsWith("card:")) {
+              touchedCards.add(touched.slice("card:".length));
+            } else if (touched.startsWith("column:")) {
+              touchedColumns.add(touched.slice("column:".length));
+            }
+          }
           // Collected here, published by the caller only after the commit: a
           // subscriber must never replay a command the database could still
           // roll back. `touches` rides along (TASK-30.1) — it is what the
@@ -1088,6 +1230,38 @@ export class CommandsService {
             await options.afterRun(tx, runId, responses);
           }
         }
+        // TASK-200.10: the revision this transaction committed, read in the
+        // same snapshot as the writes. The caller stores `running` under it
+        // only after `BoardWriteService.run` resolves; nothing here may leak
+        // an uncommitted snapshot into the cache.
+        let finalBoard: BoardAggregate | null = null;
+        let finalRevision: bigint | null = null;
+        if (
+          running !== null &&
+          this.boardAggregates.enabled &&
+          // A targeted snapshot (TASK-200.7) holds only the shell and the
+          // named card(s); caching it under the board revision would serve a
+          // partial board to the next full read.
+          options.targeted !== true
+        ) {
+          // Reducer state + fully normalized touched cards = the fresh-read
+          // shape; the rebuild also drops client-only `activity`/`links`.
+          await this.rebuildTouchedCards(tx, boardId, running, touchedCards);
+          await this.rebuildTouchedColumns(
+            tx,
+            boardId,
+            running,
+            touchedColumns,
+          );
+          const finalRow = await tx.board.findUnique({
+            where: { id: boardId },
+            select: { aggregateRevision: true },
+          });
+          if (finalRow !== null) {
+            finalBoard = running;
+            finalRevision = finalRow.aggregateRevision;
+          }
+        }
         if (approval !== null && !approvalReplay && runId !== null) {
           const consumed = await this.approvals.consumeCommandApproval(
             tx,
@@ -1103,6 +1277,8 @@ export class CommandsService {
             runId,
             createdRun,
             freshCommandIds: fresh.map((entry) => entry.dto.commandId),
+            finalBoard,
+            finalRevision,
           };
         }
         return {
@@ -1112,10 +1288,23 @@ export class CommandsService {
           runId,
           createdRun,
           freshCommandIds: fresh.map((entry) => entry.dto.commandId),
+          finalBoard,
+          finalRevision,
         };
       },
       pauseGateFor(options.principal, attribution.agentSessionId),
     );
+
+    // TASK-200.10: the transaction committed, so the final in-memory
+    // aggregate is now the truth at `finalRevision`. Publish nothing before
+    // this point: a failed batch throws above and never reaches the store.
+    if (applied.finalBoard !== null && applied.finalRevision !== null) {
+      this.boardAggregates.remember(
+        boardId,
+        applied.finalRevision,
+        applied.finalBoard,
+      );
+    }
 
     if (applied.consumedApproval !== null) {
       await this.approvals.publishState(applied.consumedApproval);
@@ -1194,7 +1383,7 @@ export class CommandsService {
     client: Prisma.TransactionClient | PrismaService = this.prisma,
     options: { exemptRestoreLimits?: boolean } = {},
   ): Promise<InversePreconditionFailure[]> {
-    let board = await loadBoardAggregate(client, boardId);
+    let board = await this.boardAggregates.load(client, boardId);
     if (board === null) return [];
     const currentVersion = await this.latestSeq(boardId, client);
     const failures: InversePreconditionFailure[] = [];
@@ -1368,7 +1557,8 @@ export class CommandsService {
     await this.assertIdsBelongToBoard(client, boardId, [...ids]);
     // H2 preview parity: a plan that re-parents a same-board checklist/item
     // must be refused in the preview, not only inside the apply transaction.
-    const current = board ?? (await loadBoardAggregate(this.prisma, boardId));
+    const current =
+      board ?? (await this.boardAggregates.load(this.prisma, boardId));
     if (current !== null) {
       await this.assertEntityParentage(client, prepared, current, ledger);
     }

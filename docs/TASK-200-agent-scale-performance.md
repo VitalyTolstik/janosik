@@ -703,6 +703,97 @@ checklist/link; 3,37 МБ на 5k, 64–131 МБ transient на открытие
 **Файлы:** `backend/src/boards/*`, `backend/src/commands/*`,
 `backend/src/comments/*`, `backend/src/attachments/*`.
 
+**Статус:** реализовано в `feat/TASK-200.10-aggregate-cache`.
+
+- Кэш (`BoardAggregateCacheService` + глобальный
+  `BoardAggregateCacheModule`) хранит один `BoardAggregate` на доску и
+  проверяет его по `Board.aggregateRevision` из того же
+  транзакционного/повторяемого снимка. Ключ — `(boardId, revision)`, не
+  TTL и не `seq`: комментарий/вложение/revision-writer без новой команды
+  просто не совпадает. Redis для корректности не нужен; шина ничего не
+  инвалидирует и не может быть обязательной. Промах идёт в прежние
+  запросы (`loadBoardAggregate`/`loadBoardAggregateWithRevision` остались
+  некэшируемыми примитивами).
+- `BoardAggregateLoader` — кэширующий вход для команд, планов, approvals
+  и legacy-чтения `GET /boards/:id`. Если `Board` уже прочитан, ревизия
+  берётся из него (лишнего `SELECT` на попадании нет); узкие policy-чтения
+  передают только `aggregateRevision`. **Обычный промах загружает из БД и
+  не кэширует.** `snapshot: true` разрешает запись только потому, что
+  вызывающий уже читает board row и все aggregate-запросы в одном
+  REPEATABLE READ снимке: так работает собственный legacy-read
+  (`getAggregateWithSeq`) и `loadFresh` для plans/approvals. Команда
+  по-прежнему пишет через явный post-commit `remember`. Второго
+  пула-соединения и READ COMMITTED fill-проверки нет.
+- В `CommandsService.applyBatch` финальная ревизия читается в той же
+  транзакции после всех записей, а итоговый in-memory aggregate кладётся в
+  кэш только после успешного `BoardWriteService.run` — до публикации
+  событий. Поэтому вторая команда подряд попадает в кэш и не делает
+  aggregate-`SELECT`; промах внутри транзакции намеренно не кэшируется.
+  Устаревшая запись (меньшая ревизия) никогда не перетирает новую.
+- Reducer не содержит серверных атрибутов карточки (`lastActorId`,
+  `claimedByTokenId`/`claimedBySessionId`, `attachmentCount`,
+  `archivedAt`/`archivedFromColumnId`, `updatedAt`), а `RESTORE_*`-payload
+  может нести клиентские `activity`/`links` (включая crafted
+  `column.cardIds` с ghost/archived id). Перед кэшированием каждая
+  затронутая карточка **пересобирается из БД** тем же `toCard` +
+  labels/checklists/items/links, что и полная загрузка; несуществующие
+  карточки удаляются. Затронутые колонки пересобираются по живым
+  non-archived `Card` в порядке `position`, а все `column.cardIds`
+  санитизируются против `board.cards`. Поэтому клиентские
+  `activity`/`links`/ghost id никогда не попадают в кэш, а запись на
+  совпавшей ревизии отражает закоммиченное состояние этой ревизии
+  (включая duplicate/restore, column order и счётчик вложений
+  карточки-владельца при описании с чужим embed).
+- Границы: LRU по числу записей и приблизительному размеру
+  (`JSON.stringify` + 256 байт на запись, считается только при записи);
+  по умолчанию 32 записи / 32 МиБ на процесс, `0` в
+  `BOARD_AGGREGATE_CACHE_ENTRIES` или `BOARD_AGGREGATE_CACHE_BYTES`
+  полностью выключает кэш и возвращает путь без лишних запросов. Одна
+  доска больше бюджета не кэшируется и не вытесняет остальные. Запись
+  платит один `structuredClone` + `JSON.stringify`; попадание — один
+  `structuredClone` (временная копия на запрос).
+- Coherency: comment, attachment, claim/session-end, admin card restore и
+  board restore проверены e2e — ревизия растёт, старая запись не
+  отдаётся, следующая загрузка содержит новые данные; две независимые
+  пары loader/cache имитируют реплики (писатель R+1, читатель на R
+  промахивается и перечитывает). Ручной инвалидации нет — корректность
+  держится на триггерах 200.6. Инвариант блокировок: **user-membership
+  lock → sorted board locks**. Его берут все пути accepted-membership
+  (`InvitationsService.accept`, `createBoard`, admin add и admin accept,
+  board import, demo provisioning), `revokeApiTokens` (user keys → один
+  статический набор
+  `ApiToken.boardId` + accepted memberships + claim-доски, без late-loop) и
+  удаление аккаунта (user key до чтения membership/claims, post-lock набор
+  вложений и recount). Интерактивный token DELETE использует kill-first:
+  отдельная транзакция `killOnly` без user/board lock ставит `revokedAt`,
+  отменяет сессии/approvals и коммитится; затем `releaseRevokedTokenClaims`
+  без claims сразу возвращается, иначе сортированно блокирует только
+  текущие claim-доски и очищает карточки только на них. Claim, появившийся
+  после этого на другой доске, не пишется без блокировки и остаётся до
+  истечения lease. `sweepClaims` — по доске и чанками по 100.
+  `SET_BOARD_WORKFLOW` (set/clear, включая equal) снимает
+  `workflowInvalid`; карточка-владелец description-embed пересобирается по
+  `attachmentCount`; crafted `RESTORE_COLUMN` с ghost/archived id
+  санитизируется.
+- Тесты: `backend/src/boards/board-aggregate-cache.spec.ts` (LRU по
+  entries/bytes, disabled=0, несовпадение ревизии, stale set, deep-clone,
+  счётчики, oversize), `board-aggregate-loader.spec.ts` (miss без snapshot
+  не заполняет; snapshot/loadFresh заполняет; hit из `remember`), unit на
+  user/board lock order, demo membership locks, `revokeApiTokens` (один
+  sorted set, releaseUserClaims, fail-closed code), `sweepClaims` (чанки +
+  ожидание in-flight writer) и
+  `backend/test/task-200-10-aggregate-cache.e2e-spec.ts` (вторая команда
+  без aggregate-`SELECT`, read/plan snapshot miss заполняет, обычный read
+  miss — нет, паритет кэша и свежей загрузки на add/update/move/archive/
+  delete card/label/checklist/column/board, duplicate, restores/order/
+  crafted payload, coherency внешних писателей, membership-lock wait,
+  lapsed-claim sweep, account schedule, post-lock attachment re-read и две
+  реплики).
+- **Ограничение:** заявленные в DoD «5–10× throughput» здесь не
+  измерялись; это остаётся замером 200.14. Кэш экономит 4 aggregate-запроса
+  на команду при попадании, но на запись добавляет пересборку затронутых
+  карточек и колонок (2–3 узких запроса).
+
 ---
 
 ### 200.11 — Command log: партиционирование/вынос деталей (P2)

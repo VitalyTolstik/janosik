@@ -3110,15 +3110,23 @@ function setBoardColumnStyle(
  */
 function setBoardWorkflow(board: Board, action: SetBoardWorkflowAction): Board {
   if (action.workflow === undefined) {
-    if (board.workflow === undefined) return board;
+    if (board.workflow === undefined && board.workflowInvalid === undefined) {
+      return board;
+    }
     const next = { ...board };
     delete next.workflow;
+    // TASK-200.10: clearing repairs a previously unreadable workflow; the
+    // warning flag must not outlive the config it described.
+    delete next.workflowInvalid;
     return next;
   }
   const workflow = readBoardWorkflow(action.workflow);
   if (!workflow) return board;
-  if (JSON.stringify(workflow) === JSON.stringify(board.workflow)) return board;
-  return { ...board, workflow };
+  const same = JSON.stringify(workflow) === JSON.stringify(board.workflow);
+  if (same && board.workflowInvalid === undefined) return board;
+  const next = { ...board, workflow };
+  delete next.workflowInvalid;
+  return next;
 }
 
 function moveColumn(

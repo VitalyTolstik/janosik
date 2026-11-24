@@ -14,7 +14,7 @@ import type {
   ApprovalStatus,
   Board,
 } from "@janosik/shared";
-import { loadBoardAggregate } from "@/boards/board-aggregate";
+import { BoardAggregateLoader } from "@/boards/board-aggregate-loader";
 import type { PreparedCommand } from "@/commands/command-validation";
 import type { AuthPrincipal } from "@/auth/auth-principal";
 import {
@@ -72,6 +72,7 @@ export class ApprovalsService {
     private readonly realtime: RealtimeService,
     private readonly securityAudit: SecurityAuditService,
     private readonly attention: AttentionService,
+    private readonly boardAggregates: BoardAggregateLoader,
   ) {}
 
   /** `POST /boards/:id/approvals` — PAT-only. */
@@ -83,10 +84,11 @@ export class ApprovalsService {
     dto: CreateApprovalDto,
   ): Promise<ApprovalRequestDto> {
     this.requirePat(principal, "create");
-    const board = await this.board(boardId);
-    const policy = readBoardAgentPolicy(board.agentPolicy);
-    const aggregate = await loadBoardAggregate(this.prisma, boardId);
+    // TASK-200.10: board policy and aggregate come from one REPEATABLE READ
+    // snapshot; a miss warms the cache safely.
+    const aggregate = await this.boardAggregates.loadFresh(boardId);
     if (aggregate === null) throw this.boardNotFound();
+    const policy = readBoardAgentPolicy(aggregate.agentPolicy);
 
     const plan = normalizeApprovalPlan(dto.plan, boardId);
     await this.assertPlanLimitsForUser(
@@ -1112,10 +1114,11 @@ export class ApprovalsService {
   private async board(boardId: string): Promise<{
     id: string;
     agentPolicy: Prisma.JsonValue | null;
+    aggregateRevision: bigint;
   }> {
     const board = await this.prisma.board.findFirst({
       where: { id: boardId, deletedAt: null },
-      select: { id: true, agentPolicy: true },
+      select: { id: true, agentPolicy: true, aggregateRevision: true },
     });
     if (board === null) throw this.boardNotFound();
     return board;
@@ -1135,7 +1138,7 @@ export class ApprovalsService {
   ): Promise<void> {
     try {
       const aggregate =
-        board ?? (await loadBoardAggregate(this.prisma, boardId));
+        board ?? (await this.boardAggregates.load(this.prisma, boardId));
       if (aggregate === null) throw this.boardNotFound();
       this.assertPlanLimits(plan, policy, aggregate);
     } catch (error) {

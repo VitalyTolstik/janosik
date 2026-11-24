@@ -40,6 +40,7 @@ function service(
       consumeCommandApproval: jest.fn(),
       publishState: jest.fn(),
     } as never,
+    { load: jest.fn(), remember: jest.fn() } as never,
     undefined,
     budget,
   );
@@ -496,6 +497,7 @@ describe("CommandsService.applyBatch size caps", () => {
         consumeCommandApproval: jest.fn(),
         publishState: jest.fn(),
       } as never,
+      { load: jest.fn(), remember: jest.fn() } as never,
     );
 
     await expect(
@@ -573,7 +575,13 @@ describe("CommandsService.applyBatch duplicate ids", () => {
       const prisma = {
         command: { findMany },
       } as unknown as PrismaService;
-      return new CommandsService(prisma, {} as never, {} as never, {} as never);
+      return new CommandsService(
+        prisma,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
     })();
     await expect(
       service.applyBatch("board-1", "user-1", [

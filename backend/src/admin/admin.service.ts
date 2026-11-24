@@ -2897,18 +2897,35 @@ export class AdminService {
       throw new ConflictException("User is already a member of this board");
     }
     const role = normalizeRole(dto.role);
-    await this.prisma.boardMember.create({
-      data: {
-        boardId,
-        userId: user.id,
-        role,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
-        // A master-added membership is effective immediately — no invitation
-        // round-trip the user could miss.
-        acceptedAt: new Date(),
-        invitedById: null,
+    // TASK-200.10: same user-membership key as invitation accept. The board
+    // write queue plus the user lock keep a concurrent revocation/erasure
+    // from observing a membership set that excludes this insert.
+    await this.boardWrite.run(
+      boardId,
+      async (tx) => {
+        const current = await tx.boardMember.findUnique({
+          where: { boardId_userId: { boardId, userId: user.id } },
+          select: { id: true },
+        });
+        if (current) {
+          throw new ConflictException("User is already a member of this board");
+        }
+        await tx.boardMember.create({
+          data: {
+            boardId,
+            userId: user.id,
+            role,
+            expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+            // A master-added membership is effective immediately — no
+            // invitation round-trip the user could miss.
+            acceptedAt: new Date(),
+            invitedById: null,
+          },
+        });
       },
-    });
+      undefined,
+      { lockUserId: user.id },
+    );
     await this.audit(admin, "board.member_added", "board", boardId, {
       userId: user.id,
       email: user.email,
@@ -2940,7 +2957,19 @@ export class AdminService {
     if (dto.accepted !== undefined) {
       data.acceptedAt = dto.accepted ? new Date() : null;
     }
-    await this.prisma.boardMember.update({ where: { id: memberId }, data });
+    if (dto.accepted === true) {
+      // Accepting a pending invite is a membership acceptance path too.
+      await this.boardWrite.run(
+        boardId,
+        async (tx) => {
+          await tx.boardMember.update({ where: { id: memberId }, data });
+        },
+        undefined,
+        { lockUserId: member.userId },
+      );
+    } else {
+      await this.prisma.boardMember.update({ where: { id: memberId }, data });
+    }
     await this.audit(admin, "board.member_role_changed", "board", boardId, {
       memberId,
       userId: member.userId,
