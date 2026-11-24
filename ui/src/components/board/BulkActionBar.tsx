@@ -68,7 +68,7 @@ interface RunResult {
 type BulkKind = "move" | "archive" | "delete" | "label" | "assign";
 type BarFocusTarget = "dismiss" | "clear" | "first";
 
-const ACTION_BUTTON = "h-9 max-lg:h-11";
+const ACTION_BUTTON = "h-9 max-lg:h-11 text-ui-body";
 
 /** The toolbar switch that enters checkbox selection mode. */
 export function BoardSelectionToggle() {
@@ -89,7 +89,7 @@ export function BoardSelectionToggle() {
       {t("bulk.select")}
       {selection.count > 0 ? (
         <span
-          className="ml-0.5 rounded-full bg-primary/15 px-1.5 text-[11px] font-semibold tabular-nums text-primary"
+          className="ml-0.5 rounded-full bg-primary/15 px-1.5 text-ui-micro font-semibold tabular-nums text-primary"
           data-testid="bulk-select-count"
         >
           {selection.count}
@@ -832,7 +832,7 @@ export function BulkActionBar() {
         {displayedCount > 0 ? (
           <span
             data-testid="bulk-count"
-            className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-sm font-semibold tabular-nums text-primary"
+            className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-ui-body font-semibold tabular-nums text-primary"
           >
             {t("bulk.selected", { count: displayedCount })}
           </span>
@@ -903,7 +903,7 @@ export function BulkActionBar() {
                   <span className="min-w-0 flex-1 truncate">
                     {column.title}
                   </span>
-                  <span className="ml-2 text-xs tabular-nums text-muted-foreground">
+                  <span className="ml-2 text-ui-meta tabular-nums text-muted-foreground">
                     {column.cardIds.length}
                     {column.wipLimit !== undefined ? `/${column.wipLimit}` : ""}
                   </span>
@@ -1333,13 +1333,16 @@ export function BulkActionBar() {
               }}
             />
           </div>
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="shrink-0 text-ui-meta tabular-nums text-muted-foreground">
             {t("bulk.progress", { done: busy.done, total: busy.total })}
           </span>
         </div>
       ) : null}
 
-      <p data-testid="bulk-status" className="text-xs text-muted-foreground">
+      <p
+        data-testid="bulk-status"
+        className="text-ui-body text-muted-foreground"
+      >
         {busyLabel ?? idleLabel}
         {lastRun !== null && lastRun.changed > 1 ? (
           <span className="ml-1">{t("bulk.undoHint")}</span>
@@ -1350,7 +1353,7 @@ export function BulkActionBar() {
         <div
           role="alert"
           data-testid="bulk-errors"
-          className="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-xs text-(--chip-red)"
+          className="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-ui-body text-(--chip-red)"
         >
           <p className="font-semibold">{tp("bulk.failed", failures.length)}</p>
           <ul
