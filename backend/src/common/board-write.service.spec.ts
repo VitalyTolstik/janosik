@@ -69,6 +69,21 @@ describe("isTransientConflict", () => {
 });
 
 describe("BoardWriteService", () => {
+  it("takes the user-membership lock before the board lock", async () => {
+    const { prisma, tx } = fakePrisma();
+    const locked: string[] = [];
+    tx.$executeRaw = jest.fn(async (...args: unknown[]) => {
+      locked.push(String(args[1]));
+      return 1;
+    }) as unknown as typeof tx.$executeRaw;
+
+    await service(prisma).run("board-1", async () => undefined, undefined, {
+      lockUserId: "user-1",
+    });
+
+    expect(locked).toEqual(["user-memberships:user-1", "board-1"]);
+  });
+
   it("takes the per-board advisory lock before running the body", async () => {
     const { prisma, tx } = fakePrisma();
     const order: string[] = [];

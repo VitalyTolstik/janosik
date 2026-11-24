@@ -115,6 +115,8 @@ export class InvitationsService {
         });
         return true;
       },
+      undefined,
+      { lockUserId: userId },
     );
     if (!accepted) throw new ConflictException("Invitation has expired");
     // The board's open member lists refresh right away: the invitee is a

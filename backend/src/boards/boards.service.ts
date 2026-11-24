@@ -45,6 +45,7 @@ import {
   isTransactionTimeout,
 } from "@/common/board-write.service";
 import { activeMembershipWhere } from "@/common/membership";
+import { lockUserMemberships } from "@/common/board-locks";
 import { SecurityAuditService } from "@/common/security-audit/security-audit.service";
 import {
   beforeWrite,
@@ -416,6 +417,10 @@ export class BoardsService {
             // one per-account advisory lock, so two parallel creates cannot both
             // slip past an operator cap.
             await lockBoardQuota(tx, userId);
+            // TASK-200.10: this path accepts the user as a member below;
+            // take the user-membership key before the membership insert so
+            // token revocation/account erasure cannot miss the board.
+            await lockUserMemberships(tx, [userId]);
             await assertAgentTokenCanWriteInTransaction(tx, principal);
             await assertBoardQuota(tx, userId, 1);
             const created = await tx.board.create({
@@ -1836,6 +1841,10 @@ export class BoardsService {
         async (tx) =>
           rollbackOnThrow(async () => {
             await lockBoardQuota(tx, userId);
+            // TASK-200.10: this path accepts the user as a member below;
+            // take the user-membership key before the membership insert so
+            // token revocation/account erasure cannot miss the board.
+            await lockUserMemberships(tx, [userId]);
             await assertAgentTokenCanWriteInTransaction(tx, principal);
             await assertBoardQuota(tx, userId, boards.length);
             const ids: string[] = [];

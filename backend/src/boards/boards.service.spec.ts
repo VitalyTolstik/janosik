@@ -342,6 +342,48 @@ describe("BoardsService.leaveBoard (TASK-177.2)", () => {
   });
 });
 
+describe("BoardsService.createBoard — membership lock", () => {
+  it("takes the user-membership lock before inserting the owner membership", async () => {
+    const order: string[] = [];
+    const tx = {
+      $executeRaw: jest.fn(async (...args: unknown[]) => {
+        order.push(`lock:${String(args[1])}`);
+        return 1;
+      }),
+      boardMember: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn(async () => {
+          order.push("membership");
+          return {};
+        }),
+      },
+      board: {
+        create: jest.fn().mockResolvedValue({ id: "board-1" }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (client: unknown) => Promise<unknown>) =>
+        fn(tx),
+      ),
+    } as unknown as PrismaService;
+    const service = new BoardsService(
+      prisma,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { load: jest.fn(), loadWithRevision: jest.fn() } as never,
+    );
+    jest
+      .spyOn(service, "getAggregate")
+      .mockResolvedValue({ id: "board-1" } as never);
+
+    await service.createBoard("user-1", { title: "Board" });
+
+    expect(order).toEqual(["lock:user-memberships:user-1", "membership"]);
+  });
+});
+
 describe("BoardsService.createBoard — L24 rollback proof", () => {
   it("marks a write-transaction P2028 as a guaranteed rollback", async () => {
     const timeout = Object.assign(

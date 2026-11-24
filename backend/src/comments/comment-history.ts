@@ -130,19 +130,11 @@ export type CommentHistoryTx = Pick<
 >;
 
 /**
- * Take the same transaction-scoped board locks as `BoardWriteService`, in a
- * stable order so multi-board jobs (GDPR erase, purge chunks) cannot deadlock
- * against a single-board writer.
+ * Re-exported for the existing import sites; the implementation lives in
+ * `@/common/board-locks` next to the user-membership lock so the global lock
+ * order is documented in one place.
  */
-export async function lockBoardWrites(
-  tx: Pick<Prisma.TransactionClient, "$executeRaw">,
-  boardIds: Iterable<string>,
-): Promise<void> {
-  const ids = [...new Set(boardIds)].sort();
-  for (const boardId of ids) {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${boardId}, 0))`;
-  }
-}
+export { lockBoardWrites } from "@/common/board-locks";
 
 const AUTHOR_INCLUDE = {
   author: { select: { displayName: true, email: true } },
