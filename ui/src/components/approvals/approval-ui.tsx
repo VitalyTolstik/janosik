@@ -40,10 +40,10 @@ import { cn } from "@/lib/utils";
 import { APPROVAL_RISK_KEYS, APPROVAL_STATUS_KEYS } from "@/utils/approval";
 
 const RELATED_CLASS =
-  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:min-h-11";
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-ui-meta text-muted-foreground hover:border-[color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:min-h-11";
 
 const RELATED_STATIC_CLASS =
-  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground max-md:min-h-11";
+  "inline-flex h-[22px] items-center gap-1 rounded border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-ui-meta text-muted-foreground max-md:min-h-11";
 
 const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
   pending: "warn",
@@ -57,7 +57,7 @@ const APPROVAL_STATUS_TONE: Record<ApprovalStatus, StatusTone> = {
 const RISK_CLASS: Record<ApprovalRisk, string> = {
   low: "border-border bg-muted text-muted-foreground",
   // Mockup warning chip: warning hue at 36% border / 7% fill, 4 px radius,
-  // 11 px / 600. User decision: use the mockup's raw `--warning` orange on
+  // 11 px micro badge / 600. User decision: use the mockup's raw `--warning` orange on
   // the agent surfaces, overriding the earlier AA-compromised on-tint shade.
   medium:
     "border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-[color-mix(in_oklab,var(--warning)_7%,transparent)] text-[color:var(--warning)]",
@@ -102,7 +102,7 @@ export function ApprovalRiskBadge({
       data-testid={testId}
       data-risk={risk}
       className={cn(
-        "inline-flex h-[21px] shrink-0 items-center rounded border px-1.5 text-[11px] leading-none font-semibold whitespace-nowrap",
+        "inline-flex h-[21px] shrink-0 items-center rounded border px-1.5 text-ui-micro leading-none font-semibold whitespace-nowrap",
         RISK_CLASS[risk],
       )}
     >
@@ -126,17 +126,17 @@ export function ApprovalPlanBlock({
   return (
     <section className="space-y-2" data-testid="approval-plan">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold">
+        <h4 className="text-ui-body font-semibold">
           {title ?? t("agentControl.approvals.plan")}
         </h4>
         {countLabel !== undefined ? (
-          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-ui-micro text-muted-foreground">
             {countLabel}
           </span>
         ) : null}
       </div>
       {commands.length === 0 && operations.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {t("agentControl.approvals.noPlan")}
         </p>
       ) : null}
@@ -148,13 +148,13 @@ export function ApprovalPlanBlock({
               data-testid="approval-plan-command"
               className="rounded-md border bg-muted/30 p-2"
             >
-              <p className="flex items-center gap-1.5 text-[11px] font-medium">
-                <span className="rounded bg-background px-1 text-[11px] text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-ui-label font-medium">
+                <span className="rounded bg-background px-1 text-ui-micro text-muted-foreground">
                   {index + 1}
                 </span>
                 {String(command.action.type)}
               </p>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-ui-meta text-muted-foreground">
                 {JSON.stringify(command.action, null, 2)}
               </pre>
             </li>
@@ -169,8 +169,8 @@ export function ApprovalPlanBlock({
               data-testid="approval-plan-operation"
               className="rounded-md border bg-muted/30 p-2"
             >
-              <p className="text-[11px] font-medium">{operation.op}</p>
-              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">
+              <p className="text-ui-label font-medium">{operation.op}</p>
+              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-ui-meta text-muted-foreground">
                 {JSON.stringify(
                   { target: operation.target, body: operation.body },
                   null,
@@ -216,11 +216,11 @@ export function ApprovalHash({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold">
+        <h4 className="text-ui-body font-semibold">
           {title ?? t("agentControl.approvals.planHash")}
         </h4>
         {badge !== undefined ? (
-          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+          <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-ui-micro text-muted-foreground">
             {badge}
           </span>
         ) : null}
@@ -228,7 +228,7 @@ export function ApprovalHash({
       <div className="flex items-start gap-2">
         <code
           data-testid="approval-plan-hash"
-          className="min-w-0 flex-1 break-all rounded-md border bg-muted/30 p-2 font-mono text-[11px] text-muted-foreground"
+          className="min-w-0 flex-1 break-all rounded-md border bg-muted/30 p-2 font-mono text-ui-meta text-muted-foreground"
         >
           {hash}
         </code>
@@ -252,7 +252,7 @@ export function ApprovalHash({
         </Button>
       </div>
       {hint !== undefined ? (
-        <p className="text-[11px] leading-5 text-muted-foreground">{hint}</p>
+        <p className="text-ui-meta leading-5 text-muted-foreground">{hint}</p>
       ) : null}
       <span className="sr-only" aria-live="polite">
         {copied ? t("agentControl.approvals.copied") : ""}
@@ -472,7 +472,7 @@ export function ApprovalDecisionForm({
       <form noValidate onSubmit={submitReject} className="space-y-1.5">
         <label
           htmlFor="approval-comment"
-          className="block text-[10.5px] font-semibold text-foreground"
+          className="block text-ui-micro font-semibold text-foreground"
         >
           {t("agents.approvals.rejectReason")}{" "}
           <span className="font-semibold text-muted-foreground">
@@ -487,7 +487,7 @@ export function ApprovalDecisionForm({
           rows={2}
           maxLength={2000}
           placeholder={t("agentControl.approvals.rejectReasonPlaceholder")}
-          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-[11px] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+          className="min-h-14 resize-y rounded-[5px] border-border bg-background px-2 py-1.5 text-ui-body focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
           autoFocus
         />
         <div className="flex items-center justify-end gap-1.5">
@@ -497,7 +497,7 @@ export function ApprovalDecisionForm({
             variant="ghost"
             onClick={resetReject}
             disabled={submitting}
-            className="!py-0 h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] text-muted-foreground max-xl:min-h-11"
+            className="!py-0 h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-ui-label font-[650] !leading-none text-muted-foreground max-xl:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -507,7 +507,7 @@ export function ApprovalDecisionForm({
             variant="destructive"
             data-testid="approval-confirm"
             disabled={submitting || busy || reasonRequired}
-            className="!py-0 h-7 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] !leading-[11px] !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] disabled:opacity-40 max-xl:min-h-11"
+            className="!py-0 h-7 min-w-[117px] gap-[6px] rounded-[6px] px-[9px] text-ui-label font-[650] !leading-none !bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)] disabled:opacity-40 max-xl:min-h-11"
           >
             {submitting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -529,7 +529,7 @@ export function ApprovalDecisionForm({
       >
         <p
           className={cn(
-            "mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground",
+            "mb-2 flex items-start gap-[5px] text-ui-meta leading-[1.45] text-muted-foreground",
             layout === "inline" && "mb-0 min-w-0 flex-1",
           )}
         >
@@ -574,7 +574,7 @@ export function ApprovalDecisionForm({
               onClick={onNextPending}
               disabled={busy}
               className={cn(
-                "h-7 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-xl:min-h-11",
+                "h-7 rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:text-foreground max-xl:min-h-11",
                 layout === "inline"
                   ? "shrink-0"
                   : "max-md:flex-1 max-md:basis-0",
@@ -592,10 +592,10 @@ export function ApprovalDecisionForm({
             onClick={() => setMode("reject")}
             disabled={busy}
             className={cn(
-              "gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] !leading-[11px] font-[650] max-xl:min-h-11",
+              "gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] !leading-none font-[650] max-xl:min-h-11",
               layout === "inline"
-                ? "h-7 flex-none px-[9px] text-[11px]"
-                : "h-8 flex-1 px-[11px] text-[11.5px]",
+                ? "h-7 flex-none px-[9px] text-ui-label"
+                : "h-8 flex-1 px-[11px] text-ui-label",
             )}
           >
             {t("agentControl.approvals.reject")}
@@ -607,10 +607,10 @@ export function ApprovalDecisionForm({
             onClick={() => setApproveOpen(true)}
             disabled={busy}
             className={cn(
-              "gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] !leading-[11px] font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-xl:min-h-11",
+              "gap-1.5 rounded-[6px] border border-transparent !bg-[var(--agent-primary-strong)] !leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-xl:min-h-11",
               layout === "inline"
-                ? "h-7 flex-none px-[9px] text-[11px]"
-                : "h-8 flex-1 px-[11px] text-[11.5px]",
+                ? "h-7 flex-none px-[9px] text-ui-label"
+                : "h-8 flex-1 px-[11px] text-ui-label",
             )}
           >
             {t("agents.approvals.confirmApprove")}
@@ -629,17 +629,17 @@ export function ApprovalDecisionForm({
               <ShieldCheck className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <div className="min-w-0">
-              <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
+              <DialogTitle className="text-ui-heading font-[650] leading-[1.3] tracking-normal">
                 {t("agents.approvals.approveTitle")}
               </DialogTitle>
-              <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+              <DialogDescription className="mt-[3px] text-ui-body leading-[1.5] text-muted-foreground">
                 {t("agents.approvals.approveDescription")}
               </DialogDescription>
             </div>
           </DialogHeader>
           <div className="px-4 pb-0.5">
-            <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] text-foreground">
-              <p className="text-[11px] leading-[1.5] text-foreground">
+            <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-ui-body text-foreground">
+              <p className="text-ui-body leading-[1.5] text-foreground">
                 <b className="font-[650]">
                   {impactTitle ?? t("agents.approvals.approveImpactTitle")}
                 </b>{" "}
@@ -649,7 +649,7 @@ export function ApprovalDecisionForm({
             <div className="mt-2.5 flex min-w-0 items-center gap-1.5 rounded-[5px] border border-border bg-background/30 px-1.5 py-1">
               <code
                 title={planHash}
-                className="min-w-0 flex-1 overflow-hidden font-mono text-[11px] whitespace-nowrap text-ellipsis text-muted-foreground"
+                className="min-w-0 flex-1 overflow-hidden font-mono text-ui-micro whitespace-nowrap text-ellipsis text-muted-foreground"
               >
                 {planHash.slice(0, 34)}…
               </code>
@@ -661,7 +661,7 @@ export function ApprovalDecisionForm({
               variant="ghost"
               onClick={() => setApproveOpen(false)}
               disabled={submitting}
-              className="h-7 rounded-[6px] px-2.5 text-[11px] font-[650] text-muted-foreground max-xl:min-h-11 max-md:min-w-[61px]"
+              className="h-7 rounded-[6px] px-2.5 text-ui-label font-[650] text-muted-foreground max-xl:min-h-11 max-md:min-w-[61px]"
             >
               {t("common.cancel")}
             </Button>
@@ -670,7 +670,7 @@ export function ApprovalDecisionForm({
               data-testid="approval-confirm"
               onClick={() => void submitApprove()}
               disabled={submitting || busy}
-              className="h-7 rounded-[6px] px-2.5 text-[11px] font-[650] max-xl:min-h-11 max-md:min-w-[103px]"
+              className="h-7 rounded-[6px] px-2.5 text-ui-label font-[650] max-xl:min-h-11 max-md:min-w-[103px]"
             >
               {submitting ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -740,10 +740,10 @@ export function ApprovalMetaRow({
 }) {
   return (
     <div className="min-w-0 space-y-0.5" data-testid={testId}>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+      <dt className="text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
-      <dd className="break-words text-xs">{children}</dd>
+      <dd className="break-words text-ui-label">{children}</dd>
     </div>
   );
 }
@@ -751,7 +751,7 @@ export function ApprovalMetaRow({
 export function ApprovalDetailError({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n();
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-ui-body text-muted-foreground">
       <AlertTriangle
         className="h-5 w-5 text-[color:var(--agent-tone-warning)]"
         aria-hidden

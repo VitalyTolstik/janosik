@@ -196,7 +196,7 @@ function DetailSection({
             {icon}
           </span>
         ) : null}
-        <h3 className="text-[11px] font-[650] tracking-[0.03em]">{title}</h3>
+        <h3 className="text-ui-body font-[650] tracking-[0.03em]">{title}</h3>
         {aside !== undefined ? <span className="ml-auto">{aside}</span> : null}
       </div>
       {children}
@@ -360,8 +360,8 @@ export function AttentionApprovalList({
           )}
           aria-hidden
         />
-        <h2 className="text-[12.5px] font-[650]">{heading}</h2>
-        <span className="text-[11px] text-muted-foreground">
+        <h2 className="text-ui-heading font-[650]">{heading}</h2>
+        <span className="text-ui-meta text-muted-foreground">
           {decidedView
             ? t("agents.approvals.decidedSubtitle")
             : t("agents.approvals.sortedByExpiry")}
@@ -385,14 +385,14 @@ export function AttentionApprovalList({
               aria-pressed={filter === value}
               onClick={() => onFilterChange(value)}
               className={cn(
-                "inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] transition-colors",
+                "inline-flex max-xl:min-h-11 items-center gap-1 text-ui-label transition-colors",
                 filter === value
                   ? "font-semibold text-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(key)}
-              <span className="text-[11px] tabular-nums text-muted-foreground">
+              <span className="text-ui-micro tabular-nums text-muted-foreground">
                 {counts[countKey]}
               </span>
             </button>
@@ -400,7 +400,7 @@ export function AttentionApprovalList({
         </div>
       </div>
       {filtered.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 py-6 text-ui-body text-muted-foreground">
           <CheckCircle2 className="h-4 w-4 text-success/70" aria-hidden />
           {filter === "needs"
             ? t("agents.approvals.emptyNeeds")
@@ -455,7 +455,7 @@ export function AttentionApprovalList({
                     onClick={() => onSelect(row)}
                     className="flex w-full flex-col text-left"
                   >
-                    <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <span className="mb-1.5 flex flex-wrap items-center gap-1.5 text-ui-micro text-muted-foreground">
                       <span className="font-[650] uppercase tracking-[0.06em] text-[color:var(--warning)]">
                         {t(`agents.approvals.eyebrow.${effective}`)}
                       </span>
@@ -465,15 +465,15 @@ export function AttentionApprovalList({
                       <span>{timeLabel}</span>
                       <ApprovalRiskBadge risk={row.risk} />
                     </span>
-                    <span className="mb-[3px] block text-[13px] leading-[1.35] font-[650] text-foreground">
+                    <span className="mb-[3px] block text-ui-heading leading-[1.35] font-[650] text-foreground">
                       {title}
                     </span>
-                    <span className="block text-[11.5px] leading-[1.5] text-muted-foreground">
+                    <span className="block text-ui-body leading-[1.5] text-muted-foreground">
                       <b className="font-semibold text-foreground">
                         {row.agentName ?? shortTokenId(row.requestedByTokenId)}
                       </b>{" "}
                       {t("agents.approvals.asksPrefix")}{" "}
-                      <code className="font-mono text-[11.5px]">
+                      <code className="font-mono text-ui-meta">
                         {row.actionType}
                       </code>
                       {destructiveCard ? (
@@ -511,7 +511,7 @@ export function AttentionApprovalList({
                       size="sm"
                       onClick={() => onSelect(row)}
                       data-testid={`agents-approval-review-${row.id}`}
-                      className="h-7 min-h-0 gap-1.5 rounded-[6px] !bg-[var(--agent-primary-strong)] px-[9px] text-[11px] leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11"
+                      className="h-7 min-h-0 gap-1.5 rounded-[6px] !bg-[var(--agent-primary-strong)] px-[9px] text-ui-label leading-none font-[650] shadow-[inset_0_1px_0_rgb(255_255_255/0.16)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] max-md:min-h-11"
                     >
                       {t("agents.approvals.reviewPlan")}
                     </Button>
@@ -521,12 +521,12 @@ export function AttentionApprovalList({
                         variant="outline"
                         onClick={() => onReject(row)}
                         data-testid={`agents-approval-reject-${row.id}`}
-                        className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:min-h-11"
+                        className="h-7 min-h-0 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-ui-label leading-none font-[650] max-md:min-h-11"
                       >
                         {t("agents.approvals.reject")}
                       </Button>
                     ) : null}
-                    <code className="ml-auto hidden truncate font-mono text-[11px] text-muted-foreground md:block">
+                    <code className="ml-auto hidden truncate font-mono text-ui-micro text-muted-foreground md:block">
                       {t("agents.approvals.hash", {
                         hash: row.planHash.slice(0, 10),
                       })}
@@ -547,7 +547,7 @@ export function AttentionApprovalList({
             data-testid="agents-approvals-load-more"
             disabled={loadingMore}
             onClick={onLoadMore}
-            className="min-h-11 rounded-[6px] px-3 text-[11px] font-semibold md:min-h-7"
+            className="min-h-11 rounded-[6px] px-3 text-ui-label font-semibold md:min-h-7"
           >
             {loadingMore ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -889,7 +889,7 @@ function ApprovalDetail({
           />
         ) : (
           <div className="flex w-full items-center gap-2">
-            <p className="flex flex-1 items-start gap-1.5 text-[11px] leading-[1.45] text-muted-foreground">
+            <p className="flex flex-1 items-start gap-1.5 text-ui-label leading-[1.45] text-muted-foreground">
               <span className="mt-px shrink-0">{hint.icon}</span>
               <span>{hint.text}</span>
             </p>
@@ -902,7 +902,7 @@ function ApprovalDetail({
                 variant="ghost"
                 data-testid="approval-next-pending"
                 onClick={onNextPending}
-                className="h-7 min-h-0 shrink-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="h-7 min-h-0 shrink-0 rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
                 {t("agents.approvals.nextPending")}
               </Button>
@@ -916,8 +916,8 @@ function ApprovalDetail({
                   className={cn(
                     "min-h-0 rounded-[6px] leading-none font-[650] max-md:min-h-11",
                     variant === "board"
-                      ? "h-7 px-[9px] text-[11px]"
-                      : "h-8 px-[11px] text-[11.5px]",
+                      ? "h-7 px-[9px] text-ui-label"
+                      : "h-8 px-[11px] text-ui-label",
                   )}
                   onClick={onBack}
                 >
@@ -962,7 +962,7 @@ function ApprovalDetail({
           ) : null}
           <div className="min-w-0 flex-1">
             {variant === "global" ? (
-              <p className="mb-[3px] text-[11px] font-[650] uppercase tracking-[0.04em] text-muted-foreground">
+              <p className="mb-[3px] text-ui-micro font-[650] uppercase tracking-[0.04em] text-muted-foreground">
                 {t("agents.approvals.selected")}
               </p>
             ) : null}
@@ -970,8 +970,8 @@ function ApprovalDetail({
               className={cn(
                 "break-words tracking-[-0.01em]",
                 variant === "board"
-                  ? "font-agent-display text-[15px] font-[700] leading-[1.3]"
-                  : "text-[13px] font-[650] leading-[1.35]",
+                  ? "font-agent-display text-ui-heading font-[700] leading-[1.3]"
+                  : "text-ui-heading font-[650] leading-[1.35]",
               )}
             >
               {detail === null
@@ -987,7 +987,7 @@ function ApprovalDetail({
                   />
                 ) : null}
                 <ApprovalRiskBadge risk={detail.risk} />
-                <span className="inline-flex h-[21px] items-center rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[7px] text-[11px] font-semibold leading-none text-muted-foreground">
+                <span className="inline-flex h-[21px] items-center rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[7px] text-ui-micro font-semibold leading-none text-muted-foreground">
                   {boardLabel}
                 </span>
               </div>
@@ -1032,7 +1032,7 @@ function ApprovalDetail({
           <div>
             <div
               className={cn(
-                "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
+                "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-ui-body leading-[1.45]",
                 toneClasses[hint.tone],
               )}
               role="status"
@@ -1044,10 +1044,10 @@ function ApprovalDetail({
               <span>{hint.text}</span>
             </div>
 
-            <p className="text-[11.5px] leading-[1.55] text-foreground">
+            <p className="text-ui-body leading-[1.55] text-foreground">
               <b className="font-semibold">{agentName}</b>{" "}
               {t("agents.approvals.asksPrefix")}{" "}
-              <code className="font-mono text-[11.5px]">
+              <code className="font-mono text-ui-meta">
                 {detail.actionType}
               </code>{" "}
               {t("agents.approvals.asksOn")}{" "}
@@ -1066,7 +1066,7 @@ function ApprovalDetail({
                 <RequestMeta label={t("agents.approvals.agent")}>
                   {session?.name === undefined &&
                   agentName === shortTokenId(detail.requestedByTokenId) ? (
-                    <span className="font-mono text-[11px]">{agentName}</span>
+                    <span className="font-mono text-ui-meta">{agentName}</span>
                   ) : (
                     agentName
                   )}
@@ -1077,7 +1077,7 @@ function ApprovalDetail({
                   ) : session?.name !== undefined ? (
                     session.name
                   ) : (
-                    <span className="font-mono text-[11px]">
+                    <span className="font-mono text-ui-meta">
                       {detail.agentSessionId}
                     </span>
                   )}
@@ -1120,7 +1120,7 @@ function ApprovalDetail({
                 </Chip>
               }
             >
-              <p className="mb-1.5 text-[11.5px] leading-[1.5] text-foreground">
+              <p className="mb-1.5 text-ui-body leading-[1.5] text-foreground">
                 {detail.summary}
               </p>
               <div
@@ -1133,11 +1133,11 @@ function ApprovalDetail({
                     className="rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--background)_28%,transparent)] px-2 py-[7px]"
                     data-testid="approval-plan-command"
                   >
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-[11px] font-[600] text-foreground">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-meta text-muted-foreground">
+                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-ui-micro font-[600] text-foreground">
                         {String(command.action.type)}
                       </span>
-                      <span className="min-w-0 truncate text-[11px] text-foreground">
+                      <span className="min-w-0 truncate text-ui-label text-foreground">
                         {planCommandTarget(command.action, board)}
                       </span>
                       {command.action.type === "MOVE_CARD" && board !== null
@@ -1167,20 +1167,20 @@ function ApprovalDetail({
                     className="rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--background)_28%,transparent)] px-2 py-[7px]"
                     data-testid="approval-plan-operation"
                   >
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-[11px] font-[600] text-foreground">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-meta text-muted-foreground">
+                      <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[6px] text-ui-micro font-[600] text-foreground">
                         {operation.op}
                       </span>
                     </div>
                   </div>
                 ))}
                 {commandCount === 0 ? (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-ui-meta text-muted-foreground">
                     {t("agentControl.approvals.noPlan")}
                   </p>
                 ) : null}
               </div>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
+              <p className="mt-1.5 text-ui-meta text-muted-foreground">
                 {t("agents.approvals.planHint")}
               </p>
             </DetailSection>
@@ -1194,7 +1194,7 @@ function ApprovalDetail({
                 <code
                   data-testid="approval-plan-hash"
                   title={detail.planHash}
-                  className="min-w-0 flex-1 overflow-hidden font-mono text-[11px] whitespace-nowrap text-ellipsis text-muted-foreground"
+                  className="min-w-0 flex-1 overflow-hidden font-mono text-ui-micro whitespace-nowrap text-ellipsis text-muted-foreground"
                 >
                   {detail.planHash.slice(0, 44)}…
                 </code>
@@ -1215,7 +1215,7 @@ function ApprovalDetail({
                   )}
                 </button>
               </div>
-              <p className="mt-1.5 text-[11px] leading-[1.5] text-muted-foreground">
+              <p className="mt-1.5 text-ui-meta leading-[1.5] text-muted-foreground">
                 {t("agents.approvals.hashHint")}
               </p>
             </DetailSection>
@@ -1307,14 +1307,14 @@ function ApprovalDetail({
               className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
               data-testid="agents-approval-technical"
             >
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-ui-label font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
                 <ChevronRight
                   className="h-[11px] w-[11px] transition-transform group-open:rotate-90"
                   aria-hidden
                 />
                 {t("agents.approvals.technicalDetails")}
               </summary>
-              <pre className="m-0 border-t border-border p-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
+              <pre className="m-0 border-t border-border p-2 font-mono text-ui-meta leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
                 {detail.plan === undefined
                   ? t("agentControl.approvals.noPlan")
                   : JSON.stringify(detail.plan ?? null, null, 2)}
@@ -1348,7 +1348,7 @@ function ApprovalDetail({
           cancelTestId="approval-cancel-cancel"
           confirmClassName="min-w-[107px]"
         >
-          <p className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-foreground">
+          <p className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-ui-body leading-[1.5] text-foreground">
             {detail === null ? null : `${detail.summary} · ${agentName}`}
           </p>
         </AgentConfirmDialog>
@@ -1366,10 +1366,10 @@ function RequestMeta({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_78%,transparent)] uppercase">
+      <span className="mb-0.5 block text-ui-micro tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_78%,transparent)] uppercase">
         {label}
       </span>
-      <span className="block text-[11px] leading-[1.4] font-medium break-words text-foreground">
+      <span className="block text-ui-label leading-[1.4] font-medium break-words text-foreground">
         {children}
       </span>
     </div>
@@ -1378,7 +1378,7 @@ function RequestMeta({
 
 function Chip({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex h-[21px] items-center rounded border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[11px] font-semibold whitespace-nowrap text-muted-foreground">
+    <span className="inline-flex h-[21px] items-center rounded border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-ui-micro font-semibold whitespace-nowrap text-muted-foreground">
       {children}
     </span>
   );
@@ -1401,7 +1401,7 @@ function HistoryItem({
     muted: "bg-muted-foreground",
   } as const;
   return (
-    <div className="flex items-start gap-[7px] text-[11px] leading-[1.4]">
+    <div className="flex items-start gap-[7px] text-ui-label leading-[1.4]">
       <span
         className={cn(
           "mt-1 h-1.5 w-1.5 shrink-0 rounded-full",

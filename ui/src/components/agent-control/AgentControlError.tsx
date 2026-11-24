@@ -34,10 +34,10 @@ export function AgentControlError({
         aria-hidden
       />
       <div className="min-w-0">
-        <h3 className="m-0 mb-0.5 text-[12px] font-[650] leading-[1.3]">
+        <h3 className="m-0 mb-0.5 text-ui-heading font-[650] leading-[1.3]">
           {title}
         </h3>
-        <p className="m-0 mb-2 text-[11px] leading-[1.5] text-muted-foreground">
+        <p className="m-0 mb-2 text-ui-body leading-[1.5] text-muted-foreground">
           {body}
         </p>
         <Button
@@ -46,7 +46,7 @@ export function AgentControlError({
           variant="outline"
           onClick={onRetry}
           data-testid={retryTestId}
-          className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:h-11 max-md:min-h-11"
+          className="h-7 min-h-0 rounded-[6px] px-[9px] text-ui-label font-[650] leading-none max-md:h-11 max-md:min-h-11"
         >
           <RefreshCw className="h-3.5 w-3.5" aria-hidden />
           {t("agentControl.retry")}

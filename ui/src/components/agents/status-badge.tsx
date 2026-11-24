@@ -51,7 +51,7 @@ export function StatusBadge({
       data-testid={testId}
       data-status={status}
       className={cn(
-        "inline-flex h-[22px] shrink-0 items-center justify-center gap-[5px] rounded-[5px] border px-[7px] text-[11px] leading-none font-[650] whitespace-nowrap",
+        "inline-flex h-[22px] shrink-0 items-center justify-center gap-[5px] rounded-[5px] border px-[7px] text-ui-micro leading-none font-[650] whitespace-nowrap",
         TONE_CLASS[tone],
         className,
       )}

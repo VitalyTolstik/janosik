@@ -86,7 +86,7 @@ export function AgentDetailPage() {
           data-testid="agent-detail-error"
           role="alert"
         >
-          <p className="text-sm font-medium text-[color:var(--agent-tone-danger)]">
+          <p className="text-ui-body font-medium text-[color:var(--agent-tone-danger)]">
             {t("agents.error.title")}
           </p>
           <Button
@@ -114,10 +114,10 @@ export function AgentDetailPage() {
             <Bot className="h-5 w-5" aria-hidden />
           </span>
           <div>
-            <p className="text-sm font-semibold text-foreground">
+            <p className="text-ui-body font-semibold text-foreground">
               {t("agents.notFound.title")}
             </p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            <p className="mt-1 text-ui-body leading-5 text-muted-foreground">
               {t("agents.notFound.body")}
             </p>
           </div>
@@ -168,12 +168,12 @@ export function AgentDetailPage() {
           </span>
           <div className="min-w-0">
             <h1
-              className="truncate text-[18px] font-semibold tracking-[-0.025em] text-foreground"
+              className="truncate text-ui-title font-semibold tracking-[-0.025em] text-foreground"
               data-testid="agent-detail-name"
             >
               {group.name}
             </h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-ui-meta text-muted-foreground">
               <AgentAttribution apiTokenId={group.tokenId} compact />
               <span>
                 {t("agents.owner")}:{" "}
@@ -193,12 +193,12 @@ export function AgentDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {group.liveCount > 0 ? (
-            <span className="rounded-md border border-success/30 bg-success/10 px-2 py-1 text-[11px] font-medium text-[color:var(--agent-tone-success)]">
+            <span className="rounded-md border border-success/30 bg-success/10 px-2 py-1 text-ui-micro font-medium text-[color:var(--agent-tone-success)]">
               {t("agents.liveCount", { count: group.liveCount })}
             </span>
           ) : null}
           {group.waitingCount > 0 ? (
-            <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-[color:var(--agent-tone-warning)]">
+            <span className="rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-ui-micro font-medium text-[color:var(--agent-tone-warning)]">
               {t("agents.waitingCount", { count: group.waitingCount })}
             </span>
           ) : null}
@@ -234,7 +234,7 @@ export function AgentDetailPage() {
       {state.error ? (
         <div
           role="alert"
-          className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
+          className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-ui-body text-[color:var(--agent-tone-warning)]"
         >
           <span>{t("agents.error.stale")}</span>
           <Button
@@ -250,14 +250,14 @@ export function AgentDetailPage() {
 
       {state.isAgentToken ? (
         <p
-          className="mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
+          className="mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-ui-body text-[color:var(--agent-tone-warning)]"
           data-testid="agent-token-notice"
         >
           {t("agents.agentOnly")}
         </p>
       ) : readOnly ? (
         <p
-          className="mb-3 rounded-lg border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground"
+          className="mb-3 rounded-lg border border-border bg-card/60 px-3 py-2 text-ui-body text-muted-foreground"
           data-testid="agent-read-only-notice"
         >
           {t("agents.readOnly")}
@@ -328,7 +328,7 @@ function SessionCard({
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to={routes.board(row.boardId)}
-              className="truncate text-sm font-semibold text-foreground hover:underline"
+              className="truncate text-ui-body font-semibold text-foreground hover:underline"
             >
               {row.boardTitle}
             </Link>
@@ -343,7 +343,7 @@ function SessionCard({
               />
             ) : null}
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          <p className="mt-0.5 truncate text-ui-meta text-muted-foreground">
             {[row.name, row.clientName, row.model]
               .filter((value): value is string => Boolean(value))
               .join(" · ") || row.id}
@@ -405,7 +405,7 @@ function SessionCard({
         </div>
       </div>
 
-      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-ui-label sm:grid-cols-4">
         <Field label={t("agents.heartbeat")}>
           <span className="flex flex-wrap items-center gap-1.5">
             <AgentLastSeen at={row.lastHeartbeatAt} />
@@ -452,7 +452,7 @@ function SessionCard({
       </dl>
 
       {row.summary ? (
-        <p className="mt-3 rounded-lg border border-border/70 bg-background/40 px-2.5 py-2 text-xs leading-5 text-foreground/80">
+        <p className="mt-3 rounded-lg border border-border/70 bg-background/40 px-2.5 py-2 text-ui-label leading-5 text-foreground/80">
           {row.summary}
         </p>
       ) : null}
@@ -478,7 +478,7 @@ function Field({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] uppercase tracking-widest text-muted-foreground">
+      <dt className="text-ui-micro uppercase tracking-widest text-muted-foreground">
         {label}
       </dt>
       <dd className="mt-0.5 min-w-0 truncate text-foreground/85">{children}</dd>
@@ -503,15 +503,15 @@ function Stat({
         data-testid={testId}
         className={
           tone === "success"
-            ? "text-[18px] font-semibold tabular-nums text-[color:var(--agent-tone-success)]"
+            ? "text-ui-title font-semibold tabular-nums text-[color:var(--agent-tone-success)]"
             : tone === "warning"
-              ? "text-[18px] font-semibold tabular-nums text-[color:var(--agent-tone-warning)]"
-              : "text-[18px] font-semibold tabular-nums text-foreground"
+              ? "text-ui-title font-semibold tabular-nums text-[color:var(--agent-tone-warning)]"
+              : "text-ui-title font-semibold tabular-nums text-foreground"
         }
       >
         {value}
       </div>
-      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
+      <div className="text-ui-micro uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
     </div>

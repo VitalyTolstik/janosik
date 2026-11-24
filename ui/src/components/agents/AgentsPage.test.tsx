@@ -567,13 +567,13 @@ describe("AgentsPage", () => {
       "h-7",
     );
     expect(screen.getByTestId("agents-runs-empty-clear").className).toContain(
-      "text-[11px]",
+      "text-ui-label",
     );
     const rollback = screen.getByRole("link", {
       name: "How rollback works",
     });
     expect(rollback.className).toContain("text-muted-foreground");
-    expect(rollback.className).toContain("text-[11px]");
+    expect(rollback.className).toContain("text-ui-label");
     expect(rollback.getAttribute("href")).toMatch(
       /\/docs\/user-guide\/agents\/#rollback-and-run-recovery$/,
     );
@@ -838,7 +838,7 @@ describe("AgentsPage", () => {
     ).toBeNull();
     const footerOpen = screen.getByTestId("agent-run-footer-open-board");
     expect(footerOpen.className).toContain("h-8");
-    expect(footerOpen.className).toContain("text-[11.5px]");
+    expect(footerOpen.className).toContain("text-ui-label");
     expect(footerOpen).toHaveAttribute("href", "/board/board-1?agents=runs");
     const footerCopy = screen.getByTestId("agent-run-footer-copy-link");
     expect(footerCopy.className).toContain("h-8");

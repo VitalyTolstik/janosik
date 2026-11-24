@@ -48,11 +48,11 @@ describe("agent design system (TASK-179.9)", () => {
     }
   });
 
-  it("keeps the mockup's 10 px minimum in every agent surface", () => {
-    // The current prototype uses 10/10.5 px for dense metadata (Live row
-    // actions, reject label, Load more); nothing may fall below that floor.
+  it("keeps the 11 px micro floor in every agent surface", () => {
+    // TASK-200 raised readable text to 14 px. 11 px remains only for
+    // uppercase micro-labels and dense badges; nothing may fall below it.
     for (const [name, source] of Object.entries(SURFACES)) {
-      expect(source, name).not.toMatch(/text-\[(8|9)(?:\.5)?px\]/);
+      expect(source, name).not.toMatch(/text-\[(8|9|10)(?:\.5)?px\]/);
     }
   });
 
@@ -64,11 +64,11 @@ describe("agent design system (TASK-179.9)", () => {
     // Agent control mirrors the prototype's own heading styles instead of
     // the generic DialogTitle defaults: 16/700 display face, 1.25 leading.
     expect(agentControlDialog).toContain('import "./agent-control.css"');
-    expect(agentControlCss).toContain("font-size: 16px");
+    expect(agentControlCss).toContain("font-size: 17px");
     expect(agentControlCss).toContain("font-weight: 700");
     expect(agentControlCss).toContain("line-height: 1.25");
     expect(agentControlCss).toContain(".ac-description");
-    expect(agentControlCss).toContain("font-size: 11px");
+    expect(agentControlCss).toContain("font-size: 13px");
     expect(agentControlCss).toContain("line-height: 1.45");
     expect(agentControlCss).toContain(
       'html[lang="ru"] .agent-control-surface .ac-title',
@@ -191,18 +191,18 @@ describe("agent design system (TASK-179.9)", () => {
     // controls are touch targets on a tablet, so the 44 px floor is kept at
     // every width instead of only below 768.
     expect(attention).toContain(
-      '"inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] transition-colors"',
+      '"inline-flex max-xl:min-h-11 items-center gap-1 text-ui-label transition-colors"',
     );
     expect(attention).not.toContain("md:min-h-0");
     expect(agentsPage).toContain(
-      'className="ml-auto inline-flex max-xl:min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"',
+      'className="ml-auto inline-flex max-xl:min-h-11 items-center gap-[3px] text-ui-label text-muted-foreground hover:text-foreground"',
     );
     expect(agentsPage).not.toContain("min-[761px]:min-h-0");
     expect(agentsAutomation).toContain(
       "inline-flex max-xl:min-h-11 shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap",
     );
     expect(agentsAutomation).toContain(
-      'className="ml-auto inline-flex max-xl:min-h-11 items-center gap-1 text-[11px] leading-[1.45] text-muted-foreground',
+      'className="ml-auto inline-flex max-xl:min-h-11 items-center gap-1 text-ui-label leading-[1.45] text-muted-foreground',
     );
     // Session Pause/Resume/End and the token-settings trigger keep the
     // 44 px floor up to 1279 px too; only the 1280 px desktop row shrinks.

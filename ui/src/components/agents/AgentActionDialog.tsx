@@ -181,10 +181,10 @@ export function AgentActionDialog({
             <Icon className="h-[15px] w-[15px]" />
           </span>
           <div className="min-w-0">
-            <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
+            <DialogTitle className="text-ui-heading font-[650] leading-[1.3] tracking-normal">
               {title}
             </DialogTitle>
-            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+            <DialogDescription className="mt-[3px] text-ui-body leading-[1.5] text-muted-foreground">
               {body}
             </DialogDescription>
           </div>
@@ -194,7 +194,7 @@ export function AgentActionDialog({
           {action === "end" ? (
             <p
               data-testid="agent-end-target"
-              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7.25px] text-[11px] leading-[1.5] text-foreground"
+              className="mt-[10px] rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7.25px] text-ui-body leading-[1.5] text-foreground"
             >
               {agentLabel}
               {row.name !== null && row.name !== agentLabel
@@ -207,10 +207,10 @@ export function AgentActionDialog({
           ) : (
             // The field keeps the prototype's line box around the inline-block
             // textarea; that baseline gap is part of the 244 px dialog height.
-            <div className="mt-[10px] mb-[2px] text-[11.5px] leading-[1.55]">
+            <div className="mt-[10px] mb-[2px] text-ui-label leading-[1.55]">
               <label
                 htmlFor="agent-action-reason"
-                className="block text-[10px] leading-[15.5px] font-semibold text-muted-foreground"
+                className="block text-ui-micro leading-[15.5px] font-semibold text-muted-foreground"
               >
                 {t("agents.action.reason")}
               </label>
@@ -222,7 +222,7 @@ export function AgentActionDialog({
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={reasonPlaceholder}
                 data-testid="agent-action-reason"
-                className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+                className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-ui-body leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
                 autoFocus
               />
             </div>
@@ -235,7 +235,7 @@ export function AgentActionDialog({
             disabled={busy}
             onClick={onClose}
             data-testid="agent-action-cancel"
-            className="!gap-[6px] h-7 min-w-[61px] !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] text-muted-foreground max-xl:min-h-11"
+            className="!gap-[6px] h-7 min-w-[61px] !py-0 rounded-[6px] px-[9px] !leading-none text-ui-label font-[650] text-muted-foreground max-xl:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -245,7 +245,7 @@ export function AgentActionDialog({
             onClick={() => void submit()}
             data-testid="agent-action-confirm"
             className={cn(
-              "!gap-[6px] h-7 !py-0 rounded-[6px] px-[9px] !leading-none text-[11px] font-[650] max-xl:min-h-11",
+              "!gap-[6px] h-7 !py-0 rounded-[6px] px-[9px] !leading-none text-ui-label font-[650] max-xl:min-h-11",
               action === "end" ? "min-w-[93px]" : "min-w-[107px]",
               action === "end"
                 ? "!bg-[var(--agent-danger-strong)] shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:!bg-[color-mix(in_oklab,var(--agent-danger-strong)_88%,#000)]"

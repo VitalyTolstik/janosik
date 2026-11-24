@@ -320,14 +320,14 @@ export function ApprovalsPanel({
             : "hover:bg-hover/48",
         )}
       >
-        <span className="line-clamp-2 block text-[11.5px] leading-[1.35] font-[650] text-foreground">
+        <span className="line-clamp-2 block text-ui-body leading-[1.35] font-[650] text-foreground">
           {row.summary}
         </span>
-        <span className="mt-0.5 block truncate text-[11px] leading-[1.4] text-muted-foreground">
+        <span className="mt-0.5 block truncate text-ui-meta leading-[1.4] text-muted-foreground">
           {agent}
           {card ? ` · ${card.title}` : ""}
         </span>
-        <span className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="mt-1 flex flex-wrap items-center gap-1 text-ui-meta text-muted-foreground">
           <ApprovalStatusBadge
             status={effective}
             testId="approval-row-status"
@@ -433,7 +433,7 @@ export function ApprovalsPanel({
           {partialError ? (
             <div
               role="alert"
-              className="flex flex-col items-center gap-2 p-6 text-center text-xs text-muted-foreground"
+              className="flex flex-col items-center gap-2 p-6 text-center text-ui-body text-muted-foreground"
             >
               <p>{t("agentControl.approvals.loadError")}</p>
               <Button
@@ -490,7 +490,7 @@ export function ApprovalsPanel({
             <div data-testid="approval-queue" className="pb-1">
               {pendingRows.length > 0 ? (
                 <div>
-                  <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-[11px] tracking-[0.06em] uppercase text-muted-foreground">
+                  <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-ui-micro tracking-[0.06em] uppercase text-muted-foreground">
                     <span>{t("agentControl.approvals.listHeadNeeds")}</span>
                     <span className="ml-auto tabular-nums">
                       {counts.needs ?? "—"}
@@ -501,7 +501,7 @@ export function ApprovalsPanel({
               ) : null}
               {decidedRows.length > 0 && filter !== "needs" ? (
                 <div>
-                  <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-[11px] tracking-[0.06em] uppercase text-muted-foreground">
+                  <div className="flex items-center gap-1 px-2.5 pt-[7px] pb-1 text-ui-micro tracking-[0.06em] uppercase text-muted-foreground">
                     <span>{t("agentControl.approvals.listHeadDecided")}</span>
                     <span className="ml-auto tabular-nums">
                       {counts.decided ?? "—"}
