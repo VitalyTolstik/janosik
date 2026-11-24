@@ -5339,10 +5339,24 @@ components:
           pattern: "^\\d{4}-\\d{2}-\\d{2}$"
           description: |
             The client's local creation date (`YYYY-MM-DD`). Due offsets are
-            counted from this date at 12:00 UTC, so the browser preview and
-            server-created cards agree across processes and timezones. When
-            omitted, the server uses its current UTC date. Requires a template.
+            counted from this date at 12:00 local time in
+            `templateUtcOffsetMinutes` (12:00 UTC when omitted), so the browser
+            preview and server-created cards agree across processes and
+            timezones. When omitted, the server uses its current UTC date.
+            Requires a template.
           example: "2026-11-24"
+        templateUtcOffsetMinutes:
+          type: integer
+          minimum: -840
+          maximum: 840
+          default: 0
+          description: |
+            The client's UTC offset at creation (for example `120` for UTC+2,
+            `-480` for UTC−8). Due dates are anchored to 12:00 local time in
+            this offset, so a creator in UTC+12…+14 sees the intended local
+            calendar date. Omit to keep the legacy 12:00 UTC anchor. Requires a
+            template.
+          example: 120
     BoardEnvelope:
       type: object
       required: [app, schemaVersion, exportedAt, boards]

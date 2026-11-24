@@ -23,6 +23,7 @@ export function boardTemplateCommands(
   locale: BoardStarterLocale,
   now = Date.now(),
   templateDate?: string,
+  templateUtcOffsetMinutes = 0,
 ): CreateCommandDto[] {
   const plan = boardTemplatePlan(
     templateId,
@@ -30,6 +31,7 @@ export function boardTemplateCommands(
     randomUUID,
     now,
     templateDate,
+    templateUtcOffsetMinutes,
   );
   const command = (action: Record<string, unknown>): CreateCommandDto => ({
     commandId: randomUUID(),

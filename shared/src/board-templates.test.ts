@@ -11,6 +11,7 @@ import {
   templateDateString,
   templateDueDate,
   isValidTemplateDate,
+  isValidTemplateUtcOffsetMinutes,
   isBoardCreateTemplate,
   isBoardTemplateId,
 } from "./index";
@@ -157,6 +158,21 @@ describe("board templates catalog", () => {
     expect(templateDueDate("2026-11-24", 2)).toBe(
       Date.UTC(2026, 10, 26, 12, 0, 0, 0),
     );
+    // UTC+14 local noon on Nov 26 is Nov 25 22:00 UTC.
+    expect(templateDueDate("2026-11-24", 2, 840)).toBe(
+      Date.UTC(2026, 10, 25, 22, 0, 0, 0),
+    );
+    // UTC−8 local noon on Nov 26 is Nov 26 20:00 UTC.
+    expect(templateDueDate("2026-11-24", 2, -480)).toBe(
+      Date.UTC(2026, 10, 26, 20, 0, 0, 0),
+    );
+    expect(isValidTemplateUtcOffsetMinutes(840)).toBe(true);
+    expect(isValidTemplateUtcOffsetMinutes(-720)).toBe(true);
+    expect(isValidTemplateUtcOffsetMinutes(841)).toBe(false);
+    expect(isValidTemplateUtcOffsetMinutes(1.5)).toBe(false);
+    expect(() => templateDueDate("2026-11-24", 2, 841)).toThrow(
+      /Invalid template UTC offset/,
+    );
 
     const dueDates = () =>
       boardTemplatePlan(
@@ -165,8 +181,10 @@ describe("board templates catalog", () => {
         ids(),
         FIXED_NOW,
         "2026-11-24",
+        840,
       ).cards.map((card) => card.dueDate);
     const baseline = dueDates();
+    expect(baseline).toContain(Date.UTC(2026, 10, 25, 22, 0, 0, 0));
     const previousTz = process.env.TZ;
     try {
       process.env.TZ = "Pacific/Kiritimati";

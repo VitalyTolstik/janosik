@@ -60,20 +60,34 @@ export function isValidTemplateDate(value: string): boolean {
   );
 }
 
+/** UTC offsets are bounded by the real-world maximum (UTC+14 … UTC−12). */
+export function isValidTemplateUtcOffsetMinutes(value: number): boolean {
+  return Number.isInteger(value) && value >= -840 && value <= 840;
+}
+
 /**
- * Days are counted from an explicit calendar date at 12:00 UTC, so the
- * preview (browser) and creation (API) cannot disagree because the two
- * processes run in different local timezones or on different sides of DST.
+ * Days are counted from the creator's local calendar date at 12:00 in the
+ * supplied UTC offset, so the preview (browser) and creation (API) cannot
+ * disagree because the two processes run in different timezones or on
+ * different sides of DST. The default offset `0` keeps old clients on the
+ * original 12:00 UTC anchor.
  */
 export function templateDueDate(
   templateDate: string,
   dueInDays: number,
+  utcOffsetMinutes = 0,
 ): number {
   if (!isValidTemplateDate(templateDate)) {
     throw new Error(`Invalid template date: ${templateDate}`);
   }
+  if (!isValidTemplateUtcOffsetMinutes(utcOffsetMinutes)) {
+    throw new Error(`Invalid template UTC offset: ${utcOffsetMinutes}`);
+  }
   const [year, month, day] = templateDate.split("-").map(Number);
-  return Date.UTC(year, month - 1, day + dueInDays, 12, 0, 0, 0);
+  return (
+    Date.UTC(year, month - 1, day + dueInDays, 12, 0, 0, 0) -
+    utcOffsetMinutes * 60_000
+  );
 }
 
 /**
@@ -90,6 +104,7 @@ export function boardTemplatePlan(
   newId: () => string,
   now = Date.now(),
   templateDate = templateDateString(new Date(now), true),
+  templateUtcOffsetMinutes = 0,
 ): BoardTemplatePlan {
   const template = boardTemplateById(templateId);
   if (!template) {
@@ -98,7 +113,16 @@ export function boardTemplatePlan(
   if (!isValidTemplateDate(templateDate)) {
     throw new Error(`Invalid template date: ${templateDate}`);
   }
-  return buildPlan(template, locale, newId, templateDate);
+  if (!isValidTemplateUtcOffsetMinutes(templateUtcOffsetMinutes)) {
+    throw new Error(`Invalid template UTC offset: ${templateUtcOffsetMinutes}`);
+  }
+  return buildPlan(
+    template,
+    locale,
+    newId,
+    templateDate,
+    templateUtcOffsetMinutes,
+  );
 }
 
 function buildPlan(
@@ -106,6 +130,7 @@ function buildPlan(
   locale: BoardStarterLocale,
   newId: () => string,
   templateDate: string,
+  templateUtcOffsetMinutes: number,
 ): BoardTemplatePlan {
   const copy = template.copy[locale] ?? template.copy.en;
   const labelEntries = Object.entries(copy.labels);
@@ -141,7 +166,13 @@ function buildPlan(
           .filter((value): value is string => value !== undefined),
         ...(card.desc ? { description: card.desc } : {}),
         ...(typeof card.dueInDays === "number"
-          ? { dueDate: templateDueDate(templateDate, card.dueInDays) }
+          ? {
+              dueDate: templateDueDate(
+                templateDate,
+                card.dueInDays,
+                templateUtcOffsetMinutes,
+              ),
+            }
           : {}),
         checklists: card.checklist
           ? [

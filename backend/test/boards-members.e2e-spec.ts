@@ -280,6 +280,27 @@ describe("Boards API (e2e)", () => {
       ).toBe(true);
     });
 
+    it("anchors due dates to the creator's UTC offset", async () => {
+      const res = await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Launch plan — Kiritimati",
+          template: "product-launch",
+          templateLocale: "en",
+          templateDate: "2026-11-24",
+          templateUtcOffsetMinutes: 840,
+        })
+        .expect(201);
+      const board = res.body as Board;
+      const brief = Object.values(board.cards).find(
+        (card) => card.title === "Write the launch brief",
+      );
+      // Local noon on Nov 26 in UTC+14 is Nov 25 22:00 UTC, so a browser in
+      // that offset still renders the intended Nov 26.
+      expect(brief?.dueDate).toBe(Date.UTC(2026, 10, 25, 22, 0, 0, 0));
+    });
+
     it("accepts templateLocale for every curated template", async () => {
       const res = await server()
         .post("/api/v1/boards")
@@ -384,6 +405,23 @@ describe("Boards API (e2e)", () => {
         .post("/api/v1/boards")
         .set(auth(adminToken))
         .send({ title: "Date without template", templateDate: "2026-11-24" })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Bad offset",
+          template: "sprint",
+          templateUtcOffsetMinutes: 900,
+        })
+        .expect(400);
+      await server()
+        .post("/api/v1/boards")
+        .set(auth(adminToken))
+        .send({
+          title: "Offset without template",
+          templateUtcOffsetMinutes: 120,
+        })
         .expect(400);
     });
 

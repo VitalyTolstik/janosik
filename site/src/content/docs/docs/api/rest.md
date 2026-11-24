@@ -72,8 +72,9 @@ curated examples add their columns, labels, cards, descriptions, due dates and
 checklists as one command batch, while `starter` keeps the three-column welcome
 board. `templateLocale` (`en`/`ru`) picks the copy for any template and requires
 a template. `templateDate` (`YYYY-MM-DD`) anchors due offsets to the caller's
-local creation date at 12:00 UTC; when omitted, the server uses its current UTC
-date. It also requires a template.
+local creation date at 12:00 local time in the optional
+`templateUtcOffsetMinutes` (default `0`, so 12:00 UTC); when omitted, the server
+uses its current UTC date. Both fields also require a template.
 
 A `503` from this route has one of two shapes. When the board was created but
 the starter batch failed and the fresh board could not be removed, the answer is

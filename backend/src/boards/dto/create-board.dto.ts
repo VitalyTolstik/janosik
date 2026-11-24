@@ -1,10 +1,13 @@
 import {
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
 } from "class-validator";
 import {
   BOARD_STARTER_LOCALES,
@@ -43,4 +46,15 @@ export class CreateBoardDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   templateDate?: string;
+
+  /**
+   * The client's UTC offset at creation (`-new Date().getTimezoneOffset()`).
+   * Due dates are anchored to 12:00 local time in this offset so a browser in
+   * UTC+12…+14 renders the intended local calendar date. Omitted is `0`.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(-840)
+  @Max(840)
+  templateUtcOffsetMinutes?: number;
 }

@@ -32,6 +32,8 @@ test("keeps CreateBoardRequest in sync with the first-run template catalog", asy
     schema.properties.templateDate.pattern,
     "^\\d{4}-\\d{2}-\\d{2}$",
   );
+  assert.equal(schema.properties.templateUtcOffsetMinutes.minimum, -840);
+  assert.equal(schema.properties.templateUtcOffsetMinutes.maximum, 840);
 });
 
 test("publishes the same error codes as the shared contract and describes token PATCH", async () => {

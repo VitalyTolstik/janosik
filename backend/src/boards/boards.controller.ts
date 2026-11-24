@@ -46,6 +46,7 @@ import {
   READY_WORK_LIMIT_MAX,
   READY_WORK_WAIT_MAX_MS,
   isValidTemplateDate,
+  isValidTemplateUtcOffsetMinutes,
 } from "@janosik/shared";
 import type { AuthUser } from "@/auth/auth.types";
 import type { AgentSessionContext, AuthPrincipal } from "@/auth/auth-principal";
@@ -249,6 +250,12 @@ export class BoardsController {
         field: "templateDate",
       });
     }
+    if (template === undefined && dto.templateUtcOffsetMinutes !== undefined) {
+      throw new BadRequestException({
+        message: "templateUtcOffsetMinutes requires a template",
+        field: "templateUtcOffsetMinutes",
+      });
+    }
     if (
       dto.templateDate !== undefined &&
       !isValidTemplateDate(dto.templateDate)
@@ -256,6 +263,15 @@ export class BoardsController {
       throw new BadRequestException({
         message: "templateDate must be a valid YYYY-MM-DD date",
         field: "templateDate",
+      });
+    }
+    if (
+      dto.templateUtcOffsetMinutes !== undefined &&
+      !isValidTemplateUtcOffsetMinutes(dto.templateUtcOffsetMinutes)
+    ) {
+      throw new BadRequestException({
+        message: "templateUtcOffsetMinutes must be between -840 and 840",
+        field: "templateUtcOffsetMinutes",
       });
     }
     const outcome = await this.idempotency.run({
@@ -270,6 +286,7 @@ export class BoardsController {
               template,
               locale: dto.templateLocale ?? "en",
               date: dto.templateDate ?? null,
+              utcOffsetMinutes: dto.templateUtcOffsetMinutes ?? null,
             }
           : {}),
       }),
@@ -293,6 +310,7 @@ export class BoardsController {
                 templateLocale,
                 Date.now(),
                 dto.templateDate,
+                dto.templateUtcOffsetMinutes ?? 0,
               );
         try {
           await this.commands.applyBatch(board.id, user.id, templateCommands, {
