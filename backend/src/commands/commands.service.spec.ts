@@ -575,7 +575,13 @@ describe("CommandsService.applyBatch duplicate ids", () => {
       const prisma = {
         command: { findMany },
       } as unknown as PrismaService;
-      return new CommandsService(prisma, {} as never, {} as never, {} as never);
+      return new CommandsService(
+        prisma,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
     })();
     await expect(
       service.applyBatch("board-1", "user-1", [

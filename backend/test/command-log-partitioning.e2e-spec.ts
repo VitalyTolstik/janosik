@@ -455,6 +455,7 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     await service.sweepCommands();
     expect(await prisma.commandKey.count({ where: { id } })).toBe(1);
@@ -483,6 +484,7 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
   it("builds the key board index concurrently and recovers an invalid leftover", async () => {
     const service = new MaintenanceService(
       prisma as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -549,6 +551,7 @@ describe("TASK-200.11 command log partitions (e2e)", () => {
       prisma as never,
       { remove: async () => undefined } as never,
       { retentionDays: async () => 30 } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

@@ -664,6 +664,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     expect(await service.sweepCommands()).toBe(1);
     const keyDelete = (prisma.$executeRaw as jest.Mock).mock.calls
@@ -693,6 +694,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const result = await service.ensureCommandKeyIndex();
     expect(result.removed).toBe(0);
@@ -712,6 +714,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     await service.ensureCommandKeyIndex();
     expect(prisma.$executeRawUnsafe).toHaveBeenNthCalledWith(
@@ -738,6 +741,7 @@ describe("MaintenanceService", () => {
         accountDeletionMock,
         attentionMock,
         approvalsMock,
+        boardWriteMock,
       );
       const result = await service.ensureCommandPartitions();
       // Previous month + current + three future months.
@@ -770,6 +774,7 @@ describe("MaintenanceService", () => {
         accountDeletionMock,
         attentionMock,
         approvalsMock,
+        boardWriteMock,
       );
       const result = await service.ensureCommandPartitions();
       expect(result.removed).toBe(0);
@@ -796,6 +801,7 @@ describe("MaintenanceService", () => {
         accountDeletionMock,
         attentionMock,
         approvalsMock,
+        boardWriteMock,
       );
       await service.ensureCommandPartitions();
       // October is fully outside a 7-day window; only Nov..Feb are ensured.
@@ -815,6 +821,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     const dispatch = jest
       .spyOn(
@@ -856,6 +863,7 @@ describe("MaintenanceService", () => {
         accountDeletionMock,
         attentionMock,
         approvalsMock,
+        boardWriteMock,
       );
       expect(await service.sweepCommands()).toBe(123);
       // One catalog read, one drop, one orphan-key probe; the current month
@@ -887,6 +895,7 @@ describe("MaintenanceService", () => {
       accountDeletionMock,
       attentionMock,
       approvalsMock,
+      boardWriteMock,
     );
     expect(
       await service.dropExpiredCommandPartitions(new Date(Date.now())),
