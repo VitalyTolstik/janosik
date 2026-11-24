@@ -254,6 +254,8 @@ interface BoardAccessValue {
 export interface AddBoardOptions {
   template?: BoardTemplateSelection;
   templateLocale?: BoardStarterLocale;
+  /** The client's local creation date, used for deterministic due offsets. */
+  templateDate?: string;
 }
 
 /**
@@ -409,6 +411,8 @@ interface BoardActionsValue {
   addBoard: (
     title: string,
     options?: AddBoardOptions,
+    /** Called instead of the generic toast for a template contract 400. */
+    onTemplateContractError?: (error: unknown) => void,
   ) => string | null | Promise<string | null>;
   /** Removes a board; the caller must navigate away from it first/after. */
   removeBoard: (boardId: string) => void | Promise<void>;
@@ -2722,6 +2726,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     (
       title: string,
       options?: AddBoardOptions,
+      onTemplateContractError?: (error: unknown) => void,
     ): string | null | Promise<string | null> => {
       const resolved = title.trim();
       if (resolved.length === 0) return null;
@@ -2734,6 +2739,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
             setRoles((prev) => ({ ...prev, [created.id]: "ADMIN" }));
             return created.id;
           } catch (error) {
+            // New UI against an older server (or an unknown template ID):
+            // keep the generic sync toast out of the way and let the picker
+            // offer the empty-board fallback.
+            if (
+              onTemplateContractError &&
+              options?.template !== undefined &&
+              error instanceof ApiError &&
+              error.status === 400
+            ) {
+              onTemplateContractError(error);
+              return null;
+            }
             // The starter board exists but its response was ambiguous. Open
             // that board instead of leaving the form to mint a second one.
             if (error instanceof ApiError) {
@@ -2858,6 +2875,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
           options.templateLocale ?? "en",
           createId,
           now,
+          options.templateDate,
         );
         columns = plan.columns.map((column) => ({
           id: column.id,

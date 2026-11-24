@@ -12,7 +12,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { BoardStarterLocale, BoardTemplateId } from "@janosik/shared";
 
-import { TemplatePickerDialog } from "@/components/board/TemplatePickerDialog";
+import {
+  TemplatePickerDialog,
+  type TemplateCreateOutcome,
+} from "@/components/board/TemplatePickerDialog";
 import { I18nProvider } from "@/i18n";
 import { generateBoardName } from "@/utils/board-name";
 import { BOARD_TEMPLATES } from "@janosik/shared";
@@ -22,6 +25,7 @@ function Harness({
   existingTitles = [],
   startOpen = true,
   createBoard = vi.fn(async () => "board-new"),
+  createEmptyBoard = vi.fn(async () => "empty-board"),
   onOpenBoard = vi.fn(),
   onOpenChange = vi.fn(),
 }: {
@@ -32,7 +36,9 @@ function Harness({
     name: string,
     template: BoardTemplateId,
     locale: BoardStarterLocale,
-  ) => Promise<string | null>;
+    templateDate: string,
+  ) => Promise<TemplateCreateOutcome> | TemplateCreateOutcome;
+  createEmptyBoard?: (name: string) => Promise<string | null> | string | null;
   onOpenBoard?: (boardId: string) => void;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -51,6 +57,7 @@ function Harness({
         existingTitles={existingTitles}
         initialName={initialName}
         createBoard={createBoard}
+        createEmptyBoard={createEmptyBoard}
         onOpenBoard={onOpenBoard}
       />
     </>
@@ -82,6 +89,53 @@ describe("TemplatePickerDialog", () => {
       within(picker).getAllByText("Brief checklist").length,
     ).toBeGreaterThan(0);
     await waitFor(() => expect(product).toHaveFocus());
+  });
+
+  it("exposes modal semantics and a live character counter", async () => {
+    render(
+      <I18nProvider>
+        <Harness />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    expect(picker).toHaveAttribute("aria-modal", "true");
+    const count = picker.querySelector("#template-name-count");
+    expect(count).toHaveAttribute("aria-live", "polite");
+    expect(count).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("offers the empty-board fallback when a template is unavailable", async () => {
+    const createBoard = vi.fn(
+      async () => ({ code: "template_unavailable" }) as const,
+    );
+    const createEmptyBoard = vi.fn(async (name: string) => {
+      expect(name).toBe("My launch");
+      return "empty-new";
+    });
+    const onOpenBoard = vi.fn();
+    render(
+      <I18nProvider>
+        <Harness
+          createBoard={createBoard}
+          createEmptyBoard={createEmptyBoard}
+          onOpenBoard={onOpenBoard}
+        />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const name = within(picker).getByLabelText("Board name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "My launch");
+
+    fireEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(
+      await screen.findByText(/isn’t available in this version/),
+    ).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create empty board" }),
+    );
+    expect(createEmptyBoard).toHaveBeenCalledWith("My launch");
+    expect(onOpenBoard).toHaveBeenCalledWith("empty-new");
   });
 
   it("changes the auto name with the template, then preserves a manual name", async () => {
@@ -150,7 +204,8 @@ describe("TemplatePickerDialog", () => {
         name: string,
         _template: BoardTemplateId,
         _locale: BoardStarterLocale,
-      ): Promise<string | null> => {
+        _templateDate: string,
+      ): Promise<TemplateCreateOutcome> => {
         expect(name).toBe("My launch");
         return "board-new";
       },
@@ -173,6 +228,7 @@ describe("TemplatePickerDialog", () => {
       "My launch",
       "product-launch",
       "en",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
     );
     const createdName = (await screen.findByText("My launch")) as HTMLElement;
     expect(createdName).toBeVisible();

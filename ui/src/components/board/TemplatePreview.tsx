@@ -65,12 +65,12 @@ function labelChipClass(template: BoardTemplate, key: string): string {
 function MiniBoard({
   template,
   locale,
-  now,
+  templateDate,
   maxCards = 2,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
-  now: Date;
+  templateDate: string;
   maxCards?: number;
 }) {
   const copy = template.copy[locale];
@@ -92,7 +92,7 @@ function MiniBoard({
         >
           <div className="mb-1.5 flex items-center justify-between gap-1 text-[8.5px] font-bold uppercase leading-[1.55] tracking-[0.05em] text-muted-foreground">
             <span className="min-w-0 truncate">{column.title}</span>
-            <span className="font-semibold text-muted-foreground/70">
+            <span className="font-semibold text-muted-foreground">
               {column.cards.length}
             </span>
           </div>
@@ -102,7 +102,7 @@ function MiniBoard({
               template={template}
               card={card}
               locale={locale}
-              now={now}
+              templateDate={templateDate}
             />
           ))}
         </div>
@@ -115,17 +115,17 @@ function MiniCard({
   template,
   card,
   locale,
-  now,
+  templateDate,
 }: {
   template: BoardTemplate;
   card: BoardTemplateCardCopy;
   locale: BoardStarterLocale;
-  now: Date;
+  templateDate: string;
 }) {
   const copy = template.copy[locale];
   const due =
     typeof card.dueInDays === "number"
-      ? formatDateOnly(templateDueDate(now.getTime(), card.dueInDays), locale)
+      ? formatDateOnly(templateDueDate(templateDate, card.dueInDays), locale)
       : "";
   return (
     <div className="mt-[5px] rounded-[7px] border border-border bg-card p-[7px] shadow-sm first:mt-0">
@@ -164,7 +164,7 @@ function MiniCard({
               className={cn(
                 "inline-flex items-center gap-0.5 whitespace-nowrap",
                 card.dueInDays !== undefined && card.dueInDays <= 1
-                  ? "text-warning"
+                  ? "text-(--warning-strong)"
                   : undefined,
               )}
             >
@@ -181,11 +181,11 @@ function MiniCard({
 function SampleCard({
   template,
   locale,
-  now,
+  templateDate,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
-  now: Date;
+  templateDate: string;
 }) {
   const { t } = useI18n();
   const copy = template.copy[locale];
@@ -194,7 +194,7 @@ function SampleCard({
   if (!card) return null;
   const due =
     typeof card.dueInDays === "number"
-      ? formatDateOnly(templateDueDate(now.getTime(), card.dueInDays), locale)
+      ? formatDateOnly(templateDueDate(templateDate, card.dueInDays), locale)
       : "";
 
   return (
@@ -255,10 +255,7 @@ function StatPill({
 }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-[5px] border border-border bg-background/70 px-[7px] py-[3px] text-[9.5px] font-semibold text-muted-foreground">
-      <Icon
-        aria-hidden
-        className="h-[11px] w-[11px] text-muted-foreground/70"
-      />
+      <Icon aria-hidden className="h-[11px] w-[11px] text-muted-foreground" />
       {children}
     </span>
   );
@@ -296,11 +293,11 @@ export function TemplateStats({
 export function TemplatePreview({
   template,
   locale,
-  now,
+  templateDate,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
-  now: Date;
+  templateDate: string;
 }) {
   const { t } = useI18n();
   const copy = template.copy[locale];
@@ -324,18 +321,18 @@ export function TemplatePreview({
           <div className="mb-0.5 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             <span>{t("board.templatePicker.preview")}</span>
             {template.id === "product-launch" ? (
-              <span className="rounded-[4px] bg-primary/15 px-1.5 py-px text-[8.5px] font-semibold tracking-normal text-primary">
+              <span className="rounded-[5px] bg-primary/15 px-1.5 py-0.5 text-[10px] font-[650] tracking-normal text-(--tab-text)">
                 {t("board.templatePicker.recommended")}
               </span>
             ) : null}
           </div>
-          <h3 className="m-0 text-[22px] font-semibold leading-[1.12] tracking-[-0.025em] text-foreground">
+          <h3 className="m-0 text-[22px] font-semibold leading-[1.12] tracking-[-0.025em] text-foreground max-[620px]:text-[19px]">
             {copy.name}
           </h3>
         </div>
       </div>
 
-      <p className="mt-[7px] max-w-[650px] text-[11.5px] leading-[1.5] text-muted-foreground">
+      <p className="mt-[7px] max-w-[650px] text-[11.5px] leading-[1.5] text-muted-foreground max-[620px]:text-[10.5px]">
         {copy.long}
       </p>
       <TemplateStats template={template} className="mt-2.5" />
@@ -350,12 +347,20 @@ export function TemplatePreview({
         ))}
       </div>
 
-      <MiniBoard template={template} locale={locale} now={now} />
-      <SampleCard template={template} locale={locale} now={now} />
+      <MiniBoard
+        template={template}
+        locale={locale}
+        templateDate={templateDate}
+      />
+      <SampleCard
+        template={template}
+        locale={locale}
+        templateDate={templateDate}
+      />
 
       <div className="mt-3 grid grid-cols-2 gap-x-[18px] gap-y-2.5 border-t border-border pt-[11px] max-[620px]:grid-cols-1">
         <div>
-          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("board.templatePicker.insideColumns")}
           </h4>
           <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -369,7 +374,7 @@ export function TemplatePreview({
                   className="h-2.5 w-2.5 shrink-0 text-success"
                 />
                 <span className="min-w-0 truncate">{column.title}</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   · {column.cards.length}
                 </span>
               </li>
@@ -377,7 +382,7 @@ export function TemplatePreview({
           </ul>
         </div>
         <div>
-          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("board.templatePicker.insideLabels")}
           </h4>
           <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -401,7 +406,7 @@ export function TemplatePreview({
           </ul>
         </div>
         <div>
-          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("board.templatePicker.insideChecklists")}
           </h4>
           <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -417,7 +422,7 @@ export function TemplatePreview({
                 <span className="min-w-0 truncate">
                   {card.checklist!.title}
                 </span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   · {card.checklist!.items.length}
                 </span>
               </li>
@@ -433,19 +438,19 @@ export function TemplatePreview({
 export function TemplateMiniBoard({
   template,
   locale,
-  now,
+  templateDate,
   maxCards,
 }: {
   template: BoardTemplate;
   locale: BoardStarterLocale;
-  now: Date;
+  templateDate: string;
   maxCards?: number;
 }) {
   return (
     <MiniBoard
       template={template}
       locale={locale}
-      now={now}
+      templateDate={templateDate}
       maxCards={maxCards}
     />
   );

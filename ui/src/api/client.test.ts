@@ -97,6 +97,30 @@ describe("ApiClient — REST idempotency (TASK-180.2 M17)", () => {
     });
   });
 
+  it("sends the curated template, locale and local template date", async () => {
+    const bodies: unknown[] = [];
+    const client = new ApiClient({
+      baseUrl: "/api/v1",
+      fetchImpl: async (_input, init) => {
+        bodies.push(
+          typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+        );
+        return json({ id: "board-template", title: "Launch" }, 201);
+      },
+    });
+    await client.createBoard("Launch", {
+      template: "product-launch",
+      templateLocale: "en",
+      templateDate: "2026-11-24",
+    });
+    expect(bodies[0]).toEqual({
+      title: "Launch",
+      template: "product-launch",
+      templateLocale: "en",
+      templateDate: "2026-11-24",
+    });
+  });
+
   it("uses a fresh key for each logical import and keeps it on retry", async () => {
     const keys: Array<string | null> = [];
     let attempts = 0;

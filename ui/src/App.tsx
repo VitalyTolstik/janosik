@@ -16,7 +16,10 @@ import {
 } from "@janosik/shared";
 
 import { BoardSection } from "@/components/BoardSection";
-import { TemplatePickerDialog } from "@/components/board/TemplatePickerDialog";
+import {
+  TemplatePickerDialog,
+  type TemplateCreateOutcome,
+} from "@/components/board/TemplatePickerDialog";
 import { LimitCounter } from "@/components/ui/limit-counter";
 import { BoardShellSkeleton } from "@/components/board/BoardSkeleton";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
@@ -134,15 +137,30 @@ export function NoBoardRoute() {
     }
   };
 
-  const createFromTemplate = async (
+  const createFromTemplate = (
     name: string,
     template: BoardTemplateId,
-  ): Promise<string | null> => {
+    _locale: BoardStarterLocale,
+    templateDate: string,
+  ): Promise<TemplateCreateOutcome> => {
     // This path must not early-return on `canCreate`: the generated name is
     // already valid and the empty-state field is intentionally untouched.
-    if (busy !== null) return null;
-    return await addBoard(name, { template, templateLocale });
+    if (busy !== null) return Promise.resolve(null);
+    return new Promise<TemplateCreateOutcome>((resolve) => {
+      const result = addBoard(
+        name,
+        { template, templateLocale, templateDate },
+        () => resolve({ code: "template_unavailable" }),
+      );
+      if (result !== null && typeof result === "object") {
+        void result.then(resolve);
+        return;
+      }
+      resolve(result);
+    });
   };
+
+  const createEmptyFromPicker = (name: string) => addBoard(name);
 
   return (
     <main className="flex flex-1 items-center justify-center p-6 max-[620px]:p-4">
@@ -189,7 +207,7 @@ export function NoBoardRoute() {
               placeholder={t("board.firstRun.placeholder")}
               aria-describedby="first-board-name-help first-board-name-status"
               data-testid="empty-board-name"
-              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/70 hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
             />
             <LimitCounter
               length={title.length}
@@ -210,7 +228,7 @@ export function NoBoardRoute() {
               disabled={!canPickExample}
               onClick={() => setPickerOpen(true)}
               data-testid="empty-create-template"
-              className="inline-flex h-10 flex-[1.25] items-center justify-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+              className="inline-flex h-11 flex-[1.25] items-center justify-center gap-2 rounded-lg bg-action-primary px-3.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-action-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
               <Sparkles className="h-4 w-4" aria-hidden />
               {t("board.firstRun.starterCta")}
@@ -219,7 +237,7 @@ export function NoBoardRoute() {
               type="submit"
               disabled={!canCreate}
               data-testid="empty-create-board"
-              className="inline-flex h-10 flex-[0.9] items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+              className="inline-flex h-11 flex-[0.9] items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
               {busy === "empty" ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -255,6 +273,7 @@ export function NoBoardRoute() {
         existingTitles={existingTitles}
         initialName={title}
         createBoard={createFromTemplate}
+        createEmptyBoard={createEmptyFromPicker}
         onOpenBoard={(boardId) => navigate(routes.board(boardId))}
       />
     </main>
@@ -321,7 +340,7 @@ function BoardShell() {
               type="button"
               data-testid="sync-retry"
               onClick={() => window.location.reload()}
-              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-action-primary/90"
             >
               {t("sync.retry")}
             </button>

@@ -98,6 +98,7 @@ body.janosik-touch-dragging {
   --color-brown: var(--brown);
   --color-border: var(--border);
   --color-border-soft: var(--border-soft);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-lg: var(--radius);
@@ -147,6 +148,8 @@ html[lang="ru"] .font-agent-display {
 :root {
   /* Mockup `--border-soft`: 62% in dark, 72% in light (overridden below). */
   --border-soft: color-mix(in oklab, var(--border) 62%, transparent);
+  /* Prototype dialog/chrome outline (#33445f dark, #cbd5e1 light). */
+  --border-strong: #33445f;
   /* Avatar initials: dark ink on light palette hues; a few deeper light-theme
      hues invert to white below. Both pairs clear AA on every avatar color. */
   --avatar-ink: #000000;
@@ -187,6 +190,7 @@ html.light {
   --agent-primary-strong: #1d4ed8;
   /* Mockup light `--border-soft` is 72% (62% in dark). */
   --border-soft: color-mix(in oklab, var(--border) 72%, transparent);
+  --border-strong: #cbd5e1;
   --agent-shadow-lg:
     0 28px 80px -36px rgb(15 23 42 / 0.28), 0 2px 8px rgb(15 23 42 / 0.06);
 }
@@ -1852,6 +1856,19 @@ html.light [data-testid="public-avatar"].bg-slate {
 .template-gallery {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+/* The preview owns the full 730 px content width at 1440 (gallery 338 +
+   padding), matching the prototype's mini-board columns. The wheel, trackpad
+   and keyboard still scroll; only the layout-consuming scrollbar gutter is
+   removed. */
+.template-preview-scroll {
+  scrollbar-width: none;
+}
+
+.template-preview-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @media (max-width: 620px) {
