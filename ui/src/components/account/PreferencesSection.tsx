@@ -20,8 +20,8 @@ function Row({
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0 space-y-0.5">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p className="text-ui-body font-medium">{label}</p>
+        <p className="text-ui-label text-muted-foreground">{hint}</p>
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -41,11 +41,11 @@ export function PreferencesSection() {
   return (
     <section className="space-y-5" data-testid="account-preferences">
       <header className="space-y-1">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
+        <h3 className="flex items-center gap-2 text-ui-heading font-semibold">
           <SlidersHorizontal className="h-4 w-4 text-primary" aria-hidden />
           {t("account.prefs.title")}
         </h3>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {t("account.prefs.description")}
         </p>
       </header>
@@ -78,7 +78,7 @@ export function PreferencesSection() {
               aria-pressed={theme === "light"}
               onClick={() => setTheme("light")}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-ui-label transition-colors",
                 theme === "light"
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -93,7 +93,7 @@ export function PreferencesSection() {
               aria-pressed={theme === "dark"}
               onClick={() => setTheme("dark")}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-ui-label transition-colors",
                 theme === "dark"
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",

@@ -644,7 +644,7 @@ export function CalendarView({
               onCardClick(card.id);
             }}
             className={cn(
-              "block min-h-6 w-full touch-manipulation truncate rounded-md border border-border/60 bg-muted/40 py-1 pl-1.5 pr-7 text-left text-[11px] text-foreground/80 transition-colors hover:border-primary/50",
+              "block min-h-6 w-full touch-manipulation truncate rounded-md border border-border/60 bg-muted/40 py-1 pl-1.5 pr-7 text-left text-ui-meta text-foreground/80 transition-colors hover:border-primary/50",
               !readOnly && "cursor-grab active:cursor-grabbing",
               touchDrag.activePayload === card.id &&
                 "opacity-60 ring-1 ring-primary/50",
@@ -696,7 +696,7 @@ export function CalendarView({
               boardId ? cardHref(boardId, entry.card.id) : undefined
             }
             title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
-            className="flex min-h-6 w-full touch-manipulation items-center gap-1.5 rounded-md py-1 pl-1.5 pr-7 text-left text-[11px] text-foreground/80 transition-colors hover:bg-hover"
+            className="flex min-h-6 w-full touch-manipulation items-center gap-1.5 rounded-md py-1 pl-1.5 pr-7 text-left text-ui-meta text-foreground/80 transition-colors hover:bg-hover"
           >
             {entry.labels.length > 0 ? (
               <span
@@ -781,7 +781,7 @@ export function CalendarView({
                 onCardClick(card.id);
               }}
               className={cn(
-                "flex min-h-6 w-full touch-manipulation items-stretch gap-1 overflow-hidden rounded-md border text-left text-[11px] leading-tight transition-colors hover:border-primary/50",
+                "flex min-h-6 w-full touch-manipulation items-stretch gap-1 overflow-hidden rounded-md border text-left text-ui-meta leading-tight transition-colors hover:border-primary/50",
                 status === "overdue" &&
                   "border-danger/40 bg-danger/10 text-(--chip-red)",
                 status === "soon" &&
@@ -869,7 +869,7 @@ export function CalendarView({
             aria-pressed={!isWeek}
             onClick={() => setScale("month")}
             className={cn(
-              "rounded px-2 py-0.5 text-xs font-medium transition-colors",
+              "rounded px-2 py-0.5 text-ui-label font-medium transition-colors",
               !isWeek
                 ? "bg-primary/15 text-(--tab-text)"
                 : "text-muted-foreground hover:text-foreground",
@@ -882,7 +882,7 @@ export function CalendarView({
             aria-pressed={isWeek}
             onClick={() => setScale("week")}
             className={cn(
-              "rounded px-2 py-0.5 text-xs font-medium transition-colors",
+              "rounded px-2 py-0.5 text-ui-label font-medium transition-colors",
               isWeek
                 ? "bg-primary/15 text-(--tab-text)"
                 : "text-muted-foreground hover:text-foreground",
@@ -905,7 +905,7 @@ export function CalendarView({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs"
+          className="h-7 px-2 text-ui-label"
           onClick={() =>
             setAnchor(
               isWeek
@@ -931,7 +931,7 @@ export function CalendarView({
         {/* Helper text: the grid's main affordance is not obvious from
             the grid itself. */}
         <span
-          className="hidden text-[11px] text-muted-foreground lg:inline"
+          className="hidden text-ui-meta text-muted-foreground lg:inline"
           data-testid="calendar-hint"
         >
           {t("view.calendar.hint")}
@@ -959,7 +959,7 @@ export function CalendarView({
             data-testid="unscheduled-toggle"
             onClick={() => setUnscheduledOpen((o) => !o)}
             className={cn(
-              "flex items-center gap-1.5 border-b border-border/60 px-2 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground",
+              "flex items-center gap-1.5 border-b border-border/60 px-2 py-2 text-ui-label font-semibold text-muted-foreground transition-colors hover:text-foreground",
               !unscheduledOpen && "sm:flex-col sm:gap-1 sm:px-1",
             )}
           >
@@ -975,7 +975,7 @@ export function CalendarView({
               {unscheduledOpen ? "(" : null}
               <span
                 aria-hidden
-                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-[10px] font-medium text-muted-foreground"
+                className="flex h-4 min-w-4 items-center justify-center rounded-full bg-hover px-1 text-ui-micro font-medium text-muted-foreground"
               >
                 {unscheduled.length}
               </span>
@@ -1003,7 +1003,7 @@ export function CalendarView({
                 data-testid="unscheduled-list"
               >
                 {unscheduled.length === 0 ? (
-                  <p className="px-1 text-[11px] text-muted-foreground">
+                  <p className="px-1 text-ui-meta text-muted-foreground">
                     {t("view.calendar.unscheduledEmpty")}
                   </p>
                 ) : virtualizeUnscheduled ? (
@@ -1049,7 +1049,7 @@ export function CalendarView({
             {weekdays.map((day) => (
               <div
                 key={day.getTime()}
-                className="px-1 py-1.5 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:px-2 sm:text-[11px]"
+                className="px-1 py-1.5 text-center text-ui-micro font-medium uppercase tracking-wide text-muted-foreground sm:px-2"
               >
                 {format(day, "EEEEEE", { locale })}
               </div>
@@ -1097,9 +1097,9 @@ export function CalendarView({
                       <span className="flex items-center gap-1">
                         <span
                           className={cn(
-                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums sm:text-xs",
+                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-ui-micro tabular-nums sm:text-ui-meta",
                             isToday(day) &&
-                              "bg-primary font-semibold text-primary-foreground",
+                              "bg-action-primary font-semibold text-primary-foreground",
                             !isToday(day) &&
                               !isSameMonth(day, anchor) &&
                               "text-muted-foreground",
@@ -1135,7 +1135,7 @@ export function CalendarView({
                             event.stopPropagation();
                             setOpenDayKey(key);
                           }}
-                          className="hidden rounded px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground sm:block"
+                          className="hidden rounded px-1 text-ui-micro text-muted-foreground transition-colors hover:text-foreground sm:block"
                         >
                           {tp("view.calendar.moreCards", overflow)}
                         </button>
@@ -1165,7 +1165,7 @@ export function CalendarView({
                     data-testid="day-panel"
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <p className="mb-1.5 px-1 text-xs font-semibold text-foreground">
+                    <p className="mb-1.5 px-1 text-ui-body font-semibold text-foreground">
                       {formatDateOnly(day.getTime(), lang)}
                     </p>
                     {readOnly ? null : (
@@ -1187,7 +1187,7 @@ export function CalendarView({
                     <DayPanelEntries
                       entries={entries}
                       empty={
-                        <p className="px-1 text-[11px] text-muted-foreground">
+                        <p className="px-1 text-ui-meta text-muted-foreground">
                           {t("view.calendar.dayEmpty")}
                         </p>
                       }
@@ -1264,7 +1264,7 @@ function DayComposer({
         data-testid="day-composer-input"
         aria-label={t("composer.add")}
         placeholder={t("composer.placeholder")}
-        className="h-7 text-xs"
+        className="h-7 text-ui-body"
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -1282,7 +1282,7 @@ function DayComposer({
           <Button
             variant="outline"
             size="sm"
-            className="h-7 w-full justify-start text-xs"
+            className="h-7 w-full justify-start text-ui-body"
             data-testid="day-composer-column"
           >
             {selectedColumn?.title ?? "—"}
@@ -1305,7 +1305,7 @@ function DayComposer({
             >
               <span className="truncate">{col.title}</span>
               {col.wipLimit !== undefined && col.count !== undefined && (
-                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                <span className="ml-auto pl-2 text-ui-meta tabular-nums text-muted-foreground">
                   {col.count}/{col.wipLimit}
                 </span>
               )}
@@ -1324,7 +1324,7 @@ function DayComposer({
       <div className="flex items-center gap-1.5">
         <Button
           size="sm"
-          className="h-7 flex-1 text-xs"
+          className="h-7 flex-1 text-ui-label"
           disabled={!draft.trim() || selectedFull}
           title={
             selectedFull
@@ -1338,7 +1338,7 @@ function DayComposer({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 text-xs text-muted-foreground hover:text-foreground"
+          className="h-7 text-ui-body text-muted-foreground hover:text-foreground"
           onClick={() => {
             setDraft("");
             setSelectedLabels([]);
@@ -1376,7 +1376,7 @@ function UnscheduledComposer({
         disabled={disabled}
         data-testid="unscheduled-add"
         onClick={() => setEditing(true)}
-        className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/10 px-1.5 py-1.5 text-[11px] font-medium text-(--tab-text) transition-colors enabled:hover:border-primary/70 enabled:hover:bg-primary/20 disabled:opacity-50"
+        className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-primary/40 bg-primary/10 px-1.5 py-1.5 text-ui-label font-medium text-(--tab-text) transition-colors enabled:hover:border-primary/70 enabled:hover:bg-primary/20 disabled:opacity-50"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden />
         {t("composer.add")}
@@ -1393,7 +1393,7 @@ function UnscheduledComposer({
       data-testid="unscheduled-add-input"
       aria-label={t("composer.add")}
       placeholder={t("composer.placeholder")}
-      className="h-7 text-xs"
+      className="h-7 text-ui-body"
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter" && draft.trim()) {

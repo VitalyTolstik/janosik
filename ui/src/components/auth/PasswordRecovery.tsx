@@ -105,12 +105,12 @@ export function PasswordRecovery({
         <span aria-hidden className="group">
           <BrandMark size="large" />
         </span>
-        <h1 className="text-lg font-semibold text-foreground">
+        <h1 className="text-ui-title font-semibold text-foreground">
           {step === "done"
             ? t("auth.recovery.doneTitle")
             : t("auth.recovery.title")}
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {step === "request"
             ? t("auth.recovery.subtitle")
             : step === "confirm"
@@ -127,7 +127,7 @@ export function PasswordRecovery({
           <>
             <label
               htmlFor="recovery-email"
-              className="text-sm font-medium text-foreground"
+              className="text-ui-body font-medium text-foreground"
             >
               {t("auth.email")}
             </label>
@@ -151,7 +151,7 @@ export function PasswordRecovery({
           <>
             <label
               htmlFor="recovery-code"
-              className="text-sm font-medium text-foreground"
+              className="text-ui-body font-medium text-foreground"
             >
               {t("auth.recovery.code")}
             </label>
@@ -171,7 +171,7 @@ export function PasswordRecovery({
             />
             <label
               htmlFor="recovery-password"
-              className="text-sm font-medium text-foreground"
+              className="text-ui-body font-medium text-foreground"
             >
               {t("auth.recovery.newPassword")}
             </label>
@@ -194,7 +194,7 @@ export function PasswordRecovery({
             />
             <label
               htmlFor="recovery-confirm"
-              className="text-sm font-medium text-foreground"
+              className="text-ui-body font-medium text-foreground"
             >
               {t("auth.recovery.confirmPassword")}
             </label>
@@ -222,7 +222,7 @@ export function PasswordRecovery({
             id="recovery-error"
             role="alert"
             data-testid="recovery-error"
-            className="text-sm text-danger"
+            className="text-ui-label text-danger"
           >
             {error}
           </p>
@@ -252,7 +252,7 @@ export function PasswordRecovery({
               setStep("request");
               setError(null);
             }}
-            className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center max-lg:justify-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center max-lg:justify-center text-ui-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             {t("auth.recovery.tryAgain")}
           </button>
@@ -261,7 +261,7 @@ export function PasswordRecovery({
           type="button"
           data-testid="recovery-back"
           onClick={onBack}
-          className="inline-flex min-h-11 items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex min-h-11 items-center justify-center gap-1 text-ui-label text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
           {t("auth.recovery.back")}

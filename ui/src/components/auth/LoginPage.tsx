@@ -202,7 +202,7 @@ export function LoginPage() {
         <a
           href={siteUrl}
           data-testid="auth-back-to-site"
-          className="absolute top-6 left-6 z-10 inline-flex min-h-11 items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-6 left-6 z-10 inline-flex min-h-11 items-center gap-1.5 rounded-md text-ui-body text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           {t("auth.backToSite")}
@@ -221,10 +221,10 @@ export function LoginPage() {
             <span aria-hidden className="group">
               <BrandMark size="large" />
             </span>
-            <h1 className="text-lg font-semibold text-foreground">
+            <h1 className="text-ui-title font-semibold text-foreground">
               {isRegister ? t("auth.registerTitle") : t("auth.title")}
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-ui-body text-muted-foreground">
               {isRegister ? t("auth.registerSubtitle") : t("auth.subtitle")}
             </p>
           </div>
@@ -237,7 +237,7 @@ export function LoginPage() {
             {isRegister ? (
               <>
                 <label
-                  className="text-sm font-medium text-foreground"
+                  className="text-ui-body font-medium text-foreground"
                   htmlFor="auth-display-name"
                 >
                   {t("auth.displayName")}
@@ -255,7 +255,7 @@ export function LoginPage() {
             ) : null}
 
             <label
-              className="text-sm font-medium text-foreground"
+              className="text-ui-body font-medium text-foreground"
               htmlFor="auth-email"
             >
               {t("auth.email")}
@@ -277,7 +277,7 @@ export function LoginPage() {
             />
 
             <label
-              className="text-sm font-medium text-foreground"
+              className="text-ui-body font-medium text-foreground"
               htmlFor="auth-password"
             >
               {t("auth.password")}
@@ -302,7 +302,7 @@ export function LoginPage() {
                 type="button"
                 data-testid="forgot-password"
                 onClick={() => setRecovering(true)}
-                className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center self-end text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center self-end text-ui-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
               >
                 {t("auth.recovery.forgot")}
               </button>
@@ -312,7 +312,7 @@ export function LoginPage() {
               <p
                 role="alert"
                 data-testid="login-error"
-                className="text-sm text-danger"
+                className="text-ui-label text-danger"
               >
                 {error}
               </p>
@@ -331,7 +331,7 @@ export function LoginPage() {
               <>
                 <div className="my-1 flex items-center gap-3">
                   <span className="h-px flex-1 bg-border" />
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-ui-label text-muted-foreground">
                     {t("auth.oauthDivider")}
                   </span>
                   <span className="h-px flex-1 bg-border" />
@@ -364,7 +364,7 @@ export function LoginPage() {
                 type="button"
                 data-testid="login-toggle"
                 onClick={toggleMode}
-                className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center max-lg:justify-center text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                className="max-lg:inline-flex max-lg:min-h-11 max-lg:items-center max-lg:justify-center text-ui-label text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
               >
                 {isRegister
                   ? t("auth.switchToLogin")

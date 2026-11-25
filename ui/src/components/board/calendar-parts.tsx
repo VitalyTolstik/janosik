@@ -112,7 +112,7 @@ export function MonthYearMenu({
           type="button"
           aria-haspopup="dialog"
           data-testid="month-year-trigger"
-          className="-mx-1.5 rounded-md px-1.5 py-0.5 text-sm font-semibold text-foreground transition-colors hover:bg-hover"
+          className="-mx-1.5 rounded-md px-1.5 py-0.5 text-ui-body font-semibold text-foreground transition-colors hover:bg-hover"
         >
           {label}
         </button>
@@ -132,7 +132,7 @@ export function MonthYearMenu({
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm font-semibold tabular-nums text-foreground">
+          <span className="text-ui-body font-semibold tabular-nums text-foreground">
             {year}
           </span>
           <Button
@@ -159,7 +159,7 @@ export function MonthYearMenu({
                   setOpen(false);
                 }}
                 className={cn(
-                  "h-8 rounded-md text-xs font-medium transition-colors",
+                  "h-8 rounded-md text-ui-label font-medium transition-colors",
                   selected
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-hover hover:text-foreground",

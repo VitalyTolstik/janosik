@@ -106,12 +106,12 @@ export function EmailVerificationGate() {
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
             <MailCheck className="h-5 w-5" aria-hidden />
           </span>
-          <h1 className="text-base font-semibold">
+          <h1 className="text-ui-title font-semibold">
             {t("auth.verifyEmail.title")}
           </h1>
           <p
             data-testid="email-verify-subtitle"
-            className="w-full max-w-full break-words text-sm text-muted-foreground [overflow-wrap:anywhere]"
+            className="w-full max-w-full break-words text-ui-body text-muted-foreground [overflow-wrap:anywhere]"
           >
             {t("auth.verifyEmail.subtitle", {
               email: user?.email ?? "",
@@ -171,7 +171,7 @@ export function EmailVerificationGate() {
             <p
               role="alert"
               data-testid="email-verify-error"
-              className="text-center text-xs text-danger"
+              className="text-center text-ui-label text-danger"
             >
               {error}
             </p>

@@ -238,7 +238,7 @@ export function AccountDialog({
                   name in the visible-text string (axe label-in-name, U-04). */}{" "}
               <span
                 className={cn(
-                  "hidden max-w-28 truncate text-sm",
+                  "hidden max-w-28 truncate text-ui-body",
                   !compact && "sm:inline",
                 )}
               >
@@ -293,13 +293,13 @@ export function AccountDialog({
             className="shadow-sm"
           />
           <div className="min-w-0 space-y-0.5">
-            <DialogTitle className="truncate text-base font-semibold">
+            <DialogTitle className="truncate text-ui-title font-semibold">
               {name}
             </DialogTitle>
-            <DialogDescription className="truncate text-xs">
+            <DialogDescription className="truncate text-ui-label">
               {user.email}
             </DialogDescription>
-            <p className="text-[11px] text-muted-foreground/80">
+            <p className="text-ui-micro text-muted-foreground/80">
               {t("account.memberSince", {
                 date: formatDateOnly(user.createdAt, lang),
               })}
@@ -330,9 +330,9 @@ export function AccountDialog({
                     aria-current={section === id ? "page" : undefined}
                     onClick={() => selectSection(id)}
                     className={cn(
-                      "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors max-lg:min-h-11 sm:w-full",
+                      "flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-ui-body transition-colors max-lg:min-h-11 sm:w-full",
                       section === id
-                        ? "bg-primary/10 font-medium text-primary"
+                        ? "bg-primary/10 font-medium text-(--agent-tone-primary)"
                         : "text-muted-foreground hover:bg-hover hover:text-foreground",
                     )}
                   >
@@ -348,7 +348,7 @@ export function AccountDialog({
                       setOpen(false);
                       onOpenAgents();
                     }}
-                    className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11 sm:w-full"
+                    className="flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-ui-body text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11 sm:w-full"
                   >
                     <Bot className="h-4 w-4 shrink-0" aria-hidden />
                     {t("agents.open")}
@@ -386,7 +386,7 @@ export function AccountDialog({
                 type="button"
                 data-testid="account-logout"
                 onClick={() => setConfirmingLogout(true)}
-                className="flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-danger transition-colors hover:bg-danger/10 max-lg:min-h-11"
+                className="flex w-full shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-ui-body text-(--agent-tone-danger) transition-colors hover:bg-danger/10 max-lg:min-h-11"
               >
                 <LogOut className="h-4 w-4 shrink-0" aria-hidden />
                 <span className="whitespace-nowrap">{t("auth.logout")}</span>

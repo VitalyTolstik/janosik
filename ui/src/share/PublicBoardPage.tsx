@@ -286,7 +286,7 @@ function PublicHeader({ mode }: { mode?: "snapshot" | "live" }) {
           <BoardTitle />
         </div>
       </div>
-      <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-ui-label text-muted-foreground">
         <Lock className="h-3.5 w-3.5" aria-hidden />
         <span>
           {mode === "live"
@@ -306,7 +306,7 @@ function PublicHeaderChrome() {
       <div className="group flex items-center gap-1.5">
         <BrandMark />
       </div>
-      <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-ui-label text-muted-foreground">
         <Lock className="h-3.5 w-3.5" aria-hidden />
         <span>{t("share.public.badge")}</span>
       </div>

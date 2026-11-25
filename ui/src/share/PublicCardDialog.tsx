@@ -62,7 +62,7 @@ export function PublicCardDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="min-w-0 max-w-full pr-8 text-lg wrap-anywhere">
+          <DialogTitle className="min-w-0 max-w-full pr-8 text-ui-title wrap-anywhere">
             {card.title}
           </DialogTitle>
         </DialogHeader>
@@ -113,7 +113,7 @@ function CardBody({
       </div>
 
       {assignee !== undefined ? (
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-ui-body">
           <PublicAvatar member={assignee} />
           <span className="text-muted-foreground">
             {t("card.assigneeLabel")}
@@ -126,7 +126,7 @@ function CardBody({
           {labels.map((label) => (
             <span
               key={label.id}
-              className={`rounded px-2 py-0.5 text-xs font-medium ${LABEL_COLOR_CHIP[label.color]}`}
+              className={`rounded px-2 py-0.5 text-ui-micro font-medium ${LABEL_COLOR_CHIP[label.color]}`}
             >
               {label.name}
             </span>
@@ -136,7 +136,7 @@ function CardBody({
 
       {card.description !== undefined && card.description.trim() !== "" ? (
         <p
-          className="min-w-0 max-w-full whitespace-pre-wrap text-sm wrap-anywhere"
+          className="min-w-0 max-w-full whitespace-pre-wrap text-ui-body wrap-anywhere"
           data-testid="public-description"
         >
           {card.description}
@@ -148,9 +148,9 @@ function CardBody({
         const done = items.filter((item) => item.done).length;
         return (
           <div key={checklist.id} className="space-y-1">
-            <div className="flex items-center justify-between gap-2 text-sm font-medium">
+            <div className="flex items-center justify-between gap-2 text-ui-body font-medium">
               <span className="min-w-0 wrap-anywhere">{checklist.title}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
+              <span className="shrink-0 text-ui-meta text-muted-foreground">
                 {done}/{items.length}
               </span>
             </div>
@@ -158,7 +158,7 @@ function CardBody({
               {items.map((item) => (
                 <li
                   key={item.id}
-                  className={`flex items-center gap-2 text-sm ${
+                  className={`flex items-center gap-2 text-ui-body ${
                     item.done ? "text-muted-foreground line-through" : ""
                   }`}
                 >
@@ -202,7 +202,7 @@ function PublicAvatar({
   return (
     <span
       data-testid="public-avatar"
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-[var(--avatar-ink)] ${userAvatarColor(
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-ui-micro font-semibold text-[var(--avatar-ink)] ${userAvatarColor(
         id,
         color,
       )}`}
@@ -236,7 +236,7 @@ function PublicAttachments({
   if (items.length === 0) return null;
   return (
     <div className="space-y-1">
-      <p className="text-sm font-medium">{t("card.attachments.title")}</p>
+      <p className="text-ui-body font-medium">{t("card.attachments.title")}</p>
       <ul className="space-y-1">
         {items.map((item) => (
           <li key={item.id}>
@@ -244,7 +244,7 @@ function PublicAttachments({
               href={publicAttachmentUrl(token, item.id)}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-sm text-primary hover:underline"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-ui-body text-primary hover:underline"
             >
               <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden />
               <span className="min-w-0 wrap-anywhere">{item.fileName}</span>
@@ -318,15 +318,15 @@ function PublicComments({
   if (items.length === 0 && initialError) {
     return (
       <div className="space-y-2">
-        <p className="text-sm font-medium">{t("activity.comments")}</p>
-        <p role="alert" className="text-xs text-destructive">
+        <p className="text-ui-body font-medium">{t("activity.comments")}</p>
+        <p role="alert" className="text-ui-label text-destructive">
           {t("share.public.commentsInitialError")}
         </p>
         <button
           type="button"
           data-testid="public-comments-retry"
           onClick={retryInitial}
-          className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline"
+          className="inline-flex min-h-11 items-center text-ui-body font-medium text-primary hover:underline"
         >
           {t("share.public.retry")}
         </button>
@@ -337,9 +337,9 @@ function PublicComments({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">{t("activity.comments")}</p>
+        <p className="text-ui-body font-medium">{t("activity.comments")}</p>
         <span
-          className="text-xs text-muted-foreground"
+          className="text-ui-meta text-muted-foreground"
           data-testid="public-comments-count"
         >
           {t("share.public.commentsShown", { count: items.length })}
@@ -354,12 +354,12 @@ function PublicComments({
             <li key={comment.id} className="flex gap-2">
               {author !== undefined ? <PublicAvatar member={author} /> : null}
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-ui-label text-muted-foreground">
                   {author !== undefined
                     ? userLabel(author.displayName, "")
                     : (comment.authorName ?? t("share.public.anonymous"))}
                 </p>
-                <p className="whitespace-pre-wrap break-words text-sm">
+                <p className="whitespace-pre-wrap break-words text-ui-body">
                   {stripMentionMarkup(comment.text).slice(0, LIMITS.comment)}
                 </p>
               </div>
@@ -370,7 +370,7 @@ function PublicComments({
       {nextCursor !== null || loadError ? (
         <div className="space-y-1">
           {loadError ? (
-            <p role="alert" className="text-xs text-destructive">
+            <p role="alert" className="text-ui-label text-destructive">
               {t("share.public.commentsLoadError")}
             </p>
           ) : null}
@@ -379,7 +379,7 @@ function PublicComments({
             data-testid="public-comments-more"
             disabled={loadingMore}
             onClick={() => void loadOlder()}
-            className="inline-flex min-h-11 items-center text-sm font-medium text-primary hover:underline disabled:opacity-60"
+            className="inline-flex min-h-11 items-center text-ui-body font-medium text-primary hover:underline disabled:opacity-60"
           >
             {loadingMore
               ? t("share.public.commentsLoading")

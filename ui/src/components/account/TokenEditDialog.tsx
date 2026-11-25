@@ -157,7 +157,7 @@ export function TokenEditDialog({
         <div className="space-y-1.5">
           <label
             htmlFor="token-edit-name"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.tokens.nameLabel")}
           </label>
@@ -174,7 +174,7 @@ export function TokenEditDialog({
         <div className="space-y-1.5">
           <label
             htmlFor="token-edit-board"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.tokens.boardLabel")}
           </label>
@@ -197,7 +197,7 @@ export function TokenEditDialog({
         <div className="space-y-1.5">
           <span
             id="token-edit-scope-label"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.tokens.presetLabel")}
           </span>
@@ -235,7 +235,7 @@ export function TokenEditDialog({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("account.tokens.presetHint")}
           </p>
         </div>
@@ -255,13 +255,13 @@ export function TokenEditDialog({
               htmlFor="token-edit-trusted-ci"
               className={
                 trustedCiDisabled
-                  ? "cursor-not-allowed text-sm text-muted-foreground"
-                  : "cursor-pointer text-sm"
+                  ? "cursor-not-allowed text-ui-body text-muted-foreground"
+                  : "cursor-pointer text-ui-body"
               }
             >
               {t("account.tokens.trustedCiLabel")}
             </label>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-meta text-muted-foreground">
               {trustedCiDisabled
                 ? t("account.tokens.trustedCiUnavailable")
                 : t("account.tokens.trustedCiHint")}
@@ -279,7 +279,7 @@ export function TokenEditDialog({
           />
           <label
             htmlFor="token-edit-read-only"
-            className="cursor-pointer text-sm"
+            className="cursor-pointer text-ui-body"
           >
             {t("account.tokens.readOnlyLabel")}
           </label>
@@ -288,7 +288,7 @@ export function TokenEditDialog({
         <div className="space-y-1.5">
           <label
             htmlFor="token-edit-rate"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.tokens.rateLabel")}
           </label>
@@ -309,7 +309,7 @@ export function TokenEditDialog({
             decreaseLabel={t("account.tokens.rateDecrease")}
           />
           {rateError && rateLimit !== "" ? (
-            <p role="alert" className="text-sm text-danger">
+            <p role="alert" className="text-ui-body text-danger">
               {t("account.tokens.rateInvalid", {
                 min: API_TOKEN_RATE_MIN,
                 max: API_TOKEN_RATE_MAX,
@@ -318,7 +318,7 @@ export function TokenEditDialog({
           ) : null}
         </div>
 
-        <p className="rounded-md border bg-muted/30 p-2 text-[11px] text-muted-foreground">
+        <p className="rounded-md border bg-muted/30 p-2 text-ui-meta text-muted-foreground">
           {t("account.tokens.editLimitsHint")}
         </p>
 
@@ -326,7 +326,7 @@ export function TokenEditDialog({
           <p
             role="alert"
             data-testid="token-edit-error"
-            className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger"
+            className="rounded-md border border-danger/40 bg-danger/10 p-2 text-ui-label text-danger"
           >
             {error}
           </p>

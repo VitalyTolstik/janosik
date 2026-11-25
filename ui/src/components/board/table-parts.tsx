@@ -160,14 +160,14 @@ export function SortHeader({
         title={label}
         onClick={() => onCycle(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
+          "inline-flex items-center gap-1 text-ui-micro font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
           isSorted ? "text-foreground" : "text-muted-foreground",
         )}
       >
         {label}
         {/* A neutral icon hints the header is sortable; it turns into the
             direction arrow once sorted. */}
-        <span aria-hidden className="text-[10px]">
+        <span aria-hidden className="text-ui-micro">
           {isSorted ? (sort?.dir === 1 ? "▲" : "▼") : "↕"}
         </span>
       </button>
