@@ -54,6 +54,15 @@ describe("agent design system (TASK-179.9)", () => {
     for (const [name, source] of Object.entries(SURFACES)) {
       expect(source, name).not.toMatch(/text-\[(8|9|10)(?:\.5)?px\]/);
     }
+    for (const [, size, unit] of agentControlCss.matchAll(
+      /font-size:[^;]*?([\d.]+)(px|rem)\b/g,
+    )) {
+      const pixels = Number(size) * (unit === "rem" ? 16 : 1);
+      expect(
+        pixels,
+        `agent-control.css: ${size}${unit}`,
+      ).toBeGreaterThanOrEqual(11);
+    }
   });
 
   it("ships the Latin display face and the Russian body-stack override", () => {
@@ -62,13 +71,17 @@ describe("agent design system (TASK-179.9)", () => {
     expect(agentsPage).toContain("font-agent-display");
     expect(boardSettingsShell).toContain("font-agent-display");
     // Agent control mirrors the prototype's own heading styles instead of
-    // the generic DialogTitle defaults: 16/700 display face, 1.25 leading.
+    // the generic DialogTitle defaults: 17/700 display face, 1.25 leading.
     expect(agentControlDialog).toContain('import "./agent-control.css"');
-    expect(agentControlCss).toContain("font-size: 17px");
+    expect(agentControlCss).toContain(
+      "font-size: var(--text-ui-title, 1.0625rem)",
+    );
     expect(agentControlCss).toContain("font-weight: 700");
     expect(agentControlCss).toContain("line-height: 1.25");
     expect(agentControlCss).toContain(".ac-description");
-    expect(agentControlCss).toContain("font-size: 13px");
+    expect(agentControlCss).toContain(
+      "font-size: var(--text-ui-body, 0.875rem)",
+    );
     expect(agentControlCss).toContain("line-height: 1.45");
     expect(agentControlCss).toContain(
       'html[lang="ru"] .agent-control-surface .ac-title',

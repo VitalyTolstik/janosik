@@ -371,7 +371,7 @@ function CardContextMenuBody({
                     <span className="min-w-0 flex-1 truncate">
                       {target.title}
                     </span>
-                    <span className="shrink-0 text-ui-micro text-muted-foreground">
+                    <span className="shrink-0 text-ui-meta text-muted-foreground">
                       {columnTitleOf(target.id)}
                     </span>
                   </ContextMenuItem>

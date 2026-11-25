@@ -811,25 +811,20 @@ export function AgentsAutomation({
                       className="h-[13px] w-[13px] shrink-0 text-muted-foreground/70"
                       aria-hidden
                     />
-                    <span className="min-w-0 flex-1 truncate text-foreground">
+                    <span className="min-w-0 flex-1 wrap-break-word text-foreground">
                       {t(ACTION_KEYS[action])}
                     </span>
                     <span
-                      className="ml-auto shrink-0 whitespace-nowrap rounded-[3px] border border-border px-1 py-0 text-ui-micro leading-[1.45] text-muted-foreground"
+                      className="ml-auto max-w-[55%] shrink-0 rounded-[3px] border border-border px-1 text-ui-micro wrap-anywhere leading-[1.45] text-muted-foreground"
                       data-testid={`agent-policy-covered-status-${action}`}
                       data-mode={draft.destructive}
                       title={t("board.settings.agents.coveredByMode", {
                         mode: destructiveModeLabel,
                       })}
                     >
-                      <span className="2xl:hidden">
-                        {t("board.settings.agents.coveredStatusShort")}
-                      </span>
-                      <span className="hidden 2xl:inline">
-                        {t("board.settings.agents.coveredStatus", {
-                          mode: destructiveModeLabel,
-                        })}
-                      </span>
+                      {t("board.settings.agents.coveredStatus", {
+                        mode: destructiveModeLabel,
+                      })}
                     </span>
                   </div>
                 );

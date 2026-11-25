@@ -1802,7 +1802,6 @@
   "board.settings.agents.changeDestructiveMode": "Change destructive mode",
   "board.settings.agents.coveredByMode": "Covered by Destructive actions: {{mode}}",
   "board.settings.agents.coveredStatus": "Covered · {{mode}}",
-  "board.settings.agents.coveredStatusShort": "Covered",
   "board.settings.agents.openLive": "Open live controls",
   "board.settings.agents.safeDefaults": "Safe defaults are active where unset",
   "board.settings.agents.customPolicy": "Custom policy",

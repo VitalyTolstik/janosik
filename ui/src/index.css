@@ -1160,7 +1160,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 
 /* --- Edit mode chrome: a premium "field" around the whole editor. --- */
 .mdxeditor.janosik-mdx.janosik-mdx-edit {
-  font-size: 0.925rem;
+  font-size: var(--text-ui-body, 0.875rem);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1176,7 +1176,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 
 /* --- Read-only mode (VIEWER, TASK-35): content without the field chrome. --- */
 .mdxeditor.janosik-mdx.janosik-mdx-readonly {
-  font-size: 0.925rem;
+  font-size: var(--text-ui-body, 0.875rem);
   padding: 0;
 }
 
@@ -1213,7 +1213,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 .mdxeditor.janosik-mdx .janosik-md-content.janosik-md-compact {
   min-height: 0;
   padding: 8px 10px 10px;
-  font-size: 0.875rem;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.55;
 }
 
@@ -1222,7 +1222,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 .mdxeditor.janosik-mdx .janosik-md-content.janosik-md-flush {
   min-height: 0;
   padding: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.55;
 }
 
@@ -1259,7 +1259,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--hover);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-meta, 0.75rem);
 }
 /* The library paints the placeholder with `--baseBorderHover` (a 30% mix of
  * the foreground), which measured 1.89:1 — nearly invisible (U-04). Use the
@@ -1294,7 +1294,7 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 .mdxeditor.janosik-mdx .janosik-md-content {
   min-height: 190px;
   padding: 12px 14px 16px;
-  font-size: 0.925rem;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.65;
   color: var(--foreground);
   caret-color: var(--primary);

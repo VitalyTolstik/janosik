@@ -1135,7 +1135,7 @@ export function CalendarView({
                             event.stopPropagation();
                             setOpenDayKey(key);
                           }}
-                          className="hidden rounded px-1 text-ui-micro text-muted-foreground transition-colors hover:text-foreground sm:block"
+                          className="hidden rounded px-1 text-ui-meta text-muted-foreground transition-colors hover:text-foreground sm:block"
                         >
                           {tp("view.calendar.moreCards", overflow)}
                         </button>

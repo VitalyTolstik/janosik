@@ -541,7 +541,7 @@ export function WorkflowSettings({
           >
             {statusText}
           </span>
-          <span className="truncate border-l border-border pl-3 text-muted-foreground max-lg:hidden">
+          <span className="min-w-0 border-l border-border pl-3 wrap-break-word text-muted-foreground max-md:hidden">
             {statusHint}
           </span>
         </div>

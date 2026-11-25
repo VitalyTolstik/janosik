@@ -307,7 +307,6 @@ export function ProfileSection() {
               value={user.email}
               disabled
               readOnly
-              title={user.email}
               className="text-ui-label"
             />
             <Button

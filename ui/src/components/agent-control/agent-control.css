@@ -160,7 +160,7 @@ html.light .ac-scrim {
 .agent-control-surface .ac-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: var(--text-ui-title, 1.0625rem);
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.25;
@@ -169,7 +169,7 @@ html.light .ac-scrim {
 
 .agent-control-surface .ac-description {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: var(--text-ui-body, 0.875rem);
   font-weight: 400;
   line-height: 1.45;
   color: var(--muted-foreground);
@@ -390,7 +390,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   border-radius: 999px;
   background: var(--warning);
   color: #1b1305;
-  font-size: 11px;
+  font-size: var(--text-ui-micro, 0.6875rem);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -406,7 +406,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   color: var(--muted-foreground);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: var(--text-ui-micro, 0.6875rem);
   font-weight: 650;
 }
 
@@ -1020,7 +1020,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .live-status-main p {
   margin: 2px 0 0;
-  font-size: 13px;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.5;
   color: var(--muted-foreground);
 }
@@ -1104,13 +1104,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
     height: 28px;
   }
 
-  .agent-control-surface .ac-title {
-    font-size: 16px;
-    line-height: 1.25;
-  }
-
   .agent-control-surface .ac-description {
-    font-size: 12px;
     max-width: 44ch;
   }
 
@@ -1188,7 +1182,6 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-rail-tab .rail-count {
     height: 15px;
     min-width: 15px;
-    font-size: 10px;
   }
 
   .agent-control-surface .ac-content {

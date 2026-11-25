@@ -578,8 +578,9 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     // the mode and has no checkbox of its own.
     const statuses = screen.getAllByTestId(/^agent-policy-covered-status-/);
     expect(statuses).toHaveLength(DESTRUCTIVE_POLICY_ACTIONS.length);
+    expect(screen.getAllByText("Covered · Require approval")).toEqual(statuses);
     for (const status of statuses) {
-      expect(status).toHaveTextContent("Covered · Require approval");
+      expect(status).toBeVisible();
       expect(status).toHaveAttribute("data-mode", "approval");
     }
     for (const action of DESTRUCTIVE_POLICY_ACTIONS) {
@@ -603,10 +604,9 @@ describe("AgentsAutomation (TASK-179.7)", () => {
     await userEvent.click(
       screen.getByTestId("agent-policy-destructive-option-deny"),
     );
-    for (const status of screen.getAllByTestId(
-      /^agent-policy-covered-status-/,
-    )) {
-      expect(status).toHaveTextContent("Covered · Block completely");
+    expect(screen.getAllByText("Covered · Block completely")).toEqual(statuses);
+    for (const status of statuses) {
+      expect(status).toBeVisible();
       expect(status).toHaveAttribute("data-mode", "deny");
     }
     expect(

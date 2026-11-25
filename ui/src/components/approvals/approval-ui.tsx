@@ -472,7 +472,7 @@ export function ApprovalDecisionForm({
       <form noValidate onSubmit={submitReject} className="space-y-1.5">
         <label
           htmlFor="approval-comment"
-          className="block text-ui-micro font-semibold text-foreground"
+          className="block text-ui-label font-semibold text-foreground"
         >
           {t("agents.approvals.rejectReason")}{" "}
           <span className="font-semibold text-muted-foreground">

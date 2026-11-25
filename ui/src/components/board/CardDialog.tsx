@@ -1439,7 +1439,7 @@ export function CardDialog({
                                 </span>
                                 {reason ? (
                                   <span
-                                    className="block whitespace-normal text-ui-micro leading-snug text-muted-foreground"
+                                    className="block whitespace-normal text-ui-label leading-snug text-muted-foreground"
                                     data-testid={`card-dialog-move-reason-${column.id}`}
                                   >
                                     {reason}
