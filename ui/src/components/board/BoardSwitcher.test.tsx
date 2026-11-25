@@ -223,17 +223,22 @@ describe("BoardSwitcher", () => {
     );
   });
 
-  it("keeps longer search queries while enforcing the board title limit", async () => {
+  it("does not seed an invalid empty-board name from a long search", async () => {
     renderSwitcher();
     await openSwitcher();
     const input = screen.getByRole("combobox", { name: "Search boards…" });
     fireEvent.change(input, { target: { value: "x".repeat(101) } });
-    expect(screen.getByRole("button", { name: /^Create /i })).toBeDisabled();
-    expect(
-      screen.getByText("Board names can have up to 100 characters."),
-    ).toBeVisible();
-    fireEvent.change(input, { target: { value: "x".repeat(100) } });
-    expect(screen.getByRole("button", { name: /^Create /i })).toBeEnabled();
+    expect(input).toHaveValue("x".repeat(101));
+
+    fireEvent.click(screen.getByTestId("switcher-create-empty"));
+    const name = await screen.findByLabelText("Board name");
+    const submit = screen.getByTestId("switcher-create-empty-submit");
+    expect(name).toHaveValue("");
+    expect(name).toHaveAttribute("maxlength", "100");
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(name, { target: { value: "y".repeat(100) } });
+    expect(submit).toBeEnabled();
   });
 
   it("navigates with ArrowDown + Enter", async () => {
@@ -247,29 +252,167 @@ describe("BoardSwitcher", () => {
     });
   });
 
-  it("creates a board from the footer row and navigates to it", async () => {
+  it("opens the shared template gallery from quick-create", async () => {
     renderSwitcher();
     await openSwitcher();
-    fireEvent.click(screen.getByText("New board"));
-    const input = await screen.findByLabelText("Board name");
-    await userEvent.type(input, "Gamma{Enter}");
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+
+    const picker = await screen.findByTestId("template-picker");
+    // The popover closed before the dialog mounted: one focus layer only.
+    expect(
+      screen.queryByRole("dialog", { name: "Switch board" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(picker).getByRole("button", { name: /Product launch/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const name = within(picker).getByLabelText("Board name");
+    expect((name as HTMLInputElement).value).toMatch(/^Product launch — /);
+    expect(
+      within(picker).getByRole("region", { name: /Preview: Product launch/ }),
+    ).toBeVisible();
+    // Nothing is created until the picker's CTA.
+    expect(JSON.parse(localStorage.getItem("janosik-boards")!)).toHaveLength(2);
+  });
+
+  it("seeds the template picker from an active search query", async () => {
+    renderSwitcher();
+    await openSwitcher();
+    await userEvent.type(screen.getByLabelText("Search boards…"), "Delta");
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+
+    const picker = await screen.findByTestId("template-picker");
+    expect(
+      (within(picker).getByLabelText("Board name") as HTMLInputElement).value,
+    ).toBe("Delta");
+    expect(within(picker).getByText("Edited by you")).toBeVisible();
+  });
+
+  it("creates a template board, refreshes the switcher and opens it", async () => {
+    renderSwitcher();
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+
+    const picker = await screen.findByTestId("template-picker");
+    await userEvent.click(
+      within(picker).getByRole("button", { name: /Sprint board/ }),
+    );
+    const name = (
+      within(picker).getByLabelText("Board name") as HTMLInputElement
+    ).value;
+    expect(name).toMatch(/^Sprint board \d{4}-W\d{2}$/);
+
+    fireEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(await screen.findByText("Board created")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open board" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    });
+    // The shared catalog supplied real starter content, not an empty board.
+    expect(await screen.findByText("Ship saved views")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch board" }));
+    const grid = await screen.findByRole("grid", { name: "Switch board" });
+    expect(within(grid).getByRole("gridcell", { name })).toBeInTheDocument();
+  });
+
+  it("gates empty-board creation behind an explicit name", async () => {
+    renderSwitcher();
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-empty"));
+
+    const name = await screen.findByLabelText("Board name");
+    const submit = screen.getByTestId("switcher-create-empty-submit");
+    expect(name).toHaveValue("");
+    expect(submit).toBeDisabled();
+    expect(screen.getByText("Empty boards need a name.")).toBeVisible();
+
+    await userEvent.type(name, "Gamma");
+    expect(submit).toBeEnabled();
+    await userEvent.click(submit);
+
     await waitFor(() => {
       expect(
         screen.getByRole("heading", { name: "Gamma" }),
       ).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole("button", { name: "Switch board" }));
+    const grid = await screen.findByRole("grid", { name: "Switch board" });
+    expect(within(grid).getByRole("gridcell", { name: "Gamma" })).toBeVisible();
   });
 
-  it("creates a board named after a non-matching search query", async () => {
+  it("seeds the name-gated empty-board form from a search query", async () => {
     renderSwitcher();
     await openSwitcher();
     await userEvent.type(screen.getByLabelText("Search boards…"), "Delta");
-    fireEvent.click(screen.getByText('Create "Delta"'));
+    fireEvent.click(screen.getByTestId("switcher-create-empty"));
+
+    const name = await screen.findByLabelText("Board name");
+    expect(name).toHaveValue("Delta");
+    expect(screen.getByTestId("switcher-create-empty-submit")).toBeEnabled();
+    await userEvent.click(screen.getByTestId("switcher-create-empty-submit"));
+
     await waitFor(() => {
       expect(
         screen.getByRole("heading", { name: "Delta" }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("Escape cancels only the inline empty-board form", async () => {
+    renderSwitcher();
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-empty"));
+    const name = await screen.findByLabelText("Board name");
+    name.focus();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Board name")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("grid", { name: "Switch board" })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("switcher-create-empty")).toHaveFocus(),
+    );
+  });
+
+  it("shows neutral zero-active copy on an all-archived switcher", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      JSON.stringify([
+        { ...JSON.parse(boardJson("b-1", "Alpha")), archivedAt: 123 },
+      ]),
+    );
+    renderSwitcher();
+    await openSwitcher();
+
+    expect(screen.getByText("No active boards")).toBeVisible();
+    expect(screen.queryByText("No boards match")).toBeNull();
+
+    await userEvent.type(screen.getByLabelText("Search boards…"), "zzz");
+    expect(screen.getByText("No boards match")).toBeVisible();
+    expect(screen.queryByText("No active boards")).toBeNull();
+  });
+
+  it("returns focus to the switcher trigger after closing the picker", async () => {
+    renderSwitcher();
+    const trigger = screen.getByRole("button", { name: "Switch board" });
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+
+    const picker = await screen.findByTestId("template-picker");
+    await waitFor(() =>
+      expect(
+        within(picker).getByRole("button", { name: /Product launch/ }),
+      ).toHaveFocus(),
+    );
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByTestId("template-picker")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 
   it("archives a non-active board after inline confirm (data kept)", async () => {
@@ -403,6 +546,41 @@ describe("BoardSwitcher", () => {
       ).toBeInTheDocument();
     });
     expect(screen.queryByTestId("empty-create-board")).toBeNull();
+  });
+
+  it("keeps the archived-entry picker success panel instead of redirecting", async () => {
+    localStorage.setItem("janosik-boards", `[${boardJson("b-1", "Alpha")}]`);
+    renderSwitcher();
+    const grid = await openSwitcher();
+    const alphaRow = grid.querySelector<HTMLElement>('[data-index="0"]')!;
+    fireEvent.mouseEnter(alphaRow);
+    fireEvent.click(
+      within(alphaRow).getByRole("button", { name: "Archive board" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Yes, archive" }),
+    );
+    expect(await screen.findByTestId("empty-create-board")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+    const picker = await screen.findByTestId("template-picker");
+    const name = (
+      within(picker).getByLabelText("Board name") as HTMLInputElement
+    ).value;
+    fireEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(await screen.findByText("Board created")).toBeVisible();
+    // The paused home redirect keeps the success panel (and its focus
+    // return target) alive until the user opens the board. The modal marks
+    // the background aria-hidden, so probe the DOM node directly.
+    expect(
+      document.querySelector('[data-testid="empty-create-board"]'),
+    ).not.toBeNull();
+    expect(screen.queryByTestId("board-main")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open board" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    });
   });
 
   it("creates a board from the empty-state CTA and navigates to it", async () => {
@@ -644,5 +822,175 @@ describe("BoardSwitcher role sections (server mode)", () => {
         screen.getByRole("heading", { name: "Gamma" }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("creates a template board through the server contract", async () => {
+    const server = new FakeServer([serverBoard("b-1", "Alpha")]);
+    renderServerSwitcher(server);
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+
+    const picker = await screen.findByTestId("template-picker");
+    const name = (
+      within(picker).getByLabelText("Board name") as HTMLInputElement
+    ).value;
+    fireEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(await screen.findByText("Board created")).toBeVisible();
+
+    const createRequest = server.requests.find(
+      (request) =>
+        request.method === "POST" && request.path === "/api/v1/boards",
+    );
+    expect(createRequest?.body).toMatchObject({
+      title: name,
+      template: "product-launch",
+      templateLocale: "en",
+      templateDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      templateUtcOffsetMinutes: expect.any(Number),
+    });
+    expect(server.boards.size).toBe(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open board" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Switch board" }));
+    const grid = await screen.findByRole("grid", { name: "Switch board" });
+    expect(within(grid).getByRole("gridcell", { name })).toBeVisible();
+  });
+
+  it("offers the empty-board fallback when the server rejects a template", async () => {
+    const server = new FakeServer([serverBoard("b-1", "Alpha")]);
+    renderServerSwitcher(server);
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+
+    const picker = await screen.findByTestId("template-picker");
+    const name = (
+      within(picker).getByLabelText("Board name") as HTMLInputElement
+    ).value;
+    server.failNextRequest(400, {
+      message: "Unknown template",
+      field: "template",
+    });
+    fireEvent.click(within(picker).getByTestId("template-create-board"));
+    expect(
+      await screen.findByText(/isn’t available in this version/),
+    ).toBeVisible();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create empty board" }),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    });
+    // One failed template attempt + one explicit empty-board fallback.
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" && request.path === "/api/v1/boards",
+      ),
+    ).toHaveLength(2);
+    expect(server.boards.size).toBe(2);
+  });
+
+  it("submits the empty-board form only once while the POST is in flight", async () => {
+    const server = new FakeServer([serverBoard("b-1", "Alpha")]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let createCalls = 0;
+    const handle = server.handle;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        );
+        if (init?.method === "POST" && url.pathname === "/api/v1/boards") {
+          createCalls += 1;
+          await gate;
+        }
+        return handle(input, init);
+      },
+    );
+
+    renderSwitcher();
+    await openSwitcher();
+    fireEvent.click(screen.getByTestId("switcher-create-empty"));
+    const name = await screen.findByLabelText("Board name");
+    await userEvent.type(name, "Gamma");
+    const submit = screen.getByTestId("switcher-create-empty-submit");
+    const form = submit.closest("form")!;
+
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(createCalls).toBe(1));
+    expect(submit).toBeDisabled();
+    expect(name).toBeDisabled();
+    expect(screen.queryByTestId("switcher-create-empty")).toBeNull();
+
+    await act(async () => {
+      release();
+      await gate;
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Gamma" }),
+      ).toBeInTheDocument();
+    });
+    expect(createCalls).toBe(1);
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" && request.path === "/api/v1/boards",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("checks the server board cap before opening the template picker", async () => {
+    const server = new FakeServer([serverBoard("b-1", "Alpha")]);
+    let configCalls = 0;
+    const handle = server.handle;
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === "string" ? input : input.toString(),
+          "http://api.test",
+        );
+        if (url.pathname === "/api/v1/auth/config") {
+          configCalls += 1;
+          return new Response(
+            JSON.stringify({ limits: { boards: 1, importBytes: 1024 } }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        return handle(input, init);
+      },
+    );
+
+    renderSwitcher();
+    await openSwitcher();
+    await waitFor(() => expect(configCalls).toBe(1));
+    // Let the effect consume the config response before the click.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    fireEvent.click(screen.getByTestId("switcher-create-template"));
+    expect(screen.queryByTestId("template-picker")).not.toBeInTheDocument();
+    expect(screen.getByRole("grid", { name: "Switch board" })).toBeVisible();
+    expect(
+      server.requests.filter(
+        (request) =>
+          request.method === "POST" && request.path === "/api/v1/boards",
+      ),
+    ).toHaveLength(0);
   });
 });

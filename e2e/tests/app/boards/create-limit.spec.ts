@@ -18,9 +18,9 @@ test("does not cap the workspace at ten boards in server mode", async ({
     page.getByRole("grid", { name: "Switch board" }).getByRole("row"),
   ).toHaveCount(10);
 
-  await page.getByRole("button", { name: "New board" }).click();
+  await page.getByTestId("switcher-create-empty").click();
   await page.getByRole("textbox", { name: "Board name" }).fill("Eleventh");
-  await page.getByRole("textbox", { name: "Board name" }).press("Enter");
+  await page.getByTestId("switcher-create-empty-submit").click();
 
   // TASK-166 D19: the old ten-board cap is local/offline only. Server mode
   // accepts the eleventh board and opens it.
@@ -59,19 +59,32 @@ test("only a valid search title sends a board creation request", async ({
   await page.getByRole("button", { name: "Switch board" }).click();
   const dialog = page.getByRole("dialog", { name: "Switch board" });
   const search = dialog.getByRole("combobox", { name: "Search boards…" });
-  const create = dialog.getByRole("button", { name: /^Create /i });
+  const openEmpty = dialog.getByTestId("switcher-create-empty");
+  const submit = dialog.getByTestId("switcher-create-empty-submit");
+  const name = dialog.getByRole("textbox", { name: "Board name" });
+
+  // A query over the title limit is not a valid seed: the explicit form
+  // opens empty and disabled, and submitting it sends no request.
   await search.fill("x".repeat(101));
-  await expect(create).toBeDisabled();
-  await search.press("Enter");
-  await create.press("Enter");
+  await openEmpty.click();
+  await expect(name).toHaveValue("");
+  await expect(submit).toBeDisabled();
+  await name.press("Enter");
   expect(requests).toEqual([]);
+
+  // Closing just the form leaves the switcher open for the valid path.
+  await name.press("Escape");
+  await expect(name).toBeHidden();
 
   const validTitle = "x".repeat(100);
   await search.fill(validTitle);
+  await openEmpty.click();
+  await expect(name).toHaveValue(validTitle);
+  await expect(submit).toBeEnabled();
   const created = page.waitForResponse((response) =>
     isCreateBoard(response.request()),
   );
-  await create.click();
+  await submit.click();
   expect((await created).status()).toBe(201);
   expect(requests).toEqual([validTitle]);
   await expect(page.getByRole("heading", { name: validTitle })).toBeVisible();
