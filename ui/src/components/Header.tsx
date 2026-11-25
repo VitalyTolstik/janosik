@@ -328,7 +328,7 @@ export function Header() {
             data-testid="agents-home"
             className="flex shrink-0 items-center gap-2 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            <BrandMark size="compact" />
+            <BrandMark />
             <span
               data-testid="agents-wordmark"
               className="hidden font-agent-display text-[14px] font-bold leading-none tracking-[-0.02em] sm:inline"
