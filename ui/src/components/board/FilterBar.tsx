@@ -375,7 +375,7 @@ export function FilterBar({
             data-testid="filter-facets-trigger"
             // 390px touch target: shadcn `sm` is 32px; touch screens get the
             // 44px minimum while desktop keeps the compact toolbar.
-            className="max-lg:h-11"
+            className="max-lg:h-11 text-ui-body"
             aria-label={
               facetCount > 0
                 ? `${t("filter.filtersAria")} ${facetCount}`
