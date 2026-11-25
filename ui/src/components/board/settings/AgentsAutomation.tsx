@@ -722,7 +722,7 @@ export function AgentsAutomation({
                 role="textbox"
                 aria-readonly="true"
                 aria-label={t("board.settings.agents.approverRoles")}
-                className="flex min-h-7 w-full cursor-not-allowed items-center justify-between gap-1.5 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,var(--background))] px-2 py-1 text-ui-body leading-[1.3] text-foreground opacity-[0.52] max-md:min-h-11"
+                className="flex min-h-7 w-full cursor-not-allowed items-center justify-between gap-1.5 rounded-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,var(--background))] px-2 py-1 text-ui-body leading-[1.3] text-muted-foreground max-md:min-h-11"
               >
                 <span className="min-w-0">
                   {t("board.settings.agents.approverRolesFixed")}

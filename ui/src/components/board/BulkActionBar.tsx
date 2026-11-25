@@ -832,7 +832,7 @@ export function BulkActionBar() {
         {displayedCount > 0 ? (
           <span
             data-testid="bulk-count"
-            className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-ui-body font-semibold tabular-nums text-primary"
+            className="inline-flex h-8 items-center rounded-full bg-primary/10 px-2.5 text-ui-body font-semibold tabular-nums text-(--agent-tone-primary)"
           >
             {t("bulk.selected", { count: displayedCount })}
           </span>
@@ -1254,7 +1254,10 @@ export function BulkActionBar() {
               variant="destructive"
               size="sm"
               data-testid="bulk-delete"
-              className={cn(ACTION_BUTTON, "gap-1.5")}
+              className={cn(
+                ACTION_BUTTON,
+                "gap-1.5 bg-action-danger hover:bg-action-danger/90",
+              )}
               disabled={
                 !selection.enabled || busy !== null || selection.count === 0
               }
