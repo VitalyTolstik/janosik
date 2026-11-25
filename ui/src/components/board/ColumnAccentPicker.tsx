@@ -107,7 +107,7 @@ function AccentPreview({
   const { t } = useI18n();
   return (
     <div className="space-y-1.5">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
         {t("column.accentPreview")}
       </div>
       <div
@@ -128,11 +128,11 @@ function AccentPreview({
               aria-hidden
               className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
             />
-            <span className="janosik-column-accent-heading truncate text-[11px] font-semibold">
+            <span className="janosik-column-accent-heading truncate text-ui-meta font-semibold">
               {title}
             </span>
           </span>
-          <span className="janosik-column-accent-count flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-hover px-1 text-[9px] font-medium text-muted-foreground">
+          <span className="janosik-column-accent-count flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-hover px-1 text-ui-micro font-medium text-muted-foreground">
             3
           </span>
         </div>
@@ -208,12 +208,16 @@ export function ColumnAccentPicker({
         onClick={stop}
       >
         <div className="space-y-0.5">
-          <div className="text-sm font-semibold">{t("column.accentTitle")}</div>
-          <div className="truncate text-xs text-muted-foreground">{title}</div>
+          <div className="text-ui-body font-semibold">
+            {t("column.accentTitle")}
+          </div>
+          <div className="truncate text-ui-label text-muted-foreground">
+            {title}
+          </div>
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
             {t("column.accentColors")}
           </div>
           <div
@@ -234,7 +238,7 @@ export function ColumnAccentPicker({
         </div>
 
         <div className="space-y-1.5">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
             {t("column.accentGradients")}
           </div>
           <div
@@ -261,7 +265,7 @@ export function ColumnAccentPicker({
           onClick={() => onChange(undefined)}
           data-testid="column-style-reset"
           className={cn(
-            "flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs font-medium transition-colors hover:bg-hover",
+            "flex w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-ui-label font-medium transition-colors hover:bg-hover",
             selected === "none" && "ring-2 ring-ring ring-offset-1",
           )}
         >
@@ -275,7 +279,7 @@ export function ColumnAccentPicker({
           columnStyle={columnStyle}
         />
 
-        <p className="text-[11px] leading-snug text-muted-foreground">
+        <p className="text-ui-meta leading-snug text-muted-foreground">
           {t("column.accentHint")}
         </p>
       </PopoverContent>

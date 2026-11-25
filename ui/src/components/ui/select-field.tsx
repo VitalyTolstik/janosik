@@ -74,7 +74,7 @@ export function SelectField<T extends string>({
           {...combobox.triggerProps}
           data-testid={testId}
           className={cn(
-            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-2 text-left text-sm text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-2 text-left text-ui-body text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}
         >
@@ -122,7 +122,7 @@ export function SelectField<T extends string>({
               data-testid={`${testId}-option-${option.value}`}
               onClick={() => combobox.choose(index)}
               className={cn(
-                "flex min-h-9 w-full items-center justify-between rounded-md border border-transparent px-2 py-1.5 text-left text-[12px] leading-[1.35] transition-colors max-md:min-h-11",
+                "flex min-h-9 w-full items-center justify-between rounded-md border border-transparent px-2 py-1.5 text-left text-ui-body leading-[1.35] transition-colors max-md:min-h-11",
                 active && "bg-hover",
                 checked
                   ? "border-primary/30 bg-primary/10 font-medium text-foreground hover:bg-primary/10"

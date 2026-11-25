@@ -131,7 +131,7 @@ function Column({
             onActivate?.(value);
           }}
           className={cn(
-            "flex h-8 w-full snap-center items-center justify-center gap-1 rounded-sm px-2 text-sm tabular-nums whitespace-nowrap transition-colors",
+            "flex h-8 w-full snap-center items-center justify-center gap-1 rounded-sm px-2 text-ui-body tabular-nums whitespace-nowrap transition-colors",
             value === selected
               ? "bg-primary font-semibold text-primary-foreground"
               : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
@@ -141,7 +141,7 @@ function Column({
           {suffix && (
             <span
               className={cn(
-                "text-[10px] font-medium tracking-wide",
+                "text-ui-micro font-medium tracking-wide",
                 value === selected
                   ? "text-primary-foreground/70"
                   : "text-muted-foreground",
@@ -183,7 +183,7 @@ export function TimePickerTrigger({
       aria-expanded={active}
       onClick={onToggle}
       className={cn(
-        "inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-muted/50 px-2.5 text-sm tabular-nums transition-colors hover:border-primary/40 hover:text-primary",
+        "inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-muted/50 px-2.5 text-ui-body tabular-nums transition-colors hover:border-primary/40 hover:text-primary",
         active && "border-primary/40 text-primary",
       )}
     >

@@ -112,7 +112,7 @@ function CountBadgeTrigger({ degree }: { degree: number }) {
             type="button"
             aria-label={t("card.links.badgeTooltip", { count: degree })}
             data-testid="card-links-badge"
-            className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:border-primary/40 group-hover:text-primary"
+            className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/60 bg-muted/50 px-1.5 text-ui-meta font-medium tabular-nums text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:border-primary/40 group-hover:text-primary"
             onClick={(event) => {
               // Don't let the click open the card dialog.
               event.stopPropagation();
@@ -198,13 +198,13 @@ function LinkedCardsContent({
          (the "random card" bug). */
       onClick={(event) => event.stopPropagation()}
     >
-      <p className="px-1 pb-1 text-xs font-medium text-muted-foreground">
+      <p className="px-1 pb-1 text-ui-label font-medium text-muted-foreground">
         {t("card.links.title")}
       </p>
       <div className="max-h-64 space-y-1.5 overflow-y-auto">
         {groups.length === 0 && facts.degree > 0 ? (
           <p
-            className="px-1 py-1.5 text-xs text-muted-foreground"
+            className="px-1 py-1.5 text-ui-label text-muted-foreground"
             data-testid="card-links-popover-loading"
           >
             {t("card.loading")}
@@ -212,7 +212,7 @@ function LinkedCardsContent({
         ) : null}
         {groups.map((group) => (
           <div key={group.key}>
-            <p className="px-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            <p className="px-1 pb-0.5 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground/70">
               {t(`card.links.type.${group.key}`)}
             </p>
             <ul className="space-y-0.5">
@@ -264,7 +264,7 @@ function LinkedCardRow({
         data-testid="card-link-popover-row"
         data-card-id={row.targetCardId}
         className={cn(
-          "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none",
+          "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-ui-body transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none",
           !row.live &&
             "pointer-events-none cursor-default text-muted-foreground/70",
           target?.archivedAt !== undefined && "opacity-60",
@@ -283,7 +283,7 @@ function LinkedCardRow({
       >
         <span className="min-w-0 flex-1 truncate">{row.title}</span>
         {columnTitle ? (
-          <span className="max-w-20 shrink-0 truncate text-[11px] text-muted-foreground/70">
+          <span className="max-w-20 shrink-0 truncate text-ui-meta text-muted-foreground/70">
             {columnTitle}
           </span>
         ) : null}

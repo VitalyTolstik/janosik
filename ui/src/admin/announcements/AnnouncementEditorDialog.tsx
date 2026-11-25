@@ -527,7 +527,7 @@ export function AnnouncementEditorDialog({
     <Dialog open onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent className="max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle className="text-ui-title">
             {announcement
               ? t("admin.comms.announcement.editTitle")
               : t("admin.comms.new")}

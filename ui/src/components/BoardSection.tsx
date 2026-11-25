@@ -523,7 +523,7 @@ export function BoardSection() {
             role="status"
             aria-live="polite"
             data-testid="filter-server-pending"
-            className="mb-3 text-xs text-muted-foreground"
+            className="mb-3 text-ui-label text-muted-foreground"
           >
             {t("filter.searchingServer")}
           </p>
@@ -533,7 +533,7 @@ export function BoardSection() {
             role="status"
             aria-live="polite"
             data-testid="read-model-partial"
-            className="mb-3 text-xs text-muted-foreground"
+            className="mb-3 text-ui-label text-muted-foreground"
           >
             {t("board.partialRead")}{" "}
             <button

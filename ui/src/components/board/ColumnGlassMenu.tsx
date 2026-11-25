@@ -47,7 +47,7 @@ export function ColumnGlassMenu() {
         </TooltipTrigger>
         <DropdownMenuContent align="end" className="w-64 p-0">
           <div className="space-y-1.5 px-3 py-2.5" onKeyDown={stopKeys}>
-            <label className="flex h-6 cursor-pointer items-center gap-2 text-xs">
+            <label className="flex h-6 cursor-pointer items-center gap-2 text-ui-label">
               <Checkbox
                 aria-label={t("bg.glassOpacity")}
                 checked={glass.transparency > 0}
@@ -65,7 +65,7 @@ export function ColumnGlassMenu() {
                 {t("bg.glassOpacity")}
               </span>
             </label>
-            <label className="flex h-6 cursor-pointer items-center gap-2 text-xs">
+            <label className="flex h-6 cursor-pointer items-center gap-2 text-ui-label">
               <Checkbox
                 aria-label={t("bg.glassBlur")}
                 checked={glass.blur > 0}

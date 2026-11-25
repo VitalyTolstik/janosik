@@ -856,15 +856,15 @@ export function DndBoard({
                   aria-hidden
                   className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
                 />
-                <span className="janosik-column-accent-heading truncate text-sm font-semibold text-foreground">
+                <span className="janosik-column-accent-heading truncate text-ui-body font-semibold text-foreground">
                   {activeColumn.title}
                 </span>
               </span>
-              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hover px-1.5 text-[11px] font-medium text-muted-foreground">
+              <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-hover px-1.5 text-ui-meta font-medium text-muted-foreground">
                 {activeColumn.cardIds.length}
               </span>
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="mt-2 text-ui-meta text-muted-foreground">
               {tp("overlay.columnCardCount", activeColumn.cardIds.length)}
             </p>
           </div>

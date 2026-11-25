@@ -412,7 +412,7 @@ export function TemplatePickerDialog({
                   type="button"
                   data-testid="template-open-board"
                   onClick={openCreatedBoard}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-action-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface max-[620px]:flex-1"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-action-primary px-4 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface max-[620px]:flex-1"
                 >
                   <ArrowRight aria-hidden className="h-4 w-4" />
                   {t("board.templatePicker.openBoard")}

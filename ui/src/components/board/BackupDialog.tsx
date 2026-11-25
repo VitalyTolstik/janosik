@@ -138,7 +138,7 @@ function BackupContent() {
             </div>
           </SkeletonRegion>
         ) : backups.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
+          <p className="py-8 text-center text-ui-body text-muted-foreground">
             {t("data.backupEmpty")}
           </p>
         ) : (
@@ -153,7 +153,7 @@ function BackupContent() {
                 >
                   {confirming ? (
                     <>
-                      <span className="flex-1 text-sm">
+                      <span className="flex-1 text-ui-body">
                         {t("data.restoreConfirm")}
                       </span>
                       <Button
@@ -181,7 +181,7 @@ function BackupContent() {
                   ) : (
                     <>
                       <span
-                        className="flex-1 truncate text-sm text-foreground/90"
+                        className="flex-1 truncate text-ui-body text-foreground/90"
                         title={formatDate(backup.createdAt, lang, hour12)}
                       >
                         {formatBackupTimestamp(

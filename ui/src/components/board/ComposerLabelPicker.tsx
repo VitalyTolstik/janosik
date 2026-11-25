@@ -42,7 +42,7 @@ export function ComposerLabelPicker({
             aria-pressed={isSelected}
             onClick={() => onToggle(label.id)}
             className={cn(
-              "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-[10px] font-medium transition-colors",
+              "inline-flex h-5 items-center gap-1 rounded-full border px-1.5 text-ui-micro font-medium transition-colors",
               isSelected
                 ? "border-primary/50 bg-primary/10 text-foreground"
                 : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",

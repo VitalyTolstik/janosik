@@ -109,7 +109,7 @@ export function ColumnMenu({
           <Gauge className="h-4 w-4" />
           {t("column.wipLimit")}
           {wipLimit !== undefined && (
-            <span className="ml-auto text-xs text-muted-foreground">
+            <span className="ml-auto text-ui-label text-muted-foreground">
               {wipLimit}
             </span>
           )}

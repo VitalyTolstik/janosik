@@ -204,7 +204,7 @@ export function AdminLoginPage() {
             <span aria-hidden className="group">
               <BrandMark size="large" />
             </span>
-            <h1 className="text-lg font-semibold text-foreground">
+            <h1 className="text-ui-title font-semibold text-foreground">
               {totpRequired
                 ? t("admin.login.totpTitle")
                 : t("admin.login.title")}
