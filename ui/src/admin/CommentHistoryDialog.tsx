@@ -148,7 +148,7 @@ export function AdminCommentHistoryButton({
         {comment.historyIncomplete ? (
           <span
             aria-hidden
-            className="text-ui-micro font-semibold text-(--agent-tone-warning)"
+            className="text-ui-micro font-semibold text-(--chip-warning)"
             title={t("admin.comments.history.banner.generic")}
           >
             !

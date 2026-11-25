@@ -684,7 +684,7 @@ export function UserDetailPage() {
                       {t("admin.userDetail.action.resetPassword")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="text-(--agent-tone-warning) focus:text-(--agent-tone-warning)"
+                      className="text-(--chip-warning) focus:text-(--chip-warning)"
                       data-testid="admin-user-promote"
                       onSelect={() => setPromoteDialog(true)}
                     >

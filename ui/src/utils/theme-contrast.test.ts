@@ -224,6 +224,41 @@ describe.each(themes)("$name theme contrast pairs", ({ name, css, ui }) => {
     }
   });
 
+  it("bulk selection counts clear AA on the secondary button tint", () => {
+    for (const surface of surfaces) {
+      for (const buttonAlpha of [1, 0.9]) {
+        const buttonFill = tint(css["--secondary"], surface.value, buttonAlpha);
+        const countFill = tint(css["--primary"], buttonFill, 0.15);
+        expect(
+          contrast(css["--secondary-foreground"], countFill),
+          `bulk selection count over ${surface.token} at ${buttonAlpha}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("bulk delete hover clears AA with white text", () => {
+    const hoverFill = tint(ui["--action-danger"], "#000000", 0.85);
+    expect(contrast("#ffffff", hoverFill)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("admin warning text clears AA on plain, highlighted and tinted fills", () => {
+    for (const surface of [
+      ...surfaces,
+      { token: "--hover", value: css["--hover"] },
+    ]) {
+      for (const alpha of [0, 0.1]) {
+        expect(
+          contrast(
+            ui["--chip-warning"],
+            tint(css["--warning"], surface.value, alpha),
+          ),
+          `admin warning on ${surface.token} at ${alpha}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it("status chips clear AA on their 10% and 15% fills", () => {
     const pairs = [
       ["--danger", "--chip-red"],

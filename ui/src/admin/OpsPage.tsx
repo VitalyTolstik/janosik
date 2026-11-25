@@ -508,7 +508,7 @@ export function OpsPage() {
             </p>
             {retentionDirty ? (
               <p
-                className="mt-1 text-ui-label text-(--agent-tone-warning)"
+                className="mt-1 text-ui-label text-(--chip-warning)"
                 data-testid="admin-ops-retention-dirty"
               >
                 {t("admin.ops.retention.draftHint", { days: effectiveDays })}

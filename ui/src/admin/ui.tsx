@@ -125,7 +125,7 @@ export function PageHeader({
 const BADGE_VARIANTS = {
   neutral: "border-border bg-hover/60 text-muted-foreground",
   success: "border-success/30 bg-success/10 text-(--agent-tone-success)",
-  warning: "border-warning/30 bg-warning/10 text-(--agent-tone-warning)",
+  warning: "border-warning/30 bg-warning/10 text-(--chip-warning)",
   danger: "border-danger/30 bg-danger/10 text-(--agent-tone-danger)",
   primary: "border-primary/30 bg-primary/10 text-(--agent-tone-primary)",
 } as const;
@@ -857,7 +857,7 @@ export function CharCount({
         left < 0
           ? "text-(--agent-tone-danger)"
           : left <= Math.max(20, Math.round(max * 0.1))
-            ? "text-(--agent-tone-warning)"
+            ? "text-(--chip-warning)"
             : "text-muted-foreground",
         className,
       )}

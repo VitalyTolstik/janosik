@@ -101,7 +101,7 @@ export function RowActions({
                 action.destructive
                   ? "text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                   : action.warning
-                    ? "text-(--agent-tone-warning) focus:text-(--agent-tone-warning)"
+                    ? "text-(--chip-warning) focus:text-(--chip-warning)"
                     : undefined
               }
               onSelect={() => {

@@ -69,6 +69,8 @@ type BulkKind = "move" | "archive" | "delete" | "label" | "assign";
 type BarFocusTarget = "dismiss" | "clear" | "first";
 
 const ACTION_BUTTON = "h-9 max-lg:h-11 text-ui-body";
+const DELETE_BUTTON_COLORS =
+  "bg-action-danger text-white hover:bg-[color-mix(in_srgb,var(--action-danger)_85%,black)]";
 
 /** The toolbar switch that enters checkbox selection mode. */
 export function BoardSelectionToggle() {
@@ -89,7 +91,7 @@ export function BoardSelectionToggle() {
       {t("bulk.select")}
       {selection.count > 0 ? (
         <span
-          className="ml-0.5 rounded-full bg-primary/15 px-1.5 text-ui-micro font-semibold tabular-nums text-primary"
+          className="ml-0.5 rounded-full bg-primary/15 px-1.5 text-ui-micro font-semibold tabular-nums"
           data-testid="bulk-select-count"
         >
           {selection.count}
@@ -1233,7 +1235,10 @@ export function BulkActionBar() {
                 variant="destructive"
                 size="icon"
                 data-testid="bulk-delete-confirm"
-                className="h-9 w-9 max-lg:h-11 max-lg:w-11"
+                className={cn(
+                  "h-9 w-9 max-lg:h-11 max-lg:w-11",
+                  DELETE_BUTTON_COLORS,
+                )}
                 aria-label={tp("bulk.deleteTitle", displayedCount)}
                 title={tp("bulk.deleteTitle", displayedCount)}
                 disabled={
@@ -1254,10 +1259,7 @@ export function BulkActionBar() {
               variant="destructive"
               size="sm"
               data-testid="bulk-delete"
-              className={cn(
-                ACTION_BUTTON,
-                "gap-1.5 bg-action-danger hover:bg-action-danger/90",
-              )}
+              className={cn(ACTION_BUTTON, "gap-1.5", DELETE_BUTTON_COLORS)}
               disabled={
                 !selection.enabled || busy !== null || selection.count === 0
               }

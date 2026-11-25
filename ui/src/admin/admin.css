@@ -21,8 +21,6 @@
   --admin-control-height: 32px;
   --admin-radius: 8px;
   --admin-text-2xs: 10px;
-  --admin-text-xs: 11px;
-  --admin-text-sm: 12px;
   --admin-text-md: 13px;
   --admin-text-lg: 15px;
   --admin-text-xl: 20px;
@@ -118,7 +116,7 @@
   border-radius: 6px;
   background: var(--card);
   color: var(--foreground);
-  font-size: var(--admin-text-sm);
+  font-size: var(--text-ui-label, 0.8125rem);
   outline: 2px solid var(--ring);
 }
 
@@ -213,7 +211,7 @@
     flex: 0 0 auto;
     color: var(--muted-foreground);
     content: attr(data-label);
-    font-size: var(--admin-text-xs);
+    font-size: var(--text-ui-meta, 0.75rem);
     text-align: left;
   }
   .admin-table td[data-label=""]::before {

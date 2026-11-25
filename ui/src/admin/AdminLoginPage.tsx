@@ -324,7 +324,7 @@ export function AdminLoginPage() {
                 {capsLock ? (
                   <span
                     data-testid="admin-login-capslock"
-                    className="text-ui-label text-(--agent-tone-warning)"
+                    className="text-ui-label text-(--chip-warning)"
                   >
                     ⇪ {t("admin.login.capsLock")}
                   </span>

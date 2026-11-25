@@ -541,7 +541,7 @@ export function AnnouncementEditorDialog({
           <div className="min-w-0 space-y-3">
             {legacy ? (
               <div
-                className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-ui-label text-(--agent-tone-warning)"
+                className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-ui-label text-(--chip-warning)"
                 data-testid="announcement-legacy"
               >
                 <p className="flex items-center gap-2 font-medium">
@@ -691,7 +691,7 @@ export function AnnouncementEditorDialog({
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 ${
                     complete[locale]
                       ? "border-success/30 bg-success/10 text-(--agent-tone-success)"
-                      : "border-warning/30 bg-warning/10 text-(--agent-tone-warning)"
+                      : "border-warning/30 bg-warning/10 text-(--chip-warning)"
                   }`}
                 >
                   <span
@@ -824,7 +824,7 @@ export function AnnouncementEditorDialog({
             </label>
             {emailLocked ? (
               <p
-                className="text-ui-meta leading-relaxed text-(--agent-tone-warning)"
+                className="text-ui-body leading-relaxed text-(--chip-warning)"
                 data-testid="announcement-email-locked"
               >
                 {announcement?.emailSentAt != null
@@ -835,7 +835,7 @@ export function AnnouncementEditorDialog({
             {!emailLocked && sendEmail && futureStart && startTimestamp ? (
               <p
                 role="alert"
-                className="rounded-md border border-warning/35 bg-warning/10 px-2 py-1.5 text-ui-meta leading-relaxed text-(--agent-tone-warning)"
+                className="rounded-md border border-warning/35 bg-warning/10 px-2 py-1.5 text-ui-body leading-relaxed text-(--chip-warning)"
                 data-testid="announcement-email-future-warning"
               >
                 {t("admin.comms.emailFutureWarning", {
@@ -884,7 +884,7 @@ export function AnnouncementEditorDialog({
                 <p className="text-ui-label font-medium">
                   {t("admin.comms.preview.title")}
                 </p>
-                <p className="text-ui-micro text-muted-foreground">
+                <p className="text-ui-meta text-muted-foreground">
                   {t("admin.comms.preview.banner")} ·{" "}
                   {t("admin.comms.preview.email")}
                 </p>
@@ -911,7 +911,7 @@ export function AnnouncementEditorDialog({
 
             <p
               data-testid="announcement-preview-policy"
-              className="rounded-md border border-border/70 bg-background/50 px-2 py-1 text-ui-micro leading-snug text-muted-foreground"
+              className="rounded-md border border-border/70 bg-background/50 px-2 py-1 text-ui-body leading-snug text-muted-foreground"
             >
               {fallbackPolicy === "require_all"
                 ? t("admin.comms.preview.policyStrict")
@@ -921,7 +921,7 @@ export function AnnouncementEditorDialog({
             {previewBlocked ? (
               <p
                 data-testid="announcement-preview-blocked"
-                className="flex items-start gap-1.5 rounded-md border border-warning/35 bg-warning/10 p-2 text-ui-micro leading-relaxed text-(--agent-tone-warning)"
+                className="flex items-start gap-1.5 rounded-md border border-warning/35 bg-warning/10 p-2 text-ui-body leading-relaxed text-(--chip-warning)"
               >
                 <Globe2 className="mt-px h-3 w-3 shrink-0" aria-hidden />
                 {t("admin.comms.preview.blocked", {
@@ -943,7 +943,7 @@ export function AnnouncementEditorDialog({
                   previewFallback ? (
                     <p
                       lang={previewLocale}
-                      className="flex items-start gap-1.5 rounded border border-primary/25 bg-primary/10 px-1.5 py-1 text-ui-micro leading-snug text-(--agent-tone-primary)"
+                      className="flex items-start gap-1.5 rounded border border-primary/25 bg-primary/10 px-1.5 py-1 text-ui-label leading-snug text-(--agent-tone-primary)"
                     >
                       <Globe2
                         className="mt-px h-2.5 w-2.5 shrink-0"
@@ -962,10 +962,10 @@ export function AnnouncementEditorDialog({
                 className="rounded-lg border border-border bg-[#eef1f5] p-2"
               >
                 <div className="rounded bg-white p-2 text-[#1f2937]">
-                  <p className="text-ui-micro font-bold text-[#2563eb]">
+                  <p className="text-ui-meta font-bold text-[#2563eb]">
                     Janosik
                   </p>
-                  <p className="mt-1 text-ui-micro font-semibold">
+                  <p className="mt-1 text-ui-label font-semibold wrap-anywhere">
                     {t("admin.comms.preview.subject")}:{" "}
                     {previewContent
                       ? `${
@@ -982,18 +982,18 @@ export function AnnouncementEditorDialog({
                   {previewContent && previewFallback ? (
                     <p
                       lang={previewLocale}
-                      className="mt-1 rounded border border-[#fed7aa] bg-[#fff7ed] px-1.5 py-1 text-ui-micro leading-snug text-[#9a3412]"
+                      className="mt-1 rounded border border-[#fed7aa] bg-[#fff7ed] px-1.5 py-1 text-ui-label leading-snug text-[#9a3412]"
                     >
                       {previewFallbackText}
                     </p>
                   ) : null}
-                  <p className="mt-1 whitespace-pre-line text-ui-micro leading-relaxed text-[#4b5563]">
+                  <p className="mt-1 text-ui-body leading-relaxed wrap-anywhere whitespace-pre-line text-[#4b5563]">
                     {previewContent?.body ?? ""}
                   </p>
                 </div>
               </div>
             ) : (
-              <p className="text-ui-micro text-muted-foreground">
+              <p className="text-ui-body text-muted-foreground">
                 {t("admin.comms.preview.noEmail")}
               </p>
             )}
