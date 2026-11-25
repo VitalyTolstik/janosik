@@ -135,10 +135,13 @@ export function BoardSwitcher({
       toast.error(t("limits.maxBoards", { limit }));
       return;
     }
+    // A search query is not a valid board title above the limit. Do not
+    // truncate it into an apparently valid manual name; open the picker with
+    // its normal auto-name instead.
     // The dialog is rendered as a sibling of the popover, so closing the
     // popover in the same commit cannot unmount it. Both layers never share
     // a DOM state: the dialog outlives the popover and owns the focus trap.
-    setPickerName(initialName.slice(0, LIMITS.boardTitle));
+    setPickerName(initialName.length <= LIMITS.boardTitle ? initialName : "");
     setOpen(false);
     setPickerOpen(true);
   };
@@ -359,9 +362,12 @@ function BoardSwitcherPanel({
 
   const startEmptyCreate = () => {
     if (createBusy) return;
-    // A search query is an explicit name: keep it as a starting point, but
-    // still require the user to submit the name-gated empty-board form.
-    setCreateDraft(queryTrimmed.slice(0, LIMITS.boardTitle));
+    // A search query is an explicit name only when it fits the title limit.
+    // Never truncate an oversized query into a valid-looking seed: that would
+    // leave the gated form enabled and allow a board the user did not name.
+    setCreateDraft(
+      queryTrimmed.length <= LIMITS.boardTitle ? queryTrimmed : "",
+    );
     setCreating(true);
   };
 

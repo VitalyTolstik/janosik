@@ -223,7 +223,7 @@ describe("BoardSwitcher", () => {
     );
   });
 
-  it("keeps longer search queries while capping the empty-board prefill", async () => {
+  it("does not seed an invalid empty-board name from a long search", async () => {
     renderSwitcher();
     await openSwitcher();
     const input = screen.getByRole("combobox", { name: "Search boards…" });
@@ -232,9 +232,13 @@ describe("BoardSwitcher", () => {
 
     fireEvent.click(screen.getByTestId("switcher-create-empty"));
     const name = await screen.findByLabelText("Board name");
-    expect(name).toHaveValue("x".repeat(100));
+    const submit = screen.getByTestId("switcher-create-empty-submit");
+    expect(name).toHaveValue("");
     expect(name).toHaveAttribute("maxlength", "100");
-    expect(screen.getByTestId("switcher-create-empty-submit")).toBeEnabled();
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(name, { target: { value: "y".repeat(100) } });
+    expect(submit).toBeEnabled();
   });
 
   it("navigates with ArrowDown + Enter", async () => {
