@@ -314,7 +314,7 @@ export function EmailSettingsPage() {
                 <span className="block font-medium text-foreground">
                   {t(PRESET_LABEL_KEYS[item.id])}
                 </span>
-                <span className="block break-all">
+                <span className="block break-words">
                   {item.id === "custom"
                     ? t("admin.email.preset.customHint")
                     : `${item.host}:${item.port}`}
