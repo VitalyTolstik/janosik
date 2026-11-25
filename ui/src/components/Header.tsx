@@ -390,10 +390,10 @@ export function Header() {
               aria-hidden
               className="hidden h-3 w-3 shrink-0 text-muted-foreground sm:block"
             />
-            <span className="hidden font-agent-surface text-[12px] font-medium leading-[1.45] text-foreground sm:inline">
+            <span className="hidden font-agent-surface text-ui-body font-medium leading-[1.45] text-foreground sm:inline">
               {t("agents.open")}
             </span>
-            <span className="hidden h-[23px] items-center gap-[5px] rounded-[5px] border border-[color:color-mix(in_oklab,var(--primary)_24%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-[7px] text-[11px] text-[color:color-mix(in_oklab,var(--primary)_78%,var(--foreground))] lg:inline-flex">
+            <span className="hidden h-[23px] items-center gap-[5px] rounded-[5px] border border-[color:color-mix(in_oklab,var(--primary)_24%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-[7px] text-ui-meta text-[color:color-mix(in_oklab,var(--primary)_78%,var(--foreground))] lg:inline-flex">
               <Info className="h-3 w-3" aria-hidden />
               {t("agents.shell.globalView")}
             </span>
