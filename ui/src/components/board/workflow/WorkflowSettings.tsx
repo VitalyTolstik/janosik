@@ -520,8 +520,8 @@ export function WorkflowSettings({
         </div>
       ) : null}
 
-      <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] pb-[max(11px,env(safe-area-inset-bottom))] max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:px-3.5 max-md:pt-2.5">
-        <div className="flex min-w-0 items-center gap-[7px] text-ui-label text-muted-foreground max-md:w-full">
+      <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] pb-[max(11px,env(safe-area-inset-bottom))] max-lg:flex-col max-lg:items-stretch max-lg:gap-2 max-lg:px-3.5 max-lg:pt-2.5">
+        <div className="flex min-w-0 items-center gap-[7px] text-ui-label text-muted-foreground max-lg:w-full">
           <span
             aria-hidden
             className={cn(
@@ -545,7 +545,7 @@ export function WorkflowSettings({
             {statusHint}
           </span>
         </div>
-        <div className="flex flex-none items-center gap-1.5 max-md:w-full max-md:justify-end">
+        <div className="flex flex-none items-center gap-1.5 max-lg:w-full max-lg:justify-end">
           {onCancel ? (
             <button
               type="button"

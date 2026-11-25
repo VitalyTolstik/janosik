@@ -209,7 +209,7 @@ export function NoBoardRoute() {
               placeholder={t("board.firstRun.placeholder")}
               aria-describedby="first-board-name-help first-board-name-status"
               data-testid="empty-board-name"
-              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-ui-body text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-ui-body text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[1024.98px]:text-base"
             />
             <LimitCounter
               length={title.length}

@@ -732,7 +732,7 @@ export function AnnouncementEditorDialog({
                   <span className="font-medium">
                     {t("admin.comms.policy.require_all")}
                   </span>
-                  <span className="mt-0.5 block text-ui-micro leading-relaxed text-muted-foreground">
+                  <span className="mt-0.5 block text-ui-body leading-relaxed text-muted-foreground">
                     {t("admin.comms.policy.require_all.hint")}
                   </span>
                 </span>
@@ -755,13 +755,13 @@ export function AnnouncementEditorDialog({
                   <span className="font-medium">
                     {t("admin.comms.policy.allow_fallback")}
                   </span>
-                  <span className="mt-0.5 block text-ui-micro leading-relaxed text-muted-foreground">
+                  <span className="mt-0.5 block text-ui-body leading-relaxed text-muted-foreground">
                     {t("admin.comms.policy.allow_fallback.hint")}
                   </span>
                 </span>
               </label>
               {fallbackPolicy === "allow_fallback" ? (
-                <p className="mt-1 rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-ui-micro leading-relaxed text-(--agent-tone-primary)">
+                <p className="mt-1 rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-ui-body leading-relaxed text-(--agent-tone-primary)">
                   {t("admin.comms.policy.fallbackExample")}
                 </p>
               ) : null}

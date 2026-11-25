@@ -279,7 +279,7 @@ function BoardPauseDialog({
       <div className="mt-[10px] mb-[2px] text-ui-label leading-[1.55]">
         <label
           htmlFor={pause ? "board-pause-reason" : "board-resume-reason"}
-          className="block text-ui-micro leading-[15.5px] font-semibold text-muted-foreground"
+          className="block text-ui-label leading-[15.5px] font-semibold text-muted-foreground"
         >
           {t("agentControl.pause.reasonLabel")}
         </label>

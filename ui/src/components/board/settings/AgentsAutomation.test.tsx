@@ -693,10 +693,10 @@ describe("AgentsAutomation (TASK-179.7)", () => {
       "lg:grid-cols-2",
     );
     expect(screen.getByTestId("agents-automation-footer").className).toContain(
-      "max-md:flex-col",
+      "max-lg:flex-col",
     );
     expect(screen.getByTestId("agent-policy-save").className).toContain(
-      "max-md:h-11",
+      "max-lg:h-11",
     );
   });
 });

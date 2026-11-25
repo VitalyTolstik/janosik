@@ -529,7 +529,7 @@ export function AgentsAutomation({
             className="mb-3 space-y-2"
             data-testid="agents-automation-conflicts"
           >
-            <p className="text-ui-body text-[color:var(--agent-tone-warning)]">
+            <p className="text-ui-body text-(--chip-warning)">
               {t("board.settings.agents.conflictUnresolved")}
             </p>
             {policy.conflicts.map((entry) => (
@@ -911,9 +911,9 @@ export function AgentsAutomation({
 
       <footer
         data-testid="agents-automation-footer"
-        className="flex min-h-12 shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-[9px] pb-[max(9px,env(safe-area-inset-bottom))] max-md:flex-col max-md:items-stretch max-md:gap-2.5 max-md:px-2.5 max-md:pt-2"
+        className="flex min-h-12 shrink-0 flex-wrap items-center gap-2.5 border-t border-border bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-4 py-[9px] pb-[max(9px,env(safe-area-inset-bottom))] max-lg:flex-col max-lg:items-stretch max-lg:gap-2.5 max-lg:px-2.5 max-lg:pt-2"
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-label leading-[1.45] text-muted-foreground max-md:w-full max-md:flex-wrap">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-label leading-[1.45] text-muted-foreground max-lg:w-full max-lg:flex-wrap">
           <span
             aria-hidden
             className={cn(
@@ -940,13 +940,13 @@ export function AgentsAutomation({
             {secondaryStatus}
           </span>
         </div>
-        <div className="flex flex-none items-center gap-1.5 max-md:w-full">
+        <div className="flex flex-none items-center gap-1.5 max-lg:w-full">
           <button
             type="button"
             onClick={policy.discard}
             disabled={!policy.dirty || policy.saving}
             data-testid="agents-automation-discard"
-            className="inline-flex h-8 flex-1 items-center justify-center rounded-[6px] border border-transparent px-[9px] text-ui-label font-[650] leading-tight text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 md:flex-none"
+            className="inline-flex h-8 flex-1 items-center justify-center rounded-[6px] border border-transparent px-[9px] text-ui-label font-[650] leading-tight text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-lg:h-11 md:flex-none"
           >
             {t("board.settings.agents.discard")}
           </button>
@@ -955,7 +955,7 @@ export function AgentsAutomation({
             onClick={() => void save()}
             disabled={!policy.canSave}
             data-testid="agent-policy-save"
-            className="inline-flex h-8 flex-1 items-center justify-center rounded-[6px] bg-[var(--agent-primary-strong)] px-[9px] text-ui-label font-[650] leading-tight text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-md:h-11 md:flex-none"
+            className="inline-flex h-8 flex-1 items-center justify-center rounded-[6px] bg-[var(--agent-primary-strong)] px-[9px] text-ui-label font-[650] leading-tight text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-lg:h-11 md:flex-none"
           >
             {policy.saving
               ? t("board.settings.agents.saving")

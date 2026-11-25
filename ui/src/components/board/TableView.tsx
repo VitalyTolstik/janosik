@@ -559,21 +559,21 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
-                className="sm:w-40 md:w-auto lg:w-72"
+                className="w-[42%] sm:w-40 md:w-auto lg:w-72"
               />
               <SortHeader
                 label={t("view.table.column")}
                 sortKey="column"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-28 lg:w-40"
+                className="w-[30%] max-sm:px-2 sm:w-28 lg:w-40"
               />
               <SortHeader
                 label={t("dueDate.label")}
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-32 max-sm:px-2 sm:w-28 lg:w-48"
+                className="w-[28%] max-sm:px-2 sm:w-28 lg:w-48"
               />
               <th
                 scope="col"
