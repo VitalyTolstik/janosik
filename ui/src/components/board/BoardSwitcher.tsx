@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   Eye,
+  Loader2,
   LogOut,
   Plus,
   Search,
@@ -79,12 +80,17 @@ export function BoardSwitcher({
   archivedEntry?: boolean;
 }) {
   const { t, lang } = useI18n();
-  const { boards, addBoard } = useBoard();
+  const toast = useToast();
+  const { boards, addBoard, setHomeRedirectPaused } = useBoard();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerName, setPickerName] = useState("");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const serverMode = isApiEnabled();
+  const [serverBoardLimit, setServerBoardLimit] = useState<
+    number | null | undefined
+  >(undefined);
 
   const templateLocale: BoardStarterLocale = lang.startsWith("ru")
     ? "ru"
@@ -94,11 +100,45 @@ export function BoardSwitcher({
     [boards],
   );
 
-  const startWithExample = () => {
+  useEffect(() => {
+    if (!serverMode) return;
+    let alive = true;
+    void api
+      .authConfig()
+      .then((config) => {
+        if (alive) setServerBoardLimit(config.limits.boards);
+      })
+      .catch(() => {
+        // The server still enforces its cap; do not block creation on a
+        // failed public-config read.
+        if (alive) setServerBoardLimit(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [serverMode]);
+
+  // Home redirects to the first active board as soon as one exists. The
+  // all-archived entry also opens this picker, so pause while it is showing
+  // the success panel instead of racing the redirect.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    setHomeRedirectPaused(true);
+    return () => setHomeRedirectPaused(false);
+  }, [pickerOpen, setHomeRedirectPaused]);
+
+  const startWithExample = (initialName: string) => {
+    // TASK-166 D19: the same cap the empty-board path checks before doing
+    // any work. The picker must not open only to fail after a template POST.
+    const limit = serverMode ? serverBoardLimit : LIMITS.boardsCount;
+    if (typeof limit === "number" && boards.length >= limit) {
+      toast.error(t("limits.maxBoards", { limit }));
+      return;
+    }
     // The dialog is rendered as a sibling of the popover, so closing the
     // popover in the same commit cannot unmount it. Both layers never share
     // a DOM state: the dialog outlives the popover and owns the focus trap.
-    setPickerName("");
+    setPickerName(initialName.slice(0, LIMITS.boardTitle));
     setOpen(false);
     setPickerOpen(true);
   };
@@ -155,6 +195,13 @@ export function BoardSwitcher({
           sideOffset={8}
           collisionPadding={12}
           onOpenAutoFocus={(e) => e.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            // The inline empty-board form owns Escape while it is open:
+            // cancel it, do not dismiss the whole switcher.
+            if (document.activeElement?.closest("[data-switcher-empty-form]")) {
+              event.preventDefault();
+            }
+          }}
           className="w-[340px] overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
         >
           {/* All draft state (search, inline create, keyboard cursor, pending
@@ -166,6 +213,7 @@ export function BoardSwitcher({
             open={open}
             onClose={() => setOpen(false)}
             onStartExample={startWithExample}
+            serverBoardLimit={serverBoardLimit}
           />
         </PopoverContent>
       </Popover>
@@ -194,13 +242,16 @@ interface BoardSwitcherPanelProps {
   /** Closes the surrounding popover (used after navigating/creating). */
   onClose: () => void;
   /** Closes the popover and opens the shared template gallery. */
-  onStartExample: () => void;
+  onStartExample: (initialName: string) => void;
+  /** Operator board cap from the runtime config; undefined while loading. */
+  serverBoardLimit: number | null | undefined;
 }
 
 function BoardSwitcherPanel({
   open,
   onClose,
   onStartExample,
+  serverBoardLimit,
 }: BoardSwitcherPanelProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -220,6 +271,7 @@ function BoardSwitcherPanel({
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [createDraft, setCreateDraft] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
   const [cursor, setCursor] = useState<number | null>(null);
   const gridId = useId();
   const rowId = (id: string) => `${gridId}-board-${id}`;
@@ -227,34 +279,14 @@ function BoardSwitcherPanel({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmLeaveId, setConfirmLeaveId] = useState<string | null>(null);
   const [leavingId, setLeavingId] = useState<string | null>(null);
-  // TASK-166: server mode has no 10-board product limit. `undefined` while
-  // the runtime config loads; `null` = unlimited; a number is an operator cap.
+  // TASK-166: server mode has no 10-board product limit. The runtime config
+  // owns the operator cap; local mode falls back to the localStorage guard.
   const serverMode = isApiEnabled();
-  const [serverBoardLimit, setServerBoardLimit] = useState<
-    number | null | undefined
-  >(undefined);
-
-  useEffect(() => {
-    if (!serverMode) return;
-    let alive = true;
-    void api
-      .authConfig()
-      .then((config) => {
-        if (alive) setServerBoardLimit(config.limits.boards);
-      })
-      .catch(() => {
-        // The server still enforces its cap; do not block creation on a
-        // failed public-config read.
-        if (alive) setServerBoardLimit(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [serverMode]);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const createRef = useRef<HTMLInputElement | null>(null);
   const emptyButtonRef = useRef<HTMLButtonElement | null>(null);
+  const createSubmitRef = useRef(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Only active boards are switchable/navigable; archived ones live in
@@ -326,6 +358,7 @@ function BoardSwitcherPanel({
   const canCreateEmpty = createDraft.trim().length > 0;
 
   const startEmptyCreate = () => {
+    if (createBusy) return;
     // A search query is an explicit name: keep it as a starting point, but
     // still require the user to submit the name-gated empty-board form.
     setCreateDraft(queryTrimmed.slice(0, LIMITS.boardTitle));
@@ -333,15 +366,25 @@ function BoardSwitcherPanel({
   };
 
   const cancelEmptyCreate = () => {
+    if (createBusy) return;
     setCreating(false);
     setCreateDraft("");
     window.requestAnimationFrame(() => emptyButtonRef.current?.focus());
   };
 
   const handleCreateEmpty = () => {
+    // The same synchronous lock as the first-run form and the picker: a
+    // second click/Enter must never mint a second board and a second
+    // navigation while the first POST is still in flight.
+    if (createSubmitRef.current) return;
     const title = createDraft.trim();
     if (!title) return;
-    void createBoard(title);
+    createSubmitRef.current = true;
+    setCreateBusy(true);
+    void createBoard(title).finally(() => {
+      createSubmitRef.current = false;
+      setCreateBusy(false);
+    });
   };
 
   const createBoard = async (title: string) => {
@@ -469,7 +512,9 @@ function BoardSwitcherPanel({
             <BoardListSkeleton pending={pendingBoardCount} />
           ) : (
             <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
-              {t("board.switcher.empty")}
+              {query.trim().length > 0
+                ? t("board.switcher.empty")
+                : t("board.switcher.noActive")}
             </p>
           )
         ) : null}
@@ -853,9 +898,18 @@ function BoardSwitcherPanel({
         {creating ? (
           <form
             noValidate
+            data-switcher-empty-form
             onSubmit={(event) => {
               event.preventDefault();
               handleCreateEmpty();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              // Cancel only the inline form. preventDefault reaches Radix's
+              // document listener and keeps the whole switcher open.
+              event.preventDefault();
+              event.stopPropagation();
+              cancelEmptyCreate();
             }}
             className="rounded-lg px-2 py-1.5 ring-1 ring-primary/30"
           >
@@ -866,45 +920,49 @@ function BoardSwitcherPanel({
                 ref={createRef}
                 value={createDraft}
                 maxLength={LIMITS.boardTitle}
+                disabled={createBusy}
                 onChange={(e) => setCreateDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.stopPropagation();
-                    cancelEmptyCreate();
-                  }
-                }}
                 placeholder={t("board.switcher.newPlaceholder")}
                 aria-label={t("board.switcher.newPlaceholder")}
                 aria-describedby={emptyHintId}
                 autoFocus
-                className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground max-[720.98px]:h-11 max-[720.98px]:text-base"
+                className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
               />
               <button
                 type="submit"
                 data-testid="switcher-create-empty-submit"
                 aria-label={t("board.firstRun.emptyCta")}
-                disabled={!canCreateEmpty}
-                className="inline-flex h-7 shrink-0 items-center justify-center rounded-md bg-action-primary px-2.5 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 max-[720.98px]:h-11 max-[720.98px]:px-3 max-[720.98px]:text-xs"
+                disabled={!canCreateEmpty || createBusy}
+                aria-busy={createBusy || undefined}
+                className="inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md bg-action-primary px-2.5 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[1024.98px]:px-3 max-[1024.98px]:text-xs"
               >
-                {t("board.switcher.createEmptySubmit")}
+                {createBusy ? (
+                  <Loader2 aria-hidden className="h-3 w-3 animate-spin" />
+                ) : null}
+                {createBusy
+                  ? t("common.creating")
+                  : t("board.switcher.createEmptySubmit")}
               </button>
               <button
                 type="button"
                 aria-label={t("common.cancel")}
+                disabled={createBusy}
                 onClick={cancelEmptyCreate}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-[720.98px]:h-11 max-[720.98px]:w-11"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[1024.98px]:w-11"
               >
                 <X size={14} />
               </button>
             </div>
-            <div className="mt-1 flex items-center justify-between gap-2 max-[720.98px]:mt-1.5">
+            <div className="mt-1 flex items-center justify-between gap-2 max-[1024.98px]:mt-1.5">
               <p
                 id={emptyHintId}
                 className="min-w-0 flex-1 truncate text-[10px] leading-[1.4] text-muted-foreground"
               >
-                {canCreateEmpty
-                  ? t("board.switcher.emptyReadyHint")
-                  : t("board.switcher.emptyNameHint")}
+                {createBusy
+                  ? t("common.creating")
+                  : canCreateEmpty
+                    ? t("board.switcher.emptyReadyHint")
+                    : t("board.switcher.emptyNameHint")}
               </p>
               <LimitCounter
                 length={createDraft.length}
@@ -919,8 +977,8 @@ function BoardSwitcherPanel({
             <button
               type="button"
               data-testid="switcher-create-template"
-              onClick={onStartExample}
-              className="flex min-h-8 w-full items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.06] px-2 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:border-primary/35 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring max-[720.98px]:min-h-11"
+              onClick={() => onStartExample(queryTrimmed)}
+              className="flex min-h-8 w-full items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.06] px-2 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:border-primary/35 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring max-[1024.98px]:min-h-11"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
                 <Sparkles size={15} aria-hidden />
@@ -934,7 +992,7 @@ function BoardSwitcherPanel({
               type="button"
               data-testid="switcher-create-empty"
               onClick={startEmptyCreate}
-              className="flex min-h-7 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-[720.98px]:min-h-11"
+              className="flex min-h-7 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-[1024.98px]:min-h-11"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
                 <Plus size={15} aria-hidden />

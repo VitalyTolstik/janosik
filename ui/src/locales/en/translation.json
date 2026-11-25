@@ -870,6 +870,7 @@
   "board.switcher.loading": "Loading boards…",
   "board.switcher.new": "New board",
   "board.switcher.newPlaceholder": "Board name",
+  "board.switcher.noActive": "No active boards",
   "board.switcher.restore": "Restore board",
   "board.switcher.role.member": "Member — can edit",
   "board.switcher.role.viewer": "Viewer — view only",

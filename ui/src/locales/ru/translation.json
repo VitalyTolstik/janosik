@@ -892,6 +892,7 @@
   "board.switcher.loading": "Загружаем доски…",
   "board.switcher.new": "Новая доска",
   "board.switcher.newPlaceholder": "Название доски",
+  "board.switcher.noActive": "Нет активных досок",
   "board.switcher.restore": "Восстановить доску",
   "board.switcher.role.member": "Участник — можно редактировать",
   "board.switcher.role.viewer": "Наблюдатель — только просмотр",
