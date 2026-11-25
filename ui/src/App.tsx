@@ -264,7 +264,7 @@ export function NoBoardRoute() {
               : t("board.firstRun.emptyDisabledHint")}
           </p>
         </form>
-        <p className="mt-3.5 text-ui-meta text-muted-foreground">
+        <p className="mt-3.5 text-ui-body text-muted-foreground">
           {t("board.firstRun.footHint")}
         </p>
         {allArchived ? <BoardSwitcher archivedEntry /> : null}

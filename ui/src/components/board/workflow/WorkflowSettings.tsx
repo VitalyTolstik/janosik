@@ -521,7 +521,7 @@ export function WorkflowSettings({
       ) : null}
 
       <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] pb-[max(11px,env(safe-area-inset-bottom))] max-lg:flex-col max-lg:items-stretch max-lg:gap-2 max-lg:px-3.5 max-lg:pt-2.5">
-        <div className="flex min-w-0 items-center gap-[7px] text-ui-label text-muted-foreground max-lg:w-full">
+        <div className="flex min-w-0 items-center gap-[7px] text-ui-label text-muted-foreground max-lg:w-full max-md:flex-wrap">
           <span
             aria-hidden
             className={cn(
@@ -541,7 +541,7 @@ export function WorkflowSettings({
           >
             {statusText}
           </span>
-          <span className="min-w-0 border-l border-border pl-3 wrap-break-word text-muted-foreground max-md:hidden">
+          <span className="min-w-0 border-l border-border pl-3 wrap-break-word text-muted-foreground max-md:block max-md:w-full max-md:border-l-0 max-md:pl-0 max-md:pt-1">
             {statusHint}
           </span>
         </div>

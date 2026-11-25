@@ -981,12 +981,15 @@ function TableRowBody({
                   }
                   className={cn(
                     "block truncate text-foreground/90 focus-visible:ring-2 focus-visible:ring-primary/40",
-                    !readOnly && "pr-9 group-hover/title:pr-16",
+                    !readOnly &&
+                      (selectionMode
+                        ? "pr-0"
+                        : "pr-8 sm:pr-9 sm:group-hover/title:pr-16"),
                   )}
                 >
                   <HighlightedText text={card.title} query={highlight ?? ""} />
                 </span>
-                {readOnly ? null : isArchiveConfirm ? (
+                {readOnly || selectionMode ? null : isArchiveConfirm ? (
                   <span
                     data-testid="table-archive-confirm"
                     className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
@@ -1025,12 +1028,12 @@ function TableRowBody({
                       event.stopPropagation();
                       onArchiveConfirm(card.id);
                     }}
-                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100"
+                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100 max-sm:hidden"
                   >
                     <Archive className="h-3.5 w-3.5" />
                   </button>
                 )}
-                {readOnly || isArchiveConfirm ? null : (
+                {readOnly || isArchiveConfirm || selectionMode ? null : (
                   <button
                     type="button"
                     data-testid="table-row-menu"
@@ -1040,7 +1043,7 @@ function TableRowBody({
                       event.stopPropagation();
                       openMenu();
                     }}
-                    className="absolute right-9 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 sm:opacity-0 sm:group-hover/title:opacity-100"
+                    className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 sm:right-9 sm:opacity-0 sm:group-hover/title:opacity-100"
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                   </button>
