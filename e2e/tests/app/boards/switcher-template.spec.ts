@@ -33,6 +33,31 @@ test("switcher quick-create opens the template picker and creates the board", as
     picker.getByRole("region", { name: /Preview: Product launch/ }),
   ).toBeVisible();
 
+  // Tablet landscape keeps the desktop picker scale but must not shrink the
+  // primary controls below the 44 px touch target.
+  const pickerTargets = [
+    picker.getByRole("button", { name: "Close template picker" }),
+    picker.getByLabel("Board name"),
+    picker.getByTestId("template-create-board"),
+    picker.getByRole("button", { name: "Cancel" }),
+    picker.getByRole("button", { name: "Regenerate" }),
+  ];
+  for (const viewport of [
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const target of pickerTargets) {
+      const box = await target.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    const fontSize = await picker
+      .getByLabel("Board name")
+      .evaluate((element) => getComputedStyle(element).fontSize);
+    expect(fontSize).toBe("16px");
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   await picker.getByRole("button", { name: /Sprint board/ }).click();
   const name = await picker.getByLabel("Board name").inputValue();
   expect(name).toMatch(/^Sprint board \d{4}-W\d{2}$/);
@@ -82,14 +107,40 @@ test("switcher empty-board path is name-gated and lands on the new board", async
 
   await trigger.click();
   await expect(page.getByRole("grid", { name: "Switch board" })).toBeVisible();
+
+  for (const viewport of [
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const box = await page.getByTestId("switcher-create-empty").boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
   await page.getByTestId("switcher-create-empty").click();
 
   const nameInput = page.getByLabel("Board name");
   const submit = page.getByTestId("switcher-create-empty-submit");
+  const cancel = page.getByRole("button", { name: "Cancel" });
   await expect(nameInput).toHaveValue("");
   await expect(submit).toBeDisabled();
   await expect(page.getByText("Empty boards need a name.")).toBeVisible();
   expect(creates).toBe(0);
+
+  for (const viewport of [
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const target of [nameInput, submit, cancel]) {
+      const box = await target.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    const fontSize = await nameInput.evaluate(
+      (element) => getComputedStyle(element).fontSize,
+    );
+    expect(fontSize).toBe("16px");
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   const name = `Empty ${randomUUID()}`;
   await nameInput.fill(name);
