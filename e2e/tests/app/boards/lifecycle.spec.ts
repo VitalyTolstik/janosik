@@ -7,9 +7,9 @@ test("create, rename, switch, archive, restore and delete boards across reloads"
   await board.open(page);
   const originalTitle = await page.locator("header h1").innerText();
   await page.getByRole("button", { name: "Switch board" }).click();
-  await page.getByRole("button", { name: "New board" }).click();
+  await page.getByTestId("switcher-create-empty").click();
   await page.getByRole("textbox", { name: "Board name" }).fill("Roadmap board");
-  await page.getByRole("textbox", { name: "Board name" }).press("Enter");
+  await page.getByTestId("switcher-create-empty-submit").click();
   await expect(
     page.getByRole("heading", { name: "Roadmap board" }),
   ).toBeVisible();

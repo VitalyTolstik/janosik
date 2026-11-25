@@ -1,5 +1,6 @@
 import axe from "axe-core";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -277,6 +278,33 @@ describe("TemplatePickerDialog", () => {
     expect(createdName).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Open board" }));
     expect(onOpenBoard).toHaveBeenCalledWith("board-new");
+  });
+
+  it("creates only once when the CTA is clicked twice in flight", async () => {
+    let finish: (outcome: TemplateCreateOutcome) => void = () => {};
+    const createBoard = vi.fn(
+      () =>
+        new Promise<TemplateCreateOutcome>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(
+      <I18nProvider>
+        <Harness createBoard={createBoard} />
+      </I18nProvider>,
+    );
+    const picker = await screen.findByTestId("template-picker");
+    const create = within(picker).getByTestId("template-create-board");
+
+    fireEvent.click(create);
+    fireEvent.click(create);
+    expect(createBoard).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finish("board-new");
+    });
+    expect(await screen.findByText("Board created")).toBeVisible();
+    expect(createBoard).toHaveBeenCalledTimes(1);
   });
 
   it("dedupes the auto name against archived titles", async () => {

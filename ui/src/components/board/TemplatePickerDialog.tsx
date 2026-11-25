@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentPropsWithoutRef,
   type KeyboardEvent,
 } from "react";
 import {
@@ -75,6 +76,13 @@ interface TemplatePickerDialogProps {
   createEmptyBoard: (name: string) => Promise<string | null> | string | null;
   /** Called by the success CTA; the parent navigates to the new board. */
   onOpenBoard: (boardId: string) => void;
+  /**
+   * Overrides Radix's focus return when the opener is not a stable element
+   * (e.g. a control inside a popover that closed to open this dialog).
+   */
+  onCloseAutoFocus?: ComponentPropsWithoutRef<
+    typeof DialogContent
+  >["onCloseAutoFocus"];
 }
 
 type NameMode = "auto" | "manual" | "empty";
@@ -95,6 +103,7 @@ export function TemplatePickerDialog({
   createBoard,
   createEmptyBoard,
   onOpenBoard,
+  onCloseAutoFocus,
 }: TemplatePickerDialogProps) {
   const { t, lang } = useI18n();
   const locale: BoardStarterLocale = lang.startsWith("ru") ? "ru" : "en";
@@ -359,6 +368,7 @@ export function TemplatePickerDialog({
         onInteractOutside={(event) => {
           if (busy) event.preventDefault();
         }}
+        onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "h-[min(672px,calc(100dvh-2rem))] w-[min(1110px,calc(100vw-2rem))] max-w-[1110px] gap-0 overflow-hidden rounded-[18px] border-border-strong bg-surface p-0 pt-0 pr-0 pb-0 pl-0 shadow-[0_40px_110px_-40px_rgb(0_0_0/0.9),0_2px_12px_rgb(0_0_0/0.3)] sm:rounded-[18px]",
           "max-[900px]:h-[min(700px,calc(100dvh-1.5rem))] max-[900px]:w-[calc(100vw-1.5rem)]",
@@ -434,7 +444,7 @@ export function TemplatePickerDialog({
                 disabled={busy}
                 aria-label={t("board.templatePicker.close")}
                 title={t("board.templatePicker.close")}
-                className="grid h-[31px] w-[31px] shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50 max-[900px]:h-11 max-[900px]:w-11"
+                className="grid h-[31px] w-[31px] shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[1024.98px]:w-11"
               >
                 <X aria-hidden className="h-[15px] w-[15px]" />
               </button>
@@ -633,7 +643,7 @@ export function TemplatePickerDialog({
                       setError("");
                       setVersionSkew(false);
                     }}
-                    className="h-[37px] min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 disabled:opacity-60 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:text-base"
+                    className="h-[37px] min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
                   />
                   <button
                     type="button"
@@ -641,7 +651,7 @@ export function TemplatePickerDialog({
                     disabled={busy}
                     title={t("board.templatePicker.regenerate")}
                     aria-label={t("board.templatePicker.regenerate")}
-                    className="inline-flex h-[37px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-[10.5px] font-[620] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:w-11 max-[620px]:px-0"
+                    className="inline-flex h-[37px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-[10.5px] font-[620] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[620px]:w-11 max-[620px]:px-0"
                   >
                     <RefreshCw aria-hidden className="h-3 w-3" />
                     <span className="max-[620px]:hidden">
@@ -678,7 +688,7 @@ export function TemplatePickerDialog({
                   type="button"
                   onClick={requestClose}
                   disabled={busy}
-                  className="inline-flex h-[37px] items-center justify-center rounded-lg px-3.5 text-xs font-[650] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:flex-none"
+                  className="inline-flex h-[37px] items-center justify-center rounded-lg px-3.5 text-xs font-[650] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[620px]:flex-none"
                 >
                   {t("board.templatePicker.cancel")}
                 </button>
@@ -688,7 +698,7 @@ export function TemplatePickerDialog({
                   disabled={busy}
                   aria-busy={busy || undefined}
                   data-testid="template-create-board"
-                  className="inline-flex h-[37px] items-center justify-center gap-2 rounded-lg bg-action-primary px-6 text-xs font-[650] text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-80 max-[900px]:h-11 max-[620px]:h-11 max-[620px]:flex-1"
+                  className="inline-flex h-[37px] items-center justify-center gap-2 rounded-lg bg-action-primary px-6 text-xs font-[650] text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-80 max-[1024.98px]:h-11 max-[620px]:flex-1"
                 >
                   {busy ? (
                     <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
