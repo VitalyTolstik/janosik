@@ -435,9 +435,9 @@ function GlobalSearchPanel({
             setActive(0);
           }}
           onKeyDown={onKeyDown}
-          className="h-full flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-full flex-1 bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
         />
-        <kbd className="rounded border border-border bg-hover/50 px-1 font-mono text-[10px] text-muted-foreground">
+        <kbd className="rounded border border-border bg-hover/50 px-1 font-mono text-ui-micro text-muted-foreground">
           esc
         </kbd>
       </div>
@@ -452,10 +452,12 @@ function GlobalSearchPanel({
             className="space-y-2 px-3 py-6 text-center"
             data-testid="admin-search-error"
           >
-            <p className="text-xs text-danger">{t("admin.palette.error")}</p>
+            <p className="text-ui-label text-(--agent-tone-danger)">
+              {t("admin.palette.error")}
+            </p>
             <button
               type="button"
-              className="text-[11px] text-primary underline-offset-2 hover:underline"
+              className="text-ui-meta text-(--agent-tone-primary) underline-offset-2 hover:underline"
               onClick={() =>
                 setSearch(({ query, generation }) => ({
                   query,
@@ -472,13 +474,13 @@ function GlobalSearchPanel({
         !loading &&
         !searchError &&
         allItems.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+          <p className="px-3 py-6 text-center text-ui-label text-muted-foreground">
             {t("admin.search.empty")}
           </p>
         ) : null}
 
         {query.trim() === "" ? (
-          <p className="border-b border-border/60 px-3 py-2 text-[10px] text-muted-foreground">
+          <p className="border-b border-border/60 px-3 py-2 text-ui-micro text-muted-foreground">
             {t("admin.palette.emptyQuery")}
           </p>
         ) : null}
@@ -491,7 +493,7 @@ function GlobalSearchPanel({
         >
           {commandLines.length > 0 ? (
             <div role="group" aria-label={t("admin.palette.navigate")}>
-              <p className="px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="px-3 pb-1 pt-3 text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {normalized === ""
                   ? t("admin.palette.navigate")
                   : t("admin.palette.actions")}
@@ -513,7 +515,7 @@ function GlobalSearchPanel({
 
           {visibleRecent.length > 0 ? (
             <div role="group" aria-label={t("admin.palette.recent")}>
-              <p className="px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="px-3 pb-1 pt-3 text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.palette.recent")}
               </p>
               {visibleRecent.map((line) => {
@@ -554,15 +556,15 @@ function GlobalSearchPanel({
                   className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                   aria-hidden
                 />
-                <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                <span className="min-w-0 flex-1 truncate text-ui-label text-foreground">
                   {line.label}
                   {line.secondary ? (
-                    <span className="ml-2 text-[11px] text-muted-foreground">
+                    <span className="ml-2 text-ui-meta text-muted-foreground">
                       {line.secondary}
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <span className="shrink-0 text-ui-micro uppercase tracking-wide text-muted-foreground">
                   {line.group}
                 </span>
                 {line.badge ? (
@@ -582,7 +584,7 @@ function GlobalSearchPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
+      <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-ui-micro text-muted-foreground">
         <span>{t("admin.palette.hint")}</span>
         <span className="font-mono">⌘K</span>
       </div>
@@ -623,11 +625,11 @@ function CommandRow({
         className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
         aria-hidden
       />
-      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+      <span className="min-w-0 flex-1 truncate text-ui-label text-foreground">
         {line.label}
       </span>
       {line.hint ? (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-ui-micro uppercase tracking-wide text-muted-foreground">
           {line.hint}
         </span>
       ) : null}

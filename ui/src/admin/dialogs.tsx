@@ -135,6 +135,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
     <>
       <Button
         size="sm"
+        className="bg-action-primary hover:bg-[#1d4ed8]"
         data-testid="admin-create-user"
         onClick={() => setOpen(true)}
       >
@@ -149,21 +150,21 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
           {temporary ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-sm">
+                <DialogTitle className="text-ui-body">
                   {t("admin.users.created.title")}
                 </DialogTitle>
-                <DialogDescription className="text-xs">
+                <DialogDescription className="text-ui-label">
                   {temporary.email}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-1.5">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
                   {t("admin.users.created.passwordOnce")}
                 </p>
                 <div className="flex items-center gap-2">
                   <code
                     data-testid="admin-created-password"
-                    className="flex-1 overflow-x-auto rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-foreground"
+                    className="flex-1 overflow-x-auto rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-ui-label text-foreground"
                   >
                     {temporary.password}
                   </code>
@@ -179,7 +180,10 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                     }}
                   >
                     {copied ? (
-                      <Check className="h-4 w-4 text-success" aria-hidden />
+                      <Check
+                        className="h-4 w-4 text-(--agent-tone-success)"
+                        aria-hidden
+                      />
                     ) : (
                       <Copy className="h-4 w-4" aria-hidden />
                     )}
@@ -199,7 +203,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
               className="space-y-3"
             >
               <DialogHeader>
-                <DialogTitle className="text-sm">
+                <DialogTitle className="text-ui-body">
                   {t("admin.users.create.title")}
                 </DialogTitle>
               </DialogHeader>
@@ -249,7 +253,10 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
                 />
               </Field>
               {error ? (
-                <p role="alert" className="text-xs text-danger">
+                <p
+                  role="alert"
+                  className="text-ui-label text-(--agent-tone-danger)"
+                >
                   {error}
                 </p>
               ) : null}
@@ -337,6 +344,7 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
     <>
       <Button
         size="sm"
+        className="bg-action-primary hover:bg-[#1d4ed8]"
         data-testid="admin-create-board"
         onClick={() => setOpen(true)}
       >
@@ -354,7 +362,7 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
             className="space-y-3"
           >
             <DialogHeader>
-              <DialogTitle className="text-sm">
+              <DialogTitle className="text-ui-body">
                 {t("admin.boards.create.title")}
               </DialogTitle>
             </DialogHeader>
@@ -389,7 +397,10 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
               />
             </Field>
             {error ? (
-              <p role="alert" className="text-xs text-danger">
+              <p
+                role="alert"
+                className="text-ui-label text-(--agent-tone-danger)"
+              >
                 {error}
               </p>
             ) : null}
@@ -487,11 +498,11 @@ export function ChangeUserEmailDialog({
         data-testid="admin-change-email-dialog"
       >
         <DialogHeader>
-          <DialogTitle className="text-sm">
+          <DialogTitle className="text-ui-body">
             {t("admin.users.changeEmail.title")}
           </DialogTitle>
           {user !== null ? (
-            <DialogDescription className="text-xs">
+            <DialogDescription className="text-ui-label">
               {user.email}
             </DialogDescription>
           ) : null}
@@ -513,14 +524,14 @@ export function ChangeUserEmailDialog({
               required
             />
           </Field>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("admin.users.changeEmail.warning")}
           </p>
           {error !== null ? (
             <p
               role="alert"
               data-testid="admin-change-email-error"
-              className="text-xs text-danger"
+              className="text-ui-label text-(--agent-tone-danger)"
             >
               {error}
             </p>
@@ -655,23 +666,23 @@ export function ResetUserPasswordDialog({
           <DialogDescription>{user?.email}</DialogDescription>
         </DialogHeader>
         {error !== null ? (
-          <p role="alert" className="text-xs text-danger">
+          <p role="alert" className="text-ui-label text-(--agent-tone-danger)">
             {error}
           </p>
         ) : password === null ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.common.loading")}
           </p>
         ) : (
           <div className="space-y-2">
             <code
-              className="block break-all rounded-md bg-hover p-2 font-mono text-sm"
+              className="block break-all rounded-md bg-hover p-2 font-mono text-ui-body"
               data-testid="admin-reset-password-value"
             >
               {password}
             </code>
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-ui-meta text-muted-foreground">
                 {t("admin.userDetail.reset.oneTime")}
               </p>
               <Button
@@ -929,7 +940,7 @@ export function PromoteUserDialog({
             {error !== null ? (
               <p
                 role="alert"
-                className="text-xs text-danger"
+                className="text-ui-label text-(--agent-tone-danger)"
                 data-testid="admin-promote-error"
               >
                 {error}
@@ -961,12 +972,12 @@ export function PromoteUserDialog({
           </form>
         ) : (
           <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-meta text-muted-foreground">
               {t("admin.userDetail.promote.oneTime")}
             </p>
             <div className="flex items-center gap-2">
               <code
-                className="block flex-1 break-all rounded-md bg-hover p-2 font-mono text-sm"
+                className="block flex-1 break-all rounded-md bg-hover p-2 font-mono text-ui-body"
                 data-testid="admin-promote-password"
               >
                 {password}

@@ -132,10 +132,10 @@ function StatCard({
     >
       <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
       <div className="min-w-0">
-        <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+        <p className="truncate text-ui-micro uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="text-sm font-semibold tabular-nums">{value}</p>
+        <p className="text-ui-body font-semibold tabular-nums">{value}</p>
       </div>
     </Panel>
   );
@@ -150,10 +150,10 @@ function OverviewRow({
 }) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 px-3 py-2">
-      <dt className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+      <dt className="shrink-0 text-ui-micro uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </dt>
-      <dd className="min-w-0 max-w-full truncate text-right text-xs text-foreground">
+      <dd className="min-w-0 max-w-full truncate text-right text-ui-label text-foreground">
         {children}
       </dd>
     </div>
@@ -163,10 +163,10 @@ function OverviewRow({
 function SummaryTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-border/70 bg-background/40 px-2.5 py-2">
-      <p className="truncate text-[9px] uppercase tracking-[0.08em] text-muted-foreground">
+      <p className="truncate text-ui-micro uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </p>
-      <p className="tabular-nums text-sm font-semibold text-foreground">
+      <p className="tabular-nums text-ui-body font-semibold text-foreground">
         {value}
       </p>
     </div>
@@ -599,7 +599,7 @@ export function UserDetailPage() {
               <DropdownMenuContent align="end">
                 {user.disabledAt === null ? (
                   <DropdownMenuItem
-                    className="text-danger focus:text-danger"
+                    className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                     onSelect={() => setPending("disable")}
                   >
                     <ShieldOff className="h-3.5 w-3.5" aria-hidden />
@@ -621,13 +621,13 @@ export function UserDetailPage() {
                   </DropdownMenuItem>
                 ) : null}
                 <DropdownMenuItem
-                  className="text-danger focus:text-danger"
+                  className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                   onSelect={() => setPending("revokeSessions")}
                 >
                   {t("admin.users.action.revokeSessions")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  className="text-danger focus:text-danger"
+                  className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                   onSelect={() => setPending("revokeTokens")}
                 >
                   {t("admin.users.action.revokeTokens")}
@@ -684,7 +684,7 @@ export function UserDetailPage() {
                       {t("admin.userDetail.action.resetPassword")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="text-warning focus:text-warning"
+                      className="text-(--agent-tone-warning) focus:text-(--agent-tone-warning)"
                       data-testid="admin-user-promote"
                       onSelect={() => setPromoteDialog(true)}
                     >
@@ -714,7 +714,7 @@ export function UserDetailPage() {
                       {t("admin.userDetail.action.export")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="text-danger focus:text-danger"
+                      className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                       data-testid="admin-user-delete"
                       onSelect={() => setDeleteDialog(true)}
                     >
@@ -770,12 +770,12 @@ export function UserDetailPage() {
         ) : (
           <Badge variant="danger">{t("admin.users.status.disabled")}</Badge>
         )}
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-ui-meta text-muted-foreground">
           {t("admin.userDetail.createdAt")}{" "}
           {formatDate(user.createdAt, lang, hour12)}
         </span>
         {user.disabledAt !== null ? (
-          <span className="text-[11px] text-danger">
+          <span className="text-ui-meta text-(--agent-tone-danger)">
             {t("admin.userDetail.disabledAt")}{" "}
             {formatDate(user.disabledAt, lang, hour12)}
           </span>
@@ -860,7 +860,7 @@ export function UserDetailPage() {
             data-testid={`admin-user-tab-${entry.key}`}
             onClick={() => setTab(entry.key)}
             className={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors",
+              "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-ui-label font-medium transition-colors",
               tab === entry.key
                 ? "border-primary/30 bg-primary/15 text-foreground"
                 : "border-border bg-card/60 text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -868,7 +868,7 @@ export function UserDetailPage() {
           >
             {entry.label}
             {entry.count === undefined ? null : (
-              <span className="tabular-nums text-[10px] opacity-70">
+              <span className="tabular-nums text-ui-micro opacity-70">
                 {entry.count}
               </span>
             )}
@@ -885,10 +885,10 @@ export function UserDetailPage() {
         {tab === "overview" ? (
           <div className="grid gap-3 p-4 lg:grid-cols-2">
             <section className="min-w-0 space-y-2">
-              <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <h2 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.userDetail.overview.account")}
               </h2>
-              <dl className="min-w-0 divide-y divide-border/60 rounded-lg border border-border/70 bg-background/40 text-xs">
+              <dl className="min-w-0 divide-y divide-border/60 rounded-lg border border-border/70 bg-background/40 text-ui-label">
                 <OverviewRow label={t("admin.common.id")}>
                   <IdCell id={user.id} />
                 </OverviewRow>
@@ -918,7 +918,7 @@ export function UserDetailPage() {
             </section>
 
             <section className="min-w-0 space-y-2">
-              <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <h2 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.userDetail.overview.access")}
               </h2>
               <div className="grid grid-cols-3 gap-2">
@@ -935,10 +935,10 @@ export function UserDetailPage() {
                   value={detail.counters.tokens}
                 />
               </div>
-              <h2 className="pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <h2 className="pt-2 text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.userDetail.overview.danger")}
               </h2>
-              <div className="rounded-lg border border-danger/25 bg-danger/5 px-3 py-2.5 text-[11px] leading-5 text-muted-foreground">
+              <div className="rounded-lg border border-danger/25 bg-danger/5 px-3 py-2.5 text-ui-meta leading-5 text-muted-foreground">
                 <p>
                   {t("admin.userDetail.overview.dangerHint")}{" "}
                   {t("admin.userDetail.delete.snapshotNotice")}{" "}
@@ -950,13 +950,13 @@ export function UserDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="mt-2 border-danger/40 text-danger hover:bg-danger/10"
+                    className="mt-2 border-danger/40 text-(--agent-tone-danger) hover:bg-danger/10"
                     onClick={() => setDeleteDialog(true)}
                   >
                     {t("admin.userDetail.action.deleteUser")}
                   </Button>
                 ) : (
-                  <p className="mt-1 text-[10px]">
+                  <p className="mt-1 text-ui-micro">
                     {t("admin.userDetail.overview.ownerOnly")}
                   </p>
                 )}
@@ -964,11 +964,11 @@ export function UserDetailPage() {
             </section>
 
             <section className="space-y-2 lg:col-span-2">
-              <h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              <h2 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.userDetail.overview.recent")}
               </h2>
               {detail.recentActivity.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-meta text-muted-foreground">
                   {t("admin.userDetail.overview.recentEmpty")}
                 </p>
               ) : (
@@ -976,10 +976,10 @@ export function UserDetailPage() {
                   {detail.recentActivity.slice(0, 6).map((entry) => (
                     <li
                       key={entry.id}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11px]"
+                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-ui-meta"
                     >
                       <span className="inline-flex items-center gap-2">
-                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-micro text-muted-foreground">
                           {entry.type}
                         </span>
                         <EntityLink to={boardHref(entry.boardId)}>
@@ -999,7 +999,7 @@ export function UserDetailPage() {
 
         {tab === "memberships" ? (
           <>
-            <p className="px-3 pt-2 text-[10px] leading-4 text-muted-foreground">
+            <p className="px-3 pt-2 text-ui-micro leading-4 text-muted-foreground">
               {t("admin.userDetail.membershipsNote")}
             </p>
             <Table maxHeight="40rem">
@@ -1068,7 +1068,7 @@ export function UserDetailPage() {
             <EmptyState message={t("admin.userDetail.noCards")} />
           ) : (
             <>
-              <p className="px-3 pt-2 text-[10px] leading-4 text-muted-foreground">
+              <p className="px-3 pt-2 text-ui-micro leading-4 text-muted-foreground">
                 {t("admin.userDetail.cardsDerived")}
               </p>
               <Table maxHeight="40rem">
@@ -1501,7 +1501,7 @@ export function UserDetailPage() {
                   {detail.recentCommands.map((command: AdminCommandRowDto) => (
                     <tr key={command.id}>
                       <Td label={t("admin.commands.column.type")}>
-                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                           {command.type}
                         </span>
                       </Td>
@@ -1544,7 +1544,7 @@ export function UserDetailPage() {
                   {detail.recentActivity.map((entry: AdminActivityRowDto) => (
                     <tr key={entry.id}>
                       <Td label={t("admin.activity.column.type")}>
-                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                        <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                           {entry.type}
                         </span>
                       </Td>

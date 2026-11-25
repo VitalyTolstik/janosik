@@ -316,8 +316,10 @@ export function OpsPage() {
       />
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.flags")}</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <h2 className="mb-1 text-ui-body font-medium">
+          {t("admin.ops.flags")}
+        </h2>
+        <p className="mb-3 text-ui-label text-muted-foreground">
           {t("admin.ops.flags.hint")}
         </p>
         <div className="space-y-3" data-testid="admin-flags">
@@ -327,14 +329,14 @@ export function OpsPage() {
               className="flex items-start justify-between gap-4"
             >
               <div>
-                <p className="text-sm font-medium">
+                <p className="text-ui-body font-medium">
                   {t(`admin.flag.${flag.key}.label` as AdminMessageKey)}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-ui-label text-muted-foreground">
                   {t(`admin.flag.${flag.key}.description` as AdminMessageKey)}
                 </p>
                 {flag.overrides > 0 ? (
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-ui-meta text-muted-foreground">
                     {t("admin.ops.flagOverrides", { count: flag.overrides })}
                   </p>
                 ) : null}
@@ -353,10 +355,10 @@ export function OpsPage() {
       <Panel className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-sm font-medium">
+            <h2 className="text-ui-body font-medium">
               {t("admin.ops.maintenance")}
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-ui-label text-muted-foreground">
               {t("admin.ops.maintenance.hint")}
             </p>
           </div>
@@ -368,7 +370,7 @@ export function OpsPage() {
           />
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.ops.maintenanceMessage")}
             </span>
@@ -395,11 +397,13 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.rateLimit")}</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <h2 className="mb-1 text-ui-body font-medium">
+          {t("admin.ops.rateLimit")}
+        </h2>
+        <p className="mb-3 text-ui-label text-muted-foreground">
           {t("admin.ops.rateLimit.hint")}
         </p>
-        <label className="flex max-w-xs flex-col gap-1 text-xs">
+        <label className="flex max-w-xs flex-col gap-1 text-ui-label">
           <span className="text-muted-foreground">
             {t("admin.ops.perUserLimit")}
           </span>
@@ -414,7 +418,7 @@ export function OpsPage() {
             disabled={!isOwner}
             onChange={setPerUser}
           />
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-ui-meta text-muted-foreground">
             {t("admin.ops.perUserLimitHint")}
           </span>
         </label>
@@ -431,9 +435,11 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.retention")}</h2>
+        <h2 className="mb-1 text-ui-body font-medium">
+          {t("admin.ops.retention")}
+        </h2>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.ops.retentionDays")}
             </span>
@@ -453,14 +459,14 @@ export function OpsPage() {
               onChange={setRetentionDraft}
             />
             {daysValid ? (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-ui-meta text-muted-foreground">
                 {t("admin.ops.retentionDaysHint")}
               </span>
             ) : (
               <span
                 id="admin-ops-retention-invalid"
                 role="alert"
-                className="text-[11px] text-danger"
+                className="text-ui-meta text-(--agent-tone-danger)"
                 data-testid="admin-ops-retention-invalid"
               >
                 {t("admin.ops.retention.invalid")}
@@ -497,12 +503,12 @@ export function OpsPage() {
         </div>
         {daysValid ? (
           <>
-            <p className="mt-3 text-xs text-muted-foreground">
+            <p className="mt-3 text-ui-label text-muted-foreground">
               {t("admin.ops.retention.olderThan", { days: effectiveDays })}
             </p>
             {retentionDirty ? (
               <p
-                className="mt-1 text-xs text-warning"
+                className="mt-1 text-ui-label text-(--agent-tone-warning)"
                 data-testid="admin-ops-retention-dirty"
               >
                 {t("admin.ops.retention.draftHint", { days: effectiveDays })}
@@ -514,7 +520,10 @@ export function OpsPage() {
                   className="mt-1 flex flex-wrap items-center gap-2"
                   data-testid="admin-ops-retention-error"
                 >
-                  <p role="alert" className="text-xs text-danger">
+                  <p
+                    role="alert"
+                    className="text-ui-label text-(--agent-tone-danger)"
+                  >
                     {t("admin.ops.retention.loadError")}
                   </p>
                   <Button
@@ -546,7 +555,7 @@ export function OpsPage() {
             ) : (
               <>
                 <p
-                  className="mt-1 text-xs text-muted-foreground"
+                  className="mt-1 text-ui-label text-muted-foreground"
                   data-testid="admin-ops-retention-counts"
                 >
                   {t("admin.ops.retention.purgeable", {
@@ -557,7 +566,7 @@ export function OpsPage() {
                   })}
                 </p>
                 <p
-                  className="mt-1 text-xs text-muted-foreground"
+                  className="mt-1 text-ui-label text-muted-foreground"
                   data-testid="admin-ops-backup-status"
                 >
                   {retentionData.backups.mode === "external"
@@ -566,7 +575,7 @@ export function OpsPage() {
                       })
                     : t("admin.ops.backups.none")}
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-ui-label text-muted-foreground">
                   {t("admin.ops.backups.notAutomatic")}
                 </p>
               </>
@@ -587,11 +596,13 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.schedule")}</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <h2 className="mb-1 text-ui-body font-medium">
+          {t("admin.ops.schedule")}
+        </h2>
+        <p className="mb-3 text-ui-label text-muted-foreground">
           {t("admin.ops.schedule.hint")}
         </p>
-        <label className="flex max-w-xs flex-col gap-1 text-xs">
+        <label className="flex max-w-xs flex-col gap-1 text-ui-label">
           <span className="text-muted-foreground">
             {t("admin.ops.maintenanceInterval")}
           </span>
@@ -606,7 +617,7 @@ export function OpsPage() {
             disabled={!isOwner}
             onChange={setMaintInterval}
           />
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-ui-meta text-muted-foreground">
             {t("admin.ops.maintenanceIntervalHint")}
           </span>
         </label>
@@ -632,12 +643,14 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-sm font-medium">{t("admin.ops.comms")}</h2>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <h2 className="mb-1 text-ui-body font-medium">
+          {t("admin.ops.comms")}
+        </h2>
+        <p className="mb-3 text-ui-label text-muted-foreground">
           {t("admin.ops.comms.hint")}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.ops.digestInterval")}
             </span>
@@ -653,7 +666,7 @@ export function OpsPage() {
               onChange={setDigestHours}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.ops.reminderLead")}
             </span>
@@ -684,8 +697,10 @@ export function OpsPage() {
 
       {ops?.queuesDashboard ? (
         <Panel className="p-4">
-          <h2 className="mb-1 text-sm font-medium">{t("admin.ops.queues")}</h2>
-          <p className="mb-3 text-xs text-muted-foreground">
+          <h2 className="mb-1 text-ui-body font-medium">
+            {t("admin.ops.queues")}
+          </h2>
+          <p className="mb-3 text-ui-label text-muted-foreground">
             {t("admin.ops.queues.hint")}
           </p>
           <div className="flex justify-end">

@@ -59,7 +59,7 @@ export function OwnerAttributionNotice({ testId }: { testId?: string }) {
     <div
       role="note"
       data-testid={testId}
-      className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-[11px] leading-4 text-muted-foreground"
+      className="rounded-lg border border-warning/30 bg-warning/5 px-2.5 py-2 text-ui-meta leading-4 text-muted-foreground"
     >
       {t("admin.common.actingAsOwner")}
     </div>
@@ -87,7 +87,7 @@ export function PageHeader({
     <div className="flex min-w-0 max-w-full flex-wrap items-end justify-between gap-3">
       <div className="min-w-0 flex-1 space-y-0.5">
         {eyebrow ? (
-          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
             {eyebrow}
           </p>
         ) : null}
@@ -97,13 +97,13 @@ export function PageHeader({
         {subtitle ? (
           <p
             title={subtitle}
-            className="truncate text-xs leading-5 text-muted-foreground"
+            className="truncate text-ui-label leading-5 text-muted-foreground max-md:whitespace-normal max-md:overflow-visible"
           >
             {subtitle}
           </p>
         ) : null}
         {meta ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1 text-[11px] text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pt-1 text-ui-meta text-muted-foreground">
             {meta}
           </div>
         ) : null}
@@ -124,10 +124,10 @@ export function PageHeader({
 
 const BADGE_VARIANTS = {
   neutral: "border-border bg-hover/60 text-muted-foreground",
-  success: "border-success/30 bg-success/10 text-success",
-  warning: "border-warning/30 bg-warning/10 text-warning",
-  danger: "border-danger/30 bg-danger/10 text-danger",
-  primary: "border-primary/30 bg-primary/10 text-primary",
+  success: "border-success/30 bg-success/10 text-(--agent-tone-success)",
+  warning: "border-warning/30 bg-warning/10 text-(--agent-tone-warning)",
+  danger: "border-danger/30 bg-danger/10 text-(--agent-tone-danger)",
+  primary: "border-primary/30 bg-primary/10 text-(--agent-tone-primary)",
 } as const;
 
 export function Badge({
@@ -141,7 +141,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-4",
+        "inline-flex items-center rounded-md border px-1.5 py-0.5 text-ui-meta font-medium leading-4",
         BADGE_VARIANTS[variant],
       )}
       {...rest}
@@ -178,7 +178,7 @@ export function SearchInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={t("admin.common.search")}
         aria-label={t("admin.common.search")}
-        className="h-full w-full bg-transparent pl-8 pr-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground"
+        className="h-full w-full bg-transparent pl-8 pr-2.5 text-ui-label text-foreground outline-none placeholder:text-muted-foreground"
       />
     </label>
   );
@@ -209,7 +209,7 @@ export function FilterTabs<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "h-7 rounded-md px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            "h-7 rounded-md px-2.5 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             value === option.value
               ? "bg-primary/15 text-foreground"
               : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -240,13 +240,13 @@ export function IdChip({ id, className }: { id: string; className?: string }) {
           .catch(() => setCopied(false));
       }}
       className={cn(
-        "inline-flex items-center gap-1 rounded font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground",
+        "inline-flex items-center gap-1 rounded font-mono text-ui-meta text-muted-foreground transition-colors hover:text-foreground",
         className,
       )}
     >
       {id.slice(0, 8)}
       {copied ? (
-        <Check className="h-3 w-3 text-success" aria-hidden />
+        <Check className="h-3 w-3 text-(--agent-tone-success)" aria-hidden />
       ) : (
         <Copy className="h-3 w-3 opacity-60" aria-hidden />
       )}
@@ -314,7 +314,7 @@ export function LoadingState() {
   return (
     <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
       <Spinner />
-      <span className="text-xs">{t("admin.common.loading")}</span>
+      <span className="text-ui-label">{t("admin.common.loading")}</span>
     </div>
   );
 }
@@ -335,17 +335,20 @@ export function ErrorState({
       role="alert"
     >
       <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-danger/25 bg-danger/10">
-        <AlertTriangle className="h-4 w-4 text-danger" aria-hidden />
+        <AlertTriangle
+          className="h-4 w-4 text-(--agent-tone-danger)"
+          aria-hidden
+        />
       </span>
-      <p className="text-xs font-medium text-foreground">
+      <p className="text-ui-label font-medium text-foreground">
         {t("admin.common.error")}
       </p>
-      <p className="max-w-sm text-[11px] leading-5 text-muted-foreground">
+      <p className="max-w-sm text-ui-meta leading-5 text-muted-foreground">
         {t("admin.common.errorHint")}
       </p>
       {reference ? (
         <p
-          className="font-mono text-[10px] text-muted-foreground"
+          className="font-mono text-ui-micro text-muted-foreground"
           data-testid="admin-error-reference"
         >
           {t("admin.common.errorReference")}: {reference}
@@ -385,12 +388,12 @@ export function EmptyState({
     >
       <p
         role={announce ? "alert" : undefined}
-        className="text-xs font-medium text-foreground"
+        className="text-ui-label font-medium text-foreground"
       >
         {message ?? t("admin.common.empty")}
       </p>
       {filtered ? (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.common.emptyFiltered")}
         </p>
       ) : null}
@@ -415,15 +418,18 @@ export function ForbiddenState({ onBack }: { onBack?: () => void }) {
       role="alert"
     >
       <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-warning/25 bg-warning/10">
-        <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />
+        <AlertTriangle
+          className="h-4 w-4 text-(--agent-tone-warning)"
+          aria-hidden
+        />
       </span>
-      <p className="text-sm font-semibold text-foreground">
+      <p className="text-ui-body font-semibold text-foreground">
         {t("admin.hub.forbidden.title")}
       </p>
-      <p className="max-w-sm text-[11px] leading-5 text-muted-foreground">
+      <p className="max-w-sm text-ui-meta leading-5 text-muted-foreground">
         {t("admin.hub.forbidden.body")}
       </p>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-ui-micro text-muted-foreground">
         {t("admin.common.forbiddenHint")}
       </p>
       <Button
@@ -461,7 +467,7 @@ export function Table({
       )}
       style={{ maxHeight }}
     >
-      <table className="admin-table w-max min-w-full text-left text-xs">
+      <table className="admin-table w-max min-w-full text-left text-ui-label">
         {children}
       </table>
     </div>
@@ -479,7 +485,7 @@ export function Th({
     <th
       scope="col"
       className={cn(
-        "sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-3 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground",
+        "sticky top-0 z-10 whitespace-nowrap border-b border-border bg-card px-3 text-ui-micro font-medium uppercase tracking-[0.08em] text-muted-foreground",
         className,
       )}
     >
@@ -540,18 +546,18 @@ export function Pagination({
   const pendingPage = Math.floor(offset / limit) + 1;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-1.5">
-      <span className="text-[11px] tabular-nums text-muted-foreground">
+      <span className="text-ui-meta tabular-nums text-muted-foreground">
         {t("admin.common.total", { count: total })}
       </span>
       <div className="flex items-center gap-2">
         {onLimitChange ? (
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <label className="flex items-center gap-1.5 text-ui-meta text-muted-foreground">
             <span className="sr-only">{t("admin.common.pageSize")}</span>
             <select
               data-testid="admin-page-size"
               value={limit}
               onChange={(event) => onLimitChange(Number(event.target.value))}
-              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-[11px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
+              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-ui-meta text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
             >
               {[25, 50, 100].map((size) => (
                 <option key={size} value={size}>
@@ -567,7 +573,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs max-sm:h-11 max-sm:min-h-11"
+          className="h-7 px-2 text-ui-label max-sm:h-11 max-sm:min-h-11"
           disabled={pendingPage <= 1}
           data-testid="admin-pagination-prev"
           aria-label={t("admin.common.prev")}
@@ -577,7 +583,7 @@ export function Pagination({
           {t("admin.common.prev")}
         </Button>
         <span
-          className="text-[11px] text-muted-foreground"
+          className="text-ui-meta text-muted-foreground"
           data-testid="admin-pagination-status"
         >
           {t("admin.common.page", { page: statusPage, pages: statusPages })}
@@ -585,7 +591,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs max-sm:h-11 max-sm:min-h-11"
+          className="h-7 px-2 text-ui-label max-sm:h-11 max-sm:min-h-11"
           disabled={pendingPage >= pendingPages}
           data-testid="admin-pagination-next"
           aria-label={t("admin.common.next")}
@@ -624,7 +630,7 @@ export function ListWindowFooter({
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-1.5">
       <span
-        className="text-[11px] tabular-nums text-muted-foreground"
+        className="text-ui-meta tabular-nums text-muted-foreground"
         data-testid={`${testId}-count`}
         aria-live="polite"
       >
@@ -634,7 +640,7 @@ export function ListWindowFooter({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs"
+          className="h-7 px-2 text-ui-label"
           disabled={loading}
           data-testid={`${testId}-more`}
           onClick={onLoadMore}
@@ -679,8 +685,10 @@ export function ConfirmDialog({
     >
       <DialogContent className="max-w-sm" hideClose={busy}>
         <DialogHeader>
-          <DialogTitle className="text-sm">{title}</DialogTitle>
-          <DialogDescription className="text-xs">{body}</DialogDescription>
+          <DialogTitle className="text-ui-body">{title}</DialogTitle>
+          <DialogDescription className="text-ui-label">
+            {body}
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={onClose}>
@@ -788,7 +796,7 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1 text-xs">
+    <div className="flex flex-col gap-1 text-ui-label">
       {label || labelAction ? (
         <div className="flex items-center justify-between gap-2">
           {label ? (
@@ -809,7 +817,7 @@ export function Field({
         <div className="flex items-start justify-between gap-2">
           <span
             role={error ? "alert" : undefined}
-            className="text-[11px] text-danger"
+            className="text-ui-meta text-(--agent-tone-danger)"
           >
             {error}
           </span>
@@ -817,7 +825,7 @@ export function Field({
         </div>
       ) : null}
       {hint ? (
-        <span className="text-[11px] leading-4 text-muted-foreground">
+        <span className="text-ui-meta leading-4 text-muted-foreground">
           {hint}
         </span>
       ) : null}
@@ -845,11 +853,11 @@ export function CharCount({
     <span
       data-testid="char-count"
       className={cn(
-        "self-end text-[11px] tabular-nums",
+        "self-end text-ui-meta tabular-nums",
         left < 0
-          ? "text-danger"
+          ? "text-(--agent-tone-danger)"
           : left <= Math.max(20, Math.round(max * 0.1))
-            ? "text-warning"
+            ? "text-(--agent-tone-warning)"
             : "text-muted-foreground",
         className,
       )}

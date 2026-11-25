@@ -80,7 +80,7 @@ function ChartFallback({
               fill="none"
               stroke="currentColor"
               strokeWidth="1.5"
-              className="text-primary"
+              className="text-(--agent-tone-primary)"
             />
           );
         })}

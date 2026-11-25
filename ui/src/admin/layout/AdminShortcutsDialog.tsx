@@ -31,14 +31,14 @@ export function AdminShortcutsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg" data-testid="admin-shortcuts-dialog">
         <DialogHeader>
-          <DialogTitle className="text-sm">
+          <DialogTitle className="text-ui-body">
             {t("admin.shortcuts.title")}
           </DialogTitle>
-          <DialogDescription className="text-xs">
+          <DialogDescription className="text-ui-label">
             {t("admin.shortcuts.hubsHint")}
           </DialogDescription>
         </DialogHeader>
-        <dl className="divide-y divide-border/60 text-xs">
+        <dl className="divide-y divide-border/60 text-ui-label">
           {SHORTCUTS.map((shortcut) => (
             <div
               key={shortcut.keys}
@@ -46,7 +46,7 @@ export function AdminShortcutsDialog({
             >
               <dt className="text-muted-foreground">{t(shortcut.labelKey)}</dt>
               <dd>
-                <kbd className="rounded border border-border bg-hover/50 px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                <kbd className="rounded border border-border bg-hover/50 px-1.5 py-0.5 font-mono text-ui-micro text-foreground">
                   {shortcut.keys}
                 </kbd>
               </dd>

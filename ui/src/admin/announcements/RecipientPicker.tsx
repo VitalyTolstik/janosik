@@ -49,7 +49,7 @@ export function RecipientPicker({
   };
 
   return (
-    <div className="flex flex-col gap-1 text-xs">
+    <div className="flex flex-col gap-1 text-ui-label">
       <span className="text-muted-foreground">
         {t("admin.comms.field.recipients")}
       </span>
@@ -60,7 +60,7 @@ export function RecipientPicker({
               key={email}
               type="button"
               disabled={readOnly}
-              className="inline-flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-[11px]"
+              className="inline-flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-ui-meta"
               onClick={() =>
                 onChange(recipients.filter((entry) => entry !== email))
               }
@@ -85,7 +85,7 @@ export function RecipientPicker({
                 <button
                   key={user.id}
                   type="button"
-                  className="block w-full px-2 py-1 text-left text-xs hover:bg-hover"
+                  className="block w-full px-2 py-1 text-left text-ui-label hover:bg-hover"
                   onClick={() => add(user.email)}
                 >
                   {user.displayName ? `${user.displayName} · ` : ""}

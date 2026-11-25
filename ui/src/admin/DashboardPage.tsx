@@ -34,7 +34,7 @@ function StatCard({
   label,
   value,
   hint,
-  accent = "text-primary",
+  accent = "text-(--agent-tone-primary)",
   testId,
 }: {
   icon: typeof Users;
@@ -55,14 +55,14 @@ function StatCard({
         <Icon className="h-4 w-4" aria-hidden />
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
         <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">
           {value}
         </p>
         {hint ? (
-          <p className="truncate text-[11px] text-muted-foreground">{hint}</p>
+          <p className="truncate text-ui-meta text-muted-foreground">{hint}</p>
         ) : null}
       </div>
     </Panel>
@@ -72,10 +72,10 @@ function StatCard({
 function RuntimeItem({ label, value }: { label: string; value: string }) {
   return (
     <span className="flex items-baseline gap-1.5">
-      <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+      <span className="text-ui-micro uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </span>
-      <span className="font-mono text-[11px] text-foreground">{value}</span>
+      <span className="font-mono text-ui-meta text-foreground">{value}</span>
     </span>
   );
 }
@@ -99,19 +99,19 @@ function AttentionItem({
       className="group flex items-start gap-2.5 rounded-lg border border-border bg-card/60 px-3 py-2.5 transition-colors hover:border-primary/30 hover:bg-card"
       title={hint}
     >
-      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-warning/25 bg-warning/10 text-warning">
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-warning/25 bg-warning/10 text-(--agent-tone-warning)">
         <Icon className="h-3.5 w-3.5" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[11px] font-medium text-foreground">
+          <span className="truncate text-ui-meta font-medium text-foreground">
             {label}
           </span>
-          <span className="tabular-nums text-sm font-semibold text-foreground">
+          <span className="tabular-nums text-ui-body font-semibold text-foreground">
             {value}
           </span>
         </span>
-        <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+        <span className="mt-0.5 flex items-center gap-1 text-ui-micro text-muted-foreground">
           <span className="line-clamp-1">{hint}</span>
           <ArrowRight
             className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
@@ -171,7 +171,7 @@ export function DashboardPage() {
       />
 
       <Panel
-        className="flex flex-wrap items-center gap-x-6 gap-y-1.5 px-3 py-2 text-[11px] text-muted-foreground"
+        className="flex flex-wrap items-center gap-x-6 gap-y-1.5 px-3 py-2 text-ui-meta text-muted-foreground"
         role="status"
       >
         <span className="inline-flex items-center gap-1.5 text-foreground">
@@ -232,21 +232,21 @@ export function DashboardPage() {
           hint={t("admin.dashboard.commandsHint", {
             count: metrics.commands.last7d,
           })}
-          accent="text-warning"
+          accent="text-(--agent-tone-warning)"
           testId="admin-stat-commands"
         />
         <StatCard
           icon={Database}
           label={t("admin.dashboard.sessions")}
           value={metrics.sessions.active}
-          accent="text-success"
+          accent="text-(--agent-tone-success)"
           testId="admin-stat-sessions"
         />
         <StatCard
           icon={ShieldCheck}
           label={t("admin.dashboard.admins")}
           value={metrics.admins.total}
-          accent="text-primary"
+          accent="text-(--agent-tone-primary)"
           testId="admin-stat-admins"
         />
       </div>
@@ -256,7 +256,7 @@ export function DashboardPage() {
           icon={UserX}
           label={t("admin.dashboard.disabled")}
           value={metrics.users.disabled}
-          accent="text-danger"
+          accent="text-(--agent-tone-danger)"
           testId="admin-stat-disabled"
         />
         <StatCard
@@ -284,8 +284,11 @@ export function DashboardPage() {
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel className="space-y-3 p-4">
           <div className="flex items-center gap-2">
-            <BarChart3 className="h-3.5 w-3.5 text-primary" aria-hidden />
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <BarChart3
+              className="h-3.5 w-3.5 text-(--agent-tone-primary)"
+              aria-hidden
+            />
+            <h2 className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
               {t("admin.dashboard.registrations")}
             </h2>
           </div>
@@ -311,7 +314,7 @@ export function DashboardPage() {
         <Panel className="space-y-3 p-4">
           <div className="flex items-center gap-2">
             <Activity className="h-3.5 w-3.5 text-secondary" aria-hidden />
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <h2 className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
               {t("admin.dashboard.activity")}
             </h2>
           </div>
@@ -338,12 +341,12 @@ export function DashboardPage() {
 
       <Panel>
         <div className="flex items-center justify-between px-4 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <h2 className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
             {t("admin.dashboard.recentAudit")}
           </h2>
           <Link
             to="/admin/audit"
-            className="text-[11px] text-primary transition-colors hover:text-primary/80"
+            className="text-ui-meta text-(--agent-tone-primary) transition-colors hover:text-primary/80"
           >
             {t("admin.dashboard.openAudit")}
           </Link>
@@ -355,14 +358,14 @@ export function DashboardPage() {
               className="flex items-center justify-between gap-3 px-4 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-xs text-foreground">
+                <span className="truncate text-ui-label text-foreground">
                   {entry.action}
                 </span>
-                <span className="truncate text-[11px] text-muted-foreground">
+                <span className="truncate text-ui-meta text-muted-foreground">
                   {entry.adminEmail}
                 </span>
               </div>
-              <time className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+              <time className="shrink-0 text-ui-meta tabular-nums text-muted-foreground">
                 {formatDate(entry.createdAt, lang, hour12)}
               </time>
             </li>

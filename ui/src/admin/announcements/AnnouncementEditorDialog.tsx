@@ -497,7 +497,7 @@ export function AnnouncementEditorDialog({
           tabRefs.current.ru?.focus();
         }
       }}
-      className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+      className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-label transition-colors ${
         editorLocale === locale
           ? "border-border bg-card text-foreground shadow-sm"
           : "border-transparent text-muted-foreground hover:bg-hover/60 hover:text-foreground"
@@ -507,7 +507,7 @@ export function AnnouncementEditorDialog({
           : ""
       }`}
     >
-      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5 font-mono text-[9px] font-bold">
+      <span className="rounded border border-border bg-background/50 px-1.5 py-0.5 font-mono text-ui-micro font-bold">
         {t(`admin.comms.lang.${locale}.short` as AdminMessageKey)}
       </span>
       <span className="font-medium">{localeLabel(locale)}</span>
@@ -532,7 +532,7 @@ export function AnnouncementEditorDialog({
               ? t("admin.comms.announcement.editTitle")
               : t("admin.comms.new")}
           </DialogTitle>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.comms.announcement.subtitle")}
           </p>
         </DialogHeader>
@@ -541,14 +541,14 @@ export function AnnouncementEditorDialog({
           <div className="min-w-0 space-y-3">
             {legacy ? (
               <div
-                className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning"
+                className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-ui-label text-(--agent-tone-warning)"
                 data-testid="announcement-legacy"
               >
                 <p className="flex items-center gap-2 font-medium">
                   <Languages className="h-3.5 w-3.5" aria-hidden />
                   {t("admin.comms.legacy")}
                 </p>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                <p className="mt-1 text-ui-meta leading-relaxed text-muted-foreground">
                   {t("admin.comms.legacy.hint")}
                 </p>
                 <div className="mt-2 grid gap-2">
@@ -683,15 +683,15 @@ export function AnnouncementEditorDialog({
               </Field>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 text-[11px]">
+            <div className="flex flex-wrap gap-1.5 text-ui-meta">
               {ANNOUNCEMENT_LOCALES.map((locale) => (
                 <span
                   key={locale}
                   data-testid={`announcement-status-${locale}`}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 ${
                     complete[locale]
-                      ? "border-success/30 bg-success/10 text-success"
-                      : "border-warning/30 bg-warning/10 text-warning"
+                      ? "border-success/30 bg-success/10 text-(--agent-tone-success)"
+                      : "border-warning/30 bg-warning/10 text-(--agent-tone-warning)"
                   }`}
                 >
                   <span
@@ -709,10 +709,10 @@ export function AnnouncementEditorDialog({
             </div>
 
             <div className="rounded-xl border border-border bg-background/30 p-3">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <p className="mb-2 text-ui-micro font-bold uppercase tracking-wider text-muted-foreground">
                 {t("admin.comms.policy")}
               </p>
-              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-xs hover:bg-hover/50">
+              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-ui-label hover:bg-hover/50">
                 <input
                   type="radio"
                   name="announcement-policy"
@@ -732,12 +732,12 @@ export function AnnouncementEditorDialog({
                   <span className="font-medium">
                     {t("admin.comms.policy.require_all")}
                   </span>
-                  <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                  <span className="mt-0.5 block text-ui-micro leading-relaxed text-muted-foreground">
                     {t("admin.comms.policy.require_all.hint")}
                   </span>
                 </span>
               </label>
-              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-xs hover:bg-hover/50">
+              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-ui-label hover:bg-hover/50">
                 <input
                   type="radio"
                   name="announcement-policy"
@@ -755,13 +755,13 @@ export function AnnouncementEditorDialog({
                   <span className="font-medium">
                     {t("admin.comms.policy.allow_fallback")}
                   </span>
-                  <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                  <span className="mt-0.5 block text-ui-micro leading-relaxed text-muted-foreground">
                     {t("admin.comms.policy.allow_fallback.hint")}
                   </span>
                 </span>
               </label>
               {fallbackPolicy === "allow_fallback" ? (
-                <p className="mt-1 rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px] leading-relaxed text-primary">
+                <p className="mt-1 rounded-md border border-primary/20 bg-primary/5 px-2 py-1.5 text-ui-micro leading-relaxed text-(--agent-tone-primary)">
                   {t("admin.comms.policy.fallbackExample")}
                 </p>
               ) : null}
@@ -810,7 +810,7 @@ export function AnnouncementEditorDialog({
               />
             ) : null}
 
-            <label className="flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-2 text-ui-label">
               <Checkbox
                 checked={sendEmail}
                 onCheckedChange={setSendEmail}
@@ -824,7 +824,7 @@ export function AnnouncementEditorDialog({
             </label>
             {emailLocked ? (
               <p
-                className="text-[11px] leading-relaxed text-warning"
+                className="text-ui-meta leading-relaxed text-(--agent-tone-warning)"
                 data-testid="announcement-email-locked"
               >
                 {announcement?.emailSentAt != null
@@ -835,7 +835,7 @@ export function AnnouncementEditorDialog({
             {!emailLocked && sendEmail && futureStart && startTimestamp ? (
               <p
                 role="alert"
-                className="rounded-md border border-warning/35 bg-warning/10 px-2 py-1.5 text-[11px] leading-relaxed text-warning"
+                className="rounded-md border border-warning/35 bg-warning/10 px-2 py-1.5 text-ui-meta leading-relaxed text-(--agent-tone-warning)"
                 data-testid="announcement-email-future-warning"
               >
                 {t("admin.comms.emailFutureWarning", {
@@ -848,7 +848,7 @@ export function AnnouncementEditorDialog({
               className="rounded-lg border border-border p-3"
               data-testid="announcement-schedule"
             >
-              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+              <summary className="cursor-pointer text-ui-meta font-medium text-muted-foreground">
                 {t("admin.comms.schedule")}
               </summary>
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -881,10 +881,10 @@ export function AnnouncementEditorDialog({
           <div className="min-w-0 space-y-3 self-start rounded-xl border border-border bg-background/40 p-3">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-xs font-medium">
+                <p className="text-ui-label font-medium">
                   {t("admin.comms.preview.title")}
                 </p>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-ui-micro text-muted-foreground">
                   {t("admin.comms.preview.banner")} ·{" "}
                   {t("admin.comms.preview.email")}
                 </p>
@@ -897,7 +897,7 @@ export function AnnouncementEditorDialog({
                     data-testid={`announcement-preview-${locale}`}
                     aria-pressed={previewLocale === locale}
                     onClick={() => setPreviewLocale(locale)}
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                    className={`rounded px-1.5 py-0.5 text-ui-micro font-medium ${
                       previewLocale === locale
                         ? "bg-primary/15 text-foreground"
                         : "text-muted-foreground"
@@ -911,7 +911,7 @@ export function AnnouncementEditorDialog({
 
             <p
               data-testid="announcement-preview-policy"
-              className="rounded-md border border-border/70 bg-background/50 px-2 py-1 text-[10px] leading-snug text-muted-foreground"
+              className="rounded-md border border-border/70 bg-background/50 px-2 py-1 text-ui-micro leading-snug text-muted-foreground"
             >
               {fallbackPolicy === "require_all"
                 ? t("admin.comms.preview.policyStrict")
@@ -921,7 +921,7 @@ export function AnnouncementEditorDialog({
             {previewBlocked ? (
               <p
                 data-testid="announcement-preview-blocked"
-                className="flex items-start gap-1.5 rounded-md border border-warning/35 bg-warning/10 p-2 text-[10px] leading-relaxed text-warning"
+                className="flex items-start gap-1.5 rounded-md border border-warning/35 bg-warning/10 p-2 text-ui-micro leading-relaxed text-(--agent-tone-warning)"
               >
                 <Globe2 className="mt-px h-3 w-3 shrink-0" aria-hidden />
                 {t("admin.comms.preview.blocked", {
@@ -943,7 +943,7 @@ export function AnnouncementEditorDialog({
                   previewFallback ? (
                     <p
                       lang={previewLocale}
-                      className="flex items-start gap-1.5 rounded border border-primary/25 bg-primary/10 px-1.5 py-1 text-[9px] leading-snug text-primary"
+                      className="flex items-start gap-1.5 rounded border border-primary/25 bg-primary/10 px-1.5 py-1 text-ui-micro leading-snug text-(--agent-tone-primary)"
                     >
                       <Globe2
                         className="mt-px h-2.5 w-2.5 shrink-0"
@@ -962,8 +962,10 @@ export function AnnouncementEditorDialog({
                 className="rounded-lg border border-border bg-[#eef1f5] p-2"
               >
                 <div className="rounded bg-white p-2 text-[#1f2937]">
-                  <p className="text-[9px] font-bold text-[#2563eb]">Janosik</p>
-                  <p className="mt-1 text-[10px] font-semibold">
+                  <p className="text-ui-micro font-bold text-[#2563eb]">
+                    Janosik
+                  </p>
+                  <p className="mt-1 text-ui-micro font-semibold">
                     {t("admin.comms.preview.subject")}:{" "}
                     {previewContent
                       ? `${
@@ -980,18 +982,18 @@ export function AnnouncementEditorDialog({
                   {previewContent && previewFallback ? (
                     <p
                       lang={previewLocale}
-                      className="mt-1 rounded border border-[#fed7aa] bg-[#fff7ed] px-1.5 py-1 text-[9px] leading-snug text-[#9a3412]"
+                      className="mt-1 rounded border border-[#fed7aa] bg-[#fff7ed] px-1.5 py-1 text-ui-micro leading-snug text-[#9a3412]"
                     >
                       {previewFallbackText}
                     </p>
                   ) : null}
-                  <p className="mt-1 whitespace-pre-line text-[9px] leading-relaxed text-[#4b5563]">
+                  <p className="mt-1 whitespace-pre-line text-ui-micro leading-relaxed text-[#4b5563]">
                     {previewContent?.body ?? ""}
                   </p>
                 </div>
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-ui-micro text-muted-foreground">
                 {t("admin.comms.preview.noEmail")}
               </p>
             )}
@@ -1002,7 +1004,7 @@ export function AnnouncementEditorDialog({
           <p
             role="alert"
             data-testid="announcement-validation"
-            className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger"
+            className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-ui-label text-(--agent-tone-danger)"
           >
             {validation}
           </p>

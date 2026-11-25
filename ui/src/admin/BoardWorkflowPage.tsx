@@ -153,7 +153,7 @@ function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
       </div>
 
       {!board.workflow?.enabled ? (
-        <Panel className="flex items-start gap-2 p-3 text-xs text-muted-foreground">
+        <Panel className="flex items-start gap-2 p-3 text-ui-label text-muted-foreground">
           <Workflow className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           {t("admin.workflow.disabledHint")}
         </Panel>

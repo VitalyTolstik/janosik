@@ -48,7 +48,7 @@ export function HubTabs({
       className="flex shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 py-1.5 backdrop-blur"
       data-testid="admin-hub-tabs"
     >
-      <span className="hidden shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground sm:inline">
+      <span className="hidden shrink-0 text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground sm:inline">
         {hubEntry === undefined ? t("admin.hub.tabNav") : t(hubEntry.labelKey)}
       </span>
       <nav
@@ -78,7 +78,7 @@ export function HubTabs({
               aria-selected={selected}
               data-testid={`admin-hub-tab-${tab.key}`}
               className={cn(
-                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors max-sm:h-11",
+                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui-meta font-medium transition-colors max-sm:h-11",
                 selected
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",

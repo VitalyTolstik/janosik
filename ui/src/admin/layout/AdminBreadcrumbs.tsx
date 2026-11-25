@@ -36,7 +36,7 @@ export function AdminBreadcrumbs({ className }: { className?: string }) {
       aria-label={t("admin.hub.breadcrumb")}
       data-testid="admin-breadcrumbs"
       className={cn(
-        "flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground",
+        "flex min-w-0 items-center gap-1.5 text-ui-meta text-muted-foreground",
         className,
       )}
     >

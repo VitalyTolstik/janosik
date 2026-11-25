@@ -162,7 +162,7 @@ export function DateTimeField({
     >
       <CalendarForAttempt {...calendarProps} />
       <div className="flex flex-col gap-2 border-t border-border pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
-        <p className="text-[11px] font-medium text-muted-foreground">
+        <p className="text-ui-meta font-medium text-muted-foreground">
           {timeLabel}
         </p>
         <TimePickerPanel value={time} onChange={applyTime} />
@@ -191,7 +191,7 @@ export function DateTimeField({
           disabled={disabled}
           data-testid={testId}
           aria-label={ariaLabel}
-          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-sm text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-ui-body text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           <CalendarClock
             className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -233,7 +233,7 @@ export function DateTimeField({
           pickerRow
         )}
         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/60 pt-2">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui-label text-muted-foreground">
             {parsed
               ? `${formatDateOnly(parsed.getTime(), lang)}, ${formatTime(
                   time,

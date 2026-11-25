@@ -191,7 +191,7 @@ export function AdminLoginPage() {
         <a
           href={siteUrl}
           data-testid="admin-login-back-to-site"
-          className="absolute top-6 left-6 inline-flex items-center gap-1.5 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-6 left-6 inline-flex items-center gap-1.5 rounded-md text-ui-body text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
           {t("admin.login.backToSite")}
@@ -209,7 +209,7 @@ export function AdminLoginPage() {
                 ? t("admin.login.totpTitle")
                 : t("admin.login.title")}
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-ui-body text-muted-foreground">
               {totpRequired
                 ? t("admin.login.totpSubtitle")
                 : t("admin.login.subtitle")}
@@ -227,7 +227,7 @@ export function AdminLoginPage() {
               <div
                 role="alert"
                 aria-labelledby={errorTitleId}
-                className="flex gap-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
+                className="flex gap-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-ui-body text-(--agent-tone-danger)"
               >
                 <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <div>
@@ -246,7 +246,7 @@ export function AdminLoginPage() {
             {!totpRequired ? (
               <>
                 <label
-                  className="text-sm font-medium text-foreground"
+                  className="text-ui-body font-medium text-foreground"
                   htmlFor="admin-login-email"
                 >
                   {t("admin.login.email")}
@@ -273,7 +273,7 @@ export function AdminLoginPage() {
                   <span
                     id={emailErrorId}
                     role="alert"
-                    className="text-sm text-danger"
+                    className="text-ui-body text-(--agent-tone-danger)"
                   >
                     {localEmailError}
                   </span>
@@ -281,7 +281,7 @@ export function AdminLoginPage() {
 
                 <div className="flex items-center justify-between gap-2">
                   <label
-                    className="text-sm font-medium text-foreground"
+                    className="text-ui-body font-medium text-foreground"
                     htmlFor="admin-login-password"
                   >
                     {t("admin.login.password")}
@@ -296,7 +296,7 @@ export function AdminLoginPage() {
                     }
                     aria-pressed={showPassword}
                     onClick={() => setShowPassword((visible) => !visible)}
-                    className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-ui-label text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {showPassword ? (
                       <EyeOff className="h-3 w-3" aria-hidden />
@@ -324,7 +324,7 @@ export function AdminLoginPage() {
                 {capsLock ? (
                   <span
                     data-testid="admin-login-capslock"
-                    className="text-xs text-warning"
+                    className="text-ui-label text-(--agent-tone-warning)"
                   >
                     ⇪ {t("admin.login.capsLock")}
                   </span>
@@ -332,11 +332,11 @@ export function AdminLoginPage() {
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between text-sm font-medium text-foreground">
+                <div className="flex items-center justify-between text-ui-body font-medium text-foreground">
                   <label htmlFor="admin-login-totp">
                     {t("admin.login.totpCode")}
                   </label>
-                  <span className="font-mono text-xs font-normal text-muted-foreground">
+                  <span className="font-mono text-ui-label font-normal text-muted-foreground">
                     {String(totpRemaining).padStart(2, "0")}s
                   </span>
                 </div>
@@ -364,10 +364,10 @@ export function AdminLoginPage() {
                     style={{ width: `${(totpRemaining / 30) * 100}%` }}
                   />
                 </span>
-                <span className="text-xs leading-5 text-muted-foreground">
+                <span className="text-ui-label leading-5 text-muted-foreground">
                   {t("admin.login.totpHint")}
                 </span>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-ui-label text-muted-foreground">
                   <button
                     type="button"
                     data-testid="admin-login-back"

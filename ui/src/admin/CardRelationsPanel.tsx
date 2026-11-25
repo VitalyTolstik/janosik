@@ -248,12 +248,12 @@ function ChecklistBlock({
               aria-label={t("admin.cards.relations.checklistTitle")}
               data-testid={`admin-checklist-rename-input-${checklist.id}`}
               onChange={(event) => setTitleDraft(event.target.value)}
-              className="h-7 min-w-0 flex-1 text-xs"
+              className="h-7 min-w-0 flex-1 text-ui-label"
             />
             <Button
               size="sm"
               type="submit"
-              className="h-7 px-2 text-[11px]"
+              className="h-7 px-2 text-ui-meta"
               disabled={busy !== null || titleValidation !== null}
               data-testid={`admin-checklist-rename-save-${checklist.id}`}
             >
@@ -263,7 +263,7 @@ function ChecklistBlock({
               size="sm"
               type="button"
               variant="ghost"
-              className="h-7 px-2 text-[11px]"
+              className="h-7 px-2 text-ui-meta"
               disabled={busy !== null}
               data-testid={`admin-checklist-rename-cancel-${checklist.id}`}
               onClick={() => {
@@ -277,13 +277,13 @@ function ChecklistBlock({
         ) : (
           <>
             <p
-              className="min-w-0 flex-1 break-words text-xs font-medium"
+              className="min-w-0 flex-1 break-words text-ui-label font-medium"
               data-testid={`admin-checklist-title-${checklist.id}`}
             >
               {checklist.title}
             </p>
             <span
-              className="shrink-0 tabular-nums text-[11px] text-muted-foreground"
+              className="shrink-0 tabular-nums text-ui-meta text-muted-foreground"
               data-testid={`admin-checklist-progress-${checklist.id}`}
             >
               {done}/{items.length}
@@ -291,7 +291,7 @@ function ChecklistBlock({
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 px-1.5 text-[11px]"
+              className="h-6 px-1.5 text-ui-meta"
               disabled={busy !== null}
               aria-label={t("admin.cards.relations.renameChecklistLabel", {
                 title: checklist.title,
@@ -307,7 +307,7 @@ function ChecklistBlock({
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 px-1.5 text-[11px] text-danger hover:bg-danger/10 hover:text-danger"
+              className="h-6 px-1.5 text-ui-meta text-(--agent-tone-danger) hover:bg-danger/10 hover:text-(--agent-tone-danger)"
               disabled={busy !== null}
               aria-label={t("admin.cards.relations.deleteChecklistLabel", {
                 title: checklist.title,
@@ -323,7 +323,7 @@ function ChecklistBlock({
 
       {items.length === 0 ? (
         <p
-          className="text-[11px] text-muted-foreground"
+          className="text-ui-meta text-muted-foreground"
           data-testid={`admin-checklist-items-empty-${checklist.id}`}
         >
           {t("admin.cards.relations.itemsEmpty")}
@@ -392,12 +392,12 @@ function ChecklistBlock({
                           text: event.target.value,
                         })
                       }
-                      className="h-7 min-w-0 flex-1 text-xs"
+                      className="h-7 min-w-0 flex-1 text-ui-label"
                     />
                     <Button
                       size="sm"
                       type="submit"
-                      className="h-7 px-2 text-[11px]"
+                      className="h-7 px-2 text-ui-meta"
                       disabled={busy !== null}
                       data-testid={`admin-checklist-item-rename-save-${item.id}`}
                     >
@@ -407,7 +407,7 @@ function ChecklistBlock({
                       size="sm"
                       type="button"
                       variant="ghost"
-                      className="h-7 px-2 text-[11px]"
+                      className="h-7 px-2 text-ui-meta"
                       disabled={busy !== null}
                       data-testid={`admin-checklist-item-rename-cancel-${item.id}`}
                       onClick={() => setRenamingItem(null)}
@@ -419,7 +419,7 @@ function ChecklistBlock({
                   <>
                     <span
                       className={cn(
-                        "min-w-0 flex-1 break-words text-xs",
+                        "min-w-0 flex-1 break-words text-ui-label",
                         item.done && "text-muted-foreground line-through",
                       )}
                       data-testid={`admin-checklist-item-text-${item.id}`}
@@ -429,7 +429,7 @@ function ChecklistBlock({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-1.5 text-[11px]"
+                      className="h-6 px-1.5 text-ui-meta"
                       disabled={busy !== null}
                       aria-label={t("admin.cards.relations.renameItemLabel", {
                         text: item.text,
@@ -444,7 +444,7 @@ function ChecklistBlock({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 px-1.5 text-[11px] text-danger hover:bg-danger/10 hover:text-danger"
+                      className="h-6 px-1.5 text-ui-meta text-(--agent-tone-danger) hover:bg-danger/10 hover:text-(--agent-tone-danger)"
                       disabled={itemBusy || busy !== null}
                       aria-label={t("admin.cards.relations.deleteItemLabel", {
                         text: item.text,
@@ -473,12 +473,12 @@ function ChecklistBlock({
           data-testid={`admin-checklist-item-input-${checklist.id}`}
           disabled={busy !== null || itemAtCap}
           onChange={(event) => setItemDraft(event.target.value)}
-          className="h-7 min-w-0 flex-1 text-xs"
+          className="h-7 min-w-0 flex-1 text-ui-label"
         />
         <Button
           size="sm"
           type="submit"
-          className="h-7 shrink-0 px-2 text-[11px]"
+          className="h-7 shrink-0 px-2 text-ui-meta"
           disabled={busy !== null || itemAtCap || itemDraft.trim() === ""}
           data-testid={`admin-checklist-item-add-${checklist.id}`}
         >
@@ -487,7 +487,7 @@ function ChecklistBlock({
         </Button>
       </form>
       {itemAtCap ? (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.cards.relations.itemsLimit", {
             limit: LIMITS.itemsPerChecklist,
           })}
@@ -1011,10 +1011,10 @@ export function CardRelationsPanel({
   return (
     <Panel className="min-w-0 space-y-4 p-3" data-testid="admin-card-relations">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
           {t("admin.cards.relations.title")}
         </p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.cards.relations.hint")}
         </p>
       </div>
@@ -1024,7 +1024,7 @@ export function CardRelationsPanel({
         <p
           role="alert"
           data-testid="admin-card-relations-error"
-          className="text-xs text-danger"
+          className="text-ui-label text-(--agent-tone-danger)"
         >
           {error}
         </p>
@@ -1036,17 +1036,17 @@ export function CardRelationsPanel({
         aria-label={t("admin.cards.relations.checklists")}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] font-medium text-muted-foreground">
+          <p className="text-ui-meta font-medium text-muted-foreground">
             {t("admin.cards.relations.checklists")}
           </p>
-          <span className="text-[11px] tabular-nums text-muted-foreground">
+          <span className="text-ui-meta tabular-nums text-muted-foreground">
             {liveChecklists.length}/{LIMITS.checklistsPerCard}
           </span>
         </div>
 
         {liveChecklists.length === 0 ? (
           <p
-            className="text-[11px] text-muted-foreground"
+            className="text-ui-meta text-muted-foreground"
             data-testid="admin-card-checklists-empty"
           >
             {t("admin.cards.relations.checklistsEmpty")}
@@ -1088,12 +1088,12 @@ export function CardRelationsPanel({
             data-testid="admin-new-checklist-title"
             disabled={busy !== null || checklistsAtCap}
             onChange={(event) => setNewChecklist(event.target.value)}
-            className="h-8 min-w-0 flex-1 text-xs"
+            className="h-8 min-w-0 flex-1 text-ui-label"
           />
           <Button
             size="sm"
             type="submit"
-            className="h-8 shrink-0 px-2 text-[11px]"
+            className="h-8 shrink-0 px-2 text-ui-meta"
             disabled={
               busy !== null || checklistsAtCap || newChecklist.trim() === ""
             }
@@ -1104,7 +1104,7 @@ export function CardRelationsPanel({
           </Button>
         </form>
         {checklistsAtCap ? (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("admin.cards.relations.checklistsLimit", {
               limit: LIMITS.checklistsPerCard,
             })}
@@ -1118,14 +1118,14 @@ export function CardRelationsPanel({
         aria-label={t("admin.cards.relations.links")}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[11px] font-medium text-muted-foreground">
+          <p className="text-ui-meta font-medium text-muted-foreground">
             {t("admin.cards.relations.links")}
           </p>
           <Button
             ref={openButtonRef}
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-[11px]"
+            className="h-7 px-2 text-ui-meta"
             data-testid="admin-card-link-open"
             aria-expanded={linkOpen}
             disabled={busy !== null}
@@ -1141,13 +1141,13 @@ export function CardRelationsPanel({
 
         {linkRows.length === 0 ? (
           <p
-            className="text-[11px] text-muted-foreground"
+            className="text-ui-meta text-muted-foreground"
             data-testid="admin-card-links-empty"
           >
             {t("admin.cards.relations.linksEmpty")}{" "}
             <button
               type="button"
-              className="font-medium text-primary underline-offset-2 hover:underline"
+              className="font-medium text-(--agent-tone-primary) underline-offset-2 hover:underline"
               onClick={openLinkForm}
             >
               {t("admin.cards.relations.linkCard")}
@@ -1161,7 +1161,7 @@ export function CardRelationsPanel({
               return (
                 <li
                   key={`${direction}-${link.id}`}
-                  className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border/60 px-2 py-1.5 text-xs"
+                  className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-md border border-border/60 px-2 py-1.5 text-ui-label"
                   data-testid={`admin-card-link-row-${link.id}`}
                   data-direction={direction}
                 >
@@ -1181,10 +1181,10 @@ export function CardRelationsPanel({
                       ? t("admin.cards.relations.outgoing")
                       : t("admin.cards.relations.incoming")}
                   </span>
-                  <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                     {link.type}
                   </span>
-                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                  <span className="shrink-0 text-ui-meta text-muted-foreground">
                     {relationPhrase(direction, link.type)}
                   </span>
                   {dangling ? (
@@ -1194,7 +1194,7 @@ export function CardRelationsPanel({
                   ) : (
                     <Link
                       to={cardHref(link.otherCardId)}
-                      className="min-w-0 break-words font-medium text-primary underline-offset-2 hover:underline"
+                      className="min-w-0 break-words font-medium text-(--agent-tone-primary) underline-offset-2 hover:underline"
                     >
                       {link.otherCardTitle}
                     </Link>
@@ -1211,7 +1211,7 @@ export function CardRelationsPanel({
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="ml-auto h-6 shrink-0 px-1.5 text-[11px] text-danger hover:bg-danger/10 hover:text-danger"
+                      className="ml-auto h-6 shrink-0 px-1.5 text-ui-meta text-(--agent-tone-danger) hover:bg-danger/10 hover:text-(--agent-tone-danger)"
                       disabled={busy !== null}
                       aria-label={t("admin.cards.relations.removeLinkLabel", {
                         title: link.otherCardTitle,
@@ -1228,7 +1228,7 @@ export function CardRelationsPanel({
             })}
           </ul>
         )}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-ui-meta text-muted-foreground">
           <span data-testid="admin-card-links-outgoing-count">
             {t("admin.cards.relations.outgoingCount", {
               count: liveOutgoing.length,
@@ -1260,7 +1260,7 @@ export function CardRelationsPanel({
                   onChange={(event) =>
                     setLinkOptionKey(event.target.value as LinkOption["key"])
                   }
-                  className="h-8 min-w-0 rounded-md border border-input bg-card px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-8 min-w-0 rounded-md border border-input bg-card px-2 text-ui-label text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {LINK_OPTIONS.map((option) => (
                     <option key={option.key} value={option.key}>
@@ -1300,7 +1300,7 @@ export function CardRelationsPanel({
                     setCursor(0);
                   }}
                   onKeyDown={handleTargetKeyDown}
-                  className="h-8 min-w-0 text-xs"
+                  className="h-8 min-w-0 text-ui-label"
                 />
               </Field>
             </div>
@@ -1321,9 +1321,9 @@ export function CardRelationsPanel({
                       role="option"
                       aria-selected={index === cursor}
                       className={cn(
-                        "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
+                        "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui-label",
                         index === cursor
-                          ? "bg-primary/10 text-primary"
+                          ? "bg-primary/10 text-(--agent-tone-primary)"
                           : "hover:bg-hover",
                       )}
                       onMouseEnter={() => setCursor(index)}
@@ -1345,11 +1345,11 @@ export function CardRelationsPanel({
 
             {selectedTarget !== undefined ? (
               <p
-                className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"
+                className="flex min-w-0 flex-wrap items-center gap-1.5 text-ui-meta text-muted-foreground"
                 data-testid="admin-card-link-selected"
               >
                 <Check
-                  className="h-3.5 w-3.5 shrink-0 text-success"
+                  className="h-3.5 w-3.5 shrink-0 text-(--agent-tone-success)"
                   aria-hidden
                 />
                 <span className="min-w-0 break-words">
@@ -1357,7 +1357,7 @@ export function CardRelationsPanel({
                 </span>
                 <button
                   type="button"
-                  className="text-primary underline-offset-2 hover:underline"
+                  className="text-(--agent-tone-primary) underline-offset-2 hover:underline"
                   disabled={busy !== null}
                   onClick={() => {
                     setTargetId(null);
@@ -1376,7 +1376,7 @@ export function CardRelationsPanel({
                 <p
                   role="alert"
                   data-testid="admin-card-links-board-error"
-                  className="text-[11px] text-danger"
+                  className="text-ui-meta text-(--agent-tone-danger)"
                 >
                   {t("admin.cards.relations.boardFailed")}
                 </p>
@@ -1384,7 +1384,7 @@ export function CardRelationsPanel({
                   type="button"
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-2 text-[11px]"
+                  className="h-6 px-2 text-ui-meta"
                   data-testid="admin-card-links-board-retry"
                   onClick={loadBoard}
                 >
@@ -1392,7 +1392,7 @@ export function CardRelationsPanel({
                 </Button>
               </div>
             ) : boardLoading || board === null ? (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-ui-meta text-muted-foreground">
                 {t("admin.cards.relations.boardLoading")}
               </p>
             ) : null}
@@ -1400,8 +1400,10 @@ export function CardRelationsPanel({
             {reverseHolder && selectedTarget !== undefined ? (
               <p
                 className={cn(
-                  "min-w-0 break-words text-[11px]",
-                  linkAtCap ? "text-danger" : "text-muted-foreground",
+                  "min-w-0 break-words text-ui-meta",
+                  linkAtCap
+                    ? "text-(--agent-tone-danger)"
+                    : "text-muted-foreground",
                 )}
                 data-testid="admin-card-links-holder-cap"
               >
@@ -1415,7 +1417,7 @@ export function CardRelationsPanel({
 
             {linkAtCap ? (
               <p
-                className="text-[11px] text-muted-foreground"
+                className="text-ui-meta text-muted-foreground"
                 data-testid="admin-card-links-cap"
               >
                 {t("admin.cards.relations.errorCap", {
@@ -1425,7 +1427,7 @@ export function CardRelationsPanel({
             ) : null}
             {cycleBlocked ? (
               <p
-                className="text-[11px] text-danger"
+                className="text-ui-meta text-(--agent-tone-danger)"
                 data-testid="admin-card-link-cycle"
               >
                 {t("admin.cards.relations.errorCycle")}
@@ -1436,7 +1438,7 @@ export function CardRelationsPanel({
               <Button
                 size="sm"
                 type="submit"
-                className="h-8 px-2 text-[11px]"
+                className="h-8 px-2 text-ui-meta"
                 data-testid="admin-card-link-add"
                 disabled={
                   busy !== null ||
@@ -1453,7 +1455,7 @@ export function CardRelationsPanel({
                 size="sm"
                 type="button"
                 variant="ghost"
-                className="h-8 px-2 text-[11px]"
+                className="h-8 px-2 text-ui-meta"
                 data-testid="admin-card-link-cancel"
                 disabled={busy !== null}
                 onClick={closeLinkForm}

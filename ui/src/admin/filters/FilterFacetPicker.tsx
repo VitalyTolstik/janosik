@@ -50,11 +50,11 @@ export function FilterIdPicker({
         if (typeof id === "string") onSelect(id);
       }}
     >
-      <label className="block text-xs text-muted-foreground">
+      <label className="block text-ui-label text-muted-foreground">
         {t(facet.label)}
         <input
           autoFocus
-          className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
+          className="mt-1 h-11 w-full rounded-md border border-input bg-background px-2.5 text-ui-body text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
           value={input}
           maxLength={facet.key === "targetId" ? 100 : 64}
           onChange={(event) => setInput(event.target.value)}
@@ -89,7 +89,7 @@ export function FilterFacetPicker({
   if (offeredId) itemIds.push(offeredId);
 
   const optionClassName =
-    "flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-highlighted:bg-hover sm:min-h-8";
+    "flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-ui-body outline-none data-highlighted:bg-hover sm:min-h-8";
 
   return (
     <Combobox.Root
@@ -109,7 +109,7 @@ export function FilterFacetPicker({
         aria-label={t("admin.filters.search", { facet: t(facet.label) })}
         maxLength={ADMIN_FILTER_QUERY_MAX_LENGTH}
         placeholder={t("admin.common.search")}
-        className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
+        className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-ui-body outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
       />
       <Combobox.List className="mt-1 empty:hidden">
         {options.map((option) => (
@@ -196,14 +196,14 @@ function OptionContent({ option }: { option: AdminFilterOptionDto }) {
         </span>
         {option.sublabel ? (
           <span
-            className="block truncate text-xs text-muted-foreground"
+            className="block truncate text-ui-label text-muted-foreground"
             title={option.sublabel}
           >
             {option.sublabel}
           </span>
         ) : null}
       </span>
-      <span className="shrink-0 text-right text-[11px] text-muted-foreground">
+      <span className="shrink-0 text-right text-ui-meta text-muted-foreground">
         <span className="block font-mono">{optionIds(option.id, option)}</span>
         {optionState(t, option.state)}
       </span>
@@ -227,7 +227,7 @@ function LookupStatus({
   const t = useAdminT();
   if (lookup.error) {
     return (
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-ui-label">
         <p role="status">{t("admin.filters.lookupError")}</p>
         <Button
           variant="outline"
@@ -252,7 +252,7 @@ function LookupStatus({
   return (
     <p
       role="status"
-      className="mt-2 text-xs text-muted-foreground empty:hidden"
+      className="mt-2 text-ui-label text-muted-foreground empty:hidden"
     >
       {message ? t(message) : null}
     </p>
@@ -273,7 +273,7 @@ function ChoiceCheckbox({
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-hover has-[:disabled]:cursor-default has-[:disabled]:opacity-60 sm:min-h-8">
+    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-ui-body hover:bg-hover has-[:disabled]:cursor-default has-[:disabled]:opacity-60 sm:min-h-8">
       <input
         type="checkbox"
         aria-label={name}
@@ -355,9 +355,11 @@ function EnumPicker<Value extends string>({
     <>
       <PickerSearch facet={t(facetLabel)} query={query} onChange={setQuery} />
       {help ? (
-        <p className="px-2 pb-1 text-xs text-muted-foreground">{t(help)}</p>
+        <p className="px-2 pb-1 text-ui-label text-muted-foreground">
+          {t(help)}
+        </p>
       ) : null}
-      <p className="px-2 py-1 text-xs text-muted-foreground">
+      <p className="px-2 py-1 text-ui-label text-muted-foreground">
         {t("admin.filters.selected", { count: selected.length })}
       </p>
       <div role="group" aria-label={t(facetLabel)}>
@@ -379,7 +381,7 @@ function EnumPicker<Value extends string>({
         ))}
       </div>
       {chosen.length + available.length === 0 ? (
-        <p role="status" className="px-2 text-xs text-muted-foreground">
+        <p role="status" className="px-2 text-ui-label text-muted-foreground">
           {t("admin.filters.noOptions")}
         </p>
       ) : null}
@@ -435,7 +437,7 @@ function MultiLookupPicker({
   return (
     <>
       <PickerSearch facet={t(facet.label)} query={query} onChange={setQuery} />
-      <p className="px-2 py-1 text-xs text-muted-foreground">
+      <p className="px-2 py-1 text-ui-label text-muted-foreground">
         {t("admin.filters.selected", {
           count:
             selected.length +
@@ -503,7 +505,7 @@ function MultiLookupPicker({
         ) : null}
       </div>
       {selected.length >= max ? (
-        <p role="status" className="px-2 text-xs text-muted-foreground">
+        <p role="status" className="px-2 text-ui-label text-muted-foreground">
           {t("admin.filters.maxValues", { count: max })}
         </p>
       ) : null}
@@ -539,7 +541,7 @@ function PickerSearch({
       placeholder={t("admin.common.search")}
       value={query}
       onChange={(event) => onChange(event.target.value)}
-      className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
+      className="h-11 w-full rounded-md border border-input bg-background px-2.5 text-ui-body outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-8"
     />
   );
 }

@@ -533,7 +533,7 @@ export function EntityPage<E extends AdminEntity>({
           {activeFilters.map((key) => (
             <span
               key={key}
-              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-hover/40 px-2 text-[11px] text-muted-foreground"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-hover/40 px-2 text-ui-meta text-muted-foreground"
               data-testid={`admin-filter-${key}`}
             >
               <span>{t(filterLabelKeys[key])}</span>
@@ -558,7 +558,7 @@ export function EntityPage<E extends AdminEntity>({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-xs"
+            className="h-7 px-2 text-ui-label"
             data-testid="admin-filter-clear"
             onClick={clearAllFilters}
           >
@@ -655,7 +655,7 @@ export function EntityPage<E extends AdminEntity>({
         ) : (
           <>
             {bulkEnabled && selected.size > 0 ? (
-              <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card/95 px-3 py-2 text-xs backdrop-blur">
+              <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-border bg-card/95 px-3 py-2 text-ui-label backdrop-blur">
                 <span className="text-muted-foreground">
                   {t("admin.bulk.selected", {
                     count: selected.size,
@@ -665,7 +665,7 @@ export function EntityPage<E extends AdminEntity>({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 text-xs text-destructive"
+                  className="h-7 px-2 text-ui-label text-destructive"
                   data-testid="admin-bulk-delete"
                   onClick={openBulkDelete}
                 >
@@ -674,7 +674,7 @@ export function EntityPage<E extends AdminEntity>({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 px-2 text-xs"
+                  className="h-7 px-2 text-ui-label"
                   data-testid="admin-bulk-restore"
                   onClick={() =>
                     void runBulk("restore", t("admin.bulk.restore"))
@@ -685,7 +685,7 @@ export function EntityPage<E extends AdminEntity>({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="ml-auto h-7 px-2 text-xs"
+                  className="ml-auto h-7 px-2 text-ui-label"
                   onClick={() => clearSelection()}
                 >
                   {t("admin.bulk.clear")}

@@ -100,7 +100,7 @@ function AdminGate() {
       return (
         <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
           <p
-            className="max-w-sm text-xs text-danger"
+            className="max-w-sm text-ui-label text-(--agent-tone-danger)"
             data-testid="admin-boot-failed"
             role="alert"
           >
@@ -129,7 +129,7 @@ function AdminGate() {
         />
         {recovering ? (
           <p
-            className="max-w-sm text-xs text-muted-foreground"
+            className="max-w-sm text-ui-label text-muted-foreground"
             data-testid="admin-boot-recovering"
             role="status"
           >

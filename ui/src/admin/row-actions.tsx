@@ -99,9 +99,9 @@ export function RowActions({
               key={action.label}
               className={
                 action.destructive
-                  ? "text-danger focus:text-danger"
+                  ? "text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                   : action.warning
-                    ? "text-warning focus:text-warning"
+                    ? "text-(--agent-tone-warning) focus:text-(--agent-tone-warning)"
                     : undefined
               }
               onSelect={() => {

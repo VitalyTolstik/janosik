@@ -73,7 +73,7 @@ export function FilterOptionChip({
                 {name}
               </span>
               <span
-                className="block truncate text-[10px] text-muted-foreground"
+                className="block truncate text-ui-micro text-muted-foreground"
                 title={email}
               >
                 {email}
@@ -85,13 +85,13 @@ export function FilterOptionChip({
             </span>
           )}
           {state ? (
-            <span className="shrink-0 text-[10px] text-muted-foreground">
+            <span className="shrink-0 text-ui-micro text-muted-foreground">
               {state}
             </span>
           ) : null}
         </span>
         {ids ? (
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+          <span className="shrink-0 font-mono text-ui-micro text-muted-foreground">
             {option?.columnId ? ids : `· ${ids}`}
           </span>
         ) : null}
@@ -117,7 +117,7 @@ export function FilterChip({
 }) {
   return (
     <span
-      className="inline-flex min-w-0 max-w-[min(20rem,calc(100dvw-2rem))] items-center gap-1 rounded-md border border-border bg-hover/40 pl-2 text-xs text-foreground"
+      className="inline-flex min-w-0 max-w-[min(20rem,calc(100dvw-2rem))] items-center gap-1 rounded-md border border-border bg-hover/40 pl-2 text-ui-label text-foreground"
       data-testid={`admin-filter-${filterKey}`}
       title={title}
     >

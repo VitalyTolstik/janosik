@@ -77,10 +77,10 @@ function MetaItem({
 }) {
   return (
     <div className="min-w-0 space-y-0.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <div className="truncate text-xs">{children}</div>
+      <div className="truncate text-ui-label">{children}</div>
     </div>
   );
 }
@@ -99,14 +99,14 @@ function CountItem({
 }) {
   const body = (
     <>
-      <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="truncate text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       <p
         className={
           to === undefined
-            ? "text-sm font-semibold tabular-nums"
-            : "text-sm font-semibold tabular-nums decoration-primary/50 underline-offset-2 group-hover:underline"
+            ? "text-ui-body font-semibold tabular-nums"
+            : "text-ui-body font-semibold tabular-nums decoration-primary/50 underline-offset-2 group-hover:underline"
         }
       >
         {value}
@@ -278,7 +278,7 @@ export function BoardDetailPage() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
-                    className="text-danger focus:text-danger"
+                    className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                     onSelect={() => setConfirmDelete(true)}
                   >
                     {t("admin.boards.action.delete")}
@@ -388,10 +388,10 @@ export function BoardDetailPage() {
         data-testid="admin-board-detail-workflow"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.workflow.title")}
           </p>
-          <p className="mt-0.5 text-xs">
+          <p className="mt-0.5 text-ui-label">
             {detail.workflowSummary.present
               ? t("admin.workflow.summary", {
                   state: detail.workflowSummary.enabled
@@ -412,13 +412,13 @@ export function BoardDetailPage() {
 
       <Panel data-testid="admin-board-detail-members">
         <div className="flex items-center justify-between px-3 pt-2.5">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.boardDetail.members")}
           </p>
           <Button
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-xs"
+            className="h-7 px-2 text-ui-label"
             data-testid="admin-board-add-member"
             onClick={() => setAddOpen(true)}
           >
@@ -516,7 +516,7 @@ export function BoardDetailPage() {
                         {t("admin.boardDetail.member.makeOwner")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="text-danger focus:text-danger"
+                        className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                         onSelect={() =>
                           void run(
                             t("admin.boardDetail.member.removeDone"),
@@ -560,14 +560,14 @@ export function BoardDetailPage() {
                 onChange={(event) => setNewEmail(event.target.value)}
               />
             </Field>
-            <label className="flex flex-col gap-1 text-xs">
+            <label className="flex flex-col gap-1 text-ui-label">
               <span className="text-muted-foreground">
                 {t("admin.userDetail.col.role")}
               </span>
               <select
                 value={newRole}
                 data-testid="admin-add-member-role"
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-ui-body"
                 onChange={(event) => setNewRole(event.target.value)}
               >
                 <option value="MEMBER">MEMBER</option>
@@ -593,7 +593,7 @@ export function BoardDetailPage() {
       </Dialog>
 
       <Panel data-testid="admin-board-detail-columns">
-        <p className="px-3 pt-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <p className="px-3 pt-2.5 text-ui-micro uppercase tracking-wide text-muted-foreground">
           {t("admin.boardDetail.columns")}
         </p>
         <Table maxHeight="22rem">
@@ -648,7 +648,7 @@ export function BoardDetailPage() {
           className="flex flex-wrap items-center gap-1.5 p-3"
           data-testid="admin-board-detail-labels"
         >
-          <p className="w-full text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="w-full text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.boardDetail.labels")}
           </p>
           {detail.labels.map((label) => (

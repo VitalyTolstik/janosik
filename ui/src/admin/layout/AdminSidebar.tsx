@@ -106,15 +106,15 @@ export function AdminSidebar({
             collapsed ? "justify-center px-2" : "px-4",
           )}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-(--agent-tone-primary)">
             <ShieldCheck className="h-4 w-4" aria-hidden />
           </span>
           {!collapsed ? (
             <div className="min-w-0 admin-hide-rail">
-              <p className="truncate text-[13px] font-semibold tracking-tight text-foreground">
+              <p className="truncate text-ui-label font-semibold tracking-tight text-foreground">
                 Janosik
               </p>
-              <p className="truncate text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="truncate text-ui-micro uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.nav.masterBadge")} console
               </p>
             </div>
@@ -122,12 +122,12 @@ export function AdminSidebar({
         </NavLink>
 
         {!collapsed ? (
-          <div className="mx-3 mt-3 flex items-center gap-1.5 rounded-md border border-border/70 bg-background/40 px-2 py-1 text-[10px] text-muted-foreground admin-hide-rail">
+          <div className="mx-3 mt-3 flex items-center gap-1.5 rounded-md border border-border/70 bg-background/40 px-2 py-1 text-ui-micro text-muted-foreground admin-hide-rail">
             <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />
             <span className="truncate">
               {import.meta.env.PROD ? "Production" : "Development"}
             </span>
-            <span className="ml-auto font-mono text-[10px] opacity-70">
+            <span className="ml-auto font-mono text-ui-micro opacity-70">
               self-hosted
             </span>
           </div>
@@ -143,7 +143,7 @@ export function AdminSidebar({
                 {collapsed ? (
                   <span className="mx-auto block h-px w-6 bg-border" />
                 ) : (
-                  <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                  <p className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
                     {t(group.labelKey)}
                   </p>
                 )}
@@ -172,7 +172,7 @@ export function AdminSidebar({
             onClick={() => setAllOpen(true)}
             data-testid="admin-all-destinations"
             className={cn(
-              "mt-1 flex h-7 items-center rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
+              "mt-1 flex h-7 items-center rounded-md text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
               collapsed
                 ? "justify-center px-0"
                 : "gap-2 px-2.5 admin-hide-rail",
@@ -216,7 +216,7 @@ export function AdminSidebar({
               <NavLink
                 to={routes.home}
                 onClick={onNavigate}
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 {t("admin.nav.backToBoards")}
@@ -229,10 +229,10 @@ export function AdminSidebar({
       <Dialog open={allOpen} onOpenChange={setAllOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-sm">
+            <DialogTitle className="text-ui-body">
               {t("admin.hub.allDestinations")}
             </DialogTitle>
-            <DialogDescription className="text-xs">
+            <DialogDescription className="text-ui-label">
               {t("admin.hub.allDestinationsDescription")}
             </DialogDescription>
           </DialogHeader>
@@ -240,7 +240,7 @@ export function AdminSidebar({
             {(Object.keys(HUB_TABS) as AdminHubKey[]).map((hub) =>
               HUB_TABS[hub].length === 0 ? null : (
                 <section key={hub} className="space-y-1.5">
-                  <h3 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <h3 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     {t(ADMIN_HUBS.find((entry) => entry.key === hub)!.labelKey)}
                   </h3>
                   {HUB_TABS[hub]
@@ -254,7 +254,7 @@ export function AdminSidebar({
                           onNavigate();
                         }}
                         className={cn(
-                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
+                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors",
                           activeTab === tab.key && activeHub(hub)
                             ? "bg-primary/10 text-foreground"
                             : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -300,7 +300,7 @@ function SidebarLink({
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
       className={cn(
-        "admin-nav-item relative flex h-7 items-center rounded-md text-xs font-medium transition-colors",
+        "admin-nav-item relative flex h-7 items-center rounded-md text-ui-label font-medium transition-colors",
         collapsed ? "justify-center px-0" : "gap-2.5 px-2.5 admin-hide-rail",
         active
           ? "text-foreground"
