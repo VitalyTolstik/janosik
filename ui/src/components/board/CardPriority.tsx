@@ -37,17 +37,22 @@ export function CardPriority({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium text-muted-foreground">
+      <span className="text-ui-label font-medium text-muted-foreground">
         {t("priority.label")}
       </span>
       {readOnly ? (
-        <span className="text-sm text-foreground">
+        <span className="text-ui-body text-foreground">
           {t(`priority.${current}`)}
         </span>
       ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" data-testid="priority-trigger">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="priority-trigger"
+              className="text-ui-label"
+            >
               <CurrentIcon
                 className={`h-3.5 w-3.5 ${PRIORITY_META[current].iconClass}`}
               />

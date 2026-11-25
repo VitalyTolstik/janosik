@@ -52,7 +52,7 @@ export function DueBadge({ dueDate }: DueBadgeProps) {
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+            "inline-flex h-5 items-center gap-1 rounded-md border px-1.5 text-ui-meta font-medium tabular-nums transition-colors",
             status === "overdue" &&
               "border-danger/40 bg-danger/10 text-(--chip-red)",
             status === "soon" &&

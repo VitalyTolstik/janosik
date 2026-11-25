@@ -129,7 +129,7 @@ function FilterSection({
 }) {
   return (
     <div className="border-b border-border px-3 py-2 last:border-b-0">
-      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="mb-1 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
         {title}
       </div>
       {children}
@@ -200,7 +200,7 @@ function OptionRow({
       data-calendar-toggle={calendarToggle ? "" : undefined}
       onClick={onSelect}
       className={cn(
-        "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+        "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body transition-colors hover:bg-hover",
         selected ? "font-medium text-foreground" : "text-foreground/90",
       )}
     >
@@ -224,7 +224,7 @@ function CheckRow({ checked, onCheckedChange, children }: CheckRowProps) {
       role="checkbox"
       aria-checked={checked}
       onClick={() => onCheckedChange(!checked)}
-      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-hover"
+      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body text-foreground transition-colors hover:bg-hover"
     >
       <span className="flex items-center gap-2">{children}</span>
       <span
@@ -387,7 +387,7 @@ export function FilterBar({
             {facetCount > 0 && (
               <span
                 data-testid="filter-facet-count"
-                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary-foreground px-1 text-[11px] font-semibold text-secondary"
+                className="flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary-foreground px-1 text-ui-micro font-semibold text-secondary"
               >
                 {facetCount}
               </span>
@@ -434,7 +434,7 @@ export function FilterBar({
           </div>
           <FilterSection title={t("filter.labels")}>
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
+              <span className="text-ui-label text-muted-foreground">
                 {t("filter.match")}
               </span>
               <div
@@ -457,7 +457,7 @@ export function FilterBar({
                       }))
                     }
                     className={cn(
-                      "rounded px-2 py-0.5 text-xs transition-colors",
+                      "rounded px-2 py-0.5 text-ui-label transition-colors",
                       filter.labelMatch === mode
                         ? "bg-primary/15 font-medium text-(--tab-text)"
                         : "text-muted-foreground hover:bg-hover",
@@ -661,7 +661,7 @@ export function FilterBar({
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:ml-auto sm:w-auto">
           <span
             data-testid="filter-match-count"
-            className="max-w-full whitespace-nowrap text-xs text-muted-foreground"
+            className="max-w-full whitespace-nowrap text-ui-meta text-muted-foreground"
           >
             {matchPending
               ? t("filter.searchingServer")
@@ -703,7 +703,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="due"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <CalendarClock className="h-3 w-3 text-muted-foreground" />
               {t(DUE_LABEL_KEY[filter.due])}
@@ -724,7 +724,7 @@ export function FilterBar({
               key={label.id}
               data-testid="filter-chip"
               data-facet="label"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <span
                 className={cn("h-2 w-2 rounded-full", dotClass(label.color))}
@@ -744,7 +744,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="no-label"
-              className="flex items-center gap-1.5 rounded-full border border-dashed border-border py-1 pl-2 pr-1 text-xs text-muted-foreground"
+              className="flex items-center gap-1.5 rounded-full border border-dashed border-border py-1 pl-2 pr-1 text-ui-label text-muted-foreground"
             >
               {t("filter.noLabel")}
               <button
@@ -764,7 +764,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="created"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <CalendarDays className="h-3 w-3 text-muted-foreground" />
               {t(CREATED_LABEL_KEY[filter.created])}
@@ -784,7 +784,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="created-on"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <CalendarDays className="h-3 w-3 text-muted-foreground" />
               {formatDay(filter.createdOn, lang)}
@@ -808,7 +808,7 @@ export function FilterBar({
                 key={priority}
                 data-testid="filter-chip"
                 data-facet="priority"
-                className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+                className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
               >
                 <Icon
                   className={`h-3 w-3 shrink-0 ${meta.iconClass}`}
@@ -838,7 +838,7 @@ export function FilterBar({
               key={userId}
               data-testid="filter-chip"
               data-facet="assignee"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               {member ? (
                 <UserAvatar
@@ -880,7 +880,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="unassigned"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <CircleUserRound
                 className="h-3 w-3 shrink-0 text-muted-foreground"
@@ -903,7 +903,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="blocked"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <Ban className="h-3 w-3 shrink-0 text-danger" aria-hidden />
               {t("filter.blocked")}
@@ -923,7 +923,7 @@ export function FilterBar({
             <span
               data-testid="filter-chip"
               data-facet="links"
-              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-xs text-foreground"
+              className="flex items-center gap-1.5 rounded-full bg-hover py-1 pl-2 pr-1 text-ui-label text-foreground"
             >
               <Link2
                 className="h-3 w-3 shrink-0 text-muted-foreground"
@@ -947,7 +947,7 @@ export function FilterBar({
 
       {/* Drag & drop hint */}
       {active && (
-        <div className="flex w-full items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="flex w-full items-center gap-1.5 text-ui-meta text-muted-foreground">
           {t("filter.dragDisabled")}
         </div>
       )}

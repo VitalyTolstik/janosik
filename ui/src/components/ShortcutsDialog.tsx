@@ -15,12 +15,12 @@ const MOD = isMacPlatform() ? "⌘" : "Ctrl+";
 function ShortcutRow({ action, keys }: { action: string; keys: string[] }) {
   return (
     <div className="flex items-center justify-between gap-4 py-1.5">
-      <span className="text-sm text-foreground/90">{action}</span>
+      <span className="text-ui-body text-foreground/90">{action}</span>
       <span className="flex shrink-0 items-center gap-1">
         {keys.map((key) => (
           <kbd
             key={key}
-            className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-muted px-1.5 font-mono text-xs font-medium text-foreground"
+            className="inline-flex h-6 min-w-6 items-center justify-center rounded-md border border-border bg-muted px-1.5 font-mono text-ui-micro font-medium text-foreground"
           >
             {key}
           </kbd>
@@ -65,7 +65,7 @@ export function ShortcutsDialog({
         // the close X and paints its focus ring.
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <DialogTitle className="text-base font-semibold">
+        <DialogTitle className="text-ui-heading font-semibold">
           {t("shortcuts.title")}
         </DialogTitle>
         <DialogDescription className="sr-only">

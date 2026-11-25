@@ -166,7 +166,7 @@ function conflictedKey(boardId: string, cardId: string): string {
   return `${boardId}:${cardId}`;
 }
 
-/** Four rows of text-sm plus the textarea padding: past this the title scrolls. */
+/** Four rows of text-ui-body plus the textarea padding: past this the title scrolls. */
 const TITLE_MAX_HEIGHT = 100;
 
 /**
@@ -1237,7 +1237,7 @@ export function CardDialog({
                   role="status"
                   aria-live="polite"
                   data-testid="card-title-blank-hint"
-                  className="text-xs text-amber-700 dark:text-amber-400"
+                  className="text-ui-label text-amber-700 dark:text-amber-400"
                 >
                   {t(
                     (card?.title ?? "").trim() === ""
@@ -1250,7 +1250,7 @@ export function CardDialog({
                 <div
                   role="alert"
                   data-testid="card-title-conflict"
-                  className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-ui-body text-foreground"
                 >
                   <span className="min-w-0 flex-1">
                     {t("card.titleConflict")}
@@ -1305,7 +1305,7 @@ export function CardDialog({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-7 gap-1 rounded-md px-2 text-xs text-muted-foreground"
+                        className="h-7 gap-1 rounded-md px-2 text-ui-label text-muted-foreground"
                       >
                         <Plus className="h-3.5 w-3.5" />
                         {t("card.menu.labels")}
@@ -1344,7 +1344,7 @@ export function CardDialog({
                 "pb-24",
             )}
           >
-            <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_320px]">
               <aside
                 aria-label={t("card.properties")}
                 className="card-details-properties space-y-3 border-b border-border/60 bg-muted/20 px-6 py-4 md:col-start-2 md:row-start-1 md:border-b-0 md:border-l md:py-5"
@@ -1378,7 +1378,7 @@ export function CardDialog({
                           >
                             <span className="truncate">{column.title}</span>
                             {column.wipLimit !== undefined && (
-                              <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                              <span className="ml-auto pl-2 text-ui-meta tabular-nums text-muted-foreground">
                                 {column.cardIds.length}/{column.wipLimit}
                               </span>
                             )}
@@ -1390,12 +1390,16 @@ export function CardDialog({
                 ) : null}
                 {!readOnly && !card.archivedAt && (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-muted-foreground">
+                    <span className="text-ui-label font-medium text-muted-foreground">
                       {t("card.columnLabel")}
                     </span>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-ui-label"
+                        >
                           <ArrowRightLeft className="h-3.5 w-3.5" />
                           {currentColumn?.title ?? "—"}
                         </Button>
@@ -1435,7 +1439,7 @@ export function CardDialog({
                                 </span>
                                 {reason ? (
                                   <span
-                                    className="block whitespace-normal text-[10px] leading-snug text-muted-foreground"
+                                    className="block whitespace-normal text-ui-micro leading-snug text-muted-foreground"
                                     data-testid={`card-dialog-move-reason-${column.id}`}
                                   >
                                     {reason}
@@ -1443,7 +1447,7 @@ export function CardDialog({
                                 ) : null}
                               </span>
                               {column.wipLimit !== undefined && (
-                                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                <span className="ml-auto pl-2 text-ui-meta tabular-nums text-muted-foreground">
                                   {column.cardIds.length}/{column.wipLimit}
                                 </span>
                               )}
@@ -1481,7 +1485,7 @@ export function CardDialog({
                 )}
 
                 <div
-                  className="col-span-full space-y-1 border-t border-border/60 pt-3 text-xs text-muted-foreground"
+                  className="col-span-full space-y-1 border-t border-border/60 pt-3 text-ui-meta text-muted-foreground"
                   data-testid="card-dates"
                 >
                   <p>
@@ -1531,7 +1535,7 @@ export function CardDialog({
                       <div
                         role="alert"
                         data-testid="card-description-conflict"
-                        className="mb-1.5 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+                        className="mb-1.5 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-ui-body text-foreground"
                       >
                         <span className="min-w-0 flex-1">
                           {t("card.descriptionConflict")}

@@ -218,7 +218,7 @@ export function SavedViewsMenu({
                 {count > 0 && (
                   <span
                     aria-hidden
-                    className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-action-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground shadow-sm ring-2 ring-background"
+                    className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-action-primary px-1 text-ui-micro font-semibold leading-none text-primary-foreground shadow-sm ring-2 ring-background"
                     data-testid="saved-views-count-badge"
                   >
                     {count}
@@ -576,8 +576,8 @@ function SavedViewsPanel({
     >
       <div className="flex items-start justify-between gap-3 border-b border-border/60 px-3 py-2.5">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{t("savedViews.menu")}</h2>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <h2 className="text-ui-body font-semibold">{t("savedViews.menu")}</h2>
+          <p className="mt-0.5 text-ui-label text-muted-foreground">
             {t("savedViews.localHint")}
           </p>
         </div>
@@ -590,7 +590,7 @@ function SavedViewsPanel({
             count: views.length,
             max: MAX_SAVED_VIEWS,
           })}
-          className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[11px] tabular-nums text-muted-foreground"
+          className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-ui-micro tabular-nums text-muted-foreground"
         >
           {t("savedViews.count", {
             count: views.length,
@@ -604,7 +604,7 @@ function SavedViewsPanel({
           <p
             role="status"
             data-testid="saved-views-notice"
-            className="rounded-md border border-border/60 bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground"
+            className="rounded-md border border-border/60 bg-muted/50 px-2 py-1.5 text-ui-body text-muted-foreground"
           >
             {stateNotice}
           </p>
@@ -613,7 +613,7 @@ function SavedViewsPanel({
           <p
             role="alert"
             data-testid="saved-views-error"
-            className="rounded-md border border-danger/40 bg-danger/10 px-2 py-1.5 text-xs text-(--chip-red)"
+            className="rounded-md border border-danger/40 bg-danger/10 px-2 py-1.5 text-ui-body text-(--chip-red)"
           >
             {errorText(error)}
           </p>
@@ -629,7 +629,7 @@ function SavedViewsPanel({
           >
             <label
               htmlFor="saved-view-name"
-              className="block text-xs font-medium"
+              className="block text-ui-label font-medium"
             >
               {t("savedViews.nameLabel")}
             </label>
@@ -666,7 +666,7 @@ function SavedViewsPanel({
               <p
                 id="saved-view-name-error"
                 role="alert"
-                className="text-xs text-(--chip-red)"
+                className="text-ui-label text-(--chip-red)"
                 data-testid={
                   createDuplicate
                     ? "saved-views-duplicate"
@@ -712,12 +712,12 @@ function SavedViewsPanel({
           </Button>
         )}
         {!filterActive && !writeBlocked && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("savedViews.filterRequired")}
           </p>
         )}
         {atLimit && !writeBlocked && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("savedViews.limit", { count: MAX_SAVED_VIEWS })}
           </p>
         )}
@@ -726,7 +726,7 @@ function SavedViewsPanel({
       <div className="mt-3 max-h-[min(50vh,22rem)] overscroll-contain overflow-y-auto border-t border-border/60 p-2">
         {views.length === 0 ? (
           <p
-            className="px-2 py-4 text-center text-xs text-muted-foreground"
+            className="px-2 py-4 text-center text-ui-body text-muted-foreground"
             data-testid="saved-views-empty"
           >
             {stateNotice ?? t("savedViews.empty")}
@@ -781,7 +781,7 @@ function SavedViewsPanel({
                         <p
                           id="saved-view-rename-error"
                           role="alert"
-                          className="text-xs text-(--chip-red)"
+                          className="text-ui-label text-(--chip-red)"
                           data-testid={
                             renameDuplicate
                               ? "saved-views-rename-duplicate"
@@ -832,10 +832,10 @@ function SavedViewsPanel({
                           aria-hidden
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
+                          <span className="block truncate text-ui-body font-medium">
                             {saved.name}
                           </span>
-                          <span className="block text-[11px] text-muted-foreground">
+                          <span className="block text-ui-meta text-muted-foreground">
                             {projectionLabel(saved)}
                           </span>
                         </span>
@@ -890,10 +890,10 @@ function SavedViewsPanel({
                           aria-hidden
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">
+                          <span className="block truncate text-ui-body font-medium">
                             {saved.name}
                           </span>{" "}
-                          <span className="block text-[11px] text-muted-foreground">
+                          <span className="block text-ui-meta text-muted-foreground">
                             {projectionLabel(saved)}
                           </span>
                         </span>

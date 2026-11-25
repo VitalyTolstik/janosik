@@ -117,7 +117,7 @@ export function CardComposer({
         disabled={addCardDisabled}
         onClick={() => setComposing(true)}
         {...(columnId ? { "data-composer-trigger": columnId } : {})}
-        className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+        className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-ui-body text-muted-foreground transition-colors hover:bg-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
       >
         <Plus className="h-4 w-4 transition-transform group-hover:scale-110" />
         <span>{t("composer.add")}</span>
@@ -170,7 +170,7 @@ export function CardComposer({
           // Keep focus in the textarea so its onBlur (reset) never fires
           // before the click lands.
           onMouseDown={(event) => event.preventDefault()}
-          className="h-7 flex-1 text-xs"
+          className="h-7 flex-1 text-ui-body"
         >
           {t("composer.submit")}
         </Button>
@@ -181,13 +181,13 @@ export function CardComposer({
             setComposing(false);
             onClose?.();
           }}
-          className="h-7 text-xs text-muted-foreground hover:text-foreground"
+          className="h-7 text-ui-label text-muted-foreground hover:text-foreground"
           onMouseDown={(event) => event.preventDefault()}
         >
           {t("common.cancel")}
         </Button>
       </div>
-      <p className="text-[11px] text-muted-foreground/80">
+      <p className="text-ui-meta text-muted-foreground/80">
         {t("composer.hint")}
       </p>
     </div>

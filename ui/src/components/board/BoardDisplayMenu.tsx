@@ -55,7 +55,7 @@ export function BoardDisplayMenu({
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuLabel className="text-xs">
+          <DropdownMenuLabel className="text-ui-label">
             {t("view.displayMenu")}
           </DropdownMenuLabel>
           {!readOnly && (

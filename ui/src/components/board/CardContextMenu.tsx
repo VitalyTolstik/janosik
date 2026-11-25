@@ -338,7 +338,7 @@ function CardContextMenuBody({
                     data-testid={`ctx-link-type-${entry.option}`}
                     onClick={() => setLinkOption(entry)}
                     className={cn(
-                      "rounded-full border px-2 py-0.5 text-[11px] leading-tight transition-colors",
+                      "rounded-full border px-2 py-0.5 text-ui-micro leading-tight transition-colors",
                       linkOption?.option === entry.option
                         ? "border-primary/60 bg-primary/10 text-foreground"
                         : "border-border/60 text-muted-foreground hover:bg-muted/60",
@@ -358,7 +358,7 @@ function CardContextMenuBody({
                   aria-label={t("card.links.searchAria")}
                   maxLength={LIMITS.cardTitle}
                   data-testid="ctx-link-search"
-                  className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  className="h-6 w-full bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
                 />
               </div>
               <div className="max-h-52 overflow-y-auto p-1">
@@ -371,13 +371,13 @@ function CardContextMenuBody({
                     <span className="min-w-0 flex-1 truncate">
                       {target.title}
                     </span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                    <span className="shrink-0 text-ui-micro text-muted-foreground">
                       {columnTitleOf(target.id)}
                     </span>
                   </ContextMenuItem>
                 ))}
                 {linkQuery.trim() !== "" && linkTargets.length === 0 ? (
-                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                  <p className="px-2 py-1.5 text-ui-body text-muted-foreground">
                     {t("card.links.noMatches")}
                   </p>
                 ) : null}
@@ -504,7 +504,7 @@ function MoveToSub({
       </ContextMenuSubTrigger>
       <ContextMenuSubContent className="w-64" data-testid="ctx-move-content">
         {allowed.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+          <p className="px-2 py-1.5 text-ui-body text-muted-foreground">
             {t("workflow.noAvailableTargets")}
           </p>
         ) : null}
@@ -533,7 +533,7 @@ function MoveToSub({
             <span className="min-w-0 flex-1">
               <span className="block truncate">{target.title}</span>
               <span
-                className="block whitespace-normal text-[10px] leading-snug text-muted-foreground"
+                className="block whitespace-normal text-ui-label leading-snug text-muted-foreground"
                 data-testid={`ctx-move-reason-${target.id}`}
               >
                 {reason}
@@ -583,7 +583,7 @@ function LabelsSub({
         <Tag />
         {t("card.menu.labels")}
         {card.labelIds.length > 0 ? (
-          <span className="ml-auto mr-1 rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+          <span className="ml-auto mr-1 rounded-full bg-muted px-1.5 text-ui-micro font-medium text-muted-foreground">
             {card.labelIds.length}
           </span>
         ) : null}
@@ -623,7 +623,7 @@ function LabelsSub({
             placeholder={t("label.namePlaceholder")}
             aria-label={t("label.new")}
             data-testid="ctx-new-label-name"
-            className="h-7 text-sm"
+            className="h-7 text-ui-body"
           />
           <div className="mt-1.5 flex flex-wrap gap-1">
             {LABEL_COLORS.map((entry) => (
@@ -646,7 +646,7 @@ function LabelsSub({
             type="button"
             size="sm"
             variant="outline"
-            className="mt-1.5 h-7 w-full text-xs"
+            className="mt-1.5 h-7 w-full text-ui-label"
             disabled={name.trim() === ""}
             onClick={create}
             data-testid="ctx-label-create"
@@ -792,7 +792,7 @@ function AssigneeSub({
             placeholder={t("card.assignee.searchPlaceholder")}
             aria-label={t("card.assignee.searchPlaceholder")}
             data-testid="ctx-assignee-search"
-            className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-6 w-full bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
           />
         </div>
         <div className="max-h-56 overflow-y-auto p-1">
@@ -831,7 +831,7 @@ function AssigneeSub({
             </ContextMenuItem>
           ))}
           {suggestions.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            <p className="px-2 py-1.5 text-ui-body text-muted-foreground">
               {t("card.assignee.empty")}
             </p>
           ) : null}
@@ -866,7 +866,7 @@ function CoverSub({
         data-testid="ctx-cover-content"
       >
         <ContextMenuGroup>
-          <ContextMenuLabel className="px-0 py-0 text-xs font-medium text-muted-foreground">
+          <ContextMenuLabel className="px-0 py-0 text-ui-label font-medium text-muted-foreground">
             {t("card.coverColors")}
           </ContextMenuLabel>
           <div className="mt-1 flex flex-wrap gap-1.5">
@@ -889,7 +889,7 @@ function CoverSub({
           </div>
         </ContextMenuGroup>
         <ContextMenuGroup>
-          <ContextMenuLabel className="mt-2 px-0 py-0 text-xs font-medium text-muted-foreground">
+          <ContextMenuLabel className="mt-2 px-0 py-0 text-ui-label font-medium text-muted-foreground">
             {t("card.coverGradients")}
           </ContextMenuLabel>
           <div className="mt-1 flex flex-wrap gap-1.5">
@@ -916,7 +916,7 @@ function CoverSub({
             type="button"
             variant="ghost"
             size="sm"
-            className="mt-2 h-7 w-full text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="mt-2 h-7 w-full text-ui-label text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={onRemove}
             data-testid="ctx-cover-remove"
           >
@@ -952,7 +952,7 @@ function ChecklistSub({
         <ListChecks />
         {t("checklist.sectionLabel")}
         {checklists.length > 0 ? (
-          <span className="ml-auto mr-1 rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
+          <span className="ml-auto mr-1 rounded-full bg-muted px-1.5 text-ui-micro font-medium text-muted-foreground">
             {checklists.reduce((total, list) => total + list.items.length, 0)}
           </span>
         ) : null}
@@ -967,10 +967,10 @@ function ChecklistSub({
             return (
               <div key={checklist.id} className="px-1 py-1.5">
                 <div className="flex items-center justify-between gap-2 px-1">
-                  <span className="min-w-0 truncate text-xs font-semibold text-foreground">
+                  <span className="min-w-0 truncate text-ui-label font-semibold text-foreground">
                     {checklist.title}
                   </span>
-                  <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                  <span className="shrink-0 text-ui-micro tabular-nums text-muted-foreground">
                     {done}/{checklist.items.length}
                   </span>
                 </div>
@@ -999,7 +999,7 @@ function ChecklistSub({
                     </span>
                     <span
                       className={cn(
-                        "min-w-0 flex-1 truncate text-xs",
+                        "min-w-0 flex-1 truncate text-ui-label",
                         item.done && "text-muted-foreground line-through",
                       )}
                     >
@@ -1023,7 +1023,7 @@ function ChecklistSub({
                         event.currentTarget.value = "";
                       }
                     }}
-                    className="h-6 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                    className="h-6 w-full bg-transparent text-ui-label outline-none placeholder:text-muted-foreground"
                   />
                 </div>
               </div>
@@ -1048,7 +1048,7 @@ function ChecklistSub({
                 event.currentTarget.value = "";
               }
             }}
-            className="h-6 w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+            className="h-6 w-full bg-transparent text-ui-label outline-none placeholder:text-muted-foreground"
           />
         </div>
       </ContextMenuSubContent>
@@ -1123,16 +1123,16 @@ function CommentSub({
           maxLength={LIMITS.comment}
           rows={3}
           data-testid="ctx-comment-input"
-          className="w-full resize-none rounded-md border border-border/60 bg-transparent p-2 text-sm outline-none placeholder:text-muted-foreground focus:border-primary/50"
+          className="w-full resize-none rounded-md border border-border/60 bg-transparent p-2 text-ui-body outline-none placeholder:text-muted-foreground focus:border-primary/50"
         />
         <div className="mt-1 flex items-center justify-between gap-2">
-          <span className="text-[10px] tabular-nums text-muted-foreground">
+          <span className="text-ui-micro tabular-nums text-muted-foreground">
             {text.length}/{LIMITS.comment}
           </span>
           <Button
             type="button"
             size="sm"
-            className="h-7 px-3 text-xs"
+            className="h-7 px-3 text-ui-label"
             disabled={!canSend}
             onClick={() => void send()}
             data-testid="ctx-comment-send"

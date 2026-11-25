@@ -143,11 +143,11 @@ export function CardDueDate({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium text-muted-foreground">
+      <span className="text-ui-label font-medium text-muted-foreground">
         {t("dueDate.label")}
       </span>
       {readOnly ? (
-        <span className="text-sm text-foreground">
+        <span className="text-ui-body text-foreground">
           {due
             ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
             : t("dueDate.set")}
@@ -155,7 +155,12 @@ export function CardDueDate({
       ) : (
         <Popover open={open} onOpenChange={(next) => setOpen(next)}>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" data-testid="due-date-trigger">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="due-date-trigger"
+              className="text-ui-label"
+            >
               <CalendarClock className="h-3.5 w-3.5" />
               {due
                 ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`

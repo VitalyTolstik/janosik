@@ -284,7 +284,7 @@ export function CardHistory({
           <CardSectionSkeleton kind="history" rows={4} />
         </SkeletonRegion>
       ) : visible.length === 0 && nextCursor === null ? (
-        <p className="py-1 text-sm text-muted-foreground">
+        <p className="py-1 text-ui-body text-muted-foreground">
           {t("history.empty")}
         </p>
       ) : visible.length > 0 ? (
@@ -393,7 +393,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
 
   return (
     <li
-      className="flex items-start gap-2.5 text-sm"
+      className="flex items-start gap-2.5 text-ui-body"
       data-testid="history-entry"
     >
       {entry.actorId && entry.actorType !== "admin" ? (
@@ -437,7 +437,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
             ) : null}
             {entry.actorType === "agent" ? (
               <span
-                className="mr-1 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="mr-1 rounded bg-muted px-1 py-0.5 align-middle text-ui-micro font-medium uppercase tracking-wide text-muted-foreground"
                 data-testid="actor-agent-badge"
                 title={t("activity.agent")}
               >
@@ -447,7 +447,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
             {t(sentence.key, sentence.params)}
           </p>
           <time
-            className="shrink-0 text-[11px] text-muted-foreground"
+            className="shrink-0 text-ui-meta text-muted-foreground"
             dateTime={new Date(entry.at).toISOString()}
             title={formatDate(entry.at, lang, hour12)}
           >
@@ -480,7 +480,7 @@ function HistoryRow({ boardId, entry }: HistoryRowProps) {
               return (
                 <li
                   key={`${change.field}-${index}`}
-                  className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-baseline gap-x-2 text-xs text-muted-foreground"
+                  className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-baseline gap-x-2 text-ui-label text-muted-foreground"
                 >
                   <span className="font-medium text-foreground/70">
                     {t(FIELD_KEYS[change.field] ?? "history.field.title")}

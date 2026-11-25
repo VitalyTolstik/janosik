@@ -73,8 +73,8 @@ export function CardClaim({
       <div
         className={
           expired
-            ? "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground"
-            : "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-xs text-foreground"
+            ? "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-ui-label text-muted-foreground"
+            : "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5 text-ui-label text-foreground"
         }
         data-testid="card-claim"
       >
@@ -112,7 +112,7 @@ export function CardClaim({
             type="button"
             variant="outline"
             size="sm"
-            className="ml-auto h-7 shrink-0 px-2 text-xs max-lg:h-11 no-hover:min-h-11"
+            className="ml-auto h-7 shrink-0 px-2 text-ui-label max-lg:h-11 no-hover:min-h-11"
             data-testid="card-claim-release"
             onClick={() => setConfirm(true)}
           >

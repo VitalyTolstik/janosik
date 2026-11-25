@@ -1583,7 +1583,9 @@ html.light [data-testid="public-avatar"].bg-slate {
     margin-bottom: 0.35rem;
   }
   .card-details-properties > button,
-  .card-details-properties > div:has(> span:first-child):last-child {
+  .card-details-properties > div:has(> span:first-child):last-child,
+  /* The cover label + "Set cover" value is longer than one phone column. */
+  .card-details-properties > div:has([data-testid="cover-trigger"]) {
     grid-column: 1 / -1;
   }
 }

@@ -111,7 +111,7 @@ export function CardChecklists({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  className="h-7 gap-1 px-2 text-ui-label text-muted-foreground hover:text-foreground"
                   disabled={checklists.length >= LIMITS.checklistsPerCard}
                   onClick={() => {
                     setExpanded(true);
@@ -237,13 +237,13 @@ function ChecklistCard({
                 expanded && "rotate-90",
               )}
             />
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            <span className="min-w-0 flex-1 truncate text-ui-body font-medium">
               {checklist.title}
             </span>
           </button>
         )}
         {total > 0 ? (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="shrink-0 text-ui-meta tabular-nums text-muted-foreground">
             {t("checklist.progress", { count: total, done, total })}
           </span>
         ) : null}
@@ -344,7 +344,7 @@ function ChecklistCard({
                     readOnly ? undefined : () => onEditItem(item.id, item.text)
                   }
                   className={cn(
-                    "min-w-0 flex-1 break-words text-sm",
+                    "min-w-0 flex-1 break-words text-ui-body",
                     !readOnly && "cursor-text",
                     item.done && "text-muted-foreground line-through",
                   )}
@@ -388,7 +388,7 @@ function ChecklistCard({
             onChange={(e) => setNewItem(e.target.value)}
             placeholder={t("checklist.itemPlaceholder")}
             aria-label={t("checklist.itemPlaceholder")}
-            className="h-8 border-none bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+            className="h-8 border-none bg-transparent px-0 text-ui-body shadow-none focus-visible:ring-0"
           />
           <LimitCounter
             length={newItem.length}
@@ -460,7 +460,7 @@ function TitleInput({
           }
         }}
         onBlur={onCommit}
-        className="h-7 text-sm"
+        className="h-7 text-ui-body"
       />
       <LimitCounter
         length={length}

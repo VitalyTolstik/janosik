@@ -113,7 +113,7 @@ export function CardActivity({
               data-testid={testId}
               onClick={() => setView(id)}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-ui-label font-medium transition-colors",
                 view === id
                   ? "bg-primary/15 text-(--tab-text)"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -127,7 +127,7 @@ export function CardActivity({
                 count.total !== undefined) ? (
                 <span
                   data-testid={`${testId}-count`}
-                  className="rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground"
+                  className="rounded-full bg-muted px-1.5 text-ui-micro tabular-nums text-muted-foreground"
                 >
                   {badge(id, count)}
                 </span>

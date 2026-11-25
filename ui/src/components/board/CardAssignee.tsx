@@ -107,12 +107,12 @@ export function CardAssignee({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium text-muted-foreground">
+      <span className="text-ui-label font-medium text-muted-foreground">
         {t("card.assigneeLabel")}
       </span>
       {readOnly ? (
         <span
-          className="flex items-center gap-1.5 text-sm text-foreground"
+          className="flex items-center gap-1.5 text-ui-body text-foreground"
           data-testid="card-assignee-readout"
         >
           {current ? (
@@ -142,7 +142,7 @@ export function CardAssignee({
               variant="outline"
               size="sm"
               data-testid="card-assignee-trigger"
-              className="min-w-0 font-normal"
+              className="min-w-0 text-ui-label font-normal"
             >
               {current ? (
                 <UserAvatar
@@ -181,7 +181,7 @@ export function CardAssignee({
                 aria-autocomplete="list"
                 aria-controls="card-assignee-options"
                 data-testid="card-assignee-input"
-                className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="h-6 w-full bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
               />
             </div>
             <ul
@@ -197,7 +197,7 @@ export function CardAssignee({
                   onMouseEnter={() => setCursor(0)}
                   onClick={() => pick(null)}
                   className={
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors " +
+                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ui-body transition-colors " +
                     (safeCursor === 0
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-accent/60")
@@ -223,7 +223,7 @@ export function CardAssignee({
                       onMouseEnter={() => setCursor(optionIndex)}
                       onClick={() => pick(member.userId)}
                       className={
-                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors " +
+                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-ui-body transition-colors " +
                         (active
                           ? "bg-accent text-accent-foreground"
                           : "hover:bg-accent/60")
@@ -243,14 +243,14 @@ export function CardAssignee({
                           name={userLabel(member.displayName, member.email)}
                           query={query}
                         />
-                        <span className="block truncate text-xs text-muted-foreground">
+                        <span className="block truncate text-ui-label text-muted-foreground">
                           {member.email}
                         </span>
                       </span>
                       {selected ? (
                         <span
                           aria-hidden
-                          className="text-xs font-semibold text-primary"
+                          className="text-ui-label font-semibold text-primary"
                         >
                           ✓
                         </span>
@@ -261,7 +261,7 @@ export function CardAssignee({
               })}
               {suggestions.length === 0 && query.trim() !== "" ? (
                 <li
-                  className="px-2 py-3 text-center text-xs text-muted-foreground"
+                  className="px-2 py-3 text-center text-ui-body text-muted-foreground"
                   data-testid="card-assignee-empty"
                 >
                   {t("card.assignee.empty")}
