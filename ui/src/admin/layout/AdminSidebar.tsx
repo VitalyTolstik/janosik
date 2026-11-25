@@ -127,9 +127,7 @@ export function AdminSidebar({
             <span className="truncate">
               {import.meta.env.PROD ? "Production" : "Development"}
             </span>
-            <span className="ml-auto font-mono text-ui-micro opacity-70">
-              self-hosted
-            </span>
+            <span className="ml-auto font-mono text-ui-micro">self-hosted</span>
           </div>
         ) : null}
 
@@ -143,7 +141,7 @@ export function AdminSidebar({
                 {collapsed ? (
                   <span className="mx-auto block h-px w-6 bg-border" />
                 ) : (
-                  <p className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                  <p className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     {t(group.labelKey)}
                   </p>
                 )}
