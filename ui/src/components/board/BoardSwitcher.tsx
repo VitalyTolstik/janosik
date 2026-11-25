@@ -922,6 +922,7 @@ function BoardSwitcherPanel({
           >
             <div className="flex items-center gap-2">
               <Plus size={15} className="shrink-0 text-primary" />
+              {/* Keep touch inputs at 16px to prevent iOS focus zoom. */}
               <input
                 name="board-create"
                 ref={createRef}
@@ -933,7 +934,7 @@ function BoardSwitcherPanel({
                 aria-label={t("board.switcher.newPlaceholder")}
                 aria-describedby={emptyHintId}
                 autoFocus
-                className="h-7 min-w-0 flex-1 bg-transparent text-ui-body outline-none placeholder:text-muted-foreground disabled:opacity-60 max-[1024.98px]:h-11"
+                className="h-7 min-w-0 flex-1 bg-transparent text-ui-body outline-none placeholder:text-muted-foreground disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
               />
               <button
                 type="submit"
@@ -963,7 +964,7 @@ function BoardSwitcherPanel({
             <div className="mt-1 flex items-center justify-between gap-2 max-[1024.98px]:mt-1.5">
               <p
                 id={emptyHintId}
-                className="min-w-0 flex-1 truncate text-ui-micro leading-[1.4] text-muted-foreground"
+                className="line-clamp-2 min-w-0 flex-1 text-ui-body leading-[1.4] text-muted-foreground"
               >
                 {createBusy
                   ? t("common.creating")

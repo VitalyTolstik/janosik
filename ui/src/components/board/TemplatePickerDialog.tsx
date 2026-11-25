@@ -626,6 +626,7 @@ export function TemplatePickerDialog({
                   </span>
                 </div>
                 <div className="flex gap-1.5">
+                  {/* Keep touch inputs at 16px to prevent iOS focus zoom. */}
                   <input
                     ref={nameInputRef}
                     id="template-board-name"

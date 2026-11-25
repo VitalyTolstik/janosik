@@ -551,7 +551,7 @@ export function TableView({
         data-testid="table-scroll"
         className="flex-1 overflow-x-auto overflow-y-auto overscroll-contain"
       >
-        <table className="w-full table-fixed border-collapse text-ui-body max-md:min-w-[640px]">
+        <table className="w-full table-fixed border-collapse text-ui-body">
           <thead>
             <tr className="border-b border-border/60">
               <SortHeader
@@ -559,7 +559,7 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-40 md:w-auto lg:w-72"
+                className="sm:w-40 md:w-auto lg:w-72"
               />
               <SortHeader
                 label={t("view.table.column")}
@@ -573,7 +573,7 @@ export function TableView({
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-28 lg:w-48"
+                className="w-32 max-sm:px-2 sm:w-28 lg:w-48"
               />
               <th
                 scope="col"
@@ -1130,7 +1130,7 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="px-2 py-2 sm:px-3"
+            className="px-2 py-2 max-sm:[&_[data-due-status]]:h-auto max-sm:[&_[data-due-status]]:min-h-5 max-sm:[&_[data-due-status]]:max-w-full sm:px-3"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
@@ -1145,7 +1145,7 @@ function TableRowBody({
                   <button
                     type="button"
                     data-testid="table-due-cell"
-                    className="block max-w-full truncate rounded transition-opacity hover:opacity-80"
+                    className="block max-w-full rounded text-left transition-opacity hover:opacity-80 sm:truncate"
                   >
                     <span className="sr-only">{t("dueDate.label")} </span>
                     {typeof card.dueDate === "number" ? (

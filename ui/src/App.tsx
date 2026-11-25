@@ -199,6 +199,7 @@ export function NoBoardRoute() {
             </span>
           </div>
           <div className="relative">
+            {/* Keep touch inputs at 16px to prevent iOS focus zoom. */}
             <input
               id="first-board-name"
               name="board-title"
@@ -208,7 +209,7 @@ export function NoBoardRoute() {
               placeholder={t("board.firstRun.placeholder")}
               aria-describedby="first-board-name-help first-board-name-status"
               data-testid="empty-board-name"
-              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-ui-label text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-ui-body text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
             />
             <LimitCounter
               length={title.length}
@@ -219,7 +220,7 @@ export function NoBoardRoute() {
           </div>
           <p
             id="first-board-name-help"
-            className="mt-1.5 text-ui-micro leading-[1.45] text-muted-foreground"
+            className="mt-1.5 text-ui-body leading-[1.45] text-muted-foreground"
           >
             {t("board.firstRun.nameHelper")}
           </p>
@@ -252,7 +253,7 @@ export function NoBoardRoute() {
           </div>
           <p
             id="first-board-name-status"
-            className="mt-2.5 flex items-start gap-1 text-ui-micro leading-[1.5] text-muted-foreground"
+            className="mt-2.5 flex items-start gap-1 text-ui-body leading-[1.5] text-muted-foreground"
           >
             <Info
               aria-hidden
@@ -263,7 +264,7 @@ export function NoBoardRoute() {
               : t("board.firstRun.emptyDisabledHint")}
           </p>
         </form>
-        <p className="mt-3.5 text-ui-micro text-muted-foreground">
+        <p className="mt-3.5 text-ui-meta text-muted-foreground">
           {t("board.firstRun.footHint")}
         </p>
         {allArchived ? <BoardSwitcher archivedEntry /> : null}
