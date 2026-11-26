@@ -198,7 +198,7 @@ export function FilterTabs<T extends string>({
   return (
     <div
       className={cn(
-        "inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5",
+        "inline-flex h-8 items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5 max-lg:h-auto",
         className,
       )}
     >
@@ -209,7 +209,7 @@ export function FilterTabs<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "h-7 rounded-md px-2.5 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            "h-7 rounded-md px-2.5 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11",
             value === option.value
               ? "bg-primary/15 text-foreground"
               : "text-muted-foreground hover:bg-hover hover:text-foreground",

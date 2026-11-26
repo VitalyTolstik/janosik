@@ -124,6 +124,13 @@ export function DateTimeField({
   const [time, setTime] = useState(() =>
     parsed ? formatTimeOfDay(parsed) : "12:00",
   );
+  const displayValue = parsed
+    ? `${formatDateOnly(parsed.getTime(), lang)}, ${formatTime(
+        formatTimeOfDay(parsed),
+        lang,
+        hour12,
+      )}`
+    : placeholder;
 
   const changeOpen = (nextOpen: boolean) => {
     if (!nextOpen) focusAfterRetry.current = false;
@@ -191,7 +198,8 @@ export function DateTimeField({
           disabled={disabled}
           data-testid={testId}
           aria-label={ariaLabel}
-          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-ui-body text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          title={displayValue}
+          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-ui-body text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 max-lg:h-11"
         >
           <CalendarClock
             className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -200,13 +208,7 @@ export function DateTimeField({
           <span
             className={parsed ? "truncate" : "truncate text-muted-foreground"}
           >
-            {parsed
-              ? `${formatDateOnly(parsed.getTime(), lang)}, ${formatTime(
-                  formatTimeOfDay(parsed),
-                  lang,
-                  hour12,
-                )}`
-              : placeholder}
+            {displayValue}
           </span>
         </button>
       </PopoverTrigger>

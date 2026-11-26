@@ -274,7 +274,7 @@ export function WorkflowSettings({
                   onClick={() => setView(entry.id)}
                   onKeyDown={onViewKeyDown}
                   className={cn(
-                    "inline-flex h-7 items-center gap-1 whitespace-nowrap rounded px-1.5 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none",
+                    "inline-flex h-7 items-center gap-1 whitespace-nowrap rounded px-1.5 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none max-lg:min-h-11",
                     active
                       ? "bg-hover text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_22%,transparent)]"
                       : "text-muted-foreground hover:text-foreground",

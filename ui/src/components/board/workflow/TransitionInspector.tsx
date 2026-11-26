@@ -102,7 +102,7 @@ export function TransitionInspector({
             <span
               className={cn(
                 "inline-flex items-center gap-1 text-ui-meta leading-4",
-                active ? "text-success" : "text-muted-foreground",
+                active ? "text-(--chip-green)" : "text-muted-foreground",
               )}
             >
               {active ? (
@@ -376,7 +376,7 @@ export function TransitionInspector({
                   </span>
                 ) : reason === null ? (
                   <span
-                    className="inline-flex min-w-0 items-center gap-1 text-ui-meta leading-[1.3] text-success"
+                    className="inline-flex min-w-0 items-center gap-1 text-ui-meta leading-[1.3] text-(--chip-green)"
                     data-testid={`${testIdPrefix}-preview-result`}
                   >
                     <Check className="h-3 w-3 shrink-0" aria-hidden />

@@ -431,7 +431,7 @@ export function EntityPage<E extends AdminEntity>({
   };
 
   const tabsClassName =
-    "admin-tab-strip max-w-full max-sm:h-auto max-sm:overflow-x-auto max-sm:[&_button]:h-11 max-sm:[&_button]:shrink-0";
+    "admin-tab-strip max-w-full max-lg:h-auto max-lg:overflow-x-auto max-lg:[&_button]:h-11 max-lg:[&_button]:shrink-0";
   const renderHeader = (filterTrigger?: ReactNode) => (
     <PageHeader
       title={config.title}

@@ -497,7 +497,7 @@ export function AnnouncementEditorDialog({
           tabRefs.current.ru?.focus();
         }
       }}
-      className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-label transition-colors ${
+      className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-label transition-colors max-lg:min-h-11 ${
         editorLocale === locale
           ? "border-border bg-card text-foreground shadow-sm"
           : "border-transparent text-muted-foreground hover:bg-hover/60 hover:text-foreground"
@@ -855,7 +855,7 @@ export function AnnouncementEditorDialog({
               <summary className="cursor-pointer text-ui-meta font-medium text-muted-foreground">
                 {t("admin.comms.schedule")}
               </summary>
-              <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <Field label={t("admin.comms.field.startsAt")}>
                   <DateTimeField
                     value={startsAt}
@@ -901,7 +901,7 @@ export function AnnouncementEditorDialog({
                     data-testid={`announcement-preview-${locale}`}
                     aria-pressed={previewLocale === locale}
                     onClick={() => setPreviewLocale(locale)}
-                    className={`rounded px-1.5 py-0.5 text-ui-micro font-medium ${
+                    className={`inline-flex items-center justify-center rounded px-1.5 py-0.5 text-ui-micro font-medium max-lg:min-h-11 max-lg:min-w-11 max-lg:px-2.5 ${
                       previewLocale === locale
                         ? "bg-primary/15 text-foreground"
                         : "text-muted-foreground"

@@ -1,3 +1,8 @@
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+
+import type { Page } from "@playwright/test";
+
 import { test, expect } from "@/fixtures/admin.js";
 import {
   adminPath,
@@ -6,6 +11,35 @@ import {
   loginAsMaster,
   ownerCredentials,
 } from "@/helpers/admin.js";
+
+const require = createRequire(import.meta.url);
+const axeSource = readFileSync(require.resolve("axe-core"), "utf8");
+
+async function axeViolations(page: Page, selector: string) {
+  await page.evaluate(axeSource as unknown as () => void);
+  return page.evaluate(
+    async ({ targetSelector }) => {
+      const axe = (
+        window as unknown as {
+          axe: {
+            run: (
+              context: Element,
+              options: unknown,
+            ) => Promise<{ violations: Array<{ id: string }> }>;
+          };
+        }
+      ).axe;
+      const target = document.querySelector(targetSelector);
+      if (target === null)
+        throw new Error(`axe target missing: ${targetSelector}`);
+      const results = await axe.run(target, {
+        rules: { "color-contrast": { enabled: true } },
+      });
+      return results.violations.map((violation) => violation.id);
+    },
+    { targetSelector: selector },
+  );
+}
 
 test("a master edits the workflow on behalf of the owner and the change is audited", async ({
   page,
@@ -57,6 +91,43 @@ test("a master edits the workflow on behalf of the owner and the change is audit
     targetId: board.id,
     detailsText: "SET_BOARD_WORKFLOW",
   });
+});
+
+test("workflow inspector active status passes light-theme contrast", async ({
+  page,
+  board,
+}) => {
+  const backlog = await board.column("Backlog");
+  const doing = await board.column("Doing");
+  await loginAsMaster(page, ownerCredentials());
+  await page.goto(adminPath(`boards/${board.id}/workflow`), {
+    waitUntil: "domcontentloaded",
+  });
+  if (
+    await page.evaluate(() =>
+      document.documentElement.classList.contains("dark"),
+    )
+  ) {
+    await page.getByTestId("admin-theme-toggle").click();
+  }
+
+  const enabled = page.getByTestId("admin-workflow-enabled");
+  if ((await enabled.getAttribute("aria-checked")) !== "true") {
+    await enabled.click();
+  }
+  await page.getByTestId("admin-workflow-tab-matrix").click();
+  await page.getByTestId(`admin-workflow-cell-${backlog}-${doing}`).click();
+  await expect(page.getByTestId("admin-workflow-inspector")).toBeVisible();
+  await expect(
+    page
+      .getByTestId("admin-workflow-inspector")
+      .getByText(/active/i)
+      .first(),
+  ).toBeVisible();
+
+  expect(
+    await axeViolations(page, '[data-testid="admin-workflow-inspector"]'),
+  ).toEqual([]);
 });
 
 test("browser Back confirms a dirty workflow draft", async ({
