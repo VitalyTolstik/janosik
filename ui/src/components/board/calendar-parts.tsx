@@ -161,7 +161,7 @@ export function MonthYearMenu({
                 className={cn(
                   "h-8 rounded-md text-ui-label font-medium transition-colors",
                   selected
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-action-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-hover hover:text-foreground",
                 )}
               >

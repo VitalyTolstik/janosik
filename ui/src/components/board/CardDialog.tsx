@@ -1152,7 +1152,7 @@ export function CardDialog({
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
+                        variant="destructive"
                         onSelect={() => setDeleteConfirm(true)}
                       >
                         <Trash2 className="h-4 w-4" />

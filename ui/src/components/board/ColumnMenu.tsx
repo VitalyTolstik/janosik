@@ -119,10 +119,7 @@ export function ColumnMenu({
           {t("column.archiveCards")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={onDelete}
-          className="text-destructive focus:text-destructive"
-        >
+        <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
           {t("column.delete")}
         </DropdownMenuItem>

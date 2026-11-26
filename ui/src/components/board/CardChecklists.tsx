@@ -266,7 +266,7 @@ function ChecklistCard({
                 {t("checklist.rename")}
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
+                variant="destructive"
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="h-3.5 w-3.5" />

@@ -133,7 +133,7 @@ function Column({
           className={cn(
             "flex h-8 w-full snap-center items-center justify-center gap-1 rounded-sm px-2 text-ui-body tabular-nums whitespace-nowrap transition-colors",
             value === selected
-              ? "bg-primary font-semibold text-primary-foreground"
+              ? "bg-action-primary font-semibold text-primary-foreground"
               : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
           )}
         >
@@ -143,7 +143,7 @@ function Column({
               className={cn(
                 "text-ui-micro font-medium tracking-wide",
                 value === selected
-                  ? "text-primary-foreground/70"
+                  ? "text-primary-foreground"
                   : "text-muted-foreground",
               )}
             >
@@ -211,14 +211,15 @@ export function TimePickerPanel({
   value,
   onChange,
   onConfirm,
-}: TimePickerPanelProps) {
+  className,
+}: TimePickerPanelProps & { className?: string }) {
   const { t } = useI18n();
   const hour12 = useHour12();
   const hour = Number.parseInt(value.split(":")[0], 10) || 0;
   const minute = Number.parseInt(value.split(":")[1], 10) || 0;
 
   return (
-    <div className="flex gap-2">
+    <div className={cn("flex gap-2", className)}>
       <Column
         options={hourOptions(hour12)}
         selected={hour}

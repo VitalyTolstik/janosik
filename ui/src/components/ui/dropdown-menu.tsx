@@ -76,13 +76,17 @@ const DropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean;
+    /** Destructive menu copy: AA chip-red text + danger focus tint. */
+    variant?: "default" | "destructive";
   }
->(({ className, inset, ...props }, ref) => (
+>(({ className, inset, variant = "default", ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
       "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-ui-body outline-none transition-colors focus:bg-hover focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
       inset && "pl-8",
+      variant === "destructive" &&
+        "text-(--chip-red) focus:bg-danger/10 focus:text-(--chip-red) data-[highlighted]:bg-danger/10 data-[highlighted]:text-(--chip-red) [&_svg]:text-(--chip-red)",
       className,
     )}
     {...props}

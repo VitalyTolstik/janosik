@@ -260,8 +260,8 @@ export function LabelPicker({
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
+                    variant="destructive"
                     onClick={() => setDeletingId(label.id)}
-                    className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
                     {t("label.delete")}

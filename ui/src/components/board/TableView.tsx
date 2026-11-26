@@ -1158,7 +1158,10 @@ function TableRowBody({
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="relative w-auto p-3">
+                <PopoverContent
+                  align="start"
+                  className="relative w-auto p-3 max-lg:w-[min(20rem,calc(100vw-1rem))] max-lg:max-w-[calc(100vw-1rem)]"
+                >
                   <DueDatePickerContent
                     cardId={card.id}
                     dueDate={card.dueDate}
