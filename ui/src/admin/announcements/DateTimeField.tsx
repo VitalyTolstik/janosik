@@ -292,7 +292,16 @@ export function DateTimeField({
       <PopoverContent
         align="start"
         collisionPadding={8}
-        className="max-h-[calc(100dvh-1rem)] w-auto max-w-[calc(100vw-1rem)] overflow-y-auto p-3"
+        // Radix flips the panel above a trigger that sits near the bottom of a
+        // short dialog and exposes only the space it actually found in
+        // `--radix-popper-available-height`. Capping to the viewport alone
+        // (100dvh) lets the panel grow taller than that space and places its
+        // top off-screen; the month header then cannot be scrolled back.
+        style={{
+          maxHeight:
+            "min(calc(100dvh - 1rem), var(--radix-popper-available-height, calc(100dvh - 1rem)))",
+        }}
+        className="w-auto max-w-[calc(100vw-1rem)] overflow-y-auto p-3"
       >
         {panel}
       </PopoverContent>
