@@ -221,7 +221,7 @@ describe("mobile safe areas (TASK-177.18)", () => {
       'labels.length > 0 ? "min-w-0 flex-1" : "w-3/4 shrink-0"',
     );
     expect(cardItem).toContain(
-      "flex h-[19px] shrink-0 flex-wrap content-center items-center gap-1 overflow-hidden",
+      "flex h-[19px] shrink-0 flex-wrap content-start items-center gap-1 overflow-hidden",
     );
     // The hover quick-action wrappers moved from the title/label row (`top-1.5`)
     // to the due row. The foreign-change dot keeps its own top-1.5 corner.

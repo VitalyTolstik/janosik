@@ -582,14 +582,14 @@ function CardItemView({
               <div
                 data-testid="card-labels"
                 aria-label={labels.map((label) => label.name).join(", ")}
-                className="flex h-[19px] shrink-0 flex-wrap content-center items-center gap-1 overflow-hidden"
+                className="flex h-[19px] shrink-0 flex-wrap content-start items-center gap-1 overflow-hidden"
               >
                 {labels.map((label) => (
                   <span
                     key={label.id}
                     title={label.name}
                     className={cn(
-                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-ui-micro font-semibold uppercase tracking-wide",
+                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-1.5 py-0.5 text-ui-micro font-semibold uppercase tracking-wide",
                       LABEL_COLOR_CHIP[label.color],
                     )}
                   >
