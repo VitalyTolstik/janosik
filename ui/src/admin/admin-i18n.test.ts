@@ -15,6 +15,16 @@ describe("admin i18n", () => {
     expect(adminMessage("admin.common.total", "en")).toBe("{count} total");
   });
 
+  it("renders the workflow summary without literal braces", () => {
+    const params = { state: "enabled", active: 8, count: 8 };
+    for (const lang of ["en", "ru"] as const) {
+      const text = adminMessage("admin.workflow.summary", lang, params);
+      expect(text).not.toContain("{");
+      expect(text).not.toContain("}");
+      expect(text).toContain("8");
+    }
+  });
+
   it("has a Russian translation for every English key", () => {
     const keys = [
       "admin.title",

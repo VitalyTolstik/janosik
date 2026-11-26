@@ -24,6 +24,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { TimePickerPanel } from "@/components/board/TimePicker";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
 import { composeTimestamp, formatTimeOfDay } from "@/utils/time";
@@ -104,6 +105,7 @@ export function DateTimeField({
 }: DateTimeFieldProps) {
   const { lang } = useI18n();
   const hour12 = useHour12();
+  const phone = useMediaQuery("(max-width: 639px)");
   const [open, setOpen] = useState(false);
   const focusAfterRetry = useRef(false);
   const focusRestoredPicker = useCallback((row: HTMLDivElement | null) => {
@@ -190,76 +192,109 @@ export function DateTimeField({
     });
   };
 
+  const trigger = (
+    <button
+      type="button"
+      disabled={disabled}
+      data-testid={testId}
+      aria-label={ariaLabel}
+      title={displayValue}
+      {...(phone
+        ? {
+            "aria-expanded": open,
+            onClick: () => changeOpen(!open),
+          }
+        : {})}
+      className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-ui-body text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 max-lg:h-11"
+    >
+      <CalendarClock
+        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+        aria-hidden
+      />
+      <span className={parsed ? "truncate" : "truncate text-muted-foreground"}>
+        {displayValue}
+      </span>
+    </button>
+  );
+
+  const panel = (
+    <>
+      {CalendarFallback ? (
+        <Suspense fallback={null}>
+          <DateTimePickerBoundary
+            key={attempt}
+            fallback={
+              <CalendarFallback
+                value={value}
+                onChange={onChange}
+                retry={retry}
+              />
+            }
+          >
+            {pickerRow}
+          </DateTimePickerBoundary>
+        </Suspense>
+      ) : (
+        pickerRow
+      )}
+      <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/60 pt-2">
+        <span className="text-ui-label text-muted-foreground">
+          {parsed
+            ? `${formatDateOnly(parsed.getTime(), lang)}, ${formatTime(
+                time,
+                lang,
+                hour12,
+              )}`
+            : placeholder}
+        </span>
+        {parsed ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-testid={`${testId}-clear`}
+            onClick={() => {
+              onChange("");
+              changeOpen(false);
+            }}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+            {clearLabel}
+          </Button>
+        ) : null}
+      </div>
+    </>
+  );
+
+  // A 626 px popover cannot fit beside a mid-screen trigger on a phone, and
+  // Radix may flip it above the viewport. Below sm the picker renders inline
+  // under the trigger, inside the dialog's own scroll region, so the whole
+  // calendar, time wheel and footer stay reachable without page scrolling.
+  if (phone) {
+    return (
+      <div>
+        {trigger}
+        {open ? (
+          <div
+            data-testid={`${testId}-panel`}
+            className="mt-2 w-full rounded-md border border-border bg-popover p-3 shadow-md"
+          >
+            {panel}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={changeOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          data-testid={testId}
-          aria-label={ariaLabel}
-          title={displayValue}
-          className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2 text-left text-ui-body text-foreground transition-colors hover:border-ring/50 focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 max-lg:h-11"
-        >
-          <CalendarClock
-            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-          <span
-            className={parsed ? "truncate" : "truncate text-muted-foreground"}
-          >
-            {displayValue}
-          </span>
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-auto max-w-[calc(100vw-1rem)] p-3"
+        collisionPadding={8}
+        className="max-h-[calc(100dvh-1rem)] w-auto max-w-[calc(100vw-1rem)] overflow-y-auto p-3"
       >
-        {CalendarFallback ? (
-          <Suspense fallback={null}>
-            <DateTimePickerBoundary
-              key={attempt}
-              fallback={
-                <CalendarFallback
-                  value={value}
-                  onChange={onChange}
-                  retry={retry}
-                />
-              }
-            >
-              {pickerRow}
-            </DateTimePickerBoundary>
-          </Suspense>
-        ) : (
-          pickerRow
-        )}
-        <div className="mt-2 flex items-center justify-between gap-3 border-t border-border/60 pt-2">
-          <span className="text-ui-label text-muted-foreground">
-            {parsed
-              ? `${formatDateOnly(parsed.getTime(), lang)}, ${formatTime(
-                  time,
-                  lang,
-                  hour12,
-                )}`
-              : placeholder}
-          </span>
-          {parsed ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid={`${testId}-clear`}
-              onClick={() => {
-                onChange("");
-                changeOpen(false);
-              }}
-            >
-              <X className="h-3.5 w-3.5" aria-hidden />
-              {clearLabel}
-            </Button>
-          ) : null}
-        </div>
+        {panel}
       </PopoverContent>
     </Popover>
   );

@@ -316,6 +316,7 @@ export function TransitionInspector({
                 disabled={!canEdit}
                 aria-label={t("workflow.transitionEnabled")}
                 data-testid={`${testIdPrefix}-transition-enabled`}
+                className="max-lg:before:absolute max-lg:before:-inset-[13px] max-lg:before:rounded-full max-lg:before:content-['']"
                 onCheckedChange={(checked) =>
                   setTransitionEnabled(selected.id, checked)
                 }

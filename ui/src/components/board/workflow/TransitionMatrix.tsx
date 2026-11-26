@@ -304,7 +304,7 @@ export function TransitionMatrix({
           label={t("workflow.matrixLegend.diagonal")}
         />
         <LegendSwatch kind="none" label={t("workflow.matrixLegend.none")} />
-        <span className="ml-auto hidden text-muted-foreground/60 sm:block">
+        <span className="ml-auto hidden text-muted-foreground sm:block">
           {t("workflow.matrixHint")}
         </span>
       </div>

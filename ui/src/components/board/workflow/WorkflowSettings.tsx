@@ -300,6 +300,7 @@ export function WorkflowSettings({
               disabled={!canEdit}
               aria-label={t("workflow.enable")}
               data-testid={`${testIdPrefix}-enabled`}
+              className="max-lg:before:absolute max-lg:before:-inset-[13px] max-lg:before:rounded-full max-lg:before:content-['']"
               onCheckedChange={setEnabled}
             />
           </div>
@@ -328,7 +329,7 @@ export function WorkflowSettings({
                 disabled={!canEdit || saving || workflow === undefined}
                 data-testid={`${testIdPrefix}-reset`}
                 onSelect={() => setConfirmReset(true)}
-                className="text-danger focus:text-danger"
+                variant="destructive"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                 {t("workflow.resetRules")}
@@ -513,7 +514,7 @@ export function WorkflowSettings({
             onClick={() => void save()}
             disabled={saving}
             data-testid={`${testIdPrefix}-retry`}
-            className="rounded border border-danger/40 px-2 py-1 text-ui-label text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="rounded border border-danger/40 px-2 py-1 text-ui-label text-(--chip-red) hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             {t("workflow.retry")}
           </button>

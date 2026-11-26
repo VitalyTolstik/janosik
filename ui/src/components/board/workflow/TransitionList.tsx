@@ -203,6 +203,7 @@ export function TransitionList({
                     column: column.title,
                   })}
                   data-testid={`${testIdPrefix}-row-switch-${column.id}`}
+                  className="max-lg:before:absolute max-lg:before:-inset-[13px] max-lg:before:rounded-full max-lg:before:content-['']"
                   onCheckedChange={(checked) =>
                     onToggle(transition.id, checked)
                   }

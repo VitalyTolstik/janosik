@@ -514,7 +514,7 @@ export function AnnouncementEditorDialog({
         {localeLabel(locale)}
       </span>
       {sourceLocale === locale ? (
-        <span className="shrink-0">
+        <span className="hidden shrink-0 max-md:inline lg:inline">
           <Badge variant="primary">{t("admin.comms.source")}</Badge>
         </span>
       ) : null}
@@ -852,7 +852,7 @@ export function AnnouncementEditorDialog({
               className="rounded-lg border border-border p-3"
               data-testid="announcement-schedule"
             >
-              <summary className="cursor-pointer text-ui-meta font-medium text-muted-foreground">
+              <summary className="cursor-pointer text-ui-meta font-medium text-muted-foreground max-lg:flex max-lg:min-h-11 max-lg:items-center">
                 {t("admin.comms.schedule")}
               </summary>
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">

@@ -883,7 +883,7 @@ export function UserDetailPage() {
           >
             {entry.label}
             {entry.count === undefined ? null : (
-              <span className="tabular-nums text-ui-micro opacity-70">
+              <span className="tabular-nums text-ui-micro text-muted-foreground">
                 {entry.count}
               </span>
             )}
@@ -971,7 +971,7 @@ export function UserDetailPage() {
                     {t("admin.userDetail.action.deleteUser")}
                   </Button>
                 ) : (
-                  <p className="mt-1 text-ui-micro">
+                  <p className="mt-1 text-ui-meta leading-5">
                     {t("admin.userDetail.overview.ownerOnly")}
                   </p>
                 )}
@@ -1014,7 +1014,7 @@ export function UserDetailPage() {
 
         {tab === "memberships" ? (
           <>
-            <p className="px-3 pt-2 text-ui-micro leading-4 text-muted-foreground">
+            <p className="px-3 pt-2 text-ui-meta leading-5 text-muted-foreground">
               {t("admin.userDetail.membershipsNote")}
             </p>
             <Table maxHeight="40rem">
@@ -1083,7 +1083,7 @@ export function UserDetailPage() {
             <EmptyState message={t("admin.userDetail.noCards")} />
           ) : (
             <>
-              <p className="px-3 pt-2 text-ui-micro leading-4 text-muted-foreground">
+              <p className="px-3 pt-2 text-ui-meta leading-5 text-muted-foreground">
                 {t("admin.userDetail.cardsDerived")}
               </p>
               <Table maxHeight="40rem">
