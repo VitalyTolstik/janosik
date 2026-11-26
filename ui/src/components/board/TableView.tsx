@@ -1039,7 +1039,7 @@ function TableRowBody({
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      openMenu();
+                      openMenu(event.currentTarget);
                     }}
                     className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 max-lg:right-1 max-lg:h-11 max-lg:w-11 sm:opacity-0 sm:group-hover/title:opacity-100 lg:right-9"
                   >

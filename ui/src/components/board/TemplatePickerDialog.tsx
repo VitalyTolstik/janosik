@@ -527,7 +527,10 @@ export function TemplatePickerDialog({
                                 count: itemCounts.cards,
                               })}
                             </span>
-                            <span aria-hidden className="opacity-55">
+                            <span
+                              aria-hidden
+                              className="opacity-55 max-[620px]:hidden"
+                            >
                               ·
                             </span>
                             <span className="min-w-0 overflow-hidden text-ellipsis">

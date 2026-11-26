@@ -42,11 +42,12 @@ function ContextMenuContent({
   alignOffset = 2,
   side = "right",
   sideOffset = 0,
+  anchor,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Popup> &
   Pick<
     React.ComponentProps<typeof ContextMenuPrimitive.Positioner>,
-    "align" | "alignOffset" | "side" | "sideOffset"
+    "align" | "alignOffset" | "side" | "sideOffset" | "anchor"
   >) {
   return (
     <ContextMenuPrimitive.Portal>
@@ -56,6 +57,7 @@ function ContextMenuContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        anchor={anchor}
       >
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"

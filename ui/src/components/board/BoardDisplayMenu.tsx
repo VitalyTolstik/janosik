@@ -49,6 +49,7 @@ export function BoardDisplayMenu({
               size="icon"
               aria-label={t("view.displayMenu")}
               data-testid="board-display-menu"
+              className="max-lg:h-11 max-lg:w-11"
             >
               <Menu className="h-5 w-5" aria-hidden />
             </Button>

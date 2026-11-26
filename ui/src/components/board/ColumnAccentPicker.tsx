@@ -187,7 +187,7 @@ export function ColumnAccentPicker({
           onKeyDown={stop}
           onClick={stop}
           className={cn(
-            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-hover hover:text-foreground",
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11",
             accent ? "text-primary" : "text-muted-foreground/60",
           )}
         >

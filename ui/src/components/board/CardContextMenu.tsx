@@ -111,7 +111,9 @@ export interface CardContextMenuProps {
   /** The element the menu opens from — rendered as-is, right-click attached.
    *  A function receives `open()` so an explicit "Card actions" button can
    *  open the same menu on touch (where long-press belongs to the drag). */
-  children: ReactElement | ((controls: { open: () => void }) => ReactElement);
+  children:
+    | ReactElement
+    | ((controls: { open: (anchor?: Element | null) => void }) => ReactElement);
   /** VIEWER mode (TASK-35): only the read-only actions stay in the menu. */
   readOnly?: boolean;
   /** Opens the card dialog — the "Open card" item. */
@@ -131,16 +133,30 @@ export function CardContextMenu({
   onArchive,
 }: CardContextMenuProps) {
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<Element | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const openMenu = (anchorElement?: Element | null) => {
+    setAnchor(anchorElement ?? null);
+    setOpen(true);
+  };
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) setAnchor(null);
+  };
   const trigger =
-    typeof children === "function"
-      ? children({ open: () => setOpen(true) })
-      : children;
+    typeof children === "function" ? children({ open: openMenu }) : children;
   return (
     <>
-      <ContextMenu open={open} onOpenChange={setOpen}>
+      <ContextMenu open={open} onOpenChange={handleOpenChange}>
         <ContextMenuTrigger render={trigger} />
-        <ContextMenuContent data-testid="card-context-menu">
+        <ContextMenuContent
+          data-testid="card-context-menu"
+          anchor={anchor ?? undefined}
+          side={anchor ? "bottom" : undefined}
+          align={anchor ? "start" : undefined}
+          alignOffset={anchor ? 0 : undefined}
+          sideOffset={anchor ? 4 : undefined}
+        >
           <CardContextMenuBody
             cardId={cardId}
             readOnly={readOnly}

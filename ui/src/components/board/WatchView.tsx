@@ -719,8 +719,8 @@ function Pager({
               data-testid={`watch-page-${entry + 1}`}
               className={
                 entry === page
-                  ? "h-6 min-w-6 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground"
-                  : "h-6 min-w-6 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+                  ? "h-6 min-w-6 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground max-lg:min-h-11 max-lg:min-w-11"
+                  : "h-6 min-w-6 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60 max-lg:min-h-11 max-lg:min-w-11"
               }
             >
               {entry + 1}
@@ -755,8 +755,8 @@ function Pager({
             data-testid={`watch-page-size-${size}`}
             className={
               pageSize === size
-                ? "h-6 min-w-7 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground"
-                : "h-6 min-w-7 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+                ? "h-6 min-w-7 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground max-lg:min-h-11 max-lg:min-w-11"
+                : "h-6 min-w-7 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60 max-lg:min-h-11 max-lg:min-w-11"
             }
           >
             {size}
@@ -784,7 +784,7 @@ function PageButton({
       disabled={disabled}
       onClick={onClick}
       data-testid={testId}
-      className="h-6 rounded-sm border border-border px-1.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40"
+      className="h-6 rounded-sm border border-border px-1.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40 max-lg:min-h-11 max-lg:min-w-11"
     >
       {label}
     </button>

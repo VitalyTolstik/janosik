@@ -787,10 +787,13 @@ export function AgentsAutomation({
               type="button"
               onClick={focusDestructiveMode}
               data-testid="agent-policy-change-destructive"
-              className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[5px] border border-border bg-popover px-2 text-ui-label font-[650] leading-[1.45] text-foreground transition-colors hover:border-primary/50 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-lg:min-h-11 max-lg:basis-full"
+              className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[5px] border border-border bg-popover px-2 text-ui-label font-[650] leading-[1.45] text-foreground transition-colors hover:border-primary/50 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-lg:min-h-11 max-lg:min-w-0 max-lg:basis-full max-lg:whitespace-normal max-lg:px-2.5 max-lg:py-2 max-lg:text-center"
             >
               {t("board.settings.agents.changeDestructiveMode")}
-              <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
+              <ArrowUpRight
+                className="h-[11px] w-[11px] shrink-0"
+                aria-hidden
+              />
             </button>
           </div>
           <div

@@ -112,7 +112,7 @@ export function MonthYearMenu({
           type="button"
           aria-haspopup="dialog"
           data-testid="month-year-trigger"
-          className="-mx-1.5 rounded-md px-1.5 py-0.5 text-ui-body font-semibold text-foreground transition-colors hover:bg-hover"
+          className="-mx-1.5 inline-flex items-center rounded-md px-1.5 py-0.5 text-ui-body font-semibold text-foreground transition-colors hover:bg-hover max-lg:min-h-11 max-lg:px-2"
         >
           {label}
         </button>

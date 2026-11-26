@@ -34,7 +34,7 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
     <div
       role="group"
       aria-label={t("view.label")}
-      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm"
+      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm max-sm:gap-0.5 max-sm:p-0.5"
     >
       {VIEWS.map(({ id, icon: Icon, labelKey }) => (
         <button

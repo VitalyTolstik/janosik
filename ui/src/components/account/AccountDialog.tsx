@@ -239,7 +239,7 @@ export function AccountDialog({
               <span
                 className={cn(
                   "hidden max-w-28 truncate text-ui-body",
-                  !compact && "sm:inline",
+                  !compact && "min-[1024px]:inline",
                 )}
               >
                 {name}

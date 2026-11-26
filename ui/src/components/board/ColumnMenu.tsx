@@ -72,7 +72,7 @@ export function ColumnMenu({
         <button
           type="button"
           aria-label={t("column.options")}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <EllipsisVertical className="h-4 w-4" />

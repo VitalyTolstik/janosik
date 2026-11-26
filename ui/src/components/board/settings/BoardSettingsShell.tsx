@@ -171,7 +171,7 @@ export function BoardSettingsShell({
           </span>
           <button
             type="button"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:absolute max-md:right-[max(0.5rem,env(safe-area-inset-right))] max-md:top-[max(0.5rem,env(safe-area-inset-top))] max-md:z-[3] max-md:h-11 max-md:w-11 max-md:bg-popover"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-transparent text-muted-foreground hover:border-border hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:absolute max-md:right-[max(0.5rem,env(safe-area-inset-right))] max-md:top-[max(0.5rem,env(safe-area-inset-top))] max-md:z-[3] max-lg:h-11 max-lg:w-11 max-md:bg-popover"
             aria-label={t("common.close")}
             data-testid={closeTestId}
             onClick={() => requestOpenChange(false)}
@@ -216,7 +216,7 @@ export function BoardSettingsShell({
                     onKeyDown={(event) => moveSection(event, index)}
                     data-testid={`board-settings-${entry.id}`}
                     className={cn(
-                      "flex min-h-9 w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-[6px] border border-transparent px-[9px] text-left text-ui-label font-[550] leading-[1.45] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none md:min-h-[38px] md:w-full md:whitespace-normal md:px-2",
+                      "flex min-h-11 w-auto shrink-0 items-center gap-2 whitespace-nowrap rounded-[6px] border border-transparent px-[9px] text-left text-ui-label font-[550] leading-[1.45] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none md:w-full md:whitespace-normal md:px-2 lg:min-h-[38px]",
                       active &&
                         "border-border bg-popover text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-popover",
                     )}

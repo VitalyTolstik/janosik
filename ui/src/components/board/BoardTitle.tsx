@@ -56,7 +56,7 @@ export function BoardTitle() {
         data-testid="board-title"
         tabIndex={-1}
         title={title}
-        className="max-w-[30vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
+        className="max-w-[30vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-0 sm:text-xl min-[1000px]:min-w-[10rem]"
       >
         {title}
       </h1>
@@ -100,7 +100,7 @@ export function BoardTitle() {
           }
         }}
         title={`${title} — ${t("board.editTitleHint")}`}
-        className="max-w-[30vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-[8rem] sm:text-xl min-[1000px]:min-w-[10rem]"
+        className="max-w-[30vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-0 sm:text-xl min-[1000px]:min-w-[10rem]"
       >
         {title}
       </h1>
