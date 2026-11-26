@@ -32,7 +32,7 @@ export function ColumnSemantics({
       data-testid={`${testIdPrefix}-semantics`}
     >
       <SectionLabel title={t("workflow.semanticsTitle")} />
-      <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1.3fr)] gap-x-3 gap-y-2 md:gap-x-[18px]">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-2 md:grid-cols-[minmax(290px,0.8fr)_minmax(0,1.2fr)] md:gap-x-[18px]">
         <label className="min-w-0 text-ui-label leading-4 text-muted-foreground">
           <span className="block">{t("workflow.startColumn")}</span>
           <SelectField<string>

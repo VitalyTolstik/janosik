@@ -862,14 +862,14 @@ export function CalendarView({
         <div
           role="group"
           aria-label={t("view.calendar.scale")}
-          className="ml-1 inline-flex items-center rounded-md border border-border/60 p-0.5"
+          className="order-last ml-1 inline-flex w-full items-center rounded-md border border-border/60 p-0.5 max-sm:ml-0 sm:order-none sm:w-auto"
         >
           <button
             type="button"
             aria-pressed={!isWeek}
             onClick={() => setScale("month")}
             className={cn(
-              "rounded px-2 py-0.5 text-ui-label font-medium transition-colors",
+              "inline-flex items-center justify-center rounded px-2 py-0.5 text-ui-label font-medium transition-colors max-lg:min-h-11 max-sm:flex-1 max-lg:px-3",
               !isWeek
                 ? "bg-primary/15 text-(--tab-text)"
                 : "text-muted-foreground hover:text-foreground",
@@ -882,7 +882,7 @@ export function CalendarView({
             aria-pressed={isWeek}
             onClick={() => setScale("week")}
             className={cn(
-              "rounded px-2 py-0.5 text-ui-label font-medium transition-colors",
+              "inline-flex items-center justify-center rounded px-2 py-0.5 text-ui-label font-medium transition-colors max-lg:min-h-11 max-sm:flex-1 max-lg:px-3",
               isWeek
                 ? "bg-primary/15 text-(--tab-text)"
                 : "text-muted-foreground hover:text-foreground",
@@ -891,42 +891,46 @@ export function CalendarView({
             {t("view.calendar.scaleWeek")}
           </button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          aria-label={
-            isWeek ? t("view.calendar.prevWeek") : t("view.calendar.prev")
-          }
-          onClick={() => step(-1)}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-ui-label"
-          onClick={() =>
-            setAnchor(
-              isWeek
-                ? startOfWeek(new Date(), { weekStartsOn })
-                : startOfMonth(new Date()),
-            )
-          }
-        >
-          {t("view.calendar.today")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          aria-label={
-            isWeek ? t("view.calendar.nextWeek") : t("view.calendar.next")
-          }
-          onClick={() => step(1)}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+        {/* The navigation cluster stays atomic: prev/Today/next move together
+            instead of letting one arrow wrap onto a second row at 390. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 max-lg:h-11 max-lg:w-11"
+            aria-label={
+              isWeek ? t("view.calendar.prevWeek") : t("view.calendar.prev")
+            }
+            onClick={() => step(-1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:px-3"
+            onClick={() =>
+              setAnchor(
+                isWeek
+                  ? startOfWeek(new Date(), { weekStartsOn })
+                  : startOfMonth(new Date()),
+              )
+            }
+          >
+            {t("view.calendar.today")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 max-lg:h-11 max-lg:w-11"
+            aria-label={
+              isWeek ? t("view.calendar.nextWeek") : t("view.calendar.next")
+            }
+            onClick={() => step(1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
         <div className="mr-auto" />
         {/* Helper text: the grid's main affordance is not obvious from
             the grid itself. */}
@@ -1097,7 +1101,7 @@ export function CalendarView({
                       <span className="flex items-center gap-1">
                         <span
                           className={cn(
-                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-ui-micro tabular-nums sm:text-ui-meta",
+                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-ui-meta tabular-nums",
                             isToday(day) &&
                               "bg-action-primary font-semibold text-primary-foreground",
                             !isToday(day) &&

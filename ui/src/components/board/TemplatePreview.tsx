@@ -236,7 +236,7 @@ function SampleCard({
       <p className="m-0 line-clamp-2 text-ui-label leading-[1.48] text-muted-foreground">
         {card.desc ?? copy.long}
       </p>
-      <div className="mt-[7px] flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-muted-foreground">
+      <div className="mt-[7px] flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-meta text-muted-foreground">
         {card.labels.length > 0 ? (
           <span className="inline-flex flex-wrap items-center gap-1">
             {card.labels.map((key) => (

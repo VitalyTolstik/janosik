@@ -42,8 +42,9 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(trigger).toHaveAttribute("aria-controls", listbox.id);
     expect(listbox).toHaveAttribute("role", "listbox");
     expect(listbox.style.pointerEvents).toBe("auto");
-    expect(listbox.style.minWidth).toBe("210px");
+    expect(listbox.style.minWidth).toBe("300px");
     expect(listbox.style.maxWidth).toContain("320px");
+    expect(trigger).toHaveAttribute("title", "Alpha");
     expect(trigger).toHaveAttribute(
       "aria-activedescendant",
       optionId(listbox, 0),

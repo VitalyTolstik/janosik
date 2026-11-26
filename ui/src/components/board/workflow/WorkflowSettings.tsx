@@ -552,7 +552,7 @@ export function WorkflowSettings({
               onClick={requestCancel}
               disabled={saving}
               data-testid={`${testIdPrefix}-cancel`}
-              className="inline-flex h-8 items-center justify-center rounded-md px-3 text-ui-body font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none"
+              className="inline-flex h-8 items-center justify-center rounded-md px-3 text-ui-body font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none max-lg:min-h-11"
             >
               {t("workflow.cancel")}
             </button>
@@ -562,7 +562,7 @@ export function WorkflowSettings({
             onClick={revert}
             disabled={!dirty || saving}
             data-testid={`${testIdPrefix}-revert`}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent px-3 text-ui-body font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent px-3 text-ui-body font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-lg:min-h-11"
           >
             {t("workflow.revert")}
           </button>
@@ -571,7 +571,7 @@ export function WorkflowSettings({
             onClick={() => void save()}
             disabled={!canEdit || saving || !dirty || validationError !== null}
             data-testid={`${testIdPrefix}-save`}
-            className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-ui-body font-semibold text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-ui-body font-semibold text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-lg:min-h-11"
           >
             {saving ? t("workflow.saving") : t("workflow.saveShort")}
           </button>

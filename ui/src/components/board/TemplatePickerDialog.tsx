@@ -454,7 +454,7 @@ export function TemplatePickerDialog({
               <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-background/40 p-3 max-[900px]:border-b max-[900px]:p-2.5 max-[620px]:p-2">
                 <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] pt-[2px] text-ui-micro font-bold uppercase tracking-[0.09em] text-muted-foreground max-[900px]:pb-1.5">
                   <span>{t("board.templatePicker.examples")}</span>
-                  <span className="font-medium normal-case tracking-normal">
+                  <span className="text-ui-meta font-medium normal-case tracking-normal">
                     {t("board.templatePicker.curated")}
                   </span>
                 </div>

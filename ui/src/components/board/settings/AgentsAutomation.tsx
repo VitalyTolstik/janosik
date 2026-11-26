@@ -787,7 +787,7 @@ export function AgentsAutomation({
               type="button"
               onClick={focusDestructiveMode}
               data-testid="agent-policy-change-destructive"
-              className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[5px] border border-border bg-popover px-2 text-ui-label font-[650] leading-[1.45] text-foreground transition-colors hover:border-primary/50 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-md:min-h-11 max-md:basis-full"
+              className="inline-flex min-h-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-[5px] border border-border bg-popover px-2 text-ui-label font-[650] leading-[1.45] text-foreground transition-colors hover:border-primary/50 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-lg:min-h-11 max-lg:basis-full"
             >
               {t("board.settings.agents.changeDestructiveMode")}
               <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
@@ -815,7 +815,7 @@ export function AgentsAutomation({
                       {t(ACTION_KEYS[action])}
                     </span>
                     <span
-                      className="ml-auto max-w-[55%] shrink-0 rounded-[3px] border border-border px-1 text-ui-micro wrap-anywhere leading-[1.45] text-muted-foreground"
+                      className="ml-auto max-w-[55%] shrink-0 rounded-[3px] border border-border px-1 text-ui-meta wrap-anywhere leading-[1.45] text-muted-foreground"
                       data-testid={`agent-policy-covered-status-${action}`}
                       data-mode={draft.destructive}
                       title={t("board.settings.agents.coveredByMode", {

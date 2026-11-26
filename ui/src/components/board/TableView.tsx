@@ -559,21 +559,21 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[42%] sm:w-40 md:w-auto lg:w-72"
+                className="w-[52%] sm:w-40 md:w-auto lg:w-72"
               />
               <SortHeader
                 label={t("view.table.column")}
                 sortKey="column"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[30%] max-sm:px-2 sm:w-28 lg:w-40"
+                className="w-[26%] max-sm:px-2 sm:w-28 lg:w-40"
               />
               <SortHeader
                 label={t("dueDate.label")}
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[28%] max-sm:px-2 sm:w-28 lg:w-48"
+                className="w-[22%] max-sm:px-2 sm:w-28 lg:w-48"
               />
               <th
                 scope="col"
@@ -903,7 +903,7 @@ function TableRowBody({
         >
           <td
             className={cn(
-              "relative min-w-0 px-2 py-2 sm:px-3",
+              "relative min-w-0 px-2 py-2 max-sm:py-0 sm:px-3",
               onToggleSelect &&
                 (selectionMode || selected) &&
                 "pl-8 max-lg:pl-12 sm:pl-9",
@@ -960,6 +960,7 @@ function TableRowBody({
                 <span
                   role="button"
                   tabIndex={0}
+                  title={card.title}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
@@ -984,7 +985,7 @@ function TableRowBody({
                     !readOnly &&
                       (selectionMode
                         ? "pr-0"
-                        : "pr-8 sm:pr-9 sm:group-hover/title:pr-16"),
+                        : "pr-14 sm:pr-9 sm:group-hover/title:pr-16"),
                   )}
                 >
                   <HighlightedText text={card.title} query={highlight ?? ""} />
@@ -1043,7 +1044,7 @@ function TableRowBody({
                       event.stopPropagation();
                       openMenu();
                     }}
-                    className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 sm:right-9 sm:opacity-0 sm:group-hover/title:opacity-100"
+                    className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 max-sm:right-1 max-sm:h-11 max-sm:w-11 max-lg:before:absolute max-lg:before:-inset-2.5 max-lg:before:content-[''] sm:right-9 sm:opacity-0 sm:group-hover/title:opacity-100"
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                   </button>
@@ -1133,7 +1134,7 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="px-2 py-2 max-sm:[&_[data-due-status]]:h-auto max-sm:[&_[data-due-status]]:min-h-5 max-sm:[&_[data-due-status]]:max-w-full sm:px-3"
+            className="px-2 py-2 max-sm:[&_[data-due-status]]:h-auto max-sm:[&_[data-due-status]]:min-h-5 max-sm:[&_[data-due-status]]:max-w-full max-lg:py-0 sm:px-3"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
@@ -1148,7 +1149,7 @@ function TableRowBody({
                   <button
                     type="button"
                     data-testid="table-due-cell"
-                    className="block max-w-full rounded text-left transition-opacity hover:opacity-80 sm:truncate"
+                    className="block max-w-full rounded text-left transition-opacity hover:opacity-80 max-lg:flex max-lg:min-h-11 max-lg:w-full max-lg:items-center sm:truncate"
                   >
                     <span className="sr-only">{t("dueDate.label")} </span>
                     {typeof card.dueDate === "number" ? (
@@ -1170,7 +1171,7 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="hidden px-3 py-2 sm:table-cell"
+            className="hidden px-3 py-2 max-lg:py-0 sm:table-cell"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
@@ -1200,7 +1201,7 @@ function TableRowBody({
                   <button
                     type="button"
                     data-testid="table-labels-cell"
-                    className="max-w-44"
+                    className="flex w-full max-w-44 items-center max-lg:min-h-11"
                   >
                     <span className="sr-only">{t("view.table.labels")} </span>
                     {card.labelIds.length > 0 ? (
