@@ -190,7 +190,7 @@ export function ProfileSection() {
           <p className="text-ui-label font-medium text-muted-foreground">
             {t("account.profile.colorLabel")}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
               data-testid="avatar-color-auto"

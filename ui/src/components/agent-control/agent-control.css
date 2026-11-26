@@ -1050,6 +1050,19 @@ html[lang="ru"] .agent-control-surface .ac-title {
     height: 44px;
   }
 
+  .agent-control-surface .ac-rail-link {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .agent-control-surface .ac-rail-footer {
+    padding-top: 4px;
+  }
+
+  .agent-control-surface .ac-rail-footer p {
+    margin-bottom: 2px;
+  }
+
   .agent-control-surface .ac-toolbar .seg .chip {
     height: 44px;
     min-height: 44px;

@@ -1167,7 +1167,7 @@ export function AgentsPage() {
       >
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] min-[1600px]:max-w-[1200px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
           <header className="mb-3 flex items-start justify-between gap-3 max-lg:mb-[9px] max-lg:flex-wrap">
-            <div className="min-w-0 max-lg:min-w-[148px] max-lg:flex-1 max-lg:basis-[148px] lg:max-w-[390px]">
+            <div className="min-w-0 max-lg:min-w-[148px] max-lg:flex-1 max-lg:basis-full lg:max-w-[390px]">
               <h2 className="font-agent-display text-ui-title font-bold leading-[1.2] tracking-[-0.025em]">
                 {t(`agents.shell.${section}`)}
               </h2>
