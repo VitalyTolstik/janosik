@@ -130,7 +130,7 @@ export function ObservabilityPage() {
 
       <Panel className="p-4" data-testid="admin-observability-frontend">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-ui-body font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.observability.frontend")}
           </h2>
           <span className="text-ui-label text-muted-foreground">
@@ -180,7 +180,7 @@ export function ObservabilityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-ui-body font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.observability.jobs")}
         </h2>
         <div className="grid grid-cols-2 gap-3 text-ui-body sm:grid-cols-3">
@@ -235,7 +235,7 @@ export function ObservabilityPage() {
 
       <Panel className="p-4" data-testid="admin-observability-comment-history">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-ui-body font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.observability.history")}
           </h2>
           <span className="text-ui-label text-muted-foreground">
@@ -333,7 +333,7 @@ export function ObservabilityPage() {
       </Panel>
 
       <Panel className="p-0">
-        <h2 className="p-4 text-ui-body font-medium">
+        <h2 className="p-4 text-ui-heading font-medium">
           {t("admin.observability.tables")}
         </h2>
         <Table maxHeight="22rem">
@@ -369,7 +369,7 @@ export function ObservabilityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-ui-body font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.observability.health")}
         </h2>
         <div className="space-y-2">
@@ -394,7 +394,7 @@ export function ObservabilityPage() {
 
       <Panel className="flex items-center justify-between gap-3 p-4">
         <div>
-          <h2 className="text-ui-body font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.observability.news")}
           </h2>
           <p className="text-ui-label text-muted-foreground">

@@ -171,7 +171,7 @@ export function SecurityPage() {
 
       <Panel className="p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-ui-body font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.security.totp")}
           </h2>
           <Badge
@@ -291,7 +291,9 @@ export function SecurityPage() {
 
       <Panel className="p-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-ui-body font-medium">{t("admin.security.ip")}</h2>
+          <h2 className="text-ui-heading font-medium">
+            {t("admin.security.ip")}
+          </h2>
           {!isOwner ? (
             <Badge variant="neutral">{t("admin.security.ip.readonly")}</Badge>
           ) : null}
@@ -321,7 +323,7 @@ export function SecurityPage() {
           <div className="mt-3 flex justify-end">
             <Button
               size="sm"
-              className="bg-action-primary hover:bg-[#1d4ed8]"
+              className="bg-action-primary hover:bg-[#1d4ed8] max-md:min-h-11"
               disabled={busy}
               data-testid="admin-ip-save"
               onClick={() => void saveAllowlist()}
@@ -333,7 +335,7 @@ export function SecurityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-ui-body font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.security.alerts")}
         </h2>
         <p className="mb-3 text-ui-label text-muted-foreground">
@@ -348,33 +350,44 @@ export function SecurityPage() {
             {security.alerts.map((alert) => (
               <div
                 key={alert.id}
-                className="flex items-center gap-3 text-ui-body"
+                className="flex flex-col gap-1 text-ui-body sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
               >
-                <Badge
-                  variant={
-                    alert.action === "admin.login_locked" ? "danger" : "warning"
-                  }
-                >
-                  {t(`admin.security.alert.${alert.reason}`)}
-                </Badge>
-                <span className="text-ui-label">
-                  {t(`admin.security.stage.${alert.stage}`)}
-                </span>
-                <span className="text-ui-label">
-                  {alert.adminEmail || t("admin.security.alert.noAccount")}
-                </span>
-                <span className="text-ui-label text-muted-foreground">
-                  {alert.ip ?? t("admin.security.alert.noIp")}
-                </span>
-                {alert.count > 1 && (
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge
+                    variant={
+                      alert.action === "admin.login_locked"
+                        ? "danger"
+                        : "warning"
+                    }
+                  >
+                    {t(`admin.security.alert.${alert.reason}`)}
+                  </Badge>
                   <span className="text-ui-label">
-                    {t("admin.security.alert.count")}: {alert.count} (
-                    {formatDate(alert.createdAt, lang, hour12)})
+                    {t(`admin.security.stage.${alert.stage}`)}
                   </span>
-                )}
-                <span className="ml-auto text-ui-label text-muted-foreground">
-                  {formatDate(alert.lastOccurredAt, lang, hour12)}
-                </span>
+                  <span
+                    className="min-w-0 max-w-full truncate text-ui-label"
+                    title={
+                      alert.adminEmail || t("admin.security.alert.noAccount")
+                    }
+                  >
+                    {alert.adminEmail || t("admin.security.alert.noAccount")}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:ml-auto">
+                  <span className="text-ui-label text-muted-foreground">
+                    {alert.ip ?? t("admin.security.alert.noIp")}
+                  </span>
+                  {alert.count > 1 && (
+                    <span className="text-ui-label">
+                      {t("admin.security.alert.count")}: {alert.count} (
+                      {formatDate(alert.createdAt, lang, hour12)})
+                    </span>
+                  )}
+                  <span className="text-ui-label text-muted-foreground max-sm:w-full">
+                    {formatDate(alert.lastOccurredAt, lang, hour12)}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

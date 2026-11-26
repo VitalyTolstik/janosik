@@ -51,6 +51,10 @@ export function TransitionList({
   const sourceTransitions = transitions.filter(
     (transition) => transition.fromColumnId === source?.id,
   );
+  const heading =
+    source === undefined
+      ? t("workflow.rules")
+      : t("workflow.allowedFrom", { column: source.title });
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = destinations.findIndex(
@@ -87,9 +91,7 @@ export function TransitionList({
     <div className="flex flex-col gap-3.5">
       <div className="flex flex-col gap-1.5">
         <SectionLabel
-          title={t("workflow.allowedFrom", {
-            column: source?.title ?? "",
-          })}
+          title={heading}
           aside={t("workflow.enabledOf", {
             enabled: enabledCount,
             total: Math.max(columns.length - 1, 0),
@@ -103,9 +105,7 @@ export function TransitionList({
 
       <div
         role="list"
-        aria-label={t("workflow.allowedFrom", {
-          column: source?.title ?? "",
-        })}
+        aria-label={heading}
         onKeyDown={onKeyDown}
         className="flex flex-col gap-[3px]"
         data-testid={`${testIdPrefix}-rules`}

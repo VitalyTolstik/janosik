@@ -135,7 +135,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
     <>
       <Button
         size="sm"
-        className="bg-action-primary hover:bg-[#1d4ed8]"
+        className="bg-action-primary hover:bg-[#1d4ed8] max-md:min-h-11"
         data-testid="admin-create-user"
         onClick={() => setOpen(true)}
       >
@@ -150,9 +150,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
           {temporary ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-ui-body">
-                  {t("admin.users.created.title")}
-                </DialogTitle>
+                <DialogTitle>{t("admin.users.created.title")}</DialogTitle>
                 <DialogDescription className="text-ui-label">
                   {temporary.email}
                 </DialogDescription>
@@ -203,9 +201,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
               className="space-y-3"
             >
               <DialogHeader>
-                <DialogTitle className="text-ui-body">
-                  {t("admin.users.create.title")}
-                </DialogTitle>
+                <DialogTitle>{t("admin.users.create.title")}</DialogTitle>
               </DialogHeader>
               <Field
                 htmlFor="admin-user-email"
@@ -344,7 +340,7 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
     <>
       <Button
         size="sm"
-        className="bg-action-primary hover:bg-[#1d4ed8]"
+        className="bg-action-primary hover:bg-[#1d4ed8] max-md:min-h-11"
         data-testid="admin-create-board"
         onClick={() => setOpen(true)}
       >
@@ -362,9 +358,7 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
             className="space-y-3"
           >
             <DialogHeader>
-              <DialogTitle className="text-ui-body">
-                {t("admin.boards.create.title")}
-              </DialogTitle>
+              <DialogTitle>{t("admin.boards.create.title")}</DialogTitle>
             </DialogHeader>
             <Field
               htmlFor="admin-board-title"
@@ -440,10 +434,13 @@ export function ChangeUserEmailDialog({
   user,
   onClose,
   onDone,
+  returnFocus,
 }: {
   user: { id: string; email: string } | null;
   onClose: () => void;
   onDone: () => void;
+  /** Explicit opener restore for state-driven dialogs opened from a menu. */
+  returnFocus?: () => void;
 }) {
   const t = useAdminT();
   const toast = useToast();
@@ -496,11 +493,14 @@ export function ChangeUserEmailDialog({
       <DialogContent
         className="max-w-sm"
         data-testid="admin-change-email-dialog"
+        onCloseAutoFocus={(event) => {
+          if (returnFocus === undefined) return;
+          event.preventDefault();
+          returnFocus();
+        }}
       >
         <DialogHeader>
-          <DialogTitle className="text-ui-body">
-            {t("admin.users.changeEmail.title")}
-          </DialogTitle>
+          <DialogTitle>{t("admin.users.changeEmail.title")}</DialogTitle>
           {user !== null ? (
             <DialogDescription className="text-ui-label">
               {user.email}
@@ -730,10 +730,13 @@ export function DeleteUserDialog({
   user,
   onClose,
   onDone,
+  returnFocus,
 }: {
   user: { id: string; email: string } | null;
   onClose: () => void;
   onDone: () => void;
+  /** Explicit opener restore for state-driven dialogs opened from a menu. */
+  returnFocus?: () => void;
 }) {
   const t = useAdminT();
   const { lang } = useI18n();
@@ -776,6 +779,11 @@ export function DeleteUserDialog({
       <DialogContent
         className="max-w-sm"
         data-testid="admin-delete-user-dialog"
+        onCloseAutoFocus={(event) => {
+          if (returnFocus === undefined) return;
+          event.preventDefault();
+          returnFocus();
+        }}
       >
         <DialogHeader>
           <DialogTitle>{t("admin.userDetail.action.deleteUser")}</DialogTitle>

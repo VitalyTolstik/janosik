@@ -202,6 +202,15 @@ export function GlobalSearchDialog({
     <Dialog open={open} onOpenChange={props.onOpenChange}>
       <DialogContent
         className="max-h-[86vh] max-w-[620px] gap-0 overflow-hidden p-0 max-sm:h-screen max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]"
+        closeClassName="max-sm:top-0 max-sm:right-0"
+        onCloseAutoFocus={(event) => {
+          const trigger = document.querySelector<HTMLElement>(
+            '[data-testid="admin-global-search"]',
+          );
+          if (trigger === null) return;
+          event.preventDefault();
+          trigger.focus();
+        }}
         data-testid="admin-command-palette"
       >
         <DialogTitle className="sr-only">{t("admin.search.title")}</DialogTitle>
@@ -402,7 +411,7 @@ function GlobalSearchPanel({
 
   return (
     <>
-      <div className="flex h-11 items-center gap-2 border-b border-border px-3">
+      <div className="flex h-11 items-center gap-2 border-b border-border pl-3 pr-16">
         <Search
           className="h-4 w-4 shrink-0 text-muted-foreground"
           aria-hidden
@@ -437,7 +446,7 @@ function GlobalSearchPanel({
           onKeyDown={onKeyDown}
           className="h-full flex-1 bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
         />
-        <kbd className="rounded border border-border bg-hover/50 px-1 font-mono text-ui-micro text-muted-foreground">
+        <kbd className="hidden rounded border border-border bg-hover/50 px-1 font-mono text-ui-micro text-muted-foreground sm:inline">
           esc
         </kbd>
       </div>
@@ -480,7 +489,7 @@ function GlobalSearchPanel({
         ) : null}
 
         {query.trim() === "" ? (
-          <p className="border-b border-border/60 px-3 py-2 text-ui-micro text-muted-foreground">
+          <p className="border-b border-border/60 px-3 py-2 text-ui-meta text-muted-foreground">
             {t("admin.palette.emptyQuery")}
           </p>
         ) : null}
@@ -584,7 +593,7 @@ function GlobalSearchPanel({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-ui-micro text-muted-foreground">
+      <div className="flex items-center justify-between border-t border-border px-3 py-1.5 text-ui-meta text-muted-foreground">
         <span>{t("admin.palette.hint")}</span>
         <span className="font-mono">⌘K</span>
       </div>

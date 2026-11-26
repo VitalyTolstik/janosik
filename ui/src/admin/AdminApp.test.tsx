@@ -1539,6 +1539,38 @@ describe("AdminApp", () => {
     await waitFor(() => expect(sidebar).not.toHaveAttribute("inert"));
   });
 
+  it("closes the phone sheet before opening all destinations (390 regression)", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(max-width: 639px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    const server = serverWith();
+    vi.stubGlobal("fetch", server.fetchImpl);
+    renderAdmin("/admin");
+
+    const sidebar = await screen.findByTestId("admin-sidebar");
+    await waitFor(() => expect(sidebar).toHaveAttribute("inert"));
+    fireEvent.click(screen.getByTestId("admin-sidebar-toggle"));
+    await waitFor(() =>
+      expect(sidebar).toHaveAttribute("data-mobile-open", "true"),
+    );
+
+    fireEvent.click(screen.getByTestId("admin-all-destinations"));
+    await waitFor(() =>
+      expect(sidebar).toHaveAttribute("data-mobile-open", "false"),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(t("admin.hub.allDestinationsDescription")),
+    ).toBeTruthy();
+  });
+
   it("collapses the sidebar to an icon rail and remembers the choice", async () => {
     localStorage.clear();
     const server = serverWith();

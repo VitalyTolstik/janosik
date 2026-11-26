@@ -204,17 +204,22 @@ export function CommsPage() {
         subtitle={t("admin.comms.subtitle")}
       />
 
-      <Panel className="flex items-center justify-between gap-3 p-4">
-        <div>
-          <h2 className="text-ui-body font-medium">
+      <Panel className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.comms.announcements")}
           </h2>
           <p className="text-ui-label text-muted-foreground">
             {t("admin.comms.announcements.hint")}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" asChild>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            asChild
+            className="max-md:min-h-11"
+          >
             <Link to="/admin/announcements">
               {t("admin.announcements.title")}
             </Link>
@@ -223,6 +228,7 @@ export function CommsPage() {
             size="sm"
             disabled={!isOwner}
             data-testid="admin-announcement-new"
+            className="max-md:min-h-11"
             onClick={() => setCreating(true)}
           >
             {t("admin.comms.new")}
@@ -231,7 +237,7 @@ export function CommsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-ui-body font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.comms.email.title")}
         </h2>
         <div className="grid gap-3">
@@ -295,6 +301,7 @@ export function CommsPage() {
               mailBody.trim() === ""
             }
             data-testid="admin-email-send"
+            className="max-md:min-h-11"
             onClick={() => void send()}
           >
             {t("admin.comms.email.send")}
@@ -303,7 +310,7 @@ export function CommsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-ui-body font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.comms.templates.title")}
         </h2>
         <div className="space-y-4">
@@ -405,6 +412,7 @@ export function CommsPage() {
                   size="sm"
                   data-testid={`admin-template-save-${template.key}`}
                   disabled={!isOwner}
+                  className="max-md:min-h-11"
                   onClick={() => void saveTemplate(template.key)}
                 >
                   {t("admin.common.save")}
@@ -421,7 +429,7 @@ export function CommsPage() {
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-ui-body">
+            <DialogTitle className="leading-snug">
               {t("admin.comms.templates.previewTitle")}
               {preview ? ` — ${preview.label}` : ""}
             </DialogTitle>

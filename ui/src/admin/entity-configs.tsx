@@ -197,11 +197,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 {
                   label: t("admin.users.action.changeEmail"),
                   run: async () => undefined,
-                  renderDialog: ({ close, reload }) => (
+                  renderDialog: ({ close, reload, returnFocus }) => (
                     <ChangeUserEmailDialog
                       user={user}
                       onClose={close}
                       onDone={reload}
+                      returnFocus={returnFocus}
                     />
                   ),
                 } satisfies EntityAction,
@@ -302,11 +303,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 {
                   label: t("admin.userDetail.action.deleteUser"),
                   run: async () => undefined,
-                  renderDialog: ({ close, reload }) => (
+                  renderDialog: ({ close, reload, returnFocus }) => (
                     <DeleteUserDialog
                       user={{ id: user.id, email: user.email }}
                       onClose={close}
                       onDone={reload}
+                      returnFocus={returnFocus}
                     />
                   ),
                 } satisfies EntityAction,

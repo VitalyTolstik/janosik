@@ -316,7 +316,7 @@ export function OpsPage() {
       />
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-ui-body font-medium">
+        <h2 className="mb-1 text-ui-heading font-medium">
           {t("admin.ops.flags")}
         </h2>
         <p className="mb-3 text-ui-label text-muted-foreground">
@@ -355,7 +355,7 @@ export function OpsPage() {
       <Panel className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-ui-body font-medium">
+            <h2 className="text-ui-heading font-medium">
               {t("admin.ops.maintenance")}
             </h2>
             <p className="text-ui-label text-muted-foreground">
@@ -389,6 +389,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-save"
+            className="max-md:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -397,7 +398,7 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-ui-body font-medium">
+        <h2 className="mb-1 text-ui-heading font-medium">
           {t("admin.ops.rateLimit")}
         </h2>
         <p className="mb-3 text-ui-label text-muted-foreground">
@@ -427,6 +428,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-rate-limit-save"
+            className="max-md:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -435,7 +437,7 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-ui-body font-medium">
+        <h2 className="mb-1 text-ui-heading font-medium">
           {t("admin.ops.retention")}
         </h2>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -496,6 +498,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-retention-save"
+            className="max-md:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -596,7 +599,7 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-ui-body font-medium">
+        <h2 className="mb-1 text-ui-heading font-medium">
           {t("admin.ops.schedule")}
         </h2>
         <p className="mb-3 text-ui-label text-muted-foreground">
@@ -627,6 +630,7 @@ export function OpsPage() {
             variant="outline"
             disabled={sweeping || !isOwner}
             data-testid="admin-ops-run-sweeps"
+            className="max-md:min-h-11"
             onClick={() => void runSweeps()}
           >
             {t("admin.ops.runNow")}
@@ -635,6 +639,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-schedule-save"
+            className="max-md:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -643,7 +648,7 @@ export function OpsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-1 text-ui-body font-medium">
+        <h2 className="mb-1 text-ui-heading font-medium">
           {t("admin.ops.comms")}
         </h2>
         <p className="mb-3 text-ui-label text-muted-foreground">
@@ -688,6 +693,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-comms-save"
+            className="max-md:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -697,7 +703,7 @@ export function OpsPage() {
 
       {ops?.queuesDashboard ? (
         <Panel className="p-4">
-          <h2 className="mb-1 text-ui-body font-medium">
+          <h2 className="mb-1 text-ui-heading font-medium">
             {t("admin.ops.queues")}
           </h2>
           <p className="mb-3 text-ui-label text-muted-foreground">

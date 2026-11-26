@@ -1179,9 +1179,7 @@ export function CardDetailPage() {
           data-testid="admin-card-description-dialog"
         >
           <DialogHeader>
-            <DialogTitle className="text-ui-body">
-              {t("admin.cards.description.title")}
-            </DialogTitle>
+            <DialogTitle>{t("admin.cards.description.title")}</DialogTitle>
             <DialogDescription className="text-ui-label">
               {card.title}
             </DialogDescription>

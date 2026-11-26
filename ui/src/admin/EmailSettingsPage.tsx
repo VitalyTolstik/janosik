@@ -349,7 +349,10 @@ export function EmailSettingsPage() {
                 <span className="block font-medium text-foreground">
                   {t(PRESET_LABEL_KEYS[item.id])}
                 </span>
-                <span className="block truncate">
+                <span
+                  className="block break-words"
+                  title={t("admin.email.preset.sandboxHint")}
+                >
                   {t("admin.email.preset.sandboxHint")}
                 </span>
               </button>
@@ -494,6 +497,7 @@ export function EmailSettingsPage() {
             size="sm"
             onClick={() => void save()}
             disabled={saveDisabled}
+            className="max-md:min-h-11"
             data-testid="admin-email-save"
           >
             {saving ? t("admin.email.saving") : t("admin.common.save")}

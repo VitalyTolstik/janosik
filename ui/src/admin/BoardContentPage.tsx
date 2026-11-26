@@ -599,9 +599,7 @@ export function BoardContentPage() {
           data-testid="admin-move-card-dialog"
         >
           <DialogHeader>
-            <DialogTitle className="text-ui-body">
-              {t("admin.boardContent.move.title")}
-            </DialogTitle>
+            <DialogTitle>{t("admin.boardContent.move.title")}</DialogTitle>
             {movingCard !== null ? (
               <DialogDescription className="text-ui-label">
                 {t("admin.boardContent.move.body", {

@@ -92,7 +92,7 @@ function OneTimePassword({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="text-ui-body">{title}</DialogTitle>
+        <DialogTitle>{title}</DialogTitle>
         <DialogDescription className="text-ui-label">{email}</DialogDescription>
       </DialogHeader>
       <div className="space-y-1.5">
@@ -242,9 +242,7 @@ function CreateMasterDialog({
             className="space-y-3"
           >
             <DialogHeader>
-              <DialogTitle className="text-ui-body">
-                {t("admin.masters.create.title")}
-              </DialogTitle>
+              <DialogTitle>{t("admin.masters.create.title")}</DialogTitle>
             </DialogHeader>
             <Field
               htmlFor="admin-master-email"

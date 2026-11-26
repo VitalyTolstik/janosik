@@ -221,11 +221,11 @@ export function BoardDetailPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          className="mt-0.5 h-7 w-7 max-sm:h-11 max-sm:w-11"
           asChild
         >
           <Link
@@ -235,59 +235,63 @@ export function BoardDetailPage() {
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
         </Button>
-        <PageHeader
-          title={board.title}
-          subtitle={board.ownerEmail ?? undefined}
-          actions={
-            <>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  to={withReturnTo(
-                    routes.adminBoardContent(board.id),
-                    listReturnTo,
-                  )}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.boards.action.content")}
-                </Link>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid="admin-board-detail-actions"
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            title={board.title}
+            subtitle={board.ownerEmail ?? undefined}
+            actions={
+              <>
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    to={withReturnTo(
+                      routes.adminBoardContent(board.id),
+                      listReturnTo,
+                    )}
                   >
-                    {t("admin.common.actions")}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {board.archivedAt === null ? (
-                    <DropdownMenuItem onSelect={() => setConfirmArchive(true)}>
-                      {t("admin.boards.action.archive")}
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        void run(t("admin.boards.action.unarchive"), () =>
-                          adminApi.unarchiveBoard(board.id),
-                        )
-                      }
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                    {t("admin.boards.action.content")}
+                  </Link>
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid="admin-board-detail-actions"
                     >
-                      {t("admin.boards.action.unarchive")}
+                      {t("admin.common.actions")}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {board.archivedAt === null ? (
+                      <DropdownMenuItem
+                        onSelect={() => setConfirmArchive(true)}
+                      >
+                        {t("admin.boards.action.archive")}
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          void run(t("admin.boards.action.unarchive"), () =>
+                            adminApi.unarchiveBoard(board.id),
+                          )
+                        }
+                      >
+                        {t("admin.boards.action.unarchive")}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
+                      onSelect={() => setConfirmDelete(true)}
+                    >
+                      {t("admin.boards.action.delete")}
                     </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
-                    onSelect={() => setConfirmDelete(true)}
-                  >
-                    {t("admin.boards.action.delete")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          }
-        />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            }
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -639,6 +643,17 @@ export function BoardDetailPage() {
                 </Td>
               </tr>
             ))}
+            {detail.columns.length === 0 ? (
+              <tr>
+                <Td
+                  colSpan={5}
+                  label={t("admin.boardDetail.columns")}
+                  className="py-6 text-center text-ui-label text-muted-foreground"
+                >
+                  {t("admin.boardDetail.columns.empty")}
+                </Td>
+              </tr>
+            ) : null}
           </tbody>
         </Table>
       </Panel>

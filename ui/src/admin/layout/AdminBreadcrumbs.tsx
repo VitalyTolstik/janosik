@@ -57,8 +57,9 @@ export function AdminBreadcrumbs({ className }: { className?: string }) {
               <Link
                 to={crumb.to}
                 aria-current={last ? "page" : undefined}
+                title={crumb.label}
                 className={cn(
-                  "truncate transition-colors hover:text-foreground",
+                  "truncate whitespace-nowrap transition-colors hover:text-foreground",
                   last && "text-foreground",
                 )}
               >
@@ -66,7 +67,11 @@ export function AdminBreadcrumbs({ className }: { className?: string }) {
               </Link>
             ) : (
               <span
-                className={cn("truncate", last && "text-foreground")}
+                title={crumb.label}
+                className={cn(
+                  "truncate whitespace-nowrap",
+                  last && "text-foreground",
+                )}
                 aria-current={last ? "page" : undefined}
               >
                 {crumb.label}

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { parseAdminFilterId } from "@janosik/shared";
@@ -29,15 +30,27 @@ export function HubTabs({
   const t = useAdminT();
   const { admin } = useAdminAuth();
   const [params] = useSearchParams();
+  const navRef = useRef<HTMLElement | null>(null);
   const isOwner = admin?.role === "OWNER";
   const tabs = HUB_TABS[hub];
-  if (tabs.length === 0) return null;
 
   const active = params.get("tab") ?? HUB_DEFAULT_TAB[hub] ?? tabs[0]?.key;
   const hubEntry = ADMIN_HUBS.find((entry) => entry.key === hub);
   const visible = tabs.filter(
     (tab) => tab.ownerOnly !== true || isOwner || showOwnerTabs,
   );
+
+  // Deep links and RU labels can put the selected tab past the right edge of
+  // the scroll strip. Bring it into view whenever the active tab changes.
+  useEffect(() => {
+    const selected = navRef.current?.querySelector<HTMLElement>(
+      '[aria-selected="true"]',
+    );
+    selected?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [active, visible.length]);
+
+  if (tabs.length === 0) return null;
+
   const [boardId, repeated] = params.getAll("boardId");
   const board =
     repeated === undefined ? parseAdminFilterId(boardId) : undefined;
@@ -52,6 +65,7 @@ export function HubTabs({
         {hubEntry === undefined ? t("admin.hub.tabNav") : t(hubEntry.labelKey)}
       </span>
       <nav
+        ref={navRef}
         role="tablist"
         aria-label={t("admin.hub.tabNav")}
         className="admin-tab-strip -mb-1.5 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pt-1.5"
@@ -78,7 +92,7 @@ export function HubTabs({
               aria-selected={selected}
               data-testid={`admin-hub-tab-${tab.key}`}
               className={cn(
-                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui-meta font-medium transition-colors max-sm:h-11",
+                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui-meta font-medium transition-colors max-md:h-11",
                 selected
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",

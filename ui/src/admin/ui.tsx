@@ -85,19 +85,19 @@ export function PageHeader({
 }) {
   return (
     <div className="flex min-w-0 max-w-full flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0 flex-1 space-y-0.5">
+      <div className="min-w-56 flex-1 space-y-0.5">
         {eyebrow ? (
           <p className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
             {eyebrow}
           </p>
         ) : null}
-        <h1 className="truncate text-xl font-semibold tracking-[-0.025em] text-foreground">
+        <h1 className="truncate text-xl font-semibold tracking-[-0.025em] text-foreground max-md:line-clamp-2 max-md:whitespace-normal max-md:break-words">
           {title}
         </h1>
         {subtitle ? (
           <p
             title={subtitle}
-            className="truncate text-ui-label leading-5 text-muted-foreground max-md:whitespace-normal max-md:overflow-visible"
+            className="text-ui-label leading-5 text-muted-foreground md:truncate max-md:line-clamp-2 max-md:break-words"
           >
             {subtitle}
           </p>
@@ -498,15 +498,18 @@ export function Td({
   children,
   className,
   label,
+  colSpan,
 }: {
   children?: ReactNode;
   className?: string;
   /** Column name used by the phone card layout (`data-label`). */
   label?: string;
+  colSpan?: number;
 }) {
   return (
     <td
       data-label={label ?? ""}
+      colSpan={colSpan}
       className={cn(
         "whitespace-nowrap border-b border-border/60 px-3 align-middle text-foreground",
         className,
@@ -664,6 +667,7 @@ export function ConfirmDialog({
   busy = false,
   onConfirm,
   onClose,
+  returnFocusRef,
 }: {
   open: boolean;
   title: string;
@@ -673,6 +677,8 @@ export function ConfirmDialog({
   busy?: boolean;
   onConfirm: () => void;
   onClose: () => void;
+  /** The row-action trigger; restored after Escape/Cancel. */
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 }) {
   const t = useAdminT();
   return (
@@ -683,9 +689,18 @@ export function ConfirmDialog({
         onClose();
       }}
     >
-      <DialogContent className="max-w-sm" hideClose={busy}>
+      <DialogContent
+        className="max-w-sm"
+        hideClose={busy}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (target === null || target === undefined) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         <DialogHeader>
-          <DialogTitle className="text-ui-body">{title}</DialogTitle>
+          <DialogTitle className="leading-snug">{title}</DialogTitle>
           <DialogDescription className="text-ui-label">
             {body}
           </DialogDescription>
@@ -754,19 +769,24 @@ export function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ring-1 ring-inset transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
-        checked
-          ? "bg-primary ring-primary/60"
-          : "bg-muted-foreground/40 ring-border",
-      )}
+      className="group relative inline-flex h-5 w-9 shrink-0 items-center justify-center rounded-full focus-visible:outline-none disabled:opacity-50 max-md:h-11 max-md:w-11"
     >
       <span
+        aria-hidden
         className={cn(
-          "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
-          checked ? "translate-x-4" : "translate-x-0.5",
+          "relative inline-flex h-5 w-9 items-center rounded-full ring-1 ring-inset transition-colors group-focus-visible:ring-2 group-focus-visible:ring-ring",
+          checked
+            ? "bg-primary ring-primary/60"
+            : "bg-muted-foreground/40 ring-border",
         )}
-      />
+      >
+        <span
+          className={cn(
+            "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+            checked ? "translate-x-4" : "translate-x-0.5",
+          )}
+        />
+      </span>
     </button>
   );
 }

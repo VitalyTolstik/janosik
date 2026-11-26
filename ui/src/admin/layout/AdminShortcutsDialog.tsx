@@ -31,9 +31,7 @@ export function AdminShortcutsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg" data-testid="admin-shortcuts-dialog">
         <DialogHeader>
-          <DialogTitle className="text-ui-body">
-            {t("admin.shortcuts.title")}
-          </DialogTitle>
+          <DialogTitle>{t("admin.shortcuts.title")}</DialogTitle>
           <DialogDescription className="text-ui-label">
             {t("admin.shortcuts.hubsHint")}
           </DialogDescription>

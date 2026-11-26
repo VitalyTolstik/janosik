@@ -111,8 +111,8 @@ function AttentionItem({
             {value}
           </span>
         </span>
-        <span className="mt-0.5 flex items-center gap-1 text-ui-micro text-muted-foreground">
-          <span className="line-clamp-1">{hint}</span>
+        <span className="mt-0.5 flex items-center gap-1 text-ui-meta text-muted-foreground">
+          <span className="line-clamp-2">{hint}</span>
           <ArrowRight
             className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
             aria-hidden
@@ -357,11 +357,17 @@ export function DashboardPage() {
               key={entry.id}
               className="flex items-center justify-between gap-3 px-4 py-2"
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-ui-label text-foreground">
+              <div className="flex min-w-0 flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-2">
+                <span
+                  title={entry.action}
+                  className="max-w-full truncate text-ui-label text-foreground max-sm:whitespace-normal max-sm:break-words"
+                >
                   {entry.action}
                 </span>
-                <span className="truncate text-ui-meta text-muted-foreground">
+                <span
+                  title={entry.adminEmail}
+                  className="max-w-full truncate text-ui-meta text-muted-foreground max-sm:whitespace-normal max-sm:break-words"
+                >
                   {entry.adminEmail}
                 </span>
               </div>

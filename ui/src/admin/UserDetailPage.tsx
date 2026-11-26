@@ -733,6 +733,13 @@ export function UserDetailPage() {
         user={emailDialog ? { id: user.id, email: user.email } : null}
         onClose={() => setEmailDialog(false)}
         onDone={reload}
+        returnFocus={() =>
+          document
+            .querySelector<HTMLElement>(
+              '[data-testid="admin-user-detail-actions"]',
+            )
+            ?.focus()
+        }
       />
 
       <ResetUserPasswordDialog
@@ -746,6 +753,13 @@ export function UserDetailPage() {
         onDone={() => {
           window.location.assign(appPath("/admin/users"));
         }}
+        returnFocus={() =>
+          document
+            .querySelector<HTMLElement>(
+              '[data-testid="admin-user-detail-actions"]',
+            )
+            ?.focus()
+        }
       />
 
       <PromoteUserDialog

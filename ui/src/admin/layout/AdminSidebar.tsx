@@ -94,7 +94,7 @@ export function AdminSidebar({
         data-collapsed={collapsed ? "true" : "false"}
         data-mobile-open={mobileOpen ? "true" : "false"}
         aria-label={t("admin.hub.navLabel")}
-        className="admin-sidebar flex shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm"
+        className="admin-sidebar flex shrink-0 flex-col border-r border-border bg-card backdrop-blur-sm"
       >
         <NavLink
           to={routes.admin}
@@ -167,10 +167,17 @@ export function AdminSidebar({
 
           <button
             type="button"
-            onClick={() => setAllOpen(true)}
+            onClick={() => {
+              // The phone sheet is a z-60 layer and the shared dialog only
+              // z-50: close the sheet before opening, or the dialog renders
+              // underneath it. Also lift the dialog so the 180 ms slide-out
+              // never paints over the new modal.
+              onNavigate();
+              setAllOpen(true);
+            }}
             data-testid="admin-all-destinations"
             className={cn(
-              "mt-1 flex h-7 items-center rounded-md text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
+              "mt-1 flex h-7 items-center rounded-md text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11",
               collapsed
                 ? "justify-center px-0"
                 : "gap-2 px-2.5 admin-hide-rail",
@@ -199,7 +206,7 @@ export function AdminSidebar({
                   to={routes.home}
                   aria-label={t("admin.nav.backToBoards")}
                   onClick={onNavigate}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 </NavLink>
@@ -214,7 +221,7 @@ export function AdminSidebar({
               <NavLink
                 to={routes.home}
                 onClick={onNavigate}
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:min-h-11"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 {t("admin.nav.backToBoards")}
@@ -225,11 +232,22 @@ export function AdminSidebar({
       </aside>
 
       <Dialog open={allOpen} onOpenChange={setAllOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className="z-[70] max-w-2xl"
+          onCloseAutoFocus={(event) => {
+            // At phone width the sheet closed to expose this dialog, so its
+            // trigger is inert/off-screen; return focus to the menu button.
+            if (!window.matchMedia?.("(max-width: 639px)").matches) return;
+            event.preventDefault();
+            document
+              .querySelector<HTMLElement>(
+                '[data-testid="admin-sidebar-toggle"]',
+              )
+              ?.focus();
+          }}
+        >
           <DialogHeader>
-            <DialogTitle className="text-ui-body">
-              {t("admin.hub.allDestinations")}
-            </DialogTitle>
+            <DialogTitle>{t("admin.hub.allDestinations")}</DialogTitle>
             <DialogDescription className="text-ui-label">
               {t("admin.hub.allDestinationsDescription")}
             </DialogDescription>
@@ -252,7 +270,7 @@ export function AdminSidebar({
                           onNavigate();
                         }}
                         className={cn(
-                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors",
+                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors max-md:min-h-11",
                           activeTab === tab.key && activeHub(hub)
                             ? "bg-primary/10 text-foreground"
                             : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -298,7 +316,7 @@ function SidebarLink({
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
       className={cn(
-        "admin-nav-item relative flex h-7 items-center rounded-md text-ui-label font-medium transition-colors",
+        "admin-nav-item relative flex h-7 items-center rounded-md text-ui-label font-medium transition-colors max-md:h-11",
         collapsed ? "justify-center px-0" : "gap-2.5 px-2.5 admin-hide-rail",
         active
           ? "text-foreground"
