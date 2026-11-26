@@ -67,7 +67,7 @@ export function NotFoundPage({ variant = "page" }: NotFoundPageProps) {
           type="button"
           data-testid="not-found-back"
           onClick={goToBoards}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-action-primary px-4 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[color-mix(in_oklab,var(--action-primary)_88%,black)]"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-action-primary px-4 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[color-mix(in_oklab,var(--action-primary)_88%,black)] max-lg:min-h-11"
         >
           <Archive className="h-4 w-4" aria-hidden />
           {t("notFound.back")}

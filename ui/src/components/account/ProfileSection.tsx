@@ -199,7 +199,7 @@ export function ProfileSection() {
               title={t("account.profile.colorAuto")}
               onClick={() => setColor(null)}
               className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-foreground/40 text-foreground/70 transition-transform hover:scale-110 max-lg:relative max-lg:before:absolute max-lg:before:-inset-2 max-lg:before:content-['']",
+                "flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-foreground/40 text-foreground/70 transition-transform hover:scale-110 max-lg:relative max-lg:before:absolute max-lg:before:-inset-[9px] max-lg:before:content-['']",
                 color === null &&
                   "ring-2 ring-ring ring-offset-2 ring-offset-background",
               )}

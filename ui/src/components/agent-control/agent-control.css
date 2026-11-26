@@ -1071,6 +1071,16 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-rail-tab {
     min-height: 44px;
   }
+
+  .agent-control-surface .ac-body--overlay-footer .ac-rail {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .agent-control-surface .ac-body--overlay-footer .ac-rail-divider {
+    margin-top: 4px;
+    margin-bottom: 4px;
+  }
 }
 
 @media (max-width: 900px) {
