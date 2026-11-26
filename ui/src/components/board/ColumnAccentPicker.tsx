@@ -196,7 +196,8 @@ export function ColumnAccentPicker({
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-64 space-y-3"
+        collisionPadding={8}
+        className="max-h-[var(--radix-popover-content-available-height)] w-64 space-y-3 overflow-y-auto overscroll-contain"
         data-testid="column-style-palette"
         // Do NOT stop `pointerdown`: Radix's dismissable layer has to see the
         // end of the gesture, or its "pointer inside the tree" flag stays set

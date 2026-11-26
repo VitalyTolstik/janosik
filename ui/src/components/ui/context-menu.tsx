@@ -118,7 +118,7 @@ function ContextMenuItem({
       className={cn(
         "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-ui-body outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         variant === "destructive" &&
-          "text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive [&_svg:not([class*='text-'])]:text-destructive",
+          "text-(--chip-red) data-[highlighted]:bg-danger/10 data-[highlighted]:text-(--chip-red) [&_svg:not([class*='text-'])]:text-(--chip-red)",
         className,
       )}
       {...props}

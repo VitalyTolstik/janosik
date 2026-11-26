@@ -371,7 +371,7 @@ export function TemplatePickerDialog({
         onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "h-[min(672px,calc(100dvh-2rem))] w-[min(1110px,calc(100vw-2rem))] max-w-[1110px] gap-0 overflow-hidden rounded-[18px] border-border-strong bg-surface p-0 pt-0 pr-0 pb-0 pl-0 shadow-[0_40px_110px_-40px_rgb(0_0_0/0.9),0_2px_12px_rgb(0_0_0/0.3)] sm:rounded-[18px]",
-          "max-[900px]:h-[min(700px,calc(100dvh-1.5rem))] max-[900px]:w-[calc(100vw-1.5rem)]",
+          "max-[899.98px]:h-[min(700px,calc(100dvh-1.5rem))] max-[899.98px]:w-[calc(100vw-1.5rem)]",
           "max-[620px]:h-dvh max-[620px]:max-h-dvh max-[620px]:w-screen max-[620px]:max-w-none max-[620px]:rounded-none max-[620px]:border-0",
           "max-[620px]:pt-[env(safe-area-inset-top)] max-[620px]:pr-[env(safe-area-inset-right)] max-[620px]:pb-[env(safe-area-inset-bottom)] max-[620px]:pl-[env(safe-area-inset-left)]",
         )}
@@ -450,9 +450,9 @@ export function TemplatePickerDialog({
               </button>
             </header>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] max-[900px]:grid-rows-[auto_minmax(0,1fr)] min-[901px]:grid-cols-[338px_minmax(0,1fr)] min-[901px]:grid-rows-1">
-              <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-background/40 p-3 max-[900px]:border-b max-[900px]:p-2.5 max-[620px]:p-2">
-                <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] pt-[2px] text-ui-micro font-bold uppercase tracking-[0.09em] text-muted-foreground max-[900px]:pb-1.5">
+            <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] max-[899.98px]:grid-rows-[auto_minmax(0,1fr)] min-[900px]:grid-cols-[338px_minmax(0,1fr)] min-[900px]:grid-rows-1">
+              <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-background/40 p-3 max-[899.98px]:border-b max-[899.98px]:p-2.5 max-[620px]:p-2">
+                <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] pt-[2px] text-ui-micro font-bold uppercase tracking-[0.09em] text-muted-foreground max-[899.98px]:pb-1.5">
                   <span>{t("board.templatePicker.examples")}</span>
                   <span className="text-ui-meta font-medium normal-case tracking-normal">
                     {t("board.templatePicker.curated")}
@@ -461,7 +461,7 @@ export function TemplatePickerDialog({
                 <div
                   role="group"
                   aria-label={t("board.templatePicker.examples")}
-                  className="template-gallery flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-0.5 max-[900px]:snap-x max-[900px]:snap-proximity max-[900px]:flex-row max-[900px]:overflow-x-auto max-[900px]:overflow-y-hidden max-[900px]:pb-1"
+                  className="template-gallery flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-0.5 max-[899.98px]:snap-x max-[899.98px]:snap-proximity max-[899.98px]:flex-row max-[899.98px]:overflow-x-auto max-[899.98px]:overflow-y-hidden max-[899.98px]:pb-1"
                 >
                   {BOARD_TEMPLATES.map((item, index) => {
                     const selected = item.id === selectedId;
@@ -485,12 +485,12 @@ export function TemplatePickerDialog({
                           selected
                             ? "border-primary/45 bg-card shadow-sm ring-2 ring-primary/15"
                             : "border-transparent hover:bg-hover",
-                          "max-[900px]:min-w-[248px] max-[900px]:max-w-[248px] max-[900px]:shrink-0 max-[900px]:snap-start max-[900px]:border-border max-[900px]:bg-card max-[900px]:p-2 max-[620px]:min-w-[216px] max-[620px]:max-w-[216px]",
+                          "max-[899.98px]:min-w-[248px] max-[899.98px]:max-w-[248px] max-[899.98px]:shrink-0 max-[899.98px]:snap-start max-[899.98px]:border-border max-[899.98px]:bg-card max-[899.98px]:p-2 max-[620px]:min-w-[216px] max-[620px]:max-w-[216px]",
                         )}
                       >
                         <span
                           className={cn(
-                            "grid h-[34px] w-[34px] place-items-center rounded-[9px] border max-[900px]:h-[30px] max-[900px]:w-[30px] max-[620px]:h-[28px] max-[620px]:w-[28px]",
+                            "grid h-[34px] w-[34px] place-items-center rounded-[9px] border max-[899.98px]:h-[30px] max-[899.98px]:w-[30px] max-[620px]:h-[28px] max-[620px]:w-[28px]",
                             templateAccentIconClass(item),
                           )}
                         >
@@ -510,7 +510,7 @@ export function TemplatePickerDialog({
                               </span>
                             ) : null}
                           </span>
-                          <span className="mt-0.5 line-clamp-1 text-ui-label leading-[1.38] text-muted-foreground max-[900px]:line-clamp-2">
+                          <span className="mt-0.5 line-clamp-1 text-ui-label leading-[1.38] text-muted-foreground max-[899.98px]:line-clamp-2">
                             {itemCopy.short}
                           </span>
                           <span className="mt-1 flex flex-wrap items-center gap-x-[7px] gap-y-1 text-ui-meta leading-[1.3] text-muted-foreground">
@@ -527,8 +527,12 @@ export function TemplatePickerDialog({
                                 count: itemCounts.cards,
                               })}
                             </span>
-                            <span className="min-w-0 overflow-hidden text-ellipsis">
-                              {itemCopy.tags.join(" · ")}
+                            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              {itemCopy.tags.map((tag) => (
+                                <span key={tag} className="whitespace-nowrap">
+                                  {tag}
+                                </span>
+                              ))}
                             </span>
                           </span>
                         </span>
@@ -553,7 +557,7 @@ export function TemplatePickerDialog({
                 <section
                   aria-label={`${t("board.templatePicker.preview")}: ${template.copy[locale].name}`}
                   tabIndex={0}
-                  className="template-preview-scroll h-full min-w-0 overflow-y-auto overflow-x-hidden bg-surface pb-[22px] pl-5 pr-5 pt-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[900px]:p-[15px_16px_18px] max-[620px]:p-3"
+                  className="template-preview-scroll h-full min-w-0 overflow-y-auto overflow-x-hidden bg-surface pb-[22px] pl-5 pr-5 pt-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[899.98px]:p-[15px_16px_18px] max-[620px]:p-3"
                 >
                   <TemplatePreview
                     template={template}
@@ -591,7 +595,7 @@ export function TemplatePickerDialog({
               </div>
             ) : null}
 
-            <footer className="flex shrink-0 flex-wrap items-end gap-3.5 border-t border-border bg-card px-[18px] py-3 max-[900px]:py-[9px] max-[620px]:gap-2 max-[620px]:p-[9px_11px]">
+            <footer className="flex shrink-0 flex-wrap items-end gap-3.5 border-t border-border bg-card px-[18px] py-3 max-[899.98px]:py-[9px] max-[620px]:gap-2 max-[620px]:p-[9px_11px]">
               <div className="min-w-0 flex-1 max-[620px]:basis-full">
                 <div className="mb-1 flex items-center gap-1.5">
                   <label
