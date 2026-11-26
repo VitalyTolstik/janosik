@@ -855,7 +855,7 @@ export function AnnouncementEditorDialog({
               <summary className="cursor-pointer text-ui-meta font-medium text-muted-foreground max-lg:flex max-lg:min-h-11 max-lg:items-center">
                 {t("admin.comms.schedule")}
               </summary>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
                 <Field label={t("admin.comms.field.startsAt")}>
                   <DateTimeField
                     value={startsAt}

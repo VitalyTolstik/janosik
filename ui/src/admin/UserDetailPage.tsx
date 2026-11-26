@@ -132,7 +132,10 @@ function StatCard({
     >
       <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
       <div className="min-w-0">
-        <p className="truncate text-ui-micro uppercase tracking-wide text-muted-foreground">
+        <p
+          className="truncate text-ui-micro uppercase tracking-wide text-muted-foreground"
+          title={label}
+        >
           {label}
         </p>
         <p className="text-ui-body font-semibold tabular-nums">{value}</p>
