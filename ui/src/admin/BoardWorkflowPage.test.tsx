@@ -151,6 +151,15 @@ describe("BoardWorkflowPage discard blocker (M39)", () => {
     ).toBeNull();
   });
 
+  it("keeps the editor panel from shrinking inside the page scroller", async () => {
+    renderPage(["/admin/boards/board-1/workflow"]);
+    const panel = (await screen.findByTestId("workflow-make-dirty")).closest(
+      "section",
+    );
+    expect(panel).not.toBeNull();
+    expect(panel?.className).toContain("shrink-0");
+  });
+
   it("lets the consumed ?lng= handoff through without a prompt", async () => {
     const router = renderPage([
       "/admin/boards/board-1/workflow?draft=1&lng=ru#old",

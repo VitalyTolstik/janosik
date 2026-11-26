@@ -225,7 +225,7 @@ export function BoardDetailPage() {
         <Button
           size="icon"
           variant="ghost"
-          className="mt-0.5 h-7 w-7 max-sm:h-11 max-sm:w-11"
+          className="mt-0.5 h-7 w-7 max-lg:h-11 max-lg:w-11"
           asChild
         >
           <Link
@@ -241,7 +241,12 @@ export function BoardDetailPage() {
             subtitle={board.ownerEmail ?? undefined}
             actions={
               <>
-                <Button asChild size="sm" variant="outline">
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="max-lg:min-h-11"
+                >
                   <Link
                     to={withReturnTo(
                       routes.adminBoardContent(board.id),
@@ -257,6 +262,7 @@ export function BoardDetailPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      className="max-lg:min-h-11"
                       data-testid="admin-board-detail-actions"
                     >
                       {t("admin.common.actions")}
@@ -407,7 +413,7 @@ export function BoardDetailPage() {
               : t("admin.workflow.notConfigured")}
           </p>
         </div>
-        <Button size="sm" variant="outline" asChild>
+        <Button size="sm" variant="outline" asChild className="max-lg:min-h-11">
           <Link to={routes.adminBoardWorkflow(board.id)}>
             {t("admin.workflow.open")}
           </Link>
@@ -422,7 +428,7 @@ export function BoardDetailPage() {
           <Button
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-ui-label"
+            className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:min-h-11"
             data-testid="admin-board-add-member"
             onClick={() => setAddOpen(true)}
           >
@@ -478,7 +484,7 @@ export function BoardDetailPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 max-sm:h-11 max-sm:w-11 p-0"
+                        className="h-7 w-7 max-lg:h-11 max-lg:w-11 p-0"
                         data-testid={`admin-member-actions-${member.id}`}
                         aria-label={t("admin.common.actions")}
                       >

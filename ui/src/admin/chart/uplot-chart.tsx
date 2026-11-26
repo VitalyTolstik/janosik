@@ -95,6 +95,10 @@ export function UplotChart({
       ],
       series: [
         {
+          // The x series is an axis carrier, not a plotted value. `show:false`
+          // marks it `u-off`; admin.css drops that row from the live legend,
+          // where “Day: --” used to push the real series past the viewport.
+          show: false,
           label: xLabel,
           value: (_self, raw) => (raw == null ? "" : xFormat(Number(raw))),
         },

@@ -279,6 +279,24 @@
   display: none;
 }
 
+/* uPlot renders the x-axis carrier as a legend series even when it is hidden
+   (`show: false` → `u-off`). It has no value and only adds “Day / --” noise;
+   drop it from the admin legend while keeping the live series values. */
+.admin-app .u-legend tr.u-off {
+  display: none;
+}
+
+/* Below desktop the tab strip may be wider than the content column (RU
+   Settings is the worst case). Wrap the tabs instead of hiding whole
+   destinations behind a borderless scroller; desktop fits on one row. */
+@media (max-width: 1023px) {
+  .admin-tab-strip {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 2px;
+  }
+}
+
 @media (max-width: 639px) {
   .admin-sidebar,
   .admin-app[data-collapsed] .admin-sidebar {

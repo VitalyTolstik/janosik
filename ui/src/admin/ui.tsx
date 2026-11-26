@@ -97,7 +97,7 @@ export function PageHeader({
         {subtitle ? (
           <p
             title={subtitle}
-            className="text-ui-label leading-5 text-muted-foreground md:truncate max-md:line-clamp-2 max-md:break-words"
+            className="text-ui-label leading-5 text-muted-foreground lg:truncate max-lg:line-clamp-2 max-lg:break-words"
           >
             {subtitle}
           </p>
@@ -560,7 +560,7 @@ export function Pagination({
               data-testid="admin-page-size"
               value={limit}
               onChange={(event) => onLimitChange(Number(event.target.value))}
-              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-ui-meta text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
+              className="h-7 rounded-md border border-border bg-background/60 px-1.5 text-ui-meta text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:h-11"
             >
               {[25, 50, 100].map((size) => (
                 <option key={size} value={size}>
@@ -576,7 +576,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-ui-label max-sm:h-11 max-sm:min-h-11"
+          className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:min-h-11"
           disabled={pendingPage <= 1}
           data-testid="admin-pagination-prev"
           aria-label={t("admin.common.prev")}
@@ -594,7 +594,7 @@ export function Pagination({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-ui-label max-sm:h-11 max-sm:min-h-11"
+          className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:min-h-11"
           disabled={pendingPage >= pendingPages}
           data-testid="admin-pagination-next"
           aria-label={t("admin.common.next")}
@@ -739,7 +739,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cn(
-        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11 max-sm:w-11",
+        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:h-11 max-lg:w-11",
         className,
       )}
       {...props}
@@ -769,7 +769,7 @@ export function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="group relative inline-flex h-5 w-9 shrink-0 items-center justify-center rounded-full focus-visible:outline-none disabled:opacity-50 max-md:h-11 max-md:w-11"
+      className="group relative inline-flex h-5 w-9 shrink-0 items-center justify-center rounded-full focus-visible:outline-none disabled:opacity-50 max-lg:h-11 max-lg:w-11"
     >
       <span
         aria-hidden

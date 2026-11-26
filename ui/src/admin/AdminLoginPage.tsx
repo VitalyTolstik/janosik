@@ -177,7 +177,7 @@ export function AdminLoginPage() {
           aria-label={t("admin.login.theme")}
           data-testid="admin-login-theme"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
         >
           {theme === "dark" ? (
             <Sun className="h-3.5 w-3.5" aria-hidden />
@@ -268,7 +268,7 @@ export function AdminLoginPage() {
                     localEmailError !== null ? emailErrorId : undefined
                   }
                   data-testid="admin-login-email"
-                  className="max-md:h-11"
+                  className="max-lg:h-11"
                 />
                 {localEmailError !== null ? (
                   <span
@@ -297,7 +297,7 @@ export function AdminLoginPage() {
                     }
                     aria-pressed={showPassword}
                     onClick={() => setShowPassword((visible) => !visible)}
-                    className="inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 text-ui-label text-muted-foreground transition-colors hover:text-foreground max-md:min-h-11 max-md:px-2"
+                    className="inline-flex min-h-6 items-center gap-1 rounded px-1 py-0.5 text-ui-label text-muted-foreground transition-colors hover:text-foreground max-lg:min-h-11 max-lg:px-2"
                   >
                     {showPassword ? (
                       <EyeOff className="h-3 w-3" aria-hidden />
@@ -321,7 +321,7 @@ export function AdminLoginPage() {
                   onKeyDown={capsLockFrom}
                   onKeyUp={capsLockFrom}
                   data-testid="admin-login-password"
-                  className="max-md:h-11"
+                  className="max-lg:h-11"
                 />
                 {capsLock ? (
                   <span
@@ -355,7 +355,7 @@ export function AdminLoginPage() {
                     setCode(event.target.value.replace(/\D/g, ""))
                   }
                   data-testid="admin-login-totp"
-                  className="h-10 text-center font-mono text-lg tracking-[0.35em] max-md:h-11"
+                  className="h-10 text-center font-mono text-lg tracking-[0.35em] max-lg:h-11"
                 />
                 <span
                   className="block h-0.5 overflow-hidden rounded-full bg-border"
@@ -391,7 +391,7 @@ export function AdminLoginPage() {
               type="submit"
               disabled={busy}
               data-testid="admin-login-submit"
-              className="w-full max-md:min-h-11"
+              className="w-full max-lg:min-h-11"
             >
               {busy ? (
                 <>

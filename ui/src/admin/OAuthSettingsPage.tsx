@@ -235,6 +235,7 @@ export function OAuthSettingsPage() {
                 <Button
                   size="sm"
                   data-testid={`admin-oauth-save-${provider}`}
+                  className="max-lg:min-h-11"
                   disabled={
                     savingId === provider ||
                     clientIdError !== null ||

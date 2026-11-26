@@ -153,3 +153,32 @@ test("Back and sidebar navigation confirm a dirty workflow draft", async ({
   await dialog.getByRole("button", { name: /discard/i }).click();
   await expect(page).toHaveURL(/\/admin\/users$/);
 });
+
+test.describe("tablet workflow layout", () => {
+  test.use({ viewport: { width: 768, height: 1024 } });
+
+  test("keeps the Save footer reachable on a long workflow", async ({
+    page,
+    board,
+  }) => {
+    // Four columns are enough to make the editor taller than the 1024 px
+    // viewport; before the shrink fix the overflow-hidden panel cut the
+    // footer out of both the panel and the page scroller.
+    await board.column("Backlog");
+    await board.column("Doing");
+    await board.column("Review");
+    await board.column("Done");
+    await loginAsMaster(page, ownerCredentials());
+    await page.goto(adminPath(`boards/${board.id}/workflow`), {
+      waitUntil: "domcontentloaded",
+    });
+
+    const save = page.getByTestId("admin-workflow-save");
+    await expect(save).toBeVisible();
+    await save.scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport();
+    const box = await save.boundingBox();
+    expect(box).not.toBeNull();
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(1024);
+  });
+});

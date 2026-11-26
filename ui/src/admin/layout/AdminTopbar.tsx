@@ -59,7 +59,7 @@ export function AdminTopbar({
               type="button"
               data-testid="admin-sidebar-toggle"
               aria-label={t("admin.nav.toggleSidebar")}
-              className="admin-sidebar-toggle inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
+              className="admin-sidebar-toggle inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
               aria-expanded={mobile ? undefined : !collapsed}
               onClick={onToggleSidebar}
             >
@@ -109,7 +109,7 @@ export function AdminTopbar({
           aria-label={t("admin.search.title")}
           title={t("admin.search.title")}
           onClick={onOpenPalette}
-          className="inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border border-border bg-background/50 px-0 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11 lg:w-auto lg:justify-start lg:px-2.5"
+          className="inline-flex h-7 w-7 items-center justify-center gap-2 rounded-md border border-border bg-background/50 px-0 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11 lg:w-auto lg:justify-start lg:px-2.5"
         >
           <Search className="h-3.5 w-3.5" aria-hidden />
           <span className="hidden whitespace-nowrap lg:inline">
@@ -129,7 +129,7 @@ export function AdminTopbar({
               aria-pressed={density === "compact"}
               onClick={onToggleDensity}
               className={cn(
-                "hidden h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 transition-colors hover:bg-hover hover:text-foreground sm:inline-flex",
+                "hidden h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11 sm:inline-flex",
                 density === "compact"
                   ? "text-(--agent-tone-primary)"
                   : "text-muted-foreground",
@@ -154,7 +154,7 @@ export function AdminTopbar({
               aria-label={t("admin.nav.toggleTheme")}
               aria-pressed={theme === "dark"}
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
             >
               {theme === "dark" ? (
                 <Sun className="h-3.5 w-3.5" aria-hidden />
@@ -173,7 +173,7 @@ export function AdminTopbar({
               data-testid="admin-shortcuts-open"
               aria-label={t("admin.shortcuts.open")}
               onClick={onOpenShortcuts}
-              className="hidden h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground sm:inline-flex"
+              className="hidden h-7 w-7 items-center justify-center rounded-md border border-border bg-background/50 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11 sm:inline-flex"
             >
               <HelpCircle className="h-3.5 w-3.5" aria-hidden />
             </button>
@@ -187,7 +187,7 @@ export function AdminTopbar({
           data-testid="admin-logout"
           aria-label={t("admin.nav.logout")}
           title={t("admin.nav.logout")}
-          className="inline-flex h-7 w-7 items-center justify-center gap-1.5 rounded-md border border-border bg-background/50 px-0 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11 lg:w-auto lg:justify-start lg:px-2.5"
+          className="inline-flex h-7 w-7 items-center justify-center gap-1.5 rounded-md border border-border bg-background/50 px-0 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11 lg:w-auto lg:justify-start lg:px-2.5"
         >
           <LogOut className="h-3.5 w-3.5" aria-hidden />
           <span className="hidden whitespace-nowrap lg:inline">

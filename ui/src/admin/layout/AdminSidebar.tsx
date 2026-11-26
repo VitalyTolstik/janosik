@@ -177,7 +177,7 @@ export function AdminSidebar({
             }}
             data-testid="admin-all-destinations"
             className={cn(
-              "mt-1 flex h-7 items-center rounded-md text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11",
+              "mt-1 flex h-7 items-center rounded-md text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11",
               collapsed
                 ? "justify-center px-0"
                 : "gap-2 px-2.5 admin-hide-rail",
@@ -206,7 +206,7 @@ export function AdminSidebar({
                   to={routes.home}
                   aria-label={t("admin.nav.backToBoards")}
                   onClick={onNavigate}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:h-11 max-md:w-11"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 </NavLink>
@@ -221,7 +221,7 @@ export function AdminSidebar({
               <NavLink
                 to={routes.home}
                 onClick={onNavigate}
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-md:min-h-11"
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 {t("admin.nav.backToBoards")}
@@ -253,6 +253,32 @@ export function AdminSidebar({
             </DialogDescription>
           </DialogHeader>
           <div className="grid max-h-[60vh] gap-4 overflow-y-auto sm:grid-cols-2">
+            <section className="space-y-1.5">
+              <h3 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("admin.hub.group.operate")}
+              </h3>
+              {ADMIN_HUBS.filter(
+                (hub) => hub.key === "overview" || hub.key === "users",
+              ).map((hub) => (
+                <NavLink
+                  key={hub.key}
+                  to={hub.to}
+                  onClick={() => {
+                    setAllOpen(false);
+                    onNavigate();
+                  }}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors max-lg:min-h-11",
+                    activeHub(hub.key)
+                      ? "bg-primary/10 text-foreground"
+                      : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                  )}
+                >
+                  <span>{t(hub.labelKey)}</span>
+                  <ChevronRight className="h-3 w-3 opacity-50" aria-hidden />
+                </NavLink>
+              ))}
+            </section>
             {(Object.keys(HUB_TABS) as AdminHubKey[]).map((hub) =>
               HUB_TABS[hub].length === 0 ? null : (
                 <section key={hub} className="space-y-1.5">
@@ -270,7 +296,7 @@ export function AdminSidebar({
                           onNavigate();
                         }}
                         className={cn(
-                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors max-md:min-h-11",
+                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors max-lg:min-h-11",
                           activeTab === tab.key && activeHub(hub)
                             ? "bg-primary/10 text-foreground"
                             : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -316,7 +342,7 @@ function SidebarLink({
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
       className={cn(
-        "admin-nav-item relative flex h-7 items-center rounded-md text-ui-label font-medium transition-colors max-md:h-11",
+        "admin-nav-item relative flex h-7 items-center rounded-md text-ui-label font-medium transition-colors max-lg:h-11",
         collapsed ? "justify-center px-0" : "gap-2.5 px-2.5 admin-hide-rail",
         active
           ? "text-foreground"

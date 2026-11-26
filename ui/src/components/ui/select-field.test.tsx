@@ -166,7 +166,7 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("keeps 36 px desktop rows and 44 px mobile rows", async () => {
+  it("keeps 36 px desktop rows and 44 px touch rows", async () => {
     const user = userEvent.setup();
     render(
       <SelectField
@@ -180,7 +180,7 @@ describe("SelectField combobox (TASK-179.9)", () => {
     await user.click(screen.getByTestId("picker"));
     const option = screen.getByTestId("picker-option-beta");
     expect(option.className).toContain("min-h-9");
-    expect(option.className).toContain("max-md:min-h-11");
+    expect(option.className).toContain("max-lg:min-h-11");
     expect(option).toHaveAttribute("role", "option");
   });
 

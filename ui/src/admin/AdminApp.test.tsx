@@ -1569,6 +1569,7 @@ describe("AdminApp", () => {
     expect(
       within(dialog).getByText(t("admin.hub.allDestinationsDescription")),
     ).toBeTruthy();
+    expect(within(dialog).getAllByRole("link")).toHaveLength(26);
   });
 
   it("collapses the sidebar to an icon rail and remembers the choice", async () => {

@@ -280,7 +280,7 @@ export function DemoPage() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 gap-1.5 px-2 text-ui-label"
+                className="h-7 gap-1.5 px-2 text-ui-label max-lg:min-h-11"
                 data-testid="admin-demo-copy-link"
                 onClick={() => {
                   const url = appShareUrl(`/s/${demo.shareToken}`);
@@ -341,6 +341,7 @@ export function DemoPage() {
                 size="sm"
                 variant="outline"
                 data-testid="admin-demo-board-save"
+                className="max-lg:min-h-11"
                 disabled={running || busy}
                 onClick={() => setSelectedBoardId(boardId.trim())}
               >
@@ -403,6 +404,7 @@ export function DemoPage() {
               <Button
                 size="sm"
                 data-testid="admin-demo-start"
+                className="max-lg:min-h-11"
                 disabled={
                   running ||
                   busy ||
@@ -419,6 +421,7 @@ export function DemoPage() {
                 size="sm"
                 variant="destructive"
                 data-testid="admin-demo-stop"
+                className="max-lg:min-h-11"
                 disabled={!cleanupPending || busy}
                 onClick={() => setConfirming(true)}
               >

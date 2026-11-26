@@ -389,7 +389,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-save"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -428,7 +428,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-rate-limit-save"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -485,6 +485,7 @@ export function OpsPage() {
                   }
                   data-testid={`admin-ops-retention-preset-${preset}`}
                   disabled={!isOwner}
+                  className="max-lg:min-h-11"
                   onClick={() => setRetentionDraft(String(preset))}
                 >
                   {t("admin.ops.retentionPreset", { days: preset })}
@@ -498,7 +499,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-retention-save"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -532,7 +533,7 @@ export function OpsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7"
+                    className="h-7 max-lg:min-h-11"
                     disabled={!daysValid}
                     data-testid="admin-ops-retention-retry"
                     onClick={() => void fetchRetention(effectiveDays)}
@@ -591,6 +592,7 @@ export function OpsPage() {
             size="sm"
             disabled={!daysValid || !isOwner || purging || !retentionMatches}
             data-testid="admin-ops-purge"
+            className="max-lg:min-h-11"
             onClick={() => setPurgeOpen(true)}
           >
             {t("admin.ops.retention.purge")}
@@ -630,7 +632,7 @@ export function OpsPage() {
             variant="outline"
             disabled={sweeping || !isOwner}
             data-testid="admin-ops-run-sweeps"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void runSweeps()}
           >
             {t("admin.ops.runNow")}
@@ -639,7 +641,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-schedule-save"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}
@@ -693,7 +695,7 @@ export function OpsPage() {
             size="sm"
             disabled={busy || !isOwner || !daysValid}
             data-testid="admin-ops-comms-save"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void saveOps()}
           >
             {t("admin.common.save")}

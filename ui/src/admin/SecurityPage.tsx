@@ -217,6 +217,7 @@ export function SecurityPage() {
               size="sm"
               disabled={busy || code.length !== 6}
               data-testid="admin-totp-confirm"
+              className="max-lg:min-h-11"
               onClick={() => void confirm()}
             >
               {t("admin.security.totp.confirm")}
@@ -255,6 +256,7 @@ export function SecurityPage() {
               size="sm"
               disabled={busy || (code.length !== 6 && password.length === 0)}
               data-testid="admin-totp-replace"
+              className="max-lg:min-h-11"
               onClick={() =>
                 void beginSetup({
                   ...(code.length === 6 ? { totpCode: code } : {}),
@@ -269,6 +271,7 @@ export function SecurityPage() {
               size="sm"
               disabled={busy || code.length !== 6}
               data-testid="admin-totp-disable"
+              className="max-lg:min-h-11"
               onClick={() => void disable()}
             >
               {t("admin.security.totp.disable")}
@@ -278,7 +281,7 @@ export function SecurityPage() {
           <div className="mt-3">
             <Button
               size="sm"
-              className="bg-action-primary hover:bg-[#1d4ed8]"
+              className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
               data-testid="admin-totp-enable"
               disabled={busy}
               onClick={() => void beginSetup()}
@@ -323,7 +326,7 @@ export function SecurityPage() {
           <div className="mt-3 flex justify-end">
             <Button
               size="sm"
-              className="bg-action-primary hover:bg-[#1d4ed8] max-md:min-h-11"
+              className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
               disabled={busy}
               data-testid="admin-ip-save"
               onClick={() => void saveAllowlist()}

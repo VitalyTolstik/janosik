@@ -221,6 +221,7 @@ export function TrafficSettingsPage() {
             <Button
               size="sm"
               data-testid="admin-traffic-save"
+              className="max-lg:min-h-11"
               disabled={saving || draft === ""}
               onClick={() => void save()}
             >

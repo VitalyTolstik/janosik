@@ -135,7 +135,7 @@ export function CreateUserButton({ reload }: { reload: () => void }) {
     <>
       <Button
         size="sm"
-        className="bg-action-primary hover:bg-[#1d4ed8] max-md:min-h-11"
+        className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
         data-testid="admin-create-user"
         onClick={() => setOpen(true)}
       >
@@ -340,7 +340,7 @@ export function CreateBoardButton({ reload }: { reload: () => void }) {
     <>
       <Button
         size="sm"
-        className="bg-action-primary hover:bg-[#1d4ed8] max-md:min-h-11"
+        className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
         data-testid="admin-create-board"
         onClick={() => setOpen(true)}
       >

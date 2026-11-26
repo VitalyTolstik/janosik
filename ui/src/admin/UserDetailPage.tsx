@@ -575,7 +575,7 @@ export function UserDetailPage() {
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          className="h-7 w-7 max-lg:h-11 max-lg:w-11"
           asChild
         >
           <Link to={backTo} aria-label={t("admin.common.back")}>
@@ -591,6 +591,7 @@ export function UserDetailPage() {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="max-lg:min-h-11"
                   data-testid="admin-user-detail-actions"
                 >
                   {t("admin.common.actions")}
@@ -874,7 +875,7 @@ export function UserDetailPage() {
             data-testid={`admin-user-tab-${entry.key}`}
             onClick={() => setTab(entry.key)}
             className={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-ui-label font-medium transition-colors",
+              "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-ui-label font-medium transition-colors max-lg:h-11",
               tab === entry.key
                 ? "border-primary/30 bg-primary/15 text-foreground"
                 : "border-border bg-card/60 text-muted-foreground hover:bg-hover hover:text-foreground",

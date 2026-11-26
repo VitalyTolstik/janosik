@@ -92,7 +92,7 @@ export function HubTabs({
               aria-selected={selected}
               data-testid={`admin-hub-tab-${tab.key}`}
               className={cn(
-                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui-meta font-medium transition-colors max-md:h-11",
+                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui-meta font-medium transition-colors max-lg:h-11",
                 selected
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-hover hover:text-foreground",

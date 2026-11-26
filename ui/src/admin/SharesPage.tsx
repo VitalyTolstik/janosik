@@ -271,7 +271,7 @@ export function SharesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 p-0 max-sm:h-11 max-sm:w-11"
+                          className="h-7 w-7 p-0 max-lg:h-11 max-lg:w-11"
                           aria-label={t("admin.shares.copy")}
                           title={t("admin.shares.copy")}
                           data-testid={`admin-share-copy-${row.id}`}
@@ -298,7 +298,7 @@ export function SharesPage() {
                           rel="noreferrer"
                           aria-label={t("admin.shares.open")}
                           title={t("admin.shares.open")}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
                         >
                           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         </a>
@@ -310,7 +310,7 @@ export function SharesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 text-destructive max-sm:h-11 max-sm:w-11"
+                            className="h-7 w-7 p-0 text-destructive max-lg:h-11 max-lg:w-11"
                             aria-label={t("admin.shares.revoke")}
                             title={t("admin.shares.revoke")}
                             disabled={busy === row.id}

@@ -218,7 +218,7 @@ export function CommsPage() {
             size="sm"
             variant="outline"
             asChild
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
           >
             <Link to="/admin/announcements">
               {t("admin.announcements.title")}
@@ -228,7 +228,7 @@ export function CommsPage() {
             size="sm"
             disabled={!isOwner}
             data-testid="admin-announcement-new"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => setCreating(true)}
           >
             {t("admin.comms.new")}
@@ -301,7 +301,7 @@ export function CommsPage() {
               mailBody.trim() === ""
             }
             data-testid="admin-email-send"
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             onClick={() => void send()}
           >
             {t("admin.comms.email.send")}
@@ -412,7 +412,7 @@ export function CommsPage() {
                   size="sm"
                   data-testid={`admin-template-save-${template.key}`}
                   disabled={!isOwner}
-                  className="max-md:min-h-11"
+                  className="max-lg:min-h-11"
                   onClick={() => void saveTemplate(template.key)}
                 >
                   {t("admin.common.save")}

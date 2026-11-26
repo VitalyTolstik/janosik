@@ -497,7 +497,7 @@ export function AnnouncementEditorDialog({
           tabRefs.current.ru?.focus();
         }
       }}
-      className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-label transition-colors ${
+      className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-ui-label transition-colors ${
         editorLocale === locale
           ? "border-border bg-card text-foreground shadow-sm"
           : "border-transparent text-muted-foreground hover:bg-hover/60 hover:text-foreground"
@@ -510,9 +510,13 @@ export function AnnouncementEditorDialog({
       <span className="rounded border border-border bg-background/50 px-1.5 py-0.5 font-mono text-ui-micro font-bold">
         {t(`admin.comms.lang.${locale}.short` as AdminMessageKey)}
       </span>
-      <span className="font-medium">{localeLabel(locale)}</span>
+      <span className="min-w-0 truncate font-medium">
+        {localeLabel(locale)}
+      </span>
       {sourceLocale === locale ? (
-        <Badge variant="primary">{t("admin.comms.source")}</Badge>
+        <span className="shrink-0">
+          <Badge variant="primary">{t("admin.comms.source")}</Badge>
+        </span>
       ) : null}
       <span
         aria-hidden
@@ -585,7 +589,7 @@ export function AnnouncementEditorDialog({
             ) : null}
 
             <div
-              className="flex gap-1 rounded-xl border border-border bg-background/40 p-1"
+              className="flex flex-col gap-1 rounded-xl border border-border bg-background/40 p-1 sm:flex-row"
               role="tablist"
               aria-label={t("admin.comms.languages")}
             >
@@ -712,7 +716,7 @@ export function AnnouncementEditorDialog({
               <p className="mb-2 text-ui-micro font-bold uppercase tracking-wider text-muted-foreground">
                 {t("admin.comms.policy")}
               </p>
-              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-ui-label hover:bg-hover/50">
+              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-ui-label hover:bg-hover/50 max-lg:min-h-11">
                 <input
                   type="radio"
                   name="announcement-policy"
@@ -737,7 +741,7 @@ export function AnnouncementEditorDialog({
                   </span>
                 </span>
               </label>
-              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-ui-label hover:bg-hover/50">
+              <label className="flex cursor-pointer gap-2 rounded-lg p-2 text-ui-label hover:bg-hover/50 max-lg:min-h-11">
                 <input
                   type="radio"
                   name="announcement-policy"
@@ -810,7 +814,7 @@ export function AnnouncementEditorDialog({
               />
             ) : null}
 
-            <label className="flex items-center gap-2 text-ui-label">
+            <label className="flex min-h-11 items-center gap-2 text-ui-label">
               <Checkbox
                 checked={sendEmail}
                 onCheckedChange={setSendEmail}

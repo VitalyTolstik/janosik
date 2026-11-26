@@ -482,7 +482,7 @@ export function EmailSettingsPage() {
           </>
         )}
 
-        <label className="flex items-center gap-2 text-ui-label font-medium text-foreground">
+        <label className="flex items-center gap-2 text-ui-label font-medium text-foreground max-lg:min-h-11">
           <Checkbox
             checked={draft.enabled}
             disabled={!isOwner}
@@ -497,7 +497,7 @@ export function EmailSettingsPage() {
             size="sm"
             onClick={() => void save()}
             disabled={saveDisabled}
-            className="max-md:min-h-11"
+            className="max-lg:min-h-11"
             data-testid="admin-email-save"
           >
             {saving ? t("admin.email.saving") : t("admin.common.save")}
@@ -541,6 +541,7 @@ export function EmailSettingsPage() {
             disabled={!isOwner || testToError !== null || testing}
             onClick={() => void sendTest()}
             data-testid="admin-email-test-send"
+            className="max-lg:min-h-11"
           >
             {testing
               ? t("admin.email.test.sending")
@@ -586,7 +587,12 @@ export function EmailSettingsPage() {
           <p className="text-ui-meta text-muted-foreground">
             {t("admin.email.sandbox.note")}
           </p>
-          <Button size="sm" variant="outline" asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            asChild
+            className="max-lg:min-h-11"
+          >
             <a href={settings.webViewer.url} target="_blank" rel="noreferrer">
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               {t("admin.email.sandbox.open")}

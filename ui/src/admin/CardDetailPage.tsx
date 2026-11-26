@@ -565,7 +565,7 @@ export function CardDetailPage() {
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 shrink-0 max-sm:h-11 max-sm:w-11"
+          className="h-7 w-7 shrink-0 max-lg:h-11 max-lg:w-11"
           asChild
         >
           <Link

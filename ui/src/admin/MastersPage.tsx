@@ -586,7 +586,7 @@ export function MastersPage() {
                           type="button"
                           aria-label={t("admin.common.actions")}
                           data-testid={`admin-master-menu-${master.email}`}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
                         >
                           <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                         </button>
