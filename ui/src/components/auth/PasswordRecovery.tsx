@@ -138,6 +138,7 @@ export function PasswordRecovery({
                 invalidField === "recovery-email" ? "recovery-error" : undefined
               }
               data-testid="recovery-email"
+              className="max-lg:min-h-11"
               type="email"
               autoComplete="email"
               required
@@ -162,6 +163,7 @@ export function PasswordRecovery({
                 invalidField === "recovery-code" ? "recovery-error" : undefined
               }
               data-testid="recovery-code"
+              className="max-lg:min-h-11"
               autoComplete="one-time-code"
               required
               minLength={32}
@@ -184,6 +186,7 @@ export function PasswordRecovery({
                   : undefined
               }
               data-testid="recovery-password"
+              className="max-lg:min-h-11"
               type="password"
               autoComplete="new-password"
               required
@@ -207,6 +210,7 @@ export function PasswordRecovery({
                   : undefined
               }
               data-testid="recovery-confirm"
+              className="max-lg:min-h-11"
               type="password"
               autoComplete="new-password"
               required

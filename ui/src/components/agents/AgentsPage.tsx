@@ -89,11 +89,11 @@ const SECTIONS = ["attention", "sessions", "runs"] as const;
 
 /** Toolbar select trigger, matching the prototype `.select` control. */
 const TOOLBAR_SELECT_CLASS =
-  "min-h-11 w-auto min-w-0 gap-[6px] rounded-[5px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-ui-label max-md:gap-1 max-md:px-[5px] md:h-7 md:min-h-7";
+  "min-h-11 w-auto min-w-0 gap-[6px] rounded-[5px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-ui-label max-lg:gap-1 max-lg:px-[5px] lg:h-7 lg:min-h-7";
 
 /** Prototype `.btn-sm`: 28 px high, 13 px / 650, 6 px radius. */
 const SMALL_BUTTON_CLASS =
-  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-ui-label leading-none font-[650]";
+  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-ui-label leading-none font-[650] max-lg:h-11 max-lg:min-h-11";
 const SMALL_OUTLINE_CLASS = `${SMALL_BUTTON_CLASS} !bg-[color-mix(in_oklab,var(--surface)_65%,transparent)]`;
 const SMALL_PRIMARY_CLASS = `${SMALL_BUTTON_CLASS} !bg-[var(--agent-primary-strong)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)]`;
 
@@ -1166,8 +1166,8 @@ export function AgentsPage() {
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] min-[1600px]:max-w-[1200px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
-          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px] max-md:flex-wrap">
-            <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px] md:max-w-[390px]">
+          <header className="mb-3 flex items-start justify-between gap-3 max-lg:mb-[9px] max-lg:flex-wrap">
+            <div className="min-w-0 max-lg:min-w-[148px] max-lg:flex-1 max-lg:basis-[148px] lg:max-w-[390px]">
               <h2 className="font-agent-display text-ui-title font-bold leading-[1.2] tracking-[-0.025em]">
                 {t(`agents.shell.${section}`)}
               </h2>
@@ -1179,7 +1179,7 @@ export function AgentsPage() {
                     : t("agents.shell.runsDescription")}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-[7px] max-md:ml-auto max-md:flex-wrap max-md:justify-end">
+            <div className="flex shrink-0 items-center gap-[7px] max-lg:ml-auto max-lg:flex-wrap max-lg:justify-end">
               <span
                 className="hidden items-center gap-1.5 text-ui-meta text-muted-foreground sm:inline-flex"
                 data-testid="agents-updated"
@@ -1219,7 +1219,7 @@ export function AgentsPage() {
                   state.refreshing || (section === "runs" && runs.loading)
                 }
                 data-testid="agents-refresh"
-                className="h-7 min-h-0 gap-[6px] rounded-[6px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-ui-label leading-none font-[650] max-md:h-11 max-md:min-h-11"
+                className="h-7 min-h-0 gap-[6px] rounded-[6px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-ui-label leading-none font-[650] max-lg:h-11 max-lg:min-h-11"
               >
                 <RefreshCw
                   className={cn(
@@ -1239,7 +1239,7 @@ export function AgentsPage() {
                   size="sm"
                   onClick={openTokens}
                   data-testid="agents-manage-tokens"
-                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-ui-label leading-none font-[650] max-md:h-11 max-md:min-h-11"
+                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-ui-label leading-none font-[650] max-lg:h-11 max-lg:min-h-11"
                 >
                   {t("agents.shell.manageTokens")}
                 </Button>
@@ -1249,7 +1249,7 @@ export function AgentsPage() {
                   type="button"
                   onClick={clearRunFilters}
                   data-testid="agents-runs-clear-all"
-                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:min-h-11"
                 >
                   {t("agents.runs.clearAll")}
                 </button>
@@ -1275,7 +1275,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 rounded-[6px] border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] py-0 pr-[9px] pl-[27px] text-ui-body shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
+                    className="min-h-11 rounded-[6px] border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] py-0 pr-[9px] pl-[27px] text-ui-body shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 lg:h-[30px] lg:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -1394,7 +1394,7 @@ export function AgentsPage() {
                   type="button"
                   onClick={clearRunFilters}
                   data-testid="agents-toolbar-clear"
-                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:min-h-11"
                 >
                   {t("agents.clearFilters")}
                 </button>
@@ -1404,7 +1404,7 @@ export function AgentsPage() {
                 type="button"
                 onClick={clearFilters}
                 data-testid="agents-toolbar-clear"
-                className="ml-auto inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                className="ml-auto inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:min-h-11"
               >
                 {t("agents.clearFilters")}
               </button>

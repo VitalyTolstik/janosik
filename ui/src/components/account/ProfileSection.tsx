@@ -173,6 +173,7 @@ export function ProfileSection() {
             variant="outline"
             size="sm"
             data-testid="avatar-photo-upload"
+            className="max-lg:min-h-11"
             disabled={uploading}
             onClick={() => photoInputRef.current?.click()}
           >
@@ -181,7 +182,7 @@ export function ProfileSection() {
               ? t("account.profile.avatarUploading")
               : t("account.profile.avatarUpload")}
           </Button>
-          <p className="max-w-[12rem] text-center text-ui-micro text-muted-foreground">
+          <p className="max-w-[12rem] text-center text-ui-meta text-muted-foreground">
             {t("account.profile.avatarHint")}
           </p>
         </div>
@@ -198,7 +199,7 @@ export function ProfileSection() {
               title={t("account.profile.colorAuto")}
               onClick={() => setColor(null)}
               className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-foreground/40 text-foreground/70 transition-transform hover:scale-110",
+                "flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-foreground/40 text-foreground/70 transition-transform hover:scale-110 max-lg:relative max-lg:before:absolute max-lg:before:-inset-2 max-lg:before:content-['']",
                 color === null &&
                   "ring-2 ring-ring ring-offset-2 ring-offset-background",
               )}
@@ -214,7 +215,7 @@ export function ProfileSection() {
                 aria-pressed={color === key}
                 onClick={() => setColor(key)}
                 className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full text-white transition-transform hover:scale-110",
+                  "flex h-7 w-7 items-center justify-center rounded-full text-white transition-transform hover:scale-110 max-lg:relative max-lg:before:absolute max-lg:before:-inset-2 max-lg:before:content-['']",
                   avatarColorClass(key),
                   color === key &&
                     "ring-2 ring-ring ring-offset-2 ring-offset-background",
@@ -249,6 +250,7 @@ export function ProfileSection() {
             <Button
               type="submit"
               data-testid="account-profile-save"
+              className="max-lg:min-h-11"
               disabled={!dirty || saving}
             >
               {saving ? t("common.saving") : t("common.save")}
@@ -259,7 +261,7 @@ export function ProfileSection() {
           </p>
         </div>
 
-        <label className="flex items-start gap-2 text-ui-label text-muted-foreground">
+        <label className="flex items-start gap-2 text-ui-label text-muted-foreground max-lg:min-h-11 max-lg:items-center">
           <input
             type="checkbox"
             data-testid="account-notify-digest"
@@ -276,7 +278,7 @@ export function ProfileSection() {
           </span>
         </label>
 
-        <label className="flex items-start gap-2 text-ui-label text-muted-foreground">
+        <label className="flex items-start gap-2 text-ui-label text-muted-foreground max-lg:min-h-11 max-lg:items-center">
           <input
             type="checkbox"
             data-testid="account-notify-attention"
@@ -313,6 +315,7 @@ export function ProfileSection() {
               type="button"
               variant="outline"
               data-testid="account-email-change"
+              className="max-lg:min-h-11"
               onClick={() => setChangingEmail(true)}
             >
               {t("account.email.change")}

@@ -246,6 +246,7 @@ export function LoginPage() {
                   id="auth-display-name"
                   data-testid="login-display-name"
                   name="displayName"
+                  className="max-lg:min-h-11"
                   value={displayName}
                   maxLength={50}
                   autoComplete="name"
@@ -269,6 +270,7 @@ export function LoginPage() {
               data-testid="login-email"
               name="email"
               type="email"
+              className="max-lg:min-h-11"
               required
               autoFocus
               autoComplete="email"
@@ -291,6 +293,7 @@ export function LoginPage() {
               data-testid="login-password"
               name="password"
               type="password"
+              className="max-lg:min-h-11"
               required
               autoComplete={isRegister ? "new-password" : "current-password"}
               value={password}

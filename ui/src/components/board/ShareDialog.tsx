@@ -649,7 +649,7 @@ function TtlPicker({
           size="sm"
           aria-label={t("share.ttl.label")}
           data-testid="share-ttl"
-          className="h-8 min-w-[5.5rem] justify-between gap-1.5 px-2 font-normal"
+          className="h-8 min-w-[5.5rem] justify-between gap-1.5 px-2 font-normal max-lg:min-h-11"
         >
           {label(value)}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -828,7 +828,7 @@ function ShareForm({
                 variant={mode === option ? "default" : "outline"}
                 size="sm"
                 className={cn(
-                  "flex-1",
+                  "flex-1 max-lg:min-h-11",
                   mode === option && "bg-action-primary hover:bg-[#1d4ed8]",
                 )}
                 data-testid={`share-mode-${option}`}
@@ -868,7 +868,7 @@ function ShareForm({
       />
 
       <div className="flex flex-wrap items-center gap-4 text-ui-body">
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 max-lg:min-h-11">
           <Checkbox
             checked={includeComments}
             onCheckedChange={setIncludeComments}
@@ -876,7 +876,7 @@ function ShareForm({
           />
           {t("share.flag.comments")}
         </label>
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 max-lg:min-h-11">
           <Checkbox
             checked={includeAttachments}
             onCheckedChange={setIncludeAttachments}
@@ -932,7 +932,7 @@ function ShareForm({
         <Button
           type="button"
           className={cn(
-            "bg-action-primary hover:bg-[#1d4ed8]",
+            "bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11",
             editing ? "flex-1 gap-1.5" : "w-full gap-1.5",
           )}
           disabled={busy || shares === null || (!editing && count >= limit)}

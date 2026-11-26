@@ -1278,7 +1278,7 @@ describe("agent control (TASK-166.14)", () => {
 
     const policyLink = await screen.findByTestId("agent-open-policy");
     expect(screen.queryByTestId("agent-policy-tab")).toBeNull();
-    expect(screen.getByText("Agent policy ↗")).toBeInTheDocument();
+    expect(screen.getByText("Agent policy")).toBeInTheDocument();
     expect(policyLink).toHaveClass("ac-rail-link");
     expect(policyLink).toHaveTextContent("Open policy settings");
     await userEvent.click(policyLink);

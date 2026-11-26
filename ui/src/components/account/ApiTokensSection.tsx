@@ -311,7 +311,7 @@ export function ApiTokensSection() {
         <Button
           size="sm"
           data-testid="token-create"
-          className="bg-action-primary hover:bg-[#1d4ed8]"
+          className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4" aria-hidden />
@@ -481,7 +481,7 @@ export function ApiTokensSection() {
                       variant="outline"
                       size="sm"
                       data-testid="token-expiry"
-                      className="w-full justify-between font-normal"
+                      className="w-full justify-between font-normal max-lg:min-h-11"
                     >
                       {t(
                         EXPIRY_PRESETS.find((item) => item.id === preset)!
@@ -550,7 +550,7 @@ export function ApiTokensSection() {
                       size="sm"
                       data-testid="token-scope-preset"
                       aria-labelledby="token-create-scope-label token-create-scope-value"
-                      className="w-full justify-between font-normal"
+                      className="w-full justify-between font-normal max-lg:min-h-11"
                     >
                       <span id="token-create-scope-value">
                         {t(SCOPE_PRESET_LABELS[scopePreset])}

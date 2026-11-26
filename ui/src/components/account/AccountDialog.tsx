@@ -299,7 +299,7 @@ export function AccountDialog({
             <DialogDescription className="truncate text-ui-label">
               {user.email}
             </DialogDescription>
-            <p className="text-ui-micro text-muted-foreground/80">
+            <p className="text-ui-meta text-muted-foreground">
               {t("account.memberSince", {
                 date: formatDateOnly(user.createdAt, lang),
               })}

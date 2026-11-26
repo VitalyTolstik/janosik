@@ -422,6 +422,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 }
 
 .agent-control-surface .ac-rail-note {
+  flex: 0 0 auto;
   padding: 0 8px;
   font-size: 13px;
   line-height: 1.5;
@@ -434,10 +435,12 @@ html[lang="ru"] .agent-control-surface .ac-title {
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 2px;
+  white-space: nowrap;
 }
 
 .agent-control-surface .ac-rail-link {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   gap: 4px;
   min-height: 30px;
@@ -446,7 +449,6 @@ html[lang="ru"] .agent-control-surface .ac-title {
   font-size: 13px;
   color: var(--muted-foreground);
   text-align: left;
-  text-wrap: balance;
   line-height: 1.35;
   width: 100%;
   background: none;
@@ -803,7 +805,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   padding: 0 6px;
   border-radius: 4px;
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -820,7 +822,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 .agent-control-surface.ac-modal .seg .chip {
   height: 21px;
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -1040,6 +1042,21 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface.ac-modal {
     width: calc(100vw - 22px);
     height: min(722px, calc(100dvh - 70px - env(safe-area-inset-top)));
+  }
+}
+
+@media (max-width: 1023px) {
+  .agent-control-surface .ac-search .input {
+    height: 44px;
+  }
+
+  .agent-control-surface .ac-toolbar .seg .chip {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .agent-control-surface .ac-rail-tab {
+    min-height: 44px;
   }
 }
 

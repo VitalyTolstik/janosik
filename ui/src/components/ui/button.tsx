@@ -10,9 +10,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+          "bg-action-primary text-primary-foreground shadow-sm hover:bg-[color-mix(in_oklab,var(--action-primary)_88%,black)]",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "bg-action-danger text-destructive-foreground shadow-sm hover:bg-[color-mix(in_oklab,var(--action-danger)_88%,black)]",
         outline:
           "border border-input bg-transparent hover:bg-hover hover:text-foreground",
         secondary:
@@ -22,7 +22,7 @@ const buttonVariants = cva(
         /** Premium primary (owner call): a soft vertical gradient, a
          *  colored ring and a gentle lift — for the composer's Save. */
         premium:
-          "bg-gradient-to-b from-primary to-primary/85 text-primary-foreground shadow-sm ring-1 ring-inset ring-white/20 hover:from-primary hover:to-primary/80 hover:shadow-md active:scale-[0.98] transition-[box-shadow,filter,transform]",
+          "bg-gradient-to-b from-action-primary to-[color-mix(in_oklab,var(--action-primary)_85%,black)] text-primary-foreground shadow-sm ring-1 ring-inset ring-white/20 hover:from-[color-mix(in_oklab,var(--action-primary)_96%,black)] hover:to-[color-mix(in_oklab,var(--action-primary)_78%,black)] hover:shadow-md active:scale-[0.98] transition-[box-shadow,filter,transform]",
       },
       size: {
         default: "h-9 px-4 py-2",

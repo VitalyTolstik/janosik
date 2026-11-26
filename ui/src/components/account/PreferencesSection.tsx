@@ -78,9 +78,9 @@ export function PreferencesSection() {
               aria-pressed={theme === "light"}
               onClick={() => setTheme("light")}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-ui-label transition-colors",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-ui-label transition-colors max-lg:min-h-11",
                 theme === "light"
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-action-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -93,9 +93,9 @@ export function PreferencesSection() {
               aria-pressed={theme === "dark"}
               onClick={() => setTheme("dark")}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-ui-label transition-colors",
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-ui-label transition-colors max-lg:min-h-11",
                 theme === "dark"
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-action-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
