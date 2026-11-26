@@ -114,7 +114,7 @@ function Column({
       role="listbox"
       aria-label={label}
       onKeyDown={onKeyDown}
-      className="snap-y overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-1"
+      className="relative snap-y overflow-y-auto rounded-md border border-border/60 bg-muted/30 p-1"
       style={{ height: ROWS_VISIBLE * ROW_H_PX }}
     >
       {options.map(({ value, label: optionLabel, suffix }) => (
@@ -183,8 +183,8 @@ export function TimePickerTrigger({
       aria-expanded={active}
       onClick={onToggle}
       className={cn(
-        "inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-muted/50 px-2.5 text-ui-body tabular-nums transition-colors hover:border-primary/40 hover:text-primary",
-        active && "border-primary/40 text-primary",
+        "inline-flex h-8 items-center gap-2 rounded-md border border-border/70 bg-muted/50 px-2.5 text-ui-body tabular-nums transition-colors hover:border-primary/40 hover:text-(--tab-text)",
+        active && "border-primary/40 text-(--tab-text)",
       )}
     >
       <Clock className="h-3.5 w-3.5 opacity-70" aria-hidden />
