@@ -47,6 +47,7 @@ import {
 import { ComposerLabelPicker } from "@/components/board/ComposerLabelPicker";
 import { useToast } from "@/components/Toast";
 import { useCardLabels } from "@/hooks/use-card-labels";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useTouchDrag } from "@/hooks/use-touch-drag";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
@@ -295,6 +296,7 @@ export function CalendarView({
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
   const { t, tp, lang } = useI18n();
   const hour12 = useHour12();
+  const compactHeader = useMediaQuery("(max-width: 639px)");
   const toast = useToast();
   const locale = lang.startsWith("ru") ? ruLocale : undefined;
   const weekStartsOn = lang.startsWith("ru") ? 1 : 0;
@@ -844,6 +846,82 @@ export function CalendarView({
     );
   };
 
+  const scaleToggle = (
+    <div
+      role="group"
+      aria-label={t("view.calendar.scale")}
+      className="ml-1 inline-flex w-full items-center rounded-md border border-border/60 p-0.5 max-sm:ml-0 sm:w-auto"
+    >
+      <button
+        type="button"
+        aria-pressed={!isWeek}
+        onClick={() => setScale("month")}
+        className={cn(
+          "inline-flex items-center justify-center rounded px-2 py-0.5 text-ui-label font-medium transition-colors max-lg:min-h-11 max-sm:flex-1 max-lg:px-3",
+          !isWeek
+            ? "bg-primary/15 text-(--tab-text)"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {t("view.calendar.scaleMonth")}
+      </button>
+      <button
+        type="button"
+        aria-pressed={isWeek}
+        onClick={() => setScale("week")}
+        className={cn(
+          "inline-flex items-center justify-center rounded px-2 py-0.5 text-ui-label font-medium transition-colors max-lg:min-h-11 max-sm:flex-1 max-lg:px-3",
+          isWeek
+            ? "bg-primary/15 text-(--tab-text)"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {t("view.calendar.scaleWeek")}
+      </button>
+    </div>
+  );
+
+  const navigationCluster = (
+    <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 max-lg:h-11 max-lg:w-11"
+        aria-label={
+          isWeek ? t("view.calendar.prevWeek") : t("view.calendar.prev")
+        }
+        onClick={() => step(-1)}
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:px-3"
+        onClick={() =>
+          setAnchor(
+            isWeek
+              ? startOfWeek(new Date(), { weekStartsOn })
+              : startOfMonth(new Date()),
+          )
+        }
+      >
+        {t("view.calendar.today")}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 max-lg:h-11 max-lg:w-11"
+        aria-label={
+          isWeek ? t("view.calendar.nextWeek") : t("view.calendar.next")
+        }
+        onClick={() => step(1)}
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
       <header className="flex flex-wrap items-center gap-1 border-b border-border/60 px-2 py-2 sm:px-3">
@@ -856,81 +934,20 @@ export function CalendarView({
           locale={locale}
           onPick={stepTo}
         />
-        {/* Navigation cluster stays on the left: scale toggle, then the
-            arrows with "Today" between them; the right side keeps only
-            the helper text. */}
-        <div
-          role="group"
-          aria-label={t("view.calendar.scale")}
-          className="order-last ml-1 inline-flex w-full items-center rounded-md border border-border/60 p-0.5 max-sm:ml-0 sm:order-none sm:w-auto"
-        >
-          <button
-            type="button"
-            aria-pressed={!isWeek}
-            onClick={() => setScale("month")}
-            className={cn(
-              "inline-flex items-center justify-center rounded px-2 py-0.5 text-ui-label font-medium transition-colors max-lg:min-h-11 max-sm:flex-1 max-lg:px-3",
-              !isWeek
-                ? "bg-primary/15 text-(--tab-text)"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t("view.calendar.scaleMonth")}
-          </button>
-          <button
-            type="button"
-            aria-pressed={isWeek}
-            onClick={() => setScale("week")}
-            className={cn(
-              "inline-flex items-center justify-center rounded px-2 py-0.5 text-ui-label font-medium transition-colors max-lg:min-h-11 max-sm:flex-1 max-lg:px-3",
-              isWeek
-                ? "bg-primary/15 text-(--tab-text)"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t("view.calendar.scaleWeek")}
-          </button>
-        </div>
-        {/* The navigation cluster stays atomic: prev/Today/next move together
-            instead of letting one arrow wrap onto a second row at 390. */}
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 max-lg:h-11 max-lg:w-11"
-            aria-label={
-              isWeek ? t("view.calendar.prevWeek") : t("view.calendar.prev")
-            }
-            onClick={() => step(-1)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:px-3"
-            onClick={() =>
-              setAnchor(
-                isWeek
-                  ? startOfWeek(new Date(), { weekStartsOn })
-                  : startOfMonth(new Date()),
-              )
-            }
-          >
-            {t("view.calendar.today")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 max-lg:h-11 max-lg:w-11"
-            aria-label={
-              isWeek ? t("view.calendar.nextWeek") : t("view.calendar.next")
-            }
-            onClick={() => step(1)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* DOM order follows the mobile visual order (month → prev/Today/next
+            → scale) so Tab matches what the eye sees; desktop keeps the
+            month → scale → nav order. */}
+        {compactHeader ? (
+          <>
+            {navigationCluster}
+            {scaleToggle}
+          </>
+        ) : (
+          <>
+            {scaleToggle}
+            {navigationCluster}
+          </>
+        )}
         <div className="mr-auto" />
         {/* Helper text: the grid's main affordance is not obvious from
             the grid itself. */}

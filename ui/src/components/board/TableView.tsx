@@ -559,21 +559,21 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[52%] sm:w-40 md:w-auto lg:w-72"
+                className="w-[42%] min-[360px]:w-[52%] sm:w-40 md:w-auto lg:w-72"
               />
               <SortHeader
                 label={t("view.table.column")}
                 sortKey="column"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[26%] max-sm:px-2 sm:w-28 lg:w-40"
+                className="w-[30%] max-sm:px-2 min-[360px]:w-[26%] sm:w-28 lg:w-40"
               />
               <SortHeader
                 label={t("dueDate.label")}
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[22%] max-sm:px-2 sm:w-28 lg:w-48"
+                className="w-[28%] max-sm:px-2 min-[360px]:w-[22%] sm:w-28 lg:w-48"
               />
               <th
                 scope="col"
@@ -982,10 +982,7 @@ function TableRowBody({
                   }
                   className={cn(
                     "block truncate text-foreground/90 focus-visible:ring-2 focus-visible:ring-primary/40",
-                    !readOnly &&
-                      (selectionMode
-                        ? "pr-0"
-                        : "pr-14 sm:pr-9 sm:group-hover/title:pr-16"),
+                    !readOnly && (selectionMode ? "pr-0" : "pr-14 lg:pr-16"),
                   )}
                 >
                   <HighlightedText text={card.title} query={highlight ?? ""} />
@@ -1029,7 +1026,7 @@ function TableRowBody({
                       event.stopPropagation();
                       onArchiveConfirm(card.id);
                     }}
-                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100 max-sm:hidden"
+                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100 max-lg:hidden"
                   >
                     <Archive className="h-3.5 w-3.5" />
                   </button>
@@ -1044,7 +1041,7 @@ function TableRowBody({
                       event.stopPropagation();
                       openMenu();
                     }}
-                    className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 max-sm:right-1 max-sm:h-11 max-sm:w-11 max-lg:before:absolute max-lg:before:-inset-2.5 max-lg:before:content-[''] sm:right-9 sm:opacity-0 sm:group-hover/title:opacity-100"
+                    className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 max-lg:right-1 max-lg:h-11 max-lg:w-11 sm:opacity-0 sm:group-hover/title:opacity-100 lg:right-9"
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                   </button>
