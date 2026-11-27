@@ -13,7 +13,7 @@ test("create, rename, switch, archive, restore and delete boards across reloads"
   await expect(
     page.getByRole("heading", { name: "Roadmap board" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Rename board" }).click();
+  await page.getByTestId("board-title").click();
   await page.locator('[name="board-title-edit"]').fill("Renamed board");
   const renameSaved = page.waitForResponse(
     (response) =>

@@ -26,8 +26,12 @@ test("Data menu and Recently deleted stay usable at 390", async ({
   await openDataMenu(page);
   const exportItem = page.getByTestId("data-export-board");
   const deletedItem = page.getByTestId("data-deleted");
-  for (const item of [exportItem, deletedItem]) {
+  for (const [label, item] of [
+    ["Data export", exportItem],
+    ["Recently deleted", deletedItem],
+  ] as const) {
     await expect(item).toBeVisible();
+    await expectInsideViewport(item, label);
     const box = await item.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(44);
@@ -68,11 +72,12 @@ test("Data menu and dialog close targets are 44px at 768", async ({
   await board.open(page);
   await page.setViewportSize({ width: 768, height: 1024 });
   await openDataMenu(page);
-  for (const item of [
-    page.getByTestId("data-export-board"),
-    page.getByTestId("data-deleted"),
-  ]) {
+  for (const [label, item] of [
+    ["Data export", page.getByTestId("data-export-board")],
+    ["Recently deleted", page.getByTestId("data-deleted")],
+  ] as const) {
     await expect(item).toBeVisible();
+    await expectInsideViewport(item, label);
     const box = await item.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(44);

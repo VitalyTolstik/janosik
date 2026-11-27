@@ -4,10 +4,10 @@ import {
   breakStream,
   expectPresence,
   installStreamBreak,
-  presenceStack,
   resumeStream,
   streamAttempts,
 } from "@/helpers/collaboration.js";
+import { openPeople } from "@/helpers/header.js";
 import {
   cardDialog,
   cardTitle,
@@ -99,11 +99,21 @@ test("presence disappears within a minute after the other tab closes", async ({
   await partner.openBoard(partnerBrowser.page);
   await expectPresence(page, 2);
 
+  // Presence lives inside People now. Open it while the partner is still
+  // here, then prove the partner's row disappears (not merely that the
+  // always-present trigger does).
+  await openPeople(page);
+  const partnerRow = page
+    .getByTestId("people-presence-row")
+    .filter({ hasText: partner.user.email });
+  await expect(partnerRow).toBeVisible();
+
   const closedAt = Date.now();
   await partnerBrowser.context.close();
 
-  await expect(presenceStack(page)).toBeHidden({ timeout: 60_000 });
+  await expect(partnerRow).toBeHidden({ timeout: 60_000 });
   expect(Date.now() - closedAt).toBeLessThanOrEqual(60_000);
+  await expectPresence(page, 1);
 });
 
 test("a missed update is caught up when the stream resumes with since", async ({

@@ -195,6 +195,102 @@ test("board header keeps the title and Agents action usable at tablet widths", a
   }
 });
 
+test("a long board title keeps every header control hittable at 640–768", async ({
+  page,
+  board,
+}) => {
+  // The fixture's title is 42 characters: the old non-shrinking title kept
+  // its intrinsic width and pushed People/Agents under the right cluster.
+  expect(board.title.length).toBeGreaterThanOrEqual(40);
+  await board.open(page);
+
+  const undo = page.getByRole("button", { name: "Undo" });
+  const redo = page.getByRole("button", { name: "Redo" });
+  // Two UI actions, then undo one: both history controls are enabled, so
+  // their centre hit-test exercises a real target rather than a disabled
+  // button's pointer-events:none wrapper.
+  for (const name of ["Header probe one", "Header probe two"]) {
+    await page.getByRole("button", { name: "Add column", exact: true }).click();
+    await page.locator('[name="column-create"]').fill(name);
+    await page.locator('[name="column-create"]').press("Enter");
+    await expect(page.getByRole("group", { name, exact: true })).toBeVisible();
+  }
+  await undo.click();
+  await page.mouse.move(0, 0);
+  await expect(undo).toBeEnabled();
+  await expect(redo).toBeEnabled();
+  const search = page.getByRole("button", { name: "Global search" });
+  const people = page.getByTestId("people-trigger");
+  const agents = page.getByTestId("agent-control-trigger");
+  const boardMenu = page.getByTestId("board-menu-trigger");
+  const account = page.getByTestId("account-trigger");
+
+  for (const width of [640, 700, 721, 768, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const headerOverflow = await page
+      .locator("header")
+      .first()
+      .evaluate((header) => header.scrollWidth - header.clientWidth);
+    expect(headerOverflow, `header overflow at ${width}`).toBeLessThanOrEqual(
+      0,
+    );
+
+    const layout = await page.evaluate(() => {
+      const title = document.querySelector("header h1");
+      const agent = document.querySelector<HTMLElement>(
+        '[data-testid="agent-control-trigger"]',
+      );
+      return {
+        titleRight: title?.getBoundingClientRect().right ?? null,
+        agentLeft: agent?.getBoundingClientRect().left ?? null,
+      };
+    });
+    expect(layout.titleRight).not.toBeNull();
+    expect(layout.agentLeft).not.toBeNull();
+    expect(layout.titleRight!).toBeLessThanOrEqual(layout.agentLeft! + 1);
+
+    const expectHittable = async (
+      label: string,
+      control: import("@playwright/test").Locator,
+    ) => {
+      await expect(control, `${label} at ${width}`).toBeVisible();
+      const hitInside = await control.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        return hit !== null && element.contains(hit);
+      });
+      expect(hitInside, `${label} centre hit-test at ${width}`).toBe(true);
+      const box = await control.boundingBox();
+      expect(box, `${label} box at ${width}`).not.toBeNull();
+      expect(box!.x, `${label} left edge at ${width}`).toBeGreaterThanOrEqual(
+        -0.5,
+      );
+      expect(
+        box!.x + box!.width,
+        `${label} right edge at ${width}`,
+      ).toBeLessThanOrEqual(width + 0.5);
+    };
+
+    for (const [label, control] of [
+      ["Undo", undo],
+      ["Redo", redo],
+      ["People", people],
+      ["Agents", agents],
+      ["Board menu", boardMenu],
+      ["Account", account],
+    ] as const) {
+      await expectHittable(label, control);
+    }
+    if (width >= 721) await expectHittable("Global search", search);
+    else await expect(search).toBeHidden();
+  }
+});
+
 test("1024 sheet starts below the real board header", async ({
   page,
   board,

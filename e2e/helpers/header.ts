@@ -71,6 +71,12 @@ export async function openCardArchive(page: Page): Promise<Locator> {
 export async function openHelpMenu(page: Page): Promise<Locator> {
   await openBoardMenu(page);
   const trigger = page.getByTestId("board-menu-help");
+  if ((await trigger.count()) === 0) {
+    // Below `sm` the Help rows are inline in the Board menu.
+    const menu = page.getByRole("menu").first();
+    await expect(menu).toBeVisible();
+    return menu;
+  }
   if ((await trigger.getAttribute("aria-expanded")) !== "true") {
     await trigger.click();
   }

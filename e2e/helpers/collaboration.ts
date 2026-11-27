@@ -1,9 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { cardTitle, columnSection } from "@/helpers/history.js";
-import {
-  openMembers as openMembersFromHeader,
-  peopleTrigger,
-} from "@/helpers/header.js";
+import { openMembers as openMembersFromHeader } from "@/helpers/header.js";
 
 /** Shared UI steps for the two-account collaboration suite. */
 
@@ -229,11 +226,6 @@ export async function addCard(
   await expect(cardTitle(page, title)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(composer).toBeHidden();
-}
-
-/** The People entry itself is always present on a server board (H1). */
-export function presenceStack(page: Page): Locator {
-  return peopleTrigger(page);
 }
 
 /** Presence faces render inside the People trigger at ≥1024 px. */

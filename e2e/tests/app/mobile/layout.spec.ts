@@ -3,6 +3,7 @@ import { type Locator, type Page } from "@playwright/test";
 import { expect, test } from "@/fixtures/board.js";
 import { openDataMenu } from "@/helpers/data.js";
 import {
+  openBoardMenu,
   openBoardSettings,
   openCardArchive,
   openMembers,
@@ -191,6 +192,39 @@ test("undo and the data menu are touch-reachable on the phone", async ({
   ).toBeVisible();
 });
 
+test("Board menu Data, Help and Archive stay inside the phone viewport", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  await openBoardMenu(page);
+
+  // Below `sm` these groups are inline because a nested 256 px submenu
+  // cannot fit beside the root menu; every row must be fully on screen.
+  await expect(page.getByTestId("board-menu-data")).toHaveCount(0);
+  await expect(page.getByTestId("board-menu-help")).toHaveCount(0);
+  for (const [testId, label] of [
+    ["data-export-board", "Data export"],
+    ["data-deleted", "Recently deleted"],
+    ["data-workflow-rules", "Workflow rules"],
+    ["board-menu-archive", "Card archive"],
+    ["help-shortcuts", "Keyboard shortcuts"],
+    ["help-docs", "Documentation"],
+  ] as const) {
+    const item = page.getByTestId(testId);
+    await expect(item, label).toBeVisible();
+    await expectInsideViewport(item, label);
+    await expectTouchTarget(item);
+  }
+
+  await page.getByTestId("data-deleted").tap();
+  const dialog = page.getByRole("dialog", { name: "Recently deleted" });
+  await expect(dialog).toBeVisible();
+  await expectInsideViewport(dialog, "recently deleted");
+  await dialog.getByRole("button", { name: "Close", exact: true }).tap();
+  await expect(dialog).toBeHidden();
+});
+
 test("the card archive is reachable on the phone and restores a card", async ({
   page,
   board,
@@ -263,6 +297,23 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(page.getByTestId("board-members-box")).toBeVisible();
   await members.getByRole("button", { name: "Close", exact: true }).tap();
   await expect(members).toBeHidden();
+
+  // Closing Members returns focus to People; its tooltip must not swallow
+  // the very next tap on the Board menu.
+  const boardMenu = page.getByTestId("board-menu-trigger");
+  const boardMenuHit = await boardMenu.evaluate((trigger) => {
+    const rect = trigger.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    return hit !== null && trigger.contains(hit);
+  });
+  expect(boardMenuHit).toBe(true);
+  await boardMenu.tap();
+  await expect(page.getByRole("menu").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu").first()).toBeHidden();
 
   // Share link.
   const share = await openShare(page);
