@@ -55,6 +55,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { BreakableText } from "@/components/ui/breakable-text";
 import {
   formatDateOnly,
   formatTime,
@@ -829,7 +830,7 @@ export function BoardMembersPanel({
                     data-testid="board-member-open"
                     aria-label={t("profile.open", { name: label })}
                     onClick={() => openProfile(member.userId)}
-                    className="flex w-full min-w-0 flex-1 items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80 sm:w-auto"
+                    className="flex w-full min-w-0 basis-full items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80 sm:w-auto sm:flex-1 sm:basis-0"
                   >
                     <UserAvatar
                       userId={member.userId}
@@ -839,21 +840,27 @@ export function BoardMembersPanel({
                       avatarPath={member.avatarPath}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="flex min-w-0 items-center gap-1.5 truncate text-ui-body font-medium">
-                        <span className="truncate">{label}</span>
+                      <p className="flex min-w-0 items-center gap-1.5 text-ui-body font-medium">
+                        <span className="min-w-0 break-words">
+                          <BreakableText text={label} />
+                        </span>
                         {member.userId === user?.id ? (
-                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-ui-micro font-normal text-muted-foreground">
+                          <span className="shrink-0 whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-ui-micro font-normal text-muted-foreground">
                             {t("board.members.you")}
                           </span>
                         ) : null}
                       </p>
-                      <p className="truncate text-ui-label text-muted-foreground">
-                        {member.email}
+                      <p
+                        data-testid="board-member-email"
+                        className="break-words text-ui-label text-muted-foreground"
+                      >
+                        <BreakableText text={member.email} />
                       </p>
                       {member.role === "VIEWER" ? (
                         <p
+                          data-testid="board-member-expiry"
                           className={cn(
-                            "truncate text-ui-label",
+                            "break-words text-ui-label",
                             expired ? "text-danger" : "text-muted-foreground",
                           )}
                         >

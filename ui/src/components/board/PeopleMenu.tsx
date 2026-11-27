@@ -76,31 +76,40 @@ export function PeopleMenu() {
               data-testid="people-trigger"
               className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
             >
-              <span className="hidden items-center lg:flex">
-                {visible.length === 0 ? (
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  visible.map((person, index) => (
-                    <span
-                      key={person.id}
-                      data-testid="people-avatar"
-                      className={cn(
-                        "janosik-presence-in",
-                        index > 0 && "-ml-2",
-                      )}
-                    >
-                      <UserAvatar
-                        userId={person.id}
-                        displayName={person.displayName}
-                        email=""
-                        color={person.avatarColor}
-                        avatarPath={person.avatarPath}
-                        size="sm"
-                        className="ring-2 ring-background"
-                      />
-                    </span>
-                  ))
-                )}
+              {/* The presence faces are decorative here: the People icon and
+                  the button's accessible name identify the control, so the
+                  avatar initials never read as a second account (H5). */}
+              <Users
+                className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span
+                aria-hidden="true"
+                data-testid="people-presence-group"
+                className="hidden items-center lg:flex"
+              >
+                {visible.length === 0
+                  ? null
+                  : visible.map((person, index) => (
+                      <span
+                        key={person.id}
+                        data-testid="people-avatar"
+                        className={cn(
+                          "janosik-presence-in",
+                          index > 0 && "-ml-2",
+                        )}
+                      >
+                        <UserAvatar
+                          userId={person.id}
+                          displayName={person.displayName}
+                          email=""
+                          color={person.avatarColor}
+                          avatarPath={person.avatarPath}
+                          size="sm"
+                          className="ring-2 ring-background"
+                        />
+                      </span>
+                    ))}
                 {overflow > 0 ? (
                   <span
                     data-testid="people-overflow"
@@ -110,10 +119,6 @@ export function PeopleMenu() {
                   </span>
                 ) : null}
               </span>
-              <Users
-                className="h-[18px] w-[18px] text-muted-foreground lg:hidden"
-                aria-hidden
-              />
               <span
                 aria-hidden="true"
                 data-testid="people-live-dot"

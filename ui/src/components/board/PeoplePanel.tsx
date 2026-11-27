@@ -4,6 +4,7 @@ import type { BoardRole } from "@janosik/shared";
 
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardPeople } from "@/hooks/use-board-people";
+import { BreakableText } from "@/components/ui/breakable-text";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useI18n, type MessageKey } from "@/i18n";
@@ -118,10 +119,15 @@ export function PeoplePanel({ boardId }: { boardId: string }) {
                     avatarPath={member.avatarPath}
                     size="sm"
                   />
-                  <span className="min-w-0 flex-1 break-words">
-                    {userLabel(member.displayName, member.email)}
+                  <span
+                    className="min-w-0 flex-1 break-words"
+                    title={userLabel(member.displayName, member.email)}
+                  >
+                    <BreakableText
+                      text={userLabel(member.displayName, member.email)}
+                    />
                     {user?.id === member.userId ? (
-                      <span className="ml-1 text-ui-label text-muted-foreground">
+                      <span className="ml-1 whitespace-nowrap text-ui-label text-muted-foreground">
                         ({t("board.members.you")})
                       </span>
                     ) : null}

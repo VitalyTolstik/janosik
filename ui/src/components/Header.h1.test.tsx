@@ -480,6 +480,25 @@ describe("H1 header: People + Board menu", () => {
     );
   });
 
+  it("keeps the People presence faces decorative and leaves the account entry distinct", async () => {
+    const server = new FakeServer([board]);
+    server.initialPresence = [ADMIN, BORIS];
+    renderHeader(server);
+
+    const people = await screen.findByTestId("people-trigger");
+    await waitFor(() =>
+      expect(people).toHaveAccessibleName("People — 2 people on this board"),
+    );
+    // The avatar stack is grouped under the People icon and hidden from the
+    // accessibility tree: it must never compete with the account trigger.
+    const group = screen.getByTestId("people-presence-group");
+    expect(group).toHaveAttribute("aria-hidden", "true");
+    expect(within(people).getAllByTestId("people-avatar")).toHaveLength(2);
+    expect(within(people).queryByTestId("people-overflow")).toBeNull();
+    expect(within(people).queryByText("Admin")).toBeNull();
+    expect(screen.getByTestId("account-trigger")).toHaveAccessibleName(/Admin/);
+  });
+
   it("opens members and share from People and returns focus to the trigger", async () => {
     renderHeader(new FakeServer([board]));
     await openPeople();

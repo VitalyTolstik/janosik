@@ -117,6 +117,9 @@ for (const width of [390, 1024]) {
           "aria-expanded",
           "false",
         );
+        // The sheet closed before the editor opened, so its "Open full card"
+        // button is gone; the toggle is the panel's surviving doorway (H5).
+        await expect(page.locator(inspectorToggle)).toBeFocused();
       } else {
         await expect(panel).toBeVisible();
         await expect(panel).toBeFocused();

@@ -783,14 +783,17 @@ function AssigneeBadge({
           }}
           className="shrink-0 rounded-full transition-transform hover:scale-110"
         >
-          <UserAvatar
-            userId={member?.userId ?? assigneeId}
-            displayName={member?.displayName ?? null}
-            email={member?.email ?? ""}
-            color={member?.avatarColor}
-            avatarPath={member?.avatarPath}
-            size="sm"
-          />
+          {/* The initials are decorative; the button name is "Assigned to…". */}
+          <span aria-hidden="true" className="inline-flex">
+            <UserAvatar
+              userId={member?.userId ?? assigneeId}
+              displayName={member?.displayName ?? null}
+              email={member?.email ?? ""}
+              color={member?.avatarColor}
+              avatarPath={member?.avatarPath}
+              size="sm"
+            />
+          </span>
         </button>
       </TooltipTrigger>
       <TooltipContent>{t("card.assignee.assignedTo", { name })}</TooltipContent>

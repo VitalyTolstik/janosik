@@ -98,6 +98,13 @@ export function BoardSection({
   InspectorSlot,
 }: { InspectorSlot?: ComponentType<BoardInspectorSlotProps> } = {}) {
   const inspector = useBoardInspector();
+  // Read by handleCardClick without making the callback depend on every
+  // panel state change; the 390 sheet is gone by the time its card closes.
+  const inspectorRef = useRef(inspector);
+  useEffect(() => {
+    inspectorRef.current = inspector;
+  }, [inspector]);
+  const cardReturnFocusRef = useRef<HTMLElement | null>(null);
   const {
     board,
     roleOf,
@@ -424,6 +431,12 @@ export function BoardSection({
   ]);
   const handleCardClick = useCallback(
     (cardId: string) => {
+      // The 390 sheet closes before the editor mounts, taking the peek's
+      // "Open full card" button with it. Remember the inspector toggle so
+      // closing the editor returns focus to the panel's doorway (H5).
+      const panel = inspectorRef.current;
+      cardReturnFocusRef.current =
+        panel?.mode === "sheet" && panel.open ? panel.triggerRef.current : null;
       setOpenCardId(cardId);
       // A history push, not a replace: Back then closes the dialog. The
       // functional update keeps this callback stable across URL changes, so
@@ -642,6 +655,7 @@ export function BoardSection({
             readOnly={readOnly}
             focusCommentId={focusCommentId}
             focusAttachmentId={focusAttachmentId}
+            returnFocusRef={cardReturnFocusRef}
             onOpenChange={(open) => {
               if (!open) closeCard();
             }}

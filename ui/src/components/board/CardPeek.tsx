@@ -9,6 +9,7 @@ import {
 } from "@janosik/shared";
 
 import { Button } from "@/components/ui/button";
+import { BreakableText } from "@/components/ui/breakable-text";
 import { formatDate, useHour12, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoardActions, useBoardState } from "@/store/BoardContext";
@@ -119,9 +120,11 @@ function CardSummary({
     : "";
 
   return (
-    <section className="space-y-5 p-4 [overflow-wrap:anywhere]">
+    <section className="space-y-5 p-4">
       <div className="space-y-2">
-        <h3 className="text-ui-title font-semibold">{card.title}</h3>
+        <h3 className="break-words text-ui-title font-semibold">
+          {card.title}
+        </h3>
         {labels.length > 0 ? (
           <ul
             aria-label={t("view.table.labels")}
@@ -139,7 +142,7 @@ function CardSummary({
                     LABEL_COLOR_DOT[label.color],
                   )}
                 />
-                <span className="min-w-0">{label.name}</span>
+                <span className="min-w-0 break-words">{label.name}</span>
               </li>
             ))}
           </ul>
@@ -174,7 +177,9 @@ function CardSummary({
             <dt className="mb-0.5 text-ui-label text-muted-foreground">
               {label}
             </dt>
-            <dd>{value}</dd>
+            <dd className="break-words" title={String(value)}>
+              <BreakableText text={String(value)} />
+            </dd>
           </div>
         ))}
       </dl>

@@ -71,6 +71,68 @@ describe("CardItem title clamping", () => {
   });
 });
 
+describe("CardItem peek selection", () => {
+  it("selects on click, opens on double-click and Enter, and lets bulk selection win", () => {
+    const onClick = vi.fn();
+    const onSelectPeek = vi.fn();
+    const onToggleSelect = vi.fn();
+    const card = { ...baseCard, title: "Selection card" };
+
+    const { rerender } = render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={card}
+            labels={[]}
+            onClick={onClick}
+            onSelectPeek={onSelectPeek}
+            readOnly
+            peekSelected
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    const article = screen.getByTestId("card-title").closest("article")!;
+
+    fireEvent.click(article);
+    expect(onSelectPeek).toHaveBeenCalledExactlyOnceWith(card.id);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(article).toHaveAttribute("aria-current", "true");
+
+    fireEvent.doubleClick(article);
+    expect(onClick).toHaveBeenCalledExactlyOnceWith(card.id);
+
+    fireEvent.keyDown(article, { key: "Enter" });
+    expect(onClick).toHaveBeenCalledTimes(2);
+
+    fireEvent.keyDown(article, { key: " " });
+    expect(onClick).toHaveBeenCalledTimes(3);
+
+    onSelectPeek.mockClear();
+    rerender(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={card}
+            labels={[]}
+            onClick={onClick}
+            onSelectPeek={onSelectPeek}
+            onToggleSelect={onToggleSelect}
+            selectionMode
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    onClick.mockClear();
+    fireEvent.click(article, { shiftKey: true });
+    expect(onToggleSelect).toHaveBeenCalledExactlyOnceWith(card.id, true);
+    expect(onSelectPeek).not.toHaveBeenCalled();
+    expect(onClick).not.toHaveBeenCalled();
+    fireEvent.doubleClick(article);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
 describe("CardItem fixed tile layout", () => {
   it("renders every card at the same fixed size", () => {
     renderCard();
@@ -536,9 +598,18 @@ describe("assignee badge (TASK-49)", () => {
     renderWithLive(live, { ...baseCard, assigneeId: "u-boris" });
 
     expect(screen.getByTestId("card-assignee")).toBeInTheDocument();
+    expect(screen.getByTestId("card-assignee")).toHaveAccessibleName(
+      "Assigned to Boris",
+    );
     expect(screen.getByTestId("user-avatar")).toHaveAttribute(
       "aria-label",
       "Boris",
+    );
+    // The initials are decorative; hiding them keeps the visible text out of
+    // the button name and clears axe label-content-name-mismatch (H5).
+    expect(screen.getByTestId("user-avatar").parentElement).toHaveAttribute(
+      "aria-hidden",
+      "true",
     );
   });
 

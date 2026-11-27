@@ -324,6 +324,30 @@ describe("board inspector", () => {
     expect(inspector).toBeVisible();
   });
 
+  it("keeps a VIEWER's read-only roster and hides sharing/invites", async () => {
+    const server = new FakeServer([board]);
+    server.role = "VIEWER";
+    server.membersByBoard.set(board.id, [member("user-1", "ADMIN")]);
+    const user = await setup(768, server);
+    await user.click(screen.getByRole("button", { name: "Show people panel" }));
+    const inspector = screen.getByRole("dialog", { name: "Inspector" });
+    const members = await within(inspector).findByRole("button", {
+      name: "Members",
+    });
+    expect(
+      within(inspector).queryByRole("button", { name: "Share" }),
+    ).toBeNull();
+    await user.click(members);
+    const dialog = await screen.findByTestId("board-members-box");
+    expect(within(dialog).queryByTestId("board-members-invite")).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Role of user-1" }),
+    ).toBeNull();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(members).toHaveFocus());
+    expect(inspector).toBeVisible();
+  });
+
   it("shows an archived roster without admin dialog actions or live presence", async () => {
     const server = new FakeServer([
       {
