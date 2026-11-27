@@ -320,9 +320,60 @@ jobs:
           jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
           jq -e 'all(.[]; .result == "success")' <<< "$NEEDS"
 
+  e2e-image:
+    if: >-
+      github.repository == 'VitalyTolstik/janosik' &&
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login != 'dependabot[bot]'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A registry/build failure leaves the browser checks on their local build path.
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: write
+    env:
+      E2E_IMAGE_TAG: ghcr.io/vitalytolstik/janosik-e2e:ci-${{ github.event.pull_request.head.sha || github.sha }}
+    outputs:
+      # Different PR merge commits can share a head tag.
+      image: ${{ steps.build.conclusion == 'success' && steps.build.outputs.digest && format('{0}@{1}', env.E2E_IMAGE_TAG, steps.build.outputs.digest) || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push e2e image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.E2E_IMAGE_TAG }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=janosik-e2e-amd64
+          cache-to: type=gha,mode=max,scope=janosik-e2e-amd64,ignore-error=true
+
   browser-e2e-shard:
+    needs: e2e-image
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -355,6 +406,9 @@ jobs:
         run: npx playwright install --with-deps chrome
       - name: Run browser tests
         id: browser_tests
+        env:
+          E2E_IMAGE: ${{ needs.e2e-image.outputs.image }}
+          E2E_GHCR_TOKEN: ${{ needs.e2e-image.outputs.image && secrets.GITHUB_TOKEN || '' }}
         run: npm run test:docker -w e2e -- --shard=${{ matrix.shard }}/4
       - name: Upload browser report and traces
         if: failure() && steps.browser_tests.outcome == 'failure'
@@ -367,8 +421,13 @@ jobs:
           if-no-files-found: ignore
 
   browser-e2e-no-mail:
+    needs: e2e-image
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
     env:
       E2E_PORT: 4300
       E2E_MAIL_PORT: 4802
@@ -385,6 +444,8 @@ jobs:
         id: browser_tests_no_mail
         env:
           E2E_MAIL_DISABLED_TEST: "1"
+          E2E_IMAGE: ${{ needs.e2e-image.outputs.image }}
+          E2E_GHCR_TOKEN: ${{ needs.e2e-image.outputs.image && secrets.GITHUB_TOKEN || '' }}
         run: npm run test:docker -w e2e
       - name: Upload browser report and traces (email disabled)
         if: failure() && steps.browser_tests_no_mail.outcome == 'failure'
@@ -412,8 +473,13 @@ jobs:
           jq -e 'all(.[]; .result == "success")' <<< "$NEEDS"
 
   browser-e2e-admin-core:
+    needs: e2e-image
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -440,6 +506,8 @@ jobs:
         run: npx playwright install --with-deps chrome
       - name: Admin core (owner + operator paths)
         env:
+          E2E_IMAGE: ${{ needs.e2e-image.outputs.image }}
+          E2E_GHCR_TOKEN: ${{ needs.e2e-image.outputs.image && secrets.GITHUB_TOKEN || '' }}
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-admin-core
         run: npm run test:admin -w e2e -- --shard=${{ matrix.shard }}/2
       - name: Upload admin core report
@@ -453,8 +521,13 @@ jobs:
           if-no-files-found: ignore
 
   browser-e2e-admin-global:
+    needs: e2e-image
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
     env:
       E2E_PORT: 4370
       E2E_MAIL_PORT: 4870
@@ -469,6 +542,8 @@ jobs:
         run: npx playwright install --with-deps chrome
       - name: Admin global (own disposable stack, one worker)
         env:
+          E2E_IMAGE: ${{ needs.e2e-image.outputs.image }}
+          E2E_GHCR_TOKEN: ${{ needs.e2e-image.outputs.image && secrets.GITHUB_TOKEN || '' }}
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-admin-global
         run: npm run test:admin:global -w e2e
       - name: Upload admin global report

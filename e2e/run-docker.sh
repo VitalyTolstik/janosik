@@ -23,20 +23,50 @@ JANOSIK_IMAGE=janosik-e2e-local
 JANOSIK_TAG=$project
 EOF
 
-compose() {
+docker_cli() {
   env -i PATH="$PATH" HOME="$HOME" DOCKER_HOST="${DOCKER_HOST:-}" \
-    DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" \
-    docker compose --env-file "$temp_dir/compose.env" --project-name "$project" \
-      -f "$root/docker-compose.yml" -f "$root/e2e/docker-compose.e2e.yml" "$@"
+    DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" docker "$@"
+}
+compose() {
+  docker_cli compose --env-file "$temp_dir/compose.env" --project-name "$project" \
+    -f "$root/docker-compose.yml" -f "$root/e2e/docker-compose.e2e.yml" "$@"
 }
 cleanup() {
   compose down --volumes --remove-orphans || true
-  docker image rm "janosik-e2e-local:$project" >/dev/null 2>&1 || true
+  docker_cli image rm "janosik-e2e-local:$project" >/dev/null 2>&1 || true
   rm -rf "$temp_dir"
 }
 trap cleanup EXIT
 
-compose up --build --detach --wait --wait-timeout 240
+pull_prebuilt() {
+  local auth_dir="$temp_dir/ghcr"
+  local -a docker_args=()
+  if [[ "$E2E_IMAGE" == ghcr.io/* && -n "${E2E_GHCR_TOKEN:-}" ]]; then
+    # Keep the CI login in this run's temp dir, outside Docker's credential store.
+    mkdir "$auth_dir" || return 1
+    printf '{"auths":{"ghcr.io":{}}}\n' > "$auth_dir/config.json" || return 1
+    docker_args=(--config "$auth_dir")
+    printf '%s\n' "$E2E_GHCR_TOKEN" | docker_cli "${docker_args[@]}" login ghcr.io \
+      --username "${GITHUB_ACTOR:-}" --password-stdin || return 1
+  fi
+  docker_cli "${docker_args[@]}" pull -- "$E2E_IMAGE"
+}
+
+build_flag=--build
+if [[ -n "${E2E_IMAGE:-}" ]]; then
+  if pull_prebuilt &&
+    platform=$(docker_cli image inspect --format '{{.Os}}/{{.Architecture}}' -- "$E2E_IMAGE") &&
+    [[ "$platform" == linux/amd64 ]]; then
+    printf 'E2E_IMAGE=%s\nE2E_PULL_POLICY=never\n' "$E2E_IMAGE" >> "$temp_dir/compose.env"
+    build_flag=--no-build
+    echo "Using prebuilt e2e image $E2E_IMAGE"
+  else
+    echo "Could not log in, pull, or verify prebuilt e2e image $E2E_IMAGE. Falling back to a local Docker build." >&2
+  fi
+  rm -rf "$temp_dir/ghcr"
+fi
+unset E2E_GHCR_TOKEN
+compose up "$build_flag" --detach --wait --wait-timeout 240
 compose exec -T -e ADMIN_PASSWORD=e2e-master-password app \
   node /app/backend/scripts/admin-cli.cjs create --email master@e2e.example --owner
 export E2E_SITE_URL="http://127.0.0.1:$port/"
