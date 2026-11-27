@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { isOverlayOpen } from "./overlay";
+import { findOpenOverlay, isOverlayOpen } from "./overlay";
 
 /** The overlay guard shared by the board, filter and help shortcuts. */
 describe("isOverlayOpen", () => {
@@ -70,5 +70,22 @@ describe("isOverlayOpen", () => {
 
     dialog.setAttribute("data-state", "open");
     expect(isOverlayOpen()).toBe(true);
+  });
+
+  it("finds the top portalled surface and skips hidden and closing overlays", () => {
+    document.body.innerHTML = `
+      <div id="card" role="dialog" data-state="open">
+        <div role="listbox" data-state="open"></div>
+      </div>
+      <div id="menu" role="menu" data-state="open"></div>
+      <div role="dialog" data-state="closed"></div>
+      <div aria-hidden="true"><div role="dialog" data-state="open"></div></div>
+      <div hidden><div role="listbox"></div></div>
+    `;
+
+    const menu = document.getElementById("menu");
+    expect(findOpenOverlay()).toBe(menu);
+    menu?.remove();
+    expect(findOpenOverlay()).toBe(document.getElementById("card"));
   });
 });

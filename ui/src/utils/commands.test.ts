@@ -64,20 +64,14 @@ describe("command capabilities", () => {
     ]);
   });
 
-  it("only lists actions that have a capability, including the H3 Panel action", () => {
+  it("only lists actions that have a capability", () => {
     const openFilters = vi.fn();
-    const openPanel = vi.fn();
     const available = boardCommands((key) => englishCatalog[key], [], vi.fn(), {
       openFilters,
     });
     expect(available.map(({ id }) => id)).toEqual(["openFilters"]);
     if ("run" in available[0]) available[0].run();
     expect(openFilters).toHaveBeenCalledOnce();
-
-    const withPanel = boardCommands((key) => englishCatalog[key], [], vi.fn(), {
-      openPanel,
-    });
-    expect(withPanel.map(({ id }) => id)).toEqual(["openPanel"]);
   });
 
   it("keeps the command catalog in sync across EN and RU", () => {

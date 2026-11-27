@@ -149,6 +149,7 @@ export function Header() {
     (people.boardId !== settingsBoardId ||
       people.archived !== archived ||
       people.role !== role ||
+      (people.dialog === "members" && !showMembers) ||
       (people.dialog === "share" && !showShare))
   ) {
     setPeople(null);
@@ -189,6 +190,12 @@ export function Header() {
     if (previousBoardId === null) return;
     if (!isBoardRoute) {
       settingsBoardRef.current = null;
+      requestAnimationFrame(() => {
+        if (document.activeElement === document.body) {
+          const brand = brandRef.current;
+          if (!brand?.closest('[aria-hidden="true"], [inert]')) brand?.focus();
+        }
+      });
       return;
     }
     // Still between aggregates: wait for the target board, so the gear/title

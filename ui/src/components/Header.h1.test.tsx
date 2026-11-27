@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,9 +7,13 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Board, PresenceUser } from "@janosik/shared";
+import {
+  MAX_IMPORT_BYTES,
+  type Board,
+  type PresenceUser,
+} from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
@@ -32,6 +37,20 @@ const board: Board = {
   createdAt: 1,
   updatedAt: 1,
 };
+const boardWithCard: Board = {
+  ...board,
+  columns: [{ id: "col-1", title: "Todo", cardIds: ["card-1"], createdAt: 1 }],
+  cards: {
+    "card-1": {
+      id: "card-1",
+      title: "Archived card",
+      labelIds: [],
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  },
+};
+const otherBoard: Board = { ...board, id: "board-2", title: "Release board" };
 
 const ADMIN: PresenceUser = {
   id: "user-1",
@@ -48,22 +67,31 @@ const BORIS: PresenceUser = {
 
 function renderHeader(server: FakeServer, path = "/board/board-1") {
   vi.stubGlobal("fetch", server.handle);
-  return render(
+  const router = createMemoryRouter(
+    [
+      {
+        path: "*",
+        element: (
+          <AuthProvider>
+            <BoardProvider>
+              <UserProfileProvider boardId="board-1">
+                <Header />
+              </UserProfileProvider>
+            </BoardProvider>
+          </AuthProvider>
+        ),
+      },
+    ],
+    { initialEntries: [path] },
+  );
+  render(
     <ThemeProvider>
       <BoardBackgroundProvider>
         <BoardGlassProvider>
           <I18nProvider>
             <TooltipProvider>
               <ToastProvider>
-                <MemoryRouter initialEntries={[path]}>
-                  <AuthProvider>
-                    <BoardProvider>
-                      <UserProfileProvider boardId="board-1">
-                        <Header />
-                      </UserProfileProvider>
-                    </BoardProvider>
-                  </AuthProvider>
-                </MemoryRouter>
+                <RouterProvider router={router} />
               </ToastProvider>
             </TooltipProvider>
           </I18nProvider>
@@ -71,6 +99,7 @@ function renderHeader(server: FakeServer, path = "/board/board-1") {
       </BoardBackgroundProvider>
     </ThemeProvider>,
   );
+  return router;
 }
 
 async function openPeople() {
@@ -108,6 +137,19 @@ async function typeCommand(query: string) {
     `>${query}`,
   );
   return user;
+}
+
+async function openSettings() {
+  await openBoardMenu();
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Board settings" }),
+  );
+  return screen.findByTestId("board-settings-dialog");
+}
+
+function publishRole(server: FakeServer, role: "ADMIN" | "VIEWER") {
+  server.role = role;
+  server.publishMembership(board.id, server.account.id, "updated");
 }
 
 beforeEach(() => {
@@ -148,7 +190,7 @@ describe("header command capabilities", () => {
     const user = await typeCommand("");
     expect(screen.getByRole("option", { name: "Members" })).toBeVisible();
     expect(
-      screen.queryByRole("option", { name: /Share|Settings|Panel/i }),
+      screen.queryByRole("option", { name: /Share|Settings/i }),
     ).toBeNull();
     await user.keyboard("backups{Enter}");
     const data = await screen.findByRole("menu", { name: "Data & backups" });
@@ -157,11 +199,257 @@ describe("header command capabilities", () => {
     ).toBeVisible();
     expect(within(data).queryByTestId("data-deleted")).toBeNull();
   });
+
+  it.each([
+    {
+      scenario: "archived ADMIN",
+      archived: true,
+      allowPublicShares: true,
+      expected: ["Data & backups"],
+    },
+    {
+      scenario: "public shares disabled",
+      archived: false,
+      allowPublicShares: false,
+      expected: ["Members", "Board settings", "Data & backups"],
+    },
+  ])(
+    "matches the People and Board menus for $scenario",
+    async ({ archived, allowPublicShares, expected }) => {
+      vi.spyOn(api, "authConfig").mockResolvedValue({
+        allowRegistration: true,
+        allowPublicShares,
+        limits: { boards: null, importBytes: MAX_IMPORT_BYTES },
+      });
+      const server = new FakeServer([
+        archived ? { ...boardWithCard, archivedAt: 1_700_000 } : board,
+      ]);
+      renderHeader(server, archived ? "/board/board-1?card=card-1" : undefined);
+      await openPeople();
+      const people = await screen.findByRole("menu", { name: "People" });
+      expect(
+        within(people)
+          .queryAllByRole("menuitem")
+          .map((item) => item.textContent),
+      ).toEqual(archived ? [] : ["Members"]);
+      await userEvent.keyboard("{Escape}");
+
+      await openBoardMenu();
+      const boardMenu = await screen.findByRole("menu", { name: "Board menu" });
+      if (archived) {
+        expect(
+          within(boardMenu).queryByRole("menuitem", { name: "Board settings" }),
+        ).toBeNull();
+      } else {
+        expect(
+          within(boardMenu).getByRole("menuitem", { name: "Board settings" }),
+        ).toBeVisible();
+      }
+      await userEvent.click(
+        within(boardMenu).getByRole("menuitem", { name: "Data & backups" }),
+      );
+      const regularDataItems = screen
+        .getAllByRole("menuitem")
+        .filter((item) => item.closest('[role="menu"]') !== boardMenu)
+        .map((item) => item.textContent);
+      expect(regularDataItems).toEqual([
+        "Export this board",
+        "Export JSON",
+        "Import JSON",
+        "Recently deleted",
+        "Workflow rules",
+      ]);
+      await userEvent.keyboard("{Escape}");
+      if (screen.queryByRole("menu", { name: "Board menu" })) {
+        await userEvent.keyboard("{Escape}");
+      }
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+      const user = await typeCommand("");
+      const labels = screen
+        .getAllByRole("option")
+        .map((option) => option.textContent);
+      expect(
+        labels.filter((label) =>
+          /^(Members|Share|Board settings|Data & backups)$/.test(label ?? ""),
+        ),
+      ).toEqual(expected);
+      await user.keyboard("export{Enter}");
+      const data = await screen.findByRole("menu", { name: "Data & backups" });
+      expect(
+        within(data)
+          .getAllByRole("menuitem")
+          .map((item) => item.textContent),
+      ).toEqual(regularDataItems);
+      expect(
+        within(data).getByRole("menuitem", { name: "Export this board" }),
+      ).not.toHaveAttribute("aria-disabled");
+    },
+  );
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("header dialog lifecycle", () => {
+  beforeEach(() => {
+    const restoreLayout = stubVisibleLayout();
+    return restoreLayout;
+  });
+
+  it.each(["archive", "live role loss"] as const)(
+    "closes Settings on %s and restores focus to the Board menu",
+    async (change) => {
+      const server = new FakeServer([boardWithCard]);
+      const path = "/board/board-1?card=card-1";
+      const router = renderHeader(server, path);
+      const dialog = await openSettings();
+      expect(dialog).toBeVisible();
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+      await waitFor(() => expect(server.hasEventStream(board.id)).toBe(true));
+
+      if (change === "archive") {
+        server.publishCommand(board.id, { type: "ARCHIVE_BOARD", at: 100 });
+      } else {
+        publishRole(server, "VIEWER");
+      }
+
+      await waitFor(() => expect(dialog).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByTestId("board-menu-trigger")).toHaveFocus(),
+      );
+      expect(
+        router.state.location.pathname + router.state.location.search,
+      ).toBe(path);
+      await openBoardMenu();
+      expect(
+        await screen.findByRole("menu", { name: "Board menu" }),
+      ).toBeVisible();
+      expect(screen.queryByTestId("board-settings-trigger")).toBeNull();
+    },
+  );
+
+  it("allows normal palette search over Settings and returns focus to the new board", async () => {
+    const router = renderHeader(new FakeServer([board, otherBoard]));
+    const dialog = await openSettings();
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}k{/Control}");
+    const search = await screen.findByRole("combobox", {
+      name: "Search cards and boards",
+    });
+    await user.type(search, otherBoard.title);
+    const result = await screen.findByRole("option", {
+      name: /^Release board\b/,
+    });
+    expect(search).toHaveAttribute("aria-activedescendant", result.id);
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/board/board-2"),
+    );
+    expect(dialog).not.toBeInTheDocument();
+    expect(screen.getByTestId("board-title")).toHaveTextContent(
+      otherBoard.title,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("board-menu-trigger")).toHaveFocus(),
+    );
+  });
+
+  it("returns focus to the destination header when navigation removes Settings and the Board menu", async () => {
+    const router = renderHeader(new FakeServer([board]));
+    const dialog = await openSettings();
+    expect(dialog).toBeVisible();
+    await act(() => router.navigate("/agents"));
+
+    expect(dialog).not.toBeInTheDocument();
+    expect(screen.queryByTestId("board-menu-trigger")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("agents-home")).toHaveFocus(),
+    );
+  });
+
+  it("returns palette focus to the brand link when navigation removes the search trigger", async () => {
+    const router = renderHeader(new FakeServer([board]));
+    await screen.findByTestId("people-trigger");
+    const trigger = screen.getByRole("button", { name: "Global search" });
+    await userEvent.click(trigger);
+    const search = await screen.findByTestId("global-search-input");
+    expect(search).toHaveFocus();
+    await act(() => router.navigate("/unknown"));
+
+    expect(trigger).not.toBeInTheDocument();
+    expect(search).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("brand-home")).toHaveFocus());
+  });
+
+  describe.each([
+    { entry: "Members", dialogName: /^Members/ },
+    { entry: "Share", dialogName: "Share this board" },
+  ])("$entry dialog", ({ entry, dialogName }) => {
+    it.each(["board switch", "archive", "live role change"] as const)(
+      "resets on %s and stays closed when the original scope returns",
+      async (change) => {
+        const server = new FakeServer([boardWithCard, otherBoard]);
+        const path = "/board/board-1?card=card-1";
+        const router = renderHeader(server, path);
+        await openPeople();
+        await userEvent.click(
+          await screen.findByRole("menuitem", { name: entry }),
+        );
+        const dialog = await screen.findByRole("dialog", { name: dialogName });
+        expect(dialog).toBeVisible();
+        await waitFor(() => expect(server.hasEventStream(board.id)).toBe(true));
+
+        if (change === "board switch") {
+          await act(() => router.navigate("/board/board-2"));
+          expect(screen.getByTestId("board-title")).toHaveTextContent(
+            otherBoard.title,
+          );
+        } else if (change === "archive") {
+          server.publishCommand(board.id, { type: "ARCHIVE_BOARD", at: 100 });
+        } else {
+          publishRole(server, "VIEWER");
+        }
+        await waitFor(() => expect(dialog).not.toBeInTheDocument());
+        await waitFor(() =>
+          expect(screen.getByTestId("people-trigger")).toHaveFocus(),
+        );
+        expect(screen.queryByRole("dialog", { hidden: true })).toBeNull();
+
+        if (change === "board switch") {
+          await act(() => router.navigate(path));
+        } else if (change === "archive") {
+          await waitFor(() =>
+            expect(server.hasEventStream(board.id)).toBe(true),
+          );
+          server.publishCommand(board.id, { type: "UNARCHIVE_BOARD", at: 101 });
+        } else {
+          publishRole(server, "ADMIN");
+        }
+        await waitFor(() =>
+          expect(screen.getByTestId("board-title")).toHaveAttribute(
+            "aria-keyshortcuts",
+            "Enter",
+          ),
+        );
+        expect(screen.getByTestId("board-title")).toHaveTextContent(
+          board.title,
+        );
+        expect(screen.queryByRole("dialog", { hidden: true })).toBeNull();
+        await openPeople();
+        await userEvent.click(
+          await screen.findByRole("menuitem", { name: entry }),
+        );
+        expect(
+          await screen.findByRole("dialog", { name: dialogName }),
+        ).toBeVisible();
+      },
+    );
+  });
 });
 
 describe("H1 header: People + Board menu", () => {
@@ -334,20 +622,8 @@ describe("H1 header: People + Board menu", () => {
 
   it("keeps the card archive reachable on an archived board and hides admin surfaces", async () => {
     const archivedBoard: Board = {
-      ...board,
+      ...boardWithCard,
       archivedAt: 1_700_000,
-      columns: [
-        { id: "col-1", title: "Todo", cardIds: ["card-1"], createdAt: 1 },
-      ],
-      cards: {
-        "card-1": {
-          id: "card-1",
-          title: "Archived card",
-          labelIds: [],
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      },
     };
     const server = new FakeServer([archivedBoard]);
     renderHeader(server, "/board/board-1?card=card-1");
@@ -383,25 +659,6 @@ describe("H1 header: People + Board menu", () => {
     expect(
       await screen.findByRole("dialog", { name: /Members/ }),
     ).toBeVisible();
-  });
-
-  it("closes the Members dialog when the caller's role changes live", async () => {
-    const server = new FakeServer([board]);
-    renderHeader(server);
-    await openPeople();
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Members" }),
-    );
-    expect(
-      await screen.findByRole("dialog", { name: /Members/ }),
-    ).toBeVisible();
-
-    server.role = "VIEWER";
-    server.publishMembership(board.id, server.account.id, "updated");
-
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: /Members/ })).toBeNull(),
-    );
   });
 
   it("keeps rename on the title itself, not on a permanent header button", async () => {

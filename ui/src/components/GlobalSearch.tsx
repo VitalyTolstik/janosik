@@ -50,6 +50,7 @@ import {
   type SearchHit,
 } from "@/utils/filter";
 import { isMacPlatform } from "@/utils/platform";
+import { findOpenOverlay, isOverlayOpen } from "@/utils/overlay";
 import {
   boardCommands,
   filterCommands,
@@ -115,12 +116,19 @@ export function GlobalSearch({
   const serverMode = isApiEnabled();
 
   const [open, setOpen] = useState(false);
+  const [commandsBlocked, setCommandsBlocked] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const needsFallbackFocus = useRef(false);
+  const openerRef = useRef<HTMLElement | null>(null);
   const pendingCommand = useRef<(() => void) | null>(null);
 
   const setOpenBoth = useCallback(
     (next: boolean) => {
+      if (next) {
+        // Snapshot the interaction layer before mounting the palette's own dialog.
+        setCommandsBlocked(isOverlayOpen());
+        const active = document.activeElement;
+        openerRef.current = active instanceof HTMLElement ? active : null;
+      }
       setOpen(next);
       onOpenChange?.(next);
     },
@@ -185,25 +193,37 @@ export function GlobalSearch({
       <Dialog open={open} onOpenChange={setOpenBoth}>
         <DialogContent
           className="gap-0 p-0 max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]"
-          onOpenAutoFocus={() => {
-            needsFallbackFocus.current =
-              document.activeElement === document.body;
-          }}
           onCloseAutoFocus={(event) => {
-            if (needsFallbackFocus.current) {
+            event.preventDefault();
+            const run = pendingCommand.current;
+            pendingCommand.current = null;
+            const opener = openerRef.current;
+            openerRef.current = null;
+            const canRestoreOpener =
+              opener?.isConnected &&
+              opener !== document.body &&
+              !opener.closest('[aria-hidden="true"], [inert]');
+            const overlay = findOpenOverlay();
+            if (overlay) {
+              // Keep focus in the surviving surface, even if its opener was removed.
+              if (canRestoreOpener && overlay.contains(opener)) opener.focus();
+              if (!overlay.contains(document.activeElement)) overlay.focus();
+              return;
+            }
+            if (document.activeElement === document.body && canRestoreOpener) {
+              opener.focus();
+            }
+            if (document.activeElement === document.body) {
               const trigger = triggerRef.current;
               const target = trigger?.getClientRects().length
                 ? trigger
                 : fallbackFocusRef?.current;
-              if (target) {
-                event.preventDefault();
+              if (target && !target.closest('[aria-hidden="true"], [inert]')) {
                 target.focus();
               }
             }
             // Let the palette release its focus trap before another surface opens.
-            const run = pendingCommand.current;
-            pendingCommand.current = null;
-            run?.();
+            if (!commandsBlocked) run?.();
           }}
         >
           <DialogTitle className="sr-only">{t("search.aria")}</DialogTitle>
@@ -216,8 +236,9 @@ export function GlobalSearch({
           <GlobalSearchPalette
             onClose={() => setOpenBoth(false)}
             commands={commands}
+            commandsBlocked={commandsBlocked}
             onRun={(run) => {
-              if (pendingCommand.current) return;
+              if (commandsBlocked || pendingCommand.current) return;
               pendingCommand.current = run;
               setOpenBoth(false);
             }}
@@ -232,12 +253,14 @@ interface GlobalSearchPaletteProps {
   /** Closes the palette after navigating to a hit. */
   onClose: () => void;
   commands?: CommandActions;
+  commandsBlocked: boolean;
   onRun: (run: () => void) => void;
 }
 
 function GlobalSearchPalette({
   onClose,
   commands,
+  commandsBlocked,
   onRun,
 }: GlobalSearchPaletteProps) {
   const { t } = useI18n();
@@ -375,8 +398,11 @@ function GlobalSearchPalette({
     [navigate],
   );
   const commandsForBoard = useMemo(
-    () => (commandMode ? boardCommands(t, boards, openBoard, commands) : []),
-    [boards, commandMode, commands, openBoard, t],
+    () =>
+      commandMode && !commandsBlocked
+        ? boardCommands(t, boards, openBoard, commands)
+        : [],
+    [boards, commandMode, commands, commandsBlocked, openBoard, t],
   );
   const picker = commandsForBoard.find((command) => command.id === pickerId);
   const commandOptions = commandMode
@@ -517,8 +543,12 @@ function GlobalSearchPalette({
         {commandMode ? (
           <div className="flex flex-wrap items-baseline gap-x-2 px-3 pt-1 text-ui-label">
             <span className="font-medium text-foreground">{commandLabel}</span>
-            <span id={commandHintId} className="text-muted-foreground">
-              {t("commands.filterHint")}
+            <span
+              id={commandHintId}
+              role={commandsBlocked ? "status" : undefined}
+              className="text-muted-foreground"
+            >
+              {t(commandsBlocked ? "commands.blocked" : "commands.filterHint")}
             </span>
           </div>
         ) : null}
@@ -555,7 +585,7 @@ function GlobalSearchPalette({
                 </ResultRow>
               ))}
             </div>
-            {optionCount === 0 ? (
+            {optionCount === 0 && !commandsBlocked ? (
               <p
                 role="status"
                 className="px-3 py-6 text-center text-ui-body text-muted-foreground"

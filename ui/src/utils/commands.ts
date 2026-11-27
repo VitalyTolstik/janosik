@@ -10,8 +10,6 @@ export interface CommandActions {
   openSettings?: () => void;
   openData?: () => void;
   toggleDensity?: () => void;
-  /** H3 can supply this once the board inspector has an open/toggle handler. */
-  openPanel?: () => void;
 }
 
 type CommandOption = {
@@ -33,7 +31,6 @@ const ACTIONS = [
   ["openSettings", "board.settings.button", "commands.keywords.settings"],
   ["openData", "data.tooltip", "commands.keywords.data"],
   ["toggleDensity", "view.densityMenu", "commands.keywords.density"],
-  ["openPanel", "commands.panel", "commands.keywords.panel"],
 ] as const;
 
 export function readCommandQuery(input: string): string | null {

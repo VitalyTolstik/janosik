@@ -7,8 +7,7 @@ const OVERLAY_SELECTOR = [
 ].join(", ");
 
 /**
- * True when a modal, menu, listbox or context menu owns the interaction
- * layer.
+ * Find the topmost visible modal, menu, listbox or context menu.
  *
  * Tooltips are deliberately excluded: hovering a hint must not disable the
  * global keyboard shortcuts. Radix popovers render with `role="dialog"`, so
@@ -18,13 +17,20 @@ const OVERLAY_SELECTOR = [
  * A surface that is animating out keeps its role for the exit duration but
  * already has `data-state="closed"`; it no longer owns the keyboard, so the
  * first Ctrl+Z or `?` after closing must work instead of being swallowed.
- * Radix nests role-bearing descendants (for example the app palette's
- * listbox) that carry no `data-state` of their own, so resolve the nearest
- * stateful ancestor rather than only the matched element.
+ * Inline results and submenu contents belong to their enclosing surface.
+ * Portalled surfaces appear later in the DOM and own focus first.
  */
+export function findOpenOverlay(): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>(OVERLAY_SELECTOR))
+    .reverse()
+    .find(
+      (overlay) =>
+        !overlay.closest(
+          '[data-state="closed"], [hidden], [aria-hidden="true"], [inert]',
+        ) && !overlay.parentElement?.closest(OVERLAY_SELECTOR),
+    );
+}
+
 export function isOverlayOpen(): boolean {
-  return [...document.querySelectorAll(OVERLAY_SELECTOR)].some(
-    (overlay) =>
-      overlay.closest("[data-state]")?.getAttribute("data-state") !== "closed",
-  );
+  return findOpenOverlay() !== undefined;
 }
