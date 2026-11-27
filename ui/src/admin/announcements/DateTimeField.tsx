@@ -107,6 +107,7 @@ export function DateTimeField({
   const hour12 = useHour12();
   const phone = useMediaQuery("(max-width: 639px)");
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const focusAfterRetry = useRef(false);
   const focusRestoredPicker = useCallback((row: HTMLDivElement | null) => {
     if (row && focusAfterRetry.current) {
@@ -138,6 +139,23 @@ export function DateTimeField({
     if (!nextOpen) focusAfterRetry.current = false;
     setOpen(nextOpen);
   };
+
+  // The phone panel is a disclosure, not a Radix popover, so it has no Escape
+  // handling of its own. Close it (and return focus) in the capture phase so
+  // the key cannot also close a surrounding dialog.
+  useEffect(() => {
+    if (!phone || !open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      focusAfterRetry.current = false;
+      setOpen(false);
+      triggerRef.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [phone, open]);
 
   // Opening or receiving a new value (edit/reset) syncs the time wheel.
   useEffect(() => {
@@ -194,6 +212,7 @@ export function DateTimeField({
 
   const trigger = (
     <button
+      ref={triggerRef}
       type="button"
       disabled={disabled}
       data-testid={testId}

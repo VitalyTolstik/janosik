@@ -28,11 +28,18 @@ for (const width of [1440, 1024, 390]) {
     await page.goto(adminPath(`cards/${cardId}`));
 
     const due = page.getByTestId("admin-card-due-input");
-    const dialog = page.getByRole("dialog");
+    // Below sm the picker renders inline under the trigger; wider widths keep
+    // the Radix popover (role=dialog).
+    const picker =
+      width < 640
+        ? page.getByTestId("admin-card-due-input-panel")
+        : page.getByRole("dialog");
     await due.press("Enter");
-    await expectUnclipped(dialog.getByRole("grid"));
-    await expect(dialog.getByRole("listbox")).toHaveCount(2);
+    await picker.scrollIntoViewIfNeeded();
+    await expectUnclipped(picker.getByRole("grid"));
+    await expect(picker.getByRole("listbox")).toHaveCount(2);
     await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
     await expect(due).toBeFocused();
 
     const calendarChunk = /\/assets\/calendar-[^/]+\.js$/;
@@ -43,16 +50,17 @@ for (const width of [1440, 1024, 390]) {
     });
     await due.press("Enter");
     await failedChunk;
+    await picker.scrollIntoViewIfNeeded();
 
-    const alert = dialog.getByRole("alert");
-    const retry = dialog.getByRole("button", {
+    const alert = picker.getByRole("alert");
+    const retry = picker.getByRole("button", {
       name: "Retry date and time picker",
     });
-    const native = dialog.getByLabel("Due date and time");
+    const native = picker.getByLabel("Due date and time");
     await expect(alert).toContainText(
       "The date and time picker could not load.",
     );
-    await expectUnclipped(dialog);
+    await expectUnclipped(picker);
     await expectUnclipped(retry);
     await expectUnclipped(native);
     await expect
@@ -70,13 +78,13 @@ for (const width of [1440, 1024, 390]) {
     await expect(retry).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(native).toBeFocused();
-    await expect(dialog.getByRole("listbox")).toHaveCount(0);
-    await expect(dialog.getByRole("grid")).toHaveCount(0);
+    await expect(picker.getByRole("listbox")).toHaveCount(0);
+    await expect(picker.getByRole("grid")).toHaveCount(0);
     await expect(page.getByTestId("admin-card-title-input")).toBeEditable();
 
     await native.fill("2027-04-06T18:43");
     await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
+    await expect(picker).toBeHidden();
     await expect(due).toBeFocused();
     await page.getByTestId("admin-card-due-save").click();
     await expect(page.getByTestId("admin-card-due-remove")).toBeEnabled();
