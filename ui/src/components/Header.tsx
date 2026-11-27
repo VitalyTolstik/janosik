@@ -302,16 +302,19 @@ export function Header() {
         // `env()` is 0 (every desktop browser), so nothing gets double padding.
         // From `sm` up the 52 px row grows by the top inset (iPad standalone)
         // instead of squeezing its controls.
-        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] sm:pr-[max(1.5rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))]",
+        // Phone/tablet use a 0.75rem edge so the search entry, title and
+        // right cluster all fit through 1023 px; the desktop row restores
+        // its 1.5rem gutters at `lg`.
+        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] lg:pr-[max(1.5rem,env(safe-area-inset-right))] lg:pl-[max(1.5rem,env(safe-area-inset-left))]",
         isAgentsRoute &&
           "min-h-[61px] flex-row flex-nowrap items-center pr-[max(10px,env(safe-area-inset-right))] pl-[max(10px,env(safe-area-inset-left))] font-agent-surface sm:pr-[max(14px,env(safe-area-inset-right))] sm:pl-[max(14px,env(safe-area-inset-left))]",
       )}
     >
       <div
         className={cn(
-          // Tighter gaps through the tablet range buy the board title enough
-          // room for a realistic name without pushing into the right cluster.
-          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-2 lg:gap-3",
+          // Tighter gaps through the tablet range buy the board title and
+          // the icon-only search enough room without touching the cluster.
+          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-1 lg:gap-3",
           isAgentsRoute && "w-auto flex-1 gap-[10px]",
         )}
       >
@@ -434,11 +437,11 @@ export function Header() {
             <GlobalSearch iconOnly />
           </div>
         ) : isBoardRoute ? (
-          // Below 1024 the icon would eat the title's last ~46 px at the
-          // 768–800 squeeze; the global ⌘K shortcut still opens search. The
-          // visible icon and label return together on the full header.
-          <div className="hidden min-[1024px]:block">
-            <GlobalSearch />
+          // The 44 px icon entry returns at 721 (phones keep it behind ⌘K);
+          // the label waits for the full header at 1024 so it cannot paint
+          // over the title or Agents.
+          <div className="hidden min-[721px]:block">
+            <GlobalSearch labelClassName="hidden min-[1024px]:inline" />
           </div>
         ) : (
           <GlobalSearch />

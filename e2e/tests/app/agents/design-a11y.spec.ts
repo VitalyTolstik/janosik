@@ -183,13 +183,18 @@ test("board header keeps the title and Agents action usable at tablet widths", a
         page.getByRole("button", { name: "Switch board" }),
       ).toBeVisible();
     }
-    if (width < 1024) {
-      // Search stays behind ⌘K so the title keeps the 768–800 range.
+    if (width < 721) {
       await expect(search).toBeHidden();
       await expect(page.getByText("Global search")).toBeHidden();
     } else {
+      // The icon-only entry stays pointer-reachable on touch tablets; the
+      // label waits for 1024.
       await expect(search).toBeVisible();
-      await expect(page.getByText("Global search")).toBeVisible();
+      if (width < 1024) {
+        await expect(page.getByText("Global search")).toBeHidden();
+      } else {
+        await expect(page.getByText("Global search")).toBeVisible();
+      }
     }
   }
 });
@@ -285,9 +290,12 @@ test("a long board title keeps every header control hittable at 640–768", asyn
     ] as const) {
       await expectHittable(label, control);
     }
-    // The search icon is behind ⌘K below 1024, so it cannot collide with or
-    // cover Agents in this squeeze.
-    await expect(search).toBeHidden();
+    if (width >= 721) {
+      await expectHittable("Global search", search);
+    } else {
+      // Phones keep search behind ⌘K.
+      await expect(search).toBeHidden();
+    }
   }
 });
 
@@ -341,6 +349,19 @@ test("a realistic board title is not ellipsized at 768/800", async ({
     expect(layout.textWidth).toBeLessThanOrEqual(layout.boxWidth + 1);
     expect(layout.headerOverflow).toBeLessThanOrEqual(0);
     expect(layout.titleRight).toBeLessThanOrEqual(layout.agentLeft + 1);
+
+    // Search stayed pointer-reachable while the title kept its width.
+    const search = page.getByRole("button", { name: "Global search" });
+    await expect(search).toBeVisible();
+    const hitInsideSearch = await search.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return hit !== null && element.contains(hit);
+    });
+    expect(hitInsideSearch, `search hit-test at ${width}`).toBe(true);
   }
 });
 
