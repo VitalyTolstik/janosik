@@ -87,11 +87,15 @@ const pressKey = (key: string, init: KeyboardEventInit = {}) =>
     ...init,
   });
 
-// Radix DropdownMenu opens on pointerdown, not click.
-const openHelp = () =>
-  fireEvent.pointerDown(screen.getByRole("button", { name: "Help" }), {
+// H1: Help is a submenu of the Board menu. Radix opens the root on
+// pointerdown and a submenu on pointermove.
+const openHelp = () => {
+  fireEvent.pointerDown(screen.getByTestId("board-menu-trigger"), {
     button: 0,
   });
+  // Click opens immediately; pointermove would wait out Radix's 100 ms timer.
+  fireEvent.click(screen.getByTestId("board-menu-help"));
+};
 
 describe("keyboard shortcuts", () => {
   beforeEach(() => {

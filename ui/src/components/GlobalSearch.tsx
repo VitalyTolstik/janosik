@@ -147,7 +147,7 @@ export function GlobalSearch({
               "gap-1.5 text-muted-foreground transition-colors hover:text-foreground",
               iconOnly && "w-8 justify-center !px-0",
               !iconOnly && "pr-2.5",
-              "max-md:h-11 max-md:w-11 max-md:min-w-11 max-md:shrink-0 max-md:justify-center max-md:px-0",
+              "max-lg:h-11 max-lg:w-11 max-lg:min-w-11 max-lg:shrink-0 max-lg:justify-center max-lg:px-0",
             )}
           >
             <span

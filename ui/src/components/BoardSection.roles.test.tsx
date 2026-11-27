@@ -116,8 +116,15 @@ describe("BoardSection role wiring (TASK-35)", () => {
     ).toBeInTheDocument();
     expect(container.querySelector("[data-composer-trigger]")).toBeNull();
     expect(container.querySelector("[data-add-column-trigger]")).toBeNull();
-    // The members dialog is available to every role (read-only for a VIEWER).
-    expect(screen.getByRole("button", { name: "Members" })).toBeInTheDocument();
+    // The members dialog is available to every role (read-only for a VIEWER),
+    // behind the single People entry (H1).
+    fireEvent.pointerDown(screen.getByTestId("people-trigger"), {
+      button: 0,
+      pointerType: "mouse",
+    });
+    expect(
+      await screen.findByRole("menuitem", { name: "Members" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the composers for an ADMIN (control)", async () => {

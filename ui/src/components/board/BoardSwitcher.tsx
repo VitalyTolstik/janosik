@@ -185,7 +185,7 @@ export function BoardSwitcher({
               "shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground",
               archivedEntry
                 ? "gap-2"
-                : "h-8 w-6 max-[720.98px]:h-11 max-[720.98px]:w-11",
+                : "h-8 w-6 max-lg:h-11 max-lg:w-11 max-lg:min-w-11",
             )}
           >
             {archivedEntry ? t("board.switcher.archived") : null}
