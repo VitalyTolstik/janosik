@@ -58,7 +58,7 @@ for (const { width, mode, dockWidth } of [
       ).toBeVisible();
       await expect(toggle).toBeFocused();
       await expect(panel.getByRole("separator")).toBeVisible();
-      expect((await panel.boundingBox())!.width).toBe(dockWidth);
+      await expect(panel).toHaveCSS("width", `${dockWidth}px`);
       await toggle.click();
     } else {
       await expect(
