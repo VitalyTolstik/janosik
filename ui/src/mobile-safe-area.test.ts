@@ -58,9 +58,15 @@ describe("mobile safe areas (TASK-177.18)", () => {
     // The fallback is the old mobile token, so a desktop header is untouched.
     expect(header).toContain("max(0.375rem,env(safe-area-inset-top))");
     expect(header).toContain("max(0.75rem,env(safe-area-inset-left))");
-    // Phones/tablets keep the compact edge; the desktop row restores 1.5rem.
+    // The app shell restores the original 1.5rem tablet/desktop gutters;
+    // only the board route opts into the 0.75rem tablet squeeze.
+    expect(header).toContain("sm:pl-[max(1.5rem,env(safe-area-inset-left))]");
     expect(header).toContain("lg:pl-[max(1.5rem,env(safe-area-inset-left))]");
     expect(header).toContain("lg:pr-[max(1.5rem,env(safe-area-inset-right))]");
+    expect(header).toContain("sm:pl-[max(0.75rem,env(safe-area-inset-left))]");
+    // The agents shell keeps its explicit 14 px edge at every breakpoint.
+    expect(header).toContain("lg:pl-[max(14px,env(safe-area-inset-left))]");
+    expect(header).toContain("lg:pr-[max(14px,env(safe-area-inset-right))]");
     // iPad standalone (>=640) grows the fixed row instead of squeezing it.
     expect(header).toContain("sm:pt-[env(safe-area-inset-top)]");
     expect(header).toContain("sm:h-[calc(52px_+_env(safe-area-inset-top))]");

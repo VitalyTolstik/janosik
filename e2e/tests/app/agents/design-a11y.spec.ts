@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { test, expect } from "@/fixtures/board.js";
+import { login } from "@/fixtures/auth.js";
 import { createAgentSession } from "@/helpers/agents.js";
 import { openBoardSettings } from "@/helpers/header.js";
 import { appUrl } from "@/helpers/urls.js";
@@ -297,6 +298,33 @@ test("a long board title keeps every header control hittable at 640–768", asyn
       await expect(search).toBeHidden();
     }
   }
+});
+
+test("header gutters stay route-appropriate", async ({ page, createUser }) => {
+  const user = await createUser();
+  await login(page, user);
+  await expect(page.getByTestId("account-trigger")).toBeVisible();
+
+  const gutters = () =>
+    page
+      .locator("header")
+      .first()
+      .evaluate((header) => {
+        const style = getComputedStyle(header);
+        return { left: style.paddingLeft, right: style.paddingRight };
+      });
+
+  // Non-board app shell keeps the original 24 px tablet gutters.
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.goto(appUrl);
+  await expect(page.locator("header").first()).toBeVisible();
+  expect(await gutters()).toEqual({ left: "24px", right: "24px" });
+
+  // The agents shell keeps its explicit 14 px edge at desktop width.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(new URL("agents", appUrl).href);
+  await expect(page.getByTestId("agents-page")).toBeVisible();
+  expect(await gutters()).toEqual({ left: "14px", right: "14px" });
 });
 
 test("a realistic board title keeps its full name with search visible", async ({

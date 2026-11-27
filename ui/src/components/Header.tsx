@@ -302,19 +302,23 @@ export function Header() {
         // `env()` is 0 (every desktop browser), so nothing gets double padding.
         // From `sm` up the 52 px row grows by the top inset (iPad standalone)
         // instead of squeezing its controls.
-        // Phone/tablet use a 0.75rem edge so the search entry, title and
-        // right cluster all fit through 1023 px; the desktop row restores
-        // its 1.5rem gutters at `lg`.
-        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] lg:pr-[max(1.5rem,env(safe-area-inset-right))] lg:pl-[max(1.5rem,env(safe-area-inset-left))]",
+        // The app shell keeps its 1.5rem sm gutters everywhere; only the
+        // board route tightens them to 0.75rem through the tablet squeeze so
+        // search + title + every control fit. Desktop boards restore 1.5rem.
+        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] sm:pr-[max(1.5rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] lg:pr-[max(1.5rem,env(safe-area-inset-right))] lg:pl-[max(1.5rem,env(safe-area-inset-left))]",
+        isBoardRoute &&
+          "sm:pr-[max(0.75rem,env(safe-area-inset-right))] sm:pl-[max(0.75rem,env(safe-area-inset-left))]",
         isAgentsRoute &&
-          "min-h-[61px] flex-row flex-nowrap items-center pr-[max(10px,env(safe-area-inset-right))] pl-[max(10px,env(safe-area-inset-left))] font-agent-surface sm:pr-[max(14px,env(safe-area-inset-right))] sm:pl-[max(14px,env(safe-area-inset-left))]",
+          "min-h-[61px] flex-row flex-nowrap items-center pr-[max(10px,env(safe-area-inset-right))] pl-[max(10px,env(safe-area-inset-left))] font-agent-surface sm:pr-[max(14px,env(safe-area-inset-right))] sm:pl-[max(14px,env(safe-area-inset-left))] lg:pr-[max(14px,env(safe-area-inset-right))] lg:pl-[max(14px,env(safe-area-inset-left))]",
       )}
     >
       <div
         className={cn(
-          // Tighter gaps through the tablet range buy the board title and
-          // the icon-only search enough room without touching the cluster.
-          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-1 lg:gap-3",
+          // Tighter board-only gaps through the tablet range buy the title
+          // and icon-only search enough room; other routes keep the original
+          // 0.5rem tablet rhythm.
+          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-2 lg:gap-3",
+          isBoardRoute && "sm:gap-1",
           isAgentsRoute && "w-auto flex-1 gap-[10px]",
         )}
       >
