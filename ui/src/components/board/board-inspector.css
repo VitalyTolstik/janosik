@@ -8,11 +8,6 @@
   flex-basis: var(--inspector-width);
 }
 
-.board-inspector,
-.inspector-scrim {
-  --janosik-ease-drawer: var(--janosik-ease-out);
-}
-
 .board-inspector {
   z-index: 50;
   display: flex;
@@ -122,6 +117,8 @@
   width: 8px;
   cursor: col-resize;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .inspector-separator:is(:hover, :focus-visible):not([aria-disabled="true"]) {

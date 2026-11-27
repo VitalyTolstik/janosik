@@ -7,16 +7,23 @@ import { boardPanelKey } from "@/utils/board-panel-storage";
 const KEY = boardPanelKey("user", "board");
 
 function viewport(width: number) {
+  const events = new EventTarget();
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
-    matches: width >= Number(/\d+/.exec(query)?.[0]),
+    get matches() {
+      return width >= Number(/\d+/.exec(query)?.[0]);
+    },
     media: query,
     onchange: null,
     addListener: vi.fn(),
     removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    dispatchEvent: events.dispatchEvent.bind(events),
   }));
+  return (next: number) => {
+    width = next;
+    act(() => events.dispatchEvent(new Event("change")));
+  };
 }
 
 function prefs(width = 380, tab = "people", version = 1) {
@@ -55,6 +62,7 @@ describe("board panel preferences", () => {
     [1024, "drawer", false],
     [1439, "drawer", false],
     [1440, "dock", true],
+    [1680, "dock", true],
     [1920, "dock", true],
   ])("only restores open when docked at %i", (width, mode, open) => {
     viewport(width);
@@ -70,6 +78,33 @@ describe("board panel preferences", () => {
     act(() => result.current.setOpen(true));
     act(() => result.current.setOpen(false));
     expect(localStorage.getItem(KEY)).toBe(prefs());
+  });
+
+  it("persists dismissal immediately after a docked panel becomes a drawer", () => {
+    const resize = viewport(1440);
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() =>
+      useBoardPanels("user", "board"),
+    );
+    act(() => result.current.setOpen(true));
+    act(() => result.current.setWidth(410));
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({
+      right: { open: true, width: 360 },
+    });
+
+    resize(1024);
+    expect(result.current.mode).toBe("drawer");
+    act(() => result.current.setOpen(false));
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({
+      right: { open: false, width: 410 },
+    });
+    act(() => vi.advanceTimersByTime(200));
+    resize(1440);
+    expect(result.current).toMatchObject({ mode: "dock", open: false });
+    unmount();
+
+    const reloaded = renderHook(() => useBoardPanels("user", "board"));
+    expect(reloaded.result.current).toMatchObject({ open: false, width: 410 });
   });
 
   it("uses session state and preserves a newer preference version", () => {
@@ -88,7 +123,20 @@ describe("board panel preferences", () => {
     expect(next.result.current.open).toBe(true);
   });
 
-  it("starts at 400 on a wide viewport without a saved width", () => {
+  it.each([undefined, "invalid", null])(
+    "uses the wide default when the stored width is %s",
+    (width) => {
+      viewport(1920);
+      localStorage.setItem(
+        KEY,
+        JSON.stringify({ version: 1, right: { open: true, width } }),
+      );
+      const { result } = renderHook(() => useBoardPanels("user", "board"));
+      expect(result.current).toMatchObject({ open: true, width: 400 });
+    },
+  );
+
+  it("starts at 400 on a wide viewport without any saved preferences", () => {
     viewport(1920);
     const { result } = renderHook(() => useBoardPanels("user", "board"));
     expect(result.current).toMatchObject({ open: false, width: 400 });

@@ -9,11 +9,15 @@ import { useMatch, useSearchParams } from "react-router-dom";
 
 import { isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-import { DragContext, InspectorContext } from "@/hooks/use-board-inspector";
+import {
+  BOARD_INSPECTOR_ID,
+  DragContext,
+  InspectorContext,
+} from "@/hooks/use-board-inspector";
 import { useBoardPanels } from "@/hooks/use-board-panels";
 import { routes } from "@/routes";
 import { isEditableTarget } from "@/utils/keyboard";
-import { isOverlayOpen } from "@/utils/overlay";
+import { findOpenOverlay } from "@/utils/overlay";
 
 export function BoardPanelsProvider({
   boardId,
@@ -45,7 +49,14 @@ export function BoardPanelsProvider({
     if (mode === "dock") triggerRef.current?.focus();
   };
   const toggle = (keyboard: boolean) => {
-    if (dragging || cardOpen || isOverlayOpen()) return false;
+    if (dragging || cardOpen) return false;
+    const overlay = findOpenOverlay();
+    if (
+      overlay &&
+      !(keyboard && open && overlay.parentElement?.id === BOARD_INSPECTOR_ID)
+    ) {
+      return false;
+    }
     if (open) {
       close();
     } else {

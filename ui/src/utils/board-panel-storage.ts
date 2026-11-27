@@ -11,6 +11,10 @@ export type BoardPanelPrefs = {
   left: { open: boolean; width: number };
 };
 
+type StoredBoardPanelPrefs = Omit<BoardPanelPrefs, "right"> & {
+  right: Omit<BoardPanelPrefs["right"], "width"> & { width?: number };
+};
+
 function clampWidth(width: number, min: number, max: number, fallback: number) {
   return Number.isFinite(width)
     ? Math.min(max, Math.max(min, Math.round(width)))
@@ -40,17 +44,23 @@ function readStoredValue(key: string) {
   }
 }
 
-export function readBoardPanels(key: string): BoardPanelPrefs | undefined {
+export function readBoardPanels(
+  key: string,
+): StoredBoardPanelPrefs | undefined {
   const session = sessionPrefs.get(key);
   if (session) return session;
   try {
     const prefs = readStoredValue(key);
     if (prefs?.version !== 1) return;
+    const width = prefs.right?.width;
     return {
       version: 1,
       right: {
         open: prefs.right?.open === true,
-        width: clampRightWidth(prefs.right?.width ?? NaN),
+        width:
+          typeof width === "number" && Number.isFinite(width)
+            ? clampRightWidth(width)
+            : undefined,
         tab: INSPECTOR_TABS.find((tab) => tab === prefs.right?.tab) ?? "people",
       },
       left: {

@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
@@ -46,6 +47,8 @@ function ResizeHandle({
 
   function start(event: PointerEvent<HTMLDivElement>) {
     if (disabled || event.button !== 0 || event.pointerType === "touch") return;
+    event.preventDefault();
+    event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = { pointerId: event.pointerId, x: event.clientX, width };
   }
@@ -94,8 +97,10 @@ function ResizeHandle({
       tabIndex={disabled ? -1 : 0}
       className="inspector-separator"
       onKeyDown={resize}
-      onDoubleClick={() => {
-        if (!disabled) setWidth(defaultWidth);
+      onDoubleClick={(event) => {
+        if (disabled) return;
+        event.preventDefault();
+        setWidth(defaultWidth);
       }}
       onPointerDown={start}
       onPointerMove={move}
@@ -119,7 +124,7 @@ export function BoardInspector({ boardId }: { boardId: string }) {
 
   const content = (
     <aside
-      id={BOARD_INSPECTOR_ID}
+      id={docked ? BOARD_INSPECTOR_ID : undefined}
       aria-labelledby={TITLE_ID}
       aria-modal={docked ? undefined : true}
       className="board-inspector"
@@ -202,35 +207,47 @@ export function BoardInspector({ boardId }: { boardId: string }) {
     );
   }
 
-  return (
-    <Dialog.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) panel.close();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="inspector-scrim" />
-        <Dialog.Content
-          asChild
-          aria-describedby={undefined}
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            if (event.target instanceof HTMLElement)
-              panel.focusOnOpen(event.target);
-          }}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            if (!cardOpen) panel.triggerRef.current?.focus();
-          }}
-          onEscapeKeyDown={(event) => {
-            if (dragging || cardOpen || isEditableTarget(event.target))
-              event.preventDefault();
+  return createPortal(
+    <div id={BOARD_INSPECTOR_ID}>
+      {/* Unmount the layer immediately when the card takes over so the exit
+          animation cannot leave a scrim or dismissable layer above it. */}
+      {cardOpen ? null : (
+        <Dialog.Root
+          open={open}
+          onOpenChange={(next) => {
+            if (!next) panel.close();
           }}
         >
-          {content}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          <Dialog.Overlay className="inspector-scrim" />
+          <Dialog.Content
+            asChild
+            aria-describedby={undefined}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              if (event.target instanceof HTMLElement)
+                panel.focusOnOpen(event.target);
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const trigger = panel.triggerRef.current;
+              if (!trigger || trigger.disabled) return;
+              if (trigger.getAttribute("aria-expanded") === "false") {
+                trigger.focus();
+              } else if (document.activeElement === document.body) {
+                // Crossing back to the dock replaced the focused dialog.
+                panel.tabRef.current?.focus();
+              }
+            }}
+            onEscapeKeyDown={(event) => {
+              if (dragging || isEditableTarget(event.target))
+                event.preventDefault();
+            }}
+          >
+            {content}
+          </Dialog.Content>
+        </Dialog.Root>
+      )}
+    </div>,
+    document.body,
   );
 }

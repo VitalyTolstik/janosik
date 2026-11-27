@@ -32,6 +32,7 @@ export function PeoplePanel({ boardId }: { boardId: string }) {
   );
   useEffect(() => {
     if (!Number.isFinite(nextExpiry)) return;
+    // eslint-disable-next-line react-hooks/purity -- schedule against the clock after commit, even if the roster arrived later
     const delay = Math.min(nextExpiry - Date.now(), 2_147_483_647);
     const timer = setTimeout(() => setNow(Date.now()), delay);
     return () => clearTimeout(timer);

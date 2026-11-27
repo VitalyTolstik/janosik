@@ -6,6 +6,7 @@ for (const { width, mode, dockWidth } of [
   { width: 768, mode: "drawer", dockWidth: 0 },
   { width: 1024, mode: "drawer", dockWidth: 0 },
   { width: 1440, mode: "dock", dockWidth: 360 },
+  { width: 1680, mode: "dock", dockWidth: 360 },
   { width: 1920, mode: "dock", dockWidth: 400 },
 ]) {
   test(`opens the ${mode} inspector at ${width}px without document overflow`, async ({
@@ -19,7 +20,7 @@ for (const { width, mode, dockWidth } of [
     await board.open(page);
 
     const toggle = page.locator('[aria-controls="board-inspector"]');
-    const panel = page.locator("#board-inspector");
+    const panel = page.locator(".board-inspector");
     const main = page.getByTestId("board-main");
     const measure = async () => (await main.boundingBox())!.width;
     const noDocumentOverflow = async () => {
@@ -35,6 +36,7 @@ for (const { width, mode, dockWidth } of [
     };
     const closedWidth = await measure();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#board-inspector")).toHaveCount(1);
     await expect(panel).toBeHidden();
     await noDocumentOverflow();
     const target = width < 1024 ? 44 : 32;
@@ -88,6 +90,11 @@ for (const { width, mode, dockWidth } of [
       await expect(panel).toBeVisible();
       await expect.poll(measure).toBe(closedWidth - dockWidth);
     } else {
+      await page.keyboard.press("BracketRight");
+      await expect(panel).toBeHidden();
+      await expect(toggle).toBeFocused();
+      await page.keyboard.press("BracketRight");
+      await expect(panel).toBeVisible();
       await page.reload();
       await expect(toggle).toHaveAttribute("aria-expanded", "false");
       await expect(panel).toBeHidden();
@@ -104,8 +111,8 @@ test("resizes the dock without changing column widths or losing scroll access", 
     await board.column(name);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
   await board.open(page);
-  await page.emulateMedia({ reducedMotion: "reduce" });
   const main = page.getByTestId("board-main");
   const columns = main.locator("[data-column-accent]");
   await expect(columns).toHaveCount(5);
@@ -123,8 +130,156 @@ test("resizes the dock without changing column widths or losing scroll access", 
   await columns.last().scrollIntoViewIfNeeded();
   await expect(columns.last()).toBeInViewport({ ratio: 0.98 });
 
+  await handle.focus();
   await handle.dblclick();
   await expect(handle).toHaveAttribute("aria-valuenow", "360");
+  const resetHandle = (await handle.boundingBox())!;
+  const resetX = resetHandle.x + resetHandle.width / 2;
+  await page.mouse.move(resetX, y + 80);
+  await page.mouse.down();
+  await page.mouse.move(resetX - 32, y + 80, { steps: 6 });
+  await page.mouse.up();
+  await expect(handle).toHaveAttribute("aria-valuenow", "392");
+  expect((await main.boundingBox())!.width).toBe(1048);
+});
+
+test("moves focus with the inspector across the dock breakpoint", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await board.open(page);
+  const toggle = page.locator('[aria-controls="board-inspector"]');
+  const panel = page.locator(".board-inspector");
+  await toggle.click();
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(panel).toHaveAttribute("data-mode", "drawer");
+  await expect(panel).toBeFocused();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(panel).toHaveAttribute("data-mode", "dock");
+  await expect(panel.getByRole("tab", { name: "People" })).toBeFocused();
+});
+
+test("persists dismissal when the open dock becomes a drawer", async ({
+  page,
+  board,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await board.open(page);
+  const toggle = page.locator('[aria-controls="board-inspector"]');
+  const panel = page.locator(".board-inspector");
+  await toggle.click();
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(panel).toHaveAttribute("data-mode", "drawer");
+  const scrim = page.locator(".inspector-scrim");
+  await scrim.click({ position: { x: 20, y: 300 } });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  const key = `janosik-board-panels:v1:${board.userId}:${board.id}`;
+  const savedOpen = await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)!).right.open,
+    key,
+  );
+  expect(savedOpen).toBe(false);
+  await expect(panel).toBeHidden();
+  await expect(toggle).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(panel).toBeHidden();
+});
+
+for (const dismissWith of ["Close", "Escape"]) {
+  test(`can dismiss the card with ${dismissWith} after the dock becomes a drawer`, async ({
+    page,
+    board,
+  }) => {
+    const column = await board.column("Todo");
+    await board.card(column, "Release checklist");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await board.open(page);
+    await page.getByRole("button", { name: "Show people panel" }).click();
+    await page
+      .getByTestId("card-title")
+      .filter({ hasText: "Release checklist" })
+      .click();
+    const editor = page.getByRole("dialog", { name: "Card details" });
+    await expect(editor).toBeVisible();
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await expect(page.locator(".inspector-scrim")).toHaveCount(0);
+    await expect(editor).toBeVisible();
+
+    if (dismissWith === "Close") {
+      await editor.getByRole("button", { name: "Close", exact: true }).click();
+    } else {
+      await page.keyboard.press("Escape");
+    }
+    await expect(editor).toBeHidden();
+    const drawer = page.getByRole("dialog", { name: "Inspector" });
+    await expect(drawer).toHaveAttribute("data-mode", "drawer");
+    await expect(drawer).toBeFocused();
+    await drawer.getByRole("button", { name: "Close inspector" }).click();
+    await expect(drawer).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: "Show people panel" }),
+    ).toBeFocused();
+  });
+}
+
+test("closes the bottom sheet before reopening a card from browser history", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Todo");
+  await board.card(column, "Release checklist");
+  await page.setViewportSize({ width: 390, height: 900 });
+  await board.open(page);
+  await page
+    .getByTestId("card-title")
+    .filter({ hasText: "Release checklist" })
+    .click();
+  const editor = page.getByRole("dialog", { name: "Card details" });
+  await expect(editor).toBeVisible();
+  await page.goBack();
+  await expect(editor).toBeHidden();
+
+  const toggle = page.getByRole("button", { name: "Show people panel" });
+  await toggle.click();
+  const sheet = page.getByRole("dialog", { name: "Inspector" });
+  await expect(sheet).toBeVisible();
+  await page.goForward();
+  await expect(editor).toBeVisible();
+  await expect(page.locator(".inspector-scrim")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(editor).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(sheet).toBeHidden();
+});
+
+test("disables the inspector toggle during a card drag", async ({
+  page,
+  board,
+}) => {
+  const column = await board.column("Todo");
+  await board.card(column, "Release checklist");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await board.open(page);
+
+  const toggle = page.getByRole("button", { name: "Show people panel" });
+  const card = page
+    .getByTestId("card-title")
+    .filter({ hasText: "Release checklist" });
+  const { x, y, width, height } = (await card.boundingBox())!;
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  await page.mouse.move(centerX, centerY);
+  await page.mouse.down();
+  await page.mouse.move(centerX + 16, centerY, { steps: 4 });
+  await expect(toggle).toBeDisabled();
+  await page.keyboard.press("BracketRight");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await page.mouse.up();
+  await expect(toggle).toBeEnabled();
 });
 
 test.describe("touch inspector", () => {
@@ -156,7 +311,7 @@ test("hands off to Members and Share, then restores focus through both Escape le
   await board.open(page);
   const toggle = page.getByRole("button", { name: "Show people panel" });
   await toggle.click();
-  const inspector = page.locator("#board-inspector");
+  const inspector = page.locator(".board-inspector");
   const members = inspector.getByRole("button", {
     name: "Members",
     exact: true,
@@ -164,13 +319,19 @@ test("hands off to Members and Share, then restores focus through both Escape le
   const share = inspector.getByRole("button", { name: "Share", exact: true });
   await members.click();
   await expect(page.getByTestId("board-members-box")).toBeVisible();
+  const membersDialog = page.getByRole("dialog", { name: /Members/ });
+  await membersDialog.getByTestId("dialog-close").focus();
+  await page.keyboard.press("BracketRight");
+  await expect(membersDialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(members).toBeFocused();
 
   await share.click();
-  await expect(
-    page.getByRole("dialog", { name: "Share this board" }),
-  ).toBeVisible();
+  const shareDialog = page.getByRole("dialog", { name: "Share this board" });
+  await expect(shareDialog).toBeVisible();
+  await shareDialog.getByTestId("dialog-close").focus();
+  await page.keyboard.press("BracketRight");
+  await expect(shareDialog).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(share).toBeFocused();
   await expect(inspector).toBeVisible();
@@ -187,7 +348,7 @@ test("opens from the command palette and yields to a card modal", async ({
   await board.card(column, "Release checklist");
   await page.setViewportSize({ width: 1440, height: 900 });
   await board.open(page);
-  const panel = page.locator("#board-inspector");
+  const panel = page.locator(".board-inspector");
   const input = globalSearchInput(page);
 
   await page.keyboard.press("Control+k");

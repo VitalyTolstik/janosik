@@ -16,7 +16,10 @@ import {
 } from "@janosik/shared";
 
 import { BoardPanelsProvider } from "@/components/board/BoardPanelsProvider";
-import { useBoardInspector } from "@/hooks/use-board-inspector";
+import {
+  BOARD_INSPECTOR_ID,
+  useBoardInspector,
+} from "@/hooks/use-board-inspector";
 import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { BoardSection } from "@/components/BoardSection";
 import {
@@ -292,13 +295,15 @@ const BoardInspector = lazy(() =>
 );
 
 function BoardInspectorSlot({ boardId }: { boardId: string }) {
-  const open = useBoardInspector()?.open;
+  const inspector = useBoardInspector();
   const [hasOpened, setHasOpened] = useState(false);
-  if (open && !hasOpened) setHasOpened(true);
+  if (!inspector) return null;
+  if (inspector.open && !hasOpened) setHasOpened(true);
+  const placeholder = <div id={BOARD_INSPECTOR_ID} hidden />;
   // After the first open, keep the shell mounted for its exit transition.
-  if (!hasOpened) return null;
+  if (!hasOpened) return placeholder;
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={placeholder}>
       <BoardInspector boardId={boardId} />
     </Suspense>
   );

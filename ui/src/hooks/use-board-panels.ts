@@ -46,6 +46,7 @@ export function useBoardPanels(userId: string, boardId: string | undefined) {
   const [state, setState] = useState(() => ({
     key,
     open: docked && stored?.right.open === true,
+    openedInDock: docked && stored?.right.open === true,
     width: stored?.right.width,
     tab: stored?.right.tab ?? "people",
   }));
@@ -53,9 +54,12 @@ export function useBoardPanels(userId: string, boardId: string | undefined) {
     setState({
       key,
       open: docked && stored?.right.open === true,
+      openedInDock: docked && stored?.right.open === true,
       width: stored?.right.width,
       tab: stored?.right.tab ?? state.tab,
     });
+  } else if (docked && state.open && !state.openedInDock) {
+    setState({ ...state, openedInDock: true });
   }
 
   const writer = useMemo(() => createPanelWriter(key), [key]);
@@ -88,10 +92,11 @@ export function useBoardPanels(userId: string, boardId: string | undefined) {
     tab: state.tab,
     setOpen(open: boolean) {
       if (open === state.open) return;
-      setState({ ...state, open });
+      setState({ ...state, open, openedInDock: open && docked });
       // Modal opens must never become restored docked opens.
-      if (docked) persist({ open, width, tab: state.tab }, true);
-      else if (!open) writer.flush();
+      if (docked || (!open && state.openedInDock)) {
+        persist({ open, width, tab: state.tab }, true);
+      } else if (!open) writer.flush();
     },
     setWidth(value: number) {
       const nextWidth = clampRightWidth(value, defaultWidth);
