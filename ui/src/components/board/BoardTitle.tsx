@@ -60,7 +60,7 @@ export function BoardTitle() {
         data-testid="board-title"
         tabIndex={-1}
         title={title}
-        className="max-w-full min-w-[7rem] flex-1 truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground max-lg:flex max-lg:min-h-11 max-lg:items-center sm:max-w-[320px] sm:flex-none sm:min-w-0 sm:text-lg lg:text-xl min-[1000px]:min-w-[10rem]"
+        className="max-w-full min-w-[7rem] flex-1 truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground max-lg:flex max-lg:min-h-11 max-lg:items-center sm:max-w-[320px] sm:min-w-0 sm:text-lg lg:text-xl min-[1000px]:min-w-[10rem]"
       >
         {title}
       </h1>
@@ -91,12 +91,13 @@ export function BoardTitle() {
       />
     </span>
   ) : (
-    <div className="group/title flex min-w-0 flex-1 items-center gap-0.5 sm:flex-none">
+    <div className="group/title flex min-w-0 flex-1 items-center gap-0.5">
       <h1
         ref={headingRef}
         data-testid="board-title"
         onClick={startEdit}
         tabIndex={0}
+        aria-keyshortcuts="Enter"
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -104,17 +105,30 @@ export function BoardTitle() {
           }
         }}
         title={`${title} — ${t("board.editTitleHint")}`}
-        className="flex max-w-full min-w-[7rem] flex-1 cursor-text items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 max-lg:min-h-11 sm:max-w-[320px] sm:flex-none sm:text-lg lg:min-h-0 lg:text-xl min-[1000px]:min-w-[10rem]"
+        className="flex max-w-full min-w-[7rem] flex-1 cursor-text items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 max-lg:min-h-11 sm:max-w-[320px] sm:text-lg lg:min-h-0 lg:text-xl min-[1000px]:min-w-[10rem]"
       >
         <span className="truncate">{title}</span>
         <span
           data-testid="board-rename"
           aria-hidden="true"
-          className="pointer-events-none inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-80 group-focus-within/title:opacity-80"
+          className="pointer-events-none inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-80 group-focus-within/title:opacity-80 no-hover:opacity-80"
         >
           <Pencil className="h-3.5 w-3.5" />
         </span>
       </h1>
+      {/* The pencil is decorative; this sibling keeps the action in the
+          accessibility tree with its old "Rename board" name. It is not a
+          second tab stop — the heading above is the keyboard control. */}
+      <button
+        type="button"
+        data-testid="board-rename-control"
+        aria-label={t("board.rename")}
+        tabIndex={-1}
+        onClick={startEdit}
+        className="sr-only"
+      >
+        {t("board.rename")}
+      </button>
     </div>
   );
 }

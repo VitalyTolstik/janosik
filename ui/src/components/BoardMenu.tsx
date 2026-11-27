@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -27,6 +28,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useShortcutsHotkey } from "@/hooks/use-shortcuts-hotkey";
 import { useI18n } from "@/i18n";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
@@ -61,6 +63,11 @@ export function BoardMenu({
   const { board } = useBoard();
   const { role } = useBoardAccess();
   const data = useDataMenu();
+  // A submenu is 256 px wide and Radix anchors it beside the 240 px root
+  // menu. On a phone neither side fits, so it flips left and lands almost
+  // entirely outside the viewport (Data/Help were unreadable at 390 px).
+  // Below `sm`, render those groups inline in the same menu instead.
+  const inlineGroups = useMediaQuery("(max-width: 639px)");
   const [menuOpen, setMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -110,22 +117,31 @@ export function BoardMenu({
             </>
           ) : null}
 
-          <DropdownMenuSub
-            onOpenChange={(open) => {
-              if (open) data.onMenuOpenChange(true);
-            }}
-          >
-            <DropdownMenuSubTrigger
-              className="max-lg:h-11"
-              data-testid="board-menu-data"
-            >
-              <Database className="h-4 w-4" />
-              {t("data.tooltip")}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-64">
+          {inlineGroups ? (
+            <>
+              <DropdownMenuLabel className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("data.tooltip")}
+              </DropdownMenuLabel>
               <DataMenuItems menu={data} includeArchive={false} />
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+            </>
+          ) : (
+            <DropdownMenuSub
+              onOpenChange={(open) => {
+                if (open) data.onMenuOpenChange(true);
+              }}
+            >
+              <DropdownMenuSubTrigger
+                className="max-lg:h-11"
+                data-testid="board-menu-data"
+              >
+                <Database className="h-4 w-4" />
+                {t("data.tooltip")}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-64">
+                <DataMenuItems menu={data} includeArchive={false} />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
 
           <DropdownMenuItem
             className="max-lg:h-11"
@@ -140,18 +156,27 @@ export function BoardMenu({
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger
-              className="max-lg:h-11"
-              data-testid="board-menu-help"
-            >
-              <HelpCircle className="h-4 w-4" />
-              {t("help.aria")}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
+          {inlineGroups ? (
+            <>
+              <DropdownMenuLabel className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("help.aria")}
+              </DropdownMenuLabel>
               <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+            </>
+          ) : (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger
+                className="max-lg:h-11"
+                data-testid="board-menu-help"
+              >
+                <HelpCircle className="h-4 w-4" />
+                {t("help.aria")}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-56">
+                <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

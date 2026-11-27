@@ -318,10 +318,19 @@ describe("H1 header: People + Board menu", () => {
     renderHeader(new FakeServer([board]));
     const title = await screen.findByTestId("board-title");
     expect(title).toHaveAttribute("tabindex", "0");
-    expect(screen.queryByRole("button", { name: "Rename board" })).toBeNull();
+    expect(title).toHaveAttribute("aria-keyshortcuts", "Enter");
     expect(screen.getByTestId("board-rename")).toHaveAttribute(
       "aria-hidden",
       "true",
+    );
+    // The visible pencil is decorative, but the rename action keeps a real
+    // button role and name for screen readers.
+    expect(
+      screen.getByRole("button", { name: "Rename board" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("board-rename-control")).toHaveAttribute(
+      "tabindex",
+      "-1",
     );
     fireEvent.click(title);
     expect(

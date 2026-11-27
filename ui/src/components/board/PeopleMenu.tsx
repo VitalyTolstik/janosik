@@ -196,14 +196,16 @@ export function PeopleMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {/* A live archive makes the roster read-only and revokes Share: close
+          either dialog instead of leaving mutating controls open. */}
       <BoardMembersDialog
-        open={membersOpen}
+        open={!archived && membersOpen}
         onOpenChange={setMembersOpen}
         showTrigger={false}
         returnFocusRef={triggerRef}
       />
       <ShareDialog
-        open={shareOpen}
+        open={!archived && shareOpen}
         onOpenChange={setShareOpen}
         showTrigger={false}
         returnFocusRef={triggerRef}

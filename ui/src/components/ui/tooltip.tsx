@@ -18,7 +18,10 @@ const TooltipContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 overflow-hidden rounded-md bg-foreground px-3 py-1.5 text-ui-meta text-background animate-in fade-in-0 zoom-in-95",
+        // Tooltips are informational: never let one swallow the pointer,
+        // especially when focus returns to a trigger after a dialog closes
+        // and its tooltip opens over the neighbouring header control.
+        "pointer-events-none z-50 overflow-hidden rounded-md bg-foreground px-3 py-1.5 text-ui-meta text-background animate-in fade-in-0 zoom-in-95",
         className,
       )}
       {...props}
