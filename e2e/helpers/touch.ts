@@ -322,34 +322,55 @@ export async function touchDragToOffscreen(
       candidate.x >= -0.5 &&
       candidate.x + candidate.width <= viewport.width + 0.5;
     let box = await target.boundingBox({ timeout: 500 }).catch(() => null);
+    let reached = fullyInside(box);
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline && !fullyInside(box)) {
       await page.waitForTimeout(100);
       box = await target.boundingBox({ timeout: 500 }).catch(() => null);
+      reached ||= fullyInside(box);
     }
     if (!box) throw new Error("touchDragToOffscreen: target disappeared");
+    if (!reached) {
+      throw new Error(
+        "touchDragToOffscreen: auto-scroll did not bring the target into its scroll container",
+      );
+    }
 
-    // The release point can still sit inside the auto-scroll band. Aim at
-    // the target's true centre: a calendar day cell is 128 px tall, so its
-    // centre is outside the 48 px band, while the old capped 40 px point sat
-    // inside it. A 60 ms wait then kept scrolling, moving the next week's
-    // same weekday under the finger and dropping the card there.
-    //
-    // The box above was measured while the rAF loop was still running, and a
-    // delayed frame scales its step by up to 250 ms (14 px × 15), so the
-    // target can move a whole calendar row before the move below lands.
-    // Park on the target and chase its centre until the box stops moving,
-    // then release there: the finger is either outside the band or the
-    // container is already at its scroll limit.
+    // The auto-scroll can overshoot after `fullyInside` was true: a stalled
+    // rAF frame scales its step by up to 250 ms (14 px × 15), so the target
+    // can jump past the top edge while its centre is still inside the
+    // viewport. Aim at the visible intersection with the scroll container.
+    // If the target overshot completely, centre it once; the `reached` check
+    // above still proves the auto-scroll itself did the work.
     let visible = visibleBox(page, box, "target after auto-scroll");
     const settleDeadline = Date.now() + 3_000;
+    let recenters = 0;
     for (;;) {
+      const visibleTop = Math.max(visible.y, top);
+      const visibleBottom = Math.min(visible.y + visible.height, bottom);
+      if (visibleBottom - visibleTop < Math.min(32, visible.height / 2)) {
+        if (recenters >= 2) {
+          throw new Error(
+            "touchDragToOffscreen: target overshot its scroll container",
+          );
+        }
+        recenters += 1;
+        await target.evaluate((element) => {
+          element.scrollIntoView({ block: "center", inline: "nearest" });
+        });
+        const next = await target
+          .boundingBox({ timeout: 500 })
+          .catch(() => null);
+        if (!next) throw new Error("touchDragToOffscreen: target disappeared");
+        visible = visibleBox(page, next, "target after recenter");
+        continue;
+      }
       await client.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [
           {
             x: visible.x + visible.width / 2,
-            y: visible.y + visible.height / 2,
+            y: (visibleTop + visibleBottom) / 2,
             id: 1,
             radiusX: 1,
             radiusY: 1,
