@@ -59,16 +59,15 @@ export function PeopleMenu() {
   const boardId = board?.id;
   const archived = board?.archivedAt !== undefined;
 
-  // A live archive revokes admin sharing and hides the admin roster; a board
-  // switch replaces the board under the dialog. Reset both in either case,
-  // otherwise the persisted open flag retargets the next board's roster.
+  // A live archive or role change revokes sharing or hides the admin roster;
+  // a board switch replaces the board under the dialog. Reset both in every
+  // case, otherwise a persisted open flag retargets the next board's roster.
   useEffect(() => {
     if (boardId === undefined) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- board/archive transition is the trigger
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- board/archive/role transition is the trigger
     setMembersOpen(false);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- board/archive transition is the trigger
     setShareOpen(false);
-  }, [boardId, archived]);
+  }, [boardId, archived, role]);
 
   // Members, sharing and presence are server-only concepts; local mode had
   // no members/share/presence triggers before H1 either.

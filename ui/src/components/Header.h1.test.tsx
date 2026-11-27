@@ -333,6 +333,25 @@ describe("H1 header: People + Board menu", () => {
     ).toBeVisible();
   });
 
+  it("closes the Members dialog when the caller's role changes live", async () => {
+    const server = new FakeServer([board]);
+    renderHeader(server);
+    await openPeople();
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Members" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: /Members/ }),
+    ).toBeVisible();
+
+    server.role = "VIEWER";
+    server.publishMembership(board.id, server.account.id, "updated");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /Members/ })).toBeNull(),
+    );
+  });
+
   it("keeps rename on the title itself, not on a permanent header button", async () => {
     renderHeader(new FakeServer([board]));
     const title = await screen.findByTestId("board-title");
