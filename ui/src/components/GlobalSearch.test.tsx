@@ -152,6 +152,55 @@ describe("GlobalSearch", () => {
     expect(trigger.className).not.toContain("!px-0");
   });
 
+  it("selects a board in command mode with the keyboard", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-1", "Alpha", [])},${boardJson("b-2", "Beta", [])},${boardJson("b-3", "Old stuff", [])}]`,
+    );
+    renderSearch();
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Global search" });
+    await user.click(trigger);
+    const input = screen.getByRole("combobox");
+    await user.type(input, "> navigate");
+    expect(screen.getByRole("listbox", { name: "Commands" })).toBeVisible();
+    await user.keyboard("{Enter}");
+    const list = screen.getByRole("listbox", { name: "Switch board" });
+    const [alpha, beta] = within(list).getAllByRole("option");
+    expect(within(list).getAllByRole("option")).toHaveLength(2);
+    expect(input).toHaveAttribute("aria-activedescendant", alpha.id);
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant", beta.id);
+    expect(beta).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", alpha.id);
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() =>
+      expect(screen.getByTestId("loc")).toHaveTextContent("/board/b-2"),
+    );
+    expect(trigger).toHaveFocus();
+  });
+
+  it("shows a command empty state and returns to full-text search with Backspace", async () => {
+    renderSearch();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Global search" }));
+    const input = screen.getByRole("combobox");
+    await user.type(input, ">x");
+    expect(
+      within(screen.getByTestId("global-search-results")).getByRole("status"),
+    ).toHaveTextContent("No matching commands or options.");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    await user.keyboard("{Backspace}");
+    expect(screen.getByRole("option", { name: "Switch board" })).toBeVisible();
+    await user.keyboard("{Backspace}");
+    expect(input).toHaveAccessibleName("Search cards and boards");
+    await user.type(input, "mockups");
+    expect(
+      await screen.findByRole("option", { name: /Landing redesign/ }),
+    ).toBeVisible();
+  });
+
   it("finds a card by description and highlights the match", async () => {
     renderSearch();
     const hits = await search("mockups");

@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -133,6 +134,43 @@ function boardWithDueCard(): string {
 describe("BoardSection", () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it("runs filter, view and density commands against the mounted board", async () => {
+    localStorage.setItem("janosik-boards", boardWithDueCard());
+    renderBoard("/board/board-view");
+    const user = userEvent.setup();
+    const runCommand = async (query: string) => {
+      await user.keyboard("{Control>}k{/Control}");
+      await user.type(
+        await screen.findByTestId("global-search-input"),
+        `>${query}`,
+      );
+      await user.keyboard("{Enter}");
+    };
+
+    await runCommand("compact");
+    await waitFor(() =>
+      expect(document.documentElement).toHaveAttribute(
+        "data-density",
+        "compact",
+      ),
+    );
+    expect(localStorage.getItem("janosik-board-density")).toBe("compact");
+
+    await runCommand("switch view");
+    const views = screen.getByRole("listbox", { name: "Switch view" });
+    expect(within(views).getAllByRole("option")).toHaveLength(4);
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await screen.findByRole("table");
+
+    await runCommand("filters");
+    const filters = await screen.findByTestId("filters-popover");
+    expect(filters).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.getByTestId("filter-facets-trigger")).toHaveFocus(),
+    );
   });
 
   it("renders the seed board with its columns and cards", () => {

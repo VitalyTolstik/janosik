@@ -3,11 +3,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 import type { BoardView } from "@/components/board/ViewSwitcher";
+import {
+  useBoardDensity,
+  type BoardDensityControls,
+} from "@/hooks/use-board-density";
 
 const VIEW_STORAGE_KEY = "janosik-board-view";
 
@@ -23,14 +29,30 @@ function readStoredView(): BoardView {
   return "board";
 }
 
-const BoardViewContext = createContext<{
-  view: BoardView;
-  setView: (view: BoardView) => void;
-} | null>(null);
+const BoardViewContext = createContext<
+  | (BoardDensityControls & {
+      view: BoardView;
+      setView: (view: BoardView) => void;
+      openFiltersRef: RefObject<() => void>;
+    })
+  | null
+>(null);
 
 export function BoardViewProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<BoardView>(readStoredView);
-  const controls = useMemo(() => ({ view, setView }), [view]);
+  const { density, setDensity, toggleDensity } = useBoardDensity();
+  const openFiltersRef = useRef<() => void>(null);
+  const controls = useMemo(
+    () => ({
+      view,
+      setView,
+      density,
+      setDensity,
+      toggleDensity,
+      openFiltersRef,
+    }),
+    [view, density, setDensity, toggleDensity],
+  );
 
   useEffect(() => {
     try {

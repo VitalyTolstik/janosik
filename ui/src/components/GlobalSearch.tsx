@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { shortcutLetterCode } from "@/utils/keyboard";
@@ -49,6 +50,13 @@ import {
   type SearchHit,
 } from "@/utils/filter";
 import { isMacPlatform } from "@/utils/platform";
+import {
+  boardCommands,
+  filterCommands,
+  readCommandQuery,
+  type CommandActions,
+  type PaletteCommand,
+} from "@/utils/commands";
 
 const SEARCH_DEBOUNCE_MS = 200;
 /** Per-group dropdown cap (Jira-style) — enough context without an endless list. */
@@ -84,6 +92,8 @@ interface GlobalSearchProps {
   iconOnly?: boolean;
   /** Responsive label visibility for a header with its own breakpoints. */
   labelClassName?: string;
+  commands?: CommandActions;
+  fallbackFocusRef?: RefObject<HTMLElement>;
 }
 
 /**
@@ -98,11 +108,16 @@ export function GlobalSearch({
   onOpenChange,
   iconOnly = false,
   labelClassName,
+  commands,
+  fallbackFocusRef,
 }: GlobalSearchProps) {
   const { t } = useI18n();
   const serverMode = isApiEnabled();
 
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const needsFallbackFocus = useRef(false);
+  const pendingCommand = useRef<(() => void) | null>(null);
 
   const setOpenBoth = useCallback(
     (next: boolean) => {
@@ -139,6 +154,7 @@ export function GlobalSearch({
           {/* Labeled trigger: a muted "Global search" hint sits to the left
               of the magnifier (hidden on narrow screens — the icon stays). */}
           <Button
+            ref={triggerRef}
             variant="ghost"
             size="sm"
             aria-label={t("search.label")}
@@ -167,7 +183,29 @@ export function GlobalSearch({
       </Tooltip>
 
       <Dialog open={open} onOpenChange={setOpenBoth}>
-        <DialogContent className="gap-0 p-0 max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]">
+        <DialogContent
+          className="gap-0 p-0 max-sm:pb-[env(safe-area-inset-bottom)] max-sm:pl-[env(safe-area-inset-left)] max-sm:pr-[env(safe-area-inset-right)] max-sm:pt-[env(safe-area-inset-top)]"
+          onOpenAutoFocus={() => {
+            needsFallbackFocus.current =
+              document.activeElement === document.body;
+          }}
+          onCloseAutoFocus={(event) => {
+            if (needsFallbackFocus.current) {
+              const trigger = triggerRef.current;
+              const target = trigger?.getClientRects().length
+                ? trigger
+                : fallbackFocusRef?.current;
+              if (target) {
+                event.preventDefault();
+                target.focus();
+              }
+            }
+            // Let the palette release its focus trap before another surface opens.
+            const run = pendingCommand.current;
+            pendingCommand.current = null;
+            run?.();
+          }}
+        >
           <DialogTitle className="sr-only">{t("search.aria")}</DialogTitle>
           <DialogDescription className="sr-only">
             {t(serverMode ? "search.hint" : "search.hintLocal")}
@@ -175,7 +213,15 @@ export function GlobalSearch({
           {/* Query/results state lives in the palette body, which Radix
               unmounts on close — every open starts clean with no `open`
               reset effect (AGENT.md: reset by remount). */}
-          <GlobalSearchPalette onClose={() => setOpenBoth(false)} />
+          <GlobalSearchPalette
+            onClose={() => setOpenBoth(false)}
+            commands={commands}
+            onRun={(run) => {
+              if (pendingCommand.current) return;
+              pendingCommand.current = run;
+              setOpenBoth(false);
+            }}
+          />
         </DialogContent>
       </Dialog>
     </>
@@ -185,16 +231,26 @@ export function GlobalSearch({
 interface GlobalSearchPaletteProps {
   /** Closes the palette after navigating to a hit. */
   onClose: () => void;
+  commands?: CommandActions;
+  onRun: (run: () => void) => void;
 }
 
-function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
+function GlobalSearchPalette({
+  onClose,
+  commands,
+  onRun,
+}: GlobalSearchPaletteProps) {
   const { t } = useI18n();
   const toast = useToast();
   const { boards, pendingBoardCount } = useBoard();
   const navigate = useNavigate();
 
   const [rawQuery, setRawQuery] = useState("");
-  const [query, setQuery] = useState("");
+  const [debouncedQuery, setQuery] = useState("");
+  const [pickerId, setPickerId] = useState<string | null>(null);
+  const commandQuery = readCommandQuery(rawQuery);
+  const commandMode = commandQuery !== null;
+  const query = commandMode ? "" : debouncedQuery;
   // Expansion is bound to the query it was requested for: typing during the
   // debounce must not carry an uncapped list into the next query.
   const [showAllFor, setShowAllFor] = useState<string | null>(null);
@@ -206,18 +262,20 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
   const [scrollRequest, setScrollRequest] = useState(0);
   const showAll = showAllFor === query;
   const listId = useId();
+  const commandHintId = useId();
   const optionId = (index: number) => `${listId}-option-${index}`;
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   // Debounce the query before the (synchronous) search runs over it.
   useEffect(() => {
+    if (commandMode) return;
     const timer = setTimeout(() => {
       setQuery(rawQuery);
       setScrollRequest((request) => request + 1);
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [rawQuery]);
+  }, [commandMode, rawQuery]);
 
   // Focus on mount: the DialogTrigger covers the click path, this covers
   // the Ctrl/Cmd+K path (previously done by an `open` effect).
@@ -312,12 +370,42 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
   const boardOffset = cardHits.length;
   const hits = useMemo(() => [...groups.cards, ...groups.boards], [groups]);
 
-  const activeIndex = useMemo(() => {
-    if (hits.length === 0) return -1;
-    if (cursorKey === null) return 0;
-    const index = hits.findIndex((hit) => searchHitKey(hit) === cursorKey);
-    return index >= 0 ? index : 0;
-  }, [cursorKey, hits]);
+  const openBoard = useCallback(
+    (id: string) => navigate(routes.board(id)),
+    [navigate],
+  );
+  const commandsForBoard = useMemo(
+    () => (commandMode ? boardCommands(t, boards, openBoard, commands) : []),
+    [boards, commandMode, commands, openBoard, t],
+  );
+  const picker = commandsForBoard.find((command) => command.id === pickerId);
+  const commandOptions = commandMode
+    ? filterCommands(
+        picker && "choices" in picker ? picker.choices : commandsForBoard,
+        commandQuery,
+      )
+    : [];
+  const optionCount = commandMode ? commandOptions.length : hits.length;
+  const optionKey = (index: number) =>
+    commandMode ? commandOptions[index].id : searchHitKey(hits[index]);
+  const selectedIndex =
+    cursorKey === null
+      ? -1
+      : commandMode
+        ? commandOptions.findIndex((option) => option.id === cursorKey)
+        : hits.findIndex((hit) => searchHitKey(hit) === cursorKey);
+  const activeIndex = optionCount > 0 ? Math.max(selectedIndex, 0) : -1;
+
+  const selectCommand = (command: PaletteCommand) => {
+    if ("choices" in command) {
+      setPickerId(command.id);
+      setRawQuery(">");
+      setCursorKey(null);
+      setScrollRequest((request) => request + 1);
+    } else {
+      onRun(command.run);
+    }
+  };
 
   useEffect(() => {
     if (scrollRequest === 0) return;
@@ -335,7 +423,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     }
     onClose();
     if (hit.kind === "board") {
-      navigate(routes.board(hit.boardId));
+      openBoard(hit.boardId);
       return;
     }
     // The dialog opens on the card; a comment/attachment hit additionally
@@ -365,6 +453,8 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
     groups.totalBoards > boardHits.length
       ? formatCount(boardHits.length, groups.totalBoards)
       : undefined;
+  const commandLabel = picker?.label ?? t("commands.title");
+  const showQueryLimit = showRemaining(rawQuery.length, LIMITS.query);
 
   return (
     <>
@@ -373,7 +463,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           ref={inputRef}
           name="global-search"
           role="combobox"
-          aria-expanded={hits.length > 0}
+          aria-expanded={optionCount > 0}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={
@@ -382,37 +472,56 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
           value={rawQuery}
           maxLength={LIMITS.query}
           aria-describedby={
-            showRemaining(rawQuery.length, LIMITS.query)
-              ? "search-query-limit"
-              : undefined
+            commandMode
+              ? commandHintId + (showQueryLimit ? " search-query-limit" : "")
+              : showQueryLimit
+                ? "search-query-limit"
+                : undefined
           }
           onChange={(event) => {
-            setRawQuery(event.target.value);
+            const next = event.target.value;
+            if (readCommandQuery(next) === null) setPickerId(null);
+            else if (!commandMode) setQuery("");
+            setRawQuery(next);
             setShowAllFor(null);
             setCursorKey(null);
+            if (commandMode) setScrollRequest((request) => request + 1);
           }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || activeIndex < 0) return;
             if (event.key === "Enter") {
               event.preventDefault();
-              openHit(hits[activeIndex]);
-            } else if (event.key === "ArrowDown") {
+              if (commandMode) selectCommand(commandOptions[activeIndex]);
+              else openHit(hits[activeIndex]);
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
-              const next = Math.min(activeIndex + 1, hits.length - 1);
-              setCursorKey(searchHitKey(hits[next]));
-              setScrollRequest((request) => request + 1);
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              const next = Math.max(activeIndex - 1, 0);
-              setCursorKey(searchHitKey(hits[next]));
+              const offset = event.key === "ArrowDown" ? 1 : -1;
+              const next = Math.min(
+                Math.max(activeIndex + offset, 0),
+                optionCount - 1,
+              );
+              setCursorKey(optionKey(next));
               setScrollRequest((request) => request + 1);
             }
           }}
           placeholder={t("search.placeholder")}
-          aria-label={t("search.aria")}
-          className="h-9 border-0 pr-12 shadow-none focus-visible:ring-0"
+          aria-label={commandMode ? commandLabel : t("search.aria")}
+          className={cn(
+            "h-9 border-0 pr-12 shadow-none",
+            commandMode
+              ? "focus-visible:ring-2 focus-visible:ring-ring"
+              : "focus-visible:ring-0",
+          )}
           data-testid="global-search-input"
         />
+        {commandMode ? (
+          <div className="flex flex-wrap items-baseline gap-x-2 px-3 pt-1 text-ui-label">
+            <span className="font-medium text-foreground">{commandLabel}</span>
+            <span id={commandHintId} className="text-muted-foreground">
+              {t("commands.filterHint")}
+            </span>
+          </div>
+        ) : null}
         <LimitCounter
           id="search-query-limit"
           length={rawQuery.length}
@@ -427,157 +536,200 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
         className="max-h-[60vh] overflow-y-auto p-2"
         data-testid="global-search-results"
       >
-        {pendingBoardCount > 0 ? (
-          <p
-            role="status"
-            aria-live="polite"
-            data-testid="search-boards-loading"
-            className="flex items-center gap-2 px-3 py-1.5 text-ui-label text-muted-foreground"
-          >
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-            {t("search.boardsLoading")}
-          </p>
-        ) : null}
-        {query.trim() === "" ? (
-          <p className="px-3 py-6 text-center text-ui-body text-muted-foreground">
-            {t(serverMode ? "search.hint" : "search.hintLocal")}
-          </p>
-        ) : serverPending ? (
-          <p
-            role="status"
-            aria-live="polite"
-            data-testid="search-server-pending"
-            className="flex items-center gap-2 px-3 py-1.5 text-ui-label text-muted-foreground"
-          >
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-            {t("search.serverPending")}
-          </p>
-        ) : hits.length === 0 && !serverPartial ? (
-          <p className="px-3 py-6 text-center text-ui-body text-muted-foreground">
-            {t("search.empty")}
-          </p>
-        ) : null}
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={t("search.aria")}
-          hidden={hits.length === 0}
-        >
-          {cardHits.length > 0 ? (
-            <SearchSection title={t("search.cards")} count={cardCount}>
-              {cardHits.map((hit, index) => (
+        {commandMode ? (
+          <>
+            <div
+              id={listId}
+              role="listbox"
+              aria-label={commandLabel}
+              hidden={optionCount === 0}
+            >
+              {commandOptions.map((command, index) => (
                 <ResultRow
-                  key={`card-${hit.card.id}`}
+                  key={command.id}
                   id={optionId(index)}
                   active={index === activeIndex}
-                  onClick={() => openHit(hit)}
+                  onClick={() => selectCommand(command)}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate text-ui-body text-foreground">
-                      <HighlightedText text={hit.card.title} query={query} />
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-ui-meta text-muted-foreground">
-                      <ResultTypeBadge hit={hit} />
-                      <span className="sr-only">, </span>
-                      <span className="truncate">
-                        {hit.boardTitle}
-                        {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
-                      </span>
-                      {hit.boardArchived || hit.cardArchived ? (
-                        <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
-                      ) : null}
-                    </div>
-                    <LabelChips
-                      labels={hit.boardLabels}
-                      cardLabelIds={hit.card.labelIds}
-                    />
-                    <Snippet
-                      text={
-                        hit.matchIn === "checklist" ||
-                        hit.matchIn === "comment" ||
-                        hit.matchIn === "attachment" ||
-                        hit.matchIn === "description"
-                          ? (hit.matchText ?? hit.card.description ?? "")
-                          : (hit.card.description ?? "")
-                      }
-                      label={
-                        hit.matchIn === "comment"
-                          ? t("search.inComment")
-                          : hit.matchIn === "attachment"
-                            ? t("search.inAttachment")
-                            : undefined
-                      }
-                      query={query}
-                      show={
-                        hit.matchIn === "description" ||
-                        hit.matchIn === "checklist" ||
-                        hit.matchIn === "comment" ||
-                        hit.matchIn === "attachment"
-                      }
-                    />
-                  </div>
+                  <span className="truncate text-ui-body">{command.label}</span>
                 </ResultRow>
               ))}
-            </SearchSection>
-          ) : null}
-          {boardHits.length > 0 ? (
-            <SearchSection title={t("search.boards")} count={boardCount}>
-              {boardHits.map((hit, index) => (
-                <ResultRow
-                  key={`board-${hit.boardId}`}
-                  id={optionId(boardOffset + index)}
-                  active={boardOffset + index === activeIndex}
-                  onClick={() => openHit(hit)}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-ui-body font-medium text-foreground">
-                      <HighlightedText text={hit.boardTitle} query={query} />
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-1.5">
-                      <ResultTypeBadge hit={hit} />
-                      <span className="sr-only">, </span>
-                      {hit.boardArchived ? (
-                        <ArchivedBadge>{t("search.archived")}</ArchivedBadge>
-                      ) : null}
-                    </div>
-                  </div>
-                </ResultRow>
-              ))}
-            </SearchSection>
-          ) : null}
-        </div>
-        {serverTruncated ? (
-          <p
-            role="status"
-            aria-live="polite"
-            data-testid="search-server-truncated"
-            className="px-3 py-1.5 text-ui-label text-muted-foreground"
-          >
-            {pendingBoardCount > 0
-              ? t("search.serverTruncatedPending", {
-                  total: serverResult.total,
-                })
-              : t("search.serverTruncated", {
-                  shown: visibleServerMatches,
-                  total: serverResult.total,
+            </div>
+            {optionCount === 0 ? (
+              <p
+                role="status"
+                className="px-3 py-6 text-center text-ui-body text-muted-foreground"
+              >
+                {t("commands.empty")}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {pendingBoardCount > 0 ? (
+              <p
+                role="status"
+                aria-live="polite"
+                data-testid="search-boards-loading"
+                className="flex items-center gap-2 px-3 py-1.5 text-ui-label text-muted-foreground"
+              >
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                {t("search.boardsLoading")}
+              </p>
+            ) : null}
+            {query.trim() === "" ? (
+              <p className="px-3 py-6 text-center text-ui-body text-muted-foreground">
+                {t(serverMode ? "search.hint" : "search.hintLocal")}
+                <span className="mt-1.5 block">{t("commands.prefixHint")}</span>
+              </p>
+            ) : serverPending ? (
+              <p
+                role="status"
+                aria-live="polite"
+                data-testid="search-server-pending"
+                className="flex items-center gap-2 px-3 py-1.5 text-ui-label text-muted-foreground"
+              >
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                {t("search.serverPending")}
+              </p>
+            ) : hits.length === 0 && !serverPartial ? (
+              <p className="px-3 py-6 text-center text-ui-body text-muted-foreground">
+                {t("search.empty")}
+              </p>
+            ) : null}
+            <div
+              id={listId}
+              role="listbox"
+              aria-label={t("search.aria")}
+              hidden={hits.length === 0}
+            >
+              {cardHits.length > 0 ? (
+                <SearchSection title={t("search.cards")} count={cardCount}>
+                  {cardHits.map((hit, index) => (
+                    <ResultRow
+                      key={`card-${hit.card.id}`}
+                      id={optionId(index)}
+                      active={index === activeIndex}
+                      onClick={() => openHit(hit)}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-ui-body text-foreground">
+                          <HighlightedText
+                            text={hit.card.title}
+                            query={query}
+                          />
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-ui-meta text-muted-foreground">
+                          <ResultTypeBadge hit={hit} />
+                          <span className="sr-only">, </span>
+                          <span className="truncate">
+                            {hit.boardTitle}
+                            {hit.columnTitle ? ` › ${hit.columnTitle}` : ""}
+                          </span>
+                          {hit.boardArchived || hit.cardArchived ? (
+                            <ArchivedBadge>
+                              {t("search.archived")}
+                            </ArchivedBadge>
+                          ) : null}
+                        </div>
+                        <LabelChips
+                          labels={hit.boardLabels}
+                          cardLabelIds={hit.card.labelIds}
+                        />
+                        <Snippet
+                          text={
+                            hit.matchIn === "checklist" ||
+                            hit.matchIn === "comment" ||
+                            hit.matchIn === "attachment" ||
+                            hit.matchIn === "description"
+                              ? (hit.matchText ?? hit.card.description ?? "")
+                              : (hit.card.description ?? "")
+                          }
+                          label={
+                            hit.matchIn === "comment"
+                              ? t("search.inComment")
+                              : hit.matchIn === "attachment"
+                                ? t("search.inAttachment")
+                                : undefined
+                          }
+                          query={query}
+                          show={
+                            hit.matchIn === "description" ||
+                            hit.matchIn === "checklist" ||
+                            hit.matchIn === "comment" ||
+                            hit.matchIn === "attachment"
+                          }
+                        />
+                      </div>
+                    </ResultRow>
+                  ))}
+                </SearchSection>
+              ) : null}
+              {boardHits.length > 0 ? (
+                <SearchSection title={t("search.boards")} count={boardCount}>
+                  {boardHits.map((hit, index) => (
+                    <ResultRow
+                      key={`board-${hit.boardId}`}
+                      id={optionId(boardOffset + index)}
+                      active={boardOffset + index === activeIndex}
+                      onClick={() => openHit(hit)}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-ui-body font-medium text-foreground">
+                          <HighlightedText
+                            text={hit.boardTitle}
+                            query={query}
+                          />
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <ResultTypeBadge hit={hit} />
+                          <span className="sr-only">, </span>
+                          {hit.boardArchived ? (
+                            <ArchivedBadge>
+                              {t("search.archived")}
+                            </ArchivedBadge>
+                          ) : null}
+                        </div>
+                      </div>
+                    </ResultRow>
+                  ))}
+                </SearchSection>
+              ) : null}
+            </div>
+            {serverTruncated ? (
+              <p
+                role="status"
+                aria-live="polite"
+                data-testid="search-server-truncated"
+                className="px-3 py-1.5 text-ui-label text-muted-foreground"
+              >
+                {pendingBoardCount > 0
+                  ? t("search.serverTruncatedPending", {
+                      total: serverResult.total,
+                    })
+                  : t("search.serverTruncated", {
+                      shown: visibleServerMatches,
+                      total: serverResult.total,
+                    })}
+              </p>
+            ) : null}
+            {query.trim() !== "" && !serverPending && !serverPartial ? (
+              <p
+                role="status"
+                aria-live="polite"
+                data-testid="search-results-status"
+                className="sr-only"
+              >
+                {t("search.resultsStatus", {
+                  cards: groups.totalCards,
+                  boards: groups.totalBoards,
                 })}
-          </p>
-        ) : null}
-        {query.trim() !== "" && !serverPending && !serverPartial ? (
-          <p
-            role="status"
-            aria-live="polite"
-            data-testid="search-results-status"
-            className="sr-only"
-          >
-            {t("search.resultsStatus", {
-              cards: groups.totalCards,
-              boards: groups.totalBoards,
-            })}
-          </p>
-        ) : null}
+              </p>
+            ) : null}
+          </>
+        )}
       </div>
-      {groups.capped && !showAll ? (
+      {!commandMode && groups.capped && !showAll ? (
         <div className="flex justify-end border-t border-border p-2">
           <Button
             type="button"

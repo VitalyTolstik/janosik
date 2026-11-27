@@ -100,11 +100,63 @@ async function closeDialog(dialog: HTMLElement) {
   await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
 }
 
+async function typeCommand(query: string) {
+  const user = userEvent.setup();
+  await user.keyboard("{Control>}k{/Control}");
+  await user.type(
+    await screen.findByTestId("global-search-input"),
+    `>${query}`,
+  );
+  return user;
+}
+
 beforeEach(() => {
   localStorage.clear();
   vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
   api.clearAccessToken();
   api.onAuthLost = null;
+});
+
+describe("header command capabilities", () => {
+  it.each([
+    ["members", /^Members/, "people-trigger"],
+    ["share", "Share this board", "people-trigger"],
+    ["settings", /Board settings/i, "board-menu-trigger"],
+  ])(
+    "opens the existing %s dialog and returns focus to its trigger",
+    async (query, name, trigger) => {
+      const restoreLayout = stubVisibleLayout();
+      try {
+        renderHeader(new FakeServer([board]));
+        await screen.findByTestId("people-trigger");
+        const user = await typeCommand(query);
+        await user.keyboard("{Enter}");
+        expect(await screen.findByRole("dialog", { name })).toBeVisible();
+        await user.keyboard("{Escape}");
+        await waitFor(() => expect(screen.getByTestId(trigger)).toHaveFocus());
+      } finally {
+        restoreLayout();
+      }
+    },
+  );
+
+  it("honors the viewer's People, Settings and Data capabilities", async () => {
+    const server = new FakeServer([board]);
+    server.role = "VIEWER";
+    renderHeader(server);
+    await screen.findByTestId("people-trigger");
+    const user = await typeCommand("");
+    expect(screen.getByRole("option", { name: "Members" })).toBeVisible();
+    expect(
+      screen.queryByRole("option", { name: /Share|Settings|Panel/i }),
+    ).toBeNull();
+    await user.keyboard("backups{Enter}");
+    const data = await screen.findByRole("menu", { name: "Data & backups" });
+    expect(
+      within(data).getByRole("menuitem", { name: "Export this board" }),
+    ).toBeVisible();
+    expect(within(data).queryByTestId("data-deleted")).toBeNull();
+  });
 });
 
 afterEach(() => {

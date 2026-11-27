@@ -31,7 +31,6 @@ import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
 import { SavedViewsMenuBoundary } from "@/components/board/SavedViewsMenuBoundary";
 import { loadSavedViewsMenu } from "@/components/board/saved-views-loader";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
-import { useBoardDensity } from "@/hooks/use-board-density";
 import { useToast } from "@/components/Toast";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
@@ -138,10 +137,7 @@ export function BoardSection() {
     },
     [setSearchParams],
   );
-  const { view, setView } = useBoardView();
-  // Card density (TASK-142): a per-browser display preference, persisted next
-  // to the chosen view; it only affects the kanban card face.
-  const { density, setDensity } = useBoardDensity();
+  const { view, setView, density, setDensity, openFiltersRef } = useBoardView();
 
   const active = isFilterActive(filter);
   const serverMode = isApiEnabled();
@@ -498,6 +494,7 @@ export function BoardSection() {
                 matchCount={matchCount}
                 matchPending={serverPending}
                 onChange={setFilter}
+                openFacetsRef={openFiltersRef}
               />
             </div>
             <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
