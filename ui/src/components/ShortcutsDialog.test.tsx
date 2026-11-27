@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
+import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { Header } from "@/components/Header";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -68,7 +69,9 @@ function renderBoard(path = "/board/b-1") {
             <TooltipProvider>
               <MemoryRouter initialEntries={[path]}>
                 <BoardProvider>
-                  <Header />
+                  <BoardPeopleProvider>
+                    <Header />
+                  </BoardPeopleProvider>
                   <BoardSection />
                 </BoardProvider>
               </MemoryRouter>

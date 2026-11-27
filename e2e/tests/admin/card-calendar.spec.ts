@@ -34,7 +34,14 @@ for (const width of [1440, 1024, 390]) {
       width < 640
         ? page.getByTestId("admin-card-due-input-panel")
         : page.getByRole("dialog");
-    await due.press("Enter");
+    // The calendar-lazy wrapper can load with the page. Identify the
+    // calendar module fetched by the working picker, then abort that URL.
+    const calendarChunk = /\/assets\/calendar-(?!lazy-)[^/]+\.js$/;
+    const [calendarResponse] = await Promise.all([
+      page.waitForResponse(calendarChunk),
+      due.press("Enter"),
+    ]);
+    expect(calendarResponse.ok()).toBe(true);
     await picker.scrollIntoViewIfNeeded();
     await expectUnclipped(picker.getByRole("grid"));
     await expect(picker.getByRole("listbox")).toHaveCount(2);
@@ -42,14 +49,16 @@ for (const width of [1440, 1024, 390]) {
     await expect(picker).toBeHidden();
     await expect(due).toBeFocused();
 
-    const calendarChunk = /\/assets\/calendar-[^/]+\.js$/;
-    await page.route(calendarChunk, (route) => route.abort());
+    const calendarUrl = calendarResponse.url();
+    await page.route(calendarUrl, (route) => route.abort());
     await page.reload();
-    const failedChunk = page.waitForEvent("requestfailed", {
-      predicate: (request) => calendarChunk.test(request.url()),
-    });
-    await due.press("Enter");
-    await failedChunk;
+    await expect(due).toBeEnabled();
+    await Promise.all([
+      page.waitForEvent("requestfailed", {
+        predicate: (request) => request.url() === calendarUrl,
+      }),
+      due.press("Enter"),
+    ]);
     await picker.scrollIntoViewIfNeeded();
 
     const alert = picker.getByRole("alert");

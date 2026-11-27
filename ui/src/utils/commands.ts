@@ -9,6 +9,7 @@ export interface CommandActions {
   openShare?: () => void;
   openSettings?: () => void;
   openData?: () => void;
+  openPanel?: () => void;
   toggleDensity?: () => void;
 }
 
@@ -25,6 +26,7 @@ export type PaletteCommand = CommandAction | CommandPicker;
 const VIEWS = ["board", "calendar", "table", "watch"] as const;
 
 const ACTIONS = [
+  ["openPanel", "inspector.toggle", "commands.keywords.panel"],
   ["openFilters", "filter.filters", "commands.keywords.filters"],
   ["openMembers", "board.members.button", "commands.keywords.members"],
   ["openShare", "share.button", "commands.keywords.share"],

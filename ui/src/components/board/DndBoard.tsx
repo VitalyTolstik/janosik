@@ -15,6 +15,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { useInspectorDragChange } from "@/hooks/use-board-inspector";
 import {
   arrayMove,
   horizontalListSortingStrategy,
@@ -197,10 +198,22 @@ export function DndBoard({
   // Ref mirror so event handlers always read the latest draft (state updates
   // are async across events).
   const draftRef = useRef<Draft | null>(null);
-  const updateDraft = useCallback((next: Draft | null) => {
-    draftRef.current = next;
-    setDraftState(next);
-  }, []);
+  const onDragChange = useInspectorDragChange();
+  useEffect(
+    () => () => {
+      if (draftRef.current) onDragChange?.(false);
+    },
+    [onDragChange],
+  );
+  const updateDraft = useCallback(
+    (next: Draft | null) => {
+      if (Boolean(draftRef.current) !== Boolean(next))
+        onDragChange?.(next !== null);
+      draftRef.current = next;
+      setDraftState(next);
+    },
+    [onDragChange],
+  );
 
   // Keyboard cursor (j/k navigation): flat index over the visible cards —
   // columns in board order, cards in (filtered) column order. `e`/Enter

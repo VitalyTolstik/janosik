@@ -1,7 +1,6 @@
 import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { ChevronRight, Info, Loader2 } from "lucide-react";
 
-import { isApiEnabled } from "@/api/client";
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
 import { AgentControlButton } from "@/components/agent-control/AgentControlButton";
@@ -13,6 +12,9 @@ import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
 import { restoreBoardSettingsFocus } from "@/components/board/settings/focus";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
+import { useBoardInspector } from "@/hooks/use-board-inspector";
+import { PanelToggle } from "@/components/board/PanelToggle";
+import { useBoardPeople } from "@/hooks/use-board-people";
 import { PeopleMenu } from "@/components/board/PeopleMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { HelpMenu } from "@/components/HelpMenu";
@@ -33,7 +35,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
-import { usePublicSharesEnabled } from "@/hooks/use-public-shares-enabled";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
@@ -132,35 +133,8 @@ export function Header() {
   const archived = board?.archivedAt !== undefined;
   const canOpenSettings =
     settingsBoardId !== undefined && role === "ADMIN" && !archived;
-  const publicSharesEnabled = usePublicSharesEnabled();
-  const hasPeople = settingsBoardId !== undefined && isApiEnabled();
-  // Archived non-admins can still read the roster. Sharing also depends on operator config.
-  const showMembers = hasPeople && (!archived || role !== "ADMIN");
-  const showShare =
-    hasPeople && !archived && role === "ADMIN" && publicSharesEnabled === true;
-  const [people, setPeople] = useState<{
-    boardId: string;
-    archived: boolean;
-    role: typeof role;
-    dialog: "members" | "share";
-  } | null>(null);
-  if (
-    people !== null &&
-    (people.boardId !== settingsBoardId ||
-      people.archived !== archived ||
-      people.role !== role ||
-      (people.dialog === "members" && !showMembers) ||
-      (people.dialog === "share" && !showShare))
-  ) {
-    setPeople(null);
-  }
-  const changePeopleDialog = (dialog: "members" | "share" | null) => {
-    setPeople(
-      dialog && settingsBoardId !== undefined
-        ? { boardId: settingsBoardId, archived, role, dialog }
-        : null,
-    );
-  };
+  const people = useBoardPeople();
+  const inspector = useBoardInspector();
   const [settings, setSettings] = useState<{
     boardId: string;
     section: "workflow" | "agents";
@@ -466,12 +440,7 @@ export function Header() {
           <>
             {/* One People doorway replaces Members + Share + Presence at every
                 width; presence is no longer hidden below 1200 px. */}
-            <PeopleMenu
-              dialog={people?.dialog ?? null}
-              onDialogChange={changePeopleDialog}
-              showMembers={showMembers}
-              showShare={showShare}
-            />
+            <PeopleMenu />
             {!archived ? (
               <AgentControlButton
                 onOpen={(trigger) => {
@@ -510,12 +479,16 @@ export function Header() {
                     view !== "watch"
                       ? () => openFiltersRef.current?.()
                       : undefined,
-                  openMembers: showMembers
-                    ? () => changePeopleDialog("members")
+                  openMembers: people?.showMembers
+                    ? () => people.openDialog("members")
                     : undefined,
-                  openShare: showShare
-                    ? () => changePeopleDialog("share")
+                  openShare: people?.showShare
+                    ? () => people.openDialog("share")
                     : undefined,
+                  openPanel:
+                    inspector && !inspector.dragging && !inspector.cardOpen
+                      ? () => inspector.toggle(true)
+                      : undefined,
                   openSettings: openWorkflowSettings,
                   openData: () => openDataRef.current?.(),
                   toggleDensity: view === "board" ? toggleDensity : undefined,
@@ -526,6 +499,7 @@ export function Header() {
         ) : (
           <GlobalSearch fallbackFocusRef={brandRef} />
         )}
+        {isBoardRoute ? <PanelToggle /> : null}
         {isAgentsRoute ? (
           <NotificationsBell />
         ) : isBoardRoute ? null : (

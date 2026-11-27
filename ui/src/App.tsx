@@ -15,6 +15,12 @@ import {
   type BoardTemplateId,
 } from "@janosik/shared";
 
+import { BoardPanelsProvider } from "@/components/board/BoardPanelsProvider";
+import {
+  BOARD_INSPECTOR_ID,
+  useBoardInspector,
+} from "@/hooks/use-board-inspector";
+import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { BoardSection } from "@/components/BoardSection";
 import {
   TemplatePickerDialog,
@@ -282,6 +288,27 @@ export function NoBoardRoute() {
   );
 }
 
+const BoardInspector = lazy(() =>
+  import("@/components/board/BoardInspector").then(({ BoardInspector }) => ({
+    default: BoardInspector,
+  })),
+);
+
+function BoardInspectorSlot({ boardId }: { boardId: string }) {
+  const inspector = useBoardInspector();
+  const [hasOpened, setHasOpened] = useState(false);
+  if (!inspector) return null;
+  if (inspector.open && !hasOpened) setHasOpened(true);
+  const placeholder = <div id={BOARD_INSPECTOR_ID} hidden />;
+  // After the first open, keep the shell mounted for its exit transition.
+  if (!hasOpened) return placeholder;
+  return (
+    <Suspense fallback={placeholder}>
+      <BoardInspector boardId={boardId} />
+    </Suspense>
+  );
+}
+
 /**
  * The board route is keyed by board id, so switching boards remounts
  * `BoardSection`: per-board UI state (the card filter above all) cannot leak
@@ -292,7 +319,12 @@ function BoardRoute() {
   // The shell only renders once the boards are loaded, so a missing board here
   // is a genuinely unknown id — show the 404 rather than an empty board.
   if (!board) return <NotFoundPage variant="board" />;
-  return <BoardSection key={board.id} />;
+  return (
+    <div key={board.id} className="flex min-h-0 min-w-0 flex-1">
+      <BoardSection />
+      <BoardInspectorSlot boardId={board.id} />
+    </div>
+  );
 }
 
 /**
@@ -354,24 +386,28 @@ function BoardShell() {
 
   return (
     <UserProfileProvider boardId={board?.id}>
-      <Header />
-      {/* The single notification surface: topbar → notices → board. Every
-          top-of-page message lives here, so none of them can cover the
-          header or fight another banner for the same corner. */}
-      <BoardNotices />
-      <Routes>
-        <Route path={routes.home} element={<NoBoardRoute />} />
-        <Route path={routes.boardPattern} element={<BoardRoute />} />
-        <Route path={routes.agents} element={<AgentsPage />} />
-        <Route path={routes.agentPattern} element={<AgentDetailPage />} />
-        {/* The support "view as" entry (U-8): the token was taken from
-            the hash at boot; the session lands on the home redirect. */}
-        <Route
-          path={routes.impersonate}
-          element={<Navigate to={routes.home} replace />}
-        />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      <BoardPeopleProvider>
+        <BoardPanelsProvider boardId={board?.id}>
+          <Header />
+          {/* The single notification surface: topbar → notices → board. Every
+              top-of-page message lives here, so none of them can cover the
+              header or fight another banner for the same corner. */}
+          <BoardNotices />
+          <Routes>
+            <Route path={routes.home} element={<NoBoardRoute />} />
+            <Route path={routes.boardPattern} element={<BoardRoute />} />
+            <Route path={routes.agents} element={<AgentsPage />} />
+            <Route path={routes.agentPattern} element={<AgentDetailPage />} />
+            {/* The support "view as" entry (U-8): the token was taken from
+                the hash at boot; the session lands on the home redirect. */}
+            <Route
+              path={routes.impersonate}
+              element={<Navigate to={routes.home} replace />}
+            />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </BoardPanelsProvider>
+      </BoardPeopleProvider>
     </UserProfileProvider>
   );
 }

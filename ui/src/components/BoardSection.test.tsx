@@ -10,6 +10,7 @@ import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BoardSection } from "@/components/BoardSection";
+import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { Header } from "@/components/Header";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -50,7 +51,9 @@ function renderBoard(initialRoute = "/") {
               <TooltipProvider>
                 <MemoryRouter initialEntries={[initialRoute]}>
                   <BoardProvider>
-                    <Header />
+                    <BoardPeopleProvider>
+                      <Header />
+                    </BoardPeopleProvider>
                     <BoardSection />
                     <RouteProbe />
                   </BoardProvider>
