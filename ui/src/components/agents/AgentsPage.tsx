@@ -81,7 +81,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useBoard } from "@/store/BoardContext";
 import { cn } from "@/lib/utils";
 import { boardColor } from "@/utils/board-color";
-import { agentRollbackDocsUrl, docsUrl } from "@/utils/docs-url";
+import { agentRollbackDocsUrl, docsPageUrl } from "@/utils/docs-url";
 import { effectiveApprovalStatus } from "@/utils/approval";
 
 type Section = "attention" | "sessions" | "runs";
@@ -2475,7 +2475,7 @@ function AttentionEmpty({
             {t("agents.shell.createKey")}
           </Button>
           <Button variant="outline" asChild className={SMALL_OUTLINE_CLASS}>
-            <a href={docsUrl(lang)} target="_blank" rel="noreferrer">
+            <a href={docsPageUrl(lang, "mcp")} target="_blank" rel="noreferrer">
               {t("agents.shell.readDocs")}
             </a>
           </Button>
@@ -2505,7 +2505,7 @@ function SessionsEmpty({
             {t("agents.shell.createKey")}
           </Button>
           <Button variant="outline" asChild className={SMALL_OUTLINE_CLASS}>
-            <a href={docsUrl(lang)} target="_blank" rel="noreferrer">
+            <a href={docsPageUrl(lang, "mcp")} target="_blank" rel="noreferrer">
               {t("agents.shell.readDocs")}
             </a>
           </Button>
