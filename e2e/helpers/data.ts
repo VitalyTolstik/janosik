@@ -93,7 +93,10 @@ export interface ImportRequestTracker {
 /** Open Board menu → Data & backups and return the submenu. */
 export async function openDataMenu(page: Page): Promise<Locator> {
   await openBoardMenu(page);
-  await page.getByTestId("board-menu-data").click();
+  const trigger = page.getByTestId("board-menu-data");
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await trigger.click();
+  }
   const menu = page.getByRole("menu").last();
   await expect(menu).toBeVisible();
   return menu;

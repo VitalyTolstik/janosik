@@ -14,9 +14,15 @@ export function boardMenuTrigger(page: Page): Locator {
   return page.getByTestId("board-menu-trigger");
 }
 
+async function ensureOpen(page: Page, trigger: Locator): Promise<void> {
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await trigger.click();
+  }
+}
+
 export async function openPeople(page: Page): Promise<Locator> {
-  await peopleTrigger(page).click();
-  const menu = page.getByRole("menu");
+  await ensureOpen(page, peopleTrigger(page));
+  const menu = page.getByRole("menu").first();
   await expect(menu).toBeVisible();
   return menu;
 }
@@ -40,8 +46,8 @@ export async function openShare(page: Page): Promise<Locator> {
 }
 
 export async function openBoardMenu(page: Page): Promise<Locator> {
-  await boardMenuTrigger(page).click();
-  const menu = page.getByRole("menu");
+  await ensureOpen(page, boardMenuTrigger(page));
+  const menu = page.getByRole("menu").first();
   await expect(menu).toBeVisible();
   return menu;
 }
@@ -64,7 +70,10 @@ export async function openCardArchive(page: Page): Promise<Locator> {
 
 export async function openHelpMenu(page: Page): Promise<Locator> {
   await openBoardMenu(page);
-  await page.getByTestId("board-menu-help").click();
+  const trigger = page.getByTestId("board-menu-help");
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await trigger.click();
+  }
   const menu = page.getByRole("menu").last();
   await expect(menu).toBeVisible();
   return menu;
