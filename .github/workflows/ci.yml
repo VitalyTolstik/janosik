@@ -23,34 +23,21 @@ permissions:
 
 jobs:
   verify:
+    if: always()
+    needs: [verify-static, verify-ui, verify-backend]
     runs-on: ubuntu-latest
-    # TASK-200.13: the suite reached 14m56s on main and now runs ~17m on a
-    # merged branch (backend e2e is ~5m of it). Keep headroom so lint/format
-    # are not cut off by runner variance.
-    timeout-minutes: 25
-    services:
-      postgres:
-        image: postgres:16-alpine
+    timeout-minutes: 5
+    steps:
+      - name: Require all verify jobs to succeed
         env:
-          POSTGRES_USER: janosik
-          POSTGRES_PASSWORD: janosik
-          POSTGRES_DB: janosik_test
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U janosik -d janosik_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<< "$NEEDS"
+
+  verify-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -70,9 +57,6 @@ jobs:
 
       - name: Shared tests (with coverage gate)
         run: npm run test:coverage -w shared
-
-      - name: UI tests (with coverage gate)
-        run: npm run test:coverage -w ui
 
       # `npm run build -w ui` runs `tsc -b` first (which also type-checks
       # `shared/`), so a dedicated typecheck step would duplicate the work.
@@ -119,6 +103,67 @@ jobs:
       - name: Build (MCP server)
         run: npm run build -w mcp
 
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Format (Prettier)
+        run: npm run format:check
+
+      - name: Bundle budget (size-limit)
+        run: npm run size -w ui
+
+  verify-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: UI tests (with coverage gate)
+        run: npm run test:coverage -w ui
+
+  verify-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: janosik
+          POSTGRES_PASSWORD: janosik
+          POSTGRES_DB: janosik_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U janosik -d janosik_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Prisma generate (backend)
         run: npm run prisma:generate -w backend
 
@@ -145,15 +190,6 @@ jobs:
 
       - name: Backend typecheck/build
         run: npm run build:backend
-
-      - name: Lint (ESLint)
-        run: npm run lint
-
-      - name: Format (Prettier)
-        run: npm run format:check
-
-      - name: Bundle budget (size-limit)
-        run: npm run size -w ui
 
   # TASK-200.12: deployment config is code too. This lane is cheap — it
   # renders the single-node and 1/3-replica Compose shapes and runs nginx -t
@@ -272,12 +308,41 @@ jobs:
           if-no-files-found: ignore
 
   browser-e2e:
+    if: always()
+    needs: [browser-e2e-shard, browser-e2e-no-mail]
     runs-on: ubuntu-latest
-    # The app/site/docs suite alone takes ~32 min on a loaded runner, then the
-    # email-disabled pass reuses a fresh stack. 40 min left no headroom and the
-    # job was cancelled during cleanup after every test had passed; a retried
-    # test or a slower runner pushes it over. Keep 50 for headroom.
-    timeout-minutes: 50
+    timeout-minutes: 5
+    steps:
+      - name: Require all browser jobs to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<< "$NEEDS"
+
+  browser-e2e-shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+        include:
+          - shard: 1
+            port: 4310
+            mail_port: 4810
+          - shard: 2
+            port: 4320
+            mail_port: 4820
+          - shard: 3
+            port: 4330
+            mail_port: 4830
+          - shard: 4
+            port: 4340
+            mail_port: 4840
+    env:
+      E2E_PORT: ${{ matrix.port }}
+      E2E_MAIL_PORT: ${{ matrix.mail_port }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -287,28 +352,40 @@ jobs:
       - run: npm ci
       - run: npm run typecheck -w e2e
       - name: Install Chrome
-        id: chrome
         run: npx playwright install --with-deps chrome
       - name: Run browser tests
         id: browser_tests
-        run: npm run test:docker -w e2e
+        run: npm run test:docker -w e2e -- --shard=${{ matrix.shard }}/4
       - name: Upload browser report and traces
         if: failure() && steps.browser_tests.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-e2e-report
+          name: browser-e2e-report-${{ matrix.shard }}
           path: |
             e2e/playwright-report/
             e2e/test-results/
           if-no-files-found: ignore
+
+  browser-e2e-no-mail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      E2E_PORT: 4300
+      E2E_MAIL_PORT: 4802
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chrome
+        run: npx playwright install --with-deps chrome
       - name: Run browser tests with email disabled
         id: browser_tests_no_mail
-        if: ${{ !cancelled() && steps.chrome.outcome == 'success' }}
-        run: |
-          rm -rf e2e/playwright-report e2e/test-results
-          npm run test:docker -w e2e
         env:
           E2E_MAIL_DISABLED_TEST: "1"
+        run: npm run test:docker -w e2e
       - name: Upload browser report and traces (email disabled)
         if: failure() && steps.browser_tests_no_mail.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -322,8 +399,35 @@ jobs:
   # The master panel has its own disposable stacks: global settings are
   # destructive and must never touch the app/site/docs run above.
   browser-e2e-admin:
+    if: always()
+    needs: [browser-e2e-admin-core, browser-e2e-admin-global]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    steps:
+      - name: Require all admin browser jobs to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          jq -e 'all(.[]; .result == "success")' <<< "$NEEDS"
+
+  browser-e2e-admin-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+        include:
+          - shard: 1
+            port: 4350
+            mail_port: 4850
+          - shard: 2
+            port: 4360
+            mail_port: 4860
+    env:
+      E2E_PORT: ${{ matrix.port }}
+      E2E_MAIL_PORT: ${{ matrix.mail_port }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -336,19 +440,33 @@ jobs:
         run: npx playwright install --with-deps chrome
       - name: Admin core (owner + operator paths)
         env:
-          E2E_PORT: 4320
-          E2E_MAIL_PORT: 4820
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-admin-core
-        run: npm run test:admin -w e2e -- --output=test-results-admin-core --reporter=list
+        run: npm run test:admin -w e2e -- --shard=${{ matrix.shard }}/2
       - name: Upload admin core report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-e2e-admin-core
+          name: browser-e2e-admin-core-${{ matrix.shard }}
           path: |
             e2e/playwright-report-admin-core/
-            e2e/test-results-admin-core/
+            e2e/test-results/
           if-no-files-found: ignore
+
+  browser-e2e-admin-global:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      E2E_PORT: 4370
+      E2E_MAIL_PORT: 4870
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chrome
+        run: npx playwright install --with-deps chrome
       - name: Admin global (own disposable stack, one worker)
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-admin-global
