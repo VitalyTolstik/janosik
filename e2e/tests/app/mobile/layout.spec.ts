@@ -409,6 +409,32 @@ test("keeps double-tap rename, touch card creation and column scrolling", async 
     .toBeGreaterThan(before);
 });
 
+test.describe("390 mouse pointer", () => {
+  test.use({
+    hasTouch: false,
+    isMobile: false,
+    viewport: { width: 390, height: 844 },
+  });
+
+  test("a focus-return tooltip does not block the Board menu", async ({
+    page,
+    board,
+  }) => {
+    await board.open(page);
+    const members = await openMembers(page);
+    await members.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(members).toBeHidden();
+
+    // Closing Members returns focus to People; Radix opens its tooltip after
+    // the focus delay. The popper wrapper must not swallow the next click.
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toBeVisible({ timeout: 3_000 });
+    const boardMenu = page.getByTestId("board-menu-trigger");
+    await boardMenu.click({ timeout: 5_000 });
+    await expect(page.getByRole("menu").first()).toBeVisible();
+  });
+});
+
 test("calendar and table keep their content on screen at 390 px", async ({
   page,
   board,

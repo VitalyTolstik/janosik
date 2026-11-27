@@ -178,18 +178,17 @@ test("board header keeps the title and Agents action usable at tablet widths", a
     const search = page.getByRole("button", {
       name: "Global search",
     });
-    if (width === 720) {
-      await expect(search).toBeHidden();
-      await expect(page.getByText("Global search")).toBeHidden();
-    }
     if (width === 721) {
       await expect(
         page.getByRole("button", { name: "Switch board" }),
       ).toBeVisible();
-      await expect(search).toBeVisible();
-      await expect(page.getByText("Global search")).toBeHidden();
     }
-    if (width >= 1024) {
+    if (width < 1024) {
+      // Search stays behind ⌘K so the title keeps the 768–800 range.
+      await expect(search).toBeHidden();
+      await expect(page.getByText("Global search")).toBeHidden();
+    } else {
+      await expect(search).toBeVisible();
       await expect(page.getByText("Global search")).toBeVisible();
     }
   }
@@ -286,8 +285,111 @@ test("a long board title keeps every header control hittable at 640–768", asyn
     ] as const) {
       await expectHittable(label, control);
     }
-    if (width >= 721) await expectHittable("Global search", search);
-    else await expect(search).toBeHidden();
+    // The search icon is behind ⌘K below 1024, so it cannot collide with or
+    // cover Agents in this squeeze.
+    await expect(search).toBeHidden();
+  }
+});
+
+test("a realistic board title is not ellipsized at 768/800", async ({
+  page,
+  board,
+}) => {
+  // Long enough to be a real demo name (~225 px), unlike the fixture's
+  // 42-character UUID title that always truncates by design.
+  const timeline = "Janosik core — header work";
+  await board.command({ type: "RENAME_BOARD", title: timeline });
+  await board.open(page);
+
+  for (const width of [768, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const layout = await page.evaluate(() => {
+      const header = document.querySelector("header")!;
+      const title = header.querySelector<HTMLElement>("h1")!;
+      const text = title.querySelector<HTMLElement>("span")!;
+      // A clone without truncation measures the title's intrinsic width;
+      // the live span's scrollWidth then proves whether it ellipsizes.
+      const probe = text.cloneNode(true) as HTMLElement;
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.whiteSpace = "nowrap";
+      probe.style.width = "auto";
+      probe.style.maxWidth = "none";
+      probe.style.overflow = "visible";
+      probe.style.textOverflow = "clip";
+      title.appendChild(probe);
+      const textWidth = probe.getBoundingClientRect().width;
+      probe.remove();
+      const agent = document.querySelector<HTMLElement>(
+        '[data-testid="agent-control-trigger"]',
+      )!;
+      const rect = title.getBoundingClientRect();
+      return {
+        textWidth,
+        boxWidth: rect.width,
+        clipped: text.scrollWidth > text.clientWidth + 1,
+        headerOverflow: header.scrollWidth - header.clientWidth,
+        titleRight: rect.right,
+        agentLeft: agent.getBoundingClientRect().left,
+      };
+    });
+
+    expect(layout.textWidth, `title text at ${width}`).toBeGreaterThan(210);
+    expect(layout.clipped, `title clipped at ${width}`).toBe(false);
+    expect(layout.textWidth).toBeLessThanOrEqual(layout.boxWidth + 1);
+    expect(layout.headerOverflow).toBeLessThanOrEqual(0);
+    expect(layout.titleRight).toBeLessThanOrEqual(layout.agentLeft + 1);
+  }
+});
+
+test("desktop title keeps the switcher beside it and hover only on the text", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  const title = page.getByTestId("board-title");
+  const pencil = page.getByTestId("board-rename");
+
+  for (const width of [1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const layout = await page.evaluate(() => {
+      const heading = document.querySelector<HTMLElement>(
+        '[data-testid="board-title"]',
+      )!;
+      const wrapper = heading.parentElement!;
+      const switcher = document.querySelector<HTMLElement>(
+        'button[aria-label="Switch board"]',
+      )!;
+      return {
+        titleRight: heading.getBoundingClientRect().right,
+        wrapperRight: wrapper.getBoundingClientRect().right,
+        switcherLeft: switcher.getBoundingClientRect().left,
+        headerOverflow:
+          document.querySelector("header")!.scrollWidth -
+          document.querySelector("header")!.clientWidth,
+      };
+    });
+
+    // Shrink-only title: no empty hover strip between title and switcher.
+    expect(layout.headerOverflow).toBeLessThanOrEqual(0);
+    expect(layout.wrapperRight - layout.titleRight).toBeLessThanOrEqual(8);
+    expect(layout.switcherLeft - layout.titleRight).toBeLessThanOrEqual(40);
+
+    await page.mouse.move(0, 0);
+    await expect(pencil).toHaveCSS("opacity", "0");
+    await title.hover();
+    await expect(pencil).toHaveCSS("opacity", "0.8");
+
+    // A point that used to sit inside the grown wrapper (80 px right of the
+    // capped title) must not reveal the rename pencil.
+    const box = await title.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width + 80, box!.y + box!.height / 2);
+    await expect(pencil).toHaveCSS("opacity", "0");
   }
 });
 
