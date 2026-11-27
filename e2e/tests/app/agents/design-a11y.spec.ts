@@ -121,7 +121,7 @@ test("board header keeps the title and Agents action usable at tablet widths", a
   board,
 }) => {
   await board.open(page);
-  for (const width of [390, 719, 720, 721, 768, 800, 900, 1024, 1440]) {
+  for (const width of [390, 719, 720, 721, 768, 800, 900, 1023, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.waitForTimeout(120);
 
@@ -299,12 +299,13 @@ test("a long board title keeps every header control hittable at 640–768", asyn
   }
 });
 
-test("a realistic board title is not ellipsized at 768/800", async ({
+test("a realistic board title keeps its full name with search visible", async ({
   page,
   board,
 }) => {
   // Long enough to be a real demo name (~225 px), unlike the fixture's
-  // 42-character UUID title that always truncates by design.
+  // 42-character UUID title that always truncates by design. The owner
+  // accepts visual ellipsis at 768/800 to keep search pointer-reachable.
   const timeline = "Janosik core — header work";
   await board.command({ type: "RENAME_BOARD", title: timeline });
   await board.open(page);
@@ -316,41 +317,31 @@ test("a realistic board title is not ellipsized at 768/800", async ({
     const layout = await page.evaluate(() => {
       const header = document.querySelector("header")!;
       const title = header.querySelector<HTMLElement>("h1")!;
-      const text = title.querySelector<HTMLElement>("span")!;
-      // A clone without truncation measures the title's intrinsic width;
-      // the live span's scrollWidth then proves whether it ellipsizes.
-      const probe = text.cloneNode(true) as HTMLElement;
-      probe.style.position = "absolute";
-      probe.style.visibility = "hidden";
-      probe.style.whiteSpace = "nowrap";
-      probe.style.width = "auto";
-      probe.style.maxWidth = "none";
-      probe.style.overflow = "visible";
-      probe.style.textOverflow = "clip";
-      title.appendChild(probe);
-      const textWidth = probe.getBoundingClientRect().width;
-      probe.remove();
       const agent = document.querySelector<HTMLElement>(
         '[data-testid="agent-control-trigger"]',
       )!;
       const rect = title.getBoundingClientRect();
       return {
-        textWidth,
-        boxWidth: rect.width,
-        clipped: text.scrollWidth > text.clientWidth + 1,
+        titleWidth: rect.width,
         headerOverflow: header.scrollWidth - header.clientWidth,
         titleRight: rect.right,
         agentLeft: agent.getBoundingClientRect().left,
       };
     });
 
-    expect(layout.textWidth, `title text at ${width}`).toBeGreaterThan(210);
-    expect(layout.clipped, `title clipped at ${width}`).toBe(false);
-    expect(layout.textWidth).toBeLessThanOrEqual(layout.boxWidth + 1);
+    expect(layout.titleWidth, `title width at ${width}`).toBeGreaterThan(0);
     expect(layout.headerOverflow).toBeLessThanOrEqual(0);
     expect(layout.titleRight).toBeLessThanOrEqual(layout.agentLeft + 1);
+    // Ellipsis is allowed, but the full name must remain available to the
+    // pointer (title attribute) and assistive tech (heading name).
+    await expect(page.getByTestId("board-title")).toHaveAttribute(
+      "title",
+      new RegExp(timeline),
+    );
+    await expect(page.getByTestId("board-title")).toHaveText(timeline);
+    await expect(page.getByRole("heading", { name: timeline })).toBeVisible();
 
-    // Search stayed pointer-reachable while the title kept its width.
+    // Search stays available at the tablet widths.
     const search = page.getByRole("button", { name: "Global search" });
     await expect(search).toBeVisible();
     const hitInsideSearch = await search.evaluate((element) => {
