@@ -1,9 +1,10 @@
 services:
   app:
+    image: ${E2E_IMAGE:-${JANOSIK_IMAGE:-janosik-e2e-local}:${JANOSIK_TAG:-latest}}
     build:
       context: .
       dockerfile: Dockerfile
-    pull_policy: build
+    pull_policy: ${E2E_PULL_POLICY:-build}
     environment:
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
