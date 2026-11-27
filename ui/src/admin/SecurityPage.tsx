@@ -353,6 +353,7 @@ export function SecurityPage() {
             {security.alerts.map((alert) => (
               <div
                 key={alert.id}
+                data-testid="admin-security-alert"
                 className="flex flex-col gap-1 text-ui-body sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2">

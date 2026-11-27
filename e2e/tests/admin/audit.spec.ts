@@ -60,9 +60,11 @@ test("shows a failed master sign-in in suspicious activity", async ({
 
   const alerts = page.getByTestId("admin-security-alerts");
   await expect(alerts).toContainText(operator.email);
+  // The row wraps its identity and metadata in separate flex groups; select
+  // the whole alert, not the email's immediate parent.
   const alert = alerts
-    .getByText(operator.email, { exact: true })
-    .locator("xpath=..");
+    .getByTestId("admin-security-alert")
+    .filter({ hasText: operator.email });
   await expect(alert).toContainText("Wrong password");
   await expect(alert).toContainText(testIp);
 });
