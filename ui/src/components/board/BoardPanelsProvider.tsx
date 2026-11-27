@@ -48,6 +48,11 @@ export function BoardPanelsProvider({
     setOpen(false);
     if (mode === "dock") triggerRef.current?.focus();
   };
+  const showCard = () => {
+    if (dragging || cardOpen) return;
+    focusTabOnOpen.current = true;
+    setOpen(true, "card");
+  };
   const toggle = (keyboard: boolean) => {
     if (dragging || cardOpen) return false;
     const overlay = findOpenOverlay();
@@ -109,6 +114,7 @@ export function BoardPanelsProvider({
         tabRef,
         focusOnOpen,
         close,
+        showCard,
         toggle,
       }
     : null;

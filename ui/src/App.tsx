@@ -21,7 +21,10 @@ import {
   useBoardInspector,
 } from "@/hooks/use-board-inspector";
 import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
-import { BoardSection } from "@/components/BoardSection";
+import {
+  BoardSection,
+  type BoardInspectorSlotProps,
+} from "@/components/BoardSection";
 import {
   TemplatePickerDialog,
   type TemplateCreateOutcome,
@@ -294,7 +297,7 @@ const BoardInspector = lazy(() =>
   })),
 );
 
-function BoardInspectorSlot({ boardId }: { boardId: string }) {
+function BoardInspectorSlot({ boardId, onOpenCard }: BoardInspectorSlotProps) {
   const inspector = useBoardInspector();
   const [hasOpened, setHasOpened] = useState(false);
   if (!inspector) return null;
@@ -304,7 +307,7 @@ function BoardInspectorSlot({ boardId }: { boardId: string }) {
   if (!hasOpened) return placeholder;
   return (
     <Suspense fallback={placeholder}>
-      <BoardInspector boardId={boardId} />
+      <BoardInspector boardId={boardId} onOpenCard={onOpenCard} />
     </Suspense>
   );
 }
@@ -321,8 +324,7 @@ function BoardRoute() {
   if (!board) return <NotFoundPage variant="board" />;
   return (
     <div key={board.id} className="flex min-h-0 min-w-0 flex-1">
-      <BoardSection />
-      <BoardInspectorSlot boardId={board.id} />
+      <BoardSection InspectorSlot={BoardInspectorSlot} />
     </div>
   );
 }

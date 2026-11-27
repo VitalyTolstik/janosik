@@ -4,11 +4,14 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
+import { ActivityPanel } from "@/components/board/ActivityPanel";
+import { CardPeek } from "@/components/board/CardPeek";
 import { InspectorTabs } from "@/components/board/InspectorTabs";
 import { PeoplePanel } from "@/components/board/PeoplePanel";
 import {
@@ -19,9 +22,16 @@ import {
 } from "@/hooks/use-board-inspector";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n";
-import { RIGHT_PANEL_MAX, RIGHT_PANEL_MIN } from "@/utils/board-panel-storage";
+import { useBoardState } from "@/store/BoardContext";
+import { useCardPeekSelection } from "@/store/board-selection";
+import { cardById } from "@/store/read-model";
+import {
+  INSPECTOR_TABS,
+  RIGHT_PANEL_MAX,
+  RIGHT_PANEL_MIN,
+} from "@/utils/board-panel-storage";
 import { isEditableTarget } from "@/utils/keyboard";
-import { isOverlayOpen } from "@/utils/overlay";
+import { findOpenOverlay, isOverlayOpen } from "@/utils/overlay";
 
 import "./board-inspector.css";
 
@@ -111,16 +121,60 @@ function ResizeHandle({
   );
 }
 
-export function BoardInspector({ boardId }: { boardId: string }) {
+export function BoardInspector({
+  boardId,
+  onOpenCard,
+}: {
+  boardId: string;
+  onOpenCard: (cardId: string) => void;
+}) {
   const { t } = useI18n();
   const panel = useBoardInspector();
+  const { board } = useBoardState();
+  const selection = useCardPeekSelection();
+  const card = cardById(board?.cards, selection?.selectedCardId);
+  const activityCardId = card?.archivedAt === undefined ? card?.id : undefined;
   const docked = panel?.mode === "dock";
-  const { open, focusOnOpen } = panel ?? {};
+  const { open, focusOnOpen, tab: activeTab } = panel ?? {};
   useEffect(() => {
     if (docked && open) focusOnOpen?.();
-  }, [docked, open, focusOnOpen]);
+  }, [docked, open, focusOnOpen, activeTab]);
   if (!panel) return null;
   const { mode, cardOpen, dragging } = panel;
+
+  let tabContent: ReactNode;
+  if (open) {
+    switch (panel.tab) {
+      case "people":
+        tabContent = <PeoplePanel boardId={boardId} />;
+        break;
+      case "activity":
+        tabContent = cardOpen ? null : (
+          <ActivityPanel
+            key={activityCardId ?? "board"}
+            boardId={boardId}
+            cardId={activityCardId}
+            onClearCard={() => {
+              selection?.selectCard(null);
+              panel.tabRef.current?.focus();
+            }}
+          />
+        );
+        break;
+      case "card":
+        tabContent = (
+          <CardPeek
+            boardId={boardId}
+            cardId={selection?.selectedCardId ?? null}
+            onOpenCard={(cardId) => {
+              if (mode === "sheet") panel.close();
+              onOpenCard(cardId);
+            }}
+          />
+        );
+        break;
+    }
+  }
 
   const content = (
     <aside
@@ -183,15 +237,19 @@ export function BoardInspector({ boardId }: { boardId: string }) {
         onChange={panel.setTab}
         tabRef={panel.tabRef}
       />
-      <div
-        id={inspectorPanelId(panel.tab)}
-        role="tabpanel"
-        aria-labelledby={inspectorTabId(panel.tab)}
-        tabIndex={0}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        {open ? <PeoplePanel boardId={boardId} /> : null}
-      </div>
+      {INSPECTOR_TABS.map((tab) => (
+        <div
+          key={tab}
+          id={inspectorPanelId(tab)}
+          role="tabpanel"
+          aria-labelledby={inspectorTabId(tab)}
+          hidden={tab !== panel.tab}
+          tabIndex={0}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
+          {tab === panel.tab ? tabContent : null}
+        </div>
+      ))}
     </aside>
   );
 
@@ -230,7 +288,7 @@ export function BoardInspector({ boardId }: { boardId: string }) {
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               const trigger = panel.triggerRef.current;
-              if (!trigger || trigger.disabled) return;
+              if (!trigger || trigger.disabled || findOpenOverlay()) return;
               if (trigger.getAttribute("aria-expanded") === "false") {
                 trigger.focus();
               } else if (document.activeElement === document.body) {

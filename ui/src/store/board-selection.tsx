@@ -60,11 +60,20 @@ const EMPTY_SELECTION: CardSelectionValue = {
 
 const CardSelectionContext = createContext<CardSelectionValue | null>(null);
 
+const CardPeekSelectionContext = createContext<{
+  selectedCardId: string | null;
+  selectCard: (cardId: string | null) => void;
+  peekOpen: boolean;
+  openPeek?: (cardId: string) => void;
+} | null>(null);
+
 interface CardSelectionProviderProps {
   boardId: string;
   /** Visual card order: columns in board order, filtered where applicable. */
   order: readonly string[];
   enabled?: boolean;
+  peekOpen?: boolean;
+  showPeek?: () => void;
   children: ReactNode;
 }
 
@@ -84,10 +93,37 @@ export function CardSelectionProvider({
   boardId,
   order,
   enabled = true,
+  peekOpen = false,
+  showPeek,
   children,
 }: CardSelectionProviderProps) {
   const { t } = useI18n();
   const toast = useToast();
+  // The inspector's current card has its own lifetime and is available
+  // even when bulk actions are disabled (for example, for viewers).
+  const [peek, setPeek] = useState({ boardId, cardId: null as string | null });
+  if (peek.boardId !== boardId) setPeek({ boardId, cardId: null });
+  const selectCard = useCallback(
+    (cardId: string | null) => setPeek({ boardId, cardId }),
+    [boardId],
+  );
+  const selectedCardId = peek.boardId === boardId ? peek.cardId : null;
+  const openPeek = useCallback(
+    (cardId: string) => {
+      selectCard(cardId);
+      showPeek?.();
+    },
+    [selectCard, showPeek],
+  );
+  const peekSelection = useMemo(
+    () => ({
+      selectedCardId,
+      selectCard,
+      peekOpen,
+      openPeek: showPeek ? openPeek : undefined,
+    }),
+    [selectedCardId, selectCard, peekOpen, showPeek, openPeek],
+  );
   const [mode, setModeState] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // Synchronous mirror for rapid handler loops (select-all + range): a
@@ -278,7 +314,9 @@ export function CardSelectionProvider({
 
   return (
     <CardSelectionContext.Provider value={value}>
-      {children}
+      <CardPeekSelectionContext.Provider value={peekSelection}>
+        {children}
+      </CardPeekSelectionContext.Provider>
     </CardSelectionContext.Provider>
   );
 }
@@ -290,4 +328,9 @@ export function CardSelectionProvider({
  */
 export function useCardSelection(): CardSelectionValue {
   return useContext(CardSelectionContext) ?? EMPTY_SELECTION;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- same provider and module as useCardSelection
+export function useCardPeekSelection() {
+  return useContext(CardPeekSelectionContext);
 }

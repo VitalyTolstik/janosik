@@ -202,7 +202,7 @@ for (const dismissWith of ["Close", "Escape"]) {
     await page
       .getByTestId("card-title")
       .filter({ hasText: "Release checklist" })
-      .click();
+      .dblclick();
     const editor = page.getByRole("dialog", { name: "Card details" });
     await expect(editor).toBeVisible();
     await page.setViewportSize({ width: 1024, height: 900 });
@@ -356,7 +356,7 @@ test("opens from the command palette and yields to a card modal", async ({
   await page.getByRole("option", { name: "Toggle people panel" }).click();
   await expect(panel.getByRole("tab", { name: "People" })).toBeFocused();
 
-  await page.getByText("Release checklist", { exact: true }).click();
+  await page.getByText("Release checklist", { exact: true }).dblclick();
   await expect(panel).toHaveAttribute("inert", "");
   await page.keyboard.press("BracketRight");
   await page.keyboard.press("Control+k");
@@ -365,9 +365,12 @@ test("opens from the command palette and yields to a card modal", async ({
     page.getByRole("option", { name: "Toggle people panel" }),
   ).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("dialog").filter({ hasText: "Release checklist" }),
-  ).toBeVisible();
+  await expect(input).toBeHidden();
+  const editor = page.getByRole("dialog", { name: "Card details" });
+  await expect(editor).toBeVisible();
+  // The palette must hand focus back to the editor on its own; assert the
+  // natural target before Escape, without focusing the close button by hand.
+  await expect(editor.getByRole("textbox", { name: "Title" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(panel).not.toHaveAttribute("inert");
   await expect(panel).toBeVisible();

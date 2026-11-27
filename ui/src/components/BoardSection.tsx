@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
 } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -32,6 +33,7 @@ import { SavedViewsMenuBoundary } from "@/components/board/SavedViewsMenuBoundar
 import { loadSavedViewsMenu } from "@/components/board/saved-views-loader";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useToast } from "@/components/Toast";
+import { useBoardInspector } from "@/hooks/use-board-inspector";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -78,6 +80,11 @@ const SAVED_VIEWS_FALLBACK = (
   />
 );
 
+export type BoardInspectorSlotProps = {
+  boardId: string;
+  onOpenCard: (cardId: string) => void;
+};
+
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
  * calendar by due dates, or flat table), wrapped with a filter toolbar.
@@ -87,7 +94,10 @@ const SAVED_VIEWS_FALLBACK = (
  * the view. The board title lives in the header (BoardTitle) — nothing is
  * duplicated here.
  */
-export function BoardSection() {
+export function BoardSection({
+  InspectorSlot,
+}: { InspectorSlot?: ComponentType<BoardInspectorSlotProps> } = {}) {
+  const inspector = useBoardInspector();
   const {
     board,
     roleOf,
@@ -431,6 +441,23 @@ export function BoardSection() {
     [setSearchParams],
   );
 
+  const closeCard = () => {
+    closedCardRef.current = openCardId;
+    setOpenCardId(null);
+    // The dialog can receive Escape while the click's URL update is still
+    // pending. Replace the URL even if the last render had no card param.
+    setSearchParams(
+      (current) => {
+        const next = copySearchParamsWithoutLanguageHandoff(current);
+        next.delete("card");
+        next.delete("comment");
+        next.delete("attachment");
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
   if (!board) {
     return (
       <main className="flex flex-1 items-center justify-center p-6 text-muted-foreground">
@@ -465,6 +492,8 @@ export function BoardSection() {
       boardId={board.id}
       order={selectionOrder}
       enabled={selectionEnabled}
+      peekOpen={inspector?.open && !inspector.cardOpen}
+      showPeek={inspector?.showCard}
     >
       <main
         data-testid="board-main"
@@ -605,17 +634,7 @@ export function BoardSection() {
         <ErrorBoundary
           compact
           resetKey={openCardId ?? "closed"}
-          onReset={() => {
-            closedCardRef.current = openCardId;
-            setOpenCardId(null);
-            if (searchParams.get("card")) {
-              const next = copySearchParamsWithoutLanguageHandoff(searchParams);
-              next.delete("card");
-              next.delete("comment");
-              next.delete("attachment");
-              setSearchParams(next, { replace: true });
-            }
-          }}
+          onReset={closeCard}
         >
           <CardDialog
             cardId={openCardId}
@@ -624,26 +643,14 @@ export function BoardSection() {
             focusCommentId={focusCommentId}
             focusAttachmentId={focusAttachmentId}
             onOpenChange={(open) => {
-              if (!open) {
-                // Mark the closing card so a server commit landing between the
-                // state update and the param cleanup cannot reopen the dialog.
-                closedCardRef.current = openCardId;
-                setOpenCardId(null);
-                // Clear the deep link so a refresh doesn't reopen the card,
-                // while keeping filter and view state (TASK-152).
-                if (searchParams.get("card")) {
-                  const next =
-                    copySearchParamsWithoutLanguageHandoff(searchParams);
-                  next.delete("card");
-                  next.delete("comment");
-                  next.delete("attachment");
-                  setSearchParams(next, { replace: true });
-                }
-              }
+              if (!open) closeCard();
             }}
           />
         </ErrorBoundary>
       </main>
+      {InspectorSlot ? (
+        <InspectorSlot boardId={board.id} onOpenCard={handleCardClick} />
+      ) : null}
     </CardSelectionProvider>
   );
 }

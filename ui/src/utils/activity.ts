@@ -155,7 +155,7 @@ export function isStaleDeletedCommentEntry(
     ActivityFeedEntry,
     "type" | "commentId" | "detail" | "changes" | "details"
   >,
-  deletedIds: DeletedCommentTombstones,
+  deletedIds: ReadonlyMap<string, number>,
   requestGeneration: number,
 ): boolean {
   const id = commentActivityId(entry);
@@ -357,4 +357,32 @@ export function sentenceFor(
     key: COMMAND_KEYS[entry.type] ?? "activity.changed",
     params: { detail: entry.detail ?? "" },
   };
+}
+
+/** Command ids and standalone activity ids occupy separate namespaces. */
+export function activityEntryKey(entry: ActivityFeedEntry): string {
+  return `${entry.source}:${entry.id}`;
+}
+
+/** A timestamp stamp or update without a captured change carries no story. */
+export function activityHasStory(entry: ActivityFeedEntry): boolean {
+  if (entry.type === "TOUCH_CARD") return false;
+  if (entry.type !== "UPDATE_CARD") return true;
+  return Boolean(
+    entry.detail ||
+    entry.changes?.some((change) => change.field !== "checklistItemDone"),
+  );
+}
+
+export function activityAssignee(
+  entry: ActivityFeedEntry,
+  memberName: (id: string) => string,
+): string | null {
+  const id =
+    entry.type === "SET_CARD_ASSIGN"
+      ? entry.changes?.[0]?.to
+      : entry.type === "assignee-set"
+        ? entry.detail
+        : undefined;
+  return id ? memberName(id) : null;
 }

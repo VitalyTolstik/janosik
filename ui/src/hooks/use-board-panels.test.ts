@@ -71,6 +71,13 @@ describe("board panel preferences", () => {
     expect(result.current).toMatchObject({ mode, open, width: 380 });
   });
 
+  it.each(["activity", "card"] as const)("restores the %s tab", (tab) => {
+    viewport(390);
+    localStorage.setItem(KEY, prefs(380, tab));
+    const { result } = renderHook(() => useBoardPanels("user", "board"));
+    expect(result.current).toMatchObject({ open: false, tab });
+  });
+
   it("keeps an overlay visit from changing the saved docked preference", () => {
     viewport(1024);
     localStorage.setItem(KEY, prefs());
