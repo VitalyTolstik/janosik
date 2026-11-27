@@ -234,6 +234,65 @@ describe("workflow evaluator", () => {
     });
   });
 
+  it("accepts a summary card whose description body is not loaded", () => {
+    const summary = card("c1", {
+      readModel: {
+        descriptionChars: 42,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 0,
+        blocked: false,
+        detailLoaded: false,
+      },
+    });
+    const decision = evaluateCardTransition(
+      workflow([
+        {
+          id: "a",
+          fromColumnId: "backlog",
+          toColumnId: "doing",
+          conditions: ["requireDescription"],
+        },
+      ]),
+      summary,
+      "backlog",
+      "doing",
+      ROLE.MEMBER,
+    );
+    expect(decision.allowed).toBe(true);
+  });
+
+  it("still blocks a summary card with no stored description text", () => {
+    const summary = card("c1", {
+      readModel: {
+        descriptionChars: 0,
+        checklistItemCount: 0,
+        checklistDoneCount: 0,
+        linkCount: 0,
+        blocked: false,
+        detailLoaded: false,
+      },
+    });
+    const decision = evaluateCardTransition(
+      workflow([
+        {
+          id: "a",
+          fromColumnId: "backlog",
+          toColumnId: "doing",
+          conditions: ["requireDescription"],
+        },
+      ]),
+      summary,
+      "backlog",
+      "doing",
+      ROLE.MEMBER,
+    );
+    expect(decision).toMatchObject({
+      allowed: false,
+      failedConditions: ["requireDescription"],
+    });
+  });
+
   it("ignores roles when the reducer evaluates without an actor", () => {
     const decision = evaluateCardTransition(
       workflow([

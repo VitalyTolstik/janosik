@@ -139,10 +139,7 @@ export function failedConditions(
       !(typeof card.dueDate === "number" && Number.isFinite(card.dueDate))
     ) {
       failed.push(condition);
-    } else if (
-      condition === "requireDescription" &&
-      (card.description ?? "").trim() === ""
-    ) {
+    } else if (condition === "requireDescription" && !hasDescription(card)) {
       failed.push(condition);
     } else if (
       condition === "requireChecklistsDone" &&
@@ -152,6 +149,17 @@ export function failedConditions(
     }
   }
   return failed;
+}
+
+/**
+ * A card has a description when its body is non-blank, or — for a board
+ * summary, which deliberately omits the body — when the read model says the
+ * stored text is non-empty. Without the second arm a workflow gate asks for a
+ * description that already exists until the card dialog loads its detail.
+ */
+function hasDescription(card: Card): boolean {
+  if (card.description !== undefined) return card.description.trim() !== "";
+  return (card.readModel?.descriptionChars ?? 0) > 0;
 }
 
 /** Vacuous truth: a card without checklists has nothing left to tick. */
