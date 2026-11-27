@@ -20,6 +20,7 @@ type InspectorControls = ReturnType<typeof useBoardPanels> & {
   tabRef: RefObject<HTMLButtonElement>;
   focusOnOpen: (container?: HTMLElement) => void;
   close: () => void;
+  showCard: () => void;
   toggle: (keyboard: boolean) => boolean;
 };
 

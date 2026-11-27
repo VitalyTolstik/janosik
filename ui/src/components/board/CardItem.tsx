@@ -97,6 +97,9 @@ interface CardItemProps {
   selectionMode?: boolean;
   /** Toggles this card in the bulk selection (shift extends the range). */
   onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
+  peekSelected?: boolean;
+  onSelectPeek?: (cardId: string) => void;
+  hasPeekControl?: boolean;
   /**
    * TASK-200.9: the server filter matched this card's description. A
    * read-model summary has only `descriptionChars`, so only the server can
@@ -176,6 +179,9 @@ function CardItemView({
   selected = false,
   selectionMode = false,
   onToggleSelect,
+  peekSelected,
+  onSelectPeek,
+  hasPeekControl,
   descriptionMatch,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped(!compact);
@@ -280,6 +286,20 @@ function CardItemView({
                   }
                   return;
                 }
+                (onSelectPeek ?? onClick)(card.id);
+              }
+            : undefined
+        }
+        onDoubleClick={
+          onSelectPeek && onClick && !selectionMode
+            ? (event) => {
+                if (event.defaultPrevented || shouldLeaveToBrowser(event))
+                  return;
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest("button, a, input")
+                )
+                  return;
                 onClick(card.id);
               }
             : undefined
@@ -311,6 +331,8 @@ function CardItemView({
               },
             }
           : {})}
+        aria-current={readOnly && peekSelected ? "true" : undefined}
+        data-card-peek-selected={peekSelected || undefined}
         data-card-cursor={isCursor || undefined}
         data-card-selected={selected || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
@@ -325,6 +347,8 @@ function CardItemView({
           entering && "animate-card-in",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
+          peekSelected && "border-primary ring-2 ring-inset ring-primary",
+          hasPeekControl && "max-md:pr-12",
         )}
       >
         {onToggleSelect && (selectionMode || selected) ? (

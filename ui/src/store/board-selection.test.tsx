@@ -7,6 +7,7 @@ import {
   CARD_SELECTION_MAX,
   CardSelectionProvider,
   useCardSelection,
+  useCardPeekSelection,
 } from "@/store/board-selection";
 
 function Probe({ ids }: { ids: string[] }) {
@@ -42,6 +43,18 @@ function Probe({ ids }: { ids: string[] }) {
   );
 }
 
+function PeekProbe() {
+  const peek = useCardPeekSelection();
+  return (
+    <>
+      <div data-testid="peek-card">{peek?.selectedCardId || "none"}</div>
+      <button type="button" onClick={() => peek?.selectCard("a")}>
+        Peek at card
+      </button>
+    </>
+  );
+}
+
 function Harness({ order }: { order: string[] }) {
   const [current, setCurrent] = useState(order);
   return (
@@ -57,6 +70,32 @@ function Harness({ order }: { order: string[] }) {
 }
 
 describe("card selection state", () => {
+  it("supports a read-only peek selection and clears it when switching boards", () => {
+    function tree(boardId: string) {
+      return (
+        <I18nProvider>
+          <CardSelectionProvider
+            boardId={boardId}
+            order={["a"]}
+            enabled={false}
+          >
+            <Probe ids={["a"]} />
+            <PeekProbe />
+          </CardSelectionProvider>
+        </I18nProvider>
+      );
+    }
+
+    const { rerender } = render(tree("board-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Peek at card" }));
+    expect(screen.getByTestId("peek-card")).toHaveTextContent("a");
+    expect(screen.getByTestId("count")).toHaveTextContent("0");
+    rerender(tree("board-2"));
+    expect(screen.getByTestId("peek-card")).toHaveTextContent("none");
+    rerender(tree("board-1"));
+    expect(screen.getByTestId("peek-card")).toHaveTextContent("none");
+  });
+
   it("caps a selection at the command batch ceiling", () => {
     const ids = Array.from(
       { length: CARD_SELECTION_MAX + 5 },

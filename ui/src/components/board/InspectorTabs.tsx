@@ -1,8 +1,14 @@
 import type { KeyboardEvent, RefObject } from "react";
 
 import { inspectorPanelId, inspectorTabId } from "@/hooks/use-board-inspector";
-import { useI18n } from "@/i18n";
+import { useI18n, type MessageKey } from "@/i18n";
 import { INSPECTOR_TABS, type InspectorTab } from "@/utils/board-panel-storage";
+
+const TAB_LABELS = {
+  people: "people.title",
+  activity: "inspector.activity",
+  card: "inspector.card",
+} satisfies Record<InspectorTab, MessageKey>;
 
 export function InspectorTabs({
   tab,
@@ -63,7 +69,7 @@ export function InspectorTabs({
           className="inspector-tab border-b-2 border-transparent px-2 text-ui-body font-medium focus-visible:outline-ring aria-selected:border-primary"
           onClick={() => onChange(choice)}
         >
-          {t("people.title")}
+          {t(TAB_LABELS[choice])}
         </button>
       ))}
     </div>

@@ -6,34 +6,28 @@ import type {
   BoardMemberDto,
 } from "@janosik/shared";
 
-import { api, isApiEnabled } from "@/api/client";
 import { AgentAttribution } from "@/components/agents/AgentAttribution";
 import { shortId } from "@/components/agents/agent-model";
 import { WatchFeedSkeleton } from "@/components/board/ViewSkeleton";
 import { SkeletonRegion } from "@/components/ui/skeleton";
+import {
+  ACTIVITY_PAGE_SIZE,
+  useBoardActivityFeed,
+} from "@/hooks/use-board-activity-feed";
 import { useHour12, useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
+import { useBoardMembersList, useBoardPresence } from "@/store/board-live";
 import {
-  useBoardLive,
-  useBoardMembersList,
-  useBoardPresence,
-} from "@/store/board-live";
-import {
+  activityEntryKey,
+  activityHasStory,
+  activityAssignee,
   FIELD_KEYS,
   formatChangeValue,
-  isStaleDeletedCommentEntry,
-  reconcileRestoredComments,
   sentenceFor,
 } from "@/utils/activity";
 import { userLabel } from "@/utils/avatar";
 import { diffSides, type DiffSides } from "@/utils/diff-words";
 
-/** Entries per page of the watch feed (server max is 100). */
-const PAGE_SIZE = 50;
-/** How often the newest page is re-read; commands have no SSE frame. */
-const POLL_MS = 3000;
-/** Coalesce SSE-triggered refreshes so a busy board cannot storm the API. */
-const REFRESH_COALESCE_MS = 1000;
 /** A feed value is a display snippet, not the whole field: cap its width. */
 const MAX_VALUE_CHARS = 120;
 /** Page buttons kept around the current one before an ellipsis. */
@@ -89,21 +83,35 @@ export function WatchView({ boardId }: WatchViewProps) {
   const hour12 = useHour12();
   const presence = useBoardPresence(boardId);
   const members = useBoardMembersList(boardId);
-  const { activity, commits } = useBoardLive();
-  const serverMode = isApiEnabled();
-
-  const [items, setItems] = useState<ActivityFeedEntry[]>([]);
-  // Empty means "no activity" only after the first page has arrived; before
-  // that the feed is loading (the old code briefly claimed today was quiet).
-  const [loaded, setLoaded] = useState(!serverMode);
   const [page, setPage] = useState(0);
-  const [maxPage, setMaxPage] = useState(0);
-  const [atEnd, setAtEnd] = useState(false);
-  const [loading, setLoading] = useState(false);
-  // A failed feed request is visible and retryable — a watch wall silently
-  // showing stale or empty data is worse than an error (TASK-162 review).
-  const [error, setError] = useState(false);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE);
+  const feed = useBoardActivityFeed(boardId, {
+    active: page === 0,
+    size: pageSize,
+  });
+  const { serverMode, loadPage, refresh } = feed;
+  const [history, setHistory] = useState(
+    () => new Map<number, Awaited<ReturnType<typeof loadPage>>>(),
+  );
+  const [pageLoading, setPageLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<number | null>(null);
+  const current = page === 0 ? feed.page : history.get(page);
+  const loaded = current != null;
+  const loading = pageLoading || (page === 0 && feed.size !== pageSize);
+  const error = historyError !== null || (page === 0 && feed.error);
+  const items =
+    current?.items.filter((entry) => {
+      if (page === 0) return true;
+      const deletedAt = feed.deleted.get(entry.commentId ?? entry.detail ?? "");
+      return (
+        deletedAt === undefined ||
+        deletedAt <= current.generation ||
+        entry.type === "comment_deleted"
+      );
+    }) ?? [];
+  const newestKnown = history.size > 0 ? history.get(history.size) : feed.page;
+  const atEnd = newestKnown?.nextCursor == null;
+  const lastPage = history.size + (atEnd ? 0 : 2);
   const [activeAgents, setActiveAgents] = useState<AgentActivity[]>([]);
   // Last action time per agent, kept across page loads so membership is a
   // real sliding window (AGENT_WINDOW_MS), not "whoever is on the newest page"
@@ -123,41 +131,6 @@ export function WatchView({ boardId }: WatchViewProps) {
       }
     >(),
   );
-
-  // Cursor that fetches a given page (page 0 has none). A missing entry means
-  // the page is not reachable yet — the chain is discovered by walking.
-  const cursorByPage = useRef(new Map<number, string | null>([[0, null]]));
-  const pageCache = useRef(new Map<number, ActivityFeedEntry[]>());
-  const atEndRef = useRef(false);
-  const pageRef = useRef(0);
-  const inFlight = useRef(false);
-  // TASK-185.2: an in-flight page can resolve after the deletion frame.
-  const deletedCommentIdsRef = useRef(new Map<string, number>());
-  const deletionGenerationRef = useRef(0);
-  const withoutStaleDeleted = useCallback(
-    (items: ActivityFeedEntry[], requestGeneration: number) => {
-      reconcileRestoredComments(
-        items,
-        deletedCommentIdsRef.current,
-        requestGeneration,
-        (entry) => entry.commentId ?? entry.detail,
-      );
-      return items.filter(
-        (entry) =>
-          !isStaleDeletedCommentEntry(
-            entry,
-            deletedCommentIdsRef.current,
-            requestGeneration,
-          ),
-      );
-    },
-    [],
-  );
-  // Mirror the page for the stable poll callback without reading a ref in
-  // render (react-hooks/refs).
-  useEffect(() => {
-    pageRef.current = page;
-  }, [page]);
 
   /**
    * Fold the newest page into the rolling agent map and publish the agents
@@ -206,194 +179,66 @@ export function WatchView({ boardId }: WatchViewProps) {
     setActiveAgents(active);
   }, []);
 
-  /** Fetch (and cache) one page, discovering the next page's cursor. */
-  const fetchPage = useCallback(
-    async (index: number): Promise<ActivityFeedEntry[] | null> => {
-      const cached = pageCache.current.get(index);
-      if (cached !== undefined) return cached;
-      if (!cursorByPage.current.has(index)) return null;
-      const cursor = cursorByPage.current.get(index) ?? undefined;
-      const generation = deletionGenerationRef.current;
-      const result = await api.boardActivity(boardId, cursor, pageSize);
-      const items = withoutStaleDeleted(result.items, generation);
-      pageCache.current.set(index, items);
-      if (result.nextCursor === null) {
-        atEndRef.current = true;
-        setAtEnd(true);
-      } else {
-        cursorByPage.current.set(index + 1, result.nextCursor);
-        setMaxPage(Math.max(...cursorByPage.current.keys()));
-      }
-      return items;
-    },
-    [boardId, pageSize, withoutStaleDeleted],
-  );
+  useEffect(() => {
+    if (page !== 0 || !feed.page) return;
+    // Age the rolling agent rail on every successful newest-page refresh.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    rememberAgents(feed.page.items);
+  }, [feed.page, page, rememberAgents]);
 
-  const goToPage = useCallback(
-    async (target: number) => {
-      if (target < 0 || loading) return;
-      setLoading(true);
-      try {
-        // Walk the cursor chain until the target page is reachable.
-        let index = 0;
-        while (index < target) {
-          if (!cursorByPage.current.has(index + 1)) {
-            if (atEndRef.current) break;
-            await fetchPage(index);
-            if (atEndRef.current) break;
-          }
-          index += 1;
-        }
-        const targetItems = await fetchPage(target);
-        if (targetItems === null) return; // beyond the last page
-        setItems(targetItems);
-        setPage(target);
-      } catch {
-        // Keep the current page visible but make the failure explicit; the
-        // Retry control re-enters this path.
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchPage, loading],
-  );
-
-  /** Load page 0 at `size` and reset the cursor chain to it. */
-  const loadFirst = useCallback(
-    async (size: number) => {
-      const generation = deletionGenerationRef.current;
-      const result = await api.boardActivity(boardId, undefined, size);
-      const items = withoutStaleDeleted(result.items, generation);
-      pageCache.current.clear();
-      pageCache.current.set(0, items);
-      cursorByPage.current.clear();
-      cursorByPage.current.set(0, null);
-      atEndRef.current = result.nextCursor === null;
-      setAtEnd(result.nextCursor === null);
-      if (result.nextCursor !== null) {
-        cursorByPage.current.set(1, result.nextCursor);
-      }
-      setMaxPage(Math.max(...cursorByPage.current.keys()));
-      setItems(items);
-      rememberAgents(items);
+  async function goToPage(target: number) {
+    if (target < 0 || loading) return;
+    setHistoryError(null);
+    if (target === 0) {
+      setHistory(new Map());
       setPage(0);
-      pageRef.current = 0;
-      setError(false);
-    },
-    [boardId, rememberAgents, withoutStaleDeleted],
-  );
-
-  // The newest page stays live; when the user pages into history, polling
-  // pauses (their page must not shift under them).
-  const refreshNewest = useCallback(async () => {
-    if (!serverMode || inFlight.current || pageRef.current !== 0) return;
-    inFlight.current = true;
-    try {
-      await loadFirst(pageSize);
-    } catch {
-      // Best effort — the next tick retries, but the user sees the failure
-      // and can force a retry now.
-      setError(true);
-    } finally {
-      inFlight.current = false;
-      // Even a failed first poll ends the wait: the pager/error path is more
-      // useful than an endless skeleton.
-      setLoaded(true);
+      return;
     }
-  }, [loadFirst, pageSize, serverMode]);
-
-  // SSE frames arrive per command; on a busy board a refetch per frame would
-  // hammer the feed endpoint (and the rate limit), so bursts are coalesced
-  // into at most one refresh per REFRESH_COALESCE_MS.
-  const refreshTimer = useRef<number | null>(null);
-  const scheduleRefresh = useCallback(() => {
-    if (refreshTimer.current !== null) return;
-    refreshTimer.current = window.setTimeout(() => {
-      refreshTimer.current = null;
-      void refreshNewest();
-    }, REFRESH_COALESCE_MS);
-  }, [refreshNewest]);
-
-  /** Change the page size and jump back to the live first page. */
-  const selectPageSize = useCallback(
-    (size: number) => {
-      if (size === pageSize) return;
-      setPageSize(size);
-      setLoading(true);
-      void loadFirst(size)
-        .catch(() => setError(true))
-        .finally(() => setLoading(false));
-    },
-    [loadFirst, pageSize],
-  );
-
-  /** Re-request the current page after a failed load. */
-  const retryFeed = useCallback(() => {
-    setError(false);
-    if (pageRef.current === 0) void refreshNewest();
-    else void goToPage(pageRef.current);
-  }, [goToPage, refreshNewest]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the page lands after the await, not synchronously
-    void refreshNewest();
-  }, [refreshNewest]);
-
-  useEffect(() => {
-    if (!serverMode) return;
-    const timer = window.setInterval(() => {
-      if (!document.hidden) void refreshNewest();
-    }, POLL_MS);
-    const onVisible = () => {
-      if (!document.hidden) void refreshNewest();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [refreshNewest, serverMode]);
-
-  // A comment frame and our own settled commands are the moments the feed can
-  // change sooner than the poll. Coalesced: a swarm can emit frames far faster
-  // than a refetch is worth.
-  useEffect(() => {
-    if (!serverMode) return;
-    const offActivity = activity.subscribe((event) => {
-      if (event.boardId !== boardId) return;
-      if (event.kind === "comment_deleted") {
-        const deletedId = event.commentId ?? event.detail;
-        if (deletedId) {
-          deletionGenerationRef.current += 1;
-          deletedCommentIdsRef.current.set(
-            deletedId,
-            deletionGenerationRef.current,
-          );
-          // Drop any cached comment diff immediately; the coalesced refetch
-          // then returns the metadata-only tombstone.
-          setItems((current) =>
-            current.filter(
-              (entry) => (entry.commentId ?? entry.detail) !== deletedId,
-            ),
-          );
-          pageCache.current.clear();
+    const cached = history.get(target);
+    const deletionIsNewer = (generation: number) =>
+      [...feed.deleted.values()].some((at) => at > generation);
+    if (cached && !deletionIsNewer(cached.generation)) {
+      setPage(target);
+      return;
+    }
+    setPageLoading(true);
+    const pages = new Map(history);
+    try {
+      let previous = feed.page;
+      for (let index = 1; index <= target; index += 1) {
+        const existing = pages.get(index);
+        if (
+          existing &&
+          (index !== target || !deletionIsNewer(existing.generation))
+        ) {
+          previous = existing;
+          continue;
         }
+        if (!previous?.nextCursor) return;
+        previous = await loadPage(previous.nextCursor, pageSize);
+        pages.set(index, previous);
       }
-      scheduleRefresh();
-    });
-    const offCommits = commits.subscribe((id) => {
-      if (id === boardId) scheduleRefresh();
-    });
-    return () => {
-      offActivity();
-      offCommits();
-      if (refreshTimer.current !== null) {
-        window.clearTimeout(refreshTimer.current);
-        refreshTimer.current = null;
-      }
-    };
-  }, [activity, commits, boardId, scheduleRefresh, serverMode]);
+      setPage(target);
+    } catch {
+      setHistoryError(target);
+    } finally {
+      setHistory(pages);
+      setPageLoading(false);
+    }
+  }
+
+  function selectPageSize(size: number) {
+    if (size === pageSize) return;
+    setHistoryError(null);
+    setHistory(new Map());
+    setPage(0);
+    setPageSize(size);
+  }
+
+  function retryFeed() {
+    if (historyError === null) refresh();
+    else void goToPage(historyError);
+  }
 
   const membersById = useMemo(() => {
     const map = new Map<string, BoardMemberDto>();
@@ -410,7 +255,6 @@ export function WatchView({ boardId }: WatchViewProps) {
   // Only active cards: archived cards live in `board.cards` but not in any
   // column, and a status wall must agree with the column sums next to it.
   const totalCards = cardCount;
-  const lastPage = atEnd ? maxPage : maxPage + 1;
 
   return (
     <section
@@ -561,7 +405,7 @@ export function WatchView({ boardId }: WatchViewProps) {
             aria-label={t("watch.feed")}
             tabIndex={0}
             className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-busy={!loaded}
+            aria-busy={!loaded && !error}
           >
             {error ? (
               <div
@@ -583,7 +427,7 @@ export function WatchView({ boardId }: WatchViewProps) {
               <p className="px-5 py-4 text-ui-body text-muted-foreground">
                 {t("watch.feedLocal")}
               </p>
-            ) : !loaded ? (
+            ) : !loaded && !error ? (
               <SkeletonRegion
                 label={t("watch.feedLoading")}
                 testId="watch-feed-skeleton"
@@ -598,9 +442,9 @@ export function WatchView({ boardId }: WatchViewProps) {
               )
             ) : (
               <ol data-testid="watch-feed">
-                {items.filter(hasStory).map((entry) => (
+                {items.filter(activityHasStory).map((entry) => (
                   <WatchRow
-                    key={keyOf(entry)}
+                    key={activityEntryKey(entry)}
                     entry={entry}
                     members={membersById}
                     cards={board.cards}
@@ -626,28 +470,6 @@ export function WatchView({ boardId }: WatchViewProps) {
       </div>
     </section>
   );
-}
-
-/** Stable per-entry key: a command id and an activity id never share a space. */
-function keyOf(entry: ActivityFeedEntry): string {
-  return `${entry.source}:${entry.id}`;
-}
-
-/**
- * Does this entry say anything? `TOUCH_CARD` only stamps `updatedAt` after an
- * edit session, and an `UPDATE_CARD` with no captured diff would read as a
- * bare "Updated the card" — both are noise on a watch wall. Everything else
- * (creates, moves, comments, archive, links) carries a story.
- */
-function hasStory(entry: ActivityFeedEntry): boolean {
-  if (entry.type === "TOUCH_CARD") return false;
-  if (entry.type === "UPDATE_CARD") {
-    const changes = (entry.changes ?? []).filter(
-      (change) => change.field !== "checklistItemDone",
-    );
-    return changes.length > 0 || Boolean(entry.detail);
-  }
-  return true;
 }
 
 /** The page numbers to show: a window around the current page plus the ends. */
@@ -881,14 +703,7 @@ function WatchRow({
     return userLabel(member?.displayName ?? null, member?.email ?? userId);
   };
 
-  const isAssigneeEntry =
-    entry.type === "SET_CARD_ASSIGN" || entry.type === "assignee-set";
-  const assigneeTo = !isAssigneeEntry
-    ? null
-    : entry.type === "SET_CARD_ASSIGN"
-      ? (entry.changes?.[0]?.to ?? null)
-      : entry.detail || null;
-  const assigneeName = assigneeTo === null ? null : memberName(assigneeTo);
+  const assigneeName = activityAssignee(entry, memberName);
 
   const sentence = sentenceFor(entry, lang, hour12, assigneeName);
   const details = detailsFor(entry, t, memberName, lang, hour12, expanded);

@@ -90,12 +90,12 @@ export function useBoardPanels(userId: string, boardId: string | undefined) {
     width,
     defaultWidth,
     tab: state.tab,
-    setOpen(open: boolean) {
-      if (open === state.open) return;
-      setState({ ...state, open, openedInDock: open && docked });
+    setOpen(open: boolean, tab = state.tab) {
+      if (open === state.open && tab === state.tab) return;
+      setState({ ...state, open, tab, openedInDock: open && docked });
       // Modal opens must never become restored docked opens.
-      if (docked || (!open && state.openedInDock)) {
-        persist({ open, width, tab: state.tab }, true);
+      if (docked || tab !== state.tab || (!open && state.openedInDock)) {
+        persist({ open, width, tab }, true);
       } else if (!open) writer.flush();
     },
     setWidth(value: number) {

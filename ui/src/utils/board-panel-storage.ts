@@ -2,7 +2,7 @@ export const RIGHT_PANEL_MIN = 320;
 export const RIGHT_PANEL_MAX = 480;
 export const RIGHT_PANEL_DEFAULT = 360;
 export const RIGHT_PANEL_WIDE_DEFAULT = 400;
-export const INSPECTOR_TABS = ["people"] as const;
+export const INSPECTOR_TABS = ["people", "activity", "card"] as const;
 export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 
 export type BoardPanelPrefs = {

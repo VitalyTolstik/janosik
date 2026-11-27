@@ -11,6 +11,7 @@ import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board, BoardMemberDto } from "@janosik/shared";
 
+import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
 import { BoardInspector } from "@/components/board/BoardInspector";
 import { BoardPanelsProvider } from "@/components/board/BoardPanelsProvider";
@@ -20,6 +21,10 @@ import { PanelToggle } from "@/components/board/PanelToggle";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
+import {
+  CardSelectionProvider,
+  useCardPeekSelection,
+} from "@/store/board-selection";
 import { BoardProvider } from "@/store/BoardContext";
 import { boardPanelKey } from "@/utils/board-panel-storage";
 import { FakeServer } from "@/test/fake-server";
@@ -53,9 +58,16 @@ function member(
 function BoardControls() {
   const setDragging = useInspectorDragChange();
   const navigate = useNavigate();
+  const peek = useCardPeekSelection();
   return (
     <main>
       <input aria-label="Board filter" />
+      <button type="button" onClick={() => peek?.selectCard("card")}>
+        Select sample card
+      </button>
+      <button type="button" onClick={() => peek?.selectCard("missing")}>
+        Select missing card
+      </button>
       <button type="button" onClick={() => setDragging?.(true)}>
         Start drag
       </button>
@@ -69,6 +81,19 @@ function BoardControls() {
         Close card
       </button>
     </main>
+  );
+}
+
+function InspectorUnderTest() {
+  const navigate = useNavigate();
+  return (
+    <CardSelectionProvider boardId={board.id} order={["card"]}>
+      <BoardControls />
+      <BoardInspector
+        boardId={board.id}
+        onOpenCard={(id) => navigate(`?card=${id}`)}
+      />
+    </CardSelectionProvider>
   );
 }
 
@@ -98,8 +123,7 @@ async function setup(
                 <BoardPeopleProvider>
                   <BoardPanelsProvider boardId={board.id}>
                     <PanelToggle />
-                    <BoardControls />
-                    <BoardInspector boardId={board.id} />
+                    <InspectorUnderTest />
                   </BoardPanelsProvider>
                 </BoardPeopleProvider>
               </BoardProvider>
@@ -158,7 +182,9 @@ describe("board inspector", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     await user.click(screen.getByRole("button", { name: "End drag" }));
 
-    fireEvent.keyDown(screen.getByRole("tab"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "People" }), {
+      key: "Escape",
+    });
     expect(toggle).toHaveFocus();
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
@@ -177,7 +203,20 @@ describe("board inspector", () => {
       "aria-controls",
       screen.getByRole("tabpanel").id,
     );
-    await user.keyboard("{ArrowLeft}{ArrowRight}{End}{Home}");
+    expect(
+      within(tablist)
+        .getAllByRole("tab")
+        .map((element) => element.textContent),
+    ).toEqual(["People", "Activity", "Card"]);
+    await user.keyboard("{ArrowRight}");
+    expect(
+      within(tablist).getByRole("tab", { name: "Activity", selected: true }),
+    ).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(
+      within(tablist).getByRole("tab", { name: "Card", selected: true }),
+    ).toHaveFocus();
+    await user.keyboard("{Home}");
     expect(tab).toHaveFocus();
 
     const resize = screen.getByRole("separator", { name: "Resize inspector" });
@@ -203,7 +242,7 @@ describe("board inspector", () => {
     fireEvent.keyDown(window, { key: "ъ", code: "BracketRight" });
     const dialog = screen.getByRole("dialog", { name: "Inspector" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("tab")).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "People" })).toHaveFocus();
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
     for (const key of ["{Tab}", "{Tab}", "{Tab}", "{Shift>}{Tab}{/Shift}"]) {
       await user.keyboard(key);
@@ -324,5 +363,145 @@ describe("board inspector", () => {
     expect(
       within(aside).queryByText("On this board now"),
     ).not.toBeInTheDocument();
+  });
+  it("renders a read-only card peek, handles a missing card, and hands off to the full card", async () => {
+    const user = await setup(
+      1440,
+      new FakeServer([
+        {
+          ...board,
+          columns: [
+            { id: "todo", title: "To do", cardIds: ["card"], createdAt: 1 },
+          ],
+          labels: [{ id: "ux", name: "Design", color: "red" }],
+          cards: {
+            card: {
+              id: "card",
+              title: "Release checklist",
+              createdAt: 1,
+              updatedAt: 1,
+              labelIds: ["ux"],
+              description: "**Verify** the launch.",
+              priority: "high",
+              checklists: [
+                {
+                  id: "list",
+                  title: "Checks",
+                  items: [{ id: "item", text: "Try it", done: true }],
+                },
+              ],
+              attachmentCount: 2,
+              assigneeId: "user-1",
+              dueDate: 1800000000000,
+            },
+          },
+        },
+      ]),
+    );
+    await user.click(screen.getByRole("button", { name: "Show people panel" }));
+    await user.click(screen.getByRole("tab", { name: "Card" }));
+    const peek = screen.getByRole("tabpanel", { name: "Card" });
+    expect(peek).toHaveTextContent("Select a card on the board");
+    await user.click(
+      screen.getByRole("button", { name: "Select missing card" }),
+    );
+    expect(peek).toHaveTextContent("This card is no longer available.");
+    await user.click(
+      screen.getByRole("button", { name: "Select sample card" }),
+    );
+    const summary = within(peek);
+    expect(
+      await summary.findByRole("heading", { name: "Release checklist" }),
+    ).toBeVisible();
+    for (const text of [
+      "To do",
+      "Design",
+      "High",
+      "Verify the launch.",
+      "1/1",
+      "Attachments",
+    ]) {
+      expect(peek).toHaveTextContent(text);
+    }
+    expect(
+      peek.querySelector(
+        "input, select, textarea, [contenteditable], [draggable], [role=checkbox]",
+      ),
+    ).toBeNull();
+    expect(summary.getAllByRole("button")).toHaveLength(1);
+    await user.click(summary.getByRole("button", { name: "Open full card" }));
+    expect(
+      screen.getByRole("complementary", { name: "Inspector" }),
+    ).toHaveAttribute("inert");
+  });
+
+  it("changes the Activity scope and renders localized newest-first rows", async () => {
+    const getBoard = vi.spyOn(api, "boardActivity").mockResolvedValue({
+      nextCursor: null,
+      items: [
+        {
+          source: "command",
+          id: "2",
+          at: 2000,
+          type: "ADD_COLUMN",
+          actorName: "Grace",
+          actorId: "grace",
+        },
+        {
+          source: "command",
+          id: "1",
+          at: 1000,
+          type: "ADD_CARD",
+          actorName: "Ada",
+          actorId: "ada",
+          cardId: "card",
+        },
+      ],
+    });
+    const getCard = vi
+      .spyOn(api, "cardActivity")
+      .mockResolvedValue({ nextCursor: null, items: [] });
+    const user = await setup(
+      1440,
+      new FakeServer([
+        {
+          ...board,
+          columns: [
+            { id: "todo", title: "To do", cardIds: ["card"], createdAt: 1 },
+          ],
+          cards: {
+            card: {
+              id: "card",
+              title: "Release checklist",
+              createdAt: 1,
+              updatedAt: 1,
+              labelIds: [],
+            },
+          },
+        },
+      ]),
+    );
+    await user.click(screen.getByRole("button", { name: "Show people panel" }));
+    await user.click(screen.getByRole("tab", { name: "Activity" }));
+    const panel = within(screen.getByRole("tabpanel", { name: "Activity" }));
+    const rows = await panel.findAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Grace");
+    expect(rows[0]).toHaveTextContent("Added a column");
+    expect(rows[1]).toHaveTextContent("Ada");
+    expect(rows[0].querySelector("time")).toHaveAttribute(
+      "datetime",
+      new Date(2000).toISOString(),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Select sample card" }),
+    );
+    expect(
+      await panel.findByRole("heading", { name: "Release checklist" }),
+    ).toBeVisible();
+    expect(await panel.findByText("No activity yet")).toBeVisible();
+    expect(getCard).toHaveBeenCalledExactlyOnceWith("card", undefined, 50);
+    await user.click(panel.getByRole("button", { name: "Board activity" }));
+    expect(await panel.findByText("Grace")).toBeVisible();
+    expect(getBoard).toHaveBeenCalledTimes(1);
   });
 });

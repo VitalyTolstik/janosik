@@ -20,6 +20,7 @@ import {
   Lock,
   MessageSquare,
   Palette,
+  PanelRight,
   Search,
   SquarePen,
   Tag,
@@ -80,6 +81,7 @@ import {
   useBoardAccess,
   useBoardState,
 } from "@/store/BoardContext";
+import { useCardPeekSelection } from "@/store/board-selection";
 import { useBoardMembersList } from "@/store/board-live";
 import { hasCardDetail } from "@/store/read-model";
 import { moveTargetBlockReason } from "@/utils/workflow";
@@ -201,6 +203,7 @@ function CardContextMenuBody({
   close: () => void;
 }) {
   const { t } = useI18n();
+  const openPeek = useCardPeekSelection()?.openPeek;
   const toast = useToast();
   const { board } = useBoardState();
   const { role } = useBoardAccess();
@@ -290,9 +293,16 @@ function CardContextMenuBody({
         </ContextMenuItem>
       ) : null}
 
+      {openPeek ? (
+        <ContextMenuItem onClick={() => openPeek(cardId)}>
+          <PanelRight aria-hidden />
+          {t("inspector.peekCard")}
+        </ContextMenuItem>
+      ) : null}
+
       {!readOnly ? (
         <>
-          {onOpen ? <ContextMenuSeparator /> : null}
+          {onOpen || openPeek ? <ContextMenuSeparator /> : null}
           <MoveToSub
             board={board}
             card={card}
