@@ -23,20 +23,32 @@ JANOSIK_IMAGE=janosik-e2e-local
 JANOSIK_TAG=$project
 EOF
 
-compose() {
+docker_cli() {
   env -i PATH="$PATH" HOME="$HOME" DOCKER_HOST="${DOCKER_HOST:-}" \
-    DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" \
-    docker compose --env-file "$temp_dir/compose.env" --project-name "$project" \
-      -f "$root/docker-compose.yml" -f "$root/e2e/docker-compose.e2e.yml" "$@"
+    DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker}" docker "$@"
+}
+compose() {
+  docker_cli compose --env-file "$temp_dir/compose.env" --project-name "$project" \
+    -f "$root/docker-compose.yml" -f "$root/e2e/docker-compose.e2e.yml" "$@"
 }
 cleanup() {
   compose down --volumes --remove-orphans || true
-  docker image rm "janosik-e2e-local:$project" >/dev/null 2>&1 || true
+  docker_cli image rm "janosik-e2e-local:$project" >/dev/null 2>&1 || true
   rm -rf "$temp_dir"
 }
 trap cleanup EXIT
 
-compose up --build --detach --wait --wait-timeout 240
+build_flag=--build
+if [[ -n "${E2E_IMAGE:-}" ]]; then
+  if docker_cli image inspect -- "$E2E_IMAGE" >/dev/null 2>&1; then
+    printf 'E2E_IMAGE=%s\nE2E_PULL_POLICY=never\n' "$E2E_IMAGE" >> "$temp_dir/compose.env"
+    build_flag=--no-build
+    echo "Using local e2e image $E2E_IMAGE"
+  else
+    echo "Local e2e image $E2E_IMAGE is unavailable. Falling back to a local Docker build." >&2
+  fi
+fi
+compose up "$build_flag" --detach --wait --wait-timeout 240
 compose exec -T -e ADMIN_PASSWORD=e2e-master-password app \
   node /app/backend/scripts/admin-cli.cjs create --email master@e2e.example --owner
 export E2E_SITE_URL="http://127.0.0.1:$port/"
