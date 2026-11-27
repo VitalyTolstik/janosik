@@ -12,8 +12,10 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
+  type Ref,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
@@ -117,6 +119,7 @@ interface FilterBarProps {
    * filter in `BoardSection`, not the `filter` prop this render captured.
    */
   onChange: (change: FilterChange) => void;
+  openFacetsRef?: Ref<() => void>;
 }
 
 /** Section title inside the filters popover. */
@@ -260,9 +263,12 @@ export function FilterBar({
   matchCount,
   matchPending = false,
   onChange,
+  openFacetsRef,
 }: FilterBarProps) {
   const { t, tp, lang } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [facetsOpen, setFacetsOpen] = useState(false);
+  useImperativeHandle(openFacetsRef, () => () => setFacetsOpen(true), []);
   const [dayCalendarOpen, setDayCalendarOpen] = useState(false);
   const members = useBoardMembersList(boardId);
 
@@ -367,7 +373,7 @@ export function FilterBar({
       </div>
 
       {/* Faceted filters (labels, due date, creation date) */}
-      <Popover>
+      <Popover open={facetsOpen} onOpenChange={setFacetsOpen}>
         <PopoverTrigger asChild>
           <Button
             variant={facetCount > 0 ? "secondary" : "outline"}

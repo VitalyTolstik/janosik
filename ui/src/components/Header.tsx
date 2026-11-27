@@ -1,6 +1,7 @@
 import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { ChevronRight, Info, Loader2 } from "lucide-react";
 
+import { isApiEnabled } from "@/api/client";
 import { AccountDialog } from "@/components/account/AccountDialog";
 import { BrandMark } from "@/components/BrandMark";
 import { AgentControlButton } from "@/components/agent-control/AgentControlButton";
@@ -32,6 +33,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { usePublicSharesEnabled } from "@/hooks/use-public-shares-enabled";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
@@ -75,7 +77,9 @@ export function Header() {
   const { canUndo, canRedo } = useBoardHistory();
   const { role } = useBoardAccess();
   const { board, boards } = useBoard();
-  const { view } = useBoardView();
+  const { view, setView, toggleDensity, openFiltersRef } = useBoardView();
+  const openDataRef = useRef<(() => void) | null>(null);
+  const brandRef = useRef<HTMLAnchorElement>(null);
   const settingsBoardId = isBoardRoute ? board?.id : undefined;
   const scopeParam = new URLSearchParams(location.search).get("board");
   // Opening a detail from All boards keeps `scope=all` and adds the row's
@@ -126,6 +130,37 @@ export function Header() {
   // surfaces (members, sharing, settings, agent control) would offer writes
   // that the command and REST guards refuse. Hide them until restore.
   const archived = board?.archivedAt !== undefined;
+  const canOpenSettings =
+    settingsBoardId !== undefined && role === "ADMIN" && !archived;
+  const publicSharesEnabled = usePublicSharesEnabled();
+  const hasPeople = settingsBoardId !== undefined && isApiEnabled();
+  // Archived non-admins can still read the roster. Sharing also depends on operator config.
+  const showMembers = hasPeople && (!archived || role !== "ADMIN");
+  const showShare =
+    hasPeople && !archived && role === "ADMIN" && publicSharesEnabled === true;
+  const [people, setPeople] = useState<{
+    boardId: string;
+    archived: boolean;
+    role: typeof role;
+    dialog: "members" | "share";
+  } | null>(null);
+  if (
+    people !== null &&
+    (people.boardId !== settingsBoardId ||
+      people.archived !== archived ||
+      people.role !== role ||
+      (people.dialog === "members" && !showMembers) ||
+      (people.dialog === "share" && !showShare))
+  ) {
+    setPeople(null);
+  }
+  const changePeopleDialog = (dialog: "members" | "share" | null) => {
+    setPeople(
+      dialog && settingsBoardId !== undefined
+        ? { boardId: settingsBoardId, archived, role, dialog }
+        : null,
+    );
+  };
   const [settings, setSettings] = useState<{
     boardId: string;
     section: "workflow" | "agents";
@@ -134,13 +169,18 @@ export function Header() {
   // which board owned the last open dialog so focus can move to the new board
   // once its header is mounted, not fall to BODY with the discarded dialog.
   const settingsBoardRef = useRef<string | null>(null);
-  if (settings !== null && settings.boardId !== settingsBoardId) {
+  if (
+    settings !== null &&
+    (settings.boardId !== settingsBoardId || !canOpenSettings)
+  ) {
     setSettings(null);
   }
   const openSettings = (section: "workflow" | "agents") => {
-    if (settingsBoardId !== undefined)
-      setSettings({ boardId: settingsBoardId, section });
+    if (canOpenSettings) setSettings({ boardId: settingsBoardId, section });
   };
+  const openWorkflowSettings = canOpenSettings
+    ? () => openSettings("workflow")
+    : undefined;
   useEffect(() => {
     if (settings !== null) {
       settingsBoardRef.current = settings.boardId;
@@ -150,15 +190,23 @@ export function Header() {
     if (previousBoardId === null) return;
     if (!isBoardRoute) {
       settingsBoardRef.current = null;
+      requestAnimationFrame(() => {
+        if (document.activeElement === document.body) {
+          const brand = brandRef.current;
+          if (!brand?.closest('[aria-hidden="true"], [inert]')) brand?.focus();
+        }
+      });
       return;
     }
     // Still between aggregates: wait for the target board, so the gear/title
     // that receives focus belongs to the new board.
     if (settingsBoardId === undefined) return;
     settingsBoardRef.current = null;
-    // A normal close keeps the same board; the shell already restored focus.
-    if (settingsBoardId !== previousBoardId) restoreBoardSettingsFocus();
-  }, [isBoardRoute, settings, settingsBoardId]);
+    // The shell handles normal closes. Restore here after navigation or a permission change.
+    if (settingsBoardId !== previousBoardId || !canOpenSettings) {
+      restoreBoardSettingsFocus();
+    }
+  }, [canOpenSettings, isBoardRoute, settings, settingsBoardId]);
   const [agentControlOpen, setAgentControlOpen] = useState(false);
   const agentTrigger = useRef<HTMLButtonElement | null>(null);
   const agentsLink = useRef<HTMLAnchorElement | null>(null);
@@ -324,6 +372,7 @@ export function Header() {
       >
         {isAgentsRoute ? (
           <Link
+            ref={brandRef}
             to={routes.home}
             aria-label={t("agents.home")}
             data-testid="agents-home"
@@ -339,6 +388,7 @@ export function Header() {
           </Link>
         ) : (
           <Link
+            ref={brandRef}
             to={routes.home}
             aria-label={t("agents.home")}
             data-testid="brand-home"
@@ -416,7 +466,12 @@ export function Header() {
           <>
             {/* One People doorway replaces Members + Share + Presence at every
                 width; presence is no longer hidden below 1200 px. */}
-            <PeopleMenu />
+            <PeopleMenu
+              dialog={people?.dialog ?? null}
+              onDialogChange={changePeopleDialog}
+              showMembers={showMembers}
+              showShare={showShare}
+            />
             {!archived ? (
               <AgentControlButton
                 onOpen={(trigger) => {
@@ -438,17 +493,38 @@ export function Header() {
       >
         {isAgentsRoute ? (
           <div className="hidden sm:block">
-            <GlobalSearch iconOnly />
+            <GlobalSearch iconOnly fallbackFocusRef={brandRef} />
           </div>
         ) : isBoardRoute ? (
           // The 44 px icon entry returns at 721 (phones keep it behind ⌘K);
           // the label waits for the full header at 1024 so it cannot paint
           // over the title or Agents.
           <div className="hidden min-[721px]:block">
-            <GlobalSearch labelClassName="hidden min-[1024px]:inline" />
+            <GlobalSearch
+              labelClassName="hidden min-[1024px]:inline"
+              fallbackFocusRef={brandRef}
+              commands={
+                board && {
+                  setView,
+                  openFilters:
+                    view !== "watch"
+                      ? () => openFiltersRef.current?.()
+                      : undefined,
+                  openMembers: showMembers
+                    ? () => changePeopleDialog("members")
+                    : undefined,
+                  openShare: showShare
+                    ? () => changePeopleDialog("share")
+                    : undefined,
+                  openSettings: openWorkflowSettings,
+                  openData: () => openDataRef.current?.(),
+                  toggleDensity: view === "board" ? toggleDensity : undefined,
+                }
+              }
+            />
           </div>
         ) : (
-          <GlobalSearch />
+          <GlobalSearch fallbackFocusRef={brandRef} />
         )}
         {isAgentsRoute ? (
           <NotificationsBell />
@@ -532,7 +608,8 @@ export function Header() {
           // stranded on phones/tablets (QA-02). Settings, data and help move
           // behind it instead of holding permanent header slots.
           <BoardMenu
-            onOpenSettings={() => openSettings("workflow")}
+            onOpenSettings={openWorkflowSettings}
+            openDataRef={openDataRef}
             filter={board !== undefined && view !== "watch"}
             kanban={board !== undefined && view === "board"}
             canEdit={board !== undefined && !readOnly}

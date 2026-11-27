@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import {
   Archive,
   Database,
@@ -31,7 +31,6 @@ import {
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useShortcutsHotkey } from "@/hooks/use-shortcuts-hotkey";
 import { useI18n } from "@/i18n";
-import { useBoard, useBoardAccess } from "@/store/BoardContext";
 
 /**
  * The board's overflow menu (H1): low-frequency admin and recovery actions
@@ -45,7 +44,8 @@ import { useBoard, useBoardAccess } from "@/store/BoardContext";
  * unmounted with the menu.
  */
 interface BoardMenuProps {
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
+  openDataRef?: Ref<() => void>;
   filter?: boolean;
   kanban?: boolean;
   canEdit?: boolean;
@@ -54,14 +54,13 @@ interface BoardMenuProps {
 
 export function BoardMenu({
   onOpenSettings,
+  openDataRef,
   filter,
   kanban,
   canEdit,
   selectable,
 }: BoardMenuProps) {
   const { t } = useI18n();
-  const { board } = useBoard();
-  const { role } = useBoardAccess();
   const data = useDataMenu();
   // A submenu is 256 px wide and Radix anchors it beside the 240 px root
   // menu. On a phone neither side fits, so it flips left and lands almost
@@ -69,20 +68,32 @@ export function BoardMenu({
   // Below `sm`, render those groups inline in the same menu instead.
   const inlineGroups = useMediaQuery("(max-width: 639px)");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [dataOnly, setDataOnly] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const dataLabelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   useShortcutsHotkey(() => setShortcutsOpen(true));
 
-  const archived = board?.archivedAt !== undefined;
-  const canOpenSettings = board !== undefined && role === "ADMIN" && !archived;
+  const { onMenuOpenChange } = data;
+  useImperativeHandle(
+    openDataRef,
+    () => () => {
+      // Present the existing Data rows directly in the Board menu for this entry.
+      setDataOnly(true);
+      setMenuOpen(true);
+      onMenuOpenChange(true);
+    },
+    [onMenuOpenChange],
+  );
 
   return (
     <>
       <DropdownMenu
         open={menuOpen}
         onOpenChange={(open) => {
+          if (open) setDataOnly(false);
           setMenuOpen(open);
-          data.onMenuOpenChange(open);
+          onMenuOpenChange(open);
         }}
       >
         <Tooltip>
@@ -102,8 +113,12 @@ export function BoardMenu({
           </TooltipTrigger>
           <TooltipContent>{t("board.menu.button")}</TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="end" className="w-60">
-          {canOpenSettings ? (
+        <DropdownMenuContent
+          align="end"
+          className="w-60"
+          {...(dataOnly ? { "aria-labelledby": dataLabelId } : {})}
+        >
+          {!dataOnly && onOpenSettings ? (
             <>
               <DropdownMenuItem
                 className="max-lg:h-11"
@@ -117,9 +132,12 @@ export function BoardMenu({
             </>
           ) : null}
 
-          {inlineGroups ? (
+          {dataOnly || inlineGroups ? (
             <>
-              <DropdownMenuLabel className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
+              <DropdownMenuLabel
+                id={dataLabelId}
+                className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground"
+              >
                 {t("data.tooltip")}
               </DropdownMenuLabel>
               <DataMenuItems menu={data} includeArchive={false} />
@@ -143,40 +161,44 @@ export function BoardMenu({
             </DropdownMenuSub>
           )}
 
-          <DropdownMenuItem
-            className="max-lg:h-11"
-            data-testid="board-menu-archive"
-            onClick={() => data.setArchiveOpen(true)}
-          >
-            <Archive className="h-4 w-4" />
-            {data.archivedCount > 0
-              ? `${t("data.archiveTitle")} · ${data.archivedCount}`
-              : t("data.archiveTitle")}
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          {inlineGroups ? (
+          {!dataOnly ? (
             <>
-              <DropdownMenuLabel className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("help.aria")}
-              </DropdownMenuLabel>
-              <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
-            </>
-          ) : (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger
+              <DropdownMenuItem
                 className="max-lg:h-11"
-                data-testid="board-menu-help"
+                data-testid="board-menu-archive"
+                onClick={() => data.setArchiveOpen(true)}
               >
-                <HelpCircle className="h-4 w-4" />
-                {t("help.aria")}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-56">
-                <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
+                <Archive className="h-4 w-4" />
+                {data.archivedCount > 0
+                  ? `${t("data.archiveTitle")} · ${data.archivedCount}`
+                  : t("data.archiveTitle")}
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              {inlineGroups ? (
+                <>
+                  <DropdownMenuLabel className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("help.aria")}
+                  </DropdownMenuLabel>
+                  <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
+                </>
+              ) : (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger
+                    className="max-lg:h-11"
+                    data-testid="board-menu-help"
+                  >
+                    <HelpCircle className="h-4 w-4" />
+                    {t("help.aria")}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-56">
+                    <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
 

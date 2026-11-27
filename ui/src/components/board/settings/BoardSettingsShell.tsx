@@ -130,6 +130,9 @@ export function BoardSettingsShell({
     <Dialog open={open} onOpenChange={requestOpenChange}>
       <DialogContent
         hideClose
+        // Settings restores focus through the board chrome on close and save.
+        // Radix's captured opener can be the palette's original focus target.
+        onCloseAutoFocus={(event) => event.preventDefault()}
         className={cn(
           "h-[min(47.25rem,calc(100dvh_-_4.75rem_-_env(safe-area-inset-top)))] max-h-[calc(100dvh_-_4.75rem_-_env(safe-area-inset-top))] w-[calc(100vw-1.75rem)] max-w-[1040px] gap-0 overflow-hidden rounded-[11px]! p-0 font-agent-surface shadow-[0_28px_80px_-36px_rgba(15,23,42,0.28),0_2px_8px_rgba(15,23,42,0.06)]! dark:shadow-[0_28px_80px_-32px_rgba(0,0,0,0.78),0_2px_8px_rgba(0,0,0,0.22)]! md:top-[calc(56px_+_env(safe-area-inset-top))] md:bottom-auto",
           "pl-[max(0px,env(safe-area-inset-left))] pr-[max(0px,env(safe-area-inset-right))] max-md:m-0 max-md:h-[100dvh] max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none! max-md:border-0! max-md:pt-[env(safe-area-inset-top)]",

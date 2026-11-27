@@ -12,12 +12,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BoardSection } from "@/components/BoardSection";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { routes } from "@/routes";
 import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { BoardProvider } from "@/store/BoardContext";
+import { useRef, useState, type ComponentProps } from "react";
 
 /**
  * Global search (header): debounced cross-board query, results grouped
@@ -73,7 +80,12 @@ function LocationProbe() {
 
 function renderSearch(
   initialUrl = routes.board("b-1"),
-  { iconOnly = false }: { iconOnly?: boolean } = {},
+  {
+    palette,
+    ...props
+  }: ComponentProps<typeof GlobalSearch> & {
+    palette?: React.ReactNode;
+  } = {},
 ) {
   return render(
     <ThemeProvider>
@@ -83,7 +95,7 @@ function renderSearch(
             <TooltipProvider>
               <MemoryRouter initialEntries={[initialUrl]}>
                 <BoardProvider>
-                  <GlobalSearch iconOnly={iconOnly} />
+                  {palette ?? <GlobalSearch {...props} />}
                   <LocationProbe />
                   <Routes>
                     <Route path={routes.home} element={<div>home</div>} />
@@ -99,6 +111,37 @@ function renderSearch(
         </BoardGlassProvider>
       </BoardBackgroundProvider>
     </ThemeProvider>,
+  );
+}
+
+function LateDialog({ openShare }: { openShare: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <GlobalSearch
+        commands={{ openShare }}
+        onOpenChange={(paletteOpen) => setOpen(!paletteOpen)}
+      />
+      <Dialog open={open}>
+        <DialogContent>
+          <DialogTitle>New dialog</DialogTitle>
+          <DialogDescription>Opened as the palette closes</DialogDescription>
+          <button type="button">New dialog action</button>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function SearchWithFallback() {
+  const fallback = useRef<HTMLAnchorElement>(null);
+  return (
+    <>
+      <a href="/" ref={fallback}>
+        Home
+      </a>
+      <GlobalSearch iconOnly fallbackFocusRef={fallback} />
+    </>
   );
 }
 
@@ -150,6 +193,135 @@ describe("GlobalSearch", () => {
     });
     expect(trigger.className).toContain("pr-2.5");
     expect(trigger.className).not.toContain("!px-0");
+  });
+
+  it("selects a board in command mode with the keyboard", async () => {
+    localStorage.setItem(
+      "janosik-boards",
+      `[${boardJson("b-1", "Alpha", [])},${boardJson("b-2", "Beta", [])},${boardJson("b-3", "Old stuff", [])}]`,
+    );
+    renderSearch();
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Global search" });
+    await user.click(trigger);
+    const input = screen.getByRole("combobox");
+    await user.type(input, "> navigate");
+    expect(screen.getByRole("listbox", { name: "Commands" })).toBeVisible();
+    await user.keyboard("{Enter}");
+    const list = screen.getByRole("listbox", { name: "Switch board" });
+    const [alpha, beta] = within(list).getAllByRole("option");
+    expect(within(list).getAllByRole("option")).toHaveLength(2);
+    expect(input).toHaveAttribute("aria-activedescendant", alpha.id);
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(input).toHaveAttribute("aria-activedescendant", beta.id);
+    expect(beta).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", alpha.id);
+    await user.keyboard("{ArrowDown}{Enter}");
+    await waitFor(() =>
+      expect(screen.getByTestId("loc")).toHaveTextContent("/board/b-2"),
+    );
+    expect(trigger).toHaveFocus();
+  });
+
+  it("shows a command empty state and returns to full-text search with Backspace", async () => {
+    renderSearch();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Global search" }));
+    const input = screen.getByRole("combobox");
+    await user.type(input, ">x");
+    expect(
+      within(screen.getByTestId("global-search-results")).getByRole("status"),
+    ).toHaveTextContent("No matching commands or options.");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    await user.keyboard("{Backspace}");
+    expect(screen.getByRole("option", { name: "Switch board" })).toBeVisible();
+    await user.keyboard("{Backspace}");
+    expect(input).toHaveAccessibleName("Search cards and boards");
+    await user.type(input, "mockups");
+    expect(
+      await screen.findByRole("option", { name: /Landing redesign/ }),
+    ).toBeVisible();
+  });
+
+  it("blocks command mode over card details and restores the card's focused control", async () => {
+    const openSurface = vi.fn();
+    renderSearch(`${routes.board("b-1")}?card=c-1`, {
+      commands: {
+        openMembers: openSurface,
+        openShare: openSurface,
+        openData: openSurface,
+        openFilters: openSurface,
+        openSettings: openSurface,
+      },
+    });
+    const card = await screen.findByRole("dialog");
+    const title = within(card).getByRole("textbox", { name: "Title" });
+    title.focus();
+    expect(title).toHaveFocus();
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}k{/Control}");
+    const input = await screen.findByTestId("global-search-input");
+    expect(input).toHaveFocus();
+
+    for (const query of [
+      ">",
+      ">members",
+      ">share",
+      ">export",
+      ">filters",
+      ">settings",
+    ]) {
+      fireEvent.change(input, { target: { value: query } });
+      expect(input).toHaveAccessibleDescription(
+        "Close the open dialog to use commands.",
+      );
+      expect(input).toHaveAttribute("aria-expanded", "false");
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+      expect(screen.queryAllByRole("option", { hidden: true })).toHaveLength(0);
+      await user.keyboard("{ArrowDown}{Enter}");
+      expect(input).toHaveFocus();
+    }
+    expect(openSurface).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(title).toHaveFocus());
+    expect(screen.getAllByRole("dialog")).toEqual([card]);
+    expect(card).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("cancels a queued command when another dialog opens before it runs", async () => {
+    const openShare = vi.fn();
+    renderSearch(routes.agents, {
+      palette: <LateDialog openShare={openShare} />,
+    });
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "Global search" });
+    await user.click(trigger);
+    await user.type(await screen.findByTestId("global-search-input"), ">share");
+    expect(screen.getByRole("option", { name: "Share" })).toBeVisible();
+    await user.keyboard("{Enter}");
+
+    const dialog = await screen.findByRole("dialog", { name: "New dialog" });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(trigger.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(openShare).not.toHaveBeenCalled();
+  });
+
+  it("focuses the fallback on a non-board route when the search trigger is hidden", async () => {
+    renderSearch(routes.agents, { palette: <SearchWithFallback /> });
+    const trigger = screen.getByRole("button", { name: "Global search" });
+    expect(trigger.getClientRects()).toHaveLength(0);
+    const user = userEvent.setup();
+    await user.keyboard("{Meta>}k{/Meta}");
+    expect(await screen.findByTestId("global-search-input")).toHaveFocus();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Home" })).toHaveFocus(),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("finds a card by description and highlights the match", async () => {

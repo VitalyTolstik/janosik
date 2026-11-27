@@ -12,6 +12,52 @@ import {
 
 test.describe.configure({ timeout: 60_000 });
 
+test("a VIEWER cannot run palette commands over card details", async ({
+  page,
+  board,
+  partner,
+}) => {
+  const column = await board.column("Todo");
+  await board.card(column, "Card under the palette");
+  await partner.invite("VIEWER");
+  await partner.accept();
+  await partner.open(page);
+  await partner.openBoard(page);
+  await expect.poll(() => partner.role()).toBe("VIEWER");
+  await openCard(page, "Card under the palette");
+
+  const dialog = cardDialog(page);
+  const title = dialog.getByRole("textbox", { name: "Title" });
+  await title.focus();
+  await expect(title).toBeFocused();
+  await page.keyboard.press("Control+k");
+  const input = page.getByTestId("global-search-input");
+  await input.fill(">");
+  await expect(input).toHaveAccessibleDescription(
+    "Close the open dialog to use commands.",
+  );
+  await expect(input).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("option", { includeHidden: true })).toHaveCount(
+    0,
+  );
+
+  await input.fill(">members");
+  await input.press("ArrowDown");
+  await input.press("Enter");
+  await expect(input).toBeFocused();
+  await expect(page.getByRole("dialog", { includeHidden: true })).toHaveCount(
+    2,
+  );
+  await input.press("Escape");
+
+  await expect(input).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(title).toBeFocused();
+  await expect(page.getByRole("dialog", { includeHidden: true })).toHaveCount(
+    1,
+  );
+});
+
 test("a VIEWER gets no mutating card affordances", async ({
   page,
   board,

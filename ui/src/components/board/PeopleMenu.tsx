@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Share2, UserPlus, Users } from "lucide-react";
 import type { BoardRole, PresenceUser } from "@janosik/shared";
 
@@ -22,10 +22,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/ui/user-avatar";
-import { usePublicSharesEnabled } from "@/hooks/use-public-shares-enabled";
 import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import { useBoard } from "@/store/BoardContext";
 import { useBoardMember, useBoardPresence } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
 
@@ -44,41 +43,29 @@ const ROLE_KEYS: Record<BoardRole, MessageKey> = {
  * checks and archived-board rules are the existing ones — this is a new
  * doorway, not a new permission model.
  */
-export function PeopleMenu() {
+export function PeopleMenu({
+  dialog,
+  onDialogChange,
+  showMembers,
+  showShare,
+}: {
+  dialog: "members" | "share" | null;
+  onDialogChange: (dialog: "members" | "share" | null) => void;
+  showMembers: boolean;
+  showShare: boolean;
+}) {
   const { t, tp } = useI18n();
   const { board } = useBoard();
-  const { role } = useBoardAccess();
   const { user } = useAuth();
   const openProfile = useOpenProfile();
   const users = useBoardPresence(board?.id);
-  const publicSharesEnabled = usePublicSharesEnabled();
   const [open, setOpen] = useState(false);
-  const [membersOpen, setMembersOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const boardId = board?.id;
-  const archived = board?.archivedAt !== undefined;
-
-  // A live archive or role change revokes sharing or hides the admin roster;
-  // a board switch replaces the board under the dialog. Reset both in every
-  // case, otherwise a persisted open flag retargets the next board's roster.
-  useEffect(() => {
-    if (boardId === undefined) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- board/archive/role transition is the trigger
-    setMembersOpen(false);
-    setShareOpen(false);
-  }, [boardId, archived, role]);
 
   // Members, sharing and presence are server-only concepts; local mode had
   // no members/share/presence triggers before H1 either.
   if (!isApiEnabled() || !board) return null;
 
-  // Same per-role gate the old Members trigger had: an archived board keeps
-  // the roster read-only for non-admins, while an ADMIN gets no roster at all
-  // until the board is restored.
-  const showMembers = !archived || role !== "ADMIN";
-  const showShare =
-    !archived && role === "ADMIN" && publicSharesEnabled === true;
   const visible = users.slice(0, MAX_VISIBLE);
   const overflow = users.length - visible.length;
   const label =
@@ -156,7 +143,7 @@ export function PeopleMenu() {
             <DropdownMenuItem
               className="max-lg:h-11"
               data-testid="people-members"
-              onSelect={() => setMembersOpen(true)}
+              onSelect={() => onDialogChange("members")}
             >
               <UserPlus className="h-4 w-4" />
               {t("board.members.button")}
@@ -166,7 +153,7 @@ export function PeopleMenu() {
             <DropdownMenuItem
               className="max-lg:h-11"
               data-testid="people-share"
-              onSelect={() => setShareOpen(true)}
+              onSelect={() => onDialogChange("share")}
             >
               <Share2 className="h-4 w-4" />
               {t("share.button")}
@@ -207,17 +194,15 @@ export function PeopleMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Archived non-admins keep the read-only roster; an archived ADMIN
-          loses it until restore. The archive effect closes both flags. */}
       <BoardMembersDialog
-        open={showMembers && membersOpen}
-        onOpenChange={setMembersOpen}
+        open={showMembers && dialog === "members"}
+        onOpenChange={(open) => onDialogChange(open ? "members" : null)}
         showTrigger={false}
         returnFocusRef={triggerRef}
       />
       <ShareDialog
-        open={showShare && shareOpen}
-        onOpenChange={setShareOpen}
+        open={showShare && dialog === "share"}
+        onOpenChange={(open) => onDialogChange(open ? "share" : null)}
         showTrigger={false}
         returnFocusRef={triggerRef}
       />

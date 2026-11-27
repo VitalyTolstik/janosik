@@ -123,6 +123,26 @@ describe("GlobalSearch server matches (TASK-177.13)", () => {
     vi.restoreAllMocks();
   });
 
+  it("runs full-text search after leaving command mode without sending a command query", async () => {
+    const search = vi
+      .spyOn(api, "searchWorkspaceMatches")
+      .mockResolvedValue(workspace([]));
+    renderPalette();
+    const input = await openAndType("> switch");
+    expect(screen.getByRole("option", { name: "Switch board" })).toBeVisible();
+    // Let the normal debounce window pass with command mode active.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    expect(search).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "Newsletter" } });
+    expect(
+      await screen.findByRole("option", { name: /Newsletter/ }),
+    ).toBeVisible();
+    expect(search).toHaveBeenCalledExactlyOnceWith("Newsletter");
+  });
+
   it("shows a Comment badge, a snippet and a comment deep link", async () => {
     const search = vi.spyOn(api, "searchWorkspaceMatches").mockResolvedValue(
       workspace([
