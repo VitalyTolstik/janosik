@@ -214,7 +214,7 @@ export function AccountDialog({
                 user.displayName,
                 user.email,
               )} ${name}`}
-              className="gap-2 px-1.5 max-md:h-11 max-md:min-w-11 max-md:justify-center max-md:px-0 sm:px-2"
+              className="gap-2 px-1.5 max-lg:h-11 max-lg:min-w-11 max-lg:justify-center max-lg:px-0 sm:px-2"
             >
               {/* The 390 mockup has no avatar in the header. Keep the account
                   reachable with the same 44 px target and a neutral glyph. */}
@@ -248,7 +248,7 @@ export function AccountDialog({
                 aria-hidden
                 className={cn(
                   "hidden h-3.5 w-3.5 shrink-0 text-muted-foreground",
-                  !compact && "sm:block",
+                  !compact && "min-[1024px]:block",
                 )}
               />
             </Button>

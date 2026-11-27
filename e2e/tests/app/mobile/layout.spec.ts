@@ -1,6 +1,14 @@
 import { type Locator, type Page } from "@playwright/test";
 
 import { expect, test } from "@/fixtures/board.js";
+import { openDataMenu } from "@/helpers/data.js";
+import {
+  openBoardMenu,
+  openBoardSettings,
+  openCardArchive,
+  openMembers,
+  openShare,
+} from "@/helpers/header.js";
 import { columnSection } from "@/helpers/history.js";
 import {
   expectInsideViewport,
@@ -50,24 +58,10 @@ async function expectTouchTarget(locator: Locator) {
 }
 
 /**
- * Some board chrome is deliberately desktop-only at 390 px (TASK-179 hides
- * Members/Share/Settings there). The dialogs still render full-screen for
- * phone-sized viewports, so exercise their geometry without reintroducing a
- * hidden phone entry point.
+ * The Data menu and dialogs are real phone controls (QA-02/H1): the card
+ * archive is the only in-app recovery path for an archived card. Open it the
+ * way a user would, with a tap.
  */
-async function clickEvenIfHidden(locator: Locator) {
-  await locator.evaluate((element) => (element as HTMLElement).click());
-}
-
-/**
- * The Data menu is a real phone control now (QA-02): the card archive is the
- * only in-app recovery path for an archived card. Open it the way a user
- * would, with a tap.
- */
-async function openDataMenu(page: Page) {
-  await page.getByRole("button", { name: "Data & backups" }).tap();
-  await expect(page.getByTestId("data-archive")).toBeVisible();
-}
 
 test("the notifications bell is reachable on the phone board", async ({
   page,
@@ -166,7 +160,7 @@ test("undo and the data menu are touch-reachable on the phone", async ({
       width,
       height: width === 390 ? 844 : 1024,
     });
-    for (const name of ["Undo", "Redo", "Data & backups"]) {
+    for (const name of ["Undo", "Redo", "Board menu"]) {
       const box = await page.getByRole("button", { name }).boundingBox();
       expect(box).not.toBeNull();
       expect(box!.width).toBeGreaterThanOrEqual(44);
@@ -178,9 +172,7 @@ test("undo and the data menu are touch-reachable on the phone", async ({
   const undo = page.getByRole("button", { name: "Undo" });
   await expect(undo).toBeVisible();
   await expect(page.getByRole("button", { name: "Redo" })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Data & backups" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Board menu" })).toBeVisible();
 
   await page
     .getByTestId("card-title")
@@ -200,6 +192,39 @@ test("undo and the data menu are touch-reachable on the phone", async ({
   ).toBeVisible();
 });
 
+test("Board menu Data, Help and Archive stay inside the phone viewport", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  await openBoardMenu(page);
+
+  // Below `sm` these groups are inline because a nested 256 px submenu
+  // cannot fit beside the root menu; every row must be fully on screen.
+  await expect(page.getByTestId("board-menu-data")).toHaveCount(0);
+  await expect(page.getByTestId("board-menu-help")).toHaveCount(0);
+  for (const [testId, label] of [
+    ["data-export-board", "Data export"],
+    ["data-deleted", "Recently deleted"],
+    ["data-workflow-rules", "Workflow rules"],
+    ["board-menu-archive", "Card archive"],
+    ["help-shortcuts", "Keyboard shortcuts"],
+    ["help-docs", "Documentation"],
+  ] as const) {
+    const item = page.getByTestId(testId);
+    await expect(item, label).toBeVisible();
+    await expectInsideViewport(item, label);
+    await expectTouchTarget(item);
+  }
+
+  await page.getByTestId("data-deleted").tap();
+  const dialog = page.getByRole("dialog", { name: "Recently deleted" });
+  await expect(dialog).toBeVisible();
+  await expectInsideViewport(dialog, "recently deleted");
+  await dialog.getByRole("button", { name: "Close", exact: true }).tap();
+  await expect(dialog).toBeHidden();
+});
+
 test("the card archive is reachable on the phone and restores a card", async ({
   page,
   board,
@@ -209,8 +234,7 @@ test("the card archive is reachable on the phone and restores a card", async ({
   await board.command({ type: "ARCHIVE_CARD", cardId });
   await board.open(page);
 
-  await openDataMenu(page);
-  await page.getByTestId("data-archive").tap();
+  await openCardArchive(page);
   const archive = page.getByRole("dialog");
   await expect(archive.getByTestId("archive-list")).toContainText(
     "Archived on phone",
@@ -268,23 +292,37 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(cardDialog).toBeHidden();
 
   // Members.
-  await clickEvenIfHidden(page.locator('button[aria-label="Members"]'));
-  const members = page.getByRole("dialog");
+  const members = await openMembers(page);
   await expectDialogFits(page, members, "members");
   await expect(page.getByTestId("board-members-box")).toBeVisible();
   await members.getByRole("button", { name: "Close", exact: true }).tap();
   await expect(members).toBeHidden();
 
+  // Closing Members returns focus to People; its tooltip must not swallow
+  // the very next tap on the Board menu.
+  const boardMenu = page.getByTestId("board-menu-trigger");
+  const boardMenuHit = await boardMenu.evaluate((trigger) => {
+    const rect = trigger.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    return hit !== null && trigger.contains(hit);
+  });
+  expect(boardMenuHit).toBe(true);
+  await boardMenu.tap();
+  await expect(page.getByRole("menu").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu").first()).toBeHidden();
+
   // Share link.
-  await clickEvenIfHidden(page.getByTestId("share-trigger"));
-  const share = page.getByRole("dialog");
+  const share = await openShare(page);
   await expectDialogFits(page, share, "share");
   await share.getByRole("button", { name: "Close", exact: true }).tap();
   await expect(share).toBeHidden();
 
   // Data → archive of the long archived title.
-  await openDataMenu(page);
-  await page.getByTestId("data-archive").tap();
+  await openCardArchive(page);
   const archive = page.getByRole("dialog");
   await expectDialogFits(page, archive, "archive");
   await expect(archive.getByTestId("archive-list")).toBeVisible();
@@ -298,9 +336,8 @@ test("board dialogs fit the phone and close by touch", async ({
   await expect(page.getByTestId("data-backups")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
-  // Board settings (workflow editor) — admin only; the trigger is desktop-only.
-  await clickEvenIfHidden(page.getByTestId("board-settings-trigger"));
-  const settings = page.getByTestId("board-settings-dialog");
+  // Board settings (workflow editor) — admin only, now via the Board menu.
+  const settings = await openBoardSettings(page);
   await expectDialogFits(page, settings, "board settings");
   await settings.getByRole("button", { name: "Close", exact: true }).tap();
   await expect(settings).toBeHidden();
@@ -370,6 +407,32 @@ test("keeps double-tap rename, touch card creation and column scrolling", async 
   await expect
     .poll(async () => scroller.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(before);
+});
+
+test.describe("390 mouse pointer", () => {
+  test.use({
+    hasTouch: false,
+    isMobile: false,
+    viewport: { width: 390, height: 844 },
+  });
+
+  test("a focus-return tooltip does not block the Board menu", async ({
+    page,
+    board,
+  }) => {
+    await board.open(page);
+    const members = await openMembers(page);
+    await members.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(members).toBeHidden();
+
+    // Closing Members returns focus to People; Radix opens its tooltip after
+    // the focus delay. The popper wrapper must not swallow the next click.
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toBeVisible({ timeout: 3_000 });
+    const boardMenu = page.getByTestId("board-menu-trigger");
+    await boardMenu.click({ timeout: 5_000 });
+    await expect(page.getByRole("menu").first()).toBeVisible();
+  });
 });
 
 test("calendar and table keep their content on screen at 390 px", async ({

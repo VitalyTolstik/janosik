@@ -4,11 +4,12 @@
  * board switch unmounts the dialog outright, so both paths resolve the target
  * here.
  *
- * Preference order is gear → title → board main. The gear is hidden below
- * 721 px, so a bare `.focus()` on it would leave focus on BODY; the first
- * visible/focusable candidate wins instead. `checkVisibility()` covers modern
- * browsers; the rect fallback also excludes `display:none` candidates in
- * engines (or tests) without that API.
+ * Preference order is gear → Board menu → title → board main. The gear now
+ * lives inside the Board menu, so after the menu closes it is unmounted and
+ * the trigger takes over; a bare `.focus()` on either would leave focus on
+ * BODY, so the first visible/focusable candidate wins instead.
+ * `checkVisibility()` covers modern browsers; the rect fallback also excludes
+ * `display:none` candidates in engines (or tests) without that API.
  */
 function isFocusable(target: HTMLElement): boolean {
   if (typeof target.checkVisibility === "function") {
@@ -21,6 +22,7 @@ export function restoreBoardSettingsFocus(): void {
   const focusTrigger = () => {
     const candidates = [
       '[data-testid="board-settings-trigger"]',
+      '[data-testid="board-menu-trigger"]',
       '[data-testid="board-title"]',
       '[data-testid="board-main"]',
     ];

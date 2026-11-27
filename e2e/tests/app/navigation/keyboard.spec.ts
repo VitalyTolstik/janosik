@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { test, expect } from "@/fixtures/board.js";
 import { searchInput } from "@/helpers/filters.js";
+import { openHelpMenu } from "@/helpers/header.js";
 import { cardDialog, cardTitle, columnSection } from "@/helpers/history.js";
 import { cursorCard } from "@/helpers/navigation.js";
 
@@ -31,7 +32,7 @@ test("opens the keyboard cheat sheet from the Help menu", async ({
 }) => {
   await board.open(page);
 
-  await page.getByTestId("help-trigger").click();
+  await openHelpMenu(page);
   await page.getByTestId("help-shortcuts").click();
 
   await expect(shortcutsDialog(page)).toBeVisible();

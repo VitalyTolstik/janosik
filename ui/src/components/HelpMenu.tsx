@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { BookOpen, Keyboard } from "lucide-react";
 
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
@@ -15,17 +15,46 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useShortcutsHotkey } from "@/hooks/use-shortcuts-hotkey";
 import { useI18n } from "@/i18n";
 import { docsUrl } from "@/utils/docs-url";
-import { isOverlayOpen } from "@/utils/overlay";
 
-import { isEditableTarget, isShortcutHelpKey } from "@/utils/keyboard";
+/** Shortcut + documentation rows, shared by HelpMenu and BoardMenu. */
+export function HelpMenuItems({ onShortcuts }: { onShortcuts: () => void }) {
+  const { t, lang } = useI18n();
+  return (
+    <>
+      <DropdownMenuItem
+        className="max-lg:h-11"
+        data-testid="help-shortcuts"
+        onSelect={onShortcuts}
+      >
+        <Keyboard className="h-4 w-4" />
+        <span className="flex-1">{t("shortcuts.title")}</span>
+        <kbd className="rounded border border-border bg-muted px-1.5 font-mono text-ui-micro text-muted-foreground">
+          ?
+        </kbd>
+      </DropdownMenuItem>
+      <DropdownMenuItem className="max-lg:h-11" asChild>
+        <a
+          data-testid="help-docs"
+          href={docsUrl(lang)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <BookOpen className="h-4 w-4" />
+          {t("help.documentation")}
+        </a>
+      </DropdownMenuItem>
+    </>
+  );
+}
 
 /**
  * The header's Help menu (TASK-132): one "?" entry point that opens the
  * keyboard-shortcut sheet and links to the documentation, the Linear/Notion
- * pattern. "?" also opens the cheat sheet directly (Jira/Notion/GitHub
- * convention), which is why the listener lives here rather than in the sheet.
+ * pattern. The `?` listener lives here on non-board routes; the Board menu
+ * owns it on a board.
  */
 export function HelpMenu({
   filter,
@@ -38,27 +67,10 @@ export function HelpMenu({
   canEdit?: boolean;
   selectable?: boolean;
 }) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.isComposing ||
-        isEditableTarget(event.target) ||
-        isOverlayOpen()
-      )
-        return;
-      if (isShortcutHelpKey(event)) {
-        event.preventDefault();
-        setShortcutsOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useShortcutsHotkey(() => setShortcutsOpen(true));
 
   return (
     <>
@@ -82,27 +94,7 @@ export function HelpMenu({
           </TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuItem
-            data-testid="help-shortcuts"
-            onSelect={() => setShortcutsOpen(true)}
-          >
-            <Keyboard className="h-4 w-4" />
-            <span className="flex-1">{t("shortcuts.title")}</span>
-            <kbd className="rounded border border-border bg-muted px-1.5 font-mono text-ui-micro text-muted-foreground">
-              ?
-            </kbd>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a
-              data-testid="help-docs"
-              href={docsUrl(lang)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <BookOpen className="h-4 w-4" />
-              {t("help.documentation")}
-            </a>
-          </DropdownMenuItem>
+          <HelpMenuItems onShortcuts={() => setShortcutsOpen(true)} />
         </DropdownMenuContent>
       </DropdownMenu>
 

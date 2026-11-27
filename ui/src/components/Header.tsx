@@ -6,14 +6,13 @@ import { BrandMark } from "@/components/BrandMark";
 import { AgentControlButton } from "@/components/agent-control/AgentControlButton";
 import type { AgentControlTab } from "@/components/agent-control/AgentControlDialog";
 import { usePendingApprovals } from "@/components/agents/use-pending-approvals";
-import { BoardMembersDialog } from "@/components/board/BoardMembersDialog";
+import { BoardMenu } from "@/components/BoardMenu";
 import { BoardScopeSelect } from "@/components/agents/BoardScopeSelect";
 import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
 import { restoreBoardSettingsFocus } from "@/components/board/settings/focus";
-import { ShareDialog } from "@/components/board/ShareDialog";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
-import { DataMenu } from "@/components/DataMenu";
+import { PeopleMenu } from "@/components/board/PeopleMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { HelpMenu } from "@/components/HelpMenu";
 import { useBoardView } from "@/components/board/BoardViewProvider";
@@ -35,7 +34,6 @@ import {
 import { useI18n } from "@/i18n";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
-import { PresenceStack } from "@/components/board/PresenceStack";
 import {
   useBoard,
   useBoardAccess,
@@ -71,12 +69,6 @@ export function Header() {
   const isAgentsRoute =
     matchPath(routes.agents, location.pathname) !== null ||
     matchPath(routes.agentPattern, location.pathname) !== null;
-  // A mandatory card dialog makes the rest of the board inert (aria-hidden),
-  // so header triggers behind it cannot be reached. Remember the state and
-  // hide the Members trigger on archived deep links rather than leaving a
-  // button that a keyboard or screen reader can focus but not activate.
-  const cardOpen =
-    isBoardRoute && new URLSearchParams(location.search).has("card");
   // Narrow subscriptions on purpose (TASK-21.4): the actions never change
   // and the flags flip rarely, so typing in a card leaves the header alone.
   const { undo, redo, roleOf } = useBoardActions();
@@ -310,14 +302,23 @@ export function Header() {
         // `env()` is 0 (every desktop browser), so nothing gets double padding.
         // From `sm` up the 52 px row grows by the top inset (iPad standalone)
         // instead of squeezing its controls.
-        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] sm:pr-[max(1.5rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))]",
+        // The app shell keeps its 1.5rem sm gutters everywhere; only the
+        // board route tightens them to 0.75rem through the tablet squeeze so
+        // search + title + every control fit. Desktop boards restore 1.5rem.
+        "sticky top-0 z-40 flex min-h-[61px] shrink-0 flex-col gap-1 border-b bg-background/80 bg-gradient-to-br from-primary/15 via-secondary/10 to-transparent py-1.5 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur-md max-sm:pt-[max(0.375rem,env(safe-area-inset-top))] sm:h-[calc(52px_+_env(safe-area-inset-top))] sm:min-h-[calc(52px_+_env(safe-area-inset-top))] sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-0 sm:pb-0 sm:pt-[env(safe-area-inset-top)] sm:pr-[max(1.5rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] lg:pr-[max(1.5rem,env(safe-area-inset-right))] lg:pl-[max(1.5rem,env(safe-area-inset-left))]",
+        isBoardRoute &&
+          "sm:pr-[max(0.75rem,env(safe-area-inset-right))] sm:pl-[max(0.75rem,env(safe-area-inset-left))]",
         isAgentsRoute &&
-          "min-h-[61px] flex-row flex-nowrap items-center pr-[max(10px,env(safe-area-inset-right))] pl-[max(10px,env(safe-area-inset-left))] font-agent-surface sm:pr-[max(14px,env(safe-area-inset-right))] sm:pl-[max(14px,env(safe-area-inset-left))]",
+          "min-h-[61px] flex-row flex-nowrap items-center pr-[max(10px,env(safe-area-inset-right))] pl-[max(10px,env(safe-area-inset-left))] font-agent-surface sm:pr-[max(14px,env(safe-area-inset-right))] sm:pl-[max(14px,env(safe-area-inset-left))] lg:pr-[max(14px,env(safe-area-inset-right))] lg:pl-[max(14px,env(safe-area-inset-left))]",
       )}
     >
       <div
         className={cn(
-          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-3",
+          // Tighter board-only gaps through the tablet range buy the title
+          // and icon-only search enough room; other routes keep the original
+          // 0.5rem tablet rhythm.
+          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-2 lg:gap-3",
+          isBoardRoute && "sm:gap-1",
           isAgentsRoute && "w-auto flex-1 gap-[10px]",
         )}
       >
@@ -337,7 +338,14 @@ export function Header() {
             </span>
           </Link>
         ) : (
-          <BrandMark />
+          <Link
+            to={routes.home}
+            aria-label={t("agents.home")}
+            data-testid="brand-home"
+            className="flex shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:h-11 max-lg:w-11 max-lg:min-w-11"
+          >
+            <BrandMark />
+          </Link>
         )}
         {isAgentsRoute ? (
           <span
@@ -406,16 +414,9 @@ export function Header() {
         ) : null}
         {isBoardRoute ? (
           <>
-            {!archived || (role !== "ADMIN" && !cardOpen) ? (
-              <div className={archived ? "block" : "hidden min-[1024px]:block"}>
-                <BoardMembersDialog key={settingsBoardId ?? "no-board"} />
-              </div>
-            ) : null}
-            {!archived ? (
-              <div className="hidden min-[1024px]:block">
-                <ShareDialog />
-              </div>
-            ) : null}
+            {/* One People doorway replaces Members + Share + Presence at every
+                width; presence is no longer hidden below 1200 px. */}
+            <PeopleMenu />
             {!archived ? (
               <AgentControlButton
                 onOpen={(trigger) => {
@@ -425,30 +426,6 @@ export function Header() {
                 }}
               />
             ) : null}
-            {role === "ADMIN" && !readOnly ? (
-              <div className="max-[720.98px]:hidden">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("board.settings.button")}
-                      data-testid="board-settings-trigger"
-                      className="md:h-8 md:w-8 md:min-w-8"
-                      onClick={() => openSettings("workflow")}
-                    >
-                      <LazyAnimatedIcon name="settings" size={16} />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{t("board.settings.button")}</TooltipContent>
-                </Tooltip>
-              </div>
-            ) : null}
-            {/* The presence stack needs the widest header; below 1200 px the
-                roster stays reachable from the members dialog. */}
-            <div className="hidden min-[1200px]:block">
-              <PresenceStack />
-            </div>
           </>
         ) : null}
       </div>
@@ -464,8 +441,9 @@ export function Header() {
             <GlobalSearch iconOnly />
           </div>
         ) : isBoardRoute ? (
-          // The icon returns at 721 px; the label waits for the full header
-          // at 1024 px so it cannot paint over the title or Agents.
+          // The 44 px icon entry returns at 721 (phones keep it behind ⌘K);
+          // the label waits for the full header at 1024 so it cannot paint
+          // over the title or Agents.
           <div className="hidden min-[721px]:block">
             <GlobalSearch labelClassName="hidden min-[1024px]:inline" />
           </div>
@@ -474,20 +452,7 @@ export function Header() {
         )}
         {isAgentsRoute ? (
           <NotificationsBell />
-        ) : isBoardRoute ? (
-          <div className="hidden min-[1200px]:block">
-            <HelpMenu
-              filter={board !== undefined && view !== "watch"}
-              kanban={board !== undefined && view === "board"}
-              canEdit={board !== undefined && !readOnly}
-              selectable={
-                board !== undefined &&
-                !readOnly &&
-                (view === "board" || view === "table")
-              }
-            />
-          </div>
-        ) : (
+        ) : isBoardRoute ? null : (
           <HelpMenu />
         )}
         {isAgentsRoute ? (
@@ -562,12 +527,21 @@ export function Header() {
         ) : null}
 
         {isBoardRoute ? (
-          // Every width keeps the data menu: the card archive is the only
+          // Every width keeps the Board menu: the card archive is the only
           // in-app recovery path for an archived card, and it must not be
-          // stranded on phones/tablets (QA-02).
-          <div className="block">
-            <DataMenu />
-          </div>
+          // stranded on phones/tablets (QA-02). Settings, data and help move
+          // behind it instead of holding permanent header slots.
+          <BoardMenu
+            onOpenSettings={() => openSettings("workflow")}
+            filter={board !== undefined && view !== "watch"}
+            kanban={board !== undefined && view === "board"}
+            canEdit={board !== undefined && !readOnly}
+            selectable={
+              board !== undefined &&
+              !readOnly &&
+              (view === "board" || view === "table")
+            }
+          />
         ) : null}
 
         <AccountDialog onOpenAgents={openAllAgents} compact={isAgentsRoute} />

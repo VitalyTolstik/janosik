@@ -1,4 +1,5 @@
 import { test, expect } from "../../../fixtures/board.js";
+import { openCardArchive } from "@/helpers/header.js";
 
 test("create, edit, drag, duplicate, archive, restore and delete a card", async ({
   page,
@@ -64,8 +65,7 @@ test("create, edit, drag, duplicate, archive, restore and delete a card", async 
     .getByRole("button", { name: "Close", exact: true })
     .first()
     .click();
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   const row = page.getByTestId("archive-row");
   await expect(row).toHaveCount(1);
   await row.getByTestId("archive-restore").click();

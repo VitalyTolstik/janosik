@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { test, expect } from "@/fixtures/board.js";
+import { login } from "@/fixtures/auth.js";
 import { createAgentSession } from "@/helpers/agents.js";
+import { openBoardSettings } from "@/helpers/header.js";
 import { appUrl } from "@/helpers/urls.js";
 
 /**
@@ -120,7 +122,7 @@ test("board header keeps the title and Agents action usable at tablet widths", a
   board,
 }) => {
   await board.open(page);
-  for (const width of [390, 719, 720, 721, 768, 800, 900, 1024, 1440]) {
+  for (const width of [390, 719, 720, 721, 768, 800, 900, 1023, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.waitForTimeout(120);
 
@@ -164,11 +166,9 @@ test("board header keeps the title and Agents action usable at tablet widths", a
     expect(layout.agentLeft).not.toBeNull();
     expect(layout.titleRight!).toBeLessThanOrEqual(layout.agentLeft! + 1);
     if (width <= 720) expect(layout.agentHeight).toBeGreaterThanOrEqual(44);
-    if (width <= 720) {
-      await expect(page.getByTestId("board-settings-trigger")).toBeHidden();
-    } else {
-      await expect(page.getByTestId("board-settings-trigger")).toBeVisible();
-    }
+    // Settings lives in the Board menu now; the menu entry is the control
+    // that must stay reachable at every width.
+    await expect(page.getByTestId("board-menu-trigger")).toBeVisible();
 
     if (width === 390) {
       await expect(
@@ -179,20 +179,257 @@ test("board header keeps the title and Agents action usable at tablet widths", a
     const search = page.getByRole("button", {
       name: "Global search",
     });
-    if (width === 720) {
-      await expect(search).toBeHidden();
-      await expect(page.getByText("Global search")).toBeHidden();
-    }
     if (width === 721) {
       await expect(
         page.getByRole("button", { name: "Switch board" }),
       ).toBeVisible();
-      await expect(search).toBeVisible();
+    }
+    if (width < 721) {
+      await expect(search).toBeHidden();
       await expect(page.getByText("Global search")).toBeHidden();
+    } else {
+      // The icon-only entry stays pointer-reachable on touch tablets; the
+      // label waits for 1024.
+      await expect(search).toBeVisible();
+      if (width < 1024) {
+        await expect(page.getByText("Global search")).toBeHidden();
+      } else {
+        await expect(page.getByText("Global search")).toBeVisible();
+      }
     }
-    if (width >= 1024) {
-      await expect(page.getByText("Global search")).toBeVisible();
+  }
+});
+
+test("a long board title keeps every header control hittable at 640–768", async ({
+  page,
+  board,
+}) => {
+  // The fixture's title is 42 characters: the old non-shrinking title kept
+  // its intrinsic width and pushed People/Agents under the right cluster.
+  expect(board.title.length).toBeGreaterThanOrEqual(40);
+  await board.open(page);
+
+  const undo = page.getByRole("button", { name: "Undo" });
+  const redo = page.getByRole("button", { name: "Redo" });
+  // Two UI actions, then undo one: both history controls are enabled, so
+  // their centre hit-test exercises a real target rather than a disabled
+  // button's pointer-events:none wrapper.
+  for (const name of ["Header probe one", "Header probe two"]) {
+    await page.getByRole("button", { name: "Add column", exact: true }).click();
+    await page.locator('[name="column-create"]').fill(name);
+    await page.locator('[name="column-create"]').press("Enter");
+    await expect(page.getByRole("group", { name, exact: true })).toBeVisible();
+  }
+  await undo.click();
+  await page.mouse.move(0, 0);
+  await expect(undo).toBeEnabled();
+  await expect(redo).toBeEnabled();
+  const search = page.getByRole("button", { name: "Global search" });
+  const people = page.getByTestId("people-trigger");
+  const agents = page.getByTestId("agent-control-trigger");
+  const boardMenu = page.getByTestId("board-menu-trigger");
+  const account = page.getByTestId("account-trigger");
+
+  for (const width of [640, 700, 721, 768, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const headerOverflow = await page
+      .locator("header")
+      .first()
+      .evaluate((header) => header.scrollWidth - header.clientWidth);
+    expect(headerOverflow, `header overflow at ${width}`).toBeLessThanOrEqual(
+      0,
+    );
+
+    const layout = await page.evaluate(() => {
+      const title = document.querySelector("header h1");
+      const agent = document.querySelector<HTMLElement>(
+        '[data-testid="agent-control-trigger"]',
+      );
+      return {
+        titleRight: title?.getBoundingClientRect().right ?? null,
+        agentLeft: agent?.getBoundingClientRect().left ?? null,
+      };
+    });
+    expect(layout.titleRight).not.toBeNull();
+    expect(layout.agentLeft).not.toBeNull();
+    expect(layout.titleRight!).toBeLessThanOrEqual(layout.agentLeft! + 1);
+
+    const expectHittable = async (
+      label: string,
+      control: import("@playwright/test").Locator,
+    ) => {
+      await expect(control, `${label} at ${width}`).toBeVisible();
+      const hitInside = await control.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          rect.left + rect.width / 2,
+          rect.top + rect.height / 2,
+        );
+        return hit !== null && element.contains(hit);
+      });
+      expect(hitInside, `${label} centre hit-test at ${width}`).toBe(true);
+      const box = await control.boundingBox();
+      expect(box, `${label} box at ${width}`).not.toBeNull();
+      expect(box!.x, `${label} left edge at ${width}`).toBeGreaterThanOrEqual(
+        -0.5,
+      );
+      expect(
+        box!.x + box!.width,
+        `${label} right edge at ${width}`,
+      ).toBeLessThanOrEqual(width + 0.5);
+    };
+
+    for (const [label, control] of [
+      ["Undo", undo],
+      ["Redo", redo],
+      ["People", people],
+      ["Agents", agents],
+      ["Board menu", boardMenu],
+      ["Account", account],
+    ] as const) {
+      await expectHittable(label, control);
     }
+    if (width >= 721) {
+      await expectHittable("Global search", search);
+    } else {
+      // Phones keep search behind ⌘K.
+      await expect(search).toBeHidden();
+    }
+  }
+});
+
+test("header gutters stay route-appropriate", async ({ page, createUser }) => {
+  const user = await createUser();
+  await login(page, user);
+  await expect(page.getByTestId("account-trigger")).toBeVisible();
+
+  const gutters = () =>
+    page
+      .locator("header")
+      .first()
+      .evaluate((header) => {
+        const style = getComputedStyle(header);
+        return { left: style.paddingLeft, right: style.paddingRight };
+      });
+
+  // Non-board app shell keeps the original 24 px tablet gutters.
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.goto(appUrl);
+  await expect(page.locator("header").first()).toBeVisible();
+  expect(await gutters()).toEqual({ left: "24px", right: "24px" });
+
+  // The agents shell keeps its explicit 14 px edge at desktop width.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(new URL("agents", appUrl).href);
+  await expect(page.getByTestId("agents-page")).toBeVisible();
+  expect(await gutters()).toEqual({ left: "14px", right: "14px" });
+});
+
+test("a realistic board title keeps its full name with search visible", async ({
+  page,
+  board,
+}) => {
+  // Long enough to be a real demo name (~225 px), unlike the fixture's
+  // 42-character UUID title that always truncates by design. The owner
+  // accepts visual ellipsis at 768/800 to keep search pointer-reachable.
+  const timeline = "Janosik core — header work";
+  await board.command({ type: "RENAME_BOARD", title: timeline });
+  await board.open(page);
+
+  for (const width of [768, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const layout = await page.evaluate(() => {
+      const header = document.querySelector("header")!;
+      const title = header.querySelector<HTMLElement>("h1")!;
+      const agent = document.querySelector<HTMLElement>(
+        '[data-testid="agent-control-trigger"]',
+      )!;
+      const rect = title.getBoundingClientRect();
+      return {
+        titleWidth: rect.width,
+        headerOverflow: header.scrollWidth - header.clientWidth,
+        titleRight: rect.right,
+        agentLeft: agent.getBoundingClientRect().left,
+      };
+    });
+
+    expect(layout.titleWidth, `title width at ${width}`).toBeGreaterThan(0);
+    expect(layout.headerOverflow).toBeLessThanOrEqual(0);
+    expect(layout.titleRight).toBeLessThanOrEqual(layout.agentLeft + 1);
+    // Ellipsis is allowed, but the full name must remain available to the
+    // pointer (title attribute) and assistive tech (heading name).
+    await expect(page.getByTestId("board-title")).toHaveAttribute(
+      "title",
+      new RegExp(timeline),
+    );
+    await expect(page.getByTestId("board-title")).toHaveText(timeline);
+    await expect(page.getByRole("heading", { name: timeline })).toBeVisible();
+
+    // Search stays available at the tablet widths.
+    const search = page.getByRole("button", { name: "Global search" });
+    await expect(search).toBeVisible();
+    const hitInsideSearch = await search.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return hit !== null && element.contains(hit);
+    });
+    expect(hitInsideSearch, `search hit-test at ${width}`).toBe(true);
+  }
+});
+
+test("desktop title keeps the switcher beside it and hover only on the text", async ({
+  page,
+  board,
+}) => {
+  await board.open(page);
+  const title = page.getByTestId("board-title");
+  const pencil = page.getByTestId("board-rename");
+
+  for (const width of [1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForTimeout(120);
+
+    const layout = await page.evaluate(() => {
+      const heading = document.querySelector<HTMLElement>(
+        '[data-testid="board-title"]',
+      )!;
+      const wrapper = heading.parentElement!;
+      const switcher = document.querySelector<HTMLElement>(
+        'button[aria-label="Switch board"]',
+      )!;
+      return {
+        titleRight: heading.getBoundingClientRect().right,
+        wrapperRight: wrapper.getBoundingClientRect().right,
+        switcherLeft: switcher.getBoundingClientRect().left,
+        headerOverflow:
+          document.querySelector("header")!.scrollWidth -
+          document.querySelector("header")!.clientWidth,
+      };
+    });
+
+    // Shrink-only title: no empty hover strip between title and switcher.
+    expect(layout.headerOverflow).toBeLessThanOrEqual(0);
+    expect(layout.wrapperRight - layout.titleRight).toBeLessThanOrEqual(8);
+    expect(layout.switcherLeft - layout.titleRight).toBeLessThanOrEqual(40);
+
+    await page.mouse.move(0, 0);
+    await expect(pencil).toHaveCSS("opacity", "0");
+    await title.hover();
+    await expect(pencil).toHaveCSS("opacity", "0.8");
+
+    // A point that used to sit inside the grown wrapper (80 px right of the
+    // capped title) must not reveal the rename pencil.
+    const box = await title.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width + 80, box!.y + box!.height / 2);
+    await expect(pencil).toHaveCSS("opacity", "0");
   }
 });
 
@@ -323,13 +560,8 @@ test("390 board settings primary actions stay at 44 px", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await board.open(page);
-  // The board header deliberately hides secondary chrome at ≤720 px; the
-  // dialog itself is still full-screen and must keep 44 px phone actions.
-  await page
-    .getByTestId("board-settings-trigger")
-    .evaluate((element) => (element as HTMLElement).click());
-  const dialog = page.getByTestId("board-settings-dialog");
-  await expect(dialog).toBeVisible();
+  // The dialog is full-screen on a phone and must keep 44 px actions.
+  const dialog = await openBoardSettings(page);
   await page.getByTestId("board-settings-agents").click();
   await expect(page.getByTestId("agents-automation-footer")).toBeVisible();
   await page.waitForTimeout(250);

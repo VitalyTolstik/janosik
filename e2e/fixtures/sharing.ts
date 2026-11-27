@@ -5,6 +5,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { test as authTest, expect, login } from "./auth.js";
+import { openShare } from "../helpers/header.js";
 import { appUrl, siteUrl } from "../helpers/urls.js";
 
 type Share = {
@@ -95,7 +96,7 @@ export const test = authTest.extend<{ sharing: Sharing }>({
             response.url().endsWith(`/boards/${boardId}/shares`) &&
             response.request().method() === "GET",
         );
-        await page.getByTestId("share-trigger").click();
+        await openShare(page);
         expect((await loaded).ok()).toBeTruthy();
       },
       createShare: async (mode, options = {}) => {

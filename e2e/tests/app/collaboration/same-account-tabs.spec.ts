@@ -1,5 +1,5 @@
 import { test, expect } from "@/fixtures/board.js";
-import { addCard, presenceStack } from "@/helpers/collaboration.js";
+import { addCard } from "@/helpers/collaboration.js";
 import { cardTitle, columnSection } from "@/helpers/history.js";
 import { appUrl } from "@/helpers/urls.js";
 
@@ -20,10 +20,10 @@ test("a second tab of the same account applies its commands once and dedupes pre
   ).toBeVisible();
   await expect(columnSection(second, "Todo")).toBeVisible();
 
-  // Solo user: both tabs share one presence identity, and a solo presence
-  // stack is hidden — never "+1" for my own second tab.
-  await expect(presenceStack(page)).toBeHidden();
-  await expect(presenceStack(second)).toBeHidden();
+  // Solo user: both tabs share one presence identity — never "+1" for my
+  // own second tab. The People entry itself stays visible (H1).
+  await expect(page.getByTestId("people-overflow")).toHaveCount(0);
+  await expect(second.getByTestId("people-overflow")).toHaveCount(0);
 
   await addCard(second, "Todo", "Tab card");
   await expect(cardTitle(page, "Tab card")).toHaveCount(1, {
@@ -32,10 +32,10 @@ test("a second tab of the same account applies its commands once and dedupes pre
   await expect(cardTitle(second, "Tab card")).toHaveCount(1);
   await page.waitForTimeout(1_500);
   await expect(cardTitle(page, "Tab card")).toHaveCount(1);
-  await expect(presenceStack(page)).toBeHidden();
+  await expect(page.getByTestId("people-overflow")).toHaveCount(0);
 
   await second.close();
   await page.waitForTimeout(1_500);
-  await expect(presenceStack(page)).toBeHidden();
+  await expect(page.getByTestId("people-overflow")).toHaveCount(0);
   await expect(cardTitle(page, "Tab card")).toHaveCount(1);
 });

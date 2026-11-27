@@ -6,6 +6,8 @@ import {
   type Page,
 } from "@playwright/test";
 
+import { openBoardMenu } from "./header.js";
+
 /**
  * UI helpers for the data menu (export/import) and the board switcher.
  *
@@ -88,10 +90,24 @@ export interface ImportRequestTracker {
   count: () => number;
 }
 
-/** Open the header data menu and return the rendered menu. */
+/**
+ * Open Board menu → Data & backups and return the menu holding its rows.
+ * Below `sm` the rows are inline in the Board menu (a nested 256 px submenu
+ * cannot fit beside the root menu on a phone), so there is no submenu to
+ * open there.
+ */
 export async function openDataMenu(page: Page): Promise<Locator> {
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  const menu = page.getByRole("menu");
+  await openBoardMenu(page);
+  const trigger = page.getByTestId("board-menu-data");
+  if ((await trigger.count()) > 0) {
+    if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+      await trigger.click();
+    }
+    const submenu = page.getByRole("menu").last();
+    await expect(submenu).toBeVisible();
+    return submenu;
+  }
+  const menu = page.getByRole("menu").first();
   await expect(menu).toBeVisible();
   return menu;
 }

@@ -33,9 +33,11 @@ test("a MEMBER cannot edit the workflow and is refused by a role-only edge", asy
   await partner.accept();
   await partner.openBoard(partnerBrowser.page);
 
+  await partnerBrowser.page.getByTestId("board-menu-trigger").click();
   await expect(
-    partnerBrowser.page.getByTestId("board-settings-trigger"),
+    partnerBrowser.page.getByRole("menuitem", { name: "Board settings" }),
   ).toHaveCount(0);
+  await partnerBrowser.page.keyboard.press("Escape");
 
   await cardTitle(partnerBrowser.page, "Admin only").click({ button: "right" });
   await partnerBrowser.page.getByTestId("ctx-move-trigger").click();
@@ -91,9 +93,11 @@ test("a VIEWER gets no settings, no drag and no move menu", async ({
   await partner.accept();
   await partner.openBoard(partnerBrowser.page);
 
+  await partnerBrowser.page.getByTestId("board-menu-trigger").click();
   await expect(
-    partnerBrowser.page.getByTestId("board-settings-trigger"),
+    partnerBrowser.page.getByRole("menuitem", { name: "Board settings" }),
   ).toHaveCount(0);
+  await partnerBrowser.page.keyboard.press("Escape");
   await cardTitle(partnerBrowser.page, "Read only").click({ button: "right" });
   await expect(partnerBrowser.page.getByTestId("ctx-move-trigger")).toHaveCount(
     0,

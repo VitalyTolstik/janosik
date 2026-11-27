@@ -15,7 +15,11 @@ test("a MEMBER sees the roster but cannot manage members or shares", async ({
   await board.open(page);
   await partner.openBoard(partnerBrowser.page);
 
-  await expect(partnerBrowser.page.getByTestId("share-trigger")).toHaveCount(0);
+  await partnerBrowser.page.getByTestId("people-trigger").click();
+  await expect(
+    partnerBrowser.page.getByRole("menuitem", { name: "Share" }),
+  ).toHaveCount(0);
+  await partnerBrowser.page.keyboard.press("Escape");
   const dialog = await openMembers(partnerBrowser.page);
   await expect(memberRow(partnerBrowser.page, board.email)).toBeVisible();
   await expect(

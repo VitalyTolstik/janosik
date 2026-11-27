@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
+import { openBoardSettings as openBoardSettingsFromHeader } from "./header.js";
 import { columnSection, cardTitle } from "./history.js";
 
 /**
@@ -70,20 +71,9 @@ export async function hoverCardOverColumn(
   });
 }
 
-/** Open «Board settings» and return the dialog. */
+/** Open «Board settings» through the Board menu and return the dialog. */
 export async function openBoardSettings(page: Page): Promise<Locator> {
-  const trigger = page.getByTestId("board-settings-trigger");
-  // The board header deliberately hides secondary chrome at ≤720 px; the
-  // dialog is still full-screen there, so open it programmatically in mobile
-  // layout tests rather than reintroducing a hidden phone entry point.
-  if (await trigger.isVisible()) {
-    await trigger.click();
-  } else {
-    await trigger.evaluate((element) => (element as HTMLElement).click());
-  }
-  const dialog = page.getByTestId("board-settings-dialog");
-  await expect(dialog).toBeVisible();
-  return dialog;
+  return openBoardSettingsFromHeader(page);
 }
 
 /**

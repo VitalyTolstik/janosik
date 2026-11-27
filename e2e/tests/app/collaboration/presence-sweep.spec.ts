@@ -1,5 +1,5 @@
 import { test, expect } from "@/fixtures/collaboration.js";
-import { expectPresence, presenceStack } from "@/helpers/collaboration.js";
+import { expectPresence } from "@/helpers/collaboration.js";
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -25,6 +25,8 @@ test("the sweep drops a session whose heartbeat is blocked after the TTL", async
     return route.abort();
   });
 
-  await expect(presenceStack(page)).toBeHidden({ timeout: 85_000 });
+  await expect(page.getByTestId("people-avatar")).toHaveCount(1, {
+    timeout: 85_000,
+  });
   expect(blocked).toBeGreaterThan(0);
 });

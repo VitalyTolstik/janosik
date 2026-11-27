@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { cardTitle, columnSection } from "@/helpers/history.js";
+import { openMembers as openMembersFromHeader } from "@/helpers/header.js";
 
 /** Shared UI steps for the two-account collaboration suite. */
 
@@ -103,10 +104,8 @@ export function membersDialog(page: Page): Locator {
 }
 
 export async function openMembers(page: Page): Promise<Locator> {
-  await page.getByRole("button", { name: "Members", exact: true }).click();
-  const dialog = membersDialog(page);
-  await expect(dialog).toBeVisible();
-  return dialog;
+  await openMembersFromHeader(page);
+  return membersDialog(page);
 }
 
 export function memberRow(page: Page, email: string): Locator {
@@ -229,12 +228,9 @@ export async function addCard(
   await expect(composer).toBeHidden();
 }
 
-export function presenceStack(page: Page): Locator {
-  return page.getByTestId("presence-stack");
-}
-
+/** Presence faces render inside the People trigger at ≥1024 px. */
 export function presenceAvatars(page: Page): Locator {
-  return page.getByTestId("presence-avatar");
+  return page.getByTestId("people-avatar");
 }
 
 export async function expectPresence(
@@ -242,8 +238,8 @@ export async function expectPresence(
   count: number,
   timeout = 15_000,
 ): Promise<void> {
-  if (count < 2) {
-    await expect(presenceStack(page)).toBeHidden({ timeout });
+  if (count === 0) {
+    await expect(presenceAvatars(page)).toHaveCount(0, { timeout });
     return;
   }
   await expect(presenceAvatars(page)).toHaveCount(count, { timeout });

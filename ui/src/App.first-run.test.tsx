@@ -238,13 +238,13 @@ describe("App first run", () => {
     ).toHaveLength(0);
   });
 
-  it("renames through the visible pencil and keeps keyboard access", async () => {
+  it("renames through the title and keeps keyboard access", async () => {
     seedActiveBoard();
     render(<App router={createAppRouter()} />);
 
-    const rename = await screen.findByTestId("board-rename");
-    expect(rename).toHaveAccessibleName("Rename board");
-    rename.focus();
+    const title = await screen.findByTestId("board-title");
+    expect(title).toHaveAccessibleName("Alpha");
+    title.focus();
     await userEvent.keyboard("{Enter}");
 
     const input = await waitFor(() => {

@@ -1,4 +1,5 @@
 import { test, expect } from "../../../fixtures/card-context-menu.js";
+import { openCardArchive } from "@/helpers/header.js";
 
 test("context menu opens the card, copies its link and opens a new tab", async ({
   page,
@@ -51,7 +52,6 @@ test("context menu duplicates and archives a card", async ({
       .getByTestId("card-title")
       .filter({ hasText: /^Copy of Context task$/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   await expect(page.getByTestId("archive-row")).toContainText("Context task");
 });

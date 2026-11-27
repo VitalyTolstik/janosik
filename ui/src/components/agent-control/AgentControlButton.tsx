@@ -63,10 +63,17 @@ export function AgentControlButton({
           aria-label={label}
           data-testid={admin ? "agent-control-trigger" : "agent-runs-trigger"}
           onClick={(event) => onOpen(event.currentTarget)}
-          className="inline-flex h-11 min-h-11 items-center gap-1.5 rounded-[6px] border border-[color-mix(in_oklab,var(--primary)_26%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-2 font-agent-surface text-ui-label font-[600] leading-[1.45] text-foreground hover:bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] min-[761px]:h-[30px] min-[761px]:min-h-[30px]"
+          className="inline-flex h-11 min-h-11 items-center gap-1.5 rounded-[6px] border border-[color:color-mix(in_oklab,var(--primary)_26%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-2 font-agent-surface text-ui-label font-[600] leading-[1.45] text-foreground hover:bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] max-lg:min-w-11 max-lg:justify-center lg:h-[30px] lg:min-h-[30px]"
         >
           <LazyAnimatedIcon name="bot" size={16} aria-hidden />
-          <span>{label}</span>
+          {/* H1: below 1280 the icon + pending badge carry the entry; the
+              label would otherwise crowd the title at 1024–1279. */}
+          <span
+            data-testid="agent-control-label"
+            className="hidden min-[1280px]:inline"
+          >
+            {label}
+          </span>
           {admin && pendingCount !== null && pendingCount > 0 ? (
             <span
               data-testid="agent-control-pending-count"

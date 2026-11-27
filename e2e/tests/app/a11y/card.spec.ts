@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { type Page } from "@playwright/test";
 
 import { expect, test, type BoardFixture } from "@/fixtures/board.js";
+import { openBoardSettings } from "@/helpers/header.js";
 
 /**
  * Card/board accessibility (U-04, TASK-177.15) in a real browser.
@@ -323,9 +324,7 @@ test.describe("card a11y", () => {
     await board.open(page);
     await setTheme(page, "light");
 
-    await page.getByRole("button", { name: "Board settings" }).click();
-    const settings = page.getByRole("dialog", { name: board.title });
-    await expect(settings).toBeVisible();
+    const settings = await openBoardSettings(page);
     await expect(page.locator("main")).toHaveCount(1);
     await expectNoAxeIssues(page, '[role="dialog"]');
     await page.keyboard.press("Escape");

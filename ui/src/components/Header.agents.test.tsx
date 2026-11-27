@@ -149,8 +149,10 @@ describe("agent entry points in the header", () => {
     const restoreLayout = stubVisibleLayout();
     try {
       renderHeader("/board/board-1", new FakeServer([board, boardTwo]));
-      const settings = await screen.findByTestId("board-settings-trigger");
-      await userEvent.click(settings);
+      await userEvent.click(await screen.findByTestId("board-menu-trigger"));
+      await userEvent.click(
+        await screen.findByTestId("board-settings-trigger"),
+      );
       expect(await screen.findByTestId("board-settings-dialog")).toBeVisible();
 
       // The palette/URL navigation unmounts the dialog without a close event.
@@ -159,7 +161,9 @@ describe("agent entry points in the header", () => {
       await waitFor(() =>
         expect(screen.queryByTestId("board-settings-dialog")).toBeNull(),
       );
-      await waitFor(() => expect(settings).toHaveFocus());
+      await waitFor(() =>
+        expect(screen.getByTestId("board-menu-trigger")).toHaveFocus(),
+      );
       expect(
         screen.getByRole("heading", { name: "Docs board" }),
       ).toBeInTheDocument();

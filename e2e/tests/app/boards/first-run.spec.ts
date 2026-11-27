@@ -7,9 +7,10 @@ import { login, test, expect } from "../../../fixtures/auth.js";
  * curated example without typing a name, and finds the visible rename control.
  */
 
-test("first run names the board and renames it from the visible pencil", async ({
+test("first run names the board and renames it from the title affordance", async ({
   page,
   createUser,
+  browser,
 }) => {
   const user = await createUser();
   await login(page, user);
@@ -25,21 +26,28 @@ test("first run names the board and renames it from the visible pencil", async (
   const name = `Launch ${randomUUID()}`;
   await page.getByTestId("empty-board-name").fill(name);
   await create.click();
+  const title = page.getByTestId("board-title");
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Rename board" }),
-  ).toBeVisible();
+
+  // The pencil is a hint inside the title now, not a permanent header
+  // button. It appears for a pointer on hover…
+  const pencil = page.getByTestId("board-rename");
+  await expect(pencil).toHaveCSS("opacity", "0");
+  await title.hover();
+  await expect(pencil).toHaveCSS("opacity", "0.8");
 
   const renamed = `Renamed ${randomUUID()}`;
-  await page.getByRole("button", { name: "Rename board" }).click();
-  await page.locator('[name="board-title-edit"]').fill(renamed);
+  await title.click();
+  const input = page.locator('[name="board-title-edit"]');
+  await expect(input).toBeVisible();
+  await input.fill(renamed);
   const renameSaved = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       response.url().includes("/commands") &&
       response.ok(),
   );
-  await page.locator('[name="board-title-edit"]').press("Enter");
+  await input.press("Enter");
   await renameSaved;
   await expect(
     page.getByRole("heading", { name: renamed, exact: true }),
@@ -48,6 +56,39 @@ test("first run names the board and renames it from the visible pencil", async (
   await expect(
     page.getByRole("heading", { name: renamed, exact: true }),
   ).toBeVisible();
+
+  // …for the keyboard (focus reveals it, Enter opens the editor)…
+  await title.focus();
+  await expect(pencil).toHaveCSS("opacity", "0.8");
+  await page.keyboard.press("Enter");
+  await expect(input).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(title).toBeFocused();
+
+  // …and on a touch/coarse pointer, where hover does not exist: the pencil
+  // stays visible and the 44 px title itself remains the tap target.
+  const touchContext = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 390, height: 844 },
+  });
+  try {
+    const touchPage = await touchContext.newPage();
+    await login(touchPage, user);
+    await expect(touchPage.getByTestId("account-trigger")).toBeVisible();
+    await touchPage.goto(page.url());
+    const touchTitle = touchPage.getByTestId("board-title");
+    await expect(touchTitle).toBeVisible();
+    await expect(touchPage.getByTestId("board-rename")).toHaveCSS(
+      "opacity",
+      "0.8",
+    );
+    const box = await touchTitle.boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+    await touchTitle.tap();
+    await expect(touchPage.locator('[name="board-title-edit"]')).toBeVisible();
+  } finally {
+    await touchContext.close();
+  }
 });
 
 test("first run can create a curated example without a name", async ({

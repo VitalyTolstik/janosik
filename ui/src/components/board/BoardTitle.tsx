@@ -10,6 +10,10 @@ import { LimitCounter } from "@/components/ui/limit-counter";
  * Inline-editable board title — the single source of truth for the name
  * (Trello's pattern: click the title, type, Enter/blur saves, Esc cancels).
  * Lives in the header next to the switcher; the content area shows no title.
+ *
+ * H1: the pencil is a decorative hint revealed on hover/focus inside the
+ * title, not a permanent header button. Clicking it bubbles to the heading,
+ * which is already the accessible rename control.
  */
 export function BoardTitle() {
   const { t } = useI18n();
@@ -56,7 +60,7 @@ export function BoardTitle() {
         data-testid="board-title"
         tabIndex={-1}
         title={title}
-        className="max-w-[30vw] truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground sm:max-w-[320px] sm:min-w-0 sm:text-xl min-[1000px]:min-w-[10rem]"
+        className="max-w-full min-w-[7rem] flex-1 truncate px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground max-lg:flex max-lg:min-h-11 max-lg:items-center sm:max-w-[320px] sm:min-w-0 sm:text-lg lg:text-xl min-[1000px]:min-w-[10rem]"
       >
         {title}
       </h1>
@@ -64,7 +68,7 @@ export function BoardTitle() {
   }
 
   return editing ? (
-    <span className="relative inline-block">
+    <span className="relative inline-block min-w-0">
       <input
         name="board-title-edit"
         ref={inputRef}
@@ -77,7 +81,7 @@ export function BoardTitle() {
           else if (e.key === "Escape") cancel();
         }}
         aria-label={t("board.editTitleAria")}
-        className="h-8 w-36 max-w-[30vw] rounded-md border border-primary/40 bg-background/80 px-2 text-base font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64 sm:text-lg"
+        className="h-8 w-[min(16rem,calc(100vw-8rem))] rounded-md border border-primary/40 bg-background/80 px-2 text-base font-semibold tracking-tight outline-none ring-2 ring-primary/20 backdrop-blur-sm sm:w-64 sm:text-lg"
       />
       <LimitCounter
         length={draft.length}
@@ -87,12 +91,16 @@ export function BoardTitle() {
       />
     </span>
   ) : (
-    <div className="flex min-w-0 items-center gap-0.5">
+    // `flex-initial` (shrink, never grow) keeps the switcher beside the
+    // title at desktop widths; the title only takes its intrinsic width
+    // (capped at 320 px) and shrinks when the tablet header is tight.
+    <div className="group/title flex min-w-0 flex-initial items-center gap-0.5">
       <h1
         ref={headingRef}
         data-testid="board-title"
         onClick={startEdit}
         tabIndex={0}
+        aria-keyshortcuts="Enter"
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -100,19 +108,29 @@ export function BoardTitle() {
           }
         }}
         title={`${title} — ${t("board.editTitleHint")}`}
-        className="max-w-[30vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-lg font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 sm:max-w-[320px] sm:min-w-0 sm:text-xl min-[1000px]:min-w-[10rem]"
+        className="flex max-w-full min-w-[7rem] flex-1 cursor-text items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-base font-semibold tracking-tight text-foreground outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-primary/40 max-lg:min-h-11 sm:max-w-[320px] sm:text-lg lg:min-h-0 lg:text-xl min-[1000px]:min-w-[10rem]"
       >
-        {title}
+        <span className="truncate">{title}</span>
+        <span
+          data-testid="board-rename"
+          aria-hidden="true"
+          className="pointer-events-none inline-flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/title:opacity-80 group-focus-within/title:opacity-80 no-hover:opacity-80"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </span>
       </h1>
+      {/* The pencil is decorative; this sibling keeps the action in the
+          accessibility tree with its old "Rename board" name. It is not a
+          second tab stop — the heading above is the keyboard control. */}
       <button
         type="button"
-        onClick={startEdit}
-        data-testid="board-rename"
+        data-testid="board-rename-control"
         aria-label={t("board.rename")}
-        title={t("board.editTitleHint")}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+        tabIndex={-1}
+        onClick={startEdit}
+        className="sr-only"
       >
-        <Pencil className="h-3.5 w-3.5" aria-hidden />
+        {t("board.rename")}
       </button>
     </div>
   );

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   Check,
   ChevronDown,
@@ -46,6 +52,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { usePublicSharesEnabled } from "@/hooks/use-public-shares-enabled";
 import { useBoard } from "@/store/BoardContext";
 
 /**
@@ -55,33 +62,27 @@ import { useBoard } from "@/store/BoardContext";
  * refreshes a snapshot and revokes any link. The panel is mounted only while
  * open, so every open refetches the list (no imperative reset).
  */
-export function ShareDialog() {
+/**
+ * H1: the People menu composes this dialog as one of its rows, so the shell
+ * can render without its own trigger and receive focus back afterwards.
+ */
+export function ShareDialog({
+  open: openProp,
+  onOpenChange,
+  showTrigger = true,
+  returnFocusRef,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+  returnFocusRef?: RefObject<HTMLElement>;
+} = {}) {
   const { t } = useI18n();
   const { board, roleOf } = useBoard();
-  const [open, setOpen] = useState(false);
-  // M4: `ALLOW_PUBLIC_SHARES=false` must hide the entry point, not only make
-  // the minted token 404. `null` = config not read yet, so the trigger does
-  // not flash before the answer; a failed read keeps the control visible (the
-  // server still refuses creation independently).
-  const [publicSharesEnabled, setPublicSharesEnabled] = useState<
-    boolean | null
-  >(() => (isApiEnabled() ? null : true));
-
-  useEffect(() => {
-    if (!isApiEnabled()) return;
-    let alive = true;
-    void api
-      .authConfig()
-      .then((config) => {
-        if (alive) setPublicSharesEnabled(config.allowPublicShares);
-      })
-      .catch(() => {
-        if (alive) setPublicSharesEnabled(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
+  const publicSharesEnabled = usePublicSharesEnabled();
 
   if (
     !isApiEnabled() ||
@@ -93,22 +94,32 @@ export function ShareDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("share.button")}
-              data-testid="share-trigger"
-            >
-              <LazyAnimatedIcon name="external-link" size={18} aria-hidden />
-            </Button>
-          </DialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{t("share.button")}</TooltipContent>
-      </Tooltip>
-      <DialogContent className="h-[min(800px,calc(100dvh-2rem))] max-w-lg overflow-hidden">
+      {showTrigger ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t("share.button")}
+                data-testid="share-trigger"
+              >
+                <LazyAnimatedIcon name="external-link" size={18} aria-hidden />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{t("share.button")}</TooltipContent>
+        </Tooltip>
+      ) : null}
+      <DialogContent
+        className="h-[min(800px,calc(100dvh-2rem))] max-w-lg overflow-hidden"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t("share.title")}</DialogTitle>
           <DialogDescription>{t("share.description")}</DialogDescription>

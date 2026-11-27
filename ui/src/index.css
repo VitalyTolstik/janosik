@@ -46,6 +46,15 @@ html[data-input="touch"] [role="tooltip"] {
   display: none;
 }
 
+/* Radix wraps tooltip content in a popper div that keeps `pointer-events:
+   auto` even when the content itself is click-through. After a dialog closes
+   and focus returns to its trigger, that wrapper could swallow the next mouse
+   click on a neighbouring header control. The tooltip is informational, so
+   the whole wrapper must be transparent to the pointer. */
+[data-radix-popper-content-wrapper]:has([role="tooltip"]) {
+  pointer-events: none;
+}
+
 /* An active touch drag owns the finger: no text selection or caret movement
    under it, and a grabbing cursor on hybrid devices. */
 body.janosik-touch-dragging {
