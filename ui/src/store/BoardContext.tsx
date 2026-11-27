@@ -1,5 +1,6 @@
 import {
   createContext,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -2101,19 +2102,32 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       if (!stateRef.current.some((board) => board.id === boardId)) {
         return false;
       }
-      apply({ type: "REMOVE_BOARD", boardId });
-      if (stateRef.current.some((board) => board.id === boardId)) {
-        apply({
-          type: "IMPORT_BOARDS",
-          boards: stateRef.current.filter((board) => board.id !== boardId),
+      // The router schedules navigation as a transition. Give board removal
+      // the same priority so the updated list and URL commit together.
+      startTransition(() => {
+        apply({ type: "REMOVE_BOARD", boardId });
+        if (stateRef.current.some((board) => board.id === boardId)) {
+          apply({
+            type: "IMPORT_BOARDS",
+            boards: stateRef.current.filter((board) => board.id !== boardId),
+          });
+        }
+        dropHistory(boardId);
+        seqsRef.current.delete(boardId);
+        setRoles((prev) => {
+          if (!(boardId in prev)) return prev;
+          const { [boardId]: _removed, ...rest } = prev;
+          return rest;
         });
-      }
-      dropHistory(boardId);
-      seqsRef.current.delete(boardId);
-      setRoles((prev) => {
-        if (!(boardId in prev)) return prev;
-        const { [boardId]: _removed, ...rest } = prev;
-        return rest;
+        // If the caller was viewing the board that just vanished, move them to
+        // another active board (or the empty state) instead of leaving them on
+        // a dead URL — the 404 route is only for genuinely unknown ids.
+        if (routeBoardIdRef.current === boardId) {
+          const next = stateRef.current.find((board) => !board.archivedAt);
+          navigate(next ? routes.board(next.id) : routes.home, {
+            replace: true,
+          });
+        }
       });
       if (reason === "left") {
         toast.success(t("board.members.leftToast"));
@@ -2121,13 +2135,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         toast.error(
           t(reason === "deleted" ? "board.deleted" : "board.accessRevoked"),
         );
-      }
-      // If the caller was viewing the board that just vanished, move them to
-      // another active board (or the empty state) instead of leaving them on
-      // a dead URL — the 404 route is only for genuinely unknown ids.
-      if (routeBoardIdRef.current === boardId) {
-        const next = stateRef.current.find((board) => !board.archivedAt);
-        navigate(next ? routes.board(next.id) : routes.home, { replace: true });
       }
       return true;
     },
