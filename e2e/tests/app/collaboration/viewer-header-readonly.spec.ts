@@ -45,7 +45,11 @@ test("a VIEWER loses header, member and share management and undo", async ({
   await pressUndo(partnerBrowser.page);
   await expect(cardTitle(partnerBrowser.page, "Partner edit")).toBeVisible();
 
-  await expect(partnerBrowser.page.getByTestId("share-trigger")).toHaveCount(0);
+  await partnerBrowser.page.getByTestId("people-trigger").click();
+  await expect(
+    partnerBrowser.page.getByRole("menuitem", { name: "Share" }),
+  ).toHaveCount(0);
+  await partnerBrowser.page.keyboard.press("Escape");
   const dialog = await openMembers(partnerBrowser.page);
   await expect(memberRow(partnerBrowser.page, board.email)).toBeVisible();
   await expect(
@@ -63,7 +67,11 @@ test("a VIEWER loses header, member and share management and undo", async ({
     partnerBrowser.page.getByRole("button", { name: "Switch board" }),
   ).toBeVisible();
   await expect.poll(() => partner.role(), { timeout: 15_000 }).toBe("VIEWER");
-  await expect(partnerBrowser.page.getByTestId("share-trigger")).toHaveCount(0);
+  await partnerBrowser.page.getByTestId("people-trigger").click();
+  await expect(
+    partnerBrowser.page.getByRole("menuitem", { name: "Share" }),
+  ).toHaveCount(0);
+  await partnerBrowser.page.keyboard.press("Escape");
   await expect(undoButton(partnerBrowser.page)).toHaveCount(0);
   await expect(redoButton(partnerBrowser.page)).toHaveCount(0);
   await expect(cardTitle(partnerBrowser.page, "Partner edit")).toBeVisible();

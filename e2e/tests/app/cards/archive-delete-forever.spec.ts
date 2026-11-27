@@ -1,4 +1,5 @@
 import { test, expect } from "@/fixtures/board.js";
+import { openCardArchive } from "@/helpers/header.js";
 
 test("removes an archived card from the archive", async ({ page, board }) => {
   const column = await board.column("Archive");
@@ -6,8 +7,7 @@ test("removes an archived card from the archive", async ({ page, board }) => {
   await board.command({ type: "ARCHIVE_CARD", cardId });
   await board.open(page);
 
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   const row = page
     .getByTestId("archive-row")
     .filter({ hasText: "Delete forever" });
@@ -30,8 +30,7 @@ test("removes an archived card from the archive", async ({ page, board }) => {
   );
 
   await page.reload();
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   await expect(
     page.getByTestId("archive-row").filter({ hasText: "Delete forever" }),
   ).toHaveCount(0);
@@ -63,8 +62,7 @@ test("keeps the archive row and inline confirm usable at 768", async ({
   await page.setViewportSize({ width: 768, height: 1024 });
   await board.open(page);
 
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   const row = page
     .getByTestId("archive-row")
     .filter({ hasText: "Tablet archive row" });
@@ -128,8 +126,7 @@ test("keeps the archive inline confirm readable at 390", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await board.open(page);
 
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   const row = page
     .getByTestId("archive-row")
     .filter({ hasText: "Phone archive row" });

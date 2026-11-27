@@ -73,8 +73,9 @@ for (const width of [390, 768]) {
     const cardDialog = page.getByRole("dialog", { name: "Card details" });
     await expect(cardDialog).toBeVisible();
     await expect(cardDialog.getByTestId("archived-board-notice")).toBeVisible();
-    // The Members trigger used to render behind this dialog's inert header.
-    await expect(page.locator('button[aria-label="Members"]')).toHaveCount(0);
+    // The People entry stays in the header, but an archived ADMIN gets no
+    // Members row; the header is inert behind the mandatory card dialog.
+    await expect(page.getByTestId("people-trigger")).toHaveCount(1);
 
     const archiveDialog = await openArchiveFromCardDialog(page);
     await expect(archiveDialog).toContainText(archivedTitle);

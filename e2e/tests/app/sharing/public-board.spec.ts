@@ -64,6 +64,7 @@ test("live and snapshot links remain read-only and diverge as the board changes"
       livePage.getByTestId("card-title").filter({ hasText: "Original card" }),
     ).toBeVisible();
     await expect(livePage.getByTestId("share-trigger")).toHaveCount(0);
+    await expect(livePage.getByTestId("people-trigger")).toHaveCount(0);
     await livePage
       .getByTestId("card-title")
       .filter({ hasText: "Original card" })

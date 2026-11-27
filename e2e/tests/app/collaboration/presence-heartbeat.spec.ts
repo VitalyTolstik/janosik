@@ -40,5 +40,7 @@ test("a live tab keeps its presence session past the 60 second TTL", async ({
   }
 
   await partnerBrowser.context.close();
-  await expect(presenceStack(page)).toBeHidden({ timeout: 20_000 });
+  await expect(page.getByTestId("people-avatar")).toHaveCount(1, {
+    timeout: 20_000,
+  });
 });

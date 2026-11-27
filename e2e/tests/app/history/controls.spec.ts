@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type Page } from "@playwright/test";
 import { test, expect } from "@/fixtures/board.js";
 import { createExtraBoard } from "@/helpers/boards.js";
+import { openBoardSettings } from "@/helpers/header.js";
 import {
   cardDialog,
   closeCardDialog,
@@ -230,8 +231,7 @@ test("Russian-layout undo and redo wait until board settings closes", async ({
   await addCard(page, "History with settings open");
 
   const openSettings = async () => {
-    await page.getByTestId("board-settings-trigger").click();
-    await expect(page.getByTestId("board-settings-dialog")).toBeVisible();
+    await openBoardSettings(page);
   };
   const press = (key: string, code: string) =>
     page.locator("body").dispatchEvent("keydown", {

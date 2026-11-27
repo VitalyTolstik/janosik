@@ -1,21 +1,16 @@
 import { test, expect } from "@/fixtures/board.js";
 import { createExtraBoard } from "@/helpers/boards.js";
+import { openBoardSettings } from "@/helpers/header.js";
 
-test("forced board switch on a phone focuses the board title, not BODY", async ({
+test("forced board switch on a phone focuses the Board menu, not BODY", async ({
   page,
   board,
 }) => {
   const other = await createExtraBoard(board.api, "Phone workflow board");
   await board.open(page);
 
-  const settings = page.getByTestId("board-settings-trigger");
-  await settings.click();
-  const dialog = page.getByRole("dialog", {
-    name: `Board settings: ${board.title}`,
-  });
-  await expect(dialog).toBeVisible();
+  const dialog = await openBoardSettings(page);
 
-  // The gear is display:none at this width; the fallback must be the title.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.keyboard.press("Control+k");
   const search = page.getByRole("combobox", {
@@ -26,7 +21,7 @@ test("forced board switch on a phone focuses the board title, not BODY", async (
 
   await expect(page).toHaveURL(new RegExp(`/board/${other.id}$`));
   await expect(dialog).toBeHidden();
-  await expect(page.getByTestId("board-title")).toBeFocused();
+  await expect(page.getByTestId("board-menu-trigger")).toBeFocused();
 });
 
 test("switching boards closes the settings draft before another board can save", async ({
@@ -38,12 +33,7 @@ test("switching boards closes the settings draft before another board can save",
   const other = await createExtraBoard(board.api, "Alternate workflow board");
   await board.open(page);
 
-  const settings = page.getByTestId("board-settings-trigger");
-  await settings.click();
-  const dialog = page.getByRole("dialog", {
-    name: `Board settings: ${board.title}`,
-  });
-  await expect(dialog).toBeVisible();
+  const dialog = await openBoardSettings(page);
   const workflow = dialog.getByRole("tab", { name: "Workflow" });
   await expect(workflow).toHaveAttribute("aria-selected", "true");
   await expect(
@@ -69,13 +59,10 @@ test("switching boards closes the settings draft before another board can save",
   await expect(page).toHaveURL(new RegExp(`/board/${other.id}$`));
   await expect(dialog).toBeHidden();
   // The forced switch unmounts Settings without a close event; focus belongs
-  // to the new board's gear, not BODY.
-  await expect(settings).toBeFocused();
+  // to the new board's Board menu, not BODY.
+  await expect(page.getByTestId("board-menu-trigger")).toBeFocused();
 
-  await settings.click();
-  const otherSettings = page.getByRole("dialog", {
-    name: `Board settings: ${other.title}`,
-  });
+  const otherSettings = await openBoardSettings(page);
   await expect(otherSettings.getByTestId("workflow-enabled")).toHaveAttribute(
     "aria-checked",
     "false",
@@ -87,7 +74,7 @@ test("switching boards closes the settings draft before another board can save",
 
   await page.goBack();
   await expect(page.getByTestId("board-settings-dialog")).toBeHidden();
-  await settings.click();
+  await openBoardSettings(page);
   await expect(dialog.getByTestId("workflow-enabled")).toHaveAttribute(
     "aria-checked",
     "false",

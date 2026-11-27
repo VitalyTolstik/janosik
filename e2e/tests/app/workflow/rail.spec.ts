@@ -177,7 +177,7 @@ test("the rail opens a column, allows a rule and saves it", async ({
     "Done",
   );
   await saveWorkflow(page);
-  await expect(page.getByTestId("board-settings-trigger")).toBeFocused();
+  await expect(page.getByTestId("board-menu-trigger")).toBeFocused();
 
   const reopened = await openBoardSettings(page);
   await expect(
@@ -231,7 +231,7 @@ test("Escape on a dirty draft asks before closing", async ({ page, board }) => {
   await expect(page.getByText("Discard workflow changes?")).toBeVisible();
   await page.getByRole("button", { name: "Discard changes" }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByTestId("board-settings-trigger")).toBeFocused();
+  await expect(page.getByTestId("board-menu-trigger")).toBeFocused();
 });
 
 test("reduced motion removes rail and inspector transitions", async ({

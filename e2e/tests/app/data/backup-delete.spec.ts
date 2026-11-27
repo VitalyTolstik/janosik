@@ -1,14 +1,12 @@
 import { test, expect } from "@/fixtures/board.js";
+import { openDataMenu } from "@/helpers/data.js";
 
 test("keeps backup management out of the server-mode data menu", async ({
   page,
   board,
 }) => {
   await board.open(page);
-  await page.getByRole("button", { name: "Data & backups" }).click();
-
-  const menu = page.getByRole("menu");
-  await expect(menu).toBeVisible();
+  const menu = await openDataMenu(page);
   await expect(page.getByTestId("data-backups")).toHaveCount(0);
   await expect(
     menu.getByRole("menuitem", { name: "Save a copy now" }),

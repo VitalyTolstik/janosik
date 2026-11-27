@@ -5,6 +5,7 @@ import {
   exportJsonFromMenu,
   openBoardFromSwitcher,
 } from "@/helpers/data.js";
+import { openCardArchive } from "@/helpers/header.js";
 import { cardDialog, closeCardDialog, openCard } from "@/helpers/history.js";
 
 const DUE = Date.UTC(2027, 0, 15);
@@ -143,8 +144,7 @@ test("round-trips full card content and an archived card through the UI", async 
   await dialog.getByTestId("cover-trigger").click();
   await closeCardDialog(page);
 
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   await expect(
     page.getByTestId("archive-row").filter({ hasText: "Archived C" }),
   ).toBeVisible();

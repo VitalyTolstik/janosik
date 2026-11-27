@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { test, expect } from "@/fixtures/board.js";
 import { createAgentSession } from "@/helpers/agents.js";
+import { openBoardSettings } from "@/helpers/header.js";
 import { appUrl } from "@/helpers/urls.js";
 
 /**
@@ -164,11 +165,9 @@ test("board header keeps the title and Agents action usable at tablet widths", a
     expect(layout.agentLeft).not.toBeNull();
     expect(layout.titleRight!).toBeLessThanOrEqual(layout.agentLeft! + 1);
     if (width <= 720) expect(layout.agentHeight).toBeGreaterThanOrEqual(44);
-    if (width <= 720) {
-      await expect(page.getByTestId("board-settings-trigger")).toBeHidden();
-    } else {
-      await expect(page.getByTestId("board-settings-trigger")).toBeVisible();
-    }
+    // Settings lives in the Board menu now; the menu entry is the control
+    // that must stay reachable at every width.
+    await expect(page.getByTestId("board-menu-trigger")).toBeVisible();
 
     if (width === 390) {
       await expect(
@@ -323,13 +322,8 @@ test("390 board settings primary actions stay at 44 px", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await board.open(page);
-  // The board header deliberately hides secondary chrome at ≤720 px; the
-  // dialog itself is still full-screen and must keep 44 px phone actions.
-  await page
-    .getByTestId("board-settings-trigger")
-    .evaluate((element) => (element as HTMLElement).click());
-  const dialog = page.getByTestId("board-settings-dialog");
-  await expect(dialog).toBeVisible();
+  // The dialog is full-screen on a phone and must keep 44 px actions.
+  const dialog = await openBoardSettings(page);
   await page.getByTestId("board-settings-agents").click();
   await expect(page.getByTestId("agents-automation-footer")).toBeVisible();
   await page.waitForTimeout(250);

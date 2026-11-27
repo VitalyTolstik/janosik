@@ -6,6 +6,8 @@ import {
   type Page,
 } from "@playwright/test";
 
+import { openCardArchive } from "./header.js";
+
 export interface SearchBoard {
   id: string;
   title: string;
@@ -132,9 +134,5 @@ export function archiveSearchInput(page: Page): Locator {
 }
 
 export async function openArchive(page: Page): Promise<Locator> {
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
-  const dialog = page.getByRole("dialog", { name: "Card archive" });
-  await expect(dialog).toBeVisible();
-  return dialog;
+  return openCardArchive(page);
 }

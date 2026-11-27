@@ -1,5 +1,6 @@
 import { test, expect } from "../../../fixtures/board.js";
 import { search } from "@/helpers/filters.js";
+import { openCardArchive } from "@/helpers/header.js";
 import { type Page } from "@playwright/test";
 
 function column(page: Page, name: string) {
@@ -127,7 +128,6 @@ test("WIP limit blocks adding cards and bulk archive retains them in archive", a
     .click();
   await expect(column(page, "In progress")).toContainText("0/1");
   await page.reload();
-  await page.getByRole("button", { name: "Data & backups" }).click();
-  await page.getByTestId("data-archive").click();
+  await openCardArchive(page);
   await expect(page.getByTestId("archive-row")).toContainText("Existing task");
 });

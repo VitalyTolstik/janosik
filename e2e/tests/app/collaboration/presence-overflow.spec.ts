@@ -83,23 +83,25 @@ test("a busy board collapses its presence stack into +N with roles", async ({
     }
 
     // Owner + five extras = six people: five avatars and a +1 overflow.
-    await expect(page.getByTestId("presence-avatar")).toHaveCount(5, {
+    await expect(page.getByTestId("people-avatar")).toHaveCount(5, {
       timeout: 20_000,
     });
-    await expect(page.getByTestId("presence-overflow")).toHaveText("+1");
+    await expect(page.getByTestId("people-overflow")).toHaveText("+1");
 
-    await page.getByTestId("presence-stack").click();
-    const rows = page.getByTestId("presence-row");
+    await page.getByTestId("people-trigger").click();
+    const rows = page.getByTestId("people-presence-row");
     await expect(rows).toHaveCount(6);
     await expect(
-      page.getByTestId("presence-row").filter({ hasText: "you" }),
+      page.getByTestId("people-presence-row").filter({ hasText: "you" }),
     ).toHaveCount(1);
     await expect(
-      page.getByTestId("presence-row").filter({ hasText: "Member" }),
+      page.getByTestId("people-presence-row").filter({ hasText: "Member" }),
     ).toHaveCount(5);
     for (const extra of extras) {
       await expect(
-        page.getByTestId("presence-row").filter({ hasText: extra.email }),
+        page
+          .getByTestId("people-presence-row")
+          .filter({ hasText: extra.email }),
       ).toHaveCount(1);
     }
   } finally {

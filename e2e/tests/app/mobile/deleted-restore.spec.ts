@@ -1,4 +1,5 @@
 import { expect, test } from "@/fixtures/board.js";
+import { openDataMenu } from "@/helpers/data.js";
 import {
   expectInsideViewport,
   expectNoOwnOverflow,
@@ -21,8 +22,8 @@ test("Data menu and Recently deleted stay usable at 390", async ({
   await board.command({ type: "DELETE_CARD", cardId });
   await board.open(page);
 
-  const trigger = page.getByRole("button", { name: "Data & backups" });
-  await trigger.click();
+  const trigger = page.getByTestId("board-menu-trigger");
+  await openDataMenu(page);
   const exportItem = page.getByTestId("data-export-board");
   const deletedItem = page.getByTestId("data-deleted");
   for (const item of [exportItem, deletedItem]) {
@@ -66,7 +67,7 @@ test("Data menu and dialog close targets are 44px at 768", async ({
 }) => {
   await board.open(page);
   await page.setViewportSize({ width: 768, height: 1024 });
-  await page.getByRole("button", { name: "Data & backups" }).click();
+  await openDataMenu(page);
   for (const item of [
     page.getByTestId("data-export-board"),
     page.getByTestId("data-deleted"),
