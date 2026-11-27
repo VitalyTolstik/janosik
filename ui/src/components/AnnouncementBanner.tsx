@@ -117,7 +117,7 @@ export function AnnouncementBanner() {
           <p
             lang={lang}
             data-testid={`announcement-fallback-${item.id}`}
-            className="flex items-start gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2 py-1.5 text-[11px] leading-snug text-primary"
+            className="flex items-start gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2 py-1.5 text-ui-body leading-snug text-primary"
           >
             <Globe2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
             {item.contentLocale === "ru"

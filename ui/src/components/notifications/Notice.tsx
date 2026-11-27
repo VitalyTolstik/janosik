@@ -137,7 +137,7 @@ export function Notice({
         {eyebrow ? (
           <p
             className={cn(
-              "mb-0.5 flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-[0.1em]",
+              "mb-0.5 flex items-center gap-1.5 text-ui-micro font-bold uppercase tracking-[0.1em]",
               toneClasses.eyebrow,
             )}
           >
@@ -152,7 +152,7 @@ export function Notice({
         {title ? (
           <h3
             lang={contentLang ?? undefined}
-            className="text-[13.5px] font-semibold leading-snug tracking-tight text-foreground"
+            className="text-ui-body font-semibold leading-snug tracking-tight text-foreground"
           >
             {title}
           </h3>
@@ -161,7 +161,7 @@ export function Notice({
           <p
             lang={contentLang ?? undefined}
             className={cn(
-              "break-words text-[12.5px] leading-relaxed text-muted-foreground",
+              "break-words text-ui-label leading-relaxed text-muted-foreground",
               title && "mt-0.5",
               bodyClassName,
             )}

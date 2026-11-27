@@ -241,11 +241,11 @@ export function DataPrivacySection() {
   return (
     <section className="space-y-5" data-testid="account-data">
       <header className="space-y-1">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
+        <h3 className="flex items-center gap-2 text-ui-heading font-semibold">
           <Database className="h-4 w-4 text-primary" aria-hidden />
           {t("account.data.title")}
         </h3>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {t("account.data.description")}
         </p>
       </header>
@@ -254,10 +254,10 @@ export function DataPrivacySection() {
         className="space-y-3 rounded-lg border bg-muted/30 p-4"
         data-testid="account-export-panel"
       >
-        <h4 className="text-xs font-medium text-muted-foreground">
+        <h4 className="text-ui-label font-medium text-muted-foreground">
           {t("account.data.exportTitle")}
         </h4>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {t("account.data.exportHint")}
         </p>
         <div className="flex flex-wrap items-center gap-2">
@@ -265,6 +265,7 @@ export function DataPrivacySection() {
             type="button"
             size="sm"
             data-testid="account-export-request"
+            className="max-lg:min-h-11"
             disabled={exporting}
             onClick={() => void requestExport()}
           >
@@ -279,6 +280,7 @@ export function DataPrivacySection() {
               size="sm"
               variant="outline"
               data-testid="account-export-download"
+              className="max-lg:min-h-11"
               onClick={() => void downloadExport()}
             >
               {t("account.data.download")}
@@ -287,7 +289,7 @@ export function DataPrivacySection() {
           <span
             role="status"
             aria-live="polite"
-            className="text-xs text-muted-foreground"
+            className="text-ui-body text-muted-foreground"
             data-testid="account-export-status"
           >
             {exportRow === null
@@ -305,7 +307,7 @@ export function DataPrivacySection() {
           <p
             role="alert"
             data-testid="account-export-error"
-            className="text-xs text-danger"
+            className="text-ui-label text-(--chip-red)"
           >
             {exportError}
           </p>
@@ -317,17 +319,17 @@ export function DataPrivacySection() {
         onSubmit={deleteAccount}
         className="space-y-3 rounded-lg border border-danger/30 bg-danger/5 p-4"
       >
-        <h4 className="flex items-center gap-2 text-xs font-medium text-danger">
+        <h4 className="flex items-center gap-2 text-ui-label font-medium text-(--chip-red)">
           <ShieldAlert className="h-4 w-4" aria-hidden />
           {t("account.data.deleteTitle")}
         </h4>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {t("account.data.deleteHint")}
         </p>
         <div className="space-y-1.5">
           <label
             htmlFor="account-delete-email"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.data.confirmEmail")}
           </label>
@@ -345,7 +347,7 @@ export function DataPrivacySection() {
           <div className="space-y-1.5">
             <label
               htmlFor="account-delete-code"
-              className="text-xs font-medium text-muted-foreground"
+              className="text-ui-label font-medium text-muted-foreground"
             >
               {t("account.data.emailCode")}
             </label>
@@ -364,6 +366,7 @@ export function DataPrivacySection() {
                 size="sm"
                 variant="outline"
                 data-testid="account-delete-request-code"
+                className="max-lg:min-h-11"
                 disabled={sendingCode || confirmEmail.length === 0}
                 onClick={() => void requestCode()}
               >
@@ -375,7 +378,7 @@ export function DataPrivacySection() {
           <div className="space-y-1.5">
             <label
               htmlFor="account-delete-password"
-              className="text-xs font-medium text-muted-foreground"
+              className="text-ui-label font-medium text-muted-foreground"
             >
               {t("account.data.password")}
             </label>
@@ -394,7 +397,7 @@ export function DataPrivacySection() {
           <p
             role="alert"
             data-testid="account-data-error"
-            className="text-xs text-danger"
+            className="text-ui-label text-(--chip-red)"
           >
             {deleteError}
           </p>
@@ -405,6 +408,7 @@ export function DataPrivacySection() {
             variant="destructive"
             size="sm"
             data-testid="account-delete-submit"
+            className="max-lg:min-h-11"
             disabled={!canDelete}
           >
             <Trash2 className="h-4 w-4" aria-hidden />

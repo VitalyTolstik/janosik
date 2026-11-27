@@ -319,6 +319,13 @@ describe("AnnouncementEditorDialog", () => {
     expect(screen.getByTestId("admin-announcement-starts")).toHaveTextContent(
       "Set date and time",
     );
+    // The panel must respect the space Radix actually found for it: on a
+    // 768×340 viewport it flips above the trigger with only ~245px, and a
+    // viewport-only cap lets the calendar header land off-screen.
+    const panel = document.querySelector<HTMLElement>(
+      "[data-radix-popper-content-wrapper] > *",
+    );
+    expect(panel?.style.maxHeight).toContain("--radix-popper-available-height");
   });
 
   it("previews the banner in the selected level tone", () => {

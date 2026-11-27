@@ -25,7 +25,7 @@ export function PriorityBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 text-xs font-medium",
+        "inline-flex items-center gap-1 text-ui-label font-medium",
         meta.iconClass,
         className,
       )}

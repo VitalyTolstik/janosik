@@ -42,7 +42,7 @@ export function BackgroundSwitcher({
       <Button
         variant="outline"
         size="sm"
-        className="gap-2"
+        className="gap-2 max-lg:min-h-11"
         data-testid="pref-background"
         aria-label={t("bg.aria")}
         aria-haspopup="menu"

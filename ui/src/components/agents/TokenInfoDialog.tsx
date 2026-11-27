@@ -60,10 +60,10 @@ export function TokenInfoDialog({
             <KeyRound className="h-[15px] w-[15px]" aria-hidden />
           </span>
           <div className="min-w-0">
-            <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
+            <DialogTitle className="text-ui-heading font-[650] leading-[1.3] tracking-normal">
               {t("agents.approvals.tokenInfoTitle", { token: tokenName })}
             </DialogTitle>
-            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+            <DialogDescription className="mt-[3px] text-ui-body leading-[1.5] text-muted-foreground">
               {t("agents.approvals.tokenInfoDescription")}
             </DialogDescription>
           </div>
@@ -71,7 +71,7 @@ export function TokenInfoDialog({
         <div className="px-4 pb-[3px]">
           <p
             data-testid={`${testIdPrefix}-impact`}
-            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-[11px] leading-[1.5] text-foreground"
+            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-[9px] py-[7px] text-ui-body leading-[1.5] text-foreground"
           >
             {t("agents.approvals.tokenInfoBody")}
           </p>
@@ -82,7 +82,7 @@ export function TokenInfoDialog({
             variant="ghost"
             onClick={() => onOpenChange(false)}
             data-testid={`${testIdPrefix}-cancel`}
-            className="h-7 min-h-0 min-w-[61px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none text-muted-foreground max-md:min-h-11"
+            className="h-7 min-h-0 min-w-[61px] rounded-[6px] px-[9px] text-ui-label font-[650] leading-none text-muted-foreground max-md:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -93,7 +93,7 @@ export function TokenInfoDialog({
               onOpenChange(false);
               onOpenAccount();
             }}
-            className="h-7 min-h-0 min-w-[176px] justify-center rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-md:min-h-11"
+            className="h-7 min-h-0 min-w-[176px] justify-center rounded-[6px] px-[9px] text-ui-label font-[650] leading-none max-md:min-h-11"
           >
             {t("agents.approvals.tokenInfoOpen")}
           </Button>

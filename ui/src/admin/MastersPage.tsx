@@ -92,17 +92,17 @@ function OneTimePassword({
   return (
     <>
       <DialogHeader>
-        <DialogTitle className="text-sm">{title}</DialogTitle>
-        <DialogDescription className="text-xs">{email}</DialogDescription>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription className="text-ui-label">{email}</DialogDescription>
       </DialogHeader>
       <div className="space-y-1.5">
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
           {t("admin.masters.created.passwordOnce")}
         </p>
         <div className="flex items-center gap-2">
           <code
             data-testid="admin-master-password"
-            className="flex-1 overflow-x-auto rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-xs text-foreground"
+            className="flex-1 overflow-x-auto rounded-lg border border-border bg-background/70 px-3 py-2 font-mono text-ui-label text-foreground"
           >
             {password}
           </code>
@@ -118,7 +118,10 @@ function OneTimePassword({
             }}
           >
             {copied ? (
-              <Check className="h-4 w-4 text-success" aria-hidden />
+              <Check
+                className="h-4 w-4 text-(--agent-tone-success)"
+                aria-hidden
+              />
             ) : (
               <Copy className="h-4 w-4" aria-hidden />
             )}
@@ -239,9 +242,7 @@ function CreateMasterDialog({
             className="space-y-3"
           >
             <DialogHeader>
-              <DialogTitle className="text-sm">
-                {t("admin.masters.create.title")}
-              </DialogTitle>
+              <DialogTitle>{t("admin.masters.create.title")}</DialogTitle>
             </DialogHeader>
             <Field
               htmlFor="admin-master-email"
@@ -286,16 +287,19 @@ function CreateMasterDialog({
                 onClick={() => setOwner(!owner)}
                 className="space-y-0.5 text-left"
               >
-                <span className="block text-xs font-medium text-foreground">
+                <span className="block text-ui-label font-medium text-foreground">
                   {t("admin.masters.create.owner")}
                 </span>
-                <span className="block text-[11px] text-muted-foreground">
+                <span className="block text-ui-meta text-muted-foreground">
                   {t("admin.masters.create.ownerHint")}
                 </span>
               </button>
             </div>
             {error ? (
-              <p role="alert" className="text-xs text-danger">
+              <p
+                role="alert"
+                className="text-ui-label text-(--agent-tone-danger)"
+              >
                 {error}
               </p>
             ) : null}
@@ -532,13 +536,13 @@ export function MastersPage() {
                     {master.role === "OWNER" ? (
                       <span
                         title={t("admin.masters.ownerBadge")}
-                        className="inline-flex items-center gap-0.5 rounded border border-primary/30 bg-primary/10 px-1 py-0.5 text-[10px] text-primary"
+                        className="inline-flex items-center gap-0.5 rounded border border-primary/30 bg-primary/10 px-1 py-0.5 text-ui-micro text-(--agent-tone-primary)"
                       >
                         <Crown className="h-2.5 w-2.5" aria-hidden />
                         {t("admin.masters.ownerBadge")}
                       </span>
                     ) : (
-                      <span className="rounded border border-border bg-hover/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+                      <span className="rounded border border-border bg-hover/60 px-1 py-0.5 text-ui-micro text-muted-foreground">
                         {t("admin.masters.operatorBadge")}
                       </span>
                     )}
@@ -582,12 +586,15 @@ export function MastersPage() {
                           type="button"
                           aria-label={t("admin.common.actions")}
                           data-testid={`admin-master-menu-${master.email}`}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
                         >
                           <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                         </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56 text-xs">
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-56 text-ui-label"
+                      >
                         <DropdownMenuItem
                           onSelect={() => {
                             setAllowlistMaster(master);
@@ -603,7 +610,7 @@ export function MastersPage() {
                             onSelect={() =>
                               setPending({ kind: "disable", master })
                             }
-                            className="text-danger focus:text-danger"
+                            className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                           >
                             <ShieldOff className="h-3.5 w-3.5" aria-hidden />
                             {t("admin.masters.action.disable")}
@@ -645,7 +652,7 @@ export function MastersPage() {
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           disabled={master.id === current?.id}
-                          className="text-danger focus:text-danger"
+                          className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                           data-testid={`admin-master-remove-${master.email}`}
                           onSelect={() =>
                             setPending({ kind: "remove", master })

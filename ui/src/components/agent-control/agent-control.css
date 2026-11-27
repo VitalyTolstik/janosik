@@ -1,10 +1,10 @@
 /* Agent control (TASK-179) — board-scoped modal.
  *
- * The visual contract is design/agent-surfaces-prototype/index.html. Values
- * below mirror the prototype's computed styles (including the 11 px type
- * floor) so the board surface and the design study stay in lockstep. Keep
- * this file scoped to `.agent-control-surface`; it must not leak into the
- * rest of the app.
+ * The visual contract is design/agent-surfaces-prototype/index.html. TASK-200
+ * raises the prototype's 11 px type floor: body copy is 14 px, compact
+ * controls/lists are 13 px, metadata is 12 px and 11 px remains only for
+ * uppercase micro-labels and dense badge chips. Keep this file scoped to
+ * `.agent-control-surface`; it must not leak into the rest of the app.
  */
 
 .agent-control-surface {
@@ -20,7 +20,7 @@
     Helvetica,
     Arial,
     sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--foreground);
 }
@@ -160,7 +160,7 @@ html.light .ac-scrim {
 .agent-control-surface .ac-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: var(--text-ui-title, 1.0625rem);
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.25;
@@ -169,7 +169,7 @@ html.light .ac-scrim {
 
 .agent-control-surface .ac-description {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: var(--text-ui-body, 0.875rem);
   font-weight: 400;
   line-height: 1.45;
   color: var(--muted-foreground);
@@ -200,7 +200,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   align-items: center;
   gap: 5px;
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -248,7 +248,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted-foreground);
   white-space: nowrap;
   padding: 0 2px;
@@ -319,7 +319,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 }
 
 .agent-control-surface .ac-rail {
-  width: 206px;
+  width: 224px;
   flex: none;
   border-right: 1px solid var(--border);
   padding: 12px 9px 10px;
@@ -353,7 +353,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   border-radius: 6px;
   border: 1px solid transparent;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 550;
   text-align: left;
   background: transparent;
@@ -390,7 +390,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   border-radius: 999px;
   background: var(--warning);
   color: #1b1305;
-  font-size: 11px;
+  font-size: var(--text-ui-micro, 0.6875rem);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -406,7 +406,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   color: var(--muted-foreground);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: var(--text-ui-micro, 0.6875rem);
   font-weight: 650;
 }
 
@@ -422,8 +422,9 @@ html[lang="ru"] .agent-control-surface .ac-title {
 }
 
 .agent-control-surface .ac-rail-note {
+  flex: 0 0 auto;
   padding: 0 8px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--muted-foreground);
 }
@@ -431,21 +432,24 @@ html[lang="ru"] .agent-control-surface .ac-title {
 .agent-control-surface .ac-rail-note strong {
   display: block;
   color: var(--foreground);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   margin-bottom: 2px;
+  white-space: nowrap;
 }
 
 .agent-control-surface .ac-rail-link {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 4px;
   min-height: 30px;
-  padding: 0 8px;
+  padding: 0 4px 0 8px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted-foreground);
   text-align: left;
+  line-height: 1.35;
   width: 100%;
   background: none;
   border: 0;
@@ -460,6 +464,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   width: 12px;
   height: 12px;
   flex: none;
+  margin-top: 2px;
 }
 
 .agent-control-surface .ac-rail-footer {
@@ -470,7 +475,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .ac-rail-footer b {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--foreground);
   margin-bottom: 2px;
@@ -478,7 +483,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .ac-rail-footer p {
   margin: 0 0 7px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--muted-foreground);
 }
@@ -505,12 +510,12 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .ac-toolbar h3 {
   margin: 0 auto 0 0;
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 650;
 }
 
 .agent-control-surface .ac-toolbar .meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-foreground);
 }
 
@@ -608,14 +613,14 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .empty-state h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 650;
 }
 
 .agent-control-surface .empty-state p {
   margin: 0;
   max-width: 42ch;
-  font-size: 11.5px;
+  font-size: 14px;
   line-height: 1.55;
   color: var(--muted-foreground);
 }
@@ -650,14 +655,14 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .detail-empty h3 {
   margin: 0;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 650;
   color: var(--foreground);
 }
 
 .agent-control-surface .detail-empty p {
   margin: 0;
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.5;
   max-width: 30ch;
 }
@@ -671,7 +676,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   padding: 0 11px;
   border-radius: 6px;
   border: 1px solid transparent;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1;
   white-space: nowrap;
@@ -731,7 +736,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 .agent-control-surface .btn-sm {
   height: 28px;
   padding: 0 9px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .agent-control-surface .icon-btn-sm {
@@ -770,7 +775,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   height: 26px;
   padding: 0 10px;
   border-radius: 6px;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted-foreground);
   display: inline-flex;
@@ -800,7 +805,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   padding: 0 6px;
   border-radius: 4px;
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -817,7 +822,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 .agent-control-surface.ac-modal .seg .chip {
   height: 21px;
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -861,7 +866,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   border-radius: 6px;
   background: color-mix(in oklab, var(--background) 38%, var(--surface));
   padding: 0 9px;
-  font-size: 11.5px;
+  font-size: 14px;
   color: var(--foreground);
   min-width: 0;
 }
@@ -918,7 +923,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 }
 
 .agent-control-surface .ac-foot .ac-foot-note {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
   color: var(--muted-foreground);
   display: flex;
@@ -947,7 +952,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   display: none;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   color: var(--muted-foreground);
   min-width: 0;
@@ -1010,14 +1015,14 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
 .agent-control-surface .live-status-main b {
   display: block;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 650;
   line-height: 1.35;
 }
 
 .agent-control-surface .live-status-main p {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.5;
   color: var(--muted-foreground);
 }
@@ -1037,6 +1042,44 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface.ac-modal {
     width: calc(100vw - 22px);
     height: min(722px, calc(100dvh - 70px - env(safe-area-inset-top)));
+  }
+}
+
+@media (max-width: 1023px) {
+  .agent-control-surface .ac-search .input {
+    height: 44px;
+  }
+
+  .agent-control-surface .ac-rail-link {
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .agent-control-surface .ac-rail-footer {
+    padding-top: 4px;
+  }
+
+  .agent-control-surface .ac-rail-footer p {
+    margin-bottom: 2px;
+  }
+
+  .agent-control-surface .ac-toolbar .seg .chip {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .agent-control-surface .ac-rail-tab {
+    min-height: 44px;
+  }
+
+  .agent-control-surface .ac-body--overlay-footer .ac-rail {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .agent-control-surface .ac-body--overlay-footer .ac-rail-divider {
+    margin-top: 4px;
+    margin-bottom: 4px;
   }
 }
 
@@ -1101,13 +1144,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
     height: 28px;
   }
 
-  .agent-control-surface .ac-title {
-    font-size: 15px;
-    line-height: 1.25;
-  }
-
   .agent-control-surface .ac-description {
-    font-size: 10px;
     max-width: 44ch;
   }
 
@@ -1172,7 +1209,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
     min-height: 44px;
     padding: 0 6px;
     gap: 6px;
-    font-size: 11.5px;
+    font-size: 13px;
     white-space: nowrap;
   }
 
@@ -1185,7 +1222,6 @@ html[lang="ru"] .agent-control-surface .ac-title {
   .agent-control-surface .ac-rail-tab .rail-count {
     height: 15px;
     min-width: 15px;
-    font-size: 9.5px;
   }
 
   .agent-control-surface .ac-content {
@@ -1221,7 +1257,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   }
 
   .agent-control-surface .ac-toolbar h3 {
-    font-size: 11.5px;
+    font-size: 14px;
   }
 
   .agent-control-surface .ac-toolbar .meta {
@@ -1263,7 +1299,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
   }
 
   .agent-control-surface .ac-foot .ac-foot-note {
-    font-size: 11px;
+    font-size: 12px;
     max-width: 100%;
   }
 
@@ -1309,7 +1345,7 @@ html[lang="ru"] .agent-control-surface .ac-title {
 
   .agent-control-surface.ac-modal .ac-toolbar .seg button {
     padding: 0 6px;
-    font-size: 10px;
+    font-size: 12px;
   }
 }
 

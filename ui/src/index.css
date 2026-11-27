@@ -60,6 +60,38 @@ body.janosik-touch-dragging {
   --font-agent-surface:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+
+  /* -------------------------------------------------------------------------
+   * Semantic UI type scale (TASK-200, owner request).
+   *
+   * 14 px is the default readable size for the app: sentences, descriptions,
+   * form values, menu items and buttons. The smaller steps are deliberate
+   * exceptions, not a second body size:
+   *
+   *   ui-title   17 px — dialog/section titles (display face where supported)
+   *   ui-heading 15 px — in-dialog section headings, empty-state titles
+   *   ui-body    14 px — default body, labels, inputs, buttons, menu items
+   *   ui-label   13 px — compact control labels and dense table/menu text
+   *   ui-meta    12 px — metadata, badges, counters, timestamps
+   *   ui-micro   11 px — uppercase micro-labels and dense badge chips ONLY
+   *
+   * Never use `ui-micro` for a sentence, menu item, table cell or button.
+   * The scale is intentionally expressed through `text-ui-*` utilities so a
+   * surface can be audited by class name instead of raw `text-[Npx]` values.
+   * ---------------------------------------------------------------------- */
+  --text-ui-title: 1.0625rem;
+  --text-ui-title--line-height: 1.3;
+  --text-ui-heading: 0.9375rem;
+  --text-ui-heading--line-height: 1.4;
+  --text-ui-body: 0.875rem;
+  --text-ui-body--line-height: 1.5;
+  --text-ui-label: 0.8125rem;
+  --text-ui-label--line-height: 1.45;
+  --text-ui-meta: 0.75rem;
+  --text-ui-meta--line-height: 1.4;
+  --text-ui-micro: 0.6875rem;
+  --text-ui-micro--line-height: 1.35;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -380,6 +412,10 @@ html.light {
 
   body {
     @apply bg-background text-foreground font-sans;
+    /* TASK-200: the app default is 14 px, not the browser's 16 px. Surfaces
+       that do not set a size inherit the readable body step. */
+    font-size: var(--text-ui-body);
+    line-height: var(--text-ui-body--line-height);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
@@ -1124,7 +1160,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 
 /* --- Edit mode chrome: a premium "field" around the whole editor. --- */
 .mdxeditor.janosik-mdx.janosik-mdx-edit {
-  font-size: 0.925rem;
+  font-size: var(--text-ui-body, 0.875rem);
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1140,7 +1176,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 
 /* --- Read-only mode (VIEWER, TASK-35): content without the field chrome. --- */
 .mdxeditor.janosik-mdx.janosik-mdx-readonly {
-  font-size: 0.925rem;
+  font-size: var(--text-ui-body, 0.875rem);
   padding: 0;
 }
 
@@ -1177,7 +1213,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 .mdxeditor.janosik-mdx .janosik-md-content.janosik-md-compact {
   min-height: 0;
   padding: 8px 10px 10px;
-  font-size: 0.875rem;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.55;
 }
 
@@ -1186,7 +1222,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
 .mdxeditor.janosik-mdx .janosik-md-content.janosik-md-flush {
   min-height: 0;
   padding: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.55;
 }
 
@@ -1223,7 +1259,7 @@ body > .mdxeditor-popup-container [role="option"][data-state="checked"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--hover);
-  font-size: var(--text-xs);
+  font-size: var(--text-ui-meta, 0.75rem);
 }
 /* The library paints the placeholder with `--baseBorderHover` (a 30% mix of
  * the foreground), which measured 1.89:1 — nearly invisible (U-04). Use the
@@ -1258,7 +1294,7 @@ body > .mdxeditor-popup-container [class*="tooltipContent"] {
 .mdxeditor.janosik-mdx .janosik-md-content {
   min-height: 190px;
   padding: 12px 14px 16px;
-  font-size: 0.925rem;
+  font-size: var(--text-ui-body, 0.875rem);
   line-height: 1.65;
   color: var(--foreground);
   caret-color: var(--primary);
@@ -1547,7 +1583,9 @@ html.light [data-testid="public-avatar"].bg-slate {
     margin-bottom: 0.35rem;
   }
   .card-details-properties > button,
-  .card-details-properties > div:has(> span:first-child):last-child {
+  .card-details-properties > div:has(> span:first-child):last-child,
+  /* The cover label + "Set cover" value is longer than one phone column. */
+  .card-details-properties > div:has([data-testid="cover-trigger"]) {
     grid-column: 1 / -1;
   }
 }

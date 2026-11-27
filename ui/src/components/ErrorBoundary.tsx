@@ -116,7 +116,7 @@ function CompactFallback({ onReset }: { onReset?: () => void }) {
     <div
       role="alert"
       data-testid="error-compact"
-      className="m-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border/70 bg-card p-5 text-center text-sm shadow-lg"
+      className="m-auto flex max-w-xs flex-col items-center gap-3 rounded-xl border border-border/70 bg-card p-5 text-center text-ui-body shadow-lg"
     >
       <p className="text-muted-foreground">
         This section hit an unexpected error.
@@ -192,10 +192,10 @@ function ErrorFallback({
         {confirmingReset ? (
           <>
             <div className="space-y-1.5">
-              <h1 className="font-display text-lg font-semibold tracking-tight">
+              <h1 className="font-display text-ui-title font-semibold tracking-tight">
                 Erase local data?
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-ui-body text-muted-foreground">
                 Your boards are replaced by the starter board. A JSON copy is
                 downloaded first — you can import it back from the data menu.
               </p>
@@ -220,10 +220,10 @@ function ErrorFallback({
         ) : (
           <>
             <div className="space-y-1.5">
-              <h1 className="font-display text-lg font-semibold tracking-tight">
+              <h1 className="font-display text-ui-title font-semibold tracking-tight">
                 Something went wrong
               </h1>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-ui-body text-muted-foreground">
                 Janosik hit an unexpected error. Reload the app, or reset the
                 local data — a copy is downloaded before anything is erased.
               </p>

@@ -107,7 +107,7 @@ function WipLimitForm({
         onEnter={save}
         onEscape={() => onOpenChange(false)}
       />
-      <p className="text-xs text-muted-foreground">
+      <p className="text-ui-label text-muted-foreground">
         {t("column.wipLimitHint")}
       </p>
       <DialogFooter className="mt-2">

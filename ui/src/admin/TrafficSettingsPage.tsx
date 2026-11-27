@@ -116,7 +116,7 @@ export function TrafficSettingsPage() {
 
       {!isOwner ? (
         <Panel className="p-4">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.traffic.readonly")}
           </p>
         </Panel>
@@ -124,7 +124,7 @@ export function TrafficSettingsPage() {
 
       <Panel className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-3">
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.traffic.rpm")}
           </p>
           <p
@@ -135,7 +135,7 @@ export function TrafficSettingsPage() {
           </p>
         </div>
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.traffic.throttled")}
           </p>
           <p
@@ -143,7 +143,7 @@ export function TrafficSettingsPage() {
             className={cn(
               "text-2xl font-semibold tabular-nums",
               (traffic?.throttledLastMinute ?? 0) > 0
-                ? "text-danger"
+                ? "text-(--agent-tone-danger)"
                 : "text-foreground",
             )}
           >
@@ -151,7 +151,7 @@ export function TrafficSettingsPage() {
           </p>
         </div>
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.traffic.limit")}
           </p>
           <p
@@ -180,7 +180,7 @@ export function TrafficSettingsPage() {
           ariaLabel={t("admin.traffic.title")}
           testId="admin-traffic-chart"
         />
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.traffic.subtitle")}
         </p>
       </Panel>
@@ -189,7 +189,7 @@ export function TrafficSettingsPage() {
         <div className="space-y-1">
           <label
             htmlFor="admin-traffic-limit-input"
-            className="text-xs font-medium text-foreground"
+            className="text-ui-label font-medium text-foreground"
           >
             {t("admin.traffic.limit")}
           </label>
@@ -206,7 +206,7 @@ export function TrafficSettingsPage() {
             decreaseLabel={t("admin.common.decrease")}
           />
           <div className="flex items-center gap-2 pt-0.5">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-ui-meta text-muted-foreground">
               {t("admin.traffic.limitSource")}:
             </span>
             <Badge variant={settings?.source === "db" ? "primary" : "neutral"}>
@@ -221,6 +221,7 @@ export function TrafficSettingsPage() {
             <Button
               size="sm"
               data-testid="admin-traffic-save"
+              className="max-lg:min-h-11"
               disabled={saving || draft === ""}
               onClick={() => void save()}
             >

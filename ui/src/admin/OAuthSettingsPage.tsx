@@ -127,7 +127,7 @@ export function OAuthSettingsPage() {
 
       {!isOwner ? (
         <Panel className="p-4">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.oauth.readonly")}
           </p>
         </Panel>
@@ -148,10 +148,12 @@ export function OAuthSettingsPage() {
         return (
           <Panel key={provider} className="space-y-3 p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-foreground">{label}</p>
+              <p className="text-ui-body font-semibold text-foreground">
+                {label}
+              </p>
               <span
                 data-testid={`admin-oauth-status-${provider}`}
-                className={`text-xs ${settings.enabled ? "text-success" : "text-muted-foreground"}`}
+                className={`text-ui-label ${settings.enabled ? "text-(--agent-tone-success)" : "text-muted-foreground"}`}
               >
                 {settings.enabled
                   ? t("admin.oauth.status.on")
@@ -202,21 +204,21 @@ export function OAuthSettingsPage() {
             </Field>
 
             <div className="space-y-1">
-              <p className="text-xs font-medium text-foreground">
+              <p className="text-ui-label font-medium text-foreground">
                 {t("admin.oauth.callback")}
               </p>
               <code
                 data-testid={`admin-oauth-callback-${provider}`}
-                className="block rounded-md border bg-muted/50 px-2 py-1.5 text-xs break-all text-foreground"
+                className="block rounded-md border bg-muted/50 px-2 py-1.5 text-ui-label break-all text-foreground"
               >
                 {settings.callbackUrl}
               </code>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-ui-meta text-muted-foreground">
                 {t("admin.oauth.callbackHint", { provider: label })}
               </p>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-foreground">
+            <label className="flex items-center gap-2 text-ui-body text-foreground">
               <Checkbox
                 data-testid={`admin-oauth-enabled-${provider}`}
                 checked={draft.enabled}
@@ -233,6 +235,7 @@ export function OAuthSettingsPage() {
                 <Button
                   size="sm"
                   data-testid={`admin-oauth-save-${provider}`}
+                  className="max-lg:min-h-11"
                   disabled={
                     savingId === provider ||
                     clientIdError !== null ||

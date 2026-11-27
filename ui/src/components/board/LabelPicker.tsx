@@ -142,7 +142,7 @@ export function LabelPicker({
         {selectedLabels.map((label) => (
           <span
             key={label.id}
-            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border px-2 text-[11px] font-medium"
+            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border px-2 text-ui-meta font-medium"
           >
             <span
               aria-hidden
@@ -172,7 +172,7 @@ export function LabelPicker({
             type="button"
             aria-pressed={true}
             onClick={() => onToggle(label.id)}
-            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border px-2 text-[11px] font-medium transition-colors hover:border-foreground/30 hover:bg-hover"
+            className="inline-flex h-6 items-center gap-1.5 rounded-full border border-border px-2 text-ui-meta font-medium transition-colors hover:border-foreground/30 hover:bg-hover"
           >
             <span
               aria-hidden
@@ -210,7 +210,7 @@ export function LabelPicker({
                   onToggle(label.id);
                 }}
                 className={cn(
-                  "inline-flex h-6 items-center gap-1.5 rounded-l-full border border-r-0 px-2 text-[11px] font-medium transition-colors",
+                  "inline-flex h-6 items-center gap-1.5 rounded-l-full border border-r-0 px-2 text-ui-meta font-medium transition-colors",
                   isSelected
                     ? "border-foreground/40 bg-hover"
                     : "border-border hover:border-foreground/30 hover:bg-hover",
@@ -247,7 +247,7 @@ export function LabelPicker({
                     {t("label.rename")}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  <div className="px-2 py-1.5 text-ui-label text-muted-foreground">
                     {t("label.recolor")}
                   </div>
                   <div className="px-2 pb-1.5">
@@ -260,8 +260,8 @@ export function LabelPicker({
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
+                    variant="destructive"
                     onClick={() => setDeletingId(label.id)}
-                    className="text-destructive focus:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
                     {t("label.delete")}
@@ -321,7 +321,7 @@ export function LabelPicker({
                 type="button"
                 disabled={labels.length >= LIMITS.labelsPerBoard}
                 onClick={() => setCreating(true)}
-                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:text-foreground disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-ui-meta text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:text-foreground disabled:opacity-50"
               >
                 <Plus className="h-3 w-3" />
                 {t("label.new")}

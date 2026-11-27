@@ -100,10 +100,10 @@ export function CopyButton({
           .then(() => setCopied(true))
           .catch(() => setCopied(false));
       }}
-      className="inline-flex h-3 w-3 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground max-sm:h-11 max-sm:w-11 max-sm:justify-center"
+      className="inline-flex h-3 w-3 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground max-lg:h-11 max-lg:w-11 max-lg:justify-center"
     >
       {copied ? (
-        <Check className="h-3 w-3 text-success" aria-hidden />
+        <Check className="h-3 w-3 text-(--agent-tone-success)" aria-hidden />
       ) : (
         <Copy className="h-3 w-3 opacity-60" aria-hidden />
       )}
@@ -146,7 +146,7 @@ export function EntityLink({
         data-testid={testId}
         aria-label={ariaLabel}
         className={cn(
-          "min-w-0 truncate font-medium text-primary underline-offset-2 hover:underline",
+          "min-w-0 truncate font-medium text-(--agent-tone-primary) underline-offset-2 hover:underline",
           className,
         )}
         title={typeof children === "string" ? children : undefined}
@@ -280,15 +280,15 @@ export function TranscodeBadge({ status }: { status: string }) {
     return <span className="text-muted-foreground">—</span>;
   const tone =
     status === "done"
-      ? "bg-success/15 text-success"
+      ? "bg-success/15 text-(--agent-tone-success)"
       : status === "failed"
-        ? "bg-danger/15 text-danger"
+        ? "bg-danger/15 text-(--agent-tone-danger)"
         : "bg-muted text-muted-foreground";
   return (
     <span
       data-testid="admin-transcode-status"
       className={cn(
-        "inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center rounded-full px-1.5 py-0.5 text-ui-meta font-medium",
         tone,
       )}
     >
@@ -313,7 +313,7 @@ export function LabelChip({
     <span
       title={name}
       className={cn(
-        "inline-flex min-w-0 max-w-full items-center truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium",
+        "inline-flex min-w-0 max-w-full items-center truncate rounded-md px-1.5 py-0.5 text-ui-meta font-medium",
         chip,
         className,
       )}
@@ -362,7 +362,7 @@ export function JsonCell({
         <Chevron className="h-3.5 w-3.5 shrink-0" aria-hidden />
         {!expanded ? (
           <code
-            className="block min-w-0 flex-1 truncate font-mono text-[11px]"
+            className="block min-w-0 flex-1 truncate font-mono text-ui-meta"
             title={raw}
           >
             {raw}
@@ -372,7 +372,7 @@ export function JsonCell({
       {expanded ? (
         <pre
           data-testid={testId ? `${testId}-json` : undefined}
-          className="mt-1 max-h-64 max-w-[36rem] overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-2 font-mono text-[11px] text-foreground"
+          className="mt-1 max-h-64 max-w-[36rem] overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-2 font-mono text-ui-meta text-foreground"
         >
           {JSON.stringify(value, null, 2)}
         </pre>
@@ -431,7 +431,7 @@ export function TextExpandCell({
         ) : null}
       </button>
       {expanded ? (
-        <pre className="mt-1 max-w-[36rem] whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-2 font-sans text-xs text-foreground">
+        <pre className="mt-1 max-w-[36rem] whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-2 font-sans text-ui-label text-foreground">
           {value}
         </pre>
       ) : null}

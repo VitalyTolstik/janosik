@@ -625,7 +625,7 @@ export function CardAttachments({
         </SkeletonRegion>
       ) : items.length === 0 ? (
         <p
-          className="px-0.5 text-xs text-muted-foreground"
+          className="px-0.5 text-ui-body text-muted-foreground"
           data-testid="card-attachments-empty"
         >
           {t("card.attachments.empty")}
@@ -645,7 +645,7 @@ export function CardAttachments({
               <li
                 key={attachment.id}
                 className={cn(
-                  "group flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-hover/60",
+                  "group flex items-center gap-2 rounded-md px-1.5 py-1 text-ui-body hover:bg-hover/60",
                   highlighted && "bg-primary/10 ring-2 ring-primary/40",
                 )}
                 data-testid="card-attachment-row"
@@ -662,17 +662,17 @@ export function CardAttachments({
                 </span>
                 {attachment.transcodeStatus === "pending" ? (
                   <span
-                    className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+                    className="flex shrink-0 items-center gap-1 text-ui-meta text-muted-foreground"
                     data-testid="card-attachment-encoding"
                   >
                     <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
                     {t("card.attachments.encoding")}
                   </span>
                 ) : null}
-                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                <span className="shrink-0 text-ui-meta tabular-nums text-muted-foreground">
                   {formatSize(attachment.sizeBytes)}
                 </span>
-                <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
+                <span className="hidden shrink-0 text-ui-meta text-muted-foreground sm:inline">
                   {formatDateOnly(attachment.createdAt, lang)}
                 </span>
                 <Button
@@ -707,7 +707,7 @@ export function CardAttachments({
       {detachedItems.length > 0 ? (
         <details
           ref={detachedRef}
-          className="text-xs text-muted-foreground"
+          className="text-ui-body text-muted-foreground"
           data-testid="card-detached-attachments"
         >
           <summary className="min-h-11 cursor-pointer py-3">
@@ -746,7 +746,7 @@ export function CardAttachments({
                       >
                         {attachment.fileName}
                       </span>
-                      <span className="block text-[11px] tabular-nums">
+                      <span className="block text-ui-meta tabular-nums">
                         {formatSize(attachment.sizeBytes)} ·{" "}
                         {formatDateOnly(attachment.createdAt, lang)}
                       </span>

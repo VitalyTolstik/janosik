@@ -292,7 +292,7 @@ export function BoardContentPage() {
       <div className="flex items-center gap-2">
         <Link
           to={backTo}
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-ui-label text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
           {t("admin.boardContent.back")}
@@ -316,8 +316,11 @@ export function BoardContentPage() {
       <div className="grid gap-3 lg:grid-cols-[18rem_1fr]">
         <Panel className="flex flex-col">
           <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-            <Columns3 className="h-3.5 w-3.5 text-primary" aria-hidden />
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <Columns3
+              className="h-3.5 w-3.5 text-(--agent-tone-primary)"
+              aria-hidden
+            />
+            <h2 className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
               {t("admin.boardContent.columns")}
             </h2>
           </div>
@@ -349,13 +352,13 @@ export function BoardContentPage() {
                           if (event.key === "Enter") commitRename("column");
                           if (event.key === "Escape") setRenaming(null);
                         }}
-                        className="h-7 w-full rounded border border-input bg-background/70 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className="h-7 w-full rounded border border-input bg-background/70 px-2 text-ui-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                       <button
                         type="button"
                         aria-label={t("admin.common.save")}
                         onClick={() => commitRename("column")}
-                        className="text-success"
+                        className="text-(--agent-tone-success)"
                       >
                         <Check className="h-3.5 w-3.5" aria-hidden />
                       </button>
@@ -373,10 +376,10 @@ export function BoardContentPage() {
                       type="button"
                       data-testid={`admin-column-${column.id}`}
                       onClick={() => setSelectedColumnId(column.id)}
-                      className="flex-1 truncate text-left text-xs font-medium text-foreground"
+                      className="flex-1 truncate text-left text-ui-label font-medium text-foreground"
                     >
                       {column.title}
-                      <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                      <span className="ml-2 text-ui-meta font-normal text-muted-foreground">
                         {column.cardIds.length}
                       </span>
                     </button>
@@ -404,7 +407,7 @@ export function BoardContentPage() {
                             title: column.title,
                           })
                         }
-                        className="text-muted-foreground hover:text-danger"
+                        className="text-muted-foreground hover:text-(--agent-tone-danger)"
                       >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden />
                       </button>
@@ -424,7 +427,7 @@ export function BoardContentPage() {
               }}
               placeholder={t("admin.boardContent.columnPlaceholder")}
               data-testid="admin-new-column"
-              className="h-8 w-full rounded-lg border border-input bg-background/70 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-8 w-full rounded-lg border border-input bg-background/70 px-2.5 text-ui-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <Button
               size="icon"
@@ -441,7 +444,7 @@ export function BoardContentPage() {
 
         <Panel className="flex flex-col">
           <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <h2 className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
               {t("admin.boardContent.cards")}
               {selected ? ` · ${selected.title}` : ""}
             </h2>
@@ -449,14 +452,14 @@ export function BoardContentPage() {
           </div>
 
           {selected === undefined ? (
-            <p className="px-3 py-10 text-center text-xs text-muted-foreground">
+            <p className="px-3 py-10 text-center text-ui-label text-muted-foreground">
               {t("admin.boardContent.empty")}
             </p>
           ) : (
             <>
               <ul className="flex-1 divide-y divide-border/60">
                 {cards.length === 0 ? (
-                  <li className="px-3 py-8 text-center text-xs text-muted-foreground">
+                  <li className="px-3 py-8 text-center text-ui-label text-muted-foreground">
                     {t("admin.boardContent.noCards")}
                   </li>
                 ) : null}
@@ -482,13 +485,13 @@ export function BoardContentPage() {
                             if (event.key === "Enter") commitRename("card");
                             if (event.key === "Escape") setRenaming(null);
                           }}
-                          className="h-7 w-full rounded border border-input bg-background/70 px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="h-7 w-full rounded border border-input bg-background/70 px-2 text-ui-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         />
                         <button
                           type="button"
                           aria-label={t("admin.common.save")}
                           onClick={() => commitRename("card")}
-                          className="text-success"
+                          className="text-(--agent-tone-success)"
                         >
                           <Check className="h-3.5 w-3.5" aria-hidden />
                         </button>
@@ -506,7 +509,7 @@ export function BoardContentPage() {
                         <Link
                           to={withReturnTo(`/admin/cards/${card.id}`, returnTo)}
                           data-testid={`admin-card-open-${card.id}`}
-                          className="truncate text-xs text-foreground underline-offset-2 hover:underline"
+                          className="truncate text-ui-label text-foreground underline-offset-2 hover:underline"
                           title={card.title}
                         >
                           {card.title}
@@ -549,7 +552,7 @@ export function BoardContentPage() {
                             t("admin.boardContent.toast.cardArchived"),
                           )
                         }
-                        className="text-muted-foreground hover:text-danger"
+                        className="text-muted-foreground hover:text-(--agent-tone-danger)"
                       >
                         <Archive className="h-3.5 w-3.5" aria-hidden />
                       </button>
@@ -567,7 +570,7 @@ export function BoardContentPage() {
                   }}
                   placeholder={t("admin.boardContent.cardPlaceholder")}
                   data-testid="admin-new-card"
-                  className="h-8 w-full rounded-lg border border-input bg-background/70 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-8 w-full rounded-lg border border-input bg-background/70 px-2.5 text-ui-label outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 <Button
                   size="icon"
@@ -596,11 +599,9 @@ export function BoardContentPage() {
           data-testid="admin-move-card-dialog"
         >
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              {t("admin.boardContent.move.title")}
-            </DialogTitle>
+            <DialogTitle>{t("admin.boardContent.move.title")}</DialogTitle>
             {movingCard !== null ? (
-              <DialogDescription className="text-xs">
+              <DialogDescription className="text-ui-label">
                 {t("admin.boardContent.move.body", {
                   title: movingCard.title,
                 })}

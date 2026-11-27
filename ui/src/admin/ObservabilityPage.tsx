@@ -103,7 +103,7 @@ export function ObservabilityPage() {
       />
 
       <Panel className="p-4">
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 text-ui-body sm:grid-cols-4">
           <Field
             label={t("admin.observability.version")}
             value={data.version}
@@ -130,14 +130,14 @@ export function ObservabilityPage() {
 
       <Panel className="p-4" data-testid="admin-observability-frontend">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.observability.frontend")}
           </h2>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui-label text-muted-foreground">
             {t("admin.observability.frontend.hint")}
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 text-ui-body sm:grid-cols-4">
           <Field
             label={t("admin.observability.frontend.appVersion")}
             value={appVersion?.version ?? "—"}
@@ -180,10 +180,10 @@ export function ObservabilityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-sm font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.observability.jobs")}
         </h2>
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 text-ui-body sm:grid-cols-3">
           <Field
             label={t("admin.observability.jobs.transcode")}
             value={`${data.jobs.transcode.pending} / ${data.jobs.transcode.done} / ${data.jobs.transcode.failed}`}
@@ -203,10 +203,10 @@ export function ObservabilityPage() {
         </div>
         {data.jobs.queues.length > 0 ? (
           <div className="mt-4">
-            <p className="mb-2 text-xs text-muted-foreground">
+            <p className="mb-2 text-ui-label text-muted-foreground">
               {t("admin.observability.queues")}
             </p>
-            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 text-ui-label sm:grid-cols-4">
               {data.jobs.queues.map((queue) => (
                 <div
                   key={queue.name}
@@ -235,28 +235,28 @@ export function ObservabilityPage() {
 
       <Panel className="p-4" data-testid="admin-observability-comment-history">
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.observability.history")}
           </h2>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui-label text-muted-foreground">
             {t("admin.observability.history.hint")}
           </span>
         </div>
         {!data.commentHistory.available ? (
           <p
-            className="mb-3 rounded border border-border p-2 text-xs text-muted-foreground"
+            className="mb-3 rounded border border-border p-2 text-ui-label text-muted-foreground"
             data-testid="admin-observability-history-unavailable"
           >
             {t("admin.observability.history.unavailable")}
           </p>
         ) : null}
         <p
-          className="mb-3 text-xs text-muted-foreground"
+          className="mb-3 text-ui-label text-muted-foreground"
           data-testid="admin-observability-history-cache"
         >
           {t("admin.observability.history.cache")}
         </p>
-        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 text-ui-body sm:grid-cols-2">
           <MetricRow
             testId="history-revisions"
             label={t("admin.observability.history.revisions")}
@@ -302,7 +302,7 @@ export function ObservabilityPage() {
           />
         </div>
         <div
-          className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2"
+          className="mt-4 grid grid-cols-1 gap-3 text-ui-body sm:grid-cols-2"
           data-testid="admin-observability-history-reasons"
         >
           <MetricRow
@@ -333,7 +333,7 @@ export function ObservabilityPage() {
       </Panel>
 
       <Panel className="p-0">
-        <h2 className="p-4 text-sm font-medium">
+        <h2 className="p-4 text-ui-heading font-medium">
           {t("admin.observability.tables")}
         </h2>
         <Table maxHeight="22rem">
@@ -369,19 +369,22 @@ export function ObservabilityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-sm font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.observability.health")}
         </h2>
         <div className="space-y-2">
           {data.health.map((check) => (
-            <div key={check.name} className="flex items-center gap-3 text-sm">
+            <div
+              key={check.name}
+              className="flex items-center gap-3 text-ui-body"
+            >
               <Badge variant={check.ok ? "success" : "danger"}>
                 {check.ok
                   ? t("admin.observability.ok")
                   : t("admin.observability.fail")}
               </Badge>
-              <span className="font-mono text-xs">{check.name}</span>
-              <span className="text-xs text-muted-foreground">
+              <span className="font-mono text-ui-label">{check.name}</span>
+              <span className="text-ui-label text-muted-foreground">
                 {check.detail}
               </span>
             </div>
@@ -391,15 +394,15 @@ export function ObservabilityPage() {
 
       <Panel className="flex items-center justify-between gap-3 p-4">
         <div>
-          <h2 className="text-sm font-medium">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.observability.news")}
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.observability.news.hint")}
           </p>
         </div>
         <Link
-          className="text-xs underline underline-offset-2"
+          className="text-ui-label underline underline-offset-2"
           to="/admin/announcements"
         >
           {t("admin.announcements.title")}
@@ -412,7 +415,7 @@ export function ObservabilityPage() {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-ui-label text-muted-foreground">{label}</p>
       <p className="font-medium break-words [overflow-wrap:anywhere]">
         {value}
       </p>
@@ -440,7 +443,7 @@ function MetricRow({
       data-testid={testId}
       className="flex items-baseline justify-between gap-3"
     >
-      <p className="min-w-0 text-xs text-muted-foreground">{label}</p>
+      <p className="min-w-0 text-ui-label text-muted-foreground">{label}</p>
       <p
         className="shrink-0 text-right font-medium tabular-nums"
         data-testid={`${testId}-value`}
@@ -463,7 +466,7 @@ function StateField({
 }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-ui-label text-muted-foreground">{label}</p>
       <div className="mt-1">
         <Badge variant={ok ? "success" : "neutral"}>{value}</Badge>
       </div>

@@ -140,7 +140,7 @@ export function AdminCommentHistoryButton({
         {showCount ? (
           <span
             data-testid={`admin-comment-revision-count-${comment.id}`}
-            className="text-[10px] tabular-nums text-muted-foreground"
+            className="text-ui-micro tabular-nums text-muted-foreground"
           >
             {comment.revisionCount}
           </span>
@@ -148,7 +148,7 @@ export function AdminCommentHistoryButton({
         {comment.historyIncomplete ? (
           <span
             aria-hidden
-            className="text-[10px] font-semibold text-warning"
+            className="text-ui-micro font-semibold text-(--chip-warning)"
             title={t("admin.comments.history.banner.generic")}
           >
             !
@@ -351,7 +351,7 @@ export function AdminCommentHistoryDialog({
             role="status"
             data-testid="admin-comment-history-banner"
             data-reason={reason ?? undefined}
-            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-foreground"
+            className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-ui-label leading-relaxed text-foreground"
           >
             {banner}
           </p>
@@ -362,7 +362,7 @@ export function AdminCommentHistoryDialog({
             <p
               role="status"
               data-testid="admin-comment-history-loading"
-              className="flex items-center gap-2 text-xs text-muted-foreground"
+              className="flex items-center gap-2 text-ui-label text-muted-foreground"
             >
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
               {t("admin.comments.history.loading")}
@@ -371,7 +371,7 @@ export function AdminCommentHistoryDialog({
             <div
               role="alert"
               data-testid="admin-comment-history-error"
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-ui-body"
             >
               <span>{t("admin.comments.history.loadError")}</span>
               <Button
@@ -388,7 +388,7 @@ export function AdminCommentHistoryDialog({
           ) : items.length === 0 ? (
             <p
               data-testid="admin-comment-history-empty"
-              className="rounded-md border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground"
+              className="rounded-md border border-dashed border-border/70 px-3 py-6 text-center text-ui-body text-muted-foreground"
             >
               {t("admin.comments.history.empty")}
             </p>
@@ -424,7 +424,7 @@ export function AdminCommentHistoryDialog({
                   ref={endRef}
                   tabIndex={-1}
                   data-testid="admin-comment-history-end"
-                  className="rounded text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="rounded text-ui-label text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {t("admin.comments.history.end")}
                 </p>
@@ -434,7 +434,7 @@ export function AdminCommentHistoryDialog({
                 <div
                   role="alert"
                   data-testid="admin-comment-history-older-error"
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-ui-label"
                 >
                   <span>{t("admin.comments.history.olderError")}</span>
                   <Button
@@ -476,7 +476,7 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
       data-revision-number={number}
       className="min-w-0 rounded-lg border border-border/70 bg-card/50 p-3"
     >
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-ui-label text-muted-foreground">
         <span className="font-medium text-foreground">
           {t("admin.comments.history.revision", { number })}
         </span>
@@ -497,7 +497,7 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
             data-testid="admin-comment-history-agent"
             className="inline-flex min-w-0 items-center gap-1"
           >
-            <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
               {t("admin.comments.history.agent")}
             </span>
             {revision.agentName ? (
@@ -507,7 +507,7 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
         ) : null}
         <span
           data-testid="admin-comment-history-cause"
-          className="rounded-full border border-border/70 px-1.5 py-px text-[10px] font-medium"
+          className="rounded-full border border-border/70 px-1.5 py-px text-ui-micro font-medium"
         >
           {t(CAUSE_KEYS[revision.cause])}
         </span>
@@ -548,7 +548,7 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
         }
         data-testid={`admin-comment-history-snapshot-toggle-${number}`}
         onClick={() => setFull((current) => !current)}
-        className="mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11 max-lg:px-3"
+        className="mt-2 inline-flex min-h-9 items-center rounded-md px-2 text-ui-label font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-lg:min-h-11 max-lg:min-w-11 max-lg:px-3"
       >
         {full
           ? t("admin.comments.history.hideSnapshot")
@@ -564,26 +564,26 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
           data-testid={`admin-comment-history-snapshot-${number}`}
           className="mt-2 max-h-60 min-w-0 overflow-x-hidden overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
             {t("admin.comments.history.fullVersion")}
           </p>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-ui-meta text-muted-foreground">
             {t("admin.comments.history.before")}
           </p>
           <div
             data-testid={`admin-comment-history-snapshot-before-${number}`}
             dir="auto"
-            className="whitespace-pre-wrap break-words text-sm text-foreground/80 [overflow-wrap:anywhere]"
+            className="whitespace-pre-wrap break-words text-ui-body text-foreground/80 [overflow-wrap:anywhere]"
           >
             {revision.beforeText}
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
+          <p className="mt-2 text-ui-meta text-muted-foreground">
             {t("admin.comments.history.after")}
           </p>
           <div
             data-testid={`admin-comment-history-snapshot-after-${number}`}
             dir="auto"
-            className="whitespace-pre-wrap break-words text-sm text-foreground/80 [overflow-wrap:anywhere]"
+            className="whitespace-pre-wrap break-words text-ui-body text-foreground/80 [overflow-wrap:anywhere]"
           >
             {revision.afterText}
           </div>
@@ -596,12 +596,12 @@ function RevisionItem({ revision }: { revision: CommentRevisionDto }) {
 function DiffHalf({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0 rounded-md bg-muted/30 p-2">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       <div
         dir="auto"
-        className="mt-1 min-w-0 whitespace-pre-wrap break-words text-sm text-foreground/80 [overflow-wrap:anywhere]"
+        className="mt-1 min-w-0 whitespace-pre-wrap break-words text-ui-body text-foreground/80 [overflow-wrap:anywhere]"
       >
         {children}
       </div>

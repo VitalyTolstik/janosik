@@ -82,14 +82,17 @@ function StatusBanner({ settings }: { settings: AdminEmailSettingsDto }) {
   return (
     <div
       data-testid="admin-email-status"
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-ui-label ${
         tone === "ok"
           ? "border-success/30 bg-success/10 text-foreground"
           : "border-border bg-hover/40 text-muted-foreground"
       }`}
     >
       {tone === "ok" ? (
-        <CircleCheck className="h-4 w-4 shrink-0 text-success" aria-hidden />
+        <CircleCheck
+          className="h-4 w-4 shrink-0 text-(--agent-tone-success)"
+          aria-hidden
+        />
       ) : (
         <CircleAlert className="h-4 w-4 shrink-0" aria-hidden />
       )}
@@ -104,12 +107,16 @@ function LastProbe({ settings }: { settings: AdminEmailSettingsDto }) {
   const hour12 = useHour12();
   if (settings.lastTestAt === null) return null;
   return (
-    <p className="text-[11px] text-muted-foreground">
+    <p className="text-ui-meta text-muted-foreground">
       {t("admin.email.lastTest.label")}{" "}
       {settings.lastTestOk ? (
-        <span className="text-success">{t("admin.email.lastTest.ok")}</span>
+        <span className="text-(--agent-tone-success)">
+          {t("admin.email.lastTest.ok")}
+        </span>
       ) : (
-        <span className="text-danger">{t("admin.email.lastTest.failed")}</span>
+        <span className="text-(--agent-tone-danger)">
+          {t("admin.email.lastTest.failed")}
+        </span>
       )}
       {" · "}
       {formatDate(Date.parse(settings.lastTestAt), lang, hour12)}
@@ -278,14 +285,14 @@ export function EmailSettingsPage() {
         <StatusBanner settings={settings} />
         <LastProbe settings={settings} />
         {!isOwner ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.email.readonly")}
           </p>
         ) : null}
       </Panel>
 
       <Panel className="space-y-3 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
           {t("admin.email.provider.title")}
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -298,7 +305,7 @@ export function EmailSettingsPage() {
                 data-testid={`admin-email-preset-${item.id}`}
                 disabled={!isOwner}
                 onClick={() => selectPreset(item.id)}
-                className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                className={`rounded-lg border px-3 py-2 text-left text-ui-label transition-colors ${
                   selected
                     ? "border-primary bg-primary/10 text-foreground"
                     : "border-border bg-background/50 text-muted-foreground hover:bg-hover"
@@ -307,7 +314,7 @@ export function EmailSettingsPage() {
                 <span className="block font-medium text-foreground">
                   {t(PRESET_LABEL_KEYS[item.id])}
                 </span>
-                <span className="block truncate">
+                <span className="block break-words">
                   {item.id === "custom"
                     ? t("admin.email.preset.customHint")
                     : `${item.host}:${item.port}`}
@@ -317,10 +324,10 @@ export function EmailSettingsPage() {
           })}
         </div>
 
-        <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="pt-1 text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
           {t("admin.email.testproviders.title")}
         </p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.email.testproviders.hint")}
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -333,7 +340,7 @@ export function EmailSettingsPage() {
                 data-testid={`admin-email-preset-${item.id}`}
                 disabled={!isOwner}
                 onClick={() => selectPreset(item.id)}
-                className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                className={`rounded-lg border px-3 py-2 text-left text-ui-label transition-colors ${
                   selected
                     ? "border-primary bg-primary/10 text-foreground"
                     : "border-border bg-background/50 text-muted-foreground hover:bg-hover"
@@ -342,7 +349,10 @@ export function EmailSettingsPage() {
                 <span className="block font-medium text-foreground">
                   {t(PRESET_LABEL_KEYS[item.id])}
                 </span>
-                <span className="block truncate">
+                <span
+                  className="block break-words"
+                  title={t("admin.email.preset.sandboxHint")}
+                >
                   {t("admin.email.preset.sandboxHint")}
                 </span>
               </button>
@@ -387,7 +397,7 @@ export function EmailSettingsPage() {
                 }
               />
             </Field>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 text-ui-label text-muted-foreground">
               <Checkbox
                 checked={draft.secure}
                 disabled={!isOwner}
@@ -415,7 +425,7 @@ export function EmailSettingsPage() {
         </Field>
 
         {sandbox ? (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("admin.email.sandbox.hint")}
           </p>
         ) : (
@@ -456,14 +466,14 @@ export function EmailSettingsPage() {
                 />
               </Field>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-meta text-muted-foreground">
               {t("admin.email.password.hint")}{" "}
               {preset?.helpUrl ? (
                 <a
                   href={preset.helpUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-primary underline underline-offset-2"
+                  className="text-(--agent-tone-primary) underline underline-offset-2"
                 >
                   {t("admin.email.password.help")}
                 </a>
@@ -472,7 +482,7 @@ export function EmailSettingsPage() {
           </>
         )}
 
-        <label className="flex items-center gap-2 text-xs font-medium text-foreground">
+        <label className="flex items-center gap-2 text-ui-label font-medium text-foreground max-lg:min-h-11">
           <Checkbox
             checked={draft.enabled}
             disabled={!isOwner}
@@ -487,6 +497,7 @@ export function EmailSettingsPage() {
             size="sm"
             onClick={() => void save()}
             disabled={saveDisabled}
+            className="max-lg:min-h-11"
             data-testid="admin-email-save"
           >
             {saving ? t("admin.email.saving") : t("admin.common.save")}
@@ -495,11 +506,11 @@ export function EmailSettingsPage() {
       </Panel>
 
       <Panel className="space-y-3 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
           {t("admin.email.test.title")}
         </p>
         {!settings.active ? (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("admin.email.test.logHint")}
           </p>
         ) : null}
@@ -516,7 +527,10 @@ export function EmailSettingsPage() {
               onChange={(event) => setTestTo(event.target.value)}
             />
             {testTo.trim() !== "" && testToError !== null ? (
-              <span role="alert" className="text-[11px] text-danger">
+              <span
+                role="alert"
+                className="text-ui-meta text-(--agent-tone-danger)"
+              >
                 {testToError}
               </span>
             ) : null}
@@ -527,6 +541,7 @@ export function EmailSettingsPage() {
             disabled={!isOwner || testToError !== null || testing}
             onClick={() => void sendTest()}
             data-testid="admin-email-test-send"
+            className="max-lg:min-h-11"
           >
             {testing
               ? t("admin.email.test.sending")
@@ -537,14 +552,14 @@ export function EmailSettingsPage() {
           testResult.ok ? (
             settings.active ? (
               <p
-                className="text-xs text-success"
+                className="text-ui-label text-(--agent-tone-success)"
                 data-testid="admin-email-test-ok"
               >
                 {t("admin.email.test.ok")}
               </p>
             ) : (
               <p
-                className="text-xs text-muted-foreground"
+                className="text-ui-label text-muted-foreground"
                 data-testid="admin-email-test-ok"
               >
                 {t("admin.email.test.logOk")}
@@ -552,7 +567,7 @@ export function EmailSettingsPage() {
             )
           ) : (
             <p
-              className="text-xs text-danger"
+              className="text-ui-label text-(--agent-tone-danger)"
               data-testid="admin-email-test-failed"
             >
               {t("admin.email.test.failed").replace(
@@ -566,13 +581,18 @@ export function EmailSettingsPage() {
 
       {settings.webViewer !== null ? (
         <Panel className="space-y-3 p-4" data-testid="admin-email-webviewer">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
             {t("admin.email.sandbox.inboxTitle")}
           </p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("admin.email.sandbox.note")}
           </p>
-          <Button size="sm" variant="outline" asChild>
+          <Button
+            size="sm"
+            variant="outline"
+            asChild
+            className="max-lg:min-h-11"
+          >
             <a href={settings.webViewer.url} target="_blank" rel="noreferrer">
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
               {t("admin.email.sandbox.open")}

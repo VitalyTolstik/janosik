@@ -34,7 +34,7 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
     <div
       role="group"
       aria-label={t("view.label")}
-      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm"
+      className="inline-flex items-center gap-1 rounded-lg border border-border/60 bg-card/80 p-1 shadow-sm max-sm:gap-0.5 max-sm:p-0.5"
     >
       {VIEWS.map(({ id, icon: Icon, labelKey }) => (
         <button
@@ -43,7 +43,7 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
           aria-pressed={value === id}
           onClick={() => onChange(id)}
           className={cn(
-            "flex min-h-6 min-w-6 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors sm:px-2.5",
+            "flex min-h-6 min-w-6 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-ui-label font-medium transition-colors max-lg:min-h-11 max-lg:min-w-11 sm:px-2.5",
             value === id
               ? "bg-primary/15 text-(--tab-text)"
               : "text-muted-foreground hover:bg-hover hover:text-foreground",

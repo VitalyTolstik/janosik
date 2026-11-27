@@ -53,7 +53,7 @@ export function ArchivedBoardNotice({
       role="status"
       data-testid="archived-board-notice"
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-foreground max-sm:flex-col max-sm:items-stretch",
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-ui-body text-foreground max-sm:flex-col max-sm:items-stretch",
         className,
       )}
     >
@@ -89,7 +89,7 @@ export function ArchivedBoardNotice({
           {t("board.switcher.restore")}
         </Button>
       ) : (
-        <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-col gap-0.5 text-ui-label text-muted-foreground">
           <span>{t("board.archivedAskAdmin")}</span>
           <span data-testid="archived-board-switcher-hint">
             {t("board.archivedSwitcherHint")}

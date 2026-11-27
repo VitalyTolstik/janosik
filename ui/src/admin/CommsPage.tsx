@@ -204,17 +204,22 @@ export function CommsPage() {
         subtitle={t("admin.comms.subtitle")}
       />
 
-      <Panel className="flex items-center justify-between gap-3 p-4">
-        <div>
-          <h2 className="text-sm font-medium">
+      <Panel className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-ui-heading font-medium">
             {t("admin.comms.announcements")}
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.comms.announcements.hint")}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" asChild>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            asChild
+            className="max-lg:min-h-11"
+          >
             <Link to="/admin/announcements">
               {t("admin.announcements.title")}
             </Link>
@@ -223,6 +228,7 @@ export function CommsPage() {
             size="sm"
             disabled={!isOwner}
             data-testid="admin-announcement-new"
+            className="max-lg:min-h-11"
             onClick={() => setCreating(true)}
           >
             {t("admin.comms.new")}
@@ -231,11 +237,11 @@ export function CommsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-sm font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.comms.email.title")}
         </h2>
         <div className="grid gap-3">
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.comms.email.to")}
             </span>
@@ -248,12 +254,15 @@ export function CommsPage() {
               onChange={(event) => setMailTo(event.target.value)}
             />
             {mailTo.trim() !== "" && toError !== null ? (
-              <span role="alert" className="text-[11px] text-danger">
+              <span
+                role="alert"
+                className="text-ui-meta text-(--agent-tone-danger)"
+              >
                 {toError}
               </span>
             ) : null}
           </label>
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.comms.email.subject")}
             </span>
@@ -266,7 +275,7 @@ export function CommsPage() {
             />
             <CharCount value={mailSubject} max={SUBJECT_MAX} />
           </label>
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1 text-ui-label">
             <span className="text-muted-foreground">
               {t("admin.comms.email.body")}
             </span>
@@ -292,6 +301,7 @@ export function CommsPage() {
               mailBody.trim() === ""
             }
             data-testid="admin-email-send"
+            className="max-lg:min-h-11"
             onClick={() => void send()}
           >
             {t("admin.comms.email.send")}
@@ -300,21 +310,21 @@ export function CommsPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-sm font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.comms.templates.title")}
         </h2>
         <div className="space-y-4">
           {templates.map((template) => (
             <div key={template.key} className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-medium">{template.label}</p>
+                <p className="text-ui-body font-medium">{template.label}</p>
                 {template.custom ? (
                   <Badge variant="primary">{t("admin.comms.custom")}</Badge>
                 ) : (
                   <Badge variant="neutral">{t("admin.comms.default")}</Badge>
                 )}
                 {template.placeholders.length > 0 ? (
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-ui-meta text-muted-foreground">
                     {t("admin.comms.templates.placeholders", {
                       list: template.placeholders
                         .map((name) => `{{${name}}}`)
@@ -402,6 +412,7 @@ export function CommsPage() {
                   size="sm"
                   data-testid={`admin-template-save-${template.key}`}
                   disabled={!isOwner}
+                  className="max-lg:min-h-11"
                   onClick={() => void saveTemplate(template.key)}
                 >
                   {t("admin.common.save")}
@@ -418,7 +429,7 @@ export function CommsPage() {
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-sm">
+            <DialogTitle className="leading-snug">
               {t("admin.comms.templates.previewTitle")}
               {preview ? ` — ${preview.label}` : ""}
             </DialogTitle>
@@ -426,10 +437,12 @@ export function CommsPage() {
           {preview ? (
             <div className="space-y-3">
               <div className="rounded-lg border border-border bg-hover/40 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
                   {t("admin.comms.templates.subject")}
                 </p>
-                <p className="text-sm text-foreground">{preview.subject}</p>
+                <p className="text-ui-body text-foreground">
+                  {preview.subject}
+                </p>
               </div>
               <iframe
                 title={t("admin.comms.templates.previewTitle")}
@@ -438,7 +451,7 @@ export function CommsPage() {
                 data-testid="admin-template-preview-frame"
                 className="h-[60vh] w-full rounded-lg border border-border bg-white"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-ui-meta text-muted-foreground">
                 {t("admin.comms.templates.previewNote")}
               </p>
             </div>

@@ -202,7 +202,7 @@ export function RunsPanel({ role }: { role: Role }) {
     runs.rows.find((row) => row.id === selectedId) ?? runs.rows[0] ?? null;
   if (!isApiEnabled()) {
     return (
-      <p className="p-4 text-[11px] text-muted-foreground">
+      <p className="p-4 text-ui-body text-muted-foreground">
         {t("agentControl.runs.offline")}
       </p>
     );
@@ -327,7 +327,7 @@ export function RunsPanel({ role }: { role: Role }) {
           onChange={(value) => patch({ status: value as RunStatusFilter })}
           ariaLabel={t("agentControl.runs.filter.status")}
           testId="run-filter-status"
-          className="h-11 w-auto min-w-[104px] text-[11px] md:h-[26px] md:min-h-[26px]"
+          className="h-11 w-auto min-w-[104px] text-ui-meta md:h-[26px] md:min-h-[26px]"
         />
         <SelectField
           value={filter.kind}
@@ -335,7 +335,7 @@ export function RunsPanel({ role }: { role: Role }) {
           onChange={(value) => patch({ kind: value as RunKindFilter })}
           ariaLabel={t("agentControl.runs.filter.kind")}
           testId="run-filter-kind"
-          className="h-11 w-auto min-w-[96px] text-[11px] md:h-[26px] md:min-h-[26px]"
+          className="h-11 w-auto min-w-[96px] text-ui-meta md:h-[26px] md:min-h-[26px]"
         />
         <SelectField
           value={filter.token}
@@ -343,7 +343,7 @@ export function RunsPanel({ role }: { role: Role }) {
           onChange={(value) => patch({ token: value })}
           ariaLabel={t("agentControl.runs.filter.token")}
           testId="run-filter-token"
-          className="h-11 w-auto min-w-[104px] max-w-[148px] text-[11px] md:h-[26px] md:min-h-[26px]"
+          className="h-11 w-auto min-w-[104px] max-w-[148px] text-ui-meta md:h-[26px] md:min-h-[26px]"
         />
         <SelectField
           value={filter.session}
@@ -351,13 +351,13 @@ export function RunsPanel({ role }: { role: Role }) {
           onChange={(value) => patch({ session: value })}
           ariaLabel={t("agentControl.runs.filter.session")}
           testId="run-filter-session"
-          className="h-11 w-auto min-w-[104px] max-w-[148px] text-[11px] md:h-[26px] md:min-h-[26px]"
+          className="h-11 w-auto min-w-[104px] max-w-[148px] text-ui-meta md:h-[26px] md:min-h-[26px]"
         />
         <button
           type="button"
           onClick={clearFilters}
           data-testid="agent-runs-clear-filters"
-          className="inline-flex min-h-11 items-center rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[26px]"
+          className="inline-flex min-h-11 items-center rounded-md px-2 text-ui-meta font-medium text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[26px]"
         >
           {t("agents.runs.clearAll")}
         </button>
@@ -390,7 +390,7 @@ export function RunsPanel({ role }: { role: Role }) {
             </SkeletonRegion>
           ) : runs.error && runs.rows.length === 0 ? (
             <div className="space-y-2 p-4" data-testid="agent-runs-error">
-              <p className="text-[11px] text-[color:var(--agent-tone-danger)]">
+              <p className="text-ui-body text-[color:var(--agent-tone-danger)]">
                 {t("agentControl.runs.loadError")}
               </p>
               <Button
@@ -414,10 +414,10 @@ export function RunsPanel({ role }: { role: Role }) {
                   className="h-6 w-6 text-muted-foreground/60"
                   aria-hidden
                 />
-                <p className="text-[11px] font-medium text-foreground">
+                <p className="text-ui-body font-medium text-foreground">
                   {t("agents.runs.noMatch")}
                 </p>
-                <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+                <p className="max-w-[32ch] text-ui-body leading-[1.5] text-muted-foreground">
                   {t("agents.runs.noMatchBody")}
                 </p>
                 <Button
@@ -439,10 +439,10 @@ export function RunsPanel({ role }: { role: Role }) {
                   className="h-6 w-6 text-muted-foreground/60"
                   aria-hidden
                 />
-                <p className="text-[11px] font-medium text-foreground">
+                <p className="text-ui-body font-medium text-foreground">
                   {t("agentControl.runs.empty")}
                 </p>
-                <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+                <p className="max-w-[32ch] text-ui-body leading-[1.5] text-muted-foreground">
                   {t("agents.runs.emptyBody")}
                 </p>
               </div>
@@ -452,7 +452,7 @@ export function RunsPanel({ role }: { role: Role }) {
               {runs.error ? (
                 <div
                   role="alert"
-                  className="m-2 flex flex-wrap items-center gap-2 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-foreground"
+                  className="m-2 flex flex-wrap items-center gap-2 rounded-[7px] border border-warning/35 bg-warning/6 px-2.5 py-2 text-ui-label text-foreground"
                 >
                   <span className="min-w-0 flex-1">
                     {t("agents.runs.stale")}
@@ -482,7 +482,7 @@ export function RunsPanel({ role }: { role: Role }) {
                 conflicts={displayedConflicts}
                 groupMode="day"
               />
-              <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 text-ui-meta text-muted-foreground">
                 <span
                   data-testid="agent-runs-total"
                   data-shown={shown}
@@ -497,7 +497,7 @@ export function RunsPanel({ role }: { role: Role }) {
                   data-testid="agent-runs-more"
                   disabled={runs.loadingMore || !canLoadMore}
                   onClick={() => void loadMore()}
-                  className="h-6 min-h-0 rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none max-md:h-11 max-md:min-h-11"
+                  className="h-6 min-h-0 rounded-[5px] px-[7px] text-ui-meta font-[650] leading-none max-md:h-11 max-md:min-h-11"
                 >
                   {runs.loadingMore ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -520,10 +520,10 @@ export function RunsPanel({ role }: { role: Role }) {
               <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
                 <History className="h-[18px] w-[18px]" aria-hidden />
               </span>
-              <p className="text-[13px] font-semibold text-foreground">
+              <p className="text-ui-heading font-semibold text-foreground">
                 {t("agents.runs.selectTitle")}
               </p>
-              <p className="max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+              <p className="max-w-[30ch] text-ui-body leading-[1.5] text-muted-foreground">
                 {t("agents.runs.selectBody")}
               </p>
             </div>

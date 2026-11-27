@@ -160,6 +160,7 @@ export function AdminShell() {
       }
       if (isShortcutHelpKey(event)) {
         event.preventDefault();
+        setMobileOpen(false);
         setShortcutsOpen(true);
         return;
       }
@@ -218,7 +219,10 @@ export function AdminShell() {
           onToggleSidebar={toggleSidebar}
           onToggleDensity={toggleDensity}
           onOpenPalette={() => setSearchOpen(true)}
-          onOpenShortcuts={() => setShortcutsOpen(true)}
+          onOpenShortcuts={() => {
+            setMobileOpen(false);
+            setShortcutsOpen(true);
+          }}
         />
 
         <main
@@ -241,6 +245,7 @@ export function AdminShell() {
         onOpenChange={setSearchOpen}
         onOpenShortcuts={() => {
           setSearchOpen(false);
+          setMobileOpen(false);
           setShortcutsOpen(true);
         }}
         onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}

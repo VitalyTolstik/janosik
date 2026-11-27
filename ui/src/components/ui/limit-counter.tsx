@@ -45,7 +45,7 @@ export function LimitCounter({
     <p
       aria-live="polite"
       className={cn(
-        "text-[11px] tabular-nums",
+        "text-ui-meta tabular-nums",
         position === "below" &&
           "absolute left-0 top-full z-10 mt-0.5 max-w-full rounded bg-background/90 px-1 backdrop-blur-sm",
         danger ? cn("font-medium", dangerClassName) : "text-muted-foreground",

@@ -118,7 +118,7 @@ function MasterAllowlistForm({
         </DialogDescription>
       </DialogHeader>
       {phase === "error" ? (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-ui-label text-(--agent-tone-danger)">
           {t("admin.masters.allowlist.loadError")}
         </p>
       ) : (
@@ -137,7 +137,7 @@ function MasterAllowlistForm({
         </div>
       )}
       {error ? (
-        <p role="alert" className="text-xs text-danger">
+        <p role="alert" className="text-ui-label text-(--agent-tone-danger)">
           {error}
         </p>
       ) : null}

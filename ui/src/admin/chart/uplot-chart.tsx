@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -27,10 +27,25 @@ export function UplotChart({
   testId,
 }: ChartProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [themeRevision, setThemeRevision] = useState(0);
   const data = useMemo<uPlot.AlignedData>(
     () => [x, ...series.map((entry) => entry.values)],
     [x, series],
   );
+
+  // CSS custom properties change with the `.dark` class on <html>. Rebuild
+  // the canvas when the theme flips, otherwise it keeps the previous grid and
+  // axis colours (invisible to axe, wrong by eye).
+  useEffect(() => {
+    const observer = new MutationObserver(() =>
+      setThemeRevision((revision) => revision + 1),
+    );
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -80,6 +95,10 @@ export function UplotChart({
       ],
       series: [
         {
+          // The x series is an axis carrier, not a plotted value. `show:false`
+          // marks it `u-off`; admin.css drops that row from the live legend,
+          // where “Day: --” used to push the real series past the viewport.
+          show: false,
           label: xLabel,
           value: (_self, raw) => (raw == null ? "" : xFormat(Number(raw))),
         },
@@ -121,7 +140,7 @@ export function UplotChart({
       observer.disconnect();
       chart.destroy();
     };
-  }, [data, series, xFormat, yFormat, xTicks, xLabel, height]);
+  }, [data, series, xFormat, yFormat, xTicks, xLabel, height, themeRevision]);
 
   return (
     <div

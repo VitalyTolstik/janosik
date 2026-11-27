@@ -97,6 +97,10 @@ describe("CardItem fixed tile layout", () => {
     expect(title.className).toContain("flex-1");
     expect(labels.className).toContain("flex-wrap");
     expect(labels.className).not.toContain("whitespace-nowrap");
+    // Keep the first chip row pinned to the top: `content-center` centers the
+    // wrapped second row inside the 19px lane and clips both rows in half.
+    expect(labels.className).toContain("content-start");
+    expect(labels.className).not.toContain("content-center");
     expect(labels.children.length).toBe(6);
   });
 

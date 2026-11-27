@@ -216,7 +216,7 @@ export function CardTaskSpec({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-1 px-2 text-xs max-lg:h-11 no-hover:min-h-11"
+            className="h-8 gap-1 px-2 text-ui-label max-lg:h-11 no-hover:min-h-11"
             data-testid="card-task-spec-clear"
             onClick={() => {
               clearOrigin.current = "header";
@@ -232,7 +232,7 @@ export function CardTaskSpec({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 gap-1 px-2 text-xs max-lg:h-11 no-hover:min-h-11"
+          className="h-8 gap-1 px-2 text-ui-label max-lg:h-11 no-hover:min-h-11"
           data-testid="card-task-spec-edit"
           onClick={startEditing}
         >
@@ -276,7 +276,7 @@ export function CardTaskSpec({
             <div className="space-y-1">
               <label
                 htmlFor={`card-task-spec-criteria-${cardId}`}
-                className="text-xs font-medium text-muted-foreground"
+                className="text-ui-label font-medium text-muted-foreground"
               >
                 {t("card.taskSpec.acceptanceCriteria")}
               </label>
@@ -302,7 +302,7 @@ export function CardTaskSpec({
                   id={criteriaErrorId}
                   role="alert"
                   data-testid="card-task-spec-error"
-                  className="text-xs text-destructive"
+                  className="text-ui-label text-destructive"
                 >
                   {errorMessage(errors.criteria)}
                 </p>
@@ -311,7 +311,7 @@ export function CardTaskSpec({
             <div className="space-y-1">
               <label
                 htmlFor={`card-task-spec-done-${cardId}`}
-                className="text-xs font-medium text-muted-foreground"
+                className="text-ui-label font-medium text-muted-foreground"
               >
                 {t("card.taskSpec.definitionOfDone")}
               </label>
@@ -337,7 +337,7 @@ export function CardTaskSpec({
                   id={doneErrorId}
                   role="alert"
                   data-testid="card-task-spec-error"
-                  className="text-xs text-destructive"
+                  className="text-ui-label text-destructive"
                 >
                   {errorMessage(errors.done)}
                 </p>
@@ -345,7 +345,7 @@ export function CardTaskSpec({
             </div>
             <p
               id={hintId}
-              className="text-[11px] leading-snug text-muted-foreground"
+              className="text-ui-meta leading-snug text-muted-foreground"
             >
               {t("card.taskSpec.hint", {
                 count: LIMITS.taskSpecItems,
@@ -392,7 +392,7 @@ export function CardTaskSpec({
           </>
         ) : (
           <p
-            className="text-xs text-muted-foreground"
+            className="text-ui-body text-muted-foreground"
             data-testid="card-task-spec-empty"
           >
             {t("card.taskSpec.empty")}
@@ -427,10 +427,12 @@ function TaskSpecList({
 }) {
   return (
     <div className="space-y-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className="text-ui-label font-medium text-muted-foreground">
+        {label}
+      </span>
       <ul
         aria-label={label}
-        className="list-disc space-y-0.5 pl-5 text-sm text-foreground"
+        className="list-disc space-y-0.5 pl-5 text-ui-body text-foreground"
         data-testid={testId}
       >
         {items.map((item, index) => (

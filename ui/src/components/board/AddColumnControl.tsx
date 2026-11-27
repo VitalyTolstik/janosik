@@ -62,7 +62,7 @@ export function AddColumnControl({
         disabled={disabled}
         onClick={() => setComposing(true)}
         data-add-column-trigger
-        className="flex w-[80vw] max-w-72 shrink-0 self-start items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:bg-hover/60 enabled:hover:text-foreground disabled:pointer-events-none disabled:opacity-50 sm:w-72 sm:max-w-none"
+        className="flex w-[80vw] max-w-72 shrink-0 self-start items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-ui-body text-muted-foreground transition-colors enabled:hover:border-primary/40 enabled:hover:bg-hover/60 enabled:hover:text-foreground disabled:pointer-events-none disabled:opacity-50 sm:w-72 sm:max-w-none"
       >
         <Plus className="h-4 w-4" />
         <span>{t("column.add")}</span>

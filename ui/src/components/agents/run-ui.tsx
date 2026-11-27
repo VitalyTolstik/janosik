@@ -85,7 +85,7 @@ export function RunStatusBadge({
 export function RunKindChip({ kind }: { kind: AgentRunKind }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold whitespace-nowrap lowercase text-muted-foreground">
+    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-ui-micro font-semibold whitespace-nowrap lowercase text-muted-foreground">
       {t(RUN_KIND_KEYS[kind])}
     </span>
   );
@@ -94,7 +94,7 @@ export function RunKindChip({ kind }: { kind: AgentRunKind }) {
 export function RunConflictChip({ count }: { count: number }) {
   const { t } = useI18n();
   return (
-    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-[11px] font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
+    <span className="inline-flex h-[21px] items-center rounded-[4px] border border-warning/36 bg-warning/7 px-1.5 text-ui-micro font-semibold whitespace-nowrap text-[color:var(--agent-tone-warning)]">
       {t("agents.runs.conflictChip", { count })}
     </span>
   );
@@ -165,7 +165,7 @@ export function RunList({
           <div key={day.key}>
             <div
               className={cn(
-                "border-b border-border/70 px-2 text-[11px] font-[650] tracking-[0.06em] uppercase text-muted-foreground",
+                "border-b border-border/70 px-2 text-ui-micro font-[650] tracking-[0.06em] uppercase text-muted-foreground",
                 variant === "global"
                   ? "pt-2.5 pb-1"
                   : "!px-2.5 pt-[7px] pb-[3px]",
@@ -201,10 +201,10 @@ export function RunList({
                             "bg-primary/6 shadow-[inset_2px_0_0_var(--primary)]",
                         )}
                       >
-                        <b className="block truncate text-[11px] leading-[1.4] font-semibold">
+                        <b className="block truncate text-ui-label leading-[1.4] font-semibold">
                           {runTitle(run, t, token)}
                         </b>
-                        <span className="mt-1 block truncate text-[11px] leading-[1.4] text-muted-foreground">
+                        <span className="mt-1 block truncate text-ui-meta leading-[1.4] text-muted-foreground">
                           {token} ·{" "}
                           {t("agents.runs.commandCount", {
                             count: run.commandCount,
@@ -237,11 +237,11 @@ export function RunList({
                     >
                       <span className="min-w-0">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <b className="min-w-0 truncate text-[11.5px] leading-[1.25] font-[650]">
+                          <b className="min-w-0 truncate text-ui-label leading-[1.25] font-[650]">
                             {runTitle(run, t, token)}
                           </b>
                         </span>
-                        <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-[1.4] text-muted-foreground">
+                        <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-meta leading-[1.4] text-muted-foreground">
                           <span className="truncate">{token}</span>
                           <Dot />
                           <span className="truncate">
@@ -266,13 +266,13 @@ export function RunList({
                         <RunStatusBadge status={run.status} />
                         <span className="flex items-center justify-end gap-1.5 leading-none">
                           <time
-                            className="text-[11px] whitespace-nowrap text-muted-foreground"
+                            className="text-ui-meta whitespace-nowrap text-muted-foreground"
                             title={formatDate(runTime(run), lang, true)}
                           >
                             {clockLabel(runTime(run), today, lang, t)}
                           </time>
                           <span
-                            className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-[11px] text-muted-foreground max-[760px]:hidden"
+                            className="inline-flex h-5 items-center rounded-[4px] border border-border bg-surface/65 px-1.5 font-mono text-ui-micro text-muted-foreground max-[760px]:hidden"
                             title={run.id}
                           >
                             {shortId(run.id, 12)}
@@ -480,7 +480,7 @@ export function RunDetail({
 
   if (!isApiEnabled()) {
     return (
-      <p className="p-4 text-[11px] text-muted-foreground">
+      <p className="p-4 text-ui-body text-muted-foreground">
         {t("agentControl.runs.offline")}
       </p>
     );
@@ -495,12 +495,12 @@ export function RunDetail({
         <span className="grid h-10 w-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground">
           <AlertTriangle className="h-[18px] w-[18px]" aria-hidden />
         </span>
-        <p className="text-[13px] font-semibold text-foreground">
+        <p className="text-ui-heading font-semibold text-foreground">
           {errorStatus(detailError) === 404
             ? t("agents.runs.detailNotFound")
             : t("agentControl.runs.detailError")}
         </p>
-        <p className="max-w-[32ch] text-[11px] leading-[1.5] text-muted-foreground">
+        <p className="max-w-[32ch] text-ui-body leading-[1.5] text-muted-foreground">
           {t("agents.runs.detailErrorBody")}
         </p>
         <Button
@@ -579,18 +579,18 @@ export function RunDetail({
         ) : null}
         <div className="min-w-0 flex-1">
           {variant === "global" ? (
-            <p className="m-0 mb-0.5 text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+            <p className="m-0 mb-0.5 text-ui-micro font-[650] tracking-[0.07em] text-muted-foreground uppercase">
               {t("agents.runs.detailEyebrow", {
                 board: boardTitle ?? run.boardId,
               })}
             </p>
           ) : null}
-          <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
+          <h2 className="m-0 text-ui-heading font-[650] leading-[1.35] tracking-[-0.01em] break-words">
             {runTitle(run, t, titleToken)}
           </h2>
           {variant === "board" ? (
             <p
-              className="mt-0.5 font-mono text-[11px] text-muted-foreground"
+              className="mt-0.5 font-mono text-ui-meta text-muted-foreground"
               title={run.id}
             >
               {shortId(run.id, 12)} ·{" "}
@@ -634,13 +634,13 @@ export function RunDetail({
         <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
           <RunStatusBadge status={run.status} testId="agent-run-status" />
           <RunKindChip kind={run.kind} />
-          <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] font-semibold text-muted-foreground">
+          <span className="inline-flex h-[21px] items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-ui-micro font-semibold text-muted-foreground">
             {t("agents.runs.commandCount", { count: run.commandCount })}
           </span>
           <Link
             to={routes.board(boardId)}
             data-testid="agent-run-board-chip"
-            className="inline-flex h-[21px] max-w-full items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+            className="inline-flex h-[21px] max-w-full items-center rounded-[4px] border border-border bg-surface/65 px-1.5 text-ui-micro text-muted-foreground hover:text-foreground"
           >
             <span className="truncate">{boardTitle ?? boardId}</span>
           </Link>
@@ -723,7 +723,7 @@ export function RunDetail({
         >
           {storedCommands === 0 ? (
             <p
-              className="text-[11px] leading-[1.45] text-muted-foreground"
+              className="text-ui-body leading-[1.45] text-muted-foreground"
               data-testid="agent-run-commands-missing"
             >
               {missingCommands
@@ -742,8 +742,8 @@ export function RunDetail({
                     data-testid={`agent-run-command-${command.seq}`}
                     className="rounded-md border border-border bg-background/30 px-2 py-1.5"
                   >
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-1.5 text-ui-meta text-muted-foreground">
+                      <code className="rounded-[4px] bg-muted px-1.5 py-0.5 text-ui-meta">
                         {command.action.type}
                       </code>
                       <span className="min-w-0 truncate">
@@ -779,7 +779,7 @@ export function RunDetail({
           {!admin ? (
             <div
               data-testid="agent-run-admin-only-note"
-              className="mt-2 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-[1.45] text-muted-foreground"
+              className="mt-2 flex items-start gap-2 rounded-[7px] border border-border bg-muted/30 px-2.5 py-2 text-ui-body leading-[1.45] text-muted-foreground"
             >
               <Lock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
               <span>{t("agents.runs.adminOnlyNote")}</span>
@@ -792,7 +792,7 @@ export function RunDetail({
               className="group mt-1.5 overflow-hidden rounded-md border border-border bg-background/30"
               data-testid="agent-run-preimages"
             >
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2 py-1.5 text-ui-label font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
                 <ChevronRight
                   className="h-[11px] w-[11px] transition-transform group-open:rotate-90"
                   aria-hidden
@@ -801,7 +801,7 @@ export function RunDetail({
                   count: Object.keys(detail.preimages).length,
                 })}
               </summary>
-              <pre className="m-0 max-h-64 overflow-auto border-t border-border p-2 font-mono text-[11px] leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
+              <pre className="m-0 max-h-64 overflow-auto border-t border-border p-2 font-mono text-ui-meta leading-[1.55] whitespace-pre-wrap break-words text-muted-foreground">
                 {JSON.stringify(detail.preimages, null, 2)}
               </pre>
             </details>
@@ -815,13 +815,13 @@ export function RunDetail({
         >
           {rollbackEligible ? (
             previewing && preview === null ? (
-              <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-ui-label text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
                 {t("agentControl.runs.previewing")}
               </p>
             ) : previewError !== null ? (
               <div
-                className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-[11px] text-[color:var(--agent-tone-warning)]"
+                className="space-y-1.5 rounded-md border border-warning/35 bg-warning/6 px-2.5 py-2 text-ui-label text-[color:var(--agent-tone-warning)]"
                 role="alert"
                 data-testid={
                   previewUnavailable
@@ -862,7 +862,7 @@ export function RunDetail({
                       aria-hidden
                     />
                   )}
-                  <b className="text-[11.5px] font-[650] text-foreground">
+                  <b className="text-ui-body font-[650] text-foreground">
                     {conflicts.length > 0
                       ? t("agents.runs.rollbackConflict")
                       : t("agents.runs.rollbackPreview")}
@@ -871,7 +871,7 @@ export function RunDetail({
                 <p
                   data-testid="agent-run-can-revert"
                   data-can-revert={preview.canRevert ? "true" : "false"}
-                  className="m-0 text-[11px] leading-[1.45] text-foreground"
+                  className="m-0 text-ui-body leading-[1.45] text-foreground"
                 >
                   {preview.canRevert
                     ? t("agents.runs.previewReady", { count: storedCommands })
@@ -882,7 +882,7 @@ export function RunDetail({
                     {conflicts.map((conflict) => (
                       <li
                         key={conflict.touch}
-                        className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-warning)]"
+                        className="rounded-[4px] border border-warning/35 bg-warning/6 px-2 py-1.5 text-ui-label text-[color:var(--agent-tone-warning)]"
                       >
                         <span className="font-[650]">
                           {conflictEntityLabel(
@@ -908,7 +908,7 @@ export function RunDetail({
                     data-testid="agent-run-preview"
                     disabled={previewing}
                     onClick={() => void requestPreview()}
-                    className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-[11px] font-[650] max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                    className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-ui-label font-[650] max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                   >
                     <Eye className="h-[13px] w-[13px]" aria-hidden />
                     {t("agents.runs.previewAgain")}
@@ -927,7 +927,7 @@ export function RunDetail({
                             : t("agentControl.runs.cannotRevert")
                       }
                       onClick={() => setConfirmOpen(true)}
-                      className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-[11px] font-[650] border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                      className="h-7 min-h-0 gap-1.5 rounded-[6px] px-[9px] text-ui-label font-[650] border-danger/50 text-[color:var(--agent-tone-danger)] hover:bg-danger/10 disabled:opacity-40 max-md:min-h-11 [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
                     >
                       <RotateCcw className="h-[13px] w-[13px]" aria-hidden />
                       {!preview.canRevert
@@ -935,7 +935,7 @@ export function RunDetail({
                         : t("agentControl.runs.revert")}
                     </Button>
                   ) : (
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-ui-label text-muted-foreground">
                       {t("agentControl.runs.adminOnly")}
                     </span>
                   )}
@@ -945,7 +945,7 @@ export function RunDetail({
           ) : run.status === "reverted" ? (
             <p
               data-testid="agent-run-already-reverted"
-              className="flex items-start gap-1.5 text-[11px] text-muted-foreground"
+              className="flex items-start gap-1.5 text-ui-body text-muted-foreground"
             >
               <Check
                 className="mt-px h-3 w-3 shrink-0 text-[color:var(--agent-tone-success)]"
@@ -956,13 +956,13 @@ export function RunDetail({
           ) : run.kind === "revert" ? (
             <p
               data-testid="agent-run-revert-run-note"
-              className="flex items-start gap-1.5 text-[11px] text-muted-foreground"
+              className="flex items-start gap-1.5 text-ui-body text-muted-foreground"
             >
               <CircleSlash className="mt-px h-3 w-3 shrink-0" aria-hidden />
               {t("agents.runs.revertRunNoRollback")}
             </p>
           ) : (
-            <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+            <p className="flex items-start gap-1.5 text-ui-body text-muted-foreground">
               <CircleSlash className="mt-px h-3 w-3 shrink-0" aria-hidden />
               {t("agents.runs.nothingToRollback")}
             </p>
@@ -972,7 +972,7 @@ export function RunDetail({
             <p
               role="alert"
               data-testid="agent-run-action-error"
-              className="mt-2 rounded-md border border-danger/40 bg-danger/10 p-2 text-[11px] text-[color:var(--agent-tone-danger)]"
+              className="mt-2 rounded-md border border-danger/40 bg-danger/10 p-2 text-ui-body text-[color:var(--agent-tone-danger)]"
             >
               {actionError}
             </p>
@@ -984,7 +984,7 @@ export function RunDetail({
             <code
               data-testid="agent-run-plan-hash"
               title={run.planHash}
-              className="min-w-0 flex-1 overflow-hidden font-mono text-[11px] text-ellipsis whitespace-nowrap text-muted-foreground"
+              className="min-w-0 flex-1 overflow-hidden font-mono text-ui-micro text-ellipsis whitespace-nowrap text-muted-foreground"
             >
               {t("agents.runs.planHash", {
                 hash: run.planHash.slice(0, 34),
@@ -1013,7 +1013,7 @@ export function RunDetail({
           <Link
             to={routes.agentControl(boardId, "runs")}
             data-testid="agent-run-open-board"
-            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+            className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-ui-label text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
             <Folder className="h-2.5 w-2.5" aria-hidden />
             {t("agents.runs.openBoard")}
@@ -1024,7 +1024,7 @@ export function RunDetail({
                 type="button"
                 data-testid="agent-run-open-session"
                 onClick={() => onOpenSession(run.agentSessionId ?? "")}
-                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-ui-label text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
                 <Activity className="h-2.5 w-2.5" aria-hidden />
                 {t("agents.runs.openSession")}
@@ -1037,7 +1037,7 @@ export function RunDetail({
                   session: run.agentSessionId,
                 }).toString()}`}
                 data-testid="agent-run-open-session"
-                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-ui-label text-muted-foreground hover:text-foreground max-md:min-h-11"
               >
                 <Activity className="h-2.5 w-2.5" aria-hidden />
                 {t("agents.runs.openSession")}
@@ -1049,7 +1049,7 @@ export function RunDetail({
             onClick={() => void copyLink()}
             data-testid="agent-run-copy-link"
             data-copy-url={runLink(boardId, runId)}
-            className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-[11px] text-muted-foreground hover:text-foreground max-md:min-h-11"
+            className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-surface/58 px-1.5 text-ui-label text-muted-foreground hover:text-foreground max-md:min-h-11"
           >
             {linkCopied ? (
               <Check
@@ -1065,7 +1065,7 @@ export function RunDetail({
       </div>
 
       {variant === "global" ? (
-        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-[11px] leading-[1.45] text-muted-foreground max-md:px-3 max-md:py-[9px]">
+        <footer className="flex shrink-0 flex-col gap-2 border-t border-border bg-[color-mix(in_oklab,var(--surface)_84%,var(--background))] px-3.5 py-2.5 text-ui-label leading-[1.45] text-muted-foreground max-md:px-3 max-md:py-[9px]">
           <p className="m-0 flex items-start gap-1.5">
             <Info
               className="mt-[2px] h-[11px] w-[11px] shrink-0 text-[color:var(--agent-tone-success)]"
@@ -1081,7 +1081,7 @@ export function RunDetail({
             <Link
               to={routes.agentControl(boardId, "runs")}
               data-testid="agent-run-footer-open-board"
-              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] whitespace-nowrap text-foreground hover:bg-hover max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-ui-label leading-none font-[650] whitespace-nowrap text-foreground hover:bg-hover max-md:min-h-11"
             >
               {t("agents.runs.openBoard")}
             </Link>
@@ -1089,7 +1089,7 @@ export function RunDetail({
               type="button"
               onClick={() => void copyLink()}
               data-testid="agent-run-footer-copy-link"
-              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-transparent px-[11px] text-[11.5px] leading-none font-[650] whitespace-nowrap text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
+              className="inline-flex h-8 min-h-0 min-w-0 basis-0 flex-1 items-center justify-center gap-1.5 rounded-[6px] border border-transparent px-[11px] text-ui-label leading-none font-[650] whitespace-nowrap text-muted-foreground hover:bg-hover hover:text-foreground max-md:min-h-11"
             >
               {linkCopied ? (
                 <Check
@@ -1118,7 +1118,7 @@ export function RunDetail({
         testId="run-revert-dialog"
         confirmTestId="run-revert-confirm"
       >
-        <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.5] text-foreground">
+        <div className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-ui-body leading-[1.5] text-foreground">
           <b className="font-[650]">
             {t("agents.runs.confirmCount", { count: detail.commands.length })}
           </b>{" "}
@@ -1145,7 +1145,7 @@ function Banner({
       role="status"
       data-testid={testId}
       className={cn(
-        "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45] [&_svg]:mt-px [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
+        "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-ui-body leading-[1.45] [&_svg]:mt-px [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0",
         tone === "bad" &&
           "border-danger/35 bg-danger/6 [&_svg]:text-[color:var(--agent-tone-danger)]",
         tone === "warn" &&
@@ -1182,11 +1182,11 @@ function Section({
         <span className="text-muted-foreground [&_svg]:h-3 [&_svg]:w-3">
           {icon}
         </span>
-        <h3 className="m-0 text-[11px] font-[650] tracking-[0.03em] text-foreground">
+        <h3 className="m-0 text-ui-body font-[650] tracking-[0.03em] text-foreground">
           {title}
         </h3>
         {aside !== undefined ? (
-          <span className="ml-auto text-[11px] text-muted-foreground">
+          <span className="ml-auto text-ui-meta text-muted-foreground">
             {aside}
           </span>
         ) : null}
@@ -1205,10 +1205,10 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
+      <span className="mb-0.5 block text-ui-micro tracking-[0.04em] text-muted-foreground uppercase">
         {label}
       </span>
-      <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">
+      <span className="block min-w-0 text-ui-label leading-[1.4] font-medium break-words text-foreground">
         {children}
       </span>
     </div>
@@ -1245,10 +1245,10 @@ function TimelineItem({
         />
       </span>
       <span>
-        <b className="block text-[11px] font-semibold leading-[1.4] text-foreground">
+        <b className="block text-ui-label font-semibold leading-[1.4] text-foreground">
           {label}
         </b>
-        <span className="mt-px block text-[11px] leading-[1.4] text-muted-foreground">
+        <span className="mt-px block text-ui-meta leading-[1.4] text-muted-foreground">
           {value}
         </span>
       </span>
@@ -1259,10 +1259,10 @@ function TimelineItem({
 function DiffBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-[4px] border border-border/60 px-1.5 py-1">
-      <span className="block text-[11px] tracking-[0.04em] text-muted-foreground uppercase">
+      <span className="block text-ui-micro tracking-[0.04em] text-muted-foreground uppercase">
         {label}
       </span>
-      <b className="mt-px block truncate text-[11px] font-semibold text-foreground">
+      <b className="mt-px block truncate text-ui-label font-semibold text-foreground">
         {value}
       </b>
     </div>

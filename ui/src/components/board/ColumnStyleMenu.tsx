@@ -105,10 +105,10 @@ export function ColumnStyleMenu({
         </TooltipTrigger>
         <DropdownMenuContent align="end" className="w-72 p-1.5">
           <div className="px-2 pb-1 pt-1">
-            <div className="text-xs font-medium text-foreground">
+            <div className="text-ui-label font-medium text-foreground">
               {t("column.styleMenu")}
             </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-0.5 text-ui-meta text-muted-foreground">
               {t("column.styleMenuHint")}
             </div>
           </div>
@@ -144,10 +144,10 @@ export function ColumnStyleOptions({
         >
           <StyleGlyph style={style} />
           <span className="min-w-0">
-            <span className="block text-xs font-medium">
+            <span className="block text-ui-label font-medium">
               {t(COLUMN_STYLE_KEYS[style])}
             </span>
-            <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+            <span className="mt-0.5 block text-ui-meta leading-snug text-muted-foreground">
               {t(COLUMN_STYLE_HINT_KEYS[style])}
             </span>
           </span>

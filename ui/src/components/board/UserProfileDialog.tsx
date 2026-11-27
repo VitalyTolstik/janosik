@@ -133,11 +133,11 @@ function UserProfileBody({
         <div className="space-y-1">
           <DialogTitle
             data-testid="user-profile-name"
-            className="flex items-center justify-center gap-2 text-base"
+            className="flex items-center justify-center gap-2 text-ui-title"
           >
             {label}
             {isSelf ? (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+              <span className="rounded bg-muted px-1.5 py-0.5 text-ui-micro font-normal text-muted-foreground">
                 {t("profile.you")}
               </span>
             ) : null}
@@ -152,7 +152,7 @@ function UserProfileBody({
         <span
           data-testid="user-profile-status"
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-ui-label font-medium",
             online
               ? "border-success/40 bg-success/10 text-(--chip-green)"
               : "border-border bg-muted text-muted-foreground",
@@ -171,7 +171,7 @@ function UserProfileBody({
 
       <dl
         data-testid="user-profile-facts"
-        className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border bg-muted/30 p-3 text-sm"
+        className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border bg-muted/30 p-3 text-ui-body"
       >
         <dt className="text-muted-foreground">{t("profile.role")}</dt>
         <dd data-testid="user-profile-role" className="text-right font-medium">

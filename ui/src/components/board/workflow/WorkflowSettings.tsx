@@ -229,20 +229,20 @@ export function WorkflowSettings({
         {!insideSettingsShell ? (
           <div className="min-w-0">
             {variant === "dialog" ? (
-              <DialogTitle className="m-0 text-lg font-semibold leading-[1.2] tracking-[-0.025em] text-foreground max-md:text-base">
+              <DialogTitle className="m-0 text-ui-title font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
                 {t("board.settings.title")}
               </DialogTitle>
             ) : (
-              <h2 className="m-0 text-lg font-semibold leading-[1.2] tracking-[-0.025em] text-foreground max-md:text-base">
+              <h2 className="m-0 text-ui-title font-semibold leading-[1.2] tracking-[-0.025em] text-foreground">
                 {t("workflow.title")}
               </h2>
             )}
             {variant === "dialog" ? (
-              <DialogDescription className="mt-1 max-w-[66ch] text-[12.5px] leading-[1.48] text-muted-foreground max-md:text-[11px]">
+              <DialogDescription className="mt-1 max-w-[66ch] text-ui-body leading-[1.48] text-muted-foreground">
                 {t("board.settings.subtitle")}
               </DialogDescription>
             ) : (
-              <p className="mt-1 max-w-[66ch] text-[12.5px] leading-[1.48] text-muted-foreground max-md:text-[11px]">
+              <p className="mt-1 max-w-[66ch] text-ui-body leading-[1.48] text-muted-foreground">
                 {t("workflow.subtitle")}
               </p>
             )}
@@ -274,7 +274,7 @@ export function WorkflowSettings({
                   onClick={() => setView(entry.id)}
                   onKeyDown={onViewKeyDown}
                   className={cn(
-                    "inline-flex h-6 items-center gap-1 whitespace-nowrap rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none",
+                    "inline-flex h-7 items-center gap-1 whitespace-nowrap rounded px-1.5 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none max-lg:min-h-11",
                     active
                       ? "bg-hover text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_22%,transparent)]"
                       : "text-muted-foreground hover:text-foreground",
@@ -292,7 +292,7 @@ export function WorkflowSettings({
               "flex h-7 items-center gap-2 rounded-full border border-border bg-card/65 py-1 pl-2.5 pr-2 max-md:border-transparent max-md:bg-transparent max-md:p-0.5",
             )}
           >
-            <span className="whitespace-nowrap text-[11px] leading-4 text-muted-foreground max-md:hidden">
+            <span className="whitespace-nowrap text-ui-meta leading-4 text-muted-foreground max-md:hidden">
               {draft.enabled ? t("workflow.enabled") : t("workflow.disabled")}
             </span>
             <Switch
@@ -300,6 +300,7 @@ export function WorkflowSettings({
               disabled={!canEdit}
               aria-label={t("workflow.enable")}
               data-testid={`${testIdPrefix}-enabled`}
+              className="max-lg:before:absolute max-lg:before:-inset-[13px] max-lg:before:rounded-full max-lg:before:content-['']"
               onCheckedChange={setEnabled}
             />
           </div>
@@ -328,7 +329,7 @@ export function WorkflowSettings({
                 disabled={!canEdit || saving || workflow === undefined}
                 data-testid={`${testIdPrefix}-reset`}
                 onSelect={() => setConfirmReset(true)}
-                className="text-danger focus:text-danger"
+                variant="destructive"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden />
                 {t("workflow.resetRules")}
@@ -376,18 +377,18 @@ export function WorkflowSettings({
           className="flex flex-col gap-3 px-[18px] pb-[18px] pt-4 max-md:gap-3 max-md:px-3.5 max-md:py-3.5"
         >
           {masterMode ? (
-            <div className="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-[11px] leading-[1.45]">
+            <div className="rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-ui-body leading-[1.45]">
               {t("workflow.masterBanner")}
             </div>
           ) : null}
           {!canEdit ? (
-            <div className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11px] leading-[1.45]">
+            <div className="rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-ui-body leading-[1.45]">
               {t("workflow.adminOnly")}
             </div>
           ) : null}
           {workflowInvalid ? (
             <div
-              className="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-[11px] leading-[1.45] text-(--chip-red)"
+              className="rounded-md border border-danger/40 bg-danger/10 px-2.5 py-2 text-ui-body leading-[1.45] text-(--chip-red)"
               data-testid={`${testIdPrefix}-invalid`}
             >
               {t("workflow.error.invalidStored")}
@@ -395,7 +396,7 @@ export function WorkflowSettings({
           ) : null}
           {foreignChange ? (
             <div
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11px] leading-[1.45]"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-ui-body leading-[1.45]"
               data-testid={`${testIdPrefix}-foreign-change`}
             >
               <span>{t("workflow.foreignChange")}</span>
@@ -403,7 +404,7 @@ export function WorkflowSettings({
                 type="button"
                 onClick={reloadFromSaved}
                 data-testid={`${testIdPrefix}-reload`}
-                className="rounded border border-warning/40 px-2 py-0.5 text-[11px] text-foreground hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded border border-warning/40 px-2 py-0.5 text-ui-label text-foreground hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {t("workflow.reload")}
               </button>
@@ -411,7 +412,7 @@ export function WorkflowSettings({
           ) : null}
           {validationError ? (
             <p
-              className="flex items-center gap-1.5 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-2 text-[11px] leading-[1.45] text-(--chip-red)"
+              className="flex items-center gap-1.5 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-2 text-ui-body leading-[1.45] text-(--chip-red)"
               data-testid={`${testIdPrefix}-error`}
               role="alert"
             >
@@ -502,7 +503,7 @@ export function WorkflowSettings({
           role="alert"
           tabIndex={-1}
           data-testid={`${testIdPrefix}-save-error`}
-          className="flex flex-wrap items-center justify-between gap-2 border-t border-danger/30 bg-danger/10 px-5 py-2 text-[11px] leading-[1.45] text-(--chip-red) focus:outline-none max-md:px-3.5"
+          className="flex flex-wrap items-center justify-between gap-2 border-t border-danger/30 bg-danger/10 px-5 py-2 text-ui-label leading-[1.45] text-(--chip-red) focus:outline-none max-md:px-3.5"
         >
           <span className="flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -513,15 +514,15 @@ export function WorkflowSettings({
             onClick={() => void save()}
             disabled={saving}
             data-testid={`${testIdPrefix}-retry`}
-            className="rounded border border-danger/40 px-2 py-0.5 text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="rounded border border-danger/40 px-2 py-1 text-ui-label text-(--chip-red) hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             {t("workflow.retry")}
           </button>
         </div>
       ) : null}
 
-      <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] pb-[max(11px,env(safe-area-inset-bottom))] max-md:flex-col max-md:items-stretch max-md:gap-2 max-md:px-3.5 max-md:pt-2.5">
-        <div className="flex min-w-0 items-center gap-[7px] text-[11px] text-muted-foreground max-md:w-full">
+      <footer className="flex shrink-0 items-center justify-between gap-3.5 border-t border-border/75 bg-[color-mix(in_oklab,var(--surface)_82%,var(--background))] px-5 py-[11px] pb-[max(11px,env(safe-area-inset-bottom))] max-lg:flex-col max-lg:items-stretch max-lg:gap-2 max-lg:px-3.5 max-lg:pt-2.5">
+        <div className="flex min-w-0 items-center gap-[7px] text-ui-label text-muted-foreground max-lg:w-full max-md:flex-wrap">
           <span
             aria-hidden
             className={cn(
@@ -537,22 +538,22 @@ export function WorkflowSettings({
           <span
             aria-live="polite"
             data-testid={`${testIdPrefix}-dirty`}
-            className="truncate"
+            className="shrink-0"
           >
             {statusText}
           </span>
-          <span className="truncate border-l border-border pl-3 text-muted-foreground max-md:hidden">
+          <span className="min-w-0 border-l border-border pl-3 wrap-break-word text-muted-foreground max-md:block max-md:w-full max-md:border-l-0 max-md:pl-0 max-md:pt-1">
             {statusHint}
           </span>
         </div>
-        <div className="flex flex-none items-center gap-1.5 max-md:w-full max-md:justify-end">
+        <div className="flex flex-none items-center gap-1.5 max-lg:w-full max-lg:justify-end">
           {onCancel ? (
             <button
               type="button"
               onClick={requestCancel}
               disabled={saving}
               data-testid={`${testIdPrefix}-cancel`}
-              className="inline-flex h-8 items-center justify-center rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none"
+              className="inline-flex h-8 items-center justify-center rounded-md px-3 text-ui-body font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none max-lg:min-h-11"
             >
               {t("workflow.cancel")}
             </button>
@@ -562,7 +563,7 @@ export function WorkflowSettings({
             onClick={revert}
             disabled={!dirty || saving}
             data-testid={`${testIdPrefix}-revert`}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+            className="inline-flex h-8 items-center justify-center rounded-md border border-transparent px-3 text-ui-body font-medium text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-lg:min-h-11"
           >
             {t("workflow.revert")}
           </button>
@@ -571,7 +572,7 @@ export function WorkflowSettings({
             onClick={() => void save()}
             disabled={!canEdit || saving || !dirty || validationError !== null}
             data-testid={`${testIdPrefix}-save`}
-            className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-action-primary px-3 text-ui-body font-semibold text-primary-foreground shadow-[inset_0_1px_rgba(255,255,255,0.16)] transition-colors hover:bg-[color-mix(in_oklab,var(--action-primary)_88%,black)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none max-lg:min-h-11"
           >
             {saving ? t("workflow.saving") : t("workflow.saveShort")}
           </button>

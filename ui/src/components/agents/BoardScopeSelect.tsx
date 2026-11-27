@@ -84,8 +84,8 @@ export function BoardScopeSelect({
           className={cn(
             "inline-flex max-w-full min-w-0 items-center justify-between gap-1.5 rounded-[6px] text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             variant === "header"
-              ? "h-[30px] border border-transparent px-2 font-agent-surface text-[13px] font-semibold leading-[1.2] hover:border-[color:var(--border-soft)] hover:bg-hover max-md:min-h-11"
-              : "min-h-11 gap-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,transparent)] px-2 text-[11px] text-muted-foreground hover:bg-hover hover:text-foreground md:h-7 md:min-h-7",
+              ? "h-[30px] border border-transparent px-2 font-agent-surface text-ui-body font-semibold leading-[1.2] hover:border-[color:var(--border-soft)] hover:bg-hover max-md:min-h-11"
+              : "min-h-11 gap-[5px] border border-border bg-[color-mix(in_oklab,var(--surface)_58%,transparent)] px-2 text-ui-label text-muted-foreground hover:bg-hover hover:text-foreground md:h-7 md:min-h-7",
             variant === "filter" &&
               value !== "all" &&
               "border-[color:color-mix(in_oklab,var(--primary)_36%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] text-foreground",
@@ -136,7 +136,7 @@ export function BoardScopeSelect({
                 data-testid={`${testId}-option-${option.value}`}
                 onClick={() => combobox.choose(index)}
                 className={cn(
-                  "flex min-h-9 w-full items-center gap-2 rounded-[5px] border border-transparent px-2.5 py-1.5 text-left text-[12px] leading-[1.3] text-foreground hover:bg-hover max-md:min-h-11",
+                  "flex min-h-9 w-full items-center gap-2 rounded-[5px] border border-transparent px-2.5 py-1.5 text-left text-ui-body leading-[1.3] text-foreground hover:bg-hover max-md:min-h-11",
                   active && "bg-hover",
                   selected &&
                     "border-primary/30 bg-primary/10 hover:bg-primary/10",
@@ -159,7 +159,7 @@ export function BoardScopeSelect({
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 {typeof count === "number" && count > 0 ? (
                   <span
-                    className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+                    className="shrink-0 text-ui-micro tabular-nums text-muted-foreground"
                     data-state={stale ? "stale" : "fresh"}
                     title={stale ? t("agents.pending.stale") : undefined}
                   >
@@ -176,7 +176,7 @@ export function BoardScopeSelect({
             );
           })}
         </div>
-        <p className="mt-1 border-t border-border px-2.5 pb-1 pt-2 text-[11px] leading-5 text-muted-foreground">
+        <p className="mt-1 border-t border-border px-2.5 pb-1 pt-2 text-ui-label leading-5 text-muted-foreground">
           {t("agents.filters.boardScopeNote")}
         </p>
       </PopoverContent>

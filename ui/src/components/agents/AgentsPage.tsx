@@ -89,11 +89,11 @@ const SECTIONS = ["attention", "sessions", "runs"] as const;
 
 /** Toolbar select trigger, matching the prototype `.select` control. */
 const TOOLBAR_SELECT_CLASS =
-  "min-h-11 w-auto min-w-0 gap-[6px] rounded-[5px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-[11px] max-md:gap-1 max-md:px-[5px] md:h-7 md:min-h-7";
+  "min-h-11 w-auto min-w-0 gap-[6px] rounded-[5px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-ui-label max-lg:gap-1 max-lg:px-[5px] lg:h-7 lg:min-h-7";
 
-/** Prototype `.btn-sm`: 28 px high, 11 px / 650, 6 px radius. */
+/** Prototype `.btn-sm`: 28 px high, 13 px / 650, 6 px radius. */
 const SMALL_BUTTON_CLASS =
-  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-[11px] leading-none font-[650]";
+  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-ui-label leading-none font-[650] max-lg:h-11 max-lg:min-h-11";
 const SMALL_OUTLINE_CLASS = `${SMALL_BUTTON_CLASS} !bg-[color-mix(in_oklab,var(--surface)_65%,transparent)]`;
 const SMALL_PRIMARY_CLASS = `${SMALL_BUTTON_CLASS} !bg-[var(--agent-primary-strong)] hover:!bg-[color-mix(in_oklab,var(--agent-primary-strong)_88%,#fff)]`;
 
@@ -968,7 +968,7 @@ export function AgentsPage() {
   if (!isApiEnabled())
     return (
       <main className="flex flex-1 items-center justify-center p-6">
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-center text-ui-body text-muted-foreground">
           {t("agents.unavailable")}
         </p>
       </main>
@@ -977,15 +977,15 @@ export function AgentsPage() {
   return (
     <main
       ref={pageRef}
-      className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface text-[13px] leading-[1.45] md:flex-row md:overflow-hidden"
+      className="relative flex min-h-0 w-full flex-1 flex-col overflow-y-auto font-agent-surface text-ui-body leading-[1.45] md:flex-row md:overflow-hidden"
       data-testid="agents-page"
     >
       <aside className="flex shrink-0 flex-col border-b border-border bg-[color-mix(in_oklab,var(--surface)_58%,var(--background))] px-[10px] pt-4 pb-3 md:w-[198px] md:border-r md:border-b-0 xl:w-[222px] max-md:px-[9px] max-md:pt-1.5 max-md:pb-1.5">
         <div className="hidden px-1.5 pb-3 md:block">
-          <h1 className="font-agent-display text-[17px] font-bold leading-[1.15] tracking-[-0.025em]">
+          <h1 className="font-agent-display text-ui-title font-bold leading-[1.15] tracking-[-0.025em]">
             {t("agents.title")}
           </h1>
-          <p className="mt-[3px] max-w-[19ch] text-[11px] leading-[1.45] text-muted-foreground">
+          <p className="mt-[3px] max-w-[19ch] text-ui-label leading-[1.45] text-muted-foreground">
             {t("agents.shell.tagline")}
           </p>
         </div>
@@ -1027,7 +1027,7 @@ export function AgentsPage() {
                 onClick={() => setSection(item)}
                 data-testid={`agents-section-${item}`}
                 className={cn(
-                  "flex min-h-11 items-center gap-2 rounded-[6px] border border-transparent px-2 text-left font-agent-surface text-[12px] font-[550] leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[34px] md:flex-none max-md:min-h-11 max-md:flex-none max-md:gap-2 max-md:rounded-[5px] max-md:text-[11px]",
+                  "flex min-h-11 items-center gap-2 rounded-[6px] border border-transparent px-2 text-left font-agent-surface text-ui-body font-[550] leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground md:min-h-[36px] md:flex-none max-md:min-h-11 max-md:flex-none max-md:gap-2 max-md:rounded-[5px]",
                   section === item &&
                     "border-border bg-surface text-foreground shadow-[inset_2px_0_0_var(--primary)] hover:bg-surface",
                 )}
@@ -1039,7 +1039,7 @@ export function AgentsPage() {
                 {t(`agents.shell.${item}`)}
                 {state.loading ? (
                   <span
-                    className="ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-hover px-1 text-[11px] font-[650] tabular-nums text-muted-foreground"
+                    className="ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-hover px-1 text-ui-micro font-[650] tabular-nums text-muted-foreground"
                     data-state="loading"
                     title={t("common.loading")}
                     aria-hidden
@@ -1062,7 +1062,7 @@ export function AgentsPage() {
                         : undefined
                     }
                     className={cn(
-                      "ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded px-1 text-[11px] font-[650] tabular-nums",
+                      "ml-auto inline-grid h-[18px] min-w-[18px] place-items-center rounded px-1 text-ui-micro font-[650] tabular-nums",
                       item === "attention"
                         ? "border border-warning/26 bg-warning/12 text-[color:var(--warning)]"
                         : section === item
@@ -1078,7 +1078,7 @@ export function AgentsPage() {
           })}
         </nav>
         <div className="mt-[18px] hidden md:block">
-          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-[11px] font-[650] uppercase tracking-[0.07em] text-muted-foreground">
+          <p className="flex items-center justify-between px-2 pb-[5px] font-agent-surface text-ui-micro font-[650] uppercase tracking-[0.07em] text-muted-foreground">
             <span>{t("agents.shell.boards")}</span>
             <span data-testid="agents-boards-scope">
               {hasAdminBoard
@@ -1103,7 +1103,7 @@ export function AgentsPage() {
                   }
                   aria-pressed={filter.board === board.value}
                   className={cn(
-                    "flex min-h-8 w-full items-center gap-[7px] rounded-[6px] border border-transparent px-2 text-left font-agent-surface text-[11.5px] font-normal leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground",
+                    "flex min-h-8 w-full items-center gap-[7px] rounded-[6px] border border-transparent px-2 text-left font-agent-surface text-ui-label font-normal leading-[1.45] text-muted-foreground hover:bg-hover hover:text-foreground",
                     filter.board === board.value &&
                       "border-[color:color-mix(in_oklab,var(--border)_72%,transparent)] bg-[color-mix(in_oklab,var(--hover)_64%,transparent)] text-foreground",
                   )}
@@ -1133,7 +1133,7 @@ export function AgentsPage() {
                   ) : null}
                   {count !== null && count > 0 ? (
                     <span
-                      className="inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-[11px] font-[650] tabular-nums text-[color:var(--warning)]"
+                      className="inline-grid h-[18px] min-w-[18px] place-items-center rounded bg-[color-mix(in_oklab,var(--warning)_12%,transparent)] px-1 text-ui-micro font-[650] tabular-nums text-[color:var(--warning)]"
                       data-state={pending.stale ? "stale" : "fresh"}
                       title={
                         pending.stale ? t("agents.pending.stale") : undefined
@@ -1147,12 +1147,12 @@ export function AgentsPage() {
             })}
           </div>
         </div>
-        <div className="mt-auto hidden border-t border-border px-2 pt-3 text-[11px] leading-[1.5] text-muted-foreground md:block">
+        <div className="mt-auto hidden border-t border-border px-2 pt-3 text-ui-label leading-[1.5] text-muted-foreground md:block">
           <p>{t("agents.shell.tokenHint")}</p>
           <button
             type="button"
             onClick={openTokens}
-            className="mt-2 inline-flex min-h-9 items-center gap-[5px] text-[11px] font-semibold text-foreground hover:underline"
+            className="mt-2 inline-flex min-h-9 items-center gap-[5px] text-ui-label font-semibold text-foreground hover:underline"
           >
             {t("agents.shell.manageTokens")}
             <ArrowUpRight className="h-[11px] w-[11px]" aria-hidden />
@@ -1166,12 +1166,12 @@ export function AgentsPage() {
         className="flex min-h-0 min-w-0 flex-1 flex-col"
       >
         <div className="mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col px-[14px] pb-6 pt-4 min-[1181px]:px-[18px] min-[1600px]:max-w-[1200px] max-md:px-[10px] max-md:pt-[11px] max-md:pb-[18px]">
-          <header className="mb-3 flex items-start justify-between gap-3 max-md:mb-[9px] max-md:flex-wrap">
-            <div className="min-w-0 max-md:min-w-[148px] max-md:flex-1 max-md:basis-[148px] md:max-w-[390px]">
-              <h2 className="font-agent-display text-[18px] font-bold leading-[1.2] tracking-[-0.025em] max-md:text-[17px]">
+          <header className="mb-3 flex items-start justify-between gap-3 max-lg:mb-[9px] max-lg:flex-wrap">
+            <div className="min-w-0 max-lg:min-w-[148px] max-lg:flex-1 max-lg:basis-full lg:max-w-[390px]">
+              <h2 className="font-agent-display text-ui-title font-bold leading-[1.2] tracking-[-0.025em]">
                 {t(`agents.shell.${section}`)}
               </h2>
-              <p className="mt-[3px] text-[11.5px] leading-[1.45] text-muted-foreground max-md:text-[11px]">
+              <p className="mt-[3px] text-ui-body leading-[1.45] text-muted-foreground">
                 {section === "attention"
                   ? t("agents.shell.tagline")
                   : section === "sessions"
@@ -1179,9 +1179,9 @@ export function AgentsPage() {
                     : t("agents.shell.runsDescription")}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-[7px] max-md:ml-auto max-md:flex-wrap max-md:justify-end">
+            <div className="flex shrink-0 items-center gap-[7px] max-lg:ml-auto max-lg:flex-wrap max-lg:justify-end">
               <span
-                className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:inline-flex"
+                className="hidden items-center gap-1.5 text-ui-meta text-muted-foreground sm:inline-flex"
                 data-testid="agents-updated"
                 style={unknownBoard ? { visibility: "hidden" } : undefined}
                 data-state={
@@ -1219,7 +1219,7 @@ export function AgentsPage() {
                   state.refreshing || (section === "runs" && runs.loading)
                 }
                 data-testid="agents-refresh"
-                className="h-7 min-h-0 gap-[6px] rounded-[6px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-[11px] leading-none font-[650] max-md:h-11 max-md:min-h-11"
+                className="h-7 min-h-0 gap-[6px] rounded-[6px] border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[9px] text-ui-label leading-none font-[650] max-lg:h-11 max-lg:min-h-11"
               >
                 <RefreshCw
                   className={cn(
@@ -1239,7 +1239,7 @@ export function AgentsPage() {
                   size="sm"
                   onClick={openTokens}
                   data-testid="agents-manage-tokens"
-                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-[11px] leading-none font-[650] max-md:h-11 max-md:min-h-11"
+                  className="h-7 min-h-0 rounded-[6px] px-[9px] text-ui-label leading-none font-[650] max-lg:h-11 max-lg:min-h-11"
                 >
                   {t("agents.shell.manageTokens")}
                 </Button>
@@ -1249,7 +1249,7 @@ export function AgentsPage() {
                   type="button"
                   onClick={clearRunFilters}
                   data-testid="agents-runs-clear-all"
-                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:min-h-11"
                 >
                   {t("agents.runs.clearAll")}
                 </button>
@@ -1275,7 +1275,7 @@ export function AgentsPage() {
                     }
                     aria-label={t("agents.filters.search")}
                     placeholder={t("agents.filters.searchPlaceholder")}
-                    className="min-h-11 rounded-[6px] border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] py-0 pr-[9px] pl-[27px] text-[11.5px] shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 md:h-[30px] md:min-h-[30px]"
+                    className="min-h-11 rounded-[6px] border-border bg-[color-mix(in_oklab,var(--background)_38%,var(--surface))] py-0 pr-[9px] pl-[27px] text-ui-body shadow-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15 lg:h-[30px] lg:min-h-[30px]"
                     data-testid="agents-search"
                   />
                 </div>
@@ -1370,7 +1370,7 @@ export function AgentsPage() {
                 />
                 {!missingScope ? (
                   <span
-                    className="ml-auto text-[11px] text-muted-foreground"
+                    className="ml-auto text-ui-meta text-muted-foreground"
                     data-testid="agents-runs-total"
                     data-shown={visibleRunRows.length}
                     data-total={runs.total}
@@ -1394,7 +1394,7 @@ export function AgentsPage() {
                   type="button"
                   onClick={clearRunFilters}
                   data-testid="agents-toolbar-clear"
-                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                  className="inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:min-h-11"
                 >
                   {t("agents.clearFilters")}
                 </button>
@@ -1404,7 +1404,7 @@ export function AgentsPage() {
                 type="button"
                 onClick={clearFilters}
                 data-testid="agents-toolbar-clear"
-                className="ml-auto inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-[11px] leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-md:h-11 max-md:min-h-11"
+                className="ml-auto inline-flex h-7 min-h-0 items-center rounded-[6px] px-[9px] text-ui-label leading-none font-[650] text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:min-h-11"
               >
                 {t("agents.clearFilters")}
               </button>
@@ -1416,7 +1416,7 @@ export function AgentsPage() {
               {filtered.length > 0 ? (
                 <div
                   data-testid="agents-sessions-heartbeat-note"
-                  className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6 px-2.5 py-2 text-[11px] leading-[1.45]"
+                  className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/6 px-2.5 py-2 text-ui-body leading-[1.45]"
                 >
                   <Info
                     className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-primary)]"
@@ -1434,7 +1434,7 @@ export function AgentsPage() {
                 className="my-1 mb-2 flex flex-wrap items-center gap-2"
                 data-testid="agents-session-group-toggle"
               >
-                <span className="text-[11px] font-[650] tracking-[0.06em] text-muted-foreground uppercase">
+                <span className="text-ui-micro font-[650] tracking-[0.06em] text-muted-foreground uppercase">
                   {t("agents.groups.groupBy")}
                 </span>
                 <div
@@ -1448,7 +1448,7 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "board"}
                     onClick={() => setGroupMode("board")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-[10.5px] font-[600] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-ui-meta font-[600] text-muted-foreground md:h-7",
                       groupMode === "board" &&
                         "bg-[var(--surface)] text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_20%,transparent)]",
                     )}
@@ -1462,7 +1462,7 @@ export function AgentsPage() {
                     aria-pressed={groupMode === "token"}
                     onClick={() => setGroupMode("token")}
                     className={cn(
-                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-[10.5px] font-[600] text-muted-foreground md:h-[25px]",
+                      "inline-flex h-11 items-center gap-1 rounded-[6px] px-[7px] text-ui-meta font-[600] text-muted-foreground md:h-7",
                       groupMode === "token" &&
                         "bg-[var(--surface)] text-foreground shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_20%,transparent)]",
                     )}
@@ -1471,7 +1471,7 @@ export function AgentsPage() {
                     {t("agents.groups.token")}
                   </button>
                 </div>
-                <span className="ml-auto text-[11px] text-muted-foreground">
+                <span className="ml-auto text-ui-meta text-muted-foreground">
                   {state.loading
                     ? "—"
                     : t("agents.groups.summary", {
@@ -1487,7 +1487,7 @@ export function AgentsPage() {
             !(section === "runs" && runs.error) && (
               <div
                 className={cn(
-                  "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
+                  "mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border px-2.5 py-2 text-ui-body leading-[1.45]",
                   state.rows.length === 0
                     ? "border-danger/40 bg-danger/10 text-[color:var(--agent-tone-danger)]"
                     : "border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] text-foreground",
@@ -1538,7 +1538,7 @@ export function AgentsPage() {
                 <button
                   type="button"
                   onClick={state.reload}
-                  className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
+                  className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-ui-label font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
                   data-testid="agents-retry"
                 >
                   <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
@@ -1550,7 +1550,7 @@ export function AgentsPage() {
           (approvalQueue.error || pending.error) &&
           !(state.error && state.rows.length === 0) ? (
             <div
-              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[color:var(--agent-tone-warning)]"
+              className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-ui-body text-[color:var(--agent-tone-warning)]"
               data-testid="agents-approvals-error"
               role="alert"
             >
@@ -1566,7 +1566,7 @@ export function AgentsPage() {
           ) : null}
           {showRunsPartialError ? (
             <div
-              className="mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-[11px] leading-[1.45] text-foreground"
+              className="mb-2.5 flex flex-wrap items-start gap-2 rounded-[7px] border border-warning/35 bg-[color-mix(in_oklab,var(--warning)_6%,transparent)] px-2.5 py-2 text-ui-body leading-[1.45] text-foreground"
               role="alert"
               data-testid="agents-runs-stale"
             >
@@ -1596,7 +1596,7 @@ export function AgentsPage() {
                   runs.reload();
                   runCount.reload();
                 }}
-                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-[11px] font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
+                className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-2.5 text-ui-label font-[650] text-foreground hover:bg-hover md:h-7 md:min-h-7"
                 data-testid="agents-runs-retry"
               >
                 <RefreshCw className="h-[13px] w-[13px]" aria-hidden />
@@ -1728,7 +1728,7 @@ export function AgentsPage() {
                     }
                     conflicts={displayedConflicts}
                   />
-                  <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-[11px] text-muted-foreground">
+                  <div className="flex items-center justify-between gap-2 px-2 py-2.5 text-ui-meta text-muted-foreground">
                     <span data-testid="agents-runs-footer-total">
                       {t("agents.runs.footerShown", {
                         shown: visibleRunRows.length,
@@ -2023,7 +2023,7 @@ const COUNT_CHIP_TONE: Record<CountChipTone, string> = {
     "border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] text-muted-foreground",
 };
 
-/** Prototype `.chip`: 20 px high, 4 px radius; the app keeps the 11 px floor. */
+/** Prototype `.chip`: 20 px high, 4 px radius; 11 px is the badge floor. */
 function CountChip({
   tone,
   dot = false,
@@ -2039,7 +2039,7 @@ function CountChip({
     <span
       data-testid={testId}
       className={cn(
-        "inline-flex h-[21px] items-center gap-1 rounded-[4px] border px-1.5 text-[11px] leading-none font-semibold whitespace-nowrap",
+        "inline-flex h-[21px] items-center gap-1 rounded-[4px] border px-1.5 text-ui-micro leading-none font-semibold whitespace-nowrap",
         COUNT_CHIP_TONE[tone],
       )}
     >
@@ -2083,11 +2083,11 @@ function AttentionStaleSessions({
       <div className="mb-[7px] flex flex-wrap items-center gap-2">
         <h3
           id="agents-stale-heading"
-          className="m-0 text-[12px] font-[650] leading-[1.45]"
+          className="m-0 text-ui-heading font-[650] leading-[1.45]"
         >
           {t("agents.shell.needsNudge")}
         </h3>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-ui-meta text-muted-foreground">
           {t("agents.shell.heartbeatHint")}
         </span>
       </div>
@@ -2114,10 +2114,10 @@ function AttentionStaleSessions({
               <Clock className="h-[15px] w-[15px]" aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
-              <b className="block text-[11.5px] leading-[1.35] font-[650] break-words">
+              <b className="block text-ui-body leading-[1.35] font-[650] break-words">
                 {agentLabel(row)} · {row.name ?? shortId(row.id)}
               </b>
-              <span className="mt-px flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] leading-[1.4] text-muted-foreground">
+              <span className="mt-px flex min-w-0 flex-wrap items-center gap-x-1 text-ui-meta leading-[1.4] text-muted-foreground">
                 <span className="truncate">{row.boardTitle}</span>
                 <span aria-hidden>·</span>
                 <HeartbeatText session={row} now={now} withIcon={false} muted />
@@ -2129,7 +2129,7 @@ function AttentionStaleSessions({
                 </span>
               </span>
             </span>
-            <span className="inline-flex shrink-0 items-center gap-[3px] text-[11px] font-semibold text-foreground">
+            <span className="inline-flex shrink-0 items-center gap-[3px] text-ui-label font-semibold text-foreground">
               {t("agents.shell.inspect")}
               <ChevronRight className="h-[11px] w-[11px]" aria-hidden />
             </span>
@@ -2188,7 +2188,7 @@ function AttentionLiveSessions({
       <div className="mb-[7px] flex flex-wrap items-center gap-2">
         <h3
           id="agents-live-heading"
-          className="m-0 text-[12px] font-[650] leading-[1.45]"
+          className="m-0 text-ui-heading font-[650] leading-[1.45]"
         >
           {t("agents.shell.liveSessions")}
         </h3>
@@ -2219,7 +2219,7 @@ function AttentionLiveSessions({
           type="button"
           onClick={onViewAll}
           data-testid="agents-live-view-all"
-          className="ml-auto inline-flex max-xl:min-h-11 items-center gap-[3px] text-[11px] text-muted-foreground hover:text-foreground"
+          className="ml-auto inline-flex max-xl:min-h-11 items-center gap-[3px] text-ui-label text-muted-foreground hover:text-foreground"
         >
           {t("agents.shell.viewAll")}
           <ChevronRight className="h-[11px] w-[11px]" aria-hidden />
@@ -2273,7 +2273,7 @@ function MemberAttentionBanner({ allBoards }: { allBoards: boolean }) {
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10 text-[color:var(--agent-tone-primary)]">
         <Info className="h-[18px] w-[18px]" aria-hidden />
       </span>
-      <p className="min-w-0 pt-0.5 text-[11.5px] leading-[1.55] text-muted-foreground">
+      <p className="min-w-0 pt-0.5 text-ui-body leading-[1.55] text-muted-foreground">
         <span className="font-semibold text-foreground">
           {t(
             allBoards
@@ -2298,8 +2298,8 @@ function AllClear({ onViewSessions }: { onViewSessions: () => void }) {
         <ShieldCheck className="h-[18px] w-[18px]" aria-hidden />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[11.5px] font-[650]">{t("agents.shell.allClear")}</p>
-        <p className="text-[11px] leading-[1.45] text-muted-foreground">
+        <p className="text-ui-body font-[650]">{t("agents.shell.allClear")}</p>
+        <p className="text-ui-label leading-[1.45] text-muted-foreground">
           {t("agents.shell.allClearBody")}
         </p>
       </div>
@@ -2521,10 +2521,10 @@ function GenericDetailEmpty() {
     <>
       <header className="flex shrink-0 items-start gap-2 border-b border-border px-3.5 pt-3 pb-2">
         <div className="min-w-0">
-          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-[3px] text-ui-micro font-[650] tracking-[0.07em] text-muted-foreground uppercase">
             {t("agents.shell.detailEyebrow")}
           </p>
-          <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em]">
+          <h2 className="m-0 text-ui-heading font-[650] leading-[1.35] tracking-[-0.01em]">
             {t("agents.shell.nothingSelected")}
           </h2>
         </div>
@@ -2533,10 +2533,10 @@ function GenericDetailEmpty() {
         <span className="mb-0.5 grid h-[34px] w-[34px] place-items-center rounded-lg border border-border bg-surface text-muted-foreground">
           <Inbox className="h-[18px] w-[18px]" aria-hidden />
         </span>
-        <p className="m-0 text-[12px] leading-[1.45] font-[650] text-foreground">
+        <p className="m-0 text-ui-body leading-[1.45] font-[650] text-foreground">
           {t("agents.shell.selectItem")}
         </p>
-        <p className="m-0 max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+        <p className="m-0 max-w-[30ch] text-ui-label leading-[1.5] text-muted-foreground">
           {t("agents.shell.selectItemBody")}
         </p>
       </div>
@@ -2565,10 +2565,10 @@ function EmptyState({
       <span className="mb-0.5 grid h-[38px] w-[38px] place-items-center rounded-[9px] border border-border bg-surface text-muted-foreground">
         {icon ?? <Bot className="h-[18px] w-[18px]" aria-hidden />}
       </span>
-      <p className="text-[13px] leading-[1.45] font-[650] text-foreground">
+      <p className="text-ui-heading leading-[1.45] font-[650] text-foreground">
         {title}
       </p>
-      <p className="max-w-[42ch] text-[11.5px] leading-[1.55] text-muted-foreground">
+      <p className="max-w-[42ch] text-ui-body leading-[1.55] text-muted-foreground">
         {body}
       </p>
       {action ? (

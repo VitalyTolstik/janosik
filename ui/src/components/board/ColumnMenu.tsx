@@ -72,7 +72,7 @@ export function ColumnMenu({
         <button
           type="button"
           aria-label={t("column.options")}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
           onPointerDown={(e) => e.stopPropagation()}
         >
           <EllipsisVertical className="h-4 w-4" />
@@ -109,7 +109,7 @@ export function ColumnMenu({
           <Gauge className="h-4 w-4" />
           {t("column.wipLimit")}
           {wipLimit !== undefined && (
-            <span className="ml-auto text-xs text-muted-foreground">
+            <span className="ml-auto text-ui-label text-muted-foreground">
               {wipLimit}
             </span>
           )}
@@ -119,10 +119,7 @@ export function ColumnMenu({
           {t("column.archiveCards")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={onDelete}
-          className="text-destructive focus:text-destructive"
-        >
+        <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
           {t("column.delete")}
         </DropdownMenuItem>

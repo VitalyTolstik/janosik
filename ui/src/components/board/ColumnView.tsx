@@ -350,7 +350,7 @@ function ColumnViewBody({
               className="janosik-column-accent-dotmark h-[7px] w-[7px] shrink-0 rounded-full"
             />
             <h2
-              className="janosik-column-accent-heading truncate text-sm font-semibold text-foreground"
+              className="janosik-column-accent-heading truncate text-ui-body font-semibold text-foreground"
               onDoubleClick={readOnly ? undefined : openRename}
               {...(readOnly ? {} : doubleTapHandlers)}
             >
@@ -366,7 +366,7 @@ function ColumnViewBody({
                   : undefined
               }
               className={cn(
-                "flex h-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-medium",
+                "flex h-5 shrink-0 items-center justify-center rounded-full px-1.5 text-ui-micro font-medium",
                 overWipLimit
                   ? "bg-danger/15 text-(--chip-red)"
                   : atWipLimit
@@ -415,7 +415,7 @@ function ColumnViewBody({
         {workflowBlockedReason ? (
           <p
             data-testid={`column-workflow-blocked-${column.id}`}
-            className="mx-2 mb-1 flex items-start gap-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-[10px] leading-snug text-(--chip-red)"
+            className="mx-2 mb-1 flex items-start gap-1 rounded-md border border-danger/30 bg-danger/10 px-2 py-1 text-ui-label leading-snug text-(--chip-red)"
           >
             <Lock className="mt-px h-3 w-3 shrink-0" aria-hidden />
             <span className="min-w-0">{workflowBlockedReason}</span>
@@ -448,7 +448,7 @@ function ColumnViewBody({
               </div>
             ) : (
               <ul className="flex flex-col">
-                <li className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">
+                <li className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border text-ui-body text-muted-foreground">
                   {isFiltered && filterPending && column.cardIds.length > 0
                     ? t("filter.searchingServer")
                     : isFiltered && column.cardIds.length > 0

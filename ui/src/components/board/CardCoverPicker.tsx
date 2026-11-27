@@ -104,12 +104,17 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium text-muted-foreground">
+      <span className="text-ui-label font-medium text-muted-foreground">
         {t("card.coverLabel")}
       </span>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" data-testid="cover-trigger">
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="cover-trigger"
+            className="text-ui-label"
+          >
             {cover ? (
               <span
                 aria-hidden
@@ -124,7 +129,7 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
         </PopoverTrigger>
         <PopoverContent align="end" className="w-64 space-y-3">
           <div className="space-y-1.5">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
               {t("card.coverColors")}
             </div>
             <div
@@ -146,7 +151,7 @@ export function CardCoverPicker({ cardId, cover }: CardCoverPickerProps) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
               {t("card.coverGradients")}
             </div>
             <div

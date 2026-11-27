@@ -163,7 +163,7 @@ export function SecurityPage() {
       />
 
       <p
-        className="rounded-lg border border-border bg-hover/60 px-3 py-2 text-xs text-muted-foreground"
+        className="rounded-lg border border-border bg-hover/60 px-3 py-2 text-ui-label text-muted-foreground"
         data-testid="admin-security-scope"
       >
         {t("admin.security.scope")}
@@ -171,7 +171,9 @@ export function SecurityPage() {
 
       <Panel className="p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">{t("admin.security.totp")}</h2>
+          <h2 className="text-ui-heading font-medium">
+            {t("admin.security.totp")}
+          </h2>
           <Badge
             variant={security.totpEnabled ? "success" : "neutral"}
             data-testid="admin-totp-status"
@@ -187,16 +189,16 @@ export function SecurityPage() {
             data-testid="admin-totp-setup"
             aria-live="polite"
           >
-            <p className="text-xs text-muted-foreground">
+            <p className="text-ui-label text-muted-foreground">
               {t("admin.security.totp.hint")}
             </p>
             <code
-              className="block break-all rounded-md bg-hover p-2 font-mono text-xs"
+              className="block break-all rounded-md bg-hover p-2 font-mono text-ui-label"
               data-testid="admin-totp-secret"
             >
               {setup.secret}
             </code>
-            <label className="flex flex-col gap-1 text-xs">
+            <label className="flex flex-col gap-1 text-ui-label">
               <span className="text-muted-foreground">
                 {t("admin.security.totp.code")}
               </span>
@@ -215,6 +217,7 @@ export function SecurityPage() {
               size="sm"
               disabled={busy || code.length !== 6}
               data-testid="admin-totp-confirm"
+              className="max-lg:min-h-11"
               onClick={() => void confirm()}
             >
               {t("admin.security.totp.confirm")}
@@ -222,7 +225,7 @@ export function SecurityPage() {
           </div>
         ) : security.totpEnabled ? (
           <div className="mt-3 flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1 text-xs">
+            <label className="flex flex-col gap-1 text-ui-label">
               <span className="text-muted-foreground">
                 {t("admin.security.totp.code")}
               </span>
@@ -236,7 +239,7 @@ export function SecurityPage() {
                 }
               />
             </label>
-            <label className="flex flex-col gap-1 text-xs">
+            <label className="flex flex-col gap-1 text-ui-label">
               <span className="text-muted-foreground">
                 {t("admin.security.totp.password")}
               </span>
@@ -253,6 +256,7 @@ export function SecurityPage() {
               size="sm"
               disabled={busy || (code.length !== 6 && password.length === 0)}
               data-testid="admin-totp-replace"
+              className="max-lg:min-h-11"
               onClick={() =>
                 void beginSetup({
                   ...(code.length === 6 ? { totpCode: code } : {}),
@@ -267,6 +271,7 @@ export function SecurityPage() {
               size="sm"
               disabled={busy || code.length !== 6}
               data-testid="admin-totp-disable"
+              className="max-lg:min-h-11"
               onClick={() => void disable()}
             >
               {t("admin.security.totp.disable")}
@@ -276,6 +281,7 @@ export function SecurityPage() {
           <div className="mt-3">
             <Button
               size="sm"
+              className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
               data-testid="admin-totp-enable"
               disabled={busy}
               onClick={() => void beginSetup()}
@@ -288,12 +294,14 @@ export function SecurityPage() {
 
       <Panel className="p-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">{t("admin.security.ip")}</h2>
+          <h2 className="text-ui-heading font-medium">
+            {t("admin.security.ip")}
+          </h2>
           {!isOwner ? (
             <Badge variant="neutral">{t("admin.security.ip.readonly")}</Badge>
           ) : null}
         </div>
-        <p className="mb-2 text-xs text-muted-foreground">
+        <p className="mb-2 text-ui-label text-muted-foreground">
           {t("admin.security.ip.hint")}
         </p>
         <Input
@@ -309,7 +317,7 @@ export function SecurityPage() {
         </div>
         {!isOwner ? (
           <p
-            className="mt-2 text-[11px] text-muted-foreground"
+            className="mt-2 text-ui-meta text-muted-foreground"
             data-testid="admin-ip-readonly"
           >
             {t("admin.security.ip.ownerOnly")}
@@ -318,6 +326,7 @@ export function SecurityPage() {
           <div className="mt-3 flex justify-end">
             <Button
               size="sm"
+              className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
               disabled={busy}
               data-testid="admin-ip-save"
               onClick={() => void saveAllowlist()}
@@ -329,45 +338,60 @@ export function SecurityPage() {
       </Panel>
 
       <Panel className="p-4">
-        <h2 className="mb-3 text-sm font-medium">
+        <h2 className="mb-3 text-ui-heading font-medium">
           {t("admin.security.alerts")}
         </h2>
-        <p className="mb-3 text-xs text-muted-foreground">
+        <p className="mb-3 text-ui-label text-muted-foreground">
           {t("admin.security.alert.window")}
         </p>
         {security.alerts.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.security.alerts.empty")}
           </p>
         ) : (
           <div className="space-y-2" data-testid="admin-security-alerts">
             {security.alerts.map((alert) => (
-              <div key={alert.id} className="flex items-center gap-3 text-sm">
-                <Badge
-                  variant={
-                    alert.action === "admin.login_locked" ? "danger" : "warning"
-                  }
-                >
-                  {t(`admin.security.alert.${alert.reason}`)}
-                </Badge>
-                <span className="text-xs">
-                  {t(`admin.security.stage.${alert.stage}`)}
-                </span>
-                <span className="text-xs">
-                  {alert.adminEmail || t("admin.security.alert.noAccount")}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {alert.ip ?? t("admin.security.alert.noIp")}
-                </span>
-                {alert.count > 1 && (
-                  <span className="text-xs">
-                    {t("admin.security.alert.count")}: {alert.count} (
-                    {formatDate(alert.createdAt, lang, hour12)})
+              <div
+                key={alert.id}
+                data-testid="admin-security-alert"
+                className="flex flex-col gap-1 text-ui-body sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Badge
+                    variant={
+                      alert.action === "admin.login_locked"
+                        ? "danger"
+                        : "warning"
+                    }
+                  >
+                    {t(`admin.security.alert.${alert.reason}`)}
+                  </Badge>
+                  <span className="text-ui-label">
+                    {t(`admin.security.stage.${alert.stage}`)}
                   </span>
-                )}
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {formatDate(alert.lastOccurredAt, lang, hour12)}
-                </span>
+                  <span
+                    className="min-w-0 max-w-full truncate text-ui-label"
+                    title={
+                      alert.adminEmail || t("admin.security.alert.noAccount")
+                    }
+                  >
+                    {alert.adminEmail || t("admin.security.alert.noAccount")}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:ml-auto">
+                  <span className="text-ui-label text-muted-foreground">
+                    {alert.ip ?? t("admin.security.alert.noIp")}
+                  </span>
+                  {alert.count > 1 && (
+                    <span className="text-ui-label">
+                      {t("admin.security.alert.count")}: {alert.count} (
+                      {formatDate(alert.createdAt, lang, hour12)})
+                    </span>
+                  )}
+                  <span className="text-ui-label text-muted-foreground max-sm:w-full">
+                    {formatDate(alert.lastOccurredAt, lang, hour12)}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

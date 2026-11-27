@@ -46,7 +46,7 @@ export function SettingsHubPage() {
       {!isOwner ? (
         <div
           data-testid="admin-settings-readonly"
-          className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-border bg-card/60 px-3 py-2 text-[11px] text-muted-foreground"
+          className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-border bg-card/60 px-3 py-2 text-ui-meta text-muted-foreground"
         >
           <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>{t("admin.settings.readonly")}</span>

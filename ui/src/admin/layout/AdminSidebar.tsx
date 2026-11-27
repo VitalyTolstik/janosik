@@ -94,7 +94,7 @@ export function AdminSidebar({
         data-collapsed={collapsed ? "true" : "false"}
         data-mobile-open={mobileOpen ? "true" : "false"}
         aria-label={t("admin.hub.navLabel")}
-        className="admin-sidebar flex shrink-0 flex-col border-r border-border bg-card/40 backdrop-blur-sm"
+        className="admin-sidebar flex shrink-0 flex-col border-r border-border bg-card backdrop-blur-sm"
       >
         <NavLink
           to={routes.admin}
@@ -106,15 +106,15 @@ export function AdminSidebar({
             collapsed ? "justify-center px-2" : "px-4",
           )}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-(--agent-tone-primary)">
             <ShieldCheck className="h-4 w-4" aria-hidden />
           </span>
           {!collapsed ? (
             <div className="min-w-0 admin-hide-rail">
-              <p className="truncate text-[13px] font-semibold tracking-tight text-foreground">
+              <p className="truncate text-ui-label font-semibold tracking-tight text-foreground">
                 Janosik
               </p>
-              <p className="truncate text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="truncate text-ui-micro uppercase tracking-[0.14em] text-muted-foreground">
                 {t("admin.nav.masterBadge")} console
               </p>
             </div>
@@ -122,14 +122,12 @@ export function AdminSidebar({
         </NavLink>
 
         {!collapsed ? (
-          <div className="mx-3 mt-3 flex items-center gap-1.5 rounded-md border border-border/70 bg-background/40 px-2 py-1 text-[10px] text-muted-foreground admin-hide-rail">
+          <div className="mx-3 mt-3 flex items-center gap-1.5 rounded-md border border-border/70 bg-background/40 px-2 py-1 text-ui-micro text-muted-foreground admin-hide-rail">
             <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />
             <span className="truncate">
               {import.meta.env.PROD ? "Production" : "Development"}
             </span>
-            <span className="ml-auto font-mono text-[10px] opacity-70">
-              self-hosted
-            </span>
+            <span className="ml-auto font-mono text-ui-micro">self-hosted</span>
           </div>
         ) : null}
 
@@ -143,7 +141,7 @@ export function AdminSidebar({
                 {collapsed ? (
                   <span className="mx-auto block h-px w-6 bg-border" />
                 ) : (
-                  <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                  <p className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     {t(group.labelKey)}
                   </p>
                 )}
@@ -169,10 +167,17 @@ export function AdminSidebar({
 
           <button
             type="button"
-            onClick={() => setAllOpen(true)}
+            onClick={() => {
+              // The phone sheet is a z-60 layer and the shared dialog only
+              // z-50: close the sheet before opening, or the dialog renders
+              // underneath it. Also lift the dialog so the 180 ms slide-out
+              // never paints over the new modal.
+              onNavigate();
+              setAllOpen(true);
+            }}
             data-testid="admin-all-destinations"
             className={cn(
-              "mt-1 flex h-7 items-center rounded-md text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground",
+              "mt-1 flex h-7 items-center rounded-md text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11",
               collapsed
                 ? "justify-center px-0"
                 : "gap-2 px-2.5 admin-hide-rail",
@@ -201,7 +206,7 @@ export function AdminSidebar({
                   to={routes.home}
                   aria-label={t("admin.nav.backToBoards")}
                   onClick={onNavigate}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 </NavLink>
@@ -216,7 +221,7 @@ export function AdminSidebar({
               <NavLink
                 to={routes.home}
                 onClick={onNavigate}
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-meta text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:min-h-11"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
                 {t("admin.nav.backToBoards")}
@@ -227,20 +232,57 @@ export function AdminSidebar({
       </aside>
 
       <Dialog open={allOpen} onOpenChange={setAllOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className="z-[70] max-w-2xl"
+          onCloseAutoFocus={(event) => {
+            // At phone width the sheet closed to expose this dialog, so its
+            // trigger is inert/off-screen; return focus to the menu button.
+            if (!window.matchMedia?.("(max-width: 639px)").matches) return;
+            event.preventDefault();
+            document
+              .querySelector<HTMLElement>(
+                '[data-testid="admin-sidebar-toggle"]',
+              )
+              ?.focus();
+          }}
+        >
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              {t("admin.hub.allDestinations")}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
+            <DialogTitle>{t("admin.hub.allDestinations")}</DialogTitle>
+            <DialogDescription className="text-ui-label">
               {t("admin.hub.allDestinationsDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="grid max-h-[60vh] gap-4 overflow-y-auto sm:grid-cols-2">
+            <section className="space-y-1.5">
+              <h3 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("admin.hub.group.operate")}
+              </h3>
+              {ADMIN_HUBS.filter(
+                (hub) => hub.key === "overview" || hub.key === "users",
+              ).map((hub) => (
+                <NavLink
+                  key={hub.key}
+                  to={hub.to}
+                  onClick={() => {
+                    setAllOpen(false);
+                    onNavigate();
+                  }}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors max-lg:min-h-11",
+                    activeHub(hub.key)
+                      ? "bg-primary/10 text-foreground"
+                      : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                  )}
+                >
+                  <span>{t(hub.labelKey)}</span>
+                  <ChevronRight className="h-3 w-3 opacity-50" aria-hidden />
+                </NavLink>
+              ))}
+            </section>
             {(Object.keys(HUB_TABS) as AdminHubKey[]).map((hub) =>
               HUB_TABS[hub].length === 0 ? null : (
                 <section key={hub} className="space-y-1.5">
-                  <h3 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  <h3 className="text-ui-micro font-medium uppercase tracking-[0.14em] text-muted-foreground">
                     {t(ADMIN_HUBS.find((entry) => entry.key === hub)!.labelKey)}
                   </h3>
                   {HUB_TABS[hub]
@@ -254,7 +296,7 @@ export function AdminSidebar({
                           onNavigate();
                         }}
                         className={cn(
-                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
+                          "flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-ui-label transition-colors max-lg:min-h-11",
                           activeTab === tab.key && activeHub(hub)
                             ? "bg-primary/10 text-foreground"
                             : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -300,7 +342,7 @@ function SidebarLink({
       aria-current={active ? "page" : undefined}
       aria-label={collapsed ? label : undefined}
       className={cn(
-        "admin-nav-item relative flex h-7 items-center rounded-md text-xs font-medium transition-colors",
+        "admin-nav-item relative flex h-7 items-center rounded-md text-ui-label font-medium transition-colors max-lg:h-11",
         collapsed ? "justify-center px-0" : "gap-2.5 px-2.5 admin-hide-rail",
         active
           ? "text-foreground"

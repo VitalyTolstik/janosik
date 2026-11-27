@@ -224,26 +224,26 @@ function SampleCard({
 
   return (
     <div className="mt-3 rounded-[10px] border border-dashed border-border bg-card/55 p-3">
-      <div className="mb-1 flex items-center gap-1.5 text-[8.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+      <div className="mb-1 flex items-center gap-1.5 text-ui-micro font-bold uppercase tracking-[0.08em] text-muted-foreground">
         {t("board.templatePicker.sampleCard")}
-        <span className="rounded-[3px] border border-border px-1 py-px text-[8.5px] font-medium normal-case tracking-normal">
+        <span className="rounded-[3px] border border-border px-1 py-px text-ui-micro font-medium normal-case tracking-normal">
           {t("board.templatePicker.description")}
         </span>
       </div>
-      <h4 className="mb-1 text-[12.5px] font-semibold leading-tight text-foreground">
+      <h4 className="mb-1 text-ui-body font-semibold leading-tight text-foreground">
         {card.title}
       </h4>
-      <p className="m-0 line-clamp-2 text-[10.5px] leading-[1.48] text-muted-foreground">
+      <p className="m-0 line-clamp-2 text-ui-label leading-[1.48] text-muted-foreground">
         {card.desc ?? copy.long}
       </p>
-      <div className="mt-[7px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[8.5px] text-muted-foreground">
+      <div className="mt-[7px] flex flex-wrap items-center gap-x-2 gap-y-1 text-ui-meta text-muted-foreground">
         {card.labels.length > 0 ? (
           <span className="inline-flex flex-wrap items-center gap-1">
             {card.labels.map((key) => (
               <span
                 key={key}
                 className={cn(
-                  "inline-flex items-center gap-0.5 rounded-[3px] px-1 py-px text-[8px] font-semibold",
+                  "inline-flex items-center gap-0.5 rounded-[3px] px-1 py-px text-ui-micro font-semibold",
                   labelChipClass(template, key),
                 )}
               >
@@ -279,7 +279,7 @@ function StatPill({
   icon: LucideIcon;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-[5px] border border-border bg-background/70 px-[7px] py-[3px] text-[9.5px] font-semibold text-muted-foreground">
+    <span className="inline-flex items-center gap-1 rounded-[5px] border border-border bg-background/70 px-[7px] py-[3px] text-ui-meta font-semibold text-muted-foreground">
       <Icon aria-hidden className="h-[11px] w-[11px] text-muted-foreground" />
       {children}
     </span>
@@ -345,10 +345,10 @@ export function TemplatePreview({
           <TemplateGlyph template={template} className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <div className="mb-0.5 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          <div className="mb-0.5 flex items-center gap-1.5 text-ui-micro font-bold uppercase tracking-[0.08em] text-muted-foreground">
             <span>{t("board.templatePicker.preview")}</span>
             {template.id === "product-launch" ? (
-              <span className="rounded-[5px] bg-primary/15 px-1.5 py-0.5 text-[10px] font-[650] tracking-normal text-(--tab-text)">
+              <span className="rounded-[5px] bg-primary/15 px-1.5 py-0.5 text-ui-micro font-[650] tracking-normal text-(--tab-text)">
                 {t("board.templatePicker.recommended")}
               </span>
             ) : null}
@@ -359,7 +359,7 @@ export function TemplatePreview({
         </div>
       </div>
 
-      <p className="mt-[7px] max-w-[650px] text-[11.5px] leading-[1.5] text-muted-foreground max-[620px]:text-[10.5px]">
+      <p className="mt-[7px] max-w-[650px] text-ui-body leading-[1.5] text-muted-foreground max-[620px]:text-ui-label">
         {copy.long}
       </p>
       <TemplateStats template={template} className="mt-2.5" />
@@ -367,7 +367,7 @@ export function TemplatePreview({
         {copy.tags.map((tag) => (
           <span
             key={tag}
-            className="rounded-[3px] border border-border px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground"
+            className="rounded-[3px] border border-border px-1.5 py-0.5 text-ui-micro font-semibold text-muted-foreground"
           >
             {tag}
           </span>
@@ -389,14 +389,14 @@ export function TemplatePreview({
 
       <div className="mt-3 grid grid-cols-2 gap-x-[18px] gap-y-2.5 border-t border-border pt-[11px] max-[620px]:grid-cols-1">
         <div>
-          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <h4 className="mb-1 text-ui-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("board.templatePicker.insideColumns")}
           </h4>
           <ul className="m-0 grid list-none gap-0.5 p-0">
             {copy.columns.map((column) => (
               <li
                 key={column.title}
-                className="flex items-center gap-1.5 text-[9.5px] leading-[1.35] text-muted-foreground"
+                className="flex items-center gap-1.5 text-ui-label leading-[1.35] text-muted-foreground"
               >
                 <Check
                   aria-hidden
@@ -411,7 +411,7 @@ export function TemplatePreview({
           </ul>
         </div>
         <div>
-          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <h4 className="mb-1 text-ui-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("board.templatePicker.insideLabels")}
           </h4>
           <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -420,7 +420,7 @@ export function TemplatePreview({
               .map(([key, name]) => (
                 <li
                   key={key}
-                  className="flex items-center gap-1.5 text-[9.5px] leading-[1.35] text-muted-foreground"
+                  className="flex items-center gap-1.5 text-ui-label leading-[1.35] text-muted-foreground"
                 >
                   <span
                     aria-hidden
@@ -435,14 +435,14 @@ export function TemplatePreview({
           </ul>
         </div>
         <div>
-          <h4 className="mb-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          <h4 className="mb-1 text-ui-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground">
             {t("board.templatePicker.insideChecklists")}
           </h4>
           <ul className="m-0 grid list-none gap-0.5 p-0">
             {checklistCards.map((card) => (
               <li
                 key={card.title}
-                className="flex items-center gap-1.5 text-[9.5px] leading-[1.35] text-muted-foreground"
+                className="flex items-center gap-1.5 text-ui-label leading-[1.35] text-muted-foreground"
               >
                 <Check
                   aria-hidden

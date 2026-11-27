@@ -129,7 +129,7 @@ export function TransitionMatrix({
           title={t("workflow.matrixTitle")}
           aside={t("workflow.rulesCount", { count: totalRules })}
         />
-        <p className="max-w-[72ch] text-[11px] leading-[1.5] text-muted-foreground">
+        <p className="max-w-[72ch] text-ui-label leading-[1.5] text-muted-foreground">
           {t("workflow.matrixHintNew")}
         </p>
       </div>
@@ -140,7 +140,7 @@ export function TransitionMatrix({
           aria-label={t("workflow.matrix")}
           aria-rowcount={columns.length + 1}
           aria-colcount={columns.length + 1}
-          className="w-full min-w-[360px] table-fixed border-separate border-spacing-0 text-[11px]"
+          className="w-full min-w-[360px] table-fixed border-separate border-spacing-0 text-ui-meta"
           data-testid={`${testIdPrefix}-matrix-grid`}
         >
           <thead>
@@ -148,7 +148,7 @@ export function TransitionMatrix({
               <th
                 role="columnheader"
                 aria-colindex={1}
-                className="w-[126px] border-b border-border/60 bg-surface/90 px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground"
+                className="w-[126px] border-b border-border/60 bg-surface/90 px-2 py-1.5 text-left text-ui-meta font-medium text-muted-foreground"
               >
                 {t("workflow.fromTo")}
               </th>
@@ -158,7 +158,7 @@ export function TransitionMatrix({
                   role="columnheader"
                   aria-colindex={index + 2}
                   title={column.title}
-                  className="h-[30px] max-w-24 truncate border-b border-border/60 bg-surface/90 px-1 py-1 text-center text-[11px] font-medium text-muted-foreground"
+                  className="h-[30px] max-w-24 truncate border-b border-border/60 bg-surface/90 px-1 py-1 text-center text-ui-meta font-medium text-muted-foreground"
                 >
                   <ColumnDot
                     color={columnAccent(column, index)}
@@ -179,7 +179,7 @@ export function TransitionMatrix({
                   role="rowheader"
                   aria-colindex={1}
                   title={from.title}
-                  className="max-w-[126px] truncate border-b border-border/50 bg-surface/60 px-2 py-1.5 text-left text-[11px] font-medium text-foreground"
+                  className="max-w-[126px] truncate border-b border-border/50 bg-surface/60 px-2 py-1.5 text-left text-ui-meta font-medium text-foreground"
                 >
                   <ColumnDot
                     color={columnAccent(from, rowIndex)}
@@ -187,7 +187,7 @@ export function TransitionMatrix({
                     ring={false}
                   />
                   <span className="ml-1 align-middle">{from.title}</span>
-                  <span className="float-right pt-px font-mono text-[11px] font-normal text-muted-foreground">
+                  <span className="float-right pt-px font-mono text-ui-micro font-normal text-muted-foreground">
                     {from.cardIds.length}
                   </span>
                 </th>
@@ -254,7 +254,7 @@ export function TransitionMatrix({
                           }
                         }}
                         className={cn(
-                          "relative grid h-[26px] w-full min-w-[22px] place-items-center rounded border text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
+                          "relative grid h-[26px] w-full min-w-[22px] place-items-center rounded border text-ui-meta transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
                           diagonal
                             ? "cursor-default border-transparent bg-muted/5 text-muted-foreground/40"
                             : on
@@ -292,7 +292,7 @@ export function TransitionMatrix({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1.5 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1.5 text-ui-label text-muted-foreground">
         <LegendSwatch kind="on" label={t("workflow.matrixLegend.allowed")} />
         <LegendSwatch kind="off" label={t("workflow.matrixLegend.off")} />
         <LegendSwatch
@@ -304,7 +304,7 @@ export function TransitionMatrix({
           label={t("workflow.matrixLegend.diagonal")}
         />
         <LegendSwatch kind="none" label={t("workflow.matrixLegend.none")} />
-        <span className="ml-auto hidden text-muted-foreground/60 sm:block">
+        <span className="ml-auto hidden text-muted-foreground sm:block">
           {t("workflow.matrixHint")}
         </span>
       </div>

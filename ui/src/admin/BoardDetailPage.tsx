@@ -77,10 +77,10 @@ function MetaItem({
 }) {
   return (
     <div className="min-w-0 space-y-0.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <div className="truncate text-xs">{children}</div>
+      <div className="truncate text-ui-label">{children}</div>
     </div>
   );
 }
@@ -99,14 +99,14 @@ function CountItem({
 }) {
   const body = (
     <>
-      <p className="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="truncate text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       <p
         className={
           to === undefined
-            ? "text-sm font-semibold tabular-nums"
-            : "text-sm font-semibold tabular-nums decoration-primary/50 underline-offset-2 group-hover:underline"
+            ? "text-ui-body font-semibold tabular-nums"
+            : "text-ui-body font-semibold tabular-nums decoration-primary/50 underline-offset-2 group-hover:underline"
         }
       >
         {value}
@@ -221,11 +221,11 @@ export function BoardDetailPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          className="mt-0.5 h-7 w-7 max-lg:h-11 max-lg:w-11"
           asChild
         >
           <Link
@@ -235,59 +235,69 @@ export function BoardDetailPage() {
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Link>
         </Button>
-        <PageHeader
-          title={board.title}
-          subtitle={board.ownerEmail ?? undefined}
-          actions={
-            <>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  to={withReturnTo(
-                    routes.adminBoardContent(board.id),
-                    listReturnTo,
-                  )}
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            title={board.title}
+            subtitle={board.ownerEmail ?? undefined}
+            actions={
+              <>
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="max-lg:min-h-11"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                  {t("admin.boards.action.content")}
-                </Link>
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid="admin-board-detail-actions"
+                  <Link
+                    to={withReturnTo(
+                      routes.adminBoardContent(board.id),
+                      listReturnTo,
+                    )}
                   >
-                    {t("admin.common.actions")}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {board.archivedAt === null ? (
-                    <DropdownMenuItem onSelect={() => setConfirmArchive(true)}>
-                      {t("admin.boards.action.archive")}
-                    </DropdownMenuItem>
-                  ) : (
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        void run(t("admin.boards.action.unarchive"), () =>
-                          adminApi.unarchiveBoard(board.id),
-                        )
-                      }
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                    {t("admin.boards.action.content")}
+                  </Link>
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="max-lg:min-h-11"
+                      data-testid="admin-board-detail-actions"
                     >
-                      {t("admin.boards.action.unarchive")}
+                      {t("admin.common.actions")}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {board.archivedAt === null ? (
+                      <DropdownMenuItem
+                        onSelect={() => setConfirmArchive(true)}
+                      >
+                        {t("admin.boards.action.archive")}
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          void run(t("admin.boards.action.unarchive"), () =>
+                            adminApi.unarchiveBoard(board.id),
+                          )
+                        }
+                      >
+                        {t("admin.boards.action.unarchive")}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
+                      onSelect={() => setConfirmDelete(true)}
+                    >
+                      {t("admin.boards.action.delete")}
                     </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    className="text-danger focus:text-danger"
-                    onSelect={() => setConfirmDelete(true)}
-                  >
-                    {t("admin.boards.action.delete")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          }
-        />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            }
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -388,10 +398,10 @@ export function BoardDetailPage() {
         data-testid="admin-board-detail-workflow"
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.workflow.title")}
           </p>
-          <p className="mt-0.5 text-xs">
+          <p className="mt-0.5 text-ui-label">
             {detail.workflowSummary.present
               ? t("admin.workflow.summary", {
                   state: detail.workflowSummary.enabled
@@ -403,7 +413,7 @@ export function BoardDetailPage() {
               : t("admin.workflow.notConfigured")}
           </p>
         </div>
-        <Button size="sm" variant="outline" asChild>
+        <Button size="sm" variant="outline" asChild className="max-lg:min-h-11">
           <Link to={routes.adminBoardWorkflow(board.id)}>
             {t("admin.workflow.open")}
           </Link>
@@ -412,13 +422,13 @@ export function BoardDetailPage() {
 
       <Panel data-testid="admin-board-detail-members">
         <div className="flex items-center justify-between px-3 pt-2.5">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.boardDetail.members")}
           </p>
           <Button
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-xs"
+            className="h-7 px-2 text-ui-label max-lg:h-11 max-lg:min-h-11"
             data-testid="admin-board-add-member"
             onClick={() => setAddOpen(true)}
           >
@@ -474,7 +484,7 @@ export function BoardDetailPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-7 w-7 max-sm:h-11 max-sm:w-11 p-0"
+                        className="h-7 w-7 max-lg:h-11 max-lg:w-11 p-0"
                         data-testid={`admin-member-actions-${member.id}`}
                         aria-label={t("admin.common.actions")}
                       >
@@ -516,7 +526,7 @@ export function BoardDetailPage() {
                         {t("admin.boardDetail.member.makeOwner")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        className="text-danger focus:text-danger"
+                        className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                         onSelect={() =>
                           void run(
                             t("admin.boardDetail.member.removeDone"),
@@ -560,14 +570,14 @@ export function BoardDetailPage() {
                 onChange={(event) => setNewEmail(event.target.value)}
               />
             </Field>
-            <label className="flex flex-col gap-1 text-xs">
+            <label className="flex flex-col gap-1 text-ui-label">
               <span className="text-muted-foreground">
                 {t("admin.userDetail.col.role")}
               </span>
               <select
                 value={newRole}
                 data-testid="admin-add-member-role"
-                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-ui-body"
                 onChange={(event) => setNewRole(event.target.value)}
               >
                 <option value="MEMBER">MEMBER</option>
@@ -593,7 +603,7 @@ export function BoardDetailPage() {
       </Dialog>
 
       <Panel data-testid="admin-board-detail-columns">
-        <p className="px-3 pt-2.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <p className="px-3 pt-2.5 text-ui-micro uppercase tracking-wide text-muted-foreground">
           {t("admin.boardDetail.columns")}
         </p>
         <Table maxHeight="22rem">
@@ -639,6 +649,17 @@ export function BoardDetailPage() {
                 </Td>
               </tr>
             ))}
+            {detail.columns.length === 0 ? (
+              <tr>
+                <Td
+                  colSpan={5}
+                  label={t("admin.boardDetail.columns")}
+                  className="py-6 text-center text-ui-label text-muted-foreground"
+                >
+                  {t("admin.boardDetail.columns.empty")}
+                </Td>
+              </tr>
+            ) : null}
           </tbody>
         </Table>
       </Panel>
@@ -648,7 +669,7 @@ export function BoardDetailPage() {
           className="flex flex-wrap items-center gap-1.5 p-3"
           data-testid="admin-board-detail-labels"
         >
-          <p className="w-full text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="w-full text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.boardDetail.labels")}
           </p>
           {detail.labels.map((label) => (

@@ -256,7 +256,7 @@ function RecentlyDeletedContent({
       >
         {error ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-ui-body text-muted-foreground">
               {t("deleted.loadError")}
             </p>
             <Button
@@ -285,7 +285,7 @@ function RecentlyDeletedContent({
             ))}
           </div>
         ) : sections.length === 0 ? (
-          <p className="flex h-full items-center justify-center py-10 text-center text-sm text-muted-foreground">
+          <p className="flex h-full items-center justify-center py-10 text-center text-ui-body text-muted-foreground">
             {t("deleted.empty")}
           </p>
         ) : (
@@ -294,7 +294,7 @@ function RecentlyDeletedContent({
               const Icon = TYPE_ICON[type];
               return (
                 <section key={type} className="pb-2">
-                  <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-background/95 px-1 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+                  <h3 className="sticky top-0 z-10 flex items-center gap-1.5 bg-background/95 px-1 py-2 text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
                     <Icon className="h-3.5 w-3.5" aria-hidden />
                     {t(`deleted.type.${type}`)}
                     <span className="tabular-nums">· {items.length}</span>
@@ -311,12 +311,12 @@ function RecentlyDeletedContent({
                         >
                           <div className="min-w-0 flex-1">
                             <p
-                              className="truncate text-sm text-foreground/90"
+                              className="truncate text-ui-body text-foreground/90"
                               title={item.title}
                             >
                               {item.title || t("deleted.untitled")}
                             </p>
-                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                            <p className="mt-0.5 truncate text-ui-meta text-muted-foreground">
                               {meta}
                             </p>
                           </div>
@@ -348,7 +348,7 @@ function RecentlyDeletedContent({
               );
             })}
             {data.truncated ? (
-              <p className="px-1 py-2 text-xs text-muted-foreground">
+              <p className="px-1 py-2 text-ui-label text-muted-foreground">
                 {t("deleted.truncated", { limit: data.limit })}
               </p>
             ) : null}

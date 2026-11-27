@@ -46,7 +46,7 @@ export function NotFoundPage({ variant = "page" }: NotFoundPageProps) {
           <span className="absolute inset-x-0 top-0 h-1.5 bg-danger/70" />
           <div className="flex items-center justify-between gap-2">
             <span className="h-3 w-20 rounded bg-muted-foreground/25" />
-            <span className="rounded-full bg-danger/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-danger uppercase">
+            <span className="rounded-full bg-danger/15 px-2 py-0.5 text-ui-micro font-semibold tracking-wide text-(--chip-red) uppercase">
               404
             </span>
           </div>
@@ -57,15 +57,17 @@ export function NotFoundPage({ variant = "page" }: NotFoundPageProps) {
         </div>
 
         <div className="space-y-1.5">
-          <h1 className="text-lg font-semibold text-foreground">{title}</h1>
-          <p className="text-sm text-muted-foreground">{lead}</p>
+          <h1 className="text-ui-title font-semibold text-foreground">
+            {title}
+          </h1>
+          <p className="text-ui-body text-muted-foreground">{lead}</p>
         </div>
 
         <button
           type="button"
           data-testid="not-found-back"
           onClick={goToBoards}
-          className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          className="inline-flex h-9 items-center gap-2 rounded-lg bg-action-primary px-4 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[color-mix(in_oklab,var(--action-primary)_88%,black)] max-lg:min-h-11"
         >
           <Archive className="h-4 w-4" aria-hidden />
           {t("notFound.back")}

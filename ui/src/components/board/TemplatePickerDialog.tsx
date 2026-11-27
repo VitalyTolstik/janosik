@@ -371,7 +371,7 @@ export function TemplatePickerDialog({
         onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
           "h-[min(672px,calc(100dvh-2rem))] w-[min(1110px,calc(100vw-2rem))] max-w-[1110px] gap-0 overflow-hidden rounded-[18px] border-border-strong bg-surface p-0 pt-0 pr-0 pb-0 pl-0 shadow-[0_40px_110px_-40px_rgb(0_0_0/0.9),0_2px_12px_rgb(0_0_0/0.3)] sm:rounded-[18px]",
-          "max-[900px]:h-[min(700px,calc(100dvh-1.5rem))] max-[900px]:w-[calc(100vw-1.5rem)]",
+          "max-[899.98px]:h-[min(700px,calc(100dvh-1.5rem))] max-[899.98px]:w-[calc(100vw-1.5rem)]",
           "max-[620px]:h-dvh max-[620px]:max-h-dvh max-[620px]:w-screen max-[620px]:max-w-none max-[620px]:rounded-none max-[620px]:border-0",
           "max-[620px]:pt-[env(safe-area-inset-top)] max-[620px]:pr-[env(safe-area-inset-right)] max-[620px]:pb-[env(safe-area-inset-bottom)] max-[620px]:pl-[env(safe-area-inset-left)]",
         )}
@@ -382,7 +382,7 @@ export function TemplatePickerDialog({
               <span className="mb-2.5 grid h-[54px] w-[54px] place-items-center rounded-full border border-success/30 bg-success/15 text-success">
                 <Check aria-hidden className="h-[25px] w-[25px]" />
               </span>
-              <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+              <p className="mb-1 text-ui-micro font-bold uppercase tracking-[0.08em] text-muted-foreground">
                 {t("board.templatePicker.createdEyebrow")}
               </p>
               <DialogTitle
@@ -395,7 +395,7 @@ export function TemplatePickerDialog({
               <p className="mb-1 max-w-[620px] text-base font-semibold tracking-[-0.01em] text-foreground max-[620px]:text-[14px]">
                 {created.name}
               </p>
-              <DialogDescription className="max-w-[520px] text-[11.5px] text-muted-foreground">
+              <DialogDescription className="max-w-[520px] text-ui-body text-muted-foreground">
                 {createdTemplate.copy[locale].long}
               </DialogDescription>
               <TemplateStats template={createdTemplate} className="my-3" />
@@ -412,7 +412,7 @@ export function TemplatePickerDialog({
                   type="button"
                   data-testid="template-open-board"
                   onClick={openCreatedBoard}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-action-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface max-[620px]:flex-1"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-action-primary px-4 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface max-[620px]:flex-1"
                 >
                   <ArrowRight aria-hidden className="h-4 w-4" />
                   {t("board.templatePicker.openBoard")}
@@ -424,7 +424,7 @@ export function TemplatePickerDialog({
           <>
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 pb-3 pt-[17px] max-[620px]:px-[13px] max-[620px]:pb-2.5 max-[620px]:pt-[13px]">
               <div className="min-w-0">
-                <p className="mb-1 inline-flex items-center gap-[7px] text-[9px] font-bold uppercase leading-[1.4] tracking-[0.08em] text-(--tab-text)">
+                <p className="mb-1 inline-flex items-center gap-[7px] text-ui-micro font-bold uppercase leading-[1.4] tracking-[0.08em] text-(--tab-text)">
                   <span
                     aria-hidden
                     className="h-px w-4 bg-current opacity-70"
@@ -434,7 +434,7 @@ export function TemplatePickerDialog({
                 <DialogTitle className="text-[19px] font-semibold leading-[1.14] tracking-[-0.02em] text-foreground max-[620px]:text-[17px]">
                   {t("board.templatePicker.title")}
                 </DialogTitle>
-                <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.4] text-muted-foreground max-[620px]:text-[10.5px]">
+                <DialogDescription className="mt-[3px] text-ui-body leading-[1.4] text-muted-foreground">
                   {t("board.templatePicker.subtitle")}
                 </DialogDescription>
               </div>
@@ -450,18 +450,18 @@ export function TemplatePickerDialog({
               </button>
             </header>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] max-[900px]:grid-rows-[auto_minmax(0,1fr)] min-[901px]:grid-cols-[338px_minmax(0,1fr)] min-[901px]:grid-rows-1">
-              <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-background/40 p-3 max-[900px]:border-b max-[900px]:p-2.5 max-[620px]:p-2">
-                <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] pt-[2px] text-[9.5px] font-bold uppercase tracking-[0.09em] text-muted-foreground max-[900px]:pb-1.5">
+            <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] max-[899.98px]:grid-rows-[auto_minmax(0,1fr)] min-[900px]:grid-cols-[338px_minmax(0,1fr)] min-[900px]:grid-rows-1">
+              <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-background/40 p-3 max-[899.98px]:border-b max-[899.98px]:p-2.5 max-[620px]:p-2">
+                <div className="flex items-center justify-between gap-2 px-[5px] pb-[9px] pt-[2px] text-ui-micro font-bold uppercase tracking-[0.09em] text-muted-foreground max-[899.98px]:pb-1.5">
                   <span>{t("board.templatePicker.examples")}</span>
-                  <span className="font-medium normal-case tracking-normal">
+                  <span className="text-ui-meta font-medium normal-case tracking-normal">
                     {t("board.templatePicker.curated")}
                   </span>
                 </div>
                 <div
                   role="group"
                   aria-label={t("board.templatePicker.examples")}
-                  className="template-gallery flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-0.5 max-[900px]:snap-x max-[900px]:snap-proximity max-[900px]:flex-row max-[900px]:overflow-x-auto max-[900px]:overflow-y-hidden max-[900px]:pb-1"
+                  className="template-gallery flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-0.5 max-[899.98px]:snap-x max-[899.98px]:snap-proximity max-[899.98px]:flex-row max-[899.98px]:overflow-x-auto max-[899.98px]:overflow-y-hidden max-[899.98px]:pb-1"
                 >
                   {BOARD_TEMPLATES.map((item, index) => {
                     const selected = item.id === selectedId;
@@ -481,16 +481,16 @@ export function TemplatePickerDialog({
                         onClick={() => selectTemplate(item)}
                         onKeyDown={(event) => onGalleryKeyDown(event, index)}
                         className={cn(
-                          "grid w-full grid-cols-[32px_minmax(0,1fr)_17px] items-start gap-2 rounded-[9px] border px-2 py-[7.75px] text-left text-foreground transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60",
+                          "grid w-full grid-cols-[32px_minmax(0,1fr)_17px] items-start gap-2 rounded-[9px] border px-2 py-2 text-left text-foreground transition-[background-color,border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-60",
                           selected
                             ? "border-primary/45 bg-card shadow-sm ring-2 ring-primary/15"
                             : "border-transparent hover:bg-hover",
-                          "max-[900px]:min-w-[248px] max-[900px]:max-w-[248px] max-[900px]:shrink-0 max-[900px]:snap-start max-[900px]:border-border max-[900px]:bg-card max-[900px]:p-2 max-[620px]:min-w-[216px] max-[620px]:max-w-[216px]",
+                          "max-[899.98px]:min-w-[248px] max-[899.98px]:max-w-[248px] max-[899.98px]:shrink-0 max-[899.98px]:snap-start max-[899.98px]:border-border max-[899.98px]:bg-card max-[899.98px]:p-2 max-[620px]:min-w-[216px] max-[620px]:max-w-[216px]",
                         )}
                       >
                         <span
                           className={cn(
-                            "grid h-[34px] w-[34px] place-items-center rounded-[9px] border max-[900px]:h-[30px] max-[900px]:w-[30px] max-[620px]:h-[28px] max-[620px]:w-[28px]",
+                            "grid h-[34px] w-[34px] place-items-center rounded-[9px] border max-[899.98px]:h-[30px] max-[899.98px]:w-[30px] max-[620px]:h-[28px] max-[620px]:w-[28px]",
                             templateAccentIconClass(item),
                           )}
                         >
@@ -501,19 +501,19 @@ export function TemplatePickerDialog({
                         </span>
                         <span className="min-w-0">
                           <span className="flex flex-wrap items-center gap-1">
-                            <span className="text-[12.5px] font-semibold leading-[1.3] tracking-[-0.005em] max-[620px]:text-[11.5px]">
+                            <span className="text-ui-body font-semibold leading-[1.3] tracking-[-0.005em] max-[620px]:text-ui-label">
                               {itemCopy.name}
                             </span>
                             {item.id === "product-launch" ? (
-                              <span className="rounded-[5px] bg-primary/15 px-1.5 py-0.5 text-[10px] font-[650] leading-[1.4] text-(--tab-text)">
+                              <span className="rounded-[5px] bg-primary/15 px-1.5 py-0.5 text-ui-micro font-[650] leading-[1.4] text-(--tab-text)">
                                 {t("board.templatePicker.recommended")}
                               </span>
                             ) : null}
                           </span>
-                          <span className="mt-px line-clamp-1 text-[10.5px] leading-[1.38] text-muted-foreground max-[900px]:line-clamp-2 max-[900px]:text-[9.5px]">
+                          <span className="mt-0.5 line-clamp-1 text-ui-label leading-[1.38] text-muted-foreground max-[899.98px]:line-clamp-2">
                             {itemCopy.short}
                           </span>
-                          <span className="mt-1 flex flex-nowrap items-center gap-x-[7px] gap-y-1 overflow-hidden whitespace-nowrap text-[9.5px] leading-[1.3] text-muted-foreground max-[620px]:text-[8.5px]">
+                          <span className="mt-1 flex flex-wrap items-center gap-x-[7px] gap-y-1 text-ui-meta leading-[1.3] text-muted-foreground">
                             <span>
                               {t("board.templatePicker.columns", {
                                 count: itemCounts.columns,
@@ -527,11 +527,12 @@ export function TemplatePickerDialog({
                                 count: itemCounts.cards,
                               })}
                             </span>
-                            <span aria-hidden className="opacity-55">
-                              ·
-                            </span>
-                            <span className="min-w-0 overflow-hidden text-ellipsis">
-                              {itemCopy.tags.join(" · ")}
+                            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              {itemCopy.tags.map((tag) => (
+                                <span key={tag} className="whitespace-nowrap">
+                                  {tag}
+                                </span>
+                              ))}
                             </span>
                           </span>
                         </span>
@@ -556,7 +557,7 @@ export function TemplatePickerDialog({
                 <section
                   aria-label={`${t("board.templatePicker.preview")}: ${template.copy[locale].name}`}
                   tabIndex={0}
-                  className="template-preview-scroll h-full min-w-0 overflow-y-auto overflow-x-hidden bg-surface pb-[22px] pl-5 pr-5 pt-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[900px]:p-[15px_16px_18px] max-[620px]:p-3"
+                  className="template-preview-scroll h-full min-w-0 overflow-y-auto overflow-x-hidden bg-surface pb-[22px] pl-5 pr-5 pt-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[899.98px]:p-[15px_16px_18px] max-[620px]:p-3"
                 >
                   <TemplatePreview
                     template={template}
@@ -575,7 +576,7 @@ export function TemplatePickerDialog({
             {error || versionSkew ? (
               <div
                 role="alert"
-                className="mx-5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-[11px] leading-[1.45] text-(--agent-tone-danger) max-[620px]:mx-3"
+                className="mx-5 mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-ui-body leading-[1.45] text-(--agent-tone-danger) max-[620px]:mx-3"
               >
                 <span className="min-w-0 flex-1">
                   {error ||
@@ -594,19 +595,19 @@ export function TemplatePickerDialog({
               </div>
             ) : null}
 
-            <footer className="flex shrink-0 flex-wrap items-end gap-3.5 border-t border-border bg-card px-[18px] py-3 max-[900px]:py-[9px] max-[620px]:gap-2 max-[620px]:p-[9px_11px]">
+            <footer className="flex shrink-0 flex-wrap items-end gap-3.5 border-t border-border bg-card px-[18px] py-3 max-[899.98px]:py-[9px] max-[620px]:gap-2 max-[620px]:p-[9px_11px]">
               <div className="min-w-0 flex-1 max-[620px]:basis-full">
                 <div className="mb-1 flex items-center gap-1.5">
                   <label
                     htmlFor="template-board-name"
-                    className="text-[11px] font-semibold text-foreground"
+                    className="text-ui-label font-semibold text-foreground"
                   >
                     {t("board.templatePicker.nameLabel")}
                   </label>
                   <span
                     id="template-name-source"
                     className={cn(
-                      "inline-flex items-center rounded-[4px] px-1.5 py-px text-[8.5px] font-semibold leading-[1.4]",
+                      "inline-flex items-center rounded-[4px] px-1.5 py-px text-ui-micro font-semibold leading-[1.4]",
                       nameMode === "manual"
                         ? "bg-warning/15 text-(--warning-strong-on-tint)"
                         : "bg-primary/15 text-(--tab-text)",
@@ -620,12 +621,13 @@ export function TemplatePickerDialog({
                     id="template-name-count"
                     aria-live="polite"
                     aria-atomic="true"
-                    className="ml-auto text-[9.5px] tabular-nums text-muted-foreground"
+                    className="ml-auto text-ui-meta tabular-nums text-muted-foreground"
                   >
                     {effectiveName.length} / {LIMITS.boardTitle}
                   </span>
                 </div>
                 <div className="flex gap-1.5">
+                  {/* Keep touch inputs at 16px to prevent iOS focus zoom. */}
                   <input
                     ref={nameInputRef}
                     id="template-board-name"
@@ -643,7 +645,7 @@ export function TemplatePickerDialog({
                       setError("");
                       setVersionSkew(false);
                     }}
-                    className="h-[37px] min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
+                    className="h-[37px] min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-ui-body text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
                   />
                   <button
                     type="button"
@@ -651,7 +653,7 @@ export function TemplatePickerDialog({
                     disabled={busy}
                     title={t("board.templatePicker.regenerate")}
                     aria-label={t("board.templatePicker.regenerate")}
-                    className="inline-flex h-[37px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-[10.5px] font-[620] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[620px]:w-11 max-[620px]:px-0"
+                    className="inline-flex h-[37px] shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3.5 text-ui-label font-[620] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[620px]:w-11 max-[620px]:px-0"
                   >
                     <RefreshCw aria-hidden className="h-3 w-3" />
                     <span className="max-[620px]:hidden">
@@ -663,7 +665,7 @@ export function TemplatePickerDialog({
                   id="template-name-hint"
                   aria-live="polite"
                   className={cn(
-                    "mt-1 text-[9.5px] leading-[1.4] text-muted-foreground",
+                    "mt-1 text-ui-meta leading-[1.4] text-muted-foreground",
                     (duplicateManual || generated.truncated) &&
                       "text-(--warning-strong-on-tint)",
                   )}
@@ -688,7 +690,7 @@ export function TemplatePickerDialog({
                   type="button"
                   onClick={requestClose}
                   disabled={busy}
-                  className="inline-flex h-[37px] items-center justify-center rounded-lg px-3.5 text-xs font-[650] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[620px]:flex-none"
+                  className="inline-flex h-[37px] items-center justify-center rounded-lg px-3.5 text-ui-body font-[650] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[620px]:flex-none"
                 >
                   {t("board.templatePicker.cancel")}
                 </button>
@@ -698,7 +700,7 @@ export function TemplatePickerDialog({
                   disabled={busy}
                   aria-busy={busy || undefined}
                   data-testid="template-create-board"
-                  className="inline-flex h-[37px] items-center justify-center gap-2 rounded-lg bg-action-primary px-6 text-xs font-[650] text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-80 max-[1024.98px]:h-11 max-[620px]:flex-1"
+                  className="inline-flex h-[37px] items-center justify-center gap-2 rounded-lg bg-action-primary px-6 text-ui-body font-[650] text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-80 max-[1024.98px]:h-11 max-[620px]:flex-1"
                 >
                   {busy ? (
                     <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />

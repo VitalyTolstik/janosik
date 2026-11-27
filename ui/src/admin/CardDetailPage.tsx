@@ -119,7 +119,7 @@ export function CardFieldsFallback() {
       className="flex flex-wrap items-center justify-between gap-3 p-3"
       data-testid="admin-card-fields-error"
     >
-      <p role="alert" className="text-xs text-danger">
+      <p role="alert" className="text-ui-label text-(--agent-tone-danger)">
         {t("admin.cards.fields.loadFailed")}
       </p>
       <Button
@@ -142,7 +142,7 @@ export function CardRelationsFallback() {
       className="flex flex-wrap items-center justify-between gap-3 p-3"
       data-testid="admin-card-relations-load-error"
     >
-      <p role="alert" className="text-xs text-danger">
+      <p role="alert" className="text-ui-label text-(--agent-tone-danger)">
         {t("admin.cards.relations.loadFailed")}
       </p>
       <Button
@@ -195,10 +195,10 @@ function MetaItem({
 }) {
   return (
     <div className="min-w-0 space-y-0.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <div className="truncate text-xs">{children}</div>
+      <div className="truncate text-ui-label">{children}</div>
     </div>
   );
 }
@@ -514,14 +514,14 @@ export function CardDetailPage() {
     if (window.anchor !== null) {
       return (
         <div
-          className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-[11px] text-muted-foreground"
+          className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-ui-meta text-muted-foreground"
           data-testid={`admin-card-anchor-${section}`}
         >
           <span>{t("admin.common.anchorHint")}</span>
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[11px]"
+            className="h-6 px-2 text-ui-meta"
             onClick={() => clearAnchor(section)}
           >
             {t("admin.common.showFromStart")}
@@ -532,7 +532,7 @@ export function CardDetailPage() {
     if (anchorParamSection === section) {
       return (
         <p
-          className="border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-[11px] text-muted-foreground"
+          className="border-b border-warning/30 bg-warning/5 px-3 py-1.5 text-ui-meta text-muted-foreground"
           data-testid={`admin-card-anchor-missing-${section}`}
         >
           {t("admin.common.anchorMissing")}
@@ -565,7 +565,7 @@ export function CardDetailPage() {
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 shrink-0 max-sm:h-11 max-sm:w-11"
+          className="h-7 w-7 shrink-0 max-lg:h-11 max-lg:w-11"
           asChild
         >
           <Link
@@ -621,7 +621,7 @@ export function CardDetailPage() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
-                    className="text-danger focus:text-danger"
+                    className="text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                     onSelect={() => setConfirmDelete(true)}
                   >
                     {t("admin.cards.action.delete")}
@@ -654,7 +654,7 @@ export function CardDetailPage() {
           </Badge>
         ) : null}
         {card.dueDate !== null ? (
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-ui-meta text-muted-foreground">
             <Clock className="h-3 w-3" aria-hidden />
             {formatDate(card.dueDate, lang, hour12)}
           </span>
@@ -760,10 +760,10 @@ export function CardDetailPage() {
 
       {card.description ? (
         <Panel className="p-3" data-testid="admin-card-detail-description">
-          <p className="pb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="pb-1 text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.description")}
           </p>
-          <p className="whitespace-pre-wrap break-words text-xs text-foreground">
+          <p className="whitespace-pre-wrap break-words text-ui-label text-foreground">
             {card.description}
           </p>
         </Panel>
@@ -785,7 +785,7 @@ export function CardDetailPage() {
           className="space-y-2.5 p-3"
           data-testid="admin-card-detail-checklists"
         >
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.checklists")}
           </p>
           {detail.checklists.map((checklist) => {
@@ -796,8 +796,8 @@ export function CardDetailPage() {
             return (
               <div key={checklist.id} className="space-y-1">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium">{checklist.title}</p>
-                  <span className="tabular-nums text-[11px] text-muted-foreground">
+                  <p className="text-ui-label font-medium">{checklist.title}</p>
+                  <span className="tabular-nums text-ui-meta text-muted-foreground">
                     {done}/{live.length}
                   </span>
                 </div>
@@ -805,11 +805,13 @@ export function CardDetailPage() {
                   {live.map((item) => (
                     <li
                       key={item.id}
-                      className="flex items-center gap-1.5 text-xs"
+                      className="flex items-center gap-1.5 text-ui-label"
                     >
                       <span
                         className={
-                          item.done ? "text-success" : "text-muted-foreground"
+                          item.done
+                            ? "text-(--agent-tone-success)"
+                            : "text-muted-foreground"
                         }
                         aria-hidden
                       >
@@ -834,17 +836,20 @@ export function CardDetailPage() {
       {card.deletedAt !== null &&
       detail.linksOut.length + detail.linksIn.length > 0 ? (
         <Panel className="p-3" data-testid="admin-card-detail-links">
-          <p className="pb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <p className="pb-1.5 text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.cardDetail.links")}
           </p>
           <ul className="space-y-1">
             {detail.linksOut.map((link) => (
-              <li key={link.id} className="flex items-center gap-2 text-xs">
+              <li
+                key={link.id}
+                className="flex items-center gap-2 text-ui-label"
+              >
                 <ArrowUpRight
                   className="h-3.5 w-3.5 text-muted-foreground"
                   aria-hidden
                 />
-                <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                   {link.type}
                 </span>
                 <EntityLink to={cardHref(link.otherCardId)}>
@@ -856,12 +861,15 @@ export function CardDetailPage() {
               </li>
             ))}
             {detail.linksIn.map((link) => (
-              <li key={link.id} className="flex items-center gap-2 text-xs">
+              <li
+                key={link.id}
+                className="flex items-center gap-2 text-ui-label"
+              >
                 <ArrowDownLeft
                   className="h-3.5 w-3.5 text-muted-foreground"
                   aria-hidden
                 />
-                <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                   {link.type}
                 </span>
                 <EntityLink to={cardHref(link.otherCardId)}>
@@ -1096,7 +1104,7 @@ export function CardDetailPage() {
       ) : null}
 
       <Panel className="p-3" data-testid="admin-card-detail-timeline">
-        <p className="pb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <p className="pb-1.5 text-ui-micro uppercase tracking-wide text-muted-foreground">
           {t("admin.cardDetail.timeline")}
         </p>
         {detail.timeline.length === 0 ? (
@@ -1106,13 +1114,13 @@ export function CardDetailPage() {
             {detail.timeline.map((event) => (
               <li
                 key={`${event.kind}-${event.id}`}
-                className="flex flex-wrap items-start gap-2 text-xs"
+                className="flex flex-wrap items-start gap-2 text-ui-label"
               >
                 <span
                   className={
                     event.kind === "command"
-                      ? "rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
-                      : "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary"
+                      ? "rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground"
+                      : "rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-ui-meta text-(--agent-tone-primary)"
                   }
                 >
                   {event.type}
@@ -1129,7 +1137,7 @@ export function CardDetailPage() {
                 {event.details && !event.type.startsWith("comment_") ? (
                   <JsonCell value={event.details} />
                 ) : null}
-                <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-[11px] text-muted-foreground">
+                <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums text-ui-meta text-muted-foreground">
                   {event.kind === "command" && event.auditId ? (
                     <Link
                       to={withReturnTo(
@@ -1141,7 +1149,7 @@ export function CardDetailPage() {
                         commandId: event.id,
                         cardId: card.id,
                       })}
-                      className="shrink-0 whitespace-nowrap font-medium text-primary underline-offset-2 hover:underline"
+                      className="shrink-0 whitespace-nowrap font-medium text-(--agent-tone-primary) underline-offset-2 hover:underline"
                     >
                       {t("admin.cardDetail.timelineAudit")}
                     </Link>
@@ -1171,10 +1179,8 @@ export function CardDetailPage() {
           data-testid="admin-card-description-dialog"
         >
           <DialogHeader>
-            <DialogTitle className="text-sm">
-              {t("admin.cards.description.title")}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
+            <DialogTitle>{t("admin.cards.description.title")}</DialogTitle>
+            <DialogDescription className="text-ui-label">
               {card.title}
             </DialogDescription>
           </DialogHeader>
@@ -1200,7 +1206,7 @@ export function CardDetailPage() {
               <p
                 role="alert"
                 data-testid="admin-card-description-error"
-                className="text-xs text-danger"
+                className="text-ui-label text-(--agent-tone-danger)"
               >
                 {descriptionError}
               </p>

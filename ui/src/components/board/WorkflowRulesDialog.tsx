@@ -60,17 +60,17 @@ export function WorkflowRulesDialog({
           <DialogDescription>{t("workflow.rulesHint")}</DialogDescription>
         </DialogHeader>
         {!workflow ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-ui-body text-muted-foreground">
             {t("workflow.rulesNotConfigured")}
           </p>
         ) : (
-          <div className="space-y-4 text-sm">
+          <div className="space-y-4 text-ui-body">
             {board?.workflowInvalid ? (
-              <p className="rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-(--chip-red)">
+              <p className="rounded-md border border-danger/40 bg-danger/10 p-2 text-ui-label text-(--chip-red)">
                 {t("workflow.error.invalidStored")}
               </p>
             ) : null}
-            <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-ui-label">
               <span
                 className={
                   workflow.enabled
@@ -89,22 +89,22 @@ export function WorkflowRulesDialog({
               </span>
             </div>
 
-            <div className="grid gap-2 rounded-lg border border-border/60 p-3 text-xs sm:grid-cols-2">
+            <div className="grid gap-2 rounded-lg border border-border/60 p-3 text-ui-label sm:grid-cols-2">
               <div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-meta text-muted-foreground">
                   {t("workflow.initialColumn")}
                 </p>
-                <p className="mt-0.5 text-xs font-medium">
+                <p className="mt-0.5 text-ui-label font-medium">
                   {workflow.initialColumnId
                     ? titleOf(workflow.initialColumnId)
                     : t("workflow.initialFallback")}
                 </p>
               </div>
               <div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-meta text-muted-foreground">
                   {t("workflow.doneColumns")}
                 </p>
-                <p className="mt-0.5 text-xs font-medium">
+                <p className="mt-0.5 text-ui-label font-medium">
                   {workflow.doneColumnIds.length > 0
                     ? workflow.doneColumnIds.map(titleOf).join(", ")
                     : t("workflow.doneFallback")}
@@ -113,11 +113,11 @@ export function WorkflowRulesDialog({
             </div>
 
             <div>
-              <p className="mb-1.5 text-[11px] text-muted-foreground">
+              <p className="mb-1.5 text-ui-meta text-muted-foreground">
                 {t("workflow.transitions")}
               </p>
               {transitions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-ui-label text-muted-foreground">
                   {t("workflow.noTransitions")}
                 </p>
               ) : (
@@ -133,7 +133,7 @@ export function WorkflowRulesDialog({
                 </ul>
               )}
             </div>
-            <p className="flex items-start gap-1.5 rounded-md bg-muted/50 p-2 text-[11px] leading-snug text-muted-foreground">
+            <p className="flex items-start gap-1.5 rounded-md bg-muted/50 p-2 text-ui-meta leading-snug text-muted-foreground">
               <Lock className="mt-px h-3 w-3 shrink-0" aria-hidden />
               {t("workflow.rulesFooter")}
             </p>
@@ -166,10 +166,10 @@ function TransitionRow({
       }
       data-testid={`workflow-rule-${transition.id}`}
     >
-      <p className="text-xs font-medium">
+      <p className="text-ui-label font-medium">
         {from} <span className="text-muted-foreground">→</span> {to}
       </p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">
+      <p className="mt-0.5 text-ui-meta text-muted-foreground">
         {t("workflow.rolesLabel")}: {roles.join(" / ")}
         {conditions.length > 0
           ? ` · ${conditions.map((condition) => conditionLabel(condition, t)).join(t("workflow.conditionSeparator"))}`

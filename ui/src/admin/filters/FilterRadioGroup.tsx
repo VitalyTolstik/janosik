@@ -47,7 +47,7 @@ export function FilterRadioGroup({
           onFocus={() => setFocused(index)}
           onClick={() => onSelect(index)}
           className={cn(
-            "flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-start text-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:min-h-8",
+            "flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-start text-ui-body hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:min-h-8",
             segmented && "justify-center aria-checked:bg-primary/10",
           )}
         >

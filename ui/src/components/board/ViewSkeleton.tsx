@@ -77,7 +77,7 @@ export function TableSkeleton() {
           <Skeleton width={80} height={25} className="ml-auto rounded-md" />
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-ui-body">
             <thead>
               <tr className="border-b border-border/60">
                 {[140, 80, 120, 100, 80, 60].map((width, index) => (

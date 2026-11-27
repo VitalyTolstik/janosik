@@ -140,7 +140,7 @@ interface RolePickerProps {
   /** Accessible name (the row's user is baked in by the caller). */
   label: string;
   disabled?: boolean;
-  /** Row-sized trigger (h-8/text-xs) instead of the form-sized one. */
+  /** Row-sized trigger (h-8/text-ui-label) instead of the form-sized one. */
   compact?: boolean;
   onChange: (role: BoardRole) => void;
 }
@@ -173,8 +173,8 @@ function RolePicker({
           className={cn(
             "justify-between gap-1.5 font-normal",
             compact
-              ? "h-8 min-w-[6.5rem] px-2 text-xs"
-              : "h-9 min-w-[7.5rem] px-2.5 text-sm",
+              ? "h-8 min-w-[6.5rem] px-2 text-ui-label"
+              : "h-9 min-w-[7.5rem] px-2.5 text-ui-body",
           )}
         >
           {t(ROLE_KEYS[value])}
@@ -200,7 +200,7 @@ function RolePicker({
                 onChange(role);
               }}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body transition-colors hover:bg-hover",
                 role === value
                   ? "font-medium text-foreground"
                   : "text-foreground/90",
@@ -250,7 +250,7 @@ function ExpiryPicker({
           disabled={disabled}
           data-testid="expiry-trigger"
           aria-label={label}
-          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground"
+          className="h-8 gap-1.5 px-2 text-ui-label font-normal text-muted-foreground"
         >
           <CalendarClock className="h-3.5 w-3.5" />
           {value === null
@@ -712,7 +712,7 @@ export function BoardMembersPanel({
   return (
     <>
       <DialogHeader className="shrink-0">
-        <DialogTitle className="text-base font-semibold">
+        <DialogTitle className="text-ui-title font-semibold">
           {members === null
             ? t("board.members.titlePlain")
             : t("board.members.title", { count: members.length })}
@@ -723,7 +723,7 @@ export function BoardMembersPanel({
         {boardTitle ? (
           <p
             data-testid="board-members-board-title"
-            className="truncate text-sm text-muted-foreground"
+            className="truncate text-ui-body text-muted-foreground"
           >
             {boardTitle}
           </p>
@@ -739,7 +739,7 @@ export function BoardMembersPanel({
           <BoardMembersSkeleton />
         </SkeletonRegion>
       ) : members === null ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-ui-body">
           <span>{t("board.members.loadFailed")}</span>
           <Button variant="outline" size="sm" onClick={() => void load()}>
             {t("board.members.retry")}
@@ -764,7 +764,7 @@ export function BoardMembersPanel({
               onChange={(event) => setMemberQuery(event.target.value)}
               placeholder={t("board.members.search")}
               aria-label={t("board.members.search")}
-              className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className="h-6 w-full bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
             />
             <LimitCounter
               length={memberQuery.length}
@@ -779,7 +779,7 @@ export function BoardMembersPanel({
             data-testid="board-members-list"
           >
             {visibleMembers !== null && visibleMembers.length === 0 ? (
-              <li className="px-3 py-6 text-center text-sm text-muted-foreground">
+              <li className="px-3 py-6 text-center text-ui-body text-muted-foreground">
                 {t("board.members.noMatches")}
               </li>
             ) : null}
@@ -813,21 +813,21 @@ export function BoardMembersPanel({
                       avatarPath={member.avatarPath}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                      <p className="flex min-w-0 items-center gap-1.5 truncate text-ui-body font-medium">
                         <span className="truncate">{label}</span>
                         {member.userId === user?.id ? (
-                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-ui-micro font-normal text-muted-foreground">
                             {t("board.members.you")}
                           </span>
                         ) : null}
                       </p>
-                      <p className="truncate text-xs text-muted-foreground">
+                      <p className="truncate text-ui-label text-muted-foreground">
                         {member.email}
                       </p>
                       {member.role === "VIEWER" ? (
                         <p
                           className={cn(
-                            "truncate text-xs",
+                            "truncate text-ui-label",
                             expired ? "text-danger" : "text-muted-foreground",
                           )}
                         >
@@ -865,7 +865,7 @@ export function BoardMembersPanel({
                           />
                         </span>
                       ) : (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-ui-label text-muted-foreground">
                           {t(ROLE_KEYS[member.role])}
                         </span>
                       )}
@@ -874,7 +874,7 @@ export function BoardMembersPanel({
                           data-testid="member-leave-confirm"
                           className="flex shrink-0 items-center gap-0.5 rounded-md border border-danger/30 bg-danger/5 p-0.5 pl-2"
                         >
-                          <span className="pr-1 text-xs text-muted-foreground">
+                          <span className="pr-1 text-ui-label text-muted-foreground">
                             {t("board.members.leaveConfirm")}
                           </span>
                           <Button
@@ -921,7 +921,7 @@ export function BoardMembersPanel({
                             data-testid="board-member-leave"
                             disabled={locked || leaving}
                             onClick={() => setConfirmLeave(true)}
-                            className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground hover:text-danger"
+                            className="h-8 gap-1.5 px-2 text-ui-label font-normal text-muted-foreground hover:text-danger"
                           >
                             <LogOut size={14} />
                             {t("board.members.leave")}
@@ -1005,7 +1005,7 @@ export function BoardMembersPanel({
                       )}
                     </div>
                   ) : (
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 text-ui-label text-muted-foreground">
                       {t(ROLE_KEYS[member.role])}
                     </span>
                   )}
@@ -1021,7 +1021,7 @@ export function BoardMembersPanel({
           className="shrink-0 space-y-1 rounded-lg border border-dashed bg-muted/20 p-3"
           data-testid="board-pending-list"
         >
-          <p className="text-xs font-medium uppercase text-muted-foreground">
+          <p className="text-ui-micro font-medium uppercase text-muted-foreground">
             {t("board.members.pending.title", { count: pending.length })}
           </p>
           <ul className="space-y-1">
@@ -1037,14 +1037,14 @@ export function BoardMembersPanel({
                 <li
                   key={invitation.id}
                   data-testid="board-pending-row"
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-1.5 py-1.5 text-sm"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-1.5 py-1.5 text-ui-body"
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="min-w-0 truncate">{invitation.email}</span>
                     {expired ? (
                       <span
                         data-testid="board-pending-expired"
-                        className="shrink-0 rounded bg-danger/10 px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-danger"
+                        className="shrink-0 rounded bg-danger/10 px-1 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-danger"
                       >
                         {t("board.members.pending.expired")}
                       </span>
@@ -1104,7 +1104,7 @@ export function BoardMembersPanel({
           data-testid="board-members-invite"
           className="shrink-0 space-y-3 rounded-lg border bg-muted/30 p-4"
         >
-          <p className="text-xs font-medium text-muted-foreground">
+          <p className="text-ui-label font-medium text-muted-foreground">
             {t("board.members.invite.title")}
           </p>
           <div className="flex gap-2">
@@ -1134,14 +1134,14 @@ export function BoardMembersPanel({
             <p
               id="invite-email-error"
               role="alert"
-              className="text-sm text-danger"
+              className="text-ui-body text-danger"
             >
               {t("auth.validation.emailInvalid")}
             </p>
           )}
           {role === "VIEWER" ? (
             <div className="space-y-1">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <label className="flex items-center gap-2 text-ui-label text-muted-foreground">
                 {t("board.members.invite.expires")}
                 <ExpiryPicker
                   value={expiry}
@@ -1153,7 +1153,7 @@ export function BoardMembersPanel({
                 />
               </label>
               {inviteExpiryError ? (
-                <p role="alert" className="text-sm text-danger">
+                <p role="alert" className="text-ui-body text-danger">
                   {t("board.members.expires.past")}
                 </p>
               ) : null}

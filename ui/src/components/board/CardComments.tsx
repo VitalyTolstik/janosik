@@ -938,7 +938,7 @@ export function CardComments({
             <div
               role="alert"
               data-testid="comment-filter-error"
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-[36px] text-xs text-muted-foreground"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-[36px] text-ui-body text-muted-foreground"
             >
               <span>{t("comment.filter.error")}</span>
               <button
@@ -962,13 +962,13 @@ export function CardComments({
           <CardSectionSkeleton kind="comments" rows={3} />
         </SkeletonRegion>
       ) : items.length === 0 && loadedKind !== undefined && !filterError ? (
-        <p className="py-1 pl-[36px] text-sm text-muted-foreground">
+        <p className="py-1 pl-[36px] text-ui-body text-muted-foreground">
           {t("comment.filter.empty", {
             kind: kindLabel(loadedKind, t),
           })}
         </p>
       ) : items.length === 0 && (readOnly || !serverMode || user === null) ? (
-        <p className="py-1 pl-[36px] text-sm text-muted-foreground">
+        <p className="py-1 pl-[36px] text-ui-body text-muted-foreground">
           {t("comment.empty")}
         </p>
       ) : items.length > 0 ? (
@@ -1010,7 +1010,7 @@ export function CardComments({
         <p
           role="status"
           data-testid="comment-focus-missing"
-          className="py-1 pl-[36px] text-xs text-muted-foreground"
+          className="py-1 pl-[36px] text-ui-body text-muted-foreground"
         >
           {t("comment.focusNotFound")}
         </p>
@@ -1051,14 +1051,14 @@ export function CardComments({
             data-testid="comment-delete-preview"
           >
             <figcaption
-              className="text-xs text-muted-foreground"
+              className="text-ui-label text-muted-foreground"
               data-testid="comment-delete-author"
             >
               {t("comment.deleteAuthor", { name: pendingAuthorName })}
             </figcaption>
             <blockquote
               dir="auto"
-              className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-foreground/90"
+              className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-ui-body text-foreground/90"
               data-testid="comment-delete-excerpt"
             >
               {commentExcerpt(pendingDelete.text)}
@@ -1136,7 +1136,7 @@ function CommentKindFilters({
               data-testid={`comment-filter-${value ?? "all"}`}
               onClick={() => onChange(value)}
               className={cn(
-                "inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
+                "inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-full border px-3 text-ui-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-8",
                 selected
                   ? "border-primary/60 bg-primary/10 text-foreground"
                   : "border-border/70 text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -1200,7 +1200,7 @@ function CommentKindPicker({
           disabled={disabled}
           aria-label={`${label}: ${kindLabel(kind, t)}`}
           data-testid={testId}
-          className="h-8 gap-1.5 px-2 text-xs font-normal text-muted-foreground max-sm:h-11"
+          className="h-8 gap-1.5 px-2 text-ui-label font-normal text-muted-foreground max-sm:h-11"
         >
           {kindLabel(kind, t)}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1220,7 +1220,7 @@ function CommentKindPicker({
                 onChange(option);
               }}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover max-sm:min-h-11 max-sm:py-2.5",
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body transition-colors hover:bg-hover max-sm:min-h-11 max-sm:py-2.5",
                 option === kind
                   ? "font-medium text-foreground"
                   : "text-foreground/90",
@@ -1458,7 +1458,7 @@ function CommentRow({
   return (
     <li
       className={cn(
-        "group flex items-start gap-2.5 rounded-md text-sm",
+        "group flex items-start gap-2.5 rounded-md text-ui-body",
         highlighted && "bg-primary/10 ring-2 ring-primary/40",
         pending && "opacity-60",
       )}
@@ -1501,14 +1501,14 @@ function CommentRow({
             {comment.actorType === "agent" ? (
               <span
                 data-testid="comment-agent-badge"
-                className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="shrink-0 rounded bg-muted px-1 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground"
                 title={t("activity.agent")}
               >
                 {t("activity.agent")}
               </span>
             ) : null}
             <time
-              className="shrink-0 text-[11px] text-muted-foreground"
+              className="shrink-0 text-ui-meta text-muted-foreground"
               dateTime={new Date(comment.createdAt).toISOString()}
               title={formatDate(comment.createdAt, lang, hour12)}
             >
@@ -1532,7 +1532,7 @@ function CommentRow({
                     title={editedDate ?? undefined}
                     data-testid="comment-edited"
                     onClick={() => setHistoryOpen(true)}
-                    className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm px-1 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:min-w-11 no-hover:min-h-11 no-hover:min-w-11"
+                    className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm px-1 text-ui-meta text-muted-foreground underline decoration-dotted underline-offset-2 transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:h-11 max-md:min-w-11 no-hover:min-h-11 no-hover:min-w-11"
                   >
                     {t("comment.edited")}
                   </button>
@@ -1540,7 +1540,7 @@ function CommentRow({
                 {comment.kind !== DEFAULT_COMMENT_KIND ? (
                   <span
                     data-testid="comment-kind-badge"
-                    className="shrink-0 rounded-full border border-border/70 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                    className="shrink-0 rounded-full border border-border/70 px-1.5 py-px text-ui-micro font-medium uppercase tracking-wide text-muted-foreground"
                   >
                     {kindLabel(comment.kind, t)}
                   </span>

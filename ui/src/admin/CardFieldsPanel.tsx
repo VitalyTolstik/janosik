@@ -158,7 +158,7 @@ function CardCalendarFallback({
 
   return (
     <div className="w-72 max-w-full space-y-2">
-      <p role="alert" className="text-xs text-danger">
+      <p role="alert" className="text-ui-label text-(--agent-tone-danger)">
         {t("admin.cards.fields.calendarFailed")}
       </p>
       <Button
@@ -206,7 +206,7 @@ function LabelsHelp() {
       <PopoverContent
         align="start"
         aria-labelledby={titleId}
-        className="w-72 max-w-[calc(100vw-2rem)] text-xs"
+        className="w-72 max-w-[calc(100vw-2rem)] text-ui-label"
       >
         <h2 id={titleId} className="font-medium">
           {t("admin.cards.fields.labelsHelp")}
@@ -421,7 +421,7 @@ export function CardFieldsPanel({
           <p
             role="alert"
             data-testid={errorId}
-            className="text-[11px] text-danger"
+            className="text-ui-meta text-(--agent-tone-danger)"
           >
             {t("admin.cards.fields.boardFailed")}
           </p>
@@ -429,7 +429,7 @@ export function CardFieldsPanel({
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[11px]"
+            className="h-6 px-2 text-ui-meta"
             data-testid={retryId}
             onClick={() => setBoardReloadKey((key) => key + 1)}
           >
@@ -440,7 +440,7 @@ export function CardFieldsPanel({
     }
     if (board === null) {
       return (
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.cards.fields.boardLoading")}
         </p>
       );
@@ -600,10 +600,10 @@ export function CardFieldsPanel({
   return (
     <Panel className="space-y-3 p-3" data-testid="admin-card-fields">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
           {t("admin.cards.fields.title")}
         </p>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-ui-meta text-muted-foreground">
           {t("admin.cards.fields.hint")}
         </p>
       </div>
@@ -651,7 +651,7 @@ export function CardFieldsPanel({
             <p
               role="alert"
               data-testid="admin-card-title-error"
-              className="text-xs text-danger"
+              className="text-ui-label text-(--agent-tone-danger)"
             >
               {titleValidation ?? errors.title}
             </p>
@@ -671,7 +671,7 @@ export function CardFieldsPanel({
               value={assigneeDraft}
               disabled={busy !== null || board === null}
               onChange={(event) => void changeAssignee(event.target.value)}
-              className="h-9 w-full min-w-0 rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-9 w-full min-w-0 rounded-md border border-input bg-card px-2 text-ui-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">
                 {t("admin.cards.fields.assigneeUnassigned")}
@@ -742,7 +742,7 @@ export function CardFieldsPanel({
               ) : null}
             </div>
             {card.dueDate !== null ? (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-ui-meta text-muted-foreground">
                 {t("admin.cards.fields.dueCurrent", {
                   value: formatDate(card.dueDate, lang, hour12),
                 })}
@@ -773,7 +773,7 @@ export function CardFieldsPanel({
                 onChange={(event) =>
                   void changePriority(event.target.value as CardPriority)
                 }
-                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-card px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-card px-2 text-ui-body text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {CARD_PRIORITIES.map((priority) => (
                   <option key={priority} value={priority}>
@@ -819,7 +819,7 @@ export function CardFieldsPanel({
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-64 space-y-3">
                   <div className="space-y-1.5">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
                       {tApp("card.coverColors")}
                     </p>
                     <div
@@ -863,7 +863,7 @@ export function CardFieldsPanel({
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <p className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
                       {tApp("card.coverGradients")}
                     </p>
                     <div
@@ -930,7 +930,7 @@ export function CardFieldsPanel({
           >
             {boardStatus("labels") ??
               (boardLabels.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-meta text-muted-foreground">
                   {t("admin.cards.fields.noLabels")}
                 </p>
               ) : (
@@ -971,7 +971,7 @@ export function CardFieldsPanel({
                 </div>
               ))}
             {labelsAtCap ? (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-ui-meta text-muted-foreground">
                 {t("admin.cards.fields.labelsLimit", {
                   limit: LIMITS.labelsPerCard,
                 })}

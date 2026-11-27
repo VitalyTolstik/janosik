@@ -32,8 +32,8 @@ export function ColumnSemantics({
       data-testid={`${testIdPrefix}-semantics`}
     >
       <SectionLabel title={t("workflow.semanticsTitle")} />
-      <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1.3fr)] gap-x-3 gap-y-2 md:gap-x-[18px]">
-        <label className="min-w-0 text-[11px] leading-4 text-muted-foreground">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-2 md:grid-cols-[minmax(290px,0.8fr)_minmax(0,1.2fr)] md:gap-x-[18px]">
+        <label className="min-w-0 text-ui-label leading-4 text-muted-foreground">
           <span className="block">{t("workflow.startColumn")}</span>
           <SelectField<string>
             value={cleanDraft.initialColumnId ?? ""}
@@ -41,7 +41,7 @@ export function ColumnSemantics({
             ariaLabel={t("workflow.initialColumn")}
             testId={`${testIdPrefix}-initial`}
             onChange={(next) => setInitialColumn(next || undefined)}
-            className="mt-1 h-8 px-2 text-[13px]"
+            className="mt-1 h-8 px-2 text-ui-body"
             options={[
               { value: "", label: t("workflow.initialFallback") },
               ...columns.map((column) => ({
@@ -52,7 +52,7 @@ export function ColumnSemantics({
           />
         </label>
 
-        <div className="min-w-0 text-[11px] leading-4 text-muted-foreground">
+        <div className="min-w-0 text-ui-label leading-4 text-muted-foreground">
           <span className="block">{t("workflow.doneColumnsShort")}</span>
           <div className="mt-1 flex flex-wrap gap-1">
             {columns.map((column) => {
@@ -82,11 +82,11 @@ export function ColumnSemantics({
           </div>
         </div>
       </div>
-      <p className="text-[11px] leading-[1.45] text-muted-foreground">
+      <p className="text-ui-body leading-[1.45] text-muted-foreground">
         {t("workflow.doneHint")}
       </p>
       {outsideProcess.length > 0 ? (
-        <p className="text-[11px] leading-4 text-(--chip-warning)">
+        <p className="text-ui-label leading-4 text-(--chip-warning)">
           {t("workflow.outsideProcess", {
             columns: outsideProcess.map((column) => column.title).join(", "),
           })}

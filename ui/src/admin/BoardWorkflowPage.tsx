@@ -129,7 +129,7 @@ function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
         <Button
           size="icon"
           variant="ghost"
-          className="h-7 w-7 max-sm:h-11 max-sm:w-11"
+          className="h-7 w-7 max-lg:h-11 max-lg:w-11"
           asChild
         >
           <Link
@@ -143,7 +143,12 @@ function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
           title={board.title}
           subtitle={t("admin.workflow.subtitle")}
           actions={
-            <Button size="sm" variant="outline" asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              asChild
+              className="max-lg:min-h-11"
+            >
               <Link to={routes.adminBoardContent(board.id)}>
                 {t("admin.boards.action.content")}
               </Link>
@@ -153,13 +158,13 @@ function BoardWorkflowEditorPage({ boardId }: { boardId: string }) {
       </div>
 
       {!board.workflow?.enabled ? (
-        <Panel className="flex items-start gap-2 p-3 text-xs text-muted-foreground">
+        <Panel className="flex items-start gap-2 p-3 text-ui-label text-muted-foreground">
           <Workflow className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           {t("admin.workflow.disabledHint")}
         </Panel>
       ) : null}
 
-      <Panel className="overflow-hidden p-0">
+      <Panel className="shrink-0 overflow-hidden p-0">
         <WorkflowEditor
           key={`${board.id}-${board.updatedAt}`}
           columns={board.columns}

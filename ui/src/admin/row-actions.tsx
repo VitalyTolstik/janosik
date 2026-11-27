@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +36,7 @@ export interface EntityAction {
   renderDialog?: (options: {
     close: () => void;
     reload: () => void;
+    returnFocus: () => void;
   }) => ReactNode;
 }
 
@@ -53,6 +54,7 @@ export function RowActions({
   const [dialog, setDialog] = useState<EntityAction | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const execute = async (action: EntityAction) => {
     setBusy(true);
@@ -85,10 +87,11 @@ export function RowActions({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            ref={triggerRef}
             type="button"
             aria-label={t("admin.common.actions")}
             data-testid={testId}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
           >
             <MoreHorizontal className="h-4 w-4" aria-hidden />
           </button>
@@ -99,9 +102,9 @@ export function RowActions({
               key={action.label}
               className={
                 action.destructive
-                  ? "text-danger focus:text-danger"
+                  ? "text-(--agent-tone-danger) focus:text-(--agent-tone-danger)"
                   : action.warning
-                    ? "text-warning focus:text-warning"
+                    ? "text-(--chip-warning) focus:text-(--chip-warning)"
                     : undefined
               }
               onSelect={() => {
@@ -129,10 +132,18 @@ export function RowActions({
           busy={busy}
           onConfirm={() => void execute(pending)}
           onClose={() => (busy ? undefined : setPending(null))}
+          returnFocusRef={triggerRef}
         />
       ) : null}
       {dialog?.renderDialog
-        ? dialog.renderDialog({ close: () => setDialog(null), reload })
+        ? dialog.renderDialog({
+            close: () => setDialog(null),
+            reload,
+            returnFocus: () =>
+              document
+                .querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+                ?.focus(),
+          })
         : null}
     </>
   );

@@ -395,7 +395,7 @@ export function AgentControlDialog({
                 <>
                   <div className="ac-rail-divider" />
                   <div className="ac-rail-note">
-                    <strong>{t("agentControl.shell.policy")} ↗</strong>
+                    <strong>{t("agentControl.shell.policy")}</strong>
                     {t("agentControl.shell.policyHint")}
                   </div>
                   {onOpenPolicy ? (

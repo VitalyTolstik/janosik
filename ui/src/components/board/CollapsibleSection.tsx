@@ -58,7 +58,7 @@ export function CollapsibleSection({
           aria-expanded={isOpen}
           data-testid={testId}
           onClick={toggle}
-          className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left text-ui-label font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           <ChevronRight
             aria-hidden="true"
@@ -69,7 +69,7 @@ export function CollapsibleSection({
           />
           <span className="truncate">{title}</span>
           {badge !== undefined ? (
-            <span className="shrink-0 rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-muted px-1.5 text-ui-meta tabular-nums text-muted-foreground">
               {badge}
             </span>
           ) : null}

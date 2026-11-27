@@ -56,7 +56,7 @@ function AddCardZoneBody({
         tabIndex={-1}
         onClick={onInsert ? () => onInsert(index) : undefined}
         className={cn(
-          "pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/zone:pointer-events-auto group-hover/zone:delay-150 group-hover/zone:opacity-100 hover:bg-hover/60 hover:text-foreground",
+          "pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-ui-body text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/zone:pointer-events-auto group-hover/zone:delay-150 group-hover/zone:opacity-100 hover:bg-hover/60 hover:text-foreground",
           touchVisible && "no-hover:pointer-events-auto no-hover:opacity-100",
         )}
       >

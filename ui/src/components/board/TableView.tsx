@@ -480,7 +480,7 @@ export function TableView({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-xs font-medium text-(--tab-text) hover:bg-primary/20 hover:text-(--tab-text)"
+                className="h-7 gap-1 border-dashed border-primary/40 bg-primary/10 px-2 text-ui-label font-medium text-(--tab-text) hover:bg-primary/20 hover:text-(--tab-text)"
                 data-testid="table-add-card"
                 disabled={!anyColumnWithRoom}
                 title={anyColumnWithRoom ? undefined : t("limits.columnsFull")}
@@ -512,7 +512,7 @@ export function TableView({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto hidden h-7 gap-1 px-2 text-xs lg:inline-flex"
+              className="ml-auto hidden h-7 gap-1 px-2 text-ui-label lg:inline-flex"
               aria-label={t("view.table.columnsSettings")}
               data-testid="table-columns-settings"
             >
@@ -551,7 +551,7 @@ export function TableView({
         data-testid="table-scroll"
         className="flex-1 overflow-x-auto overflow-y-auto overscroll-contain"
       >
-        <table className="w-full table-fixed border-collapse text-sm">
+        <table className="w-full table-fixed border-collapse text-ui-body">
           <thead>
             <tr className="border-b border-border/60">
               <SortHeader
@@ -559,25 +559,25 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-40 md:w-auto lg:w-72"
+                className="w-[42%] min-[360px]:w-[52%] sm:w-40 md:w-auto lg:w-72"
               />
               <SortHeader
                 label={t("view.table.column")}
                 sortKey="column"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-28 lg:w-40"
+                className="w-[30%] max-sm:px-2 min-[360px]:w-[26%] sm:w-28 lg:w-40"
               />
               <SortHeader
                 label={t("dueDate.label")}
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-24 sm:w-28 lg:w-48"
+                className="w-[28%] max-sm:px-2 min-[360px]:w-[22%] sm:w-28 lg:w-48"
               />
               <th
                 scope="col"
-                className="hidden w-36 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell lg:w-44"
+                className="hidden w-36 px-3 py-2 text-left text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground sm:table-cell lg:w-44"
               >
                 {t("view.table.labels")}
               </th>
@@ -602,7 +602,7 @@ export function TableView({
               {visibleColumns.includes("checklists") ? (
                 <th
                   scope="col"
-                  className="hidden w-24 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
+                  className="hidden w-24 px-3 py-2 text-left text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.checklists")}
                 </th>
@@ -610,7 +610,7 @@ export function TableView({
               {visibleColumns.includes("description") ? (
                 <th
                   scope="col"
-                  className="hidden w-16 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
+                  className="hidden w-16 px-3 py-2 text-left text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.description")}
                 </th>
@@ -627,7 +627,7 @@ export function TableView({
               {visibleColumns.includes("updatedAt") ? (
                 <th
                   scope="col"
-                  className="hidden w-28 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
+                  className="hidden w-28 px-3 py-2 text-left text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.updatedAt")}
                 </th>
@@ -635,7 +635,7 @@ export function TableView({
               {visibleColumns.includes("activity") ? (
                 <th
                   scope="col"
-                  className="hidden w-20 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
+                  className="hidden w-20 px-3 py-2 text-left text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell"
                 >
                   {t("view.table.activity")}
                 </th>
@@ -903,7 +903,7 @@ function TableRowBody({
         >
           <td
             className={cn(
-              "relative min-w-0 px-2 py-2 sm:px-3",
+              "relative min-w-0 px-2 py-2 max-sm:py-0 sm:px-3",
               onToggleSelect &&
                 (selectionMode || selected) &&
                 "pl-8 max-lg:pl-12 sm:pl-9",
@@ -950,7 +950,7 @@ function TableRowBody({
                     onSubmitTitle(card.id, event.currentTarget.value);
                   if (event.key === "Escape") onCancelTitle();
                 }}
-                className="h-7 text-sm"
+                className="h-7 text-ui-body"
               />
             ) : (
               <span
@@ -960,6 +960,7 @@ function TableRowBody({
                 <span
                   role="button"
                   tabIndex={0}
+                  title={card.title}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
@@ -981,12 +982,12 @@ function TableRowBody({
                   }
                   className={cn(
                     "block truncate text-foreground/90 focus-visible:ring-2 focus-visible:ring-primary/40",
-                    !readOnly && "pr-9 group-hover/title:pr-16",
+                    !readOnly && (selectionMode ? "pr-0" : "pr-14 lg:pr-16"),
                   )}
                 >
                   <HighlightedText text={card.title} query={highlight ?? ""} />
                 </span>
-                {readOnly ? null : isArchiveConfirm ? (
+                {readOnly || selectionMode ? null : isArchiveConfirm ? (
                   <span
                     data-testid="table-archive-confirm"
                     className="absolute right-2 top-1/2 z-10 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md border border-border/60 bg-card/95 px-0.5 shadow-sm backdrop-blur-sm"
@@ -1025,12 +1026,12 @@ function TableRowBody({
                       event.stopPropagation();
                       onArchiveConfirm(card.id);
                     }}
-                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100"
+                    className="no-hover:hidden absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-warning/10 hover:text-(--chip-warning) focus-visible:opacity-100 group-hover/title:opacity-100 max-lg:hidden"
                   >
                     <Archive className="h-3.5 w-3.5" />
                   </button>
                 )}
-                {readOnly || isArchiveConfirm ? null : (
+                {readOnly || isArchiveConfirm || selectionMode ? null : (
                   <button
                     type="button"
                     data-testid="table-row-menu"
@@ -1038,9 +1039,9 @@ function TableRowBody({
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
-                      openMenu();
+                      openMenu(event.currentTarget);
                     }}
-                    className="absolute right-9 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 sm:opacity-0 sm:group-hover/title:opacity-100"
+                    className="absolute right-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground opacity-100 transition-opacity hover:bg-hover hover:text-foreground focus-visible:opacity-100 no-hover:opacity-100 max-lg:right-1 max-lg:h-11 max-lg:w-11 sm:opacity-0 sm:group-hover/title:opacity-100 lg:right-9"
                   >
                     <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
                   </button>
@@ -1053,7 +1054,7 @@ function TableRowBody({
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
-              <span className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground">
+              <span className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-ui-label text-muted-foreground">
                 {columnTitle}
               </span>
             ) : (
@@ -1063,7 +1064,7 @@ function TableRowBody({
                     type="button"
                     data-testid="table-column-cell"
                     title={t("view.table.moveHint")}
-                    className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    className="inline-flex max-w-full items-center truncate rounded-md bg-muted/50 px-1.5 py-0.5 text-ui-label text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {columnTitle}
                   </button>
@@ -1102,7 +1103,7 @@ function TableRowBody({
                           <span className="block truncate">{col.title}</span>
                           {reason ? (
                             <span
-                              className="block whitespace-normal text-[10px] leading-snug text-muted-foreground"
+                              className="block whitespace-normal text-ui-label leading-snug text-muted-foreground"
                               data-testid={`table-move-reason-${col.id}`}
                             >
                               {reason}
@@ -1110,7 +1111,7 @@ function TableRowBody({
                           ) : null}
                         </span>
                         {col.wipLimit !== undefined && (
-                          <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                          <span className="ml-auto pl-2 text-ui-meta tabular-nums text-muted-foreground">
                             {col.cardIds.length}/{col.wipLimit}
                           </span>
                         )}
@@ -1130,14 +1131,14 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="px-2 py-2 sm:px-3"
+            className="px-2 py-2 max-sm:[&_[data-due-status]]:h-auto max-sm:[&_[data-due-status]]:min-h-5 max-sm:[&_[data-due-status]]:max-w-full max-lg:py-0 sm:px-3"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
               typeof card.dueDate === "number" ? (
                 <DueBadge dueDate={card.dueDate} />
               ) : (
-                <span className="text-xs text-muted-foreground">—</span>
+                <span className="text-ui-meta text-muted-foreground">—</span>
               )
             ) : (
               <Popover>
@@ -1145,17 +1146,22 @@ function TableRowBody({
                   <button
                     type="button"
                     data-testid="table-due-cell"
-                    className="block max-w-full truncate rounded transition-opacity hover:opacity-80"
+                    className="block max-w-full rounded text-left transition-opacity hover:opacity-80 max-lg:flex max-lg:min-h-11 max-lg:w-full max-lg:items-center sm:truncate"
                   >
                     <span className="sr-only">{t("dueDate.label")} </span>
                     {typeof card.dueDate === "number" ? (
                       <DueBadge dueDate={card.dueDate} />
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <span className="text-ui-meta text-muted-foreground">
+                        —
+                      </span>
                     )}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="relative w-auto p-3">
+                <PopoverContent
+                  align="start"
+                  className="relative w-auto p-3 max-lg:w-[min(20rem,calc(100vw-1rem))] max-lg:max-w-[calc(100vw-1rem)]"
+                >
                   <DueDatePickerContent
                     cardId={card.id}
                     dueDate={card.dueDate}
@@ -1165,7 +1171,7 @@ function TableRowBody({
             )}
           </td>
           <td
-            className="hidden px-3 py-2 sm:table-cell"
+            className="hidden px-3 py-2 max-lg:py-0 sm:table-cell"
             onClick={(event) => event.stopPropagation()}
           >
             {readOnly ? (
@@ -1174,7 +1180,7 @@ function TableRowBody({
                   <span
                     key={label.id}
                     className={
-                      "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                      "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-ui-micro font-semibold uppercase tracking-wide " +
                       LABEL_COLOR_CHIP[label.color]
                     }
                   >
@@ -1186,7 +1192,7 @@ function TableRowBody({
                   </span>
                 ))}
                 {cardLabels.length === 0 ? (
-                  <span className="text-xs text-muted-foreground">—</span>
+                  <span className="text-ui-meta text-muted-foreground">—</span>
                 ) : null}
               </span>
             ) : (
@@ -1195,7 +1201,7 @@ function TableRowBody({
                   <button
                     type="button"
                     data-testid="table-labels-cell"
-                    className="max-w-44"
+                    className="flex w-full max-w-44 items-center max-lg:min-h-11"
                   >
                     <span className="sr-only">{t("view.table.labels")} </span>
                     {card.labelIds.length > 0 ? (
@@ -1204,7 +1210,7 @@ function TableRowBody({
                           <span
                             key={label.id}
                             className={
-                              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+                              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-ui-micro font-semibold uppercase tracking-wide " +
                               LABEL_COLOR_CHIP[label.color]
                             }
                           >
@@ -1217,7 +1223,9 @@ function TableRowBody({
                         ))}
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <span className="text-ui-meta text-muted-foreground">
+                        —
+                      </span>
                     )}
                   </button>
                 </PopoverTrigger>
@@ -1261,13 +1269,13 @@ function TableRowBody({
                   <span
                     data-testid="table-checklist"
                     title={t("checklist.badgeTooltip", { done, total })}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                    className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-ui-meta text-muted-foreground"
                   >
                     <ListChecks className="h-3 w-3" aria-hidden />
                     {done}/{total}
                   </span>
                 ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
+                  <span className="text-ui-meta text-muted-foreground">—</span>
                 );
               })()}
             </td>
@@ -1281,23 +1289,23 @@ function TableRowBody({
                   aria-label={t("view.table.description")}
                 />
               ) : (
-                <span className="text-xs text-muted-foreground">—</span>
+                <span className="text-ui-meta text-muted-foreground">—</span>
               )}
             </td>
           ) : null}
           {visibleColumns.includes("createdAt") ? (
-            <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
+            <td className="hidden px-3 py-2 text-ui-meta text-muted-foreground lg:table-cell">
               {formatDateOnly(card.createdAt, lang)}
             </td>
           ) : null}
           {visibleColumns.includes("updatedAt") ? (
-            <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
+            <td className="hidden px-3 py-2 text-ui-meta text-muted-foreground lg:table-cell">
               {formatDateOnly(card.updatedAt, lang)}
             </td>
           ) : null}
           {visibleColumns.includes("activity") ? (
             <td className="hidden px-3 py-2 lg:table-cell">
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1 text-ui-meta text-muted-foreground">
                 <MessageSquare className="h-3 w-3" aria-hidden />
                 {card.activity?.length ?? 0}
               </span>
@@ -1334,14 +1342,14 @@ function AssigneeCell({
 }) {
   const member = useBoardMember(boardId, assigneeId ?? null);
   if (!assigneeId) {
-    return <span className="text-xs text-muted-foreground">—</span>;
+    return <span className="text-ui-meta text-muted-foreground">—</span>;
   }
   // The assignee cell is a bounded table column now: a long e-mail must
   // truncate inside it instead of widening the column and squeezing the
   // title on a portrait tablet (QA-06).
   const label = userLabel(member?.displayName ?? null, member?.email ?? "");
   return (
-    <span className="flex min-w-0 items-center gap-1.5 text-sm">
+    <span className="flex min-w-0 items-center gap-1.5 text-ui-body">
       <UserAvatar
         userId={assigneeId}
         displayName={member?.displayName ?? null}
@@ -1422,14 +1430,14 @@ function TableCardComposer({
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
         }}
-        className="h-8 text-sm"
+        className="h-8 text-ui-body"
       />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            className="h-7 w-full justify-start text-xs"
+            className="h-7 w-full justify-start text-ui-body"
             data-testid="table-composer-column"
           >
             {selected?.title ?? "—"}
@@ -1452,7 +1460,7 @@ function TableCardComposer({
             >
               <span className="truncate">{col.title}</span>
               {col.wipLimit !== undefined && col.count !== undefined && (
-                <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                <span className="ml-auto pl-2 text-ui-meta tabular-nums text-muted-foreground">
                   {col.count}/{col.wipLimit}
                 </span>
               )}
@@ -1469,7 +1477,7 @@ function TableCardComposer({
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          className="h-7 flex-1 text-xs"
+          className="h-7 flex-1 text-ui-label"
           disabled={!title.trim() || selectedFull}
           title={
             selectedFull

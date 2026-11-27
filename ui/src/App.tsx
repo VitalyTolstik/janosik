@@ -175,7 +175,7 @@ export function NoBoardRoute() {
         <h2 className="mb-[7px] text-[23px] font-semibold leading-tight tracking-[-0.025em] text-foreground">
           {allArchived ? t("board.emptyArchived") : t("board.noBoard")}
         </h2>
-        <p className="mx-auto max-w-[360px] text-[13px] leading-[1.55] text-muted-foreground">
+        <p className="mx-auto max-w-[360px] text-ui-label leading-[1.55] text-muted-foreground">
           {allArchived ? t("board.emptyArchivedHint") : t("board.emptyNewHint")}
         </p>
 
@@ -190,15 +190,16 @@ export function NoBoardRoute() {
           <div className="mb-1.5 flex items-center gap-[7px]">
             <label
               htmlFor="first-board-name"
-              className="text-[12.5px] font-semibold text-foreground"
+              className="text-ui-label font-semibold text-foreground"
             >
               {t("board.firstRun.nameLabel")}
             </label>
-            <span className="rounded-[4px] border border-border px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            <span className="rounded-[4px] border border-border px-1.5 py-px text-ui-micro font-semibold uppercase tracking-[0.04em] text-muted-foreground">
               {t("board.firstRun.nameOptional")}
             </span>
           </div>
           <div className="relative">
+            {/* Keep touch inputs at 16px to prevent iOS focus zoom. */}
             <input
               id="first-board-name"
               name="board-title"
@@ -208,7 +209,7 @@ export function NoBoardRoute() {
               placeholder={t("board.firstRun.placeholder")}
               aria-describedby="first-board-name-help first-board-name-status"
               data-testid="empty-board-name"
-              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[620px]:text-base"
+              className="h-10 w-full rounded-lg border border-input bg-background px-3 text-ui-body text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground hover:border-muted-foreground/40 focus:border-primary focus:ring-[3px] focus:ring-primary/20 max-[1024.98px]:text-base"
             />
             <LimitCounter
               length={title.length}
@@ -219,7 +220,7 @@ export function NoBoardRoute() {
           </div>
           <p
             id="first-board-name-help"
-            className="mt-1.5 text-[10.5px] leading-[1.45] text-muted-foreground"
+            className="mt-1.5 text-ui-body leading-[1.45] text-muted-foreground"
           >
             {t("board.firstRun.nameHelper")}
           </p>
@@ -229,7 +230,7 @@ export function NoBoardRoute() {
               disabled={!canPickExample}
               onClick={() => setPickerOpen(true)}
               data-testid="empty-create-template"
-              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-action-primary px-3.5 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+              className="inline-flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg bg-action-primary px-3.5 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
               <Sparkles className="h-4 w-4" aria-hidden />
               {t("board.firstRun.starterCta")}
@@ -238,7 +239,7 @@ export function NoBoardRoute() {
               type="submit"
               disabled={!canCreate}
               data-testid="empty-create-board"
-              className="inline-flex h-11 min-w-[234px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
+              className="inline-flex h-11 min-w-[234px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3.5 text-ui-body font-medium text-foreground transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 max-[620px]:w-full max-[620px]:flex-none"
             >
               {busy === "empty" ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -252,7 +253,7 @@ export function NoBoardRoute() {
           </div>
           <p
             id="first-board-name-status"
-            className="mt-2.5 flex items-start gap-1 text-[10.5px] leading-[1.5] text-muted-foreground"
+            className="mt-2.5 flex items-start gap-1 text-ui-body leading-[1.5] text-muted-foreground"
           >
             <Info
               aria-hidden
@@ -263,7 +264,7 @@ export function NoBoardRoute() {
               : t("board.firstRun.emptyDisabledHint")}
           </p>
         </form>
-        <p className="mt-3.5 text-[10.5px] text-muted-foreground">
+        <p className="mt-3.5 text-ui-body text-muted-foreground">
           {t("board.firstRun.footHint")}
         </p>
         {allArchived ? <BoardSwitcher archivedEntry /> : null}
@@ -336,12 +337,12 @@ function BoardShell() {
         <BoardNotices />
         <main className="flex flex-1 items-center justify-center p-6">
           <div className="flex max-w-sm flex-col items-center gap-3 text-center text-muted-foreground">
-            <p className="text-sm">{t("sync.loadFailed")}</p>
+            <p className="text-ui-body">{t("sync.loadFailed")}</p>
             <button
               type="button"
               data-testid="sync-retry"
               onClick={() => window.location.reload()}
-              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8]"
+              className="inline-flex h-9 items-center rounded-lg bg-primary px-4 text-ui-body font-medium text-primary-foreground shadow-sm transition-colors hover:bg-[#1d4ed8]"
             >
               {t("sync.retry")}
             </button>
@@ -438,7 +439,7 @@ function AppGate() {
           className="flex flex-1 items-center justify-center gap-2 p-6 text-muted-foreground"
         >
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          <span className="text-sm">{t("auth.restoring")}</span>
+          <span className="text-ui-body">{t("auth.restoring")}</span>
         </main>
       )}
       {/* Login, verification and the boot splash have no notice stack; this

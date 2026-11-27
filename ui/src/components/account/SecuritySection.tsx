@@ -166,11 +166,11 @@ export function SecuritySection() {
   return (
     <section className="space-y-5" data-testid="account-security">
       <header className="space-y-1">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
+        <h3 className="flex items-center gap-2 text-ui-heading font-semibold">
           <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
           {t("account.security.title")}
         </h3>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-body text-muted-foreground">
           {t("account.security.description")}
         </p>
       </header>
@@ -184,7 +184,7 @@ export function SecuritySection() {
           <div className="space-y-1.5">
             <label
               htmlFor="security-current"
-              className="text-xs font-medium text-muted-foreground"
+              className="text-ui-label font-medium text-muted-foreground"
             >
               {t("account.security.current")}
             </label>
@@ -200,7 +200,7 @@ export function SecuritySection() {
         <div className="space-y-1.5">
           <label
             htmlFor="security-new"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.security.new")}
           </label>
@@ -215,7 +215,7 @@ export function SecuritySection() {
         <div className="space-y-1.5">
           <label
             htmlFor="security-confirm"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.security.confirm")}
           </label>
@@ -231,7 +231,7 @@ export function SecuritySection() {
           <p
             role="alert"
             data-testid="security-error"
-            className="text-xs text-danger"
+            className="text-ui-label text-danger"
           >
             {validationError ?? error}
           </p>
@@ -239,7 +239,7 @@ export function SecuritySection() {
 
         {user?.hasPassword !== false && providers.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-ui-body text-muted-foreground">
               {t("account.security.oauthLinkHint")}
             </p>
             <div className="flex flex-wrap gap-2">
@@ -261,7 +261,7 @@ export function SecuritySection() {
         )}
 
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("account.security.note")}
           </p>
           <Button

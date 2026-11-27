@@ -42,8 +42,9 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(trigger).toHaveAttribute("aria-controls", listbox.id);
     expect(listbox).toHaveAttribute("role", "listbox");
     expect(listbox.style.pointerEvents).toBe("auto");
-    expect(listbox.style.minWidth).toBe("210px");
+    expect(listbox.style.minWidth).toBe("300px");
     expect(listbox.style.maxWidth).toContain("320px");
+    expect(trigger).toHaveAttribute("title", "Alpha");
     expect(trigger).toHaveAttribute(
       "aria-activedescendant",
       optionId(listbox, 0),
@@ -165,7 +166,7 @@ describe("SelectField combobox (TASK-179.9)", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("keeps 36 px desktop rows and 44 px mobile rows", async () => {
+  it("keeps 36 px desktop rows and 44 px touch rows", async () => {
     const user = userEvent.setup();
     render(
       <SelectField
@@ -179,7 +180,7 @@ describe("SelectField combobox (TASK-179.9)", () => {
     await user.click(screen.getByTestId("picker"));
     const option = screen.getByTestId("picker-option-beta");
     expect(option.className).toContain("min-h-9");
-    expect(option.className).toContain("max-md:min-h-11");
+    expect(option.className).toContain("max-lg:min-h-11");
     expect(option).toHaveAttribute("role", "option");
   });
 

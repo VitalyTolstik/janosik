@@ -129,8 +129,10 @@ export function ProfileSection() {
   return (
     <section className="space-y-5" data-testid="account-profile">
       <header className="space-y-1">
-        <h3 className="text-sm font-semibold">{t("account.profile.title")}</h3>
-        <p className="text-xs text-muted-foreground">
+        <h3 className="text-ui-heading font-semibold">
+          {t("account.profile.title")}
+        </h3>
+        <p className="text-ui-body text-muted-foreground">
           {t("account.profile.description")}
         </p>
       </header>
@@ -147,8 +149,9 @@ export function ProfileSection() {
           ) : (
             <span
               aria-hidden
+              data-testid="user-avatar"
               className={cn(
-                "flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white shadow-sm",
+                "flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-[var(--avatar-ink)] shadow-sm",
                 avatarColorClass(color ?? avatarColorKey(user.id)),
               )}
             >
@@ -170,6 +173,7 @@ export function ProfileSection() {
             variant="outline"
             size="sm"
             data-testid="avatar-photo-upload"
+            className="max-lg:min-h-11"
             disabled={uploading}
             onClick={() => photoInputRef.current?.click()}
           >
@@ -178,15 +182,15 @@ export function ProfileSection() {
               ? t("account.profile.avatarUploading")
               : t("account.profile.avatarUpload")}
           </Button>
-          <p className="max-w-[12rem] text-center text-[10px] text-muted-foreground">
+          <p className="max-w-[12rem] text-center text-ui-meta text-muted-foreground">
             {t("account.profile.avatarHint")}
           </p>
         </div>
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">
+          <p className="text-ui-label font-medium text-muted-foreground">
             {t("account.profile.colorLabel")}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
               data-testid="avatar-color-auto"
@@ -195,7 +199,7 @@ export function ProfileSection() {
               title={t("account.profile.colorAuto")}
               onClick={() => setColor(null)}
               className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-foreground/40 text-foreground/70 transition-transform hover:scale-110",
+                "flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-foreground/40 text-foreground/70 transition-transform hover:scale-110 max-lg:relative max-lg:before:absolute max-lg:before:-inset-[9px] max-lg:before:content-['']",
                 color === null &&
                   "ring-2 ring-ring ring-offset-2 ring-offset-background",
               )}
@@ -211,7 +215,7 @@ export function ProfileSection() {
                 aria-pressed={color === key}
                 onClick={() => setColor(key)}
                 className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full text-white transition-transform hover:scale-110",
+                  "flex h-7 w-7 items-center justify-center rounded-full text-white transition-transform hover:scale-110 max-lg:relative max-lg:before:absolute max-lg:before:-inset-2 max-lg:before:content-['']",
                   avatarColorClass(key),
                   color === key &&
                     "ring-2 ring-ring ring-offset-2 ring-offset-background",
@@ -230,7 +234,7 @@ export function ProfileSection() {
         <div className="space-y-1.5">
           <label
             htmlFor="account-display-name"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.profile.nameLabel")}
           </label>
@@ -246,17 +250,18 @@ export function ProfileSection() {
             <Button
               type="submit"
               data-testid="account-profile-save"
+              className="max-lg:min-h-11"
               disabled={!dirty || saving}
             >
               {saving ? t("common.saving") : t("common.save")}
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("account.profile.nameHint", { max: DISPLAY_NAME_MAX })}
           </p>
         </div>
 
-        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+        <label className="flex items-start gap-2 text-ui-label text-muted-foreground max-lg:min-h-11 max-lg:items-center">
           <input
             type="checkbox"
             data-testid="account-notify-digest"
@@ -267,13 +272,13 @@ export function ProfileSection() {
           />
           <span>
             {t("account.profile.digest")}
-            <span className="block text-[11px] text-muted-foreground/80">
+            <span className="block text-ui-meta text-muted-foreground">
               {t("account.profile.digestHint")}
             </span>
           </span>
         </label>
 
-        <label className="flex items-start gap-2 text-xs text-muted-foreground">
+        <label className="flex items-start gap-2 text-ui-label text-muted-foreground max-lg:min-h-11 max-lg:items-center">
           <input
             type="checkbox"
             data-testid="account-notify-attention"
@@ -284,7 +289,7 @@ export function ProfileSection() {
           />
           <span>
             {t("account.profile.attention")}
-            <span className="block text-[11px] text-muted-foreground/80">
+            <span className="block text-ui-meta text-muted-foreground">
               {t("account.profile.attentionHint")}
             </span>
           </span>
@@ -293,7 +298,7 @@ export function ProfileSection() {
         <div className="space-y-1.5">
           <label
             htmlFor="account-email"
-            className="text-xs font-medium text-muted-foreground"
+            className="text-ui-label font-medium text-muted-foreground"
           >
             {t("account.profile.emailLabel")}
           </label>
@@ -304,17 +309,19 @@ export function ProfileSection() {
               value={user.email}
               disabled
               readOnly
+              className="text-ui-label"
             />
             <Button
               type="button"
               variant="outline"
               data-testid="account-email-change"
+              className="max-lg:min-h-11"
               onClick={() => setChangingEmail(true)}
             >
               {t("account.email.change")}
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-ui-meta text-muted-foreground">
             {t("account.profile.emailHint")}
           </p>
         </div>

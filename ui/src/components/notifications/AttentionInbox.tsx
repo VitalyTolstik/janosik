@@ -88,7 +88,7 @@ export function AttentionInbox({
       className="border-b border-border/60"
     >
       <div className="flex items-center justify-between gap-2 px-4 py-3">
-        <h2 id="attention-inbox-heading" className="text-sm font-semibold">
+        <h2 id="attention-inbox-heading" className="text-ui-body font-semibold">
           {t("notifications.attention.title")}
         </h2>
         {(page?.unreadCount ?? 0) > 0 ? (
@@ -111,7 +111,7 @@ export function AttentionInbox({
       </div>
 
       {unavailable && (
-        <div className="px-4 pb-3 text-xs">
+        <div className="px-4 pb-3 text-ui-label">
           <p role="alert" className="text-danger">
             {t("notifications.attention.loadError")}
           </p>
@@ -128,12 +128,15 @@ export function AttentionInbox({
       )}
       {visible === null ? (
         !unavailable && (
-          <p role="status" className="px-4 pb-3 text-xs text-muted-foreground">
+          <p
+            role="status"
+            className="px-4 pb-3 text-ui-label text-muted-foreground"
+          >
             {t("notifications.attention.loading")}
           </p>
         )
       ) : visible.items.length === 0 ? (
-        <p className="px-4 pb-4 text-sm text-muted-foreground">
+        <p className="px-4 pb-4 text-ui-body text-muted-foreground">
           {t("notifications.attention.empty")}
         </p>
       ) : (
@@ -169,8 +172,8 @@ export function AttentionInbox({
                   <p
                     className={
                       unread
-                        ? "break-words text-sm font-semibold"
-                        : "break-words text-sm"
+                        ? "break-words text-ui-body font-semibold"
+                        : "break-words text-ui-body"
                     }
                   >
                     {item.title}
@@ -180,7 +183,7 @@ export function AttentionInbox({
                     href={target.href}
                     data-testid="attention-link"
                     aria-label={openLabel}
-                    className="group -mx-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-1 text-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group -mx-1 inline-flex min-h-11 items-center gap-1.5 rounded-md px-1 text-ui-body underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={(event) => follow(event, target)}
                     onAuxClick={(event) => {
                       // Auxclick also fires for right-click; only the wheel
@@ -202,13 +205,13 @@ export function AttentionInbox({
                   </a>
                 )}
                 {item.body && (
-                  <p className="whitespace-pre-line break-words text-xs text-muted-foreground">
+                  <p className="whitespace-pre-line break-words text-ui-label text-muted-foreground">
                     {item.body}
                   </p>
                 )}
                 <div className="flex min-h-7 items-center justify-between gap-2">
                   <time
-                    className="text-xs text-muted-foreground"
+                    className="text-ui-label text-muted-foreground"
                     dateTime={new Date(item.createdAt).toISOString()}
                   >
                     {formatDateOnly(item.createdAt, lang)}

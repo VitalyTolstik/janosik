@@ -78,7 +78,7 @@ export function PresenceStack() {
             {overflow > 0 ? (
               <span
                 data-testid="presence-overflow"
-                className="-ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground ring-2 ring-background"
+                className="-ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-ui-micro font-semibold tabular-nums text-muted-foreground ring-2 ring-background"
               >
                 +{overflow}
               </span>
@@ -95,7 +95,7 @@ export function PresenceStack() {
         align="start"
         className="w-64 overflow-hidden rounded-xl border bg-popover/95 p-0 shadow-xl backdrop-blur-md"
       >
-        <div className="border-b border-border/60 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="border-b border-border/60 px-3 py-2 text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
           {t("presence.title")}
         </div>
         <ul className="max-h-64 overflow-y-auto p-1.5">
@@ -151,15 +151,15 @@ function PresenceRow({
           avatarPath={person.avatarPath ?? member?.avatarPath}
           size="sm"
         />
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
+        <span className="min-w-0 flex-1 truncate text-ui-body text-foreground/90">
           {name}
         </span>
         {isMe ? (
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
             {t("presence.you")}
           </span>
         ) : member ? (
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+          <span className="shrink-0 text-ui-micro uppercase tracking-wide text-muted-foreground/70">
             {t(ROLE_KEYS[member.role])}
           </span>
         ) : null}

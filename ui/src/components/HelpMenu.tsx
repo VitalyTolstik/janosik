@@ -88,7 +88,7 @@ export function HelpMenu({
           >
             <Keyboard className="h-4 w-4" />
             <span className="flex-1">{t("shortcuts.title")}</span>
-            <kbd className="rounded border border-border bg-muted px-1.5 font-mono text-xs text-muted-foreground">
+            <kbd className="rounded border border-border bg-muted px-1.5 font-mono text-ui-micro text-muted-foreground">
               ?
             </kbd>
           </DropdownMenuItem>

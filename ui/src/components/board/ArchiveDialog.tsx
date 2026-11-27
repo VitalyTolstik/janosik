@@ -245,7 +245,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
             }}
             placeholder={t("archive.searchPlaceholder")}
             data-testid="archive-search"
-            className="h-8 pl-8 text-sm"
+            className="h-8 pl-8 text-ui-body"
           />
         </div>
       ) : null}
@@ -276,11 +276,11 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
             />
             <label
               htmlFor={selectAllId}
-              className="cursor-pointer text-xs text-foreground"
+              className="cursor-pointer text-ui-label text-foreground"
             >
               {t(needle ? "archive.selectMatching" : "archive.selectAll")}
             </label>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-ui-label text-muted-foreground">
               {t("archive.selected", { count: selected.length })}
             </span>
             {selected.length > 0 && (
@@ -331,7 +331,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                     >
                       <span className="truncate">{column.title}</span>
                       {column.wipLimit !== undefined && (
-                        <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                        <span className="ml-auto pl-2 text-ui-label tabular-nums text-muted-foreground">
                           {column.cardIds.length}/{column.wipLimit}
                         </span>
                       )}
@@ -352,7 +352,10 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
             </Button>
           </div>
           {currentBatch && (
-            <p role="status" className="px-2.5 text-xs text-muted-foreground">
+            <p
+              role="status"
+              className="px-2.5 text-ui-label text-muted-foreground"
+            >
               {t("archive.progress", {
                 done: currentBatch.done,
                 total: currentBatch.total,
@@ -360,12 +363,15 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
             </p>
           )}
           {busy && !currentBatch && (
-            <p role="status" className="px-2.5 text-xs text-muted-foreground">
+            <p
+              role="status"
+              className="px-2.5 text-ui-label text-muted-foreground"
+            >
               {t("archive.backgroundOtherBoard")}
             </p>
           )}
           {hiddenSelectedCount > 0 && !busy && (
-            <p className="px-2.5 text-xs text-muted-foreground">
+            <p className="px-2.5 text-ui-label text-muted-foreground">
               {t("archive.hiddenSelected", { count: hiddenSelectedCount })}
             </p>
           )}
@@ -377,11 +383,11 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
         data-testid="archive-list"
       >
         {archived.length === 0 ? (
-          <p className="flex h-full items-center justify-center py-8 text-center text-sm text-muted-foreground">
+          <p className="flex h-full items-center justify-center py-8 text-center text-ui-body text-muted-foreground">
             {t(currentBatch ? "archive.backgroundEmpty" : "archive.empty")}
           </p>
         ) : visible.length === 0 ? (
-          <p className="flex h-full items-center justify-center py-8 text-center text-sm text-muted-foreground">
+          <p className="flex h-full items-center justify-center py-8 text-center text-ui-body text-muted-foreground">
             {t("archive.noMatches")}
           </p>
         ) : (
@@ -422,12 +428,12 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                       data-testid="archive-row-title"
                       onClick={() => openCard(card.id)}
                       disabled={busy}
-                      className="min-w-0 flex-1 truncate text-left text-sm text-foreground/90 transition-colors hover:text-primary"
+                      className="min-w-0 flex-1 truncate text-left text-ui-body text-foreground/90 transition-colors hover:text-primary"
                       title={card.title}
                     >
                       {card.title}
                     </button>
-                    <div className="shrink-0 text-[11px] text-muted-foreground sm:w-[22rem]">
+                    <div className="shrink-0 text-ui-meta text-muted-foreground sm:w-[22rem]">
                       {t("archive.created", {
                         date: formatDate(card.createdAt, lang, hour12),
                       })}
@@ -440,7 +446,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                   {canManage ? (
                     confirming ? (
                       <div className="mt-1 flex w-full min-w-0 items-center justify-end gap-0.5 lg:mt-0 lg:w-auto">
-                        <span className="min-w-0 whitespace-normal break-words text-right text-xs leading-tight text-muted-foreground">
+                        <span className="min-w-0 whitespace-normal break-words text-right text-ui-label leading-tight text-muted-foreground">
                           {t("archive.deleteConfirm")}
                         </span>
                         <Button
@@ -516,7 +522,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
                                     {column.title}
                                   </span>
                                   {column.wipLimit !== undefined && (
-                                    <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">
+                                    <span className="ml-auto pl-2 text-ui-label tabular-nums text-muted-foreground">
                                       {column.cardIds.length}/{column.wipLimit}
                                     </span>
                                   )}
@@ -548,7 +554,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
       {canManage ? (
         <p
           data-testid="archive-undo-hint"
-          className="text-xs text-muted-foreground"
+          className="text-ui-label text-muted-foreground"
         >
           {t("archive.restoreUndoHint")}
         </p>
@@ -558,7 +564,7 @@ function ArchiveContent({ onOpenChange, boardId }: ArchiveContentProps) {
           className="flex items-center justify-between gap-3 border-t pt-3"
           data-testid="archive-pagination"
         >
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui-label text-muted-foreground">
             {t("archive.page", { page: currentPage + 1, total: pageCount })}
           </span>
           <div className="flex items-center gap-1">

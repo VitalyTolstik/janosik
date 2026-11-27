@@ -533,7 +533,7 @@ describe("AttentionApprovals", () => {
     const close = await screen.findByRole("button", { name: "Close detail" });
     expect(close.className).toContain("h-8");
     expect(close.className).toContain("px-[11px]");
-    expect(close.className).toContain("text-[11.5px]");
+    expect(close.className).toContain("text-ui-label");
     expect(close.className).not.toContain("h-7");
   });
 
@@ -559,7 +559,7 @@ describe("AttentionApprovals", () => {
     expect(close).toBeDefined();
     expect(close?.className).toContain("h-7");
     expect(close?.className).toContain("px-[9px]");
-    expect(close?.className).toContain("text-[11px]");
+    expect(close?.className).toContain("text-ui-label");
     expect(close?.className).not.toContain("h-8");
   });
 });

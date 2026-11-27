@@ -41,7 +41,7 @@ export function GlobalTransitions({
       data-testid={`${testIdPrefix}-globals`}
     >
       <div className="flex min-w-0 items-start gap-2.5">
-        <span className="inline-flex shrink-0 items-center gap-1 pt-1 text-[11px] leading-4 text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center gap-1 pt-1 text-ui-label leading-4 text-muted-foreground">
           <GlobalMark />
           {t("workflow.globalsLead")}
         </span>
@@ -58,7 +58,7 @@ export function GlobalTransitions({
                 type="button"
                 data-testid={`${testIdPrefix}-global-${transition.id}`}
                 onClick={() => onSelect(transition.id)}
-                className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[5px] border border-warning/30 bg-warning/[0.06] px-1.5 text-[11px] text-foreground transition-colors hover:border-warning/50 hover:bg-warning/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none"
+                className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[5px] border border-warning/30 bg-warning/[0.06] px-1.5 text-ui-meta text-foreground transition-colors hover:border-warning/50 hover:bg-warning/[0.13] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none"
               >
                 <ColumnDot
                   color={columnAccent(column, index)}
@@ -68,14 +68,14 @@ export function GlobalTransitions({
                 <span>
                   {t("workflow.globalChip", { column: column.title })}
                 </span>
-                <span className="font-mono text-[11px] text-muted-foreground max-[360px]:hidden">
+                <span className="font-mono text-ui-micro text-muted-foreground max-[360px]:hidden">
                   {formatRoles(transition.allowedRoles, t)}
                 </span>
               </button>
             );
           })}
           {globals.length === 0 ? (
-            <span className="px-1 pt-1 text-[11px] text-muted-foreground">
+            <span className="px-1 pt-1 text-ui-label text-muted-foreground">
               {t("workflow.globalEmptyShort")}
             </span>
           ) : null}
@@ -86,7 +86,7 @@ export function GlobalTransitions({
                 disabled={!canEdit || targets.length === 0}
                 aria-label={t("workflow.globalAddTarget")}
                 data-testid={`${testIdPrefix}-global-add`}
-                className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-[5px] border border-dashed border-muted-foreground/25 px-1.5 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+                className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-[5px] border border-dashed border-muted-foreground/25 px-1.5 text-ui-label text-muted-foreground transition-colors hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
               >
                 <Plus className="h-3 w-3" aria-hidden />
                 {t("workflow.globalAddShort")}

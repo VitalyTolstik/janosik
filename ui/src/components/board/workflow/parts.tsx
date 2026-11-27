@@ -63,14 +63,14 @@ export function SectionLabel({
     <div className="flex items-baseline justify-between gap-3">
       <p
         id={id}
-        className="text-xs font-semibold tracking-[-0.005em] text-foreground"
+        className="text-ui-body font-semibold tracking-[-0.005em] text-foreground"
       >
         {title}
       </p>
       {aside ? (
         <span
           data-testid={asideTestId}
-          className="shrink-0 font-mono text-[11px] font-normal tracking-[-0.01em] text-muted-foreground"
+          className="shrink-0 font-mono text-ui-meta font-normal tracking-[-0.01em] text-muted-foreground"
         >
           {aside}
         </span>
@@ -83,7 +83,7 @@ export function GlobalMark() {
   return (
     <span
       aria-hidden
-      className="inline-grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full bg-warning/15 font-mono text-[11px] leading-none text-(--chip-warning)"
+      className="inline-grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full bg-warning/15 font-mono text-ui-micro leading-none text-(--chip-warning)"
     >
       *
     </span>
@@ -128,8 +128,8 @@ export function WorkflowCheck({
       className={cn(
         "inline-flex min-w-0 items-center gap-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none",
         variant === "chip"
-          ? "rounded-[5px] border px-1.5 py-0.5 text-[11px] leading-4"
-          : "rounded-sm py-0.5 text-xs leading-[1.35]",
+          ? "rounded-[5px] border px-1.5 py-0.5 text-ui-label leading-4"
+          : "rounded-sm py-0.5 text-ui-label leading-[1.35]",
         variant === "chip" && checked
           ? "border-primary/40 bg-primary/[0.13] text-foreground"
           : variant === "chip"

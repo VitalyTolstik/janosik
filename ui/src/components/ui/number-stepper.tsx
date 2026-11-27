@@ -96,7 +96,7 @@ export function NumberStepper({
         onFocus={(event) => event.target.select()}
         className="pr-10"
       />
-      <div className="absolute inset-y-1 right-1 flex w-7 flex-col overflow-hidden rounded-sm border border-input bg-muted/50">
+      <div className="absolute inset-y-1 right-1 flex w-7 flex-col overflow-hidden rounded-sm border border-input bg-muted/50 max-lg:hidden">
         <button
           type="button"
           tabIndex={-1}

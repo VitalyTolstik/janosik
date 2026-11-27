@@ -117,14 +117,14 @@ function LiveSessionRow({
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          <b className="max-w-full truncate text-[11px] font-[650] leading-[1.35]">
+          <b className="max-w-full truncate text-ui-label font-[650] leading-[1.35]">
             {session.name ?? t("agentControl.sessions.unnamed")}
           </b>
           <SessionStatePill session={session} />
           {session.stale && !session.paused ? (
             <span
               data-testid="agent-session-no-heartbeat"
-              className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-[11px] font-[650] text-[color:var(--agent-tone-warning)]"
+              className="inline-flex items-center rounded-[4px] border border-warning/34 bg-warning/6 px-1 py-px text-ui-micro font-[650] text-[color:var(--agent-tone-warning)]"
             >
               {t("agentControl.live.noHeartbeatChip")}
             </span>
@@ -141,7 +141,7 @@ function LiveSessionRow({
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-ui-meta text-muted-foreground">
           <HeartbeatText session={session} now={now} />
           <span aria-hidden>·</span>
           <span className="truncate">
@@ -157,7 +157,7 @@ function LiveSessionRow({
           </span>
         </div>
         {pausedByOtherScope ? (
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-ui-meta text-muted-foreground">
             {t("agentControl.live.pausedByScope", {
               scope: t(SCOPE_KEYS[session.pauseScope ?? "board"]),
             })}
@@ -166,13 +166,13 @@ function LiveSessionRow({
       </div>
 
       <div className="min-w-0 max-[760px]:col-start-1 max-[760px]:row-start-2">
-        <b className="block truncate text-[11px] font-[550] leading-[1.35]">
+        <b className="block truncate text-ui-label font-[550] leading-[1.35]">
           {session.currentCardId === null
             ? t("agentControl.live.noCurrentCard")
             : (cardTitles.get(session.currentCardId) ??
               shortId(session.currentCardId))}
         </b>
-        <span className="mt-px block truncate text-[11px] text-muted-foreground">
+        <span className="mt-px block truncate text-ui-meta text-muted-foreground">
           {session.currentRunId === null
             ? t("agentControl.live.noCurrentRun")
             : t("agents.runHash", { id: runNumber(session.currentRunId) })}
@@ -189,7 +189,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-resume"
                 onClick={() => onAction("resume", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[1280px]:h-[26px] min-[1280px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-ui-meta font-[650] min-[761px]:px-[7px] min-[761px]:text-ui-meta min-[1280px]:h-[26px] min-[1280px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <Play className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.resume")}
@@ -201,7 +201,7 @@ function LiveSessionRow({
                 variant="outline"
                 data-testid="agent-session-pause"
                 onClick={() => onAction("pause", session)}
-                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-[11px] font-[650] min-[761px]:px-[7px] min-[761px]:text-[10px] min-[1280px]:h-[26px] min-[1280px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
+                className="h-11 min-h-11 gap-[6px] rounded-[6px] px-[10px] text-ui-meta font-[650] min-[761px]:px-[7px] min-[761px]:text-ui-meta min-[1280px]:h-[26px] min-[1280px]:min-h-[26px] min-[761px]:bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] [&_svg]:!h-[13px] [&_svg]:!w-[13px]"
               >
                 <Pause className="h-[13px] w-[13px]" aria-hidden />
                 {t("agentControl.pause.pause")}
@@ -215,7 +215,7 @@ function LiveSessionRow({
               aria-label={t("agentControl.live.endSession")}
               title={t("agentControl.live.endSessionHint")}
               onClick={() => onAction("end", session)}
-              className="h-11 w-11 min-h-11 rounded-[5px] px-0 text-[13px] font-normal leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[1280px]:h-6 min-[1280px]:w-6 min-[1280px]:min-h-6 [&_svg]:!h-3.5 [&_svg]:!w-3.5"
+              className="h-11 w-11 min-h-11 rounded-[5px] px-0 text-ui-label font-normal leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[1280px]:h-6 min-[1280px]:w-6 min-[1280px]:min-h-6 [&_svg]:!h-3.5 [&_svg]:!w-3.5"
             >
               <Square className="h-3.5 w-3.5" aria-hidden />
             </Button>
@@ -276,10 +276,10 @@ function BoardPauseDialog({
     >
       {/* Inline-block textarea + inherited 11.5/1.55 line box: the baseline
           gap below the field is the prototype's, not extra footer padding. */}
-      <div className="mt-[10px] mb-[2px] text-[11.5px] leading-[1.55]">
+      <div className="mt-[10px] mb-[2px] text-ui-label leading-[1.55]">
         <label
           htmlFor={pause ? "board-pause-reason" : "board-resume-reason"}
-          className="block text-[10px] leading-[15.5px] font-semibold text-muted-foreground"
+          className="block text-ui-label leading-[15.5px] font-semibold text-muted-foreground"
         >
           {t("agentControl.pause.reasonLabel")}
         </label>
@@ -295,7 +295,7 @@ function BoardPauseDialog({
               : "agentControl.pause.boardResumeReasonPlaceholder",
           )}
           data-testid={pause ? "board-pause-reason" : "board-resume-reason"}
-          className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-[11.5px] leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
+          className="mt-[3px] min-h-[70px] resize-y rounded-[6px] border-border bg-background px-2 py-2 text-ui-body leading-[1.55] !inline-block focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
           autoFocus
         />
       </div>
@@ -718,7 +718,7 @@ export function PausePanel({
             <p>{t("agentControl.live.emptyBody")}</p>
             {paused ? (
               <p
-                className="mt-1 flex items-center gap-1.5 rounded-[5px] border border-warning/40 bg-warning/[0.07] px-2 py-1 text-[11px] leading-[1.4] text-foreground"
+                className="mt-1 flex items-center gap-1.5 rounded-[5px] border border-warning/40 bg-warning/[0.07] px-2 py-1 text-ui-meta leading-[1.4] text-foreground"
                 data-testid="agent-live-empty-paused"
               >
                 <Pause className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -755,13 +755,13 @@ export function PausePanel({
                   <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[5px] border border-border bg-surface text-muted-foreground">
                     <Bot className="h-3 w-3" aria-hidden />
                   </span>
-                  <b className="min-w-0 truncate text-[11px] font-[650]">
+                  <b className="min-w-0 truncate text-ui-label font-[650]">
                     {group.name}
                   </b>
-                  <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-[11px] text-muted-foreground">
+                  <span className="max-w-full truncate rounded-[3px] border border-border bg-background px-1 py-px font-mono text-ui-micro text-muted-foreground">
                     {shortTokenId(group.tokenId)}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-ui-meta text-muted-foreground">
                     {t("agentControl.live.groupLive", {
                       count: group.rows.filter(
                         (row) =>
@@ -802,7 +802,7 @@ export function PausePanel({
             ))}
 
             {!admin ? (
-              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
+              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-ui-label text-muted-foreground">
                 <ShieldCheck className="mt-px h-3 w-3 shrink-0" aria-hidden />
                 {t("agentControl.live.readOnlyNote")}
               </div>
@@ -810,7 +810,7 @@ export function PausePanel({
 
             <p
               data-testid="pause-semantics"
-              className="mt-[9px] mb-0 text-[11px] leading-[1.5] text-muted-foreground"
+              className="mt-[9px] mb-0 text-ui-label leading-[1.5] text-muted-foreground"
             >
               {t("agentControl.live.claims")}
             </p>

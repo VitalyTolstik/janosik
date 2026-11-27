@@ -480,7 +480,7 @@ function CardItemView({
             <p
               title={card.title}
               data-testid="card-title"
-              className="min-w-0 flex-1 truncate text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]"
+              className="min-w-0 flex-1 truncate text-ui-body leading-5 text-foreground/90 [overflow-wrap:anywhere]"
             >
               <HighlightedText text={card.title} query={highlight ?? ""} />
             </p>
@@ -518,7 +518,7 @@ function CardItemView({
                 data-testid="card-checklist-badge"
                 title={t("checklist.badgeTooltip", { done, total })}
                 className={cn(
-                  "shrink-0 text-[11px] font-medium tabular-nums",
+                  "shrink-0 text-ui-micro font-medium tabular-nums",
                   done === total
                     ? "text-(--chip-green)"
                     : "text-muted-foreground",
@@ -567,7 +567,7 @@ function CardItemView({
                 ref={titleRef}
                 title={titleClamped ? card.title : undefined}
                 className={cn(
-                  "line-clamp-2 break-words text-sm leading-5 text-foreground/90 [overflow-wrap:anywhere]",
+                  "line-clamp-2 break-words text-ui-body leading-5 text-foreground/90 [overflow-wrap:anywhere]",
                   labels.length > 0 ? "min-w-0 flex-1" : "w-3/4 shrink-0",
                 )}
                 data-testid="card-title"
@@ -582,14 +582,14 @@ function CardItemView({
               <div
                 data-testid="card-labels"
                 aria-label={labels.map((label) => label.name).join(", ")}
-                className="flex h-[19px] shrink-0 flex-wrap content-center items-center gap-1 overflow-hidden"
+                className="flex h-[19px] shrink-0 flex-wrap content-start items-center gap-1 overflow-hidden"
               >
                 {labels.map((label) => (
                   <span
                     key={label.id}
                     title={label.name}
                     className={cn(
-                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full px-1.5 py-0.5 text-ui-micro font-semibold uppercase tracking-wide",
                       LABEL_COLOR_CHIP[label.color],
                     )}
                   >
@@ -656,7 +656,7 @@ function CardItemView({
                     <TooltipTrigger asChild>
                       <span
                         className={cn(
-                          "inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium tabular-nums transition-colors",
+                          "inline-flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 text-ui-micro font-medium tabular-nums transition-colors",
                           done === total
                             ? "border-success/40 bg-success/10 text-(--chip-green)"
                             : "border-border/60 bg-muted/50 text-muted-foreground group-hover:border-primary/40 group-hover:text-(--tab-text)",

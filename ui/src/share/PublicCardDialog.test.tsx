@@ -117,7 +117,7 @@ describe("PublicCardDialog", () => {
         "max-w-full",
         "whitespace-pre-wrap",
         "wrap-anywhere",
-        "text-sm",
+        "text-ui-body",
       );
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     } finally {

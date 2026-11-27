@@ -71,27 +71,14 @@ export function DueDatePickerContent({
 
   return (
     <>
-      {/* The time wheel panel opens to the LEFT of the calendar inside
-          the same popover (no nested overlay): bottom edges aligned,
-          same card look, zero layout shift. */}
-      {timeOpen && (
-        <div
-          data-testid="due-time-panel"
-          className="absolute -bottom-px right-full mr-2 rounded-md border border-border bg-popover p-2 shadow-md animate-in fade-in slide-in-from-right-1"
-        >
-          <TimePickerPanel
-            value={time}
-            onChange={applyTime}
-            onConfirm={() => setTimeOpen(false)}
-          />
-        </div>
-      )}
-      <Calendar
-        mode="single"
-        localeTag={lang}
-        selected={due?.date}
-        onSelect={applyDate}
-      />
+      <div className={timeOpen ? "max-md:hidden" : undefined}>
+        <Calendar
+          mode="single"
+          localeTag={lang}
+          selected={due?.date}
+          onSelect={applyDate}
+        />
+      </div>
       <div className="mt-1 flex items-center gap-2 border-t border-border/60 pt-2">
         <TimePickerTrigger
           value={time}
@@ -102,7 +89,7 @@ export function DueDatePickerContent({
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+            className="ml-auto text-(--chip-red) hover:bg-danger/10 hover:text-(--chip-red)"
             onClick={remove}
             data-testid="due-date-remove"
           >
@@ -111,6 +98,24 @@ export function DueDatePickerContent({
           </Button>
         ) : null}
       </div>
+      {/* Desktop: the time wheel opens to the LEFT of the calendar, bottom
+          edges aligned, inside the same popover. On phones the side wheel
+          would land outside the viewport: the calendar yields to a full-width
+          wheel under the trigger row, so the complete hour/minute columns
+          stay on screen. Tablet keeps both. */}
+      {timeOpen && (
+        <div
+          data-testid="due-time-panel"
+          className="absolute -bottom-px right-full mr-2 rounded-md border border-border bg-popover p-2 shadow-md animate-in fade-in slide-in-from-right-1 max-lg:static max-lg:right-auto max-lg:bottom-auto max-lg:mt-2 max-lg:mr-0 max-lg:w-full max-lg:max-w-none max-lg:animate-none"
+        >
+          <TimePickerPanel
+            value={time}
+            onChange={applyTime}
+            onConfirm={() => setTimeOpen(false)}
+            className="max-lg:w-full max-lg:[&>*]:flex-1"
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -143,11 +148,11 @@ export function CardDueDate({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-xs font-medium text-muted-foreground">
+      <span className="text-ui-label font-medium text-muted-foreground">
         {t("dueDate.label")}
       </span>
       {readOnly ? (
-        <span className="text-sm text-foreground">
+        <span className="text-ui-body text-foreground">
           {due
             ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
             : t("dueDate.set")}
@@ -155,14 +160,22 @@ export function CardDueDate({
       ) : (
         <Popover open={open} onOpenChange={(next) => setOpen(next)}>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" data-testid="due-date-trigger">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="due-date-trigger"
+              className="text-ui-label"
+            >
               <CalendarClock className="h-3.5 w-3.5" />
               {due
                 ? `${formatDateOnly(dueDate as number, lang)}, ${formatTime(due.time, lang, hour12)}`
                 : t("dueDate.set")}
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="relative w-auto p-3">
+          <PopoverContent
+            align="end"
+            className="relative w-auto p-3 max-lg:w-[min(20rem,calc(100vw-1rem))] max-lg:max-w-[calc(100vw-1rem)]"
+          >
             <DueDatePickerContent
               cardId={cardId}
               dueDate={dueDate}

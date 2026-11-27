@@ -300,17 +300,18 @@ export function ApiTokensSection() {
     >
       <header className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <h3 className="flex items-center gap-2 text-ui-heading font-semibold">
             <KeyRound className="h-4 w-4 text-primary" aria-hidden />
             {t("account.tokens.title")}
           </h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-body text-muted-foreground">
             {t("account.tokens.description")}
           </p>
         </div>
         <Button
           size="sm"
           data-testid="token-create"
+          className="bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4" aria-hidden />
@@ -319,7 +320,9 @@ export function ApiTokensSection() {
       </header>
 
       {loadError ? (
-        <p className="text-xs text-danger">{t("account.tokens.loadError")}</p>
+        <p className="text-ui-label text-danger">
+          {t("account.tokens.loadError")}
+        </p>
       ) : null}
 
       {tokens !== null && hasLiveTokens ? (
@@ -334,7 +337,7 @@ export function ApiTokensSection() {
           )}
         >
           <div className="min-w-0 space-y-0.5">
-            <p className="flex items-center gap-1.5 text-sm font-medium">
+            <p className="flex items-center gap-1.5 text-ui-body font-medium">
               <CirclePause
                 className={cn(
                   "h-4 w-4",
@@ -348,7 +351,7 @@ export function ApiTokensSection() {
                 ? t("account.tokens.stopAllActive")
                 : t("account.tokens.stopAllTitle")}
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-meta text-muted-foreground">
               {stopAllSource !== null
                 ? stopAllSource.stopAllPausedAt !== null
                   ? t("account.tokens.stopAllSince", {
@@ -410,7 +413,7 @@ export function ApiTokensSection() {
       {tokens !== null && tokens.length === 0 && !loadError ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-8 text-center">
           <KeyRound className="h-6 w-6 text-muted-foreground/60" aria-hidden />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-ui-body text-muted-foreground">
             {t("account.tokens.empty")}
           </p>
         </div>
@@ -454,7 +457,7 @@ export function ApiTokensSection() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="token-name"
-                  className="text-xs font-medium text-muted-foreground"
+                  className="text-ui-label font-medium text-muted-foreground"
                 >
                   {t("account.tokens.nameLabel")}
                 </label>
@@ -468,7 +471,7 @@ export function ApiTokensSection() {
                 />
               </div>
               <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
+                <span className="text-ui-label font-medium text-muted-foreground">
                   {t("account.tokens.expiryLabel")}
                 </span>
                 <DropdownMenu>
@@ -478,7 +481,7 @@ export function ApiTokensSection() {
                       variant="outline"
                       size="sm"
                       data-testid="token-expiry"
-                      className="w-full justify-between font-normal"
+                      className="w-full justify-between font-normal max-lg:min-h-11"
                     >
                       {t(
                         EXPIRY_PRESETS.find((item) => item.id === preset)!
@@ -509,7 +512,7 @@ export function ApiTokensSection() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="token-board"
-                  className="text-xs font-medium text-muted-foreground"
+                  className="text-ui-label font-medium text-muted-foreground"
                 >
                   {t("account.tokens.boardLabel")}
                 </label>
@@ -535,7 +538,7 @@ export function ApiTokensSection() {
               <div className="space-y-1.5">
                 <span
                   id="token-create-scope-label"
-                  className="text-xs font-medium text-muted-foreground"
+                  className="text-ui-label font-medium text-muted-foreground"
                 >
                   {t("account.tokens.presetLabel")}
                 </span>
@@ -547,7 +550,7 @@ export function ApiTokensSection() {
                       size="sm"
                       data-testid="token-scope-preset"
                       aria-labelledby="token-create-scope-label token-create-scope-value"
-                      className="w-full justify-between font-normal"
+                      className="w-full justify-between font-normal max-lg:min-h-11"
                     >
                       <span id="token-create-scope-value">
                         {t(SCOPE_PRESET_LABELS[scopePreset])}
@@ -573,7 +576,7 @@ export function ApiTokensSection() {
                     </DropdownMenuRadioGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-ui-meta text-muted-foreground">
                   {t("account.tokens.presetHint")}
                 </p>
               </div>
@@ -592,13 +595,13 @@ export function ApiTokensSection() {
                     htmlFor="token-trusted-ci"
                     className={
                       trustedCiDisabled
-                        ? "cursor-not-allowed text-sm text-muted-foreground"
-                        : "cursor-pointer text-sm"
+                        ? "cursor-not-allowed text-ui-body text-muted-foreground"
+                        : "cursor-pointer text-ui-body"
                     }
                   >
                     {t("account.tokens.trustedCiLabel")}
                   </label>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-ui-meta text-muted-foreground">
                     {trustedCiDisabled
                       ? t("account.tokens.trustedCiUnavailable")
                       : t("account.tokens.trustedCiHint")}
@@ -615,7 +618,7 @@ export function ApiTokensSection() {
                 />
                 <label
                   htmlFor="token-read-only"
-                  className="cursor-pointer text-sm"
+                  className="cursor-pointer text-ui-body"
                 >
                   {t("account.tokens.readOnlyLabel")}
                 </label>
@@ -623,7 +626,7 @@ export function ApiTokensSection() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="token-rate"
-                  className="text-xs font-medium text-muted-foreground"
+                  className="text-ui-label font-medium text-muted-foreground"
                 >
                   {t("account.tokens.rateLabel")}
                 </label>
@@ -652,7 +655,7 @@ export function ApiTokensSection() {
                   <p
                     id="token-rate-error"
                     role="alert"
-                    className="text-sm text-danger"
+                    className="text-ui-body text-danger"
                   >
                     {t("account.tokens.rateInvalid", {
                       min: API_TOKEN_RATE_MIN,
@@ -689,7 +692,7 @@ export function ApiTokensSection() {
               <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3">
                 <code
                   data-testid="token-reveal"
-                  className="min-w-0 flex-1 break-all font-mono text-xs text-foreground"
+                  className="min-w-0 flex-1 break-all font-mono text-ui-meta text-foreground"
                 >
                   {reveal.token}
                 </code>
@@ -855,11 +858,11 @@ function TokenRow({
       className="flex items-center gap-3 px-4 py-3"
     >
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="flex items-center gap-2 truncate text-sm font-medium">
+        <p className="flex items-center gap-2 truncate text-ui-body font-medium">
           {token.name}
           <span
             className={cn(
-              "shrink-0 text-[10px] font-medium uppercase tracking-wide",
+              "shrink-0 text-ui-micro font-medium uppercase tracking-wide",
               status.className,
             )}
           >
@@ -868,7 +871,7 @@ function TokenRow({
           {paused ? (
             <span
               data-testid="token-paused-badge"
-              className="shrink-0 rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+              className="shrink-0 rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-ui-micro font-medium text-warning"
             >
               {stoppedByAll
                 ? t("account.tokens.pausedByStopAll")
@@ -876,7 +879,7 @@ function TokenRow({
             </span>
           ) : null}
         </p>
-        <p className="truncate text-[11px] text-muted-foreground">
+        <p className="truncate text-ui-meta text-muted-foreground">
           {t("account.tokens.meta", {
             created: formatDateOnly(token.createdAt, lang),
             used:
@@ -885,7 +888,7 @@ function TokenRow({
                 : formatDateOnly(token.lastUsedAt, lang),
           })}
         </p>
-        <p className="truncate text-[11px] text-muted-foreground">
+        <p className="truncate text-ui-meta text-muted-foreground">
           {token.expiresAt === null
             ? t("account.tokens.noExpiry")
             : t("account.tokens.expiresOn", {
@@ -894,7 +897,7 @@ function TokenRow({
         </p>
         {paused ? (
           <p
-            className="text-[11px] text-warning"
+            className="text-ui-meta text-warning"
             data-testid="token-paused-hint"
           >
             {token.individualPausedAt !== null
@@ -908,7 +911,7 @@ function TokenRow({
           </p>
         ) : null}
         <p
-          className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"
+          className="flex flex-wrap gap-1.5 text-ui-meta text-muted-foreground"
           data-testid="token-scope"
         >
           <span
@@ -1047,7 +1050,7 @@ function PauseReasonDialogBody({
       <div className="space-y-1.5">
         <label
           htmlFor={`${testIdPrefix}-reason`}
-          className="text-xs font-medium text-muted-foreground"
+          className="text-ui-label font-medium text-muted-foreground"
         >
           {t("account.tokens.pauseReasonLabel")}
         </label>
@@ -1062,7 +1065,7 @@ function PauseReasonDialogBody({
           autoFocus
         />
       </div>
-      <p className="rounded-md border bg-muted/30 p-2 text-[11px] text-muted-foreground">
+      <p className="rounded-md border bg-muted/30 p-2 text-ui-meta text-muted-foreground">
         {t("account.tokens.pauseSemantics")}
       </p>
       <DialogFooter>

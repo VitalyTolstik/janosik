@@ -185,7 +185,7 @@ export function NotificationsBell() {
             <span
               aria-hidden="true"
               data-testid="notifications-badge"
-              className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-white"
+              className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-ui-micro font-semibold leading-none text-white"
             >
               {count}
             </span>
@@ -298,7 +298,7 @@ function NotificationsPanel({
   return (
     <section aria-labelledby="invitations-heading">
       <div className="border-b border-border/60 px-4 py-3">
-        <h2 id="invitations-heading" className="text-sm font-semibold">
+        <h2 id="invitations-heading" className="text-ui-body font-semibold">
           {invitations === null
             ? t("notifications.titlePlain")
             : t("notifications.title", { count: invitations.length })}
@@ -306,7 +306,7 @@ function NotificationsPanel({
       </div>
 
       {unavailable ? (
-        <div className="space-y-2 px-4 py-3 text-center text-sm text-muted-foreground">
+        <div className="space-y-2 px-4 py-3 text-center text-ui-body text-muted-foreground">
           <p role="status">{t("notifications.invitationsUnavailable")}</p>
           <Button
             variant="outline"
@@ -329,7 +329,7 @@ function NotificationsPanel({
           </SkeletonRegion>
         )
       ) : invitations.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+        <p className="px-4 py-8 text-center text-ui-body text-muted-foreground">
           {t("notifications.empty")}
         </p>
       ) : (
@@ -354,12 +354,12 @@ function NotificationsPanel({
               >
                 <div className="min-w-0">
                   <p
-                    className="line-clamp-2 break-words text-sm font-medium"
+                    className="line-clamp-2 break-words text-ui-body font-medium"
                     title={invitation.boardTitle}
                   >
                     {invitation.boardTitle}
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-ui-meta text-muted-foreground">
                     {t("notifications.invitedBy", { name: inviter })}
                     {" · "}
                     {t(ROLE_KEYS[invitation.role])}
@@ -381,7 +381,7 @@ function NotificationsPanel({
                     data-testid="invitation-accept"
                     disabled={pending || expired}
                     onClick={() => void handleAccept(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs max-lg:min-h-11"
+                    className="h-8 flex-1 gap-1.5 text-ui-label max-lg:min-h-11"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t("notifications.accept")}
@@ -392,7 +392,7 @@ function NotificationsPanel({
                     data-testid="invitation-decline"
                     disabled={pending}
                     onClick={() => void handleDecline(invitation)}
-                    className="h-8 flex-1 gap-1.5 text-xs text-muted-foreground hover:text-foreground max-lg:min-h-11"
+                    className="h-8 flex-1 gap-1.5 text-ui-label text-muted-foreground hover:text-foreground max-lg:min-h-11"
                   >
                     <X className="h-3.5 w-3.5" />
                     {t("notifications.decline")}

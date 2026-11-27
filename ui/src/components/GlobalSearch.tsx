@@ -152,7 +152,7 @@ export function GlobalSearch({
           >
             <span
               className={cn(
-                "text-xs font-medium",
+                "text-ui-label font-medium",
                 labelClassName ?? cn("hidden", !iconOnly && "sm:inline"),
               )}
             >
@@ -432,14 +432,14 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             role="status"
             aria-live="polite"
             data-testid="search-boards-loading"
-            className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"
+            className="flex items-center gap-2 px-3 py-1.5 text-ui-label text-muted-foreground"
           >
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
             {t("search.boardsLoading")}
           </p>
         ) : null}
         {query.trim() === "" ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+          <p className="px-3 py-6 text-center text-ui-body text-muted-foreground">
             {t(serverMode ? "search.hint" : "search.hintLocal")}
           </p>
         ) : serverPending ? (
@@ -447,13 +447,13 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             role="status"
             aria-live="polite"
             data-testid="search-server-pending"
-            className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"
+            className="flex items-center gap-2 px-3 py-1.5 text-ui-label text-muted-foreground"
           >
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
             {t("search.serverPending")}
           </p>
         ) : hits.length === 0 && !serverPartial ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+          <p className="px-3 py-6 text-center text-ui-body text-muted-foreground">
             {t("search.empty")}
           </p>
         ) : null}
@@ -473,10 +473,10 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                   onClick={() => openHit(hit)}
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-sm text-foreground">
+                    <div className="truncate text-ui-body text-foreground">
                       <HighlightedText text={hit.card.title} query={query} />
                     </div>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <div className="mt-0.5 flex items-center gap-1.5 text-ui-meta text-muted-foreground">
                       <ResultTypeBadge hit={hit} />
                       <span className="sr-only">, </span>
                       <span className="truncate">
@@ -530,7 +530,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
                   onClick={() => openHit(hit)}
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-foreground">
+                    <div className="truncate text-ui-body font-medium text-foreground">
                       <HighlightedText text={hit.boardTitle} query={query} />
                     </div>
                     <div className="mt-0.5 flex items-center gap-1.5">
@@ -551,7 +551,7 @@ function GlobalSearchPalette({ onClose }: GlobalSearchPaletteProps) {
             role="status"
             aria-live="polite"
             data-testid="search-server-truncated"
-            className="px-3 py-1.5 text-xs text-muted-foreground"
+            className="px-3 py-1.5 text-ui-label text-muted-foreground"
           >
             {pendingBoardCount > 0
               ? t("search.serverTruncatedPending", {
@@ -614,14 +614,14 @@ function SearchSection({
   return (
     <div className="mb-1 last:mb-0">
       <div className="flex items-baseline justify-between gap-2 px-3 py-1.5">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-foreground">
+        <span className="text-ui-micro font-bold uppercase tracking-wide text-foreground">
           {title}
         </span>
         {count ? (
           <span
             aria-live="polite"
             aria-atomic="true"
-            className="text-[11px] font-medium text-muted-foreground"
+            className="text-ui-micro font-medium text-muted-foreground"
           >
             {count}
           </span>
@@ -676,7 +676,7 @@ function ResultTypeBadge({ hit }: { hit: SearchHit }) {
     <span
       data-testid="search-type-badge"
       data-type={badge}
-      className="inline-flex shrink-0 items-center rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+      className="inline-flex shrink-0 items-center rounded-full border border-border/70 px-1.5 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground"
     >
       {t(SEARCH_TYPE_KEYS[badge])}
     </span>
@@ -699,7 +699,7 @@ function LabelChips({
       {chips.map((label) => (
         <span
           key={label.id}
-          className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+          className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-ui-micro font-medium text-muted-foreground"
         >
           <span
             className={cn(
@@ -733,7 +733,7 @@ function Snippet({
   );
   if (!snippet) return null;
   return (
-    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+    <p className="mt-1 line-clamp-2 text-ui-body text-muted-foreground">
       {label ? <span className="font-medium">{label}: </span> : null}
       {snippet.map((segment, index) =>
         typeof segment === "string" ? (
@@ -753,7 +753,7 @@ function Snippet({
 
 function ArchivedBadge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
       {children}
     </span>
   );

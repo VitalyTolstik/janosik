@@ -186,8 +186,8 @@ export function DemoPage() {
           <span
             data-testid="admin-demo-status"
             className={cn(
-              "inline-flex items-center gap-1.5 text-xs font-medium",
-              running ? "text-success" : "text-muted-foreground",
+              "inline-flex items-center gap-1.5 text-ui-label font-medium",
+              running ? "text-(--agent-tone-success)" : "text-muted-foreground",
             )}
           >
             <span
@@ -204,7 +204,7 @@ export function DemoPage() {
 
       {!isOwner ? (
         <Panel className="p-4">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("admin.demo.readonly")}
           </p>
         </Panel>
@@ -212,7 +212,7 @@ export function DemoPage() {
 
       <Panel className="grid grid-cols-3 gap-4 p-4">
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.demo.agents")}
           </p>
           <p
@@ -223,7 +223,7 @@ export function DemoPage() {
           </p>
         </div>
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.demo.cards")}
           </p>
           <p
@@ -234,7 +234,7 @@ export function DemoPage() {
           </p>
         </div>
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className="text-ui-micro uppercase tracking-wide text-muted-foreground">
             {t("admin.demo.done")}
           </p>
           <p
@@ -247,11 +247,11 @@ export function DemoPage() {
       </Panel>
 
       <Panel className="flex items-center justify-between gap-3 p-4">
-        <span className="text-xs text-muted-foreground">
+        <span className="text-ui-label text-muted-foreground">
           {t("admin.demo.board")}
         </span>
         {shownBoard === "" ? (
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-ui-meta text-muted-foreground">
             {t("admin.demo.boardPlaceholder")}
           </span>
         ) : (
@@ -259,7 +259,7 @@ export function DemoPage() {
             <Badge variant="neutral">
               <code
                 data-testid="admin-demo-board"
-                className="font-mono text-[11px]"
+                className="font-mono text-ui-meta"
               >
                 {shownBoard}
               </code>
@@ -270,7 +270,7 @@ export function DemoPage() {
                 target="_blank"
                 rel="noreferrer"
                 data-testid="admin-demo-live-view"
-                className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2.5 text-ui-label text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
               >
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                 {t("admin.demo.liveView")}
@@ -280,7 +280,7 @@ export function DemoPage() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 gap-1.5 px-2 text-xs"
+                className="h-7 gap-1.5 px-2 text-ui-label max-lg:min-h-11"
                 data-testid="admin-demo-copy-link"
                 onClick={() => {
                   const url = appShareUrl(`/s/${demo.shareToken}`);
@@ -298,7 +298,10 @@ export function DemoPage() {
                 }}
               >
                 {copiedLink ? (
-                  <Check className="h-3.5 w-3.5 text-success" aria-hidden />
+                  <Check
+                    className="h-3.5 w-3.5 text-(--agent-tone-success)"
+                    aria-hidden
+                  />
                 ) : (
                   <Copy className="h-3.5 w-3.5" aria-hidden />
                 )}
@@ -314,7 +317,7 @@ export function DemoPage() {
           <div className="space-y-1">
             <label
               htmlFor="admin-demo-board-input"
-              className="text-xs font-medium text-foreground"
+              className="text-ui-label font-medium text-foreground"
             >
               {t("admin.demo.boardInput")}
             </label>
@@ -338,17 +341,18 @@ export function DemoPage() {
                 size="sm"
                 variant="outline"
                 data-testid="admin-demo-board-save"
+                className="max-lg:min-h-11"
                 disabled={running || busy}
                 onClick={() => setSelectedBoardId(boardId.trim())}
               >
                 {t("admin.common.save")}
               </Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-meta text-muted-foreground">
               {t("admin.demo.boardHint")}
             </p>
             {selectedBoardId ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-ui-label text-muted-foreground">
                 {t("admin.demo.boardWarning")}
               </p>
             ) : null}
@@ -358,7 +362,7 @@ export function DemoPage() {
               <div className="space-y-1">
                 <label
                   htmlFor="admin-demo-agents-input"
-                  className="text-xs font-medium text-foreground"
+                  className="text-ui-label font-medium text-foreground"
                 >
                   {t("admin.demo.agents")}
                 </label>
@@ -378,7 +382,7 @@ export function DemoPage() {
               <div className="space-y-1">
                 <label
                   htmlFor="admin-demo-cards-input"
-                  className="text-xs font-medium text-foreground"
+                  className="text-ui-label font-medium text-foreground"
                 >
                   {t("admin.demo.tasks")}
                 </label>
@@ -400,6 +404,7 @@ export function DemoPage() {
               <Button
                 size="sm"
                 data-testid="admin-demo-start"
+                className="max-lg:min-h-11"
                 disabled={
                   running ||
                   busy ||
@@ -416,6 +421,7 @@ export function DemoPage() {
                 size="sm"
                 variant="destructive"
                 data-testid="admin-demo-stop"
+                className="max-lg:min-h-11"
                 disabled={!cleanupPending || busy}
                 onClick={() => setConfirming(true)}
               >
@@ -425,7 +431,7 @@ export function DemoPage() {
             </div>
             {publicSharesEnabled === false ? (
               <p
-                className="mt-2 text-xs text-muted-foreground"
+                className="mt-2 text-ui-label text-muted-foreground"
                 data-testid="admin-demo-public-shares-off"
               >
                 {t("admin.demo.publicSharesDisabled")}

@@ -500,7 +500,7 @@ function BoardSwitcherPanel({
           placeholder={t("board.switcher.search")}
           aria-label={t("board.switcher.search")}
           autoFocus
-          className="h-6 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="h-6 w-full bg-transparent text-ui-body outline-none placeholder:text-muted-foreground"
         />
         <LimitCounter
           length={query.length}
@@ -517,7 +517,7 @@ function BoardSwitcherPanel({
           pendingBoardCount > 0 ? (
             <BoardListSkeleton pending={pendingBoardCount} />
           ) : (
-            <p className="px-2.5 py-6 text-center text-sm text-muted-foreground">
+            <p className="px-2.5 py-6 text-center text-ui-body text-muted-foreground">
               {query.trim().length > 0
                 ? t("board.switcher.empty")
                 : t("board.switcher.noActive")}
@@ -557,7 +557,7 @@ function BoardSwitcherPanel({
                   >
                     <div
                       role="gridcell"
-                      className="px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                      className="px-2 pb-1 pt-1.5 text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground"
                     >
                       {t(
                         header === "mine"
@@ -591,7 +591,7 @@ function BoardSwitcherPanel({
                     <span
                       aria-hidden
                       className={cn(
-                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-primary-foreground shadow-sm",
+                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ui-micro font-semibold text-primary-foreground shadow-sm",
                         boardColor(b.id),
                       )}
                     >
@@ -599,7 +599,7 @@ function BoardSwitcherPanel({
                     </span>
                     <span
                       className={cn(
-                        "min-w-0 flex-1 truncate text-left text-sm",
+                        "min-w-0 flex-1 truncate text-left text-ui-body",
                         isActive
                           ? "font-medium text-foreground"
                           : "text-foreground/90",
@@ -617,7 +617,7 @@ function BoardSwitcherPanel({
                         data-testid="board-switcher-leave-confirm"
                         className="flex items-center gap-1"
                       >
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-ui-meta text-muted-foreground">
                           {t("board.members.leaveConfirm")}
                         </span>
                         <button
@@ -644,7 +644,7 @@ function BoardSwitcherPanel({
                       </span>
                     ) : isConfirming ? (
                       <span className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-ui-meta text-muted-foreground">
                           {t("board.switcher.archiveConfirm")}
                         </span>
                         <button
@@ -671,7 +671,7 @@ function BoardSwitcherPanel({
                     ) : (
                       <>
                         <span
-                          className="shrink-0 text-xs tabular-nums text-muted-foreground"
+                          className="shrink-0 text-ui-meta tabular-nums text-muted-foreground"
                           aria-label={t("board.switcher.activeCards", {
                             count: cardCount,
                           })}
@@ -773,7 +773,7 @@ function BoardSwitcherPanel({
         {/* Archived boards: kept out of navigation, restorable. */}
         {filteredArchived.length > 0 ? (
           <div className="mt-1 border-t pt-1.5" data-testid="archived-section">
-            <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="flex items-center gap-1.5 px-2 pb-1 pt-1.5 text-ui-micro font-semibold uppercase tracking-wide text-muted-foreground">
               <Archive size={12} aria-hidden />
               {t("board.switcher.archived")}
             </p>
@@ -787,11 +787,11 @@ function BoardSwitcherPanel({
                 >
                   <span
                     aria-hidden
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-ui-micro font-semibold text-muted-foreground"
                   >
                     {boardInitial(b.title)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-left text-ui-body text-muted-foreground">
                     {b.title}
                   </span>
                   {isConfirmingLeave ? (
@@ -799,7 +799,7 @@ function BoardSwitcherPanel({
                       data-testid="board-switcher-archived-leave-confirm"
                       className="flex items-center gap-1"
                     >
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-ui-meta text-muted-foreground">
                         {t("board.members.leaveConfirm")}
                       </span>
                       <button
@@ -826,7 +826,7 @@ function BoardSwitcherPanel({
                     </span>
                   ) : isConfirming ? (
                     <span className="flex w-full min-w-0 items-center justify-end gap-1">
-                      <span className="min-w-0 whitespace-normal break-words text-right text-xs leading-tight text-muted-foreground">
+                      <span className="min-w-0 whitespace-normal break-words text-right text-ui-label leading-tight text-muted-foreground">
                         {t("board.switcher.deleteConfirm")}
                       </span>
                       <button
@@ -921,6 +921,7 @@ function BoardSwitcherPanel({
           >
             <div className="flex items-center gap-2">
               <Plus size={15} className="shrink-0 text-primary" />
+              {/* Keep touch inputs at 16px to prevent iOS focus zoom. */}
               <input
                 name="board-create"
                 ref={createRef}
@@ -932,7 +933,7 @@ function BoardSwitcherPanel({
                 aria-label={t("board.switcher.newPlaceholder")}
                 aria-describedby={emptyHintId}
                 autoFocus
-                className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
+                className="h-7 min-w-0 flex-1 bg-transparent text-ui-body outline-none placeholder:text-muted-foreground disabled:opacity-60 max-[1024.98px]:h-11 max-[1024.98px]:text-base"
               />
               <button
                 type="submit"
@@ -940,7 +941,7 @@ function BoardSwitcherPanel({
                 aria-label={t("board.firstRun.emptyCta")}
                 disabled={!canCreateEmpty || createBusy}
                 aria-busy={createBusy || undefined}
-                className="inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md bg-action-primary px-2.5 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[1024.98px]:px-3 max-[1024.98px]:text-xs"
+                className="inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-md bg-action-primary px-2.5 text-ui-label font-semibold text-primary-foreground transition-colors hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover disabled:pointer-events-none disabled:opacity-50 max-[1024.98px]:h-11 max-[1024.98px]:px-3 max-[1024.98px]:text-ui-label"
               >
                 {createBusy ? (
                   <Loader2 aria-hidden className="h-3 w-3 animate-spin" />
@@ -962,7 +963,7 @@ function BoardSwitcherPanel({
             <div className="mt-1 flex items-center justify-between gap-2 max-[1024.98px]:mt-1.5">
               <p
                 id={emptyHintId}
-                className="min-w-0 flex-1 truncate text-[10px] leading-[1.4] text-muted-foreground"
+                className="line-clamp-2 min-w-0 flex-1 text-ui-body leading-[1.4] text-muted-foreground"
               >
                 {createBusy
                   ? t("common.creating")
@@ -984,7 +985,7 @@ function BoardSwitcherPanel({
               type="button"
               data-testid="switcher-create-template"
               onClick={() => onStartExample(queryTrimmed)}
-              className="flex min-h-8 w-full items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.06] px-2 py-2 text-left text-sm font-medium text-foreground outline-none transition-colors hover:border-primary/35 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring max-[1024.98px]:min-h-11"
+              className="flex min-h-8 w-full items-center gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.06] px-2 py-2 text-left text-ui-body font-medium text-foreground outline-none transition-colors hover:border-primary/35 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-ring max-[1024.98px]:min-h-11"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
                 <Sparkles size={15} aria-hidden />
@@ -998,7 +999,7 @@ function BoardSwitcherPanel({
               type="button"
               data-testid="switcher-create-empty"
               onClick={startEmptyCreate}
-              className="flex min-h-7 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-[1024.98px]:min-h-11"
+              className="flex min-h-7 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-ui-body text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-[1024.98px]:min-h-11"
             >
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-muted-foreground">
                 <Plus size={15} aria-hidden />

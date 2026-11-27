@@ -50,10 +50,10 @@ export function PolicyResetDialog({
             <RotateCcw className="h-[15px] w-[15px]" />
           </span>
           <div className="min-w-0">
-            <DialogTitle className="m-0 text-[14px] font-[650] leading-[1.3] tracking-normal">
+            <DialogTitle className="m-0 text-ui-heading font-[650] leading-[1.3] tracking-normal">
               {title}
             </DialogTitle>
-            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+            <DialogDescription className="mt-[3px] text-ui-body leading-[1.5] text-muted-foreground">
               {description}
             </DialogDescription>
           </div>
@@ -62,7 +62,7 @@ export function PolicyResetDialog({
         <div className="px-4 pb-0.5">
           <div
             data-testid="agent-policy-reset-impact"
-            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-warning/[0.06] px-[9px] py-[7px] text-[11px] leading-[1.55] text-foreground"
+            className="mt-2.5 rounded-r-[5px] border-l-2 border-warning bg-warning/[0.06] px-[9px] py-[7px] text-ui-body leading-[1.55] text-foreground"
           >
             {impact}
           </div>
@@ -73,7 +73,7 @@ export function PolicyResetDialog({
             type="button"
             onClick={() => onOpenChange(false)}
             data-testid="agent-policy-reset-cancel"
-            className="inline-flex h-7 items-center justify-center rounded-[6px] border border-transparent px-[9px] text-[11px] font-[650] leading-none text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-md:h-11 max-md:px-3"
+            className="inline-flex h-7 items-center justify-center rounded-[6px] border border-transparent px-[9px] text-ui-label font-[650] leading-none text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none max-md:h-11 max-md:px-3"
           >
             {t("common.cancel")}
           </button>
@@ -84,7 +84,7 @@ export function PolicyResetDialog({
               onOpenChange(false);
             }}
             data-testid="agent-policy-reset-confirm"
-            className="inline-flex h-7 items-center justify-center rounded-[6px] bg-[#b91c1c] px-[9px] text-[11px] font-[650] leading-none text-white shadow-[inset_0_1px_rgba(255,255,255,0.12)] transition-colors hover:bg-[#991b1b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none max-md:h-11 max-md:px-3"
+            className="inline-flex h-7 items-center justify-center rounded-[6px] bg-[#b91c1c] px-[9px] text-ui-label font-[650] leading-none text-white shadow-[inset_0_1px_rgba(255,255,255,0.12)] transition-colors hover:bg-[#991b1b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover motion-reduce:transition-none max-md:h-11 max-md:px-3"
           >
             {confirmLabel}
           </button>

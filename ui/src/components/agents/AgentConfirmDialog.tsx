@@ -84,10 +84,10 @@ export function AgentConfirmDialog({
             <Icon className="h-[15px] w-[15px]" />
           </span>
           <div className="min-w-0">
-            <DialogTitle className="text-[14px] font-[650] leading-[1.3] tracking-normal">
+            <DialogTitle className="text-ui-heading font-[650] leading-[1.3] tracking-normal">
               {title}
             </DialogTitle>
-            <DialogDescription className="mt-[3px] text-[11.5px] leading-[1.5] text-muted-foreground">
+            <DialogDescription className="mt-[3px] text-ui-body leading-[1.5] text-muted-foreground">
               {description}
             </DialogDescription>
           </div>
@@ -99,7 +99,7 @@ export function AgentConfirmDialog({
           <p
             role="alert"
             data-testid={errorTestId}
-            className="mx-4 mt-2 rounded-[5px] border border-danger/40 bg-danger/10 px-2 py-1.5 text-[11px] text-[color:var(--agent-tone-danger)]"
+            className="mx-4 mt-2 rounded-[5px] border border-danger/40 bg-danger/10 px-2 py-1.5 text-ui-body text-[color:var(--agent-tone-danger)]"
           >
             {error}
           </p>
@@ -111,7 +111,7 @@ export function AgentConfirmDialog({
             onClick={() => onOpenChange(false)}
             disabled={busy}
             data-testid={cancelTestId}
-            className="h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none text-muted-foreground max-xl:min-h-11"
+            className="h-7 min-w-[61px] gap-[6px] rounded-[6px] px-[9px] text-ui-label font-[650] leading-none text-muted-foreground max-xl:min-h-11"
           >
             {t("common.cancel")}
           </Button>
@@ -121,7 +121,7 @@ export function AgentConfirmDialog({
             disabled={busy}
             data-testid={confirmTestId}
             className={cn(
-              "h-7 gap-[6px] rounded-[6px] px-[9px] text-[11px] font-[650] leading-none max-xl:min-h-11",
+              "h-7 gap-[6px] rounded-[6px] px-[9px] text-ui-label font-[650] leading-none max-xl:min-h-11",
               tone === "danger" ? DANGER_CONFIRM : PRIMARY_CONFIRM,
               confirmClassName,
             )}

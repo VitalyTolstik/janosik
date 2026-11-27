@@ -94,7 +94,7 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
       <Button
         variant="outline"
         size="sm"
-        className="gap-2"
+        className="gap-2 max-lg:min-h-11"
         data-testid="pref-language"
         aria-label={t("lang.aria")}
       >
@@ -103,7 +103,12 @@ export function LanguageSwitcher({ variant = "icon" }: LanguageSwitcherProps) {
         <ChevronDown className="h-3.5 w-3.5 opacity-50" />
       </Button>
     ) : (
-      <Button variant="ghost" size="icon" aria-label={t("lang.aria")}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={t("lang.aria")}
+        className="max-lg:h-11 max-lg:w-11"
+      >
         <LazyAnimatedIcon name="languages" size={20} />
       </Button>
     );

@@ -152,7 +152,10 @@ export function SortHeader({
       aria-sort={
         isSorted ? (sort?.dir === 1 ? "ascending" : "descending") : "none"
       }
-      className={cn("px-3 py-2 text-left", className)}
+      className={cn(
+        "overflow-hidden px-3 py-2 text-left max-lg:py-0",
+        className,
+      )}
     >
       <button
         type="button"
@@ -160,14 +163,14 @@ export function SortHeader({
         title={label}
         onClick={() => onCycle(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
+          "flex w-full min-w-0 items-center gap-1 text-ui-micro font-semibold uppercase tracking-wide transition-colors hover:text-foreground max-lg:min-h-11",
           isSorted ? "text-foreground" : "text-muted-foreground",
         )}
       >
-        {label}
+        <span className="truncate">{label}</span>
         {/* A neutral icon hints the header is sortable; it turns into the
             direction arrow once sorted. */}
-        <span aria-hidden className="text-[10px]">
+        <span aria-hidden className="shrink-0 text-ui-micro">
           {isSorted ? (sort?.dir === 1 ? "▲" : "▼") : "↕"}
         </span>
       </button>

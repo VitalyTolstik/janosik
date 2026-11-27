@@ -257,7 +257,7 @@ function SharePanel({ boardId }: { boardId: string }) {
       />
 
       <div className="space-y-2" aria-busy={shares === null}>
-        <p className="text-xs font-medium uppercase text-muted-foreground">
+        <p className="text-ui-micro font-medium uppercase text-muted-foreground">
           {t("share.active")}
         </p>
         {shares === null ? (
@@ -269,7 +269,9 @@ function SharePanel({ boardId }: { boardId: string }) {
             <ShareListSkeleton />
           </SkeletonRegion>
         ) : !shares.some((share) => share.mode === mode) ? (
-          <p className="text-sm text-muted-foreground">{t("share.empty")}</p>
+          <p className="text-ui-body text-muted-foreground">
+            {t("share.empty")}
+          </p>
         ) : (
           <ul className="space-y-2" data-testid="share-list">
             {shares
@@ -356,20 +358,20 @@ function ShareRow({
 
   return (
     <li
-      className="space-y-2 rounded-md border p-2 text-sm"
+      className="space-y-2 rounded-md border p-2 text-ui-body"
       data-testid="share-row"
     >
       <div className="flex items-center gap-2">
-        <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+        <span className="rounded bg-muted px-1.5 py-0.5 text-ui-meta font-medium">
           {share.mode === "live"
             ? t("share.mode.live")
             : t("share.mode.snapshot")}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate font-mono text-ui-meta text-muted-foreground">
           /s/{share.token}
         </span>
         {revoked || expired ? (
-          <span className="text-xs text-destructive">
+          <span className="text-ui-label text-destructive">
             {revoked ? t("share.revoked") : t("share.expired")}
           </span>
         ) : null}
@@ -423,7 +425,7 @@ function ShareRow({
           {share.title}
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
+      <p className="text-ui-label text-muted-foreground">
         {share.expiresAt === null
           ? t("share.expiresNever")
           : t("share.expiresAt", {
@@ -436,7 +438,7 @@ function ShareRow({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 gap-1 px-2 text-xs"
+            className="h-7 gap-1 px-2 text-ui-label"
             ref={(node) => registerEditButton(share.id, node)}
             aria-label={t("share.editAria", {
               label: share.title
@@ -454,7 +456,7 @@ function ShareRow({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 gap-1 px-2 text-xs"
+              className="h-7 gap-1 px-2 text-ui-label"
               onClick={async () => {
                 if (await copy(shareLink(share.token))) {
                   toast.success(t("share.copied"));
@@ -471,7 +473,7 @@ function ShareRow({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 px-2 text-xs"
+                className="h-7 gap-1 px-2 text-ui-label"
                 onClick={async () => {
                   try {
                     await api.refreshShare(boardId, share.id);
@@ -489,7 +491,7 @@ function ShareRow({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 gap-1 px-2 text-xs text-destructive"
+              className="h-7 gap-1 px-2 text-ui-label text-(--agent-tone-danger)"
               onClick={() => setConfirmRevoke(true)}
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
@@ -499,7 +501,7 @@ function ShareRow({
         ) : null}
       </div>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-ui-label text-muted-foreground">
         {t("share.meta", {
           views: share.views,
           flags: [
@@ -517,7 +519,7 @@ function ShareRow({
       {((share.includeComments && share.effectiveIncludeComments === false) ||
         (share.includeAttachments &&
           share.effectiveIncludeAttachments === false)) && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-ui-label text-muted-foreground">
           {t("share.refreshRequired")}
         </p>
       )}
@@ -546,15 +548,21 @@ function EmbedPicker({ token }: { token: string }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-ui-label"
+        >
           <Link2 className="h-3.5 w-3.5" aria-hidden />
           {t("share.embed")}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 space-y-3 p-3">
         <div className="space-y-1">
-          <p className="text-sm font-medium">{t("share.embedTheme.title")}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-body font-medium">
+            {t("share.embedTheme.title")}
+          </p>
+          <p className="text-ui-label text-muted-foreground">
             {t("share.embedTheme.hint")}
           </p>
         </div>
@@ -571,7 +579,7 @@ function EmbedPicker({ token }: { token: string }) {
               aria-checked={theme === option}
               onClick={() => setTheme(option)}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-hover",
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body hover:bg-hover",
                 theme === option && "bg-muted font-medium",
               )}
             >
@@ -641,7 +649,7 @@ function TtlPicker({
           size="sm"
           aria-label={t("share.ttl.label")}
           data-testid="share-ttl"
-          className="h-8 min-w-[5.5rem] justify-between gap-1.5 px-2 font-normal"
+          className="h-8 min-w-[5.5rem] justify-between gap-1.5 px-2 font-normal max-lg:min-h-11"
         >
           {label(value)}
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
@@ -661,7 +669,7 @@ function TtlPicker({
                 onChange(hours);
               }}
               className={cn(
-                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-hover",
+                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body transition-colors hover:bg-hover",
                 hours === value
                   ? "font-medium text-foreground"
                   : "text-foreground/90",
@@ -796,16 +804,16 @@ function ShareForm({
       {editing ? (
         <>
           <div className="space-y-1">
-            <p className="text-sm font-medium">{t("share.editTitle")}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-ui-body font-medium">{t("share.editTitle")}</p>
+            <p className="text-ui-label text-muted-foreground">
               {t("share.editImmutable")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-ui-meta font-medium">
               {t(`share.mode.${editing.mode}`)}
             </span>
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate font-mono text-ui-meta text-muted-foreground">
               /s/{editing.token}
             </span>
           </div>
@@ -819,7 +827,10 @@ function ShareForm({
                 type="button"
                 variant={mode === option ? "default" : "outline"}
                 size="sm"
-                className="flex-1"
+                className={cn(
+                  "flex-1 max-lg:min-h-11",
+                  mode === option && "bg-action-primary hover:bg-[#1d4ed8]",
+                )}
                 data-testid={`share-mode-${option}`}
                 aria-pressed={mode === option}
                 onClick={() => {
@@ -836,12 +847,12 @@ function ShareForm({
               </Button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {mode === "live"
               ? t("share.mode.liveHint")
               : t("share.mode.snapshotHint")}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-ui-label text-muted-foreground">
             {t("share.count", { count, limit })}
           </p>
         </>
@@ -856,8 +867,8 @@ function ShareForm({
         onChange={(event) => setTitle(event.target.value)}
       />
 
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        <label className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-4 text-ui-body">
+        <label className="flex items-center gap-2 max-lg:min-h-11">
           <Checkbox
             checked={includeComments}
             onCheckedChange={setIncludeComments}
@@ -865,7 +876,7 @@ function ShareForm({
           />
           {t("share.flag.comments")}
         </label>
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 max-lg:min-h-11">
           <Checkbox
             checked={includeAttachments}
             onCheckedChange={setIncludeAttachments}
@@ -875,7 +886,7 @@ function ShareForm({
         </label>
       </div>
 
-      <div className="flex items-center justify-between gap-2 text-sm">
+      <div className="flex items-center justify-between gap-2 text-ui-body">
         <span className="text-muted-foreground">{t("share.ttl.label")}</span>
         <TtlPicker
           value={ttlHours}
@@ -888,17 +899,19 @@ function ShareForm({
       </div>
 
       {similar && (
-        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-(--chip-warning)">
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-ui-label text-(--chip-warning)">
           {t(mode === "snapshot" ? "share.similarSnapshot" : "share.similar")}
         </p>
       )}
       {!editing && count >= limit && (
-        <p className="text-xs text-destructive">{t("share.limitReached")}</p>
+        <p className="text-ui-label text-destructive">
+          {t("share.limitReached")}
+        </p>
       )}
       {editing && error ? (
         <p
           role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-ui-label text-destructive"
         >
           {error}
         </p>
@@ -918,7 +931,10 @@ function ShareForm({
         ) : null}
         <Button
           type="button"
-          className={editing ? "flex-1 gap-1.5" : "w-full gap-1.5"}
+          className={cn(
+            "bg-action-primary hover:bg-[#1d4ed8] max-lg:min-h-11",
+            editing ? "flex-1 gap-1.5" : "w-full gap-1.5",
+          )}
           disabled={busy || shares === null || (!editing && count >= limit)}
           data-testid={editing ? "share-save" : "share-create"}
           onClick={submit}

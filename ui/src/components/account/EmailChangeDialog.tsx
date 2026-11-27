@@ -202,7 +202,7 @@ export function EmailChangeDialog({
             <div className="space-y-1.5">
               <label
                 htmlFor="email-change-new"
-                className="text-xs font-medium text-muted-foreground"
+                className="text-ui-label font-medium text-muted-foreground"
               >
                 {t("account.email.emailLabel")}
               </label>
@@ -221,7 +221,7 @@ export function EmailChangeDialog({
               <div className="space-y-1.5">
                 <label
                   htmlFor="email-change-password"
-                  className="text-xs font-medium text-muted-foreground"
+                  className="text-ui-label font-medium text-muted-foreground"
                 >
                   {t("account.email.passwordLabel")}
                 </label>
@@ -236,7 +236,7 @@ export function EmailChangeDialog({
                 />
               </div>
             )}
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-ui-meta text-muted-foreground">
               {t("account.email.sessionsNote")}
             </p>
             <DialogFooter className="gap-2">
@@ -337,7 +337,7 @@ export function EmailChangeDialog({
           <p
             role="alert"
             data-testid="email-change-error"
-            className="text-xs text-danger"
+            className="text-ui-label text-danger"
           >
             {error}
           </p>

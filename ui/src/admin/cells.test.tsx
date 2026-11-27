@@ -30,9 +30,9 @@ describe("EntityLink phone cards", () => {
       "shrink-0",
       "h-3",
       "w-3",
-      "max-sm:h-11",
-      "max-sm:w-11",
-      "max-sm:justify-center",
+      "max-lg:h-11",
+      "max-lg:w-11",
+      "max-lg:justify-center",
     );
   });
 });

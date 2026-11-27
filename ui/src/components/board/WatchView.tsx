@@ -421,7 +421,7 @@ export function WatchView({ boardId }: WatchViewProps) {
       {/* Big status header: the whole point of the view. The board name is
           already in the top bar, so it is not repeated here. */}
       <header className="flex flex-wrap items-baseline gap-x-8 gap-y-2 border-b border-muted-foreground/40 px-5 py-4">
-        <h2 className="text-xs uppercase tracking-widest text-muted-foreground">
+        <h2 className="text-ui-micro uppercase tracking-widest text-muted-foreground">
           {t("watch.title")}
         </h2>
         <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
@@ -449,8 +449,8 @@ export function WatchView({ boardId }: WatchViewProps) {
         <span
           className={
             serverMode
-              ? "ml-auto text-xs font-semibold uppercase tracking-widest text-(--chip-red)"
-              : "ml-auto text-xs uppercase tracking-widest text-muted-foreground"
+              ? "ml-auto text-ui-micro font-semibold uppercase tracking-widest text-(--chip-red)"
+              : "ml-auto text-ui-micro uppercase tracking-widest text-muted-foreground"
           }
         >
           {serverMode ? t("watch.live") : t("watch.local")}
@@ -467,7 +467,7 @@ export function WatchView({ boardId }: WatchViewProps) {
                 return (
                   <li
                     key={column.id}
-                    className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-sm last:border-b-0"
+                    className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-ui-body last:border-b-0"
                   >
                     <span className="min-w-0 truncate text-foreground/90">
                       {column.title}
@@ -485,7 +485,7 @@ export function WatchView({ boardId }: WatchViewProps) {
 
           <Section title={t("watch.onlineList")}>
             {presence.length === 0 ? (
-              <p className="py-1 text-sm text-muted-foreground">
+              <p className="py-1 text-ui-body text-muted-foreground">
                 {t("watch.nobody")}
               </p>
             ) : (
@@ -493,7 +493,7 @@ export function WatchView({ boardId }: WatchViewProps) {
                 {presence.map((user) => (
                   <li
                     key={user.id}
-                    className="truncate border-b border-muted-foreground/30 py-1.5 text-sm text-foreground/90 last:border-b-0"
+                    className="truncate border-b border-muted-foreground/30 py-1.5 text-ui-body text-foreground/90 last:border-b-0"
                   >
                     {user.displayName || user.id}
                   </li>
@@ -506,7 +506,7 @@ export function WatchView({ boardId }: WatchViewProps) {
               their recent activity is shown here instead (TASK-157). */}
           <Section title={t("watch.agentsList")}>
             {activeAgents.length === 0 ? (
-              <p className="py-1 text-sm text-muted-foreground">
+              <p className="py-1 text-ui-body text-muted-foreground">
                 {t("watch.noAgents")}
               </p>
             ) : (
@@ -521,14 +521,14 @@ export function WatchView({ boardId }: WatchViewProps) {
                   return (
                     <li
                       key={agent.key}
-                      className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-sm last:border-b-0"
+                      className="flex items-baseline justify-between gap-3 border-b border-muted-foreground/30 py-1.5 text-ui-body last:border-b-0"
                     >
                       <span className="min-w-0" title={name}>
                         <span className="block truncate text-foreground/90">
                           {name}
                         </span>
                         <span
-                          className="block truncate text-[10px] text-muted-foreground"
+                          className="block truncate text-ui-micro text-muted-foreground"
                           title={`${human}${agent.sessionId ? ` · session ${agent.sessionId}` : ""}`}
                         >
                           {human}
@@ -553,7 +553,7 @@ export function WatchView({ boardId }: WatchViewProps) {
 
         {/* Right pane: the paged live feed. */}
         <div className="flex min-h-0 flex-col">
-          <div className="border-b border-muted-foreground/40 px-5 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+          <div className="border-b border-muted-foreground/40 px-5 py-2 text-ui-micro uppercase tracking-widest text-muted-foreground">
             {t("watch.feed")}
           </div>
           <div
@@ -566,21 +566,21 @@ export function WatchView({ boardId }: WatchViewProps) {
             {error ? (
               <div
                 data-testid="watch-error"
-                className="flex items-center gap-3 border-b border-danger/30 bg-danger/10 px-5 py-3 text-sm text-(--chip-red)"
+                className="flex items-center gap-3 border-b border-danger/30 bg-danger/10 px-5 py-3 text-ui-body text-(--chip-red)"
               >
                 <span>{t("watch.feedError")}</span>
                 <button
                   type="button"
                   data-testid="watch-retry"
                   onClick={retryFeed}
-                  className="rounded-sm border border-danger/40 px-2 py-0.5 text-xs font-medium hover:bg-danger/10"
+                  className="rounded-sm border border-danger/40 px-2 py-0.5 text-ui-label font-medium hover:bg-danger/10"
                 >
                   {t("sync.retry")}
                 </button>
               </div>
             ) : null}
             {!serverMode ? (
-              <p className="px-5 py-4 text-sm text-muted-foreground">
+              <p className="px-5 py-4 text-ui-body text-muted-foreground">
                 {t("watch.feedLocal")}
               </p>
             ) : !loaded ? (
@@ -592,7 +592,7 @@ export function WatchView({ boardId }: WatchViewProps) {
               </SkeletonRegion>
             ) : items.length === 0 ? (
               error ? null : (
-                <p className="px-5 py-4 text-sm text-muted-foreground">
+                <p className="px-5 py-4 text-ui-body text-muted-foreground">
                   {t("watch.feedEmpty")}
                 </p>
               )
@@ -690,7 +690,7 @@ function Pager({
     <nav
       aria-label={t("watch.feed")}
       data-testid="watch-pager"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-muted-foreground/40 px-5 py-2 text-xs"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-muted-foreground/40 px-5 py-2 text-ui-label"
     >
       <div className="flex items-center gap-1">
         <PageButton
@@ -719,8 +719,8 @@ function Pager({
               data-testid={`watch-page-${entry + 1}`}
               className={
                 entry === page
-                  ? "h-6 min-w-6 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground"
-                  : "h-6 min-w-6 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+                  ? "h-6 min-w-6 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground max-lg:min-h-11 max-lg:min-w-11"
+                  : "h-6 min-w-6 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60 max-lg:min-h-11 max-lg:min-w-11"
               }
             >
               {entry + 1}
@@ -755,8 +755,8 @@ function Pager({
             data-testid={`watch-page-size-${size}`}
             className={
               pageSize === size
-                ? "h-6 min-w-7 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground"
-                : "h-6 min-w-7 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60"
+                ? "h-6 min-w-7 rounded-sm border border-primary/50 px-1.5 tabular-nums text-foreground max-lg:min-h-11 max-lg:min-w-11"
+                : "h-6 min-w-7 rounded-sm border border-transparent px-1.5 tabular-nums text-muted-foreground hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-60 max-lg:min-h-11 max-lg:min-w-11"
             }
           >
             {size}
@@ -784,7 +784,7 @@ function PageButton({
       disabled={disabled}
       onClick={onClick}
       data-testid={testId}
-      className="h-6 rounded-sm border border-border px-1.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40"
+      className="h-6 rounded-sm border border-border px-1.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-40 max-lg:min-h-11 max-lg:min-w-11"
     >
       {label}
     </button>
@@ -808,7 +808,7 @@ function Stat({
       >
         {value}
       </span>
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">
+      <span className="text-ui-micro uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
     </div>
@@ -824,7 +824,7 @@ function Section({
 }) {
   return (
     <div className="px-5 py-3">
-      <h3 className="mb-1 text-[11px] uppercase tracking-widest text-muted-foreground">
+      <h3 className="mb-1 text-ui-micro uppercase tracking-widest text-muted-foreground">
         {title}
       </h3>
       {children}
@@ -912,7 +912,7 @@ function WatchRow({
       // time + actor share the first line and the sentence gets the full
       // width on the next one. The fixed time/actor widths only return when
       // the header can afford them (QA-05).
-      className="grid max-w-full grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-b border-muted-foreground/40 px-5 py-1.5 text-sm last:border-b-0 lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:items-start lg:gap-x-0 lg:gap-y-0 lg:divide-x lg:divide-muted-foreground/40 lg:[&>*]:px-2 lg:[&>*:first-child]:pl-0 lg:[&>*:last-child]:pr-0"
+      className="grid max-w-full grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-b border-muted-foreground/40 px-5 py-1.5 text-ui-body last:border-b-0 lg:grid-cols-[7.5rem_minmax(6rem,10rem)_1fr] lg:items-start lg:gap-x-0 lg:gap-y-0 lg:divide-x lg:divide-muted-foreground/40 lg:[&>*]:px-2 lg:[&>*:first-child]:pl-0 lg:[&>*:last-child]:pr-0"
     >
       <time
         data-testid="watch-entry-time"
@@ -929,7 +929,7 @@ function WatchRow({
         <span className="truncate">{actorName}</span>
         {entry.actorType === "agent" ? (
           <span
-            className="shrink-0 rounded bg-muted px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+            className="shrink-0 rounded bg-muted px-1 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground"
             data-testid="actor-agent-badge"
             title={t("activity.agent")}
           >
@@ -955,7 +955,7 @@ function WatchRow({
           ) : null}
           {t(sentence.key, sentence.params)}
           {details.length > 0 ? (
-            <span className="ml-2 inline-flex max-w-[calc(100%_-_0.5rem)] min-w-0 flex-wrap items-baseline gap-x-2 text-[11px] [overflow-wrap:anywhere]">
+            <span className="ml-2 inline-flex max-w-[calc(100%_-_0.5rem)] min-w-0 flex-wrap items-baseline gap-x-2 text-ui-meta [overflow-wrap:anywhere]">
               {details.map((detail, index) => (
                 <span key={`${detail.label}-${index}`} className="min-w-0">
                   {detail.label ? (
@@ -1003,7 +1003,7 @@ function WatchRow({
           {canExpand ? (
             <button
               type="button"
-              className="ml-2 text-xs text-primary underline"
+              className="ml-2 text-ui-label text-primary underline"
               onClick={() => setExpanded(!expanded)}
             >
               {t(expanded ? "watch.showLess" : "watch.showMore")}

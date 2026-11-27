@@ -197,11 +197,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 {
                   label: t("admin.users.action.changeEmail"),
                   run: async () => undefined,
-                  renderDialog: ({ close, reload }) => (
+                  renderDialog: ({ close, reload, returnFocus }) => (
                     <ChangeUserEmailDialog
                       user={user}
                       onClose={close}
                       onDone={reload}
+                      returnFocus={returnFocus}
                     />
                   ),
                 } satisfies EntityAction,
@@ -302,11 +303,12 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                 {
                   label: t("admin.userDetail.action.deleteUser"),
                   run: async () => undefined,
-                  renderDialog: ({ close, reload }) => (
+                  renderDialog: ({ close, reload, returnFocus }) => (
                     <DeleteUserDialog
                       user={{ id: user.id, email: user.email }}
                       onClose={close}
                       onDone={reload}
+                      returnFocus={returnFocus}
                     />
                   ),
                 } satisfies EntityAction,
@@ -629,7 +631,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.cardLinks.column.type"),
             render: (link) => (
-              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                 {link.type}
               </span>
             ),
@@ -1023,7 +1025,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.attachments.column.mime"),
             render: (file) => (
-              <span className="font-mono text-[11px] text-muted-foreground">
+              <span className="font-mono text-ui-meta text-muted-foreground">
                 {file.mimeType}
               </span>
             ),
@@ -1093,7 +1095,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.activity.column.type"),
             render: (entry) => (
-              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                 {entry.type}
               </span>
             ),
@@ -1159,7 +1161,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.commands.column.type"),
             render: (command) => (
-              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                 {command.type}
               </span>
             ),
@@ -1212,7 +1214,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                     commandId: command.id,
                     type: command.type,
                   })}
-                  className="font-medium text-primary underline-offset-2 hover:underline"
+                  className="font-medium text-(--agent-tone-primary) underline-offset-2 hover:underline"
                 >
                   {t("admin.commands.column.audit")}
                 </Link>
@@ -1436,7 +1438,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.comms.col.audience"),
             render: (row) => (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-ui-label text-muted-foreground">
                 {row.audience === "all"
                   ? t("admin.comms.audience.all")
                   : (row.segment ?? t("admin.comms.audience.segment"))}
@@ -1583,7 +1585,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
           {
             label: t("admin.audit.column.action"),
             render: (entry) => (
-              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+              <span className="rounded border border-border bg-hover/40 px-1.5 py-0.5 font-mono text-ui-meta text-muted-foreground">
                 {entry.action}
               </span>
             ),
@@ -1628,7 +1630,7 @@ export function useEntityConfig(entity: AdminEntity): AnyConfig {
                       testId={`admin-id-${entry.targetId}`}
                       copyValue={entry.targetId}
                       ariaLabel={entry.targetId}
-                      className="font-mono text-[11px] font-normal"
+                      className="font-mono text-ui-meta font-normal"
                     >
                       {entry.targetId.slice(0, 8)}
                     </EntityLink>

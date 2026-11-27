@@ -40,17 +40,17 @@ export function ShareUnavailable({
         <LostBoardArt ghost={variant === "gone"} />
 
         <span
-          className="mx-auto inline-flex items-center rounded-full border border-border bg-hover/60 px-3 py-1 font-mono text-xs font-medium tabular-nums text-muted-foreground"
+          className="mx-auto inline-flex items-center rounded-full border border-border bg-hover/60 px-3 py-1 font-mono text-ui-meta font-medium tabular-nums text-muted-foreground"
           data-testid="share-unavailable-code"
         >
           {code}
         </span>
 
         <div className="space-y-1.5">
-          <h1 className="font-display text-lg font-semibold tracking-tight">
+          <h1 className="font-display text-ui-title font-semibold tracking-tight">
             {title}
           </h1>
-          <p className="text-sm text-muted-foreground">{body}</p>
+          <p className="text-ui-body text-muted-foreground">{body}</p>
         </div>
 
         <div className="flex justify-center gap-2">

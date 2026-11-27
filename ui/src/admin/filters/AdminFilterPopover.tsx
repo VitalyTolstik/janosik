@@ -37,7 +37,8 @@ import { FilterRadioGroup } from "./FilterRadioGroup";
 
 const panelClass =
   "flex flex-col gap-0 border-border bg-popover p-0 text-popover-foreground";
-const titleClass = "border-b border-border px-3 py-3 text-sm font-semibold";
+const titleClass =
+  "border-b border-border px-3 py-3 text-ui-body font-semibold";
 
 export function AdminFilterPopover({
   triggerRef,
@@ -217,7 +218,7 @@ function FilterMenu({
       type="button"
       variant="ghost"
       size="sm"
-      className="h-11 w-full justify-between px-2 text-sm sm:h-8"
+      className="h-11 w-full justify-between px-2 text-ui-body sm:h-8"
       autoFocus={lastFacet === facet.key}
       onClick={() => {
         setLastFacet(facet.key);
@@ -299,7 +300,7 @@ function FilterMenu({
             .filter(({ facets }) => facets.length > 0)
             .map(({ label, facets }) => (
               <div key={label} className="mt-2 first:mt-0">
-                <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                <h3 className="px-2 py-1 text-ui-label font-medium text-muted-foreground">
                   {t(label)}
                 </h3>
                 {facets.map(renderFacet)}
@@ -309,7 +310,7 @@ function FilterMenu({
       </div>
       <div className="shrink-0 border-t border-border px-3 py-2">
         {draftError || limitError ? (
-          <p role="status" className="mb-2 text-xs text-muted-foreground">
+          <p role="status" className="mb-2 text-ui-label text-muted-foreground">
             {t("admin.filters.limit")}
           </p>
         ) : null}

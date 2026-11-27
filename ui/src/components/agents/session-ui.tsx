@@ -154,7 +154,7 @@ export function HeartbeatText({
       data-stale={session.stale ? "true" : "false"}
       title={label}
       className={cn(
-        "inline-flex max-w-full min-w-0 items-center gap-[5px] overflow-hidden text-[11px] leading-[1.45] whitespace-nowrap",
+        "inline-flex max-w-full min-w-0 items-center gap-[5px] overflow-hidden text-ui-meta leading-[1.45] whitespace-nowrap",
         muted
           ? "text-muted-foreground"
           : session.stale
@@ -201,7 +201,7 @@ export function TokenSettingsLink({
         data-testid={`${testId}-readonly`}
         title={t("agents.tokenSettings.ownerOnlyHint")}
         className={cn(
-          "inline-flex min-h-11 items-center text-[11px] text-muted-foreground min-[1280px]:min-h-0",
+          "inline-flex min-h-11 items-center text-ui-label text-muted-foreground min-[1280px]:min-h-0",
           className,
         )}
       >
@@ -216,7 +216,7 @@ export function TokenSettingsLink({
         onClick={() => setInfoOpen(true)}
         data-testid={testId}
         className={cn(
-          "inline-flex min-h-11 min-w-[121px] items-center justify-center gap-[5px] rounded-[5px] px-[7px] text-[10.5px] font-[650] leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[1280px]:min-h-6",
+          "inline-flex min-h-11 min-w-[121px] items-center justify-center gap-[5px] rounded-[5px] px-[7px] text-ui-meta font-[650] leading-none text-muted-foreground hover:bg-hover hover:text-foreground min-[1280px]:min-h-6",
           className,
         )}
       >
@@ -316,29 +316,29 @@ function SessionGroupHeader({
           <Bot className="h-3 w-3" aria-hidden />
         </span>
       )}
-      <b className="min-w-0 truncate text-[11.5px] font-[650]">{group.title}</b>
+      <b className="min-w-0 truncate text-ui-body font-[650]">{group.title}</b>
       {mode === "token" && group.tokenId !== undefined ? (
         <span
           data-testid={`agents-token-chip-${group.tokenId}`}
           title={group.tokenId}
-          className="inline-flex h-[21px] max-w-[150px] shrink-0 items-center rounded-[3px] border border-border bg-background px-1 font-mono text-[11px] text-muted-foreground"
+          className="inline-flex h-[21px] max-w-[150px] shrink-0 items-center rounded-[3px] border border-border bg-background px-1 font-mono text-ui-micro text-muted-foreground"
         >
           <span className="truncate">{shortTokenId(group.tokenId)}</span>
         </span>
       ) : null}
       {mode === "board" && (group.pending ?? 0) > 0 ? (
-        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
+        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-ui-micro font-semibold text-[color:var(--warning)]">
           {t("agents.groups.pending", { count: group.pending ?? 0 })}
         </span>
       ) : null}
       {staleBoard ? (
-        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
+        <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-ui-micro font-semibold text-[color:var(--warning)]">
           {t("agents.shell.staleData")}
         </span>
       ) : null}
       <span
         data-testid={`agents-group-meta-${group.key}`}
-        className="ml-auto text-[11px] text-muted-foreground"
+        className="ml-auto text-ui-meta text-muted-foreground"
       >
         {t("agents.groups.sessions", { count })}
         {` · ${t("agents.groups.noHeartbeat", { count: stale })}`}
@@ -358,7 +358,7 @@ export function SessionTableHeader() {
     <div
       aria-hidden="true"
       data-testid="agent-session-table-head"
-      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-[11px] font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_112px_104px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_112px_104px] min-[1181px]:gap-2.5"
+      className="agents-session-grid hidden min-h-[26px] items-center gap-2 border-b border-border px-2 py-[5px] text-ui-micro font-[650] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_76%,transparent)] uppercase min-[761px]:grid min-[761px]:grid-cols-[minmax(128px,1.35fr)_minmax(120px,1.2fr)_112px_104px] min-[1181px]:grid-cols-[minmax(140px,1.4fr)_minmax(140px,1.35fr)_minmax(108px,1.1fr)_112px_104px] min-[1181px]:gap-2.5"
     >
       <span>{t("agents.table.agent")}</span>
       <span>{t("agents.table.session")}</span>
@@ -412,10 +412,10 @@ export function SessionRow({
           <Bot className="h-3.5 w-3.5" aria-hidden />
         </span>
         <span className="min-w-0">
-          <b className="block truncate text-[11.5px] leading-[1.35] font-[650] text-muted-foreground">
+          <b className="block truncate text-ui-label leading-[1.35] font-[650] text-muted-foreground">
             {agentLabel(row)}
           </b>
-          <span className="mt-px block truncate text-[11px] leading-[1.35] text-muted-foreground">
+          <span className="mt-px block truncate text-ui-meta leading-[1.35] text-muted-foreground">
             {[row.clientName, row.model]
               .filter((value): value is string => Boolean(value))
               .join(" · ") || shortTokenId(row.apiTokenId)}
@@ -423,20 +423,20 @@ export function SessionRow({
         </span>
       </span>
       <span className="min-w-0 max-[760px]:col-start-2 max-[760px]:row-start-1 max-[760px]:text-right">
-        <b className="block truncate text-[11px] font-[550] leading-[1.35] max-[760px]:text-[11px] max-[760px]:font-medium max-[760px]:text-muted-foreground">
+        <b className="block truncate text-ui-label font-[550] leading-[1.35] max-[760px]:font-medium max-[760px]:text-muted-foreground">
           {row.name ?? shortId(row.id)}
         </b>
-        <span className="mt-px block truncate text-[11px] text-muted-foreground max-[760px]:hidden">
+        <span className="mt-px block truncate text-ui-meta text-muted-foreground max-[760px]:hidden">
           {mode === "board" ? row.boardTitle : shortTokenId(row.apiTokenId)}
         </span>
       </span>
       <span className="hidden min-w-0 min-[1181px]:block max-[760px]:col-start-1 max-[760px]:row-start-2 max-[760px]:block">
-        <b className="block truncate text-[11px] font-[550] leading-[1.35]">
+        <b className="block truncate text-ui-label font-[550] leading-[1.35]">
           {row.currentCardId === null
             ? "—"
             : (row.cardTitle ?? shortId(row.currentCardId))}
         </b>
-        <span className="mt-px block truncate text-[11px] text-muted-foreground">
+        <span className="mt-px block truncate text-ui-meta text-muted-foreground">
           {row.currentRunId === null
             ? t("agents.noCurrentRun")
             : t("agents.runHash", { id: runNumber(row.currentRunId) })}
@@ -544,10 +544,10 @@ function MetaField({
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-0.5 block text-[11px] tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_78%,transparent)] uppercase">
+      <span className="mb-0.5 block text-ui-micro tracking-[0.04em] text-[color:color-mix(in_oklab,var(--muted-foreground)_78%,transparent)] uppercase">
         {label}
       </span>
-      <span className="block min-w-0 text-[11px] leading-[1.4] font-medium break-words text-foreground">
+      <span className="block min-w-0 text-ui-label leading-[1.4] font-medium break-words text-foreground">
         {children}
       </span>
     </div>
@@ -564,7 +564,7 @@ function SectionHead({
   return (
     <div className="mb-1.5 flex items-center gap-1.5">
       <span className="text-muted-foreground">{icon}</span>
-      <h3 className="m-0 text-[11.5px] font-[650] tracking-[0.03em] text-foreground">
+      <h3 className="m-0 text-ui-body font-[650] tracking-[0.03em] text-foreground">
         {title}
       </h3>
     </div>
@@ -572,11 +572,11 @@ function SectionHead({
 }
 
 const DETAIL_BUTTON_CLASS =
-  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-[11px] leading-none font-[650]";
+  "h-7 min-h-0 gap-[6px] rounded-[6px] px-[9px] py-0 text-ui-label leading-none font-[650]";
 
-/** Prototype `.btn`: 32 px, 11.5 px / 650, 6 px gap, 11 px side padding. */
+/** Prototype `.btn`: 32 px, 13 px / 650, 6 px gap, 11 px side padding. */
 const FOOTER_BUTTON_CLASS =
-  "min-h-11 min-w-0 flex-1 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-[11.5px] leading-none font-[650] md:min-h-8";
+  "min-h-11 min-w-0 flex-1 gap-1.5 rounded-[6px] bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-[11px] text-ui-label leading-none font-[650] md:min-h-8";
 
 function DetailEmpty({
   missingId,
@@ -600,14 +600,14 @@ function DetailEmpty({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.07em] text-muted-foreground uppercase">
+          <p className="m-0 mb-[3px] text-ui-micro font-[650] tracking-[0.07em] text-muted-foreground uppercase">
             {t("agents.shell.detailEyebrow")}
           </p>
           <h2
             data-testid={
               missingId === null ? undefined : "agents-session-detail-missing"
             }
-            className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em]"
+            className="m-0 text-ui-heading font-[650] leading-[1.35] tracking-[-0.01em]"
           >
             {missingId === null
               ? t("agents.shell.noSelection")
@@ -623,12 +623,12 @@ function DetailEmpty({
             <AlertTriangle className="h-[18px] w-[18px]" aria-hidden />
           )}
         </span>
-        <p className="m-0 text-[12px] leading-[1.45] font-[650] text-foreground">
+        <p className="m-0 text-ui-body leading-[1.45] font-[650] text-foreground">
           {missingId === null
             ? t("agents.shell.noSessionsToInspect")
             : t("agents.detail.missingTitle")}
         </p>
-        <p className="m-0 max-w-[30ch] text-[11px] leading-[1.5] text-muted-foreground">
+        <p className="m-0 max-w-[30ch] text-ui-label leading-[1.5] text-muted-foreground">
           {missingId === null
             ? t("agents.shell.noSessionsBody")
             : t("agents.detail.missingBody")}
@@ -721,10 +721,10 @@ export function SessionDetail({
           <ArrowLeft className="h-4 w-4" aria-hidden />
         </button>
         <div className="min-w-0">
-          <p className="m-0 mb-[3px] text-[11px] font-[650] tracking-[0.04em] text-muted-foreground uppercase">
+          <p className="m-0 mb-[3px] text-ui-micro font-[650] tracking-[0.04em] text-muted-foreground uppercase">
             {t("agents.detail.sessionEyebrow", { board: row.boardTitle })}
           </p>
-          <h2 className="m-0 text-[13px] font-[650] leading-[1.35] tracking-[-0.01em] break-words">
+          <h2 className="m-0 text-ui-heading font-[650] leading-[1.35] tracking-[-0.01em] break-words">
             {agentLabel(row)}
           </h2>
         </div>
@@ -735,7 +735,7 @@ export function SessionDetail({
           role="status"
           data-testid="agents-session-detail-hint"
           className={cn(
-            "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-[11px] leading-[1.45]",
+            "mb-2.5 flex items-start gap-2 rounded-[7px] border px-2.5 py-2 text-ui-body leading-[1.45]",
             bannerTone,
           )}
         >
@@ -757,7 +757,7 @@ export function SessionDetail({
           <Link
             to={routes.board(row.boardId)}
             data-testid="agents-session-board-chip"
-            className="inline-flex h-[21px] max-w-full items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-[11px] leading-none font-semibold text-muted-foreground hover:text-foreground"
+            className="inline-flex h-[21px] max-w-full items-center rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_65%,transparent)] px-1.5 text-ui-meta leading-none font-semibold text-muted-foreground hover:text-foreground"
           >
             <span className="truncate">{row.boardTitle}</span>
           </Link>
@@ -770,14 +770,14 @@ export function SessionDetail({
             />
           ) : null}
           {staleBoardIds.includes(row.boardId) ? (
-            <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-[11px] font-semibold text-[color:var(--warning)]">
+            <span className="inline-flex h-[21px] items-center rounded-[4px] border border-[color-mix(in_oklab,var(--warning)_36%,var(--border))] bg-warning/7 px-1.5 text-ui-micro font-semibold text-[color:var(--warning)]">
               {t("agents.shell.staleData")}
             </span>
           ) : null}
         </div>
 
         {row.pausedReason ? (
-          <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-warning/34 bg-warning/6 px-2.5 py-2 text-[11px] leading-[1.45]">
+          <div className="mb-2.5 flex items-start gap-2 rounded-[7px] border border-warning/34 bg-warning/6 px-2.5 py-2 text-ui-body leading-[1.45]">
             <Pause
               className="mt-px h-3.5 w-3.5 shrink-0 text-[color:var(--agent-tone-warning)]"
               aria-hidden
@@ -807,7 +807,7 @@ export function SessionDetail({
             </MetaField>
             <MetaField label={t("agents.detail.token")}>
               <span
-                className="block truncate font-mono text-[11px] text-muted-foreground"
+                className="block truncate font-mono text-ui-meta text-muted-foreground"
                 title={row.apiTokenId}
               >
                 {shortTokenId(row.apiTokenId)}
@@ -836,7 +836,7 @@ export function SessionDetail({
               ) : (
                 <span
                   data-testid="agents-session-current-run"
-                  className="block truncate font-mono text-[11px]"
+                  className="block truncate font-mono text-ui-meta"
                   title={row.currentRunId}
                 >
                   {t("agents.runHash", { id: runNumber(row.currentRunId) })}
@@ -856,7 +856,7 @@ export function SessionDetail({
           />
           <div className="flex flex-wrap gap-1.5">
             {row.currentCardId === null ? (
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-ui-label text-muted-foreground">
                 {sessionPaused
                   ? t("agents.detail.noCurrentCardPaused")
                   : terminal
@@ -868,7 +868,7 @@ export function SessionDetail({
             ) : (
               <Link
                 to={boardHref}
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:h-11 max-md:px-2.5"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-ui-meta text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:h-11 max-md:px-2.5"
               >
                 <Folder className="h-[10px] w-[10px]" aria-hidden />
                 {row.cardTitle ?? shortId(row.currentCardId)}
@@ -882,7 +882,7 @@ export function SessionDetail({
                   run: row.currentRunId,
                 }).toString()}`}
                 data-testid="agents-session-current-work-run"
-                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-[11px] font-mono text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:h-11 max-md:px-2.5"
+                className="inline-flex h-[22px] items-center gap-1 rounded-[4px] border border-border bg-[color-mix(in_oklab,var(--surface)_45%,transparent)] px-1.5 text-ui-meta font-mono text-muted-foreground hover:border-[color:color-mix(in_oklab,var(--muted-foreground)_30%,var(--border))] hover:text-foreground max-md:h-11 max-md:px-2.5"
               >
                 <History className="h-[10px] w-[10px]" aria-hidden />
                 {t("agents.runHash", { id: runNumber(row.currentRunId) })}
@@ -896,9 +896,9 @@ export function SessionDetail({
             icon={<ShieldCheck className="h-3 w-3" aria-hidden />}
             title={t("agents.detail.pauseSemantics")}
           />
-          <p className="m-0 text-[11px] leading-[1.45] text-muted-foreground">
+          <p className="m-0 text-ui-body leading-[1.45] text-muted-foreground">
             {t("agents.detail.claimsPrefix")}{" "}
-            <span className="font-mono text-[11px]">403 agent_paused</span>
+            <span className="font-mono text-ui-meta">403 agent_paused</span>
             {t("agents.detail.claimsSuffix")}
           </p>
         </section>
@@ -909,7 +909,7 @@ export function SessionDetail({
           data-testid={
             !terminal && !canControl ? "agents-session-read-only" : undefined
           }
-          className="m-0 mb-2 flex items-start gap-[5px] text-[11px] leading-[1.45] text-muted-foreground"
+          className="m-0 mb-2 flex items-start gap-[5px] text-ui-label leading-[1.45] text-muted-foreground"
         >
           {terminal ? (
             <ShieldCheck
@@ -983,7 +983,7 @@ export function SessionDetail({
               </Button>
             ) : null}
             {pausedByOtherScope ? (
-              <span className="basis-full text-[11px] text-muted-foreground">
+              <span className="basis-full text-ui-label text-muted-foreground">
                 {t("agents.detail.pausedByScope", {
                   scope: t(`agents.pause.scope.${row.pauseScope ?? "board"}`),
                 })}

@@ -287,7 +287,7 @@ export function CardLinks({
   return (
     <div ref={sectionRef} className="space-y-1.5" data-testid="card-links">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-muted-foreground">
+        <span className="text-ui-label font-medium text-muted-foreground">
           {t("card.links.title")}
         </span>
         {!readOnly && onAdd && !showEmpty && (
@@ -295,7 +295,7 @@ export function CardLinks({
             ref={addButtonRef}
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground"
+            className="h-7 text-ui-label text-muted-foreground"
             onClick={onAdd}
           >
             <Link2 className="h-3.5 w-3.5" />
@@ -306,7 +306,7 @@ export function CardLinks({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground"
+            className="h-7 text-ui-label text-muted-foreground"
             onClick={closeEditor}
           >
             {t("common.cancel")}
@@ -316,7 +316,7 @@ export function CardLinks({
 
       {groups.length === 0 && !showEmpty ? null : groups.length === 0 ? (
         <p
-          className="text-sm text-muted-foreground"
+          className="text-ui-body text-muted-foreground"
           data-testid="card-links-empty"
         >
           {t("card.links.empty")}
@@ -325,7 +325,7 @@ export function CardLinks({
         <div className="space-y-2">
           {groups.map((group) => (
             <div key={group.key} className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
                 {t(`card.links.type.${group.key}`)}
               </p>
               <ul className="space-y-1">
@@ -345,7 +345,7 @@ export function CardLinks({
                       {row.live ? (
                         <a
                           href={cardHref(board.id, row.targetCardId)}
-                          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-foreground/90 transition-colors hover:bg-hover"
+                          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-ui-body text-foreground/90 transition-colors hover:bg-hover"
                           onClick={(event) => {
                             // Modifier/middle clicks keep the browser's href
                             // behavior (new tab), including the deploy base.
@@ -362,7 +362,7 @@ export function CardLinks({
                       ) : (
                         <span
                           aria-disabled="true"
-                          className="flex min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm text-muted-foreground"
+                          className="flex min-w-0 flex-1 cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-ui-body text-muted-foreground"
                           data-testid="card-link-open"
                         >
                           <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -428,7 +428,7 @@ export function CardLinks({
                   ? `${listId}-option-${cursor}`
                   : undefined
               }
-              className="h-8 text-sm"
+              className="h-8 text-ui-body"
               data-testid="card-links-input"
             />
             {suggestions.length > 0 ? (
@@ -446,7 +446,7 @@ export function CardLinks({
                       role="option"
                       aria-selected={index === cursor}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
+                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ui-body",
                         index === cursor
                           ? "bg-primary/10 text-(--tab-text)"
                           : "hover:bg-hover",
@@ -457,7 +457,7 @@ export function CardLinks({
                     >
                       <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <HighlightedTitle title={hit.title} query={query} />
-                      <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                      <span className="ml-auto flex shrink-0 items-center gap-1 text-ui-meta text-muted-foreground">
                         <ColumnChip cardId={hit.id} board={board} />
                         {index === cursor ? (
                           <CornerDownLeft className="h-3 w-3" />

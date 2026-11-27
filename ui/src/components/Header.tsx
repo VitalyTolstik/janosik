@@ -328,10 +328,10 @@ export function Header() {
             data-testid="agents-home"
             className="flex shrink-0 items-center gap-2 rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            <BrandMark size="compact" />
+            <BrandMark />
             <span
               data-testid="agents-wordmark"
-              className="hidden font-agent-display text-[14px] font-bold leading-none tracking-[-0.02em] sm:inline"
+              className="hidden font-agent-display text-ui-body font-bold leading-none tracking-[-0.02em] sm:inline"
             >
               Janosik
             </span>
@@ -355,7 +355,7 @@ export function Header() {
         ) : isAgentsRoute ? (
           <nav
             aria-label={t("agents.breadcrumb")}
-            className="flex min-w-0 items-center gap-2 text-sm"
+            className="flex min-w-0 items-center gap-2 text-ui-body"
           >
             <div className="max-w-[150px] min-w-0 sm:max-w-[240px]">
               <BoardScopeSelect
@@ -390,10 +390,10 @@ export function Header() {
               aria-hidden
               className="hidden h-3 w-3 shrink-0 text-muted-foreground sm:block"
             />
-            <span className="hidden font-agent-surface text-[12px] font-medium leading-[1.45] text-foreground sm:inline">
+            <span className="hidden font-agent-surface text-ui-body font-medium leading-[1.45] text-foreground sm:inline">
               {t("agents.open")}
             </span>
-            <span className="hidden h-[23px] items-center gap-[5px] rounded-[5px] border border-[color:color-mix(in_oklab,var(--primary)_24%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-[7px] text-[11px] text-[color:color-mix(in_oklab,var(--primary)_78%,var(--foreground))] lg:inline-flex">
+            <span className="hidden h-[23px] items-center gap-[5px] rounded-[5px] border border-[color:color-mix(in_oklab,var(--primary)_24%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-[7px] text-ui-meta text-[color:color-mix(in_oklab,var(--primary)_78%,var(--foreground))] lg:inline-flex">
               <Info className="h-3 w-3" aria-hidden />
               {t("agents.shell.globalView")}
             </span>
@@ -503,7 +503,7 @@ export function Header() {
                 ? t("agents.pending.unknown")
                 : undefined
             }
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-[6px] border border-[color:color-mix(in_oklab,var(--primary)_26%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-2 font-agent-surface text-[11.5px] font-semibold leading-[1.45] text-foreground hover:bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[30px]"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-[6px] border border-[color:color-mix(in_oklab,var(--primary)_26%,var(--border))] bg-[color-mix(in_oklab,var(--primary)_7%,transparent)] px-2 font-agent-surface text-ui-label font-semibold leading-[1.45] text-foreground hover:bg-[color-mix(in_oklab,var(--primary)_12%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[30px]"
           >
             <LazyAnimatedIcon name="bot" size={15} aria-hidden />
             <span className="inline">{t("agents.open")}</span>
@@ -514,7 +514,7 @@ export function Header() {
                 title={
                   pendingApprovals.stale ? t("agents.pending.stale") : undefined
                 }
-                className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-[11px] font-bold leading-none tabular-nums text-[#1b1305]"
+                className="inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-warning px-1 text-ui-micro font-bold leading-none tabular-nums text-[#1b1305]"
               >
                 {pendingBadge > 99 ? "99+" : pendingBadge}
               </span>

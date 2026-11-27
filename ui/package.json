@@ -58,7 +58,7 @@
       "path": [
         "dist/assets/index-*.css"
       ],
-      "limit": "34 KB",
+      "limit": "35 KB",
       "gzip": true,
       "running": false
     },

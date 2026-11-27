@@ -225,10 +225,10 @@ export function MentionPicker({
       className="pointer-events-auto z-[60] flex flex-col overflow-hidden rounded-lg border bg-popover shadow-xl"
     >
       <div className="border-b border-border/60 px-3 py-2">
-        <p className="text-xs font-medium text-foreground">
+        <p className="text-ui-label font-medium text-foreground">
           {t("comment.mention.label")}
         </p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-ui-meta text-muted-foreground">
           {t("comment.mention.hint")}
         </p>
       </div>
@@ -244,7 +244,7 @@ export function MentionPicker({
             }`}
       </p>
       {matches.length === 0 ? (
-        <p className="px-3 py-3 text-sm text-muted-foreground">
+        <p className="px-3 py-3 text-ui-body text-muted-foreground">
           {t("comment.mention.empty")}
         </p>
       ) : (
@@ -272,7 +272,7 @@ export function MentionPicker({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => onSelect(member)}
                 className={cn(
-                  "flex min-h-11 cursor-pointer items-center gap-2 px-3 py-2 text-sm",
+                  "flex min-h-11 cursor-pointer items-center gap-2 px-3 py-2 text-ui-body",
                   selected
                     ? "bg-primary/10 text-foreground"
                     : "text-foreground/90 hover:bg-hover",
@@ -290,7 +290,7 @@ export function MentionPicker({
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate font-medium">{label}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">
+                  <span className="block truncate text-ui-meta text-muted-foreground">
                     {mentionMemberHint(member)}
                   </span>
                 </span>

@@ -272,7 +272,7 @@ export function AdminFilterBar({
         return (
           <div
             key={`${key}:${id}`}
-            className="flex shrink-0 flex-wrap items-center gap-x-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-1 text-xs"
+            className="flex shrink-0 flex-wrap items-center gap-x-2 rounded-md border border-warning/40 bg-warning/5 px-3 py-1 text-ui-label"
           >
             <p role="alert" className="min-w-0 wrap-anywhere">
               {t("admin.filters.conflict", { value })}
@@ -289,7 +289,7 @@ export function AdminFilterBar({
         );
       })}
       {failed.length > 0 ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1 text-xs">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1 text-ui-label">
           <p role="status">{t("admin.filters.lookupError")}</p>
           <Button
             size="sm"

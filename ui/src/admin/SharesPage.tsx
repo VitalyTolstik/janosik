@@ -134,7 +134,7 @@ export function SharesPage() {
           list.refreshing ? (
             <EntityListSkeleton columns={7} testId="admin-shares-skeleton" />
           ) : (
-            <p className="p-4 text-sm text-muted-foreground">
+            <p className="p-4 text-ui-body text-muted-foreground">
               {list.total > 0
                 ? t("admin.filters.emptyPage.moderation")
                 : list.effectiveSearch !== ""
@@ -199,7 +199,7 @@ export function SharesPage() {
                             {row.boardTitle ?? row.boardId}
                           </Link>
                         )}
-                        <code className="block max-w-full truncate font-mono text-[11px] text-muted-foreground">
+                        <code className="block max-w-full truncate font-mono text-ui-meta text-muted-foreground">
                           /s/{row.token}
                         </code>
                       </div>
@@ -213,7 +213,7 @@ export function SharesPage() {
                     </Td>
                     <Td
                       label={t("admin.shares.col.flags")}
-                      className="text-xs text-muted-foreground"
+                      className="text-ui-label text-muted-foreground"
                     >
                       {[
                         (row.effectiveIncludeComments ?? row.includeComments)
@@ -235,13 +235,13 @@ export function SharesPage() {
                     </Td>
                     <Td
                       label={t("admin.shares.col.created")}
-                      className="text-xs text-muted-foreground"
+                      className="text-ui-label text-muted-foreground"
                     >
                       {formatDate(row.createdAt, lang, hour12)}
                     </Td>
                     <Td
                       label={t("admin.shares.col.expires")}
-                      className="text-xs text-muted-foreground"
+                      className="text-ui-label text-muted-foreground"
                     >
                       <span data-testid={`admin-share-expires-${row.id}`}>
                         {row.expiresAt === null ? (
@@ -271,7 +271,7 @@ export function SharesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 p-0 max-sm:h-11 max-sm:w-11"
+                          className="h-7 w-7 p-0 max-lg:h-11 max-lg:w-11"
                           aria-label={t("admin.shares.copy")}
                           title={t("admin.shares.copy")}
                           data-testid={`admin-share-copy-${row.id}`}
@@ -285,7 +285,7 @@ export function SharesPage() {
                         >
                           {copiedId === row.id ? (
                             <Check
-                              className="h-3.5 w-3.5 text-success"
+                              className="h-3.5 w-3.5 text-(--agent-tone-success)"
                               aria-hidden
                             />
                           ) : (
@@ -298,7 +298,7 @@ export function SharesPage() {
                           rel="noreferrer"
                           aria-label={t("admin.shares.open")}
                           title={t("admin.shares.open")}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground max-sm:h-11 max-sm:w-11"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground max-lg:h-11 max-lg:w-11"
                         >
                           <ExternalLink className="h-3.5 w-3.5" aria-hidden />
                         </a>
@@ -310,7 +310,7 @@ export function SharesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 text-destructive max-sm:h-11 max-sm:w-11"
+                            className="h-7 w-7 p-0 text-destructive max-lg:h-11 max-lg:w-11"
                             aria-label={t("admin.shares.revoke")}
                             title={t("admin.shares.revoke")}
                             disabled={busy === row.id}
