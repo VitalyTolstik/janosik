@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StrictMode, useState } from "react";
+import { StrictMode, useLayoutEffect, useState } from "react";
 import {
   act,
   fireEvent,
@@ -216,15 +216,13 @@ function Probe() {
   );
 }
 
-function renderApp(path = "/board/b-1") {
+function renderApp(path = "/board/b-1", probe = <Probe />) {
   return render(
     <I18nProvider>
       <ToastProvider>
         <AuthProvider>
           <MemoryRouter initialEntries={[path]}>
-            <BoardProvider>
-              <Probe />
-            </BoardProvider>
+            <BoardProvider>{probe}</BoardProvider>
           </MemoryRouter>
         </AuthProvider>
       </ToastProvider>
@@ -1453,8 +1451,20 @@ describe("BoardProvider server-mode failures and board management", () => {
       seedBoard(),
       { ...seedBoard(), id: "b-2", title: "Second" },
     ]);
+    const titlesAfterLeave = new Set<string>();
+    function LeaveProbe() {
+      const { board, boards } = useBoard();
+      // Capture any intermediate commit between removal and navigation.
+      useLayoutEffect(() => {
+        if (boards.length === 1 && boards[0].id === "b-2") {
+          titlesAfterLeave.add(board?.title ?? "");
+        }
+      }, [board, boards]);
+      return <Probe />;
+    }
+
     vi.stubGlobal("fetch", server.handle);
-    renderApp();
+    renderApp("/board/b-1", <LeaveProbe />);
     await waitReady();
 
     // A refusal — e.g. the last ADMIN — keeps the board and local state.
@@ -1473,10 +1483,11 @@ describe("BoardProvider server-mode failures and board management", () => {
 
     // A real leave forgets the board, its role and its resume point.
     fireEvent.click(screen.getByTestId("leave-b1"));
-    await waitFor(() =>
-      expect(screen.getByTestId("board-count").textContent).toBe("1"),
-    );
-    expect(screen.getByTestId("title").textContent).toBe("Second");
+    await waitFor(() => {
+      expect(screen.getByTestId("board-count").textContent).toBe("1");
+      expect(screen.getByTestId("title").textContent).toBe("Second");
+    });
+    expect([...titlesAfterLeave]).toEqual(["Second"]);
     expect(server.revoked.has("b-1")).toBe(true);
     expect(server.requests.map((r) => `${r.method} ${r.path}`)).toContain(
       "DELETE /api/v1/boards/b-1/members/me",
