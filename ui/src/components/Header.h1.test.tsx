@@ -17,6 +17,7 @@ import {
 
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
+import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { Header } from "@/components/Header";
 import { UserProfileProvider } from "@/components/board/UserProfileDialog";
 import { ToastProvider } from "@/components/Toast";
@@ -75,7 +76,9 @@ function renderHeader(server: FakeServer, path = "/board/board-1") {
           <AuthProvider>
             <BoardProvider>
               <UserProfileProvider boardId="board-1">
-                <Header />
+                <BoardPeopleProvider>
+                  <Header />
+                </BoardPeopleProvider>
               </UserProfileProvider>
             </BoardProvider>
           </AuthProvider>

@@ -1,0 +1,152 @@
+/* The dock snaps the board width. Only the inspector surface moves. */
+.inspector-dock {
+  position: relative;
+  flex: 0 0 0;
+}
+
+.inspector-dock[data-open="true"] {
+  flex-basis: var(--inspector-width);
+}
+
+.board-inspector,
+.inspector-scrim {
+  --janosik-ease-drawer: var(--janosik-ease-out);
+}
+
+.board-inspector {
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  color: var(--popover-foreground);
+}
+
+.board-inspector[data-mode="dock"] {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  z-index: 10;
+  width: var(--inspector-width);
+  transition:
+    translate 200ms var(--janosik-ease-drawer),
+    display 200ms allow-discrete;
+}
+
+.board-inspector[data-mode="dock"][data-state="closed"] {
+  display: none;
+  translate: 100% 0;
+}
+
+@starting-style {
+  .board-inspector[data-mode="dock"][data-state="open"] {
+    translate: 100% 0;
+  }
+}
+
+.board-inspector[data-mode="drawer"],
+.board-inspector[data-mode="sheet"] {
+  position: fixed;
+  inset-inline-end: 0;
+  animation: inspector-slide-in 200ms var(--janosik-ease-drawer);
+}
+
+.board-inspector[data-mode="drawer"] {
+  inset-block: 0;
+  width: 360px;
+  --inspector-offset: 100% 0;
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+}
+
+.board-inspector[data-mode="sheet"] {
+  inset-inline-start: 0;
+  bottom: 0;
+  height: 85dvh;
+  border-radius: 1rem 1rem 0 0;
+  --inspector-offset: 0 100%;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.board-inspector:is(
+    [data-mode="drawer"],
+    [data-mode="sheet"]
+  )[data-state="closed"] {
+  animation-name: inspector-slide-out;
+  pointer-events: none;
+}
+
+@keyframes inspector-slide-in {
+  from {
+    translate: var(--inspector-offset);
+  }
+}
+
+@keyframes inspector-slide-out {
+  to {
+    translate: var(--inspector-offset);
+  }
+}
+
+.inspector-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(0 0 0 / 55%);
+  animation: inspector-fade-in 200ms var(--janosik-ease-drawer);
+}
+
+.inspector-scrim[data-state="closed"] {
+  animation-name: inspector-fade-out;
+}
+
+@keyframes inspector-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes inspector-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.inspector-separator {
+  position: absolute;
+  inset-block: 0;
+  left: -4px;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.inspector-separator:is(:hover, :focus-visible):not([aria-disabled="true"]) {
+  background: var(--primary);
+}
+
+.inspector-tab {
+  min-height: 36px;
+}
+
+@media (width < 1024px), (pointer: coarse) {
+  .inspector-tab,
+  .inspector-action {
+    min-height: 44px;
+  }
+
+  .inspector-separator {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-inspector[data-mode],
+  .inspector-scrim[data-state] {
+    animation: none;
+    transition: none;
+  }
+}

@@ -1941,3 +1941,15 @@ html.light [data-testid="public-avatar"].bg-slate {
     mask-image: linear-gradient(to right, #000 93%, transparent 100%);
   }
 }
+
+.inspector-control {
+  width: 32px;
+  height: 32px;
+}
+
+@media (width < 1024px), (pointer: coarse) {
+  .inspector-control {
+    width: 44px;
+    height: 44px;
+  }
+}

@@ -12,6 +12,7 @@ import type { Board } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { BoardSection } from "@/components/BoardSection";
+import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { Header } from "@/components/Header";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -57,7 +58,9 @@ function renderApp(entry = "/board/b-1") {
               <MemoryRouter initialEntries={[entry]}>
                 <ToastProvider>
                   <BoardProvider>
-                    <Header />
+                    <BoardPeopleProvider>
+                      <Header />
+                    </BoardPeopleProvider>
                     <BoardSection />
                   </BoardProvider>
                 </ToastProvider>
@@ -80,7 +83,9 @@ function renderHeader(entry = "/board/b-1") {
               <MemoryRouter initialEntries={[entry]}>
                 <ToastProvider>
                   <BoardProvider>
-                    <Header />
+                    <BoardPeopleProvider>
+                      <Header />
+                    </BoardPeopleProvider>
                   </BoardProvider>
                 </ToastProvider>
               </MemoryRouter>

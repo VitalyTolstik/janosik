@@ -12,6 +12,7 @@ import type { Board } from "@janosik/shared";
 
 import { api } from "@/api/client";
 import { AuthProvider } from "@/auth/AuthContext";
+import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
 import { Header } from "@/components/Header";
 import { ToastProvider } from "@/components/Toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -107,7 +108,9 @@ function renderHeader(
                 >
                   <AuthProvider>
                     <BoardProvider>
-                      <Header />
+                      <BoardPeopleProvider>
+                        <Header />
+                      </BoardPeopleProvider>
                       <RouteProbe />
                       <HistoryControls />
                     </BoardProvider>
