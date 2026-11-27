@@ -368,7 +368,9 @@ test("opens from the command palette and yields to a card modal", async ({
   await expect(input).toBeHidden();
   const editor = page.getByRole("dialog", { name: "Card details" });
   await expect(editor).toBeVisible();
-  await editor.getByTestId("dialog-close").focus();
+  // The palette must hand focus back to the editor on its own; assert the
+  // natural target before Escape, without focusing the close button by hand.
+  await expect(editor.getByRole("textbox", { name: "Title" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(panel).not.toHaveAttribute("inert");
   await expect(panel).toBeVisible();

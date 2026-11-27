@@ -1090,6 +1090,7 @@
   "card.deleteForeverTitle": "Удалить карточку из архива?",
   "card.deleteTitle": "Удалить эту карточку?",
   "card.deletedDesc": "Эта карточка была удалена.",
+  "card.description.loadFailed": "Не удалось загрузить описание.",
   "card.description.loading": "Загружаем описание…",
   "card.descriptionConflict": "Пока вы редактировали, описание изменил кто-то другой.",
   "card.descriptionConflictKeep": "Оставить моё",

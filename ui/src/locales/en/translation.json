@@ -1040,6 +1040,7 @@
   "card.deleteForeverTitle": "Delete card from archive?",
   "card.deleteTitle": "Delete this card?",
   "card.deletedDesc": "This card was deleted.",
+  "card.description.loadFailed": "Could not load the description.",
   "card.description.loading": "Loading description…",
   "card.descriptionConflict": "Someone else changed this description while you were editing.",
   "card.descriptionConflictKeep": "Keep mine",

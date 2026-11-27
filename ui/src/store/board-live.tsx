@@ -30,8 +30,9 @@ import { CommitStore } from "@/store/commit-store";
  * through `useSyncExternalStore`, and the stores notify only the keys that
  * actually changed. `BoardProvider` owns one instance per lifetime and hands
  * it out through this context, so nothing lives past a logout. A fourth
- * member, `ActivityStore` (TASK-37), carries no state at all — it fans
- * comment frames out to the open card and forgets them.
+ * member, `ActivityStore` (TASK-37), fans comment frames out to the open
+ * card; it keeps only per-board deletion stamps so a cached feed can reject
+ * rows that predate a deletion it missed while idle.
  */
 
 /** How long a foreign change keeps its highlight ring on screen. */
@@ -377,17 +378,60 @@ function sameMember(a: BoardMemberDto | undefined, b: BoardMemberDto): boolean {
   );
 }
 
+const NO_DELETIONS: ReadonlyMap<string, number> = new Map();
+
 /**
  * Fan-out of `type: "activity"` SSE frames (TASK-37): comments arriving on
- * an open board. Unlike the other stores this one keeps no state — every
- * frame is handed to the mounted listeners (an open card dialog) and
- * forgotten, their views refetch what they need through the REST API.
+ * an open board. Frames go to the mounted listeners (an open card dialog, the
+ * shared activity feed), and their views refetch what they need through the
+ * REST API.
+ *
+ * Comment deletions are the exception: they are recorded per board before the
+ * fan-out, because a cached feed may have no listener while Watch/Activity are
+ * closed. When it reopens it reconciles the cached page (and any response that
+ * was already in flight) against these tombstones instead of briefly showing
+ * text the server has already deleted.
  */
 export class ActivityStore {
   private readonly listeners = new Set<(event: ActivitySseEvent) => void>();
+  /** boardId → commentId → deletion generation (kept for the session). */
+  private readonly deletions = new Map<string, Map<string, number>>();
+  private readonly deletionVersions = new Map<string, number>();
 
   publish(event: ActivitySseEvent): void {
+    if (event.kind === "comment_deleted") {
+      const commentId = event.commentId ?? event.detail;
+      if (commentId) this.noteCommentDeleted(event.boardId, commentId);
+    }
     for (const listener of [...this.listeners]) listener(event);
+  }
+
+  /** Record a comment deletion and return its monotonically rising stamp. */
+  noteCommentDeleted(boardId: string, commentId: string): number {
+    const generation = this.getDeletionVersion(boardId) + 1;
+    this.deletionVersions.set(boardId, generation);
+    let deleted = this.deletions.get(boardId);
+    if (deleted === undefined) {
+      deleted = new Map();
+      this.deletions.set(boardId, deleted);
+    }
+    deleted.set(commentId, generation);
+    return generation;
+  }
+
+  /**
+   * Deleted comment ids for one board. Entries stay for the session so an
+   * older response can still be recognised as stale after a restore; a fresh
+   * response is authoritative through its own deletion generation, which is
+   * why a restored row becomes visible without dropping the tombstone.
+   */
+  getDeletedComments(boardId: string): ReadonlyMap<string, number> {
+    return this.deletions.get(boardId) ?? NO_DELETIONS;
+  }
+
+  /** Latest deletion stamp for one board; `0` before the first deletion. */
+  getDeletionVersion(boardId: string): number {
+    return this.deletionVersions.get(boardId) ?? 0;
   }
 
   subscribe = (listener: (event: ActivitySseEvent) => void): (() => void) => {
@@ -397,6 +441,8 @@ export class ActivityStore {
 
   clear(): void {
     this.listeners.clear();
+    this.deletions.clear();
+    this.deletionVersions.clear();
   }
 }
 

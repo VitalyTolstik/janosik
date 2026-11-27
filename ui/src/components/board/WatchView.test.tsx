@@ -158,6 +158,11 @@ describe("WatchView (TASK-142)", () => {
     renderWatch();
     expect(screen.getByText(/server mode/i)).toBeInTheDocument();
     expect(screen.queryByTestId("watch-feed")).toBeNull();
+    // The local-mode message is final content: the region must not stay busy
+    // forever just because the server-only feed never loads.
+    expect(
+      screen.getByRole("region", { name: "Live activity" }),
+    ).toHaveAttribute("aria-busy", "false");
   });
 
   it("shows an explicit retry when the feed request fails", async () => {

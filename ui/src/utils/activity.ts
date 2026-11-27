@@ -155,7 +155,7 @@ export function isStaleDeletedCommentEntry(
     ActivityFeedEntry,
     "type" | "commentId" | "detail" | "changes" | "details"
   >,
-  deletedIds: DeletedCommentTombstones,
+  deletedIds: ReadonlyMap<string, number>,
   requestGeneration: number,
 ): boolean {
   const id = commentActivityId(entry);

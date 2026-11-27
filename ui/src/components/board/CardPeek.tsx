@@ -72,6 +72,7 @@ function CardSummary({
   const [detailState, setDetailState] = useState<
     "loading" | "missing" | "error"
   >("loading");
+  const [detailAttempt, setDetailAttempt] = useState(0);
   const needsDescription = !hasCardDetail(card) && cardHasDescription(card);
 
   useEffect(() => {
@@ -88,7 +89,19 @@ function CardSummary({
     return () => {
       cancelled = true;
     };
-  }, [boardId, card.id, card.updatedAt, needsDescription, loadCardDetail]);
+  }, [
+    boardId,
+    card.id,
+    card.updatedAt,
+    needsDescription,
+    loadCardDetail,
+    detailAttempt,
+  ]);
+
+  function retryDescription() {
+    setDetailState("loading");
+    setDetailAttempt((attempt) => attempt + 1);
+  }
 
   if (needsDescription && detailState === "missing") {
     return (
@@ -169,15 +182,25 @@ function CardSummary({
         <h4 className="text-ui-label font-semibold">
           {t("card.descriptionLabel")}
         </h4>
-        <p className="line-clamp-5 text-ui-body text-muted-foreground">
-          {needsDescription
-            ? t(
-                detailState === "error"
-                  ? "sync.loadFailed"
-                  : "card.description.loading",
-              )
-            : description || "—"}
-        </p>
+        {needsDescription && detailState === "error" ? (
+          <div className="flex flex-wrap items-center gap-2 text-ui-body text-muted-foreground">
+            <span>{t("card.description.loadFailed")}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="inspector-action"
+              onClick={retryDescription}
+            >
+              {t("sync.retry")}
+            </Button>
+          </div>
+        ) : (
+          <p className="line-clamp-5 text-ui-body text-muted-foreground">
+            {needsDescription
+              ? t("card.description.loading")
+              : description || "—"}
+          </p>
+        )}
       </div>
       <Button
         variant="outline"

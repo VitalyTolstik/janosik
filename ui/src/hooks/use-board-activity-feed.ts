@@ -3,10 +3,7 @@ import type { ActivityFeedPage, ActivitySseEvent } from "@janosik/shared";
 
 import { api, isApiEnabled } from "@/api/client";
 import { useBoardLive } from "@/store/board-live";
-import {
-  isStaleDeletedCommentEntry,
-  reconcileRestoredComments,
-} from "@/utils/activity";
+import { isStaleDeletedCommentEntry } from "@/utils/activity";
 
 export const ACTIVITY_PAGE_SIZE = 50;
 const POLL_MS = 3000;
@@ -41,17 +38,32 @@ class ActivityFeed {
   private inFlight = false;
   private dirty = false;
   private fetchedAt = -Infinity;
-  private generation = 0;
-  private readonly deleted = new Map<string, number>();
+  private observedDeletionVersion = 0;
 
   constructor(
     private readonly live: BoardLive,
     private readonly boardId: string,
     private readonly cardId: string | undefined,
-  ) {}
+    private readonly pruneIdleScopes: () => void,
+  ) {
+    this.observedDeletionVersion = live.activity.getDeletionVersion(boardId);
+  }
 
   get idle() {
     return this.listeners.size === 0;
+  }
+
+  /** True while a page request is outstanding; such a scope is not evictable. */
+  get pending() {
+    return this.inFlight;
+  }
+
+  private get deleted() {
+    return this.live.activity.getDeletedComments(this.boardId);
+  }
+
+  private get deletionVersion() {
+    return this.live.activity.getDeletionVersion(this.boardId);
   }
 
   private get active() {
@@ -65,7 +77,19 @@ class ActivityFeed {
     return this.snapshot.size;
   }
 
-  getSnapshot = () => this.snapshot;
+  /**
+   * A deletion can arrive while this scope has no listeners. `getSnapshot`
+   * runs before the reopened consumer paints, so reconcile there instead of
+   * exposing a page fetched before the gap.
+   */
+  getSnapshot = () => {
+    const version = this.deletionVersion;
+    if (version !== this.observedDeletionVersion) {
+      this.observedDeletionVersion = version;
+      this.snapshot = this.withDeletions(this.snapshot);
+    }
+    return this.snapshot;
+  };
 
   subscribe = (listener: Listener, active: boolean, size?: number) => {
     this.listeners.set(listener, { active, size });
@@ -97,8 +121,31 @@ class ActivityFeed {
     };
   };
 
+  /**
+   * Drop cached rows whose comment was deleted after the page was fetched.
+   * Restored rows survive: `isStaleDeletedCommentEntry` compares stamps, so a
+   * response that started at/after the deletion is authoritative.
+   */
+  private withDeletions(snapshot: Snapshot): Snapshot {
+    const deleted = this.deleted;
+    const page = snapshot.page && {
+      ...snapshot.page,
+      items: snapshot.page.items.filter(
+        (entry) =>
+          !isStaleDeletedCommentEntry(
+            entry,
+            deleted,
+            snapshot.page?.generation ?? 0,
+          ),
+      ),
+    };
+    return { ...snapshot, page, deleted };
+  }
+
   private publish(snapshot: Snapshot) {
-    this.snapshot = snapshot;
+    // Always republish the shared map: a deletion may have landed while this
+    // scope was idle, and `snapshot.deleted` must not stay a stale copy.
+    this.snapshot = { ...snapshot, deleted: this.deleted };
     for (const listener of this.listeners.keys()) listener();
   }
 
@@ -134,11 +181,12 @@ class ActivityFeed {
     }
     const deletedId = event.commentId ?? event.detail;
     if (event.kind === "comment_deleted" && deletedId) {
-      this.deleted.set(deletedId, ++this.generation);
+      // ActivityStore stamped the tombstone before fan-out, so a feed that
+      // was idle at that moment sees it on its next `getSnapshot` too.
+      this.observedDeletionVersion = this.deletionVersion;
       const page = this.snapshot.page;
       this.publish({
         ...this.snapshot,
-        deleted: new Map(this.deleted),
         page: page && {
           ...page,
           items: page.items.filter(
@@ -171,23 +219,18 @@ class ActivityFeed {
     result: ActivityFeedPage,
     generation: number,
   ): FeedPage {
-    reconcileRestoredComments(
-      result.items,
-      this.deleted,
-      generation,
-      (entry) => entry.commentId ?? entry.detail,
-    );
+    const deleted = this.deleted;
     return {
       ...result,
       generation,
       items: result.items.filter(
-        (entry) => !isStaleDeletedCommentEntry(entry, this.deleted, generation),
+        (entry) => !isStaleDeletedCommentEntry(entry, deleted, generation),
       ),
     };
   }
 
   loadPage = async (cursor: string, size: number): Promise<FeedPage> => {
-    const generation = this.generation;
+    const generation = this.deletionVersion;
     return this.reconcilePage(await this.requestPage(cursor, size), generation);
   };
 
@@ -199,15 +242,17 @@ class ActivityFeed {
     this.dirty = false;
     this.fetchedAt = Date.now();
     const size = this.size;
-    const generation = this.generation;
+    const generation = this.deletionVersion;
     void this.requestPage(undefined, size)
       .then((result) => {
         const page = this.reconcilePage(result, generation);
+        this.observedDeletionVersion = this.deletionVersion;
         this.publish({ ...this.snapshot, page, size, error: false });
       })
       .catch(() => this.publish({ ...this.snapshot, size, error: true }))
       .finally(() => {
         this.inFlight = false;
+        if (this.idle) this.pruneIdleScopes();
         if (this.size !== size) this.refresh();
         else if (this.dirty) this.scheduleRefresh();
       });
@@ -218,17 +263,25 @@ class ActivityFeed {
 // so returning to a tab does not re-fetch a page that is still fresh.
 const feeds = new WeakMap<BoardLive, Map<string, ActivityFeed>>();
 
+function pruneIdleScopes(scopes: Map<string, ActivityFeed>, keep?: string) {
+  const idle = [...scopes].filter(
+    ([id, scope]) => id !== keep && scope.idle && !scope.pending,
+  );
+  for (const [id] of idle.slice(0, Math.max(0, idle.length - IDLE_SCOPES))) {
+    scopes.delete(id);
+  }
+}
+
 function getFeed(live: BoardLive, boardId: string, cardId?: string) {
   const scopes = feeds.get(live) ?? new Map<string, ActivityFeed>();
   feeds.set(live, scopes);
   const key = JSON.stringify([boardId, cardId]);
-  const feed = scopes.get(key) ?? new ActivityFeed(live, boardId, cardId);
+  const feed =
+    scopes.get(key) ??
+    new ActivityFeed(live, boardId, cardId, () => pruneIdleScopes(scopes, key));
   scopes.delete(key);
   scopes.set(key, feed);
-  const idle = [...scopes].filter(([id, scope]) => id !== key && scope.idle);
-  for (const [id] of idle.slice(0, Math.max(0, idle.length - IDLE_SCOPES))) {
-    scopes.delete(id);
-  }
+  pruneIdleScopes(scopes, key);
   return feed;
 }
 

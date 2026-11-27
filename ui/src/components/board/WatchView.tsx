@@ -405,7 +405,7 @@ export function WatchView({ boardId }: WatchViewProps) {
             aria-label={t("watch.feed")}
             tabIndex={0}
             className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-busy={!loaded && !error}
+            aria-busy={serverMode && !loaded && !error}
           >
             {error ? (
               <div
