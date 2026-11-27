@@ -91,7 +91,10 @@ export function BoardTitle() {
       />
     </span>
   ) : (
-    <div className="group/title flex min-w-0 flex-1 items-center gap-0.5">
+    // `flex-initial` (shrink, never grow) keeps the switcher beside the
+    // title at desktop widths; the title only takes its intrinsic width
+    // (capped at 320 px) and shrinks when the tablet header is tight.
+    <div className="group/title flex min-w-0 flex-initial items-center gap-0.5">
       <h1
         ref={headingRef}
         data-testid="board-title"

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Share2, UserPlus, Users } from "lucide-react";
 import type { BoardRole, PresenceUser } from "@janosik/shared";
 
@@ -56,12 +56,24 @@ export function PeopleMenu() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const boardId = board?.id;
+  const archived = board?.archivedAt !== undefined;
+
+  // A live archive revokes admin sharing and hides the admin roster; a board
+  // switch replaces the board under the dialog. Reset both in either case,
+  // otherwise the persisted open flag retargets the next board's roster.
+  useEffect(() => {
+    if (boardId === undefined) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- board/archive transition is the trigger
+    setMembersOpen(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- board/archive transition is the trigger
+    setShareOpen(false);
+  }, [boardId, archived]);
 
   // Members, sharing and presence are server-only concepts; local mode had
   // no members/share/presence triggers before H1 either.
   if (!isApiEnabled() || !board) return null;
 
-  const archived = board.archivedAt !== undefined;
   // Same per-role gate the old Members trigger had: an archived board keeps
   // the roster read-only for non-admins, while an ADMIN gets no roster at all
   // until the board is restored.
@@ -196,16 +208,16 @@ export function PeopleMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* A live archive makes the roster read-only and revokes Share: close
-          either dialog instead of leaving mutating controls open. */}
+      {/* Archived non-admins keep the read-only roster; an archived ADMIN
+          loses it until restore. The archive effect closes both flags. */}
       <BoardMembersDialog
-        open={!archived && membersOpen}
+        open={showMembers && membersOpen}
         onOpenChange={setMembersOpen}
         showTrigger={false}
         returnFocusRef={triggerRef}
       />
       <ShareDialog
-        open={!archived && shareOpen}
+        open={showShare && shareOpen}
         onOpenChange={setShareOpen}
         showTrigger={false}
         returnFocusRef={triggerRef}

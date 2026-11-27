@@ -314,6 +314,25 @@ describe("H1 header: People + Board menu", () => {
     ).toBeVisible();
   });
 
+  it("keeps the read-only roster reachable for an archived MEMBER", async () => {
+    const archivedBoard: Board = {
+      ...board,
+      archivedAt: 1_700_000,
+    };
+    const activeBoard: Board = { ...board, id: "board-2", title: "Active" };
+    const server = new FakeServer([archivedBoard, activeBoard]);
+    server.role = "MEMBER";
+    renderHeader(server, "/board/board-1");
+
+    await openPeople();
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Members" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: /Members/ }),
+    ).toBeVisible();
+  });
+
   it("keeps rename on the title itself, not on a permanent header button", async () => {
     renderHeader(new FakeServer([board]));
     const title = await screen.findByTestId("board-title");

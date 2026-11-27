@@ -309,7 +309,9 @@ export function Header() {
     >
       <div
         className={cn(
-          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-3",
+          // Tighter gaps through the tablet range buy the board title enough
+          // room for a realistic name without pushing into the right cluster.
+          "group flex w-full min-w-0 items-center gap-1 sm:w-auto sm:flex-1 sm:gap-2 lg:gap-3",
           isAgentsRoute && "w-auto flex-1 gap-[10px]",
         )}
       >
@@ -432,10 +434,11 @@ export function Header() {
             <GlobalSearch iconOnly />
           </div>
         ) : isBoardRoute ? (
-          // The icon returns at 721 px; the label waits for the full header
-          // at 1024 px so it cannot paint over the title or Agents.
-          <div className="hidden min-[721px]:block">
-            <GlobalSearch labelClassName="hidden min-[1024px]:inline" />
+          // Below 1024 the icon would eat the title's last ~46 px at the
+          // 768–800 squeeze; the global ⌘K shortcut still opens search. The
+          // visible icon and label return together on the full header.
+          <div className="hidden min-[1024px]:block">
+            <GlobalSearch />
           </div>
         ) : (
           <GlobalSearch />
