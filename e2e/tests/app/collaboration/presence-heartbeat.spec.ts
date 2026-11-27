@@ -1,5 +1,5 @@
 import { test, expect } from "@/fixtures/collaboration.js";
-import { expectPresence, presenceStack } from "@/helpers/collaboration.js";
+import { expectPresence } from "@/helpers/collaboration.js";
 
 test.describe.configure({ timeout: 120_000 });
 

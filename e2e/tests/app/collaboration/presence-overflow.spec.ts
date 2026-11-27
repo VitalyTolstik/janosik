@@ -82,11 +82,12 @@ test("a busy board collapses its presence stack into +N with roles", async ({
       extras.push({ email: user.email, context, page: extraPage });
     }
 
-    // Owner + five extras = six people: five avatars and a +1 overflow.
-    await expect(page.getByTestId("people-avatar")).toHaveCount(5, {
+    // Owner + five extras = six people: three avatars and a +3 overflow
+    // (H1 keeps the People trigger compact, the list has everyone).
+    await expect(page.getByTestId("people-avatar")).toHaveCount(3, {
       timeout: 20_000,
     });
-    await expect(page.getByTestId("people-overflow")).toHaveText("+1");
+    await expect(page.getByTestId("people-overflow")).toHaveText("+3");
 
     await page.getByTestId("people-trigger").click();
     const rows = page.getByTestId("people-presence-row");
