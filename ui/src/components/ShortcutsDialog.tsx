@@ -1,3 +1,5 @@
+import { useRef, type RefObject } from "react";
+
 import {
   Dialog,
   DialogContent,
@@ -43,6 +45,7 @@ export function ShortcutsDialog({
   kanban,
   canEdit,
   selectable,
+  returnFocusRef,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -51,8 +54,11 @@ export function ShortcutsDialog({
   canEdit?: boolean;
   /** Board or table view with bulk selection enabled. */
   selectable?: boolean;
+  /** Menu trigger, so closing returns focus there, not BODY. */
+  returnFocusRef?: RefObject<HTMLElement>;
 }) {
   const { t } = useI18n();
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   // Re-computed per render — cheap, and `open` toggles remount the table.
   const mod = MOD;
@@ -61,11 +67,24 @@ export function ShortcutsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="max-w-md"
-        // The sheet has no input to focus — without this, Radix focuses
-        // the close X and paints its focus ring.
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        // The sheet has no input; focus the title so Escape reaches the
+        // dialog without putting Radix's ring on the close X.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          titleRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
       >
-        <DialogTitle className="text-ui-heading font-semibold">
+        <DialogTitle
+          ref={titleRef}
+          tabIndex={-1}
+          className="text-ui-heading font-semibold outline-none"
+        >
           {t("shortcuts.title")}
         </DialogTitle>
         <DialogDescription className="sr-only">

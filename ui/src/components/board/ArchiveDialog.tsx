@@ -1,4 +1,10 @@
-import { useId, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArchiveRestore,
@@ -44,6 +50,8 @@ interface ArchiveDialogProps {
    * board instead of falling back to whatever active board is mounted.
    */
   boardId?: string;
+  /** Board menu trigger, so closing returns focus there, not BODY. */
+  returnFocusRef?: RefObject<HTMLElement>;
 }
 
 const MIN_PAGE_SIZE = 5;
@@ -91,10 +99,19 @@ export function ArchiveDialog({
   open,
   onOpenChange,
   boardId,
+  returnFocusRef,
 }: ArchiveDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-5xl xl:max-w-6xl">
+      <DialogContent
+        className="h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] sm:max-w-5xl xl:max-w-6xl"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         {/* Search query and the inline delete confirm live inside
             `DialogContent`: Radix unmounts it on close, so every open starts
             clean without an `open` effect (AGENT.md: reset by remount). */}

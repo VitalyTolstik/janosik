@@ -1,4 +1,5 @@
 import { Lock, Workflow } from "lucide-react";
+import type { RefObject } from "react";
 
 import type { BoardWorkflow } from "@janosik/shared";
 import {
@@ -15,6 +16,7 @@ import { conditionLabel } from "@/utils/workflow";
 interface WorkflowRulesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  returnFocusRef?: RefObject<HTMLElement>;
 }
 
 /**
@@ -27,6 +29,7 @@ interface WorkflowRulesDialogProps {
 export function WorkflowRulesDialog({
   open,
   onOpenChange,
+  returnFocusRef,
 }: WorkflowRulesDialogProps) {
   const { t } = useI18n();
   const { board } = useBoardState();
@@ -51,6 +54,12 @@ export function WorkflowRulesDialog({
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] max-w-lg overflow-y-auto"
         data-testid="workflow-rules-dialog"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type RefObject,
 } from "react";
 import {
   CalendarClock,
@@ -346,10 +347,26 @@ function ExpiryCalendarBody({
   );
 }
 
-export function BoardMembersDialog() {
+/**
+ * H1: the People menu composes this dialog as one of its rows, so the shell
+ * can render without its own trigger and receive focus back afterwards.
+ */
+export function BoardMembersDialog({
+  open: openProp,
+  onOpenChange,
+  showTrigger = true,
+  returnFocusRef,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+  returnFocusRef?: RefObject<HTMLElement>;
+} = {}) {
   const { t } = useI18n();
   const { board, roleOf, leaveBoard } = useBoard();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
 
   // A successful leave navigates to another board; leaving the modal open
   // would show that board's roster and keep the header behind a modal.
@@ -359,7 +376,7 @@ export function BoardMembersDialog() {
       if (left) setOpen(false);
       return left;
     },
-    [leaveBoard],
+    [leaveBoard, setOpen],
   );
 
   // Members are a server-only concept; the local (localStorage) mode has a
@@ -369,20 +386,23 @@ export function BoardMembersDialog() {
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t("board.members.button")}
-            onClick={() => setOpen(true)}
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <LazyAnimatedIcon name="user-plus" size={18} aria-hidden />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{t("board.members.button")}</TooltipContent>
-      </Tooltip>
+      {showTrigger ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("board.members.button")}
+              data-testid="board-members-trigger"
+              onClick={() => setOpen(true)}
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <LazyAnimatedIcon name="user-plus" size={18} aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("board.members.button")}</TooltipContent>
+        </Tooltip>
+      ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -393,6 +413,12 @@ export function BoardMembersDialog() {
             if (document.querySelector('[data-testid="expiry-calendar"]')) {
               event.preventDefault();
             }
+          }}
+          onCloseAutoFocus={(event) => {
+            const target = returnFocusRef?.current;
+            if (!target) return;
+            event.preventDefault();
+            target.focus();
           }}
         >
           <BoardMembersPanel

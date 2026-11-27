@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type RefObject } from "react";
 import { Check, RotateCcw, Trash2, X } from "lucide-react";
 
 import { useToast } from "@/components/Toast";
@@ -26,6 +26,7 @@ import {
 interface BackupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  returnFocusRef?: RefObject<HTMLElement>;
 }
 
 /**
@@ -34,10 +35,22 @@ interface BackupDialogProps {
  * compact. Restore keeps a safety snapshot of the current state first;
  * delete asks an inline ✓ / ✗ confirmation.
  */
-export function BackupDialog({ open, onOpenChange }: BackupDialogProps) {
+export function BackupDialog({
+  open,
+  onOpenChange,
+  returnFocusRef,
+}: BackupDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-1.5rem)] sm:max-w-lg">
+      <DialogContent
+        className="w-[calc(100vw-1.5rem)] sm:max-w-lg"
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef?.current;
+          if (!target) return;
+          event.preventDefault();
+          target.focus();
+        }}
+      >
         {/* The list and its inline restore confirm live inside
             `DialogContent`: Radix unmounts it on close, so each open
             re-reads the snapshots and starts with no pending confirmation —
