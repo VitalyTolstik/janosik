@@ -103,14 +103,19 @@ test("applies every facet with AND and counts each one", async ({
   await board.open(page);
 
   const popover = await openFilters(page);
-  await popover.getByRole("radio", { name: "Overdue" }).click();
-  await popover.getByRole("checkbox", { name: "Bug", exact: true }).click();
-  await popover.getByRole("checkbox", { name: "High", exact: true }).click();
-  await popover.getByRole("checkbox").filter({ hasText: board.email }).click();
-  await popover
-    .getByRole("checkbox", { name: "Has links", exact: true })
-    .click();
-  await popover.getByRole("radio", { name: "Last 7 days" }).click();
+  const options = [
+    popover.getByRole("radio", { name: "Overdue" }),
+    popover.getByRole("checkbox", { name: "Bug", exact: true }),
+    popover.getByRole("checkbox", { name: "High", exact: true }),
+    popover.getByRole("checkbox").filter({ hasText: board.email }),
+    popover.getByRole("checkbox", { name: "Has links", exact: true }),
+    popover.getByRole("radio", { name: "Last 7 days" }),
+  ];
+  for (const option of options) {
+    await option.click();
+    // Wait for the URL-backed selection to render before applying the next one.
+    await expect(option).toBeChecked();
+  }
   await closeFilters(page);
   await search(page, "Match");
 

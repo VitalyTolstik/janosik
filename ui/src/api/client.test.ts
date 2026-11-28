@@ -137,7 +137,7 @@ describe("ApiClient — REST idempotency (TASK-180.2 M17)", () => {
     });
     await client.importBoards({
       app: "janosik",
-      schemaVersion: 3,
+      schemaVersion: 4,
       exportedAt: 0,
       boards: [],
     } as never);

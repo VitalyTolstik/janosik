@@ -19,6 +19,7 @@ import { openBoardMenu } from "./header.js";
 export interface ExportCard {
   id: string;
   title: string;
+  epicId?: string;
   description?: string;
   labelIds?: string[];
   priority?: string;
@@ -49,12 +50,19 @@ export interface ExportLabel {
   [key: string]: unknown;
 }
 
+export interface ExportEpic {
+  id: string;
+  title: string;
+  [key: string]: unknown;
+}
+
 export interface ExportBoard {
   id: string;
   title: string;
   columns: ExportColumn[];
   cards: Record<string, ExportCard>;
   labels: ExportLabel[];
+  epics?: ExportEpic[];
   archivedAt?: number;
   [key: string]: unknown;
 }

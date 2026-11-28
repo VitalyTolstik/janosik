@@ -23,14 +23,19 @@ test("export and import keep the workflow and remap its columns", async ({
   const backlog = await board.column("Backlog");
   const doing = await board.column("Doing");
   const done = await board.column("Done");
-  await board.card(backlog, "Carried task");
+  const cardId = await board.card(backlog, "Carried task");
   await board.command({
     type: "SET_BOARD_WORKFLOW",
     workflow: workflow(backlog, doing, done),
   });
 
   const exported = await data.exportBoard(board.id);
-  expect(exported.schemaVersion).toBe(3);
+  expect(exported.schemaVersion).toBe(4);
+  expect(exported.boards[0]).not.toHaveProperty("epics");
+  expect(exported.boards[0].cards[cardId]).toMatchObject({
+    title: "Carried task",
+  });
+  expect(exported.boards[0].cards[cardId]).not.toHaveProperty("epicId");
   expect(exported.boards[0].workflow).toMatchObject({
     enabled: true,
     initialColumnId: backlog,
@@ -46,6 +51,7 @@ test("export and import keep the workflow and remap its columns", async ({
   );
   expect(imported).toBeDefined();
   const importedEnvelope = await data.exportBoard(imported!.id);
+  expect(importedEnvelope.schemaVersion).toBe(4);
   const importedBoard = importedEnvelope.boards[0];
   const importedBacklog = importedBoard.columns.find(
     (column) => column.title === "Backlog",

@@ -22,7 +22,7 @@ describe("ApiClient — per-board export + Recently deleted", () => {
             ((init?.headers ?? {}) as Record<string, string>).Authorization ??
             null,
         });
-        return new Response('{"app":"janosik","schemaVersion":3}', {
+        return new Response('{"app":"janosik","schemaVersion":4}', {
           status: 200,
           headers: { "Content-Type": "application/json; charset=utf-8" },
         });
@@ -31,7 +31,7 @@ describe("ApiClient — per-board export + Recently deleted", () => {
     client.setAccessToken("token-1");
 
     await expect(client.exportBoard("b/1")).resolves.toBe(
-      '{"app":"janosik","schemaVersion":3}',
+      '{"app":"janosik","schemaVersion":4}',
     );
     expect(seen).toEqual([
       { path: "/api/v1/boards/b%2F1/export", auth: "Bearer token-1" },

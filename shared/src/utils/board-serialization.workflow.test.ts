@@ -40,11 +40,14 @@ function board(): Board {
 }
 
 describe("export schema v4", () => {
-  it("writes version 4 with the workflow and reads it back", () => {
-    const raw = serializeExport([board()]);
-    expect(JSON.parse(raw).schemaVersion).toBe(4);
+  it("round-trips the workflow and an empty epics array in version 4", () => {
+    const source = { ...board(), epics: [] };
+    const raw = serializeExport([source]);
+    const exported = JSON.parse(raw);
+    expect(exported.schemaVersion).toBe(4);
+    expect(exported.boards[0].epics).toStrictEqual([]);
     expect(EXPORT_SCHEMA_VERSION).toBe(4);
-    expect(parseExport(raw)).toEqual([board()]);
+    expect(parseExport(raw)).toStrictEqual([source]);
   });
 
   it("carries the board agent policy and reads it back", () => {
