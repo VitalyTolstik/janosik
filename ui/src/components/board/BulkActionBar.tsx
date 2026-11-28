@@ -1258,6 +1258,9 @@ export function BulkActionBar() {
               collisionPadding={8}
               className="max-h-(--radix-dropdown-menu-content-available-height) w-60 overflow-y-auto"
               data-testid="bulk-epic-menu"
+              onCloseAutoFocus={(event) => {
+                if (newEpicOpen) event.preventDefault();
+              }}
             >
               <DropdownMenuLabel>{t("epic.assign")}</DropdownMenuLabel>
               {[...epics.values()]

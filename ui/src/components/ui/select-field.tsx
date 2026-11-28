@@ -32,6 +32,9 @@ interface SelectFieldProps<T extends string> {
   labelledBy?: string;
   displayLabel?: string;
   triggerRef?: React.RefObject<HTMLButtonElement>;
+  onCloseAutoFocus?: React.ComponentProps<
+    typeof PopoverContent
+  >["onCloseAutoFocus"];
 }
 
 /**
@@ -56,6 +59,7 @@ export function SelectField<T extends string>({
   labelledBy,
   displayLabel,
   triggerRef: externalTriggerRef,
+  onCloseAutoFocus,
 }: SelectFieldProps<T>) {
   const [open, setOpen] = useState(false);
   const internalTriggerRef = useRef<HTMLButtonElement>(null);
@@ -107,6 +111,7 @@ export function SelectField<T extends string>({
         align="start"
         collisionPadding={8}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={onCloseAutoFocus}
         // A Dialog's focus trap can move focus back into the dialog right
         // after the portalled listbox opens. That is not an intentional
         // dismissal: keep the listbox open; Escape and outside clicks still

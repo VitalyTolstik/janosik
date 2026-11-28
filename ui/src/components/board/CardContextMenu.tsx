@@ -180,7 +180,7 @@ export function CardContextMenu({
         <ContextMenuTrigger ref={triggerRef} render={trigger} />
         <ContextMenuContent
           data-testid="card-context-menu"
-          finalFocus={menuFinalFocus}
+          finalFocus={newEpic ? false : menuFinalFocus}
           anchor={anchor ?? undefined}
           side={anchor ? "bottom" : undefined}
           align={anchor ? "start" : undefined}

@@ -99,6 +99,11 @@ export function CardEpic({
             leadingIcon={current?.status === "active" ? <EpicDot /> : undefined}
             testId="card-epic"
             triggerRef={trigger}
+            onCloseAutoFocus={(event) => {
+              // The title input owns focus once creation starts, including
+              // when the listbox unmounts after its exit transition.
+              if (creating) event.preventDefault();
+            }}
             onChange={(id) => {
               if (id === newOption) {
                 setCreating(true);

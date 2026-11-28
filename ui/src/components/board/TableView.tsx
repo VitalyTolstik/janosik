@@ -524,7 +524,7 @@ export function TableView({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto h-7 gap-1 px-2 text-ui-label max-lg:h-11 max-lg:min-w-11"
+              className="ml-auto h-7 gap-1 px-2 text-ui-label max-lg:h-11 max-lg:min-w-11 sm:hidden lg:inline-flex"
               aria-label={t("view.table.columnsSettings")}
               data-testid="table-columns-settings"
             >
