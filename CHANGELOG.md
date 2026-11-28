@@ -1521,19 +1521,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- H5 header/inspector hardening: the People trigger groups its presence faces
-  under a Users icon and keeps them out of the accessibility tree, so the
-  header no longer reads as two account avatars and full-page axe clears
-  `label-content-name-mismatch` on the People and card-assignee buttons. The
-  Members profile owns a full row at 390 px, long account emails wrap at
-  natural separators in the roster, Members expiry text and the Card peek
-  instead of clipping mid-token, and Watch's status rail is a named,
-  keyboard-focusable region. Closing the card editor opened from the 390
-  inspector returns focus to the panel toggle. Verified at 390/768/1024/1440/
-  1920 in light/dark EN/RU with full-page axe 0 on the board, inspector and
-  Watch, plus a Vitest/RTL and Playwright matrix for prefs, roles/archived,
-  DnD with the dock open, resize persistence, reduced motion and overlay
-  focus.
+- The right inspector is removed in favour of the recommended zero-canvas-cost
+  header: People is the presence faces (plus `+N`), the bell moved to the right
+  cluster, Search is labelled **Search**, and the account trigger is
+  avatar-only. The toolbar is one row — card search → Filters → saved views →
+  view switcher → Select → `…` — with Board appearance only in the toolbar
+  overflow; Board settings, Data & backups, Card archive and Help stay in the
+  header's `…` menu, so no item appears twice. Card clicks open the editor at
+  every width again (the peek-only selection path is gone). The remaining H5
+  a11y fixes keep the People/assignee label-in-name clean, the Members profile
+  and long emails readable at 390/768, the lapsed expiry complete, and Watch's
+  status rail a named focusable region. Verified at 390/768/1024/1440/1920 in
+  light/dark EN/RU with full-page axe 0, plus the recommended-header structure,
+  disjoint menu contents, and card-modal regression tests.
 - TASK-177.17 makes comment deletion explicit: the confirmation names the
   author in its title, shows a short excerpt of the exact comment, and keeps
   the honest “cannot be undone” copy. Comments are soft-deleted server-side,

@@ -8,6 +8,7 @@ import {
   openMembers,
   removeMember,
 } from "@/helpers/collaboration.js";
+import { openBoardAppearance } from "@/helpers/header.js";
 import {
   cardDialog,
   cardTitle,
@@ -57,7 +58,7 @@ test("a demoted member's board becomes read-only live", async ({
   await expect(
     partnerBrowser.page.getByTestId("column-style-trigger"),
   ).toHaveCount(0);
-  await partnerBrowser.page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(partnerBrowser.page);
   await expect(
     partnerBrowser.page.getByTestId("column-style-menu"),
   ).toHaveCount(0);

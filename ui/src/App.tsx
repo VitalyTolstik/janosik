@@ -15,16 +15,8 @@ import {
   type BoardTemplateId,
 } from "@janosik/shared";
 
-import { BoardPanelsProvider } from "@/components/board/BoardPanelsProvider";
-import {
-  BOARD_INSPECTOR_ID,
-  useBoardInspector,
-} from "@/hooks/use-board-inspector";
 import { BoardPeopleProvider } from "@/components/board/BoardPeopleProvider";
-import {
-  BoardSection,
-  type BoardInspectorSlotProps,
-} from "@/components/BoardSection";
+import { BoardSection } from "@/components/BoardSection";
 import {
   TemplatePickerDialog,
   type TemplateCreateOutcome,
@@ -291,27 +283,6 @@ export function NoBoardRoute() {
   );
 }
 
-const BoardInspector = lazy(() =>
-  import("@/components/board/BoardInspector").then(({ BoardInspector }) => ({
-    default: BoardInspector,
-  })),
-);
-
-function BoardInspectorSlot({ boardId, onOpenCard }: BoardInspectorSlotProps) {
-  const inspector = useBoardInspector();
-  const [hasOpened, setHasOpened] = useState(false);
-  if (!inspector) return null;
-  if (inspector.open && !hasOpened) setHasOpened(true);
-  const placeholder = <div id={BOARD_INSPECTOR_ID} hidden />;
-  // After the first open, keep the shell mounted for its exit transition.
-  if (!hasOpened) return placeholder;
-  return (
-    <Suspense fallback={placeholder}>
-      <BoardInspector boardId={boardId} onOpenCard={onOpenCard} />
-    </Suspense>
-  );
-}
-
 /**
  * The board route is keyed by board id, so switching boards remounts
  * `BoardSection`: per-board UI state (the card filter above all) cannot leak
@@ -324,7 +295,7 @@ function BoardRoute() {
   if (!board) return <NotFoundPage variant="board" />;
   return (
     <div key={board.id} className="flex min-h-0 min-w-0 flex-1">
-      <BoardSection InspectorSlot={BoardInspectorSlot} />
+      <BoardSection />
     </div>
   );
 }
@@ -389,26 +360,24 @@ function BoardShell() {
   return (
     <UserProfileProvider boardId={board?.id}>
       <BoardPeopleProvider>
-        <BoardPanelsProvider boardId={board?.id}>
-          <Header />
-          {/* The single notification surface: topbar → notices → board. Every
-              top-of-page message lives here, so none of them can cover the
-              header or fight another banner for the same corner. */}
-          <BoardNotices />
-          <Routes>
-            <Route path={routes.home} element={<NoBoardRoute />} />
-            <Route path={routes.boardPattern} element={<BoardRoute />} />
-            <Route path={routes.agents} element={<AgentsPage />} />
-            <Route path={routes.agentPattern} element={<AgentDetailPage />} />
-            {/* The support "view as" entry (U-8): the token was taken from
-                the hash at boot; the session lands on the home redirect. */}
-            <Route
-              path={routes.impersonate}
-              element={<Navigate to={routes.home} replace />}
-            />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-        </BoardPanelsProvider>
+        <Header />
+        {/* The single notification surface: topbar → notices → board. Every
+            top-of-page message lives here, so none of them can cover the
+            header or fight another banner for the same corner. */}
+        <BoardNotices />
+        <Routes>
+          <Route path={routes.home} element={<NoBoardRoute />} />
+          <Route path={routes.boardPattern} element={<BoardRoute />} />
+          <Route path={routes.agents} element={<AgentsPage />} />
+          <Route path={routes.agentPattern} element={<AgentDetailPage />} />
+          {/* The support "view as" entry (U-8): the token was taken from
+              the hash at boot; the session lands on the home redirect. */}
+          <Route
+            path={routes.impersonate}
+            element={<Navigate to={routes.home} replace />}
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
       </BoardPeopleProvider>
     </UserProfileProvider>
   );

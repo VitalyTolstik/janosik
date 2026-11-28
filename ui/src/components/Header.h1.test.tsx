@@ -378,7 +378,7 @@ describe("header dialog lifecycle", () => {
   it("returns palette focus to the brand link when navigation removes the search trigger", async () => {
     const router = renderHeader(new FakeServer([board]));
     await screen.findByTestId("people-trigger");
-    const trigger = screen.getByRole("button", { name: "Global search" });
+    const trigger = screen.getByRole("button", { name: "Search" });
     await userEvent.click(trigger);
     const search = await screen.findByTestId("global-search-input");
     expect(search).toHaveFocus();

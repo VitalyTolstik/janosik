@@ -327,7 +327,7 @@ export function FilterBar({
   return (
     <div
       data-testid="filter-bar"
-      className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card/60 p-2 backdrop-blur-sm"
+      className="flex w-full min-w-0 flex-wrap items-center gap-2"
     >
       {/* Search by card name */}
       <div className="relative min-w-0 flex-1 basis-56">

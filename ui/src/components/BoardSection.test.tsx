@@ -1105,11 +1105,12 @@ describe("TableView interactivity (TASK-14.1)", () => {
     const full = screen.getAllByTestId("card-title")[0].closest("article");
     expect(full?.className).toContain("h-[112px]");
 
-    // Radix DropdownMenu opens on pointerdown, not click.
-    fireEvent.pointerDown(screen.getByTestId("board-display-menu"), {
+    // Radix DropdownMenu opens on pointerdown, not click. The appearance
+    // controls now live directly in the toolbar overflow.
+    fireEvent.pointerDown(screen.getByTestId("board-toolbar-menu"), {
       button: 0,
     });
-    fireEvent.click(screen.getByTestId("density-toggle"));
+    fireEvent.click(await screen.findByTestId("density-toggle"));
 
     await waitFor(() => {
       const compact = screen.getAllByTestId("card-title")[0].closest("article");

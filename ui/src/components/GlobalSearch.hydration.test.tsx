@@ -10,7 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/i18n";
 
 /**
- * Global search totals while background board hydration is still streaming
+ * Search totals while background board hydration is still streaming
  * (TASK-177.10 review). `pendingBoardCount` is mocked because the real
  * provider only produces it in server mode with slow aggregates.
  */
@@ -61,7 +61,7 @@ function searchUi() {
 }
 
 async function search(query: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Global search" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   const input = await screen.findByTestId("global-search-input");
   await userEvent.type(input, query);
   await waitFor(

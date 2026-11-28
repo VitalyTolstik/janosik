@@ -85,7 +85,7 @@ export async function addChecklistItem(
 }
 
 export function globalSearchButton(page: Page): Locator {
-  return page.getByRole("button", { name: "Global search" });
+  return page.getByRole("button", { name: "Search" });
 }
 
 export function globalSearchInput(page: Page): Locator {

@@ -7,7 +7,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type RefObject,
 } from "react";
 import {
   Archive,
@@ -119,13 +118,6 @@ interface CardDialogProps {
    */
   focusCommentId?: string;
   focusAttachmentId?: string;
-  /**
-   * Fallback return target when the element that opened the card is gone by
-   * close time. The 390 sheet closes before the editor opens, so the peek's
-   * "Open full card" button is detached; the caller passes the inspector
-   * toggle so focus lands there instead of on the board landmark (H5).
-   */
-  returnFocusRef?: RefObject<HTMLElement | null>;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -187,7 +179,6 @@ export function CardDialog({
   readOnly = false,
   focusCommentId,
   focusAttachmentId,
-  returnFocusRef,
   onOpenChange,
 }: CardDialogProps) {
   const {
@@ -279,39 +270,21 @@ export function CardDialog({
   // hook, but the board clears `cardId` in the same update, so the dialog is
   // replaced by its "nothing to show" branch before that hook can run. One
   // post-commit timeout (after Radix's own restore attempt) puts the keyboard
-  // position back on the card, then on the caller's fallback (the inspector
-  // toggle when a 390 sheet handed off), or on the board landmark when the
-  // card is gone (deleted/archived while the dialog was open).
+  // position back on the card, or on the board landmark when the card is
+  // gone (deleted/archived while the dialog was open).
   useEffect(() => {
     if (open || !pendingFocusReturnRef.current) return;
     pendingFocusReturnRef.current = false;
     const opener = openerRef.current;
-    const fallback = returnFocusRef?.current;
-    let timer: number | undefined;
-    let attempts = 0;
-    const focusTarget = () => {
+    const timer = window.setTimeout(() => {
       const target =
         opener?.isConnected === true
           ? opener
-          : fallback?.isConnected === true
-            ? fallback
-            : document.querySelector<HTMLElement>('[data-testid="board-main"]');
-      // The inspector toggle is briefly disabled until the `?card=` param
-      // clears. Wait for that render instead of dropping focus on <body>.
-      if (
-        target instanceof HTMLButtonElement &&
-        target.disabled &&
-        attempts < 30
-      ) {
-        attempts += 1;
-        timer = window.setTimeout(focusTarget, 16);
-        return;
-      }
+          : document.querySelector<HTMLElement>('[data-testid="board-main"]');
       target?.focus();
-    };
-    timer = window.setTimeout(focusTarget, 0);
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [open, returnFocusRef]);
+  }, [open]);
   const hour12 = useHour12();
   const toast = useToast();
   // Fires the "too long" toast once per crossing (not on every keystroke
@@ -1104,18 +1077,12 @@ export function CardDialog({
             // from the board has none, so its default restore lands on
             // <body>. The normal board close goes through `cardId = null`
             // (see the effect above); this hook covers a close that keeps the
-            // dialog mounted. The fallback is the caller's explicit target
-            // (inspector toggle after a 390 sheet); never guess a board
-            // landmark here: on unmount the board may already belong to the
-            // next screen.
-            const target = openerRef.current?.isConnected
-              ? openerRef.current
-              : returnFocusRef?.current?.isConnected
-                ? returnFocusRef.current
-                : null;
-            if (target === null) return;
+            // dialog mounted. Never guess a fallback here: on unmount the
+            // board may already belong to the next screen.
+            const opener = openerRef.current;
+            if (opener?.isConnected !== true) return;
             event.preventDefault();
-            target.focus();
+            opener.focus();
           }}
         >
           <DialogHeader className="shrink-0 pr-16 text-left">

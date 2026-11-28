@@ -27,7 +27,7 @@ import { BoardProvider } from "@/store/BoardContext";
 import { useRef, useState, type ComponentProps } from "react";
 
 /**
- * Global search (header): debounced cross-board query, results grouped
+ * Search (header): debounced cross-board query, results grouped
  * Cards → Boards with highlighted matches, archived boards ranked last,
  * and a card click opening the board with the card dialog (?card=).
  */
@@ -146,7 +146,7 @@ function SearchWithFallback() {
 }
 
 async function search(query: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Global search" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   const input = await screen.findByTestId("global-search-input");
   await userEvent.type(input, query);
   // Debounce (200 ms) — wait for the first result row.
@@ -178,7 +178,7 @@ describe("GlobalSearch", () => {
   it("keeps the icon-only header trigger at 32x32", () => {
     renderSearch(routes.board("b-1"), { iconOnly: true });
     const trigger = screen.getByRole("button", {
-      name: "Global search",
+      name: "Search",
     });
     expect(trigger.className).toContain("w-8");
     expect(trigger.className).toContain("!px-0");
@@ -189,7 +189,7 @@ describe("GlobalSearch", () => {
   it("keeps the labeled trigger wider than the icon-only one", () => {
     renderSearch();
     const trigger = screen.getByRole("button", {
-      name: "Global search",
+      name: "Search",
     });
     expect(trigger.className).toContain("pr-2.5");
     expect(trigger.className).not.toContain("!px-0");
@@ -202,7 +202,7 @@ describe("GlobalSearch", () => {
     );
     renderSearch();
     const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "Global search" });
+    const trigger = screen.getByRole("button", { name: "Search" });
     await user.click(trigger);
     const input = screen.getByRole("combobox");
     await user.type(input, "> navigate");
@@ -227,7 +227,7 @@ describe("GlobalSearch", () => {
   it("shows a command empty state and returns to full-text search with Backspace", async () => {
     renderSearch();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Global search" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
     const input = screen.getByRole("combobox");
     await user.type(input, ">x");
     expect(
@@ -297,7 +297,7 @@ describe("GlobalSearch", () => {
       palette: <LateDialog openShare={openShare} />,
     });
     const user = userEvent.setup();
-    const trigger = screen.getByRole("button", { name: "Global search" });
+    const trigger = screen.getByRole("button", { name: "Search" });
     await user.click(trigger);
     await user.type(await screen.findByTestId("global-search-input"), ">share");
     expect(screen.getByRole("option", { name: "Share" })).toBeVisible();
@@ -311,7 +311,7 @@ describe("GlobalSearch", () => {
 
   it("focuses the fallback on a non-board route when the search trigger is hidden", async () => {
     renderSearch(routes.agents, { palette: <SearchWithFallback /> });
-    const trigger = screen.getByRole("button", { name: "Global search" });
+    const trigger = screen.getByRole("button", { name: "Search" });
     expect(trigger.getClientRects()).toHaveLength(0);
     const user = userEvent.setup();
     await user.keyboard("{Meta>}k{/Meta}");

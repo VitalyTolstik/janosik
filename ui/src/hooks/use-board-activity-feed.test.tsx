@@ -104,7 +104,7 @@ afterEach(() => {
 });
 
 describe("shared activity feed", () => {
-  it("uses one poll for Watch and the inspector and reuses a fresh page on tab switches", async () => {
+  it("uses one poll for Watch consumers and reuses a fresh page", async () => {
     const { rerender, unmount } = render(tree({ watch: true }));
     await advance(0);
     expect(api.boardActivity).toHaveBeenCalledTimes(1);

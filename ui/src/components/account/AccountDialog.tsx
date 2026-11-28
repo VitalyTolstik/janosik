@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Bot,
@@ -214,7 +213,7 @@ export function AccountDialog({
                 user.displayName,
                 user.email,
               )} ${name}`}
-              className="gap-2 px-1.5 max-lg:h-11 max-lg:min-w-11 max-lg:justify-center max-lg:px-0 sm:px-2"
+              className="rounded-full px-0 max-lg:h-11 max-lg:w-11 max-lg:min-w-11 max-lg:justify-center lg:h-8 lg:w-8 lg:min-w-8"
             >
               {/* The 390 mockup has no avatar in the header. Keep the account
                   reachable with the same 44 px target and a neutral glyph. */}
@@ -232,23 +231,6 @@ export function AccountDialog({
                 className={cn(
                   "max-[760px]:hidden",
                   compact && "h-[26px] w-[26px]",
-                )}
-              />
-              {/* A real space keeps the avatar's initials from fusing with the
-                  name in the visible-text string (axe label-in-name, U-04). */}{" "}
-              <span
-                className={cn(
-                  "hidden max-w-28 truncate text-ui-body",
-                  !compact && "min-[1024px]:inline",
-                )}
-              >
-                {name}
-              </span>
-              <ChevronDown
-                aria-hidden
-                className={cn(
-                  "hidden h-3.5 w-3.5 shrink-0 text-muted-foreground",
-                  !compact && "min-[1024px]:block",
                 )}
               />
             </Button>

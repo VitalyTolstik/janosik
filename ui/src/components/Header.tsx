@@ -12,8 +12,6 @@ import { BoardSettingsDialog } from "@/components/board/BoardSettingsDialog";
 import { restoreBoardSettingsFocus } from "@/components/board/settings/focus";
 import { BoardSwitcher } from "@/components/board/BoardSwitcher";
 import { BoardTitle } from "@/components/board/BoardTitle";
-import { useBoardInspector } from "@/hooks/use-board-inspector";
-import { PanelToggle } from "@/components/board/PanelToggle";
 import { useBoardPeople } from "@/hooks/use-board-people";
 import { PeopleMenu } from "@/components/board/PeopleMenu";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -134,7 +132,6 @@ export function Header() {
   const canOpenSettings =
     settingsBoardId !== undefined && role === "ADMIN" && !archived;
   const people = useBoardPeople();
-  const inspector = useBoardInspector();
   const [settings, setSettings] = useState<{
     boardId: string;
     section: "workflow" | "agents";
@@ -335,6 +332,7 @@ export function Header() {
       )}
     >
       <div
+        data-testid="header-primary"
         className={cn(
           // Tighter board-only gaps through the tablet range buy the title
           // and icon-only search enough room; other routes keep the original
@@ -431,7 +429,7 @@ export function Header() {
             </span>
           </nav>
         ) : null}
-        {!isAgentsRoute ? (
+        {!isAgentsRoute && !isBoardRoute ? (
           <div>
             <NotificationsBell />
           </div>
@@ -455,6 +453,7 @@ export function Header() {
       </div>
 
       <div
+        data-testid="header-actions"
         className={cn(
           "ml-auto flex w-full shrink-0 items-center justify-end gap-0.5 sm:w-auto sm:justify-start",
           isAgentsRoute && "w-auto",
@@ -485,10 +484,6 @@ export function Header() {
                   openShare: people?.showShare
                     ? () => people.openDialog("share")
                     : undefined,
-                  openPanel:
-                    inspector && !inspector.dragging && !inspector.cardOpen
-                      ? () => inspector.toggle(true)
-                      : undefined,
                   openSettings: openWorkflowSettings,
                   openData: () => openDataRef.current?.(),
                   toggleDensity: view === "board" ? toggleDensity : undefined,
@@ -499,7 +494,7 @@ export function Header() {
         ) : (
           <GlobalSearch fallbackFocusRef={brandRef} />
         )}
-        {isBoardRoute ? <PanelToggle /> : null}
+        {isBoardRoute ? <NotificationsBell /> : null}
         {isAgentsRoute ? (
           <NotificationsBell />
         ) : isBoardRoute ? null : (
@@ -548,6 +543,7 @@ export function Header() {
                   variant="ghost"
                   size="icon"
                   aria-label={t("undo.aria")}
+                  data-testid="header-undo"
                   disabled={!canUndo}
                   onClick={undo}
                   className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-8 lg:min-w-8"
@@ -564,6 +560,7 @@ export function Header() {
                   variant="ghost"
                   size="icon"
                   aria-label={t("redo.aria")}
+                  data-testid="header-redo"
                   disabled={!canRedo}
                   onClick={redo}
                   className="max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-8 lg:min-w-8"

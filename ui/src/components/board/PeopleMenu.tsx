@@ -74,42 +74,40 @@ export function PeopleMenu() {
               size="icon"
               aria-label={label}
               data-testid="people-trigger"
-              className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
+              className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
             >
-              {/* The presence faces are decorative here: the People icon and
-                  the button's accessible name identify the control, so the
-                  avatar initials never read as a second account (H5). */}
-              <Users
-                className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
-                aria-hidden
-              />
+              {/* The presence faces are the People entry (recommended header):
+                  they are decorative inside the button, whose accessible name
+                  identifies the menu, so the initials never read as a second
+                  account (H5). */}
+              {visible.length === 0 ? (
+                <Users
+                  className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              ) : null}
               <span
                 aria-hidden="true"
                 data-testid="people-presence-group"
-                className="hidden items-center lg:flex"
+                className="flex items-center"
               >
-                {visible.length === 0
-                  ? null
-                  : visible.map((person, index) => (
-                      <span
-                        key={person.id}
-                        data-testid="people-avatar"
-                        className={cn(
-                          "janosik-presence-in",
-                          index > 0 && "-ml-2",
-                        )}
-                      >
-                        <UserAvatar
-                          userId={person.id}
-                          displayName={person.displayName}
-                          email=""
-                          color={person.avatarColor}
-                          avatarPath={person.avatarPath}
-                          size="sm"
-                          className="ring-2 ring-background"
-                        />
-                      </span>
-                    ))}
+                {visible.map((person, index) => (
+                  <span
+                    key={person.id}
+                    data-testid="people-avatar"
+                    className={cn("janosik-presence-in", index > 0 && "-ml-2")}
+                  >
+                    <UserAvatar
+                      userId={person.id}
+                      displayName={person.displayName}
+                      email=""
+                      color={person.avatarColor}
+                      avatarPath={person.avatarPath}
+                      size="sm"
+                      className="ring-2 ring-background"
+                    />
+                  </span>
+                ))}
                 {overflow > 0 ? (
                   <span
                     data-testid="people-overflow"

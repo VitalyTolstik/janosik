@@ -71,35 +71,22 @@ describe("CardItem title clamping", () => {
   });
 });
 
-describe("CardItem peek selection", () => {
-  it("selects on click, opens on double-click and Enter, and lets bulk selection win", () => {
+describe("CardItem card activation", () => {
+  it("opens the modal on click and Enter, and lets bulk selection win", () => {
     const onClick = vi.fn();
-    const onSelectPeek = vi.fn();
     const onToggleSelect = vi.fn();
     const card = { ...baseCard, title: "Selection card" };
 
     const { rerender } = render(
       <I18nProvider>
         <TooltipProvider>
-          <CardItem
-            card={card}
-            labels={[]}
-            onClick={onClick}
-            onSelectPeek={onSelectPeek}
-            readOnly
-            peekSelected
-          />
+          <CardItem card={card} labels={[]} onClick={onClick} readOnly />
         </TooltipProvider>
       </I18nProvider>,
     );
     const article = screen.getByTestId("card-title").closest("article")!;
 
     fireEvent.click(article);
-    expect(onSelectPeek).toHaveBeenCalledExactlyOnceWith(card.id);
-    expect(onClick).not.toHaveBeenCalled();
-    expect(article).toHaveAttribute("aria-current", "true");
-
-    fireEvent.doubleClick(article);
     expect(onClick).toHaveBeenCalledExactlyOnceWith(card.id);
 
     fireEvent.keyDown(article, { key: "Enter" });
@@ -108,7 +95,6 @@ describe("CardItem peek selection", () => {
     fireEvent.keyDown(article, { key: " " });
     expect(onClick).toHaveBeenCalledTimes(3);
 
-    onSelectPeek.mockClear();
     rerender(
       <I18nProvider>
         <TooltipProvider>
@@ -116,7 +102,6 @@ describe("CardItem peek selection", () => {
             card={card}
             labels={[]}
             onClick={onClick}
-            onSelectPeek={onSelectPeek}
             onToggleSelect={onToggleSelect}
             selectionMode
           />
@@ -126,7 +111,6 @@ describe("CardItem peek selection", () => {
     onClick.mockClear();
     fireEvent.click(article, { shiftKey: true });
     expect(onToggleSelect).toHaveBeenCalledExactlyOnceWith(card.id, true);
-    expect(onSelectPeek).not.toHaveBeenCalled();
     expect(onClick).not.toHaveBeenCalled();
     fireEvent.doubleClick(article);
     expect(onClick).not.toHaveBeenCalled();

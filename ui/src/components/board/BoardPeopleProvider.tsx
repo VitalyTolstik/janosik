@@ -12,7 +12,7 @@ import { usePublicSharesEnabled } from "@/hooks/use-public-shares-enabled";
 import { routes } from "@/routes";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
 
-/** The header, palette and inspector share one Members and Share dialog pair. */
+/** The header, palette and board toolbar share one Members and Share dialog pair. */
 export function BoardPeopleProvider({ children }: PropsWithChildren) {
   const isBoardRoute = useMatch(routes.boardPattern) !== null;
   const { board } = useBoard();

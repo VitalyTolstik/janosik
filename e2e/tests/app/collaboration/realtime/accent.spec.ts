@@ -1,5 +1,6 @@
 import { test, expect } from "@/fixtures/collaboration.js";
 import { columnSection } from "@/helpers/history.js";
+import { openBoardAppearance } from "@/helpers/header.js";
 
 test.describe.configure({ timeout: 60_000 });
 
@@ -24,7 +25,7 @@ test("a column accent and the board shape appear in the other context", async ({
     { timeout: 5000 },
   );
 
-  await page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(page);
   await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-band").click();
   await page.keyboard.press("Escape");

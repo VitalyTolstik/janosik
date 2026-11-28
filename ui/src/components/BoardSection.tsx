@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
 } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -28,12 +27,11 @@ import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
-import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
+import { BoardAppearanceMenu } from "@/components/board/BoardAppearanceMenu";
 import { SavedViewsMenuBoundary } from "@/components/board/SavedViewsMenuBoundary";
 import { loadSavedViewsMenu } from "@/components/board/saved-views-loader";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useToast } from "@/components/Toast";
-import { useBoardInspector } from "@/hooks/use-board-inspector";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -42,7 +40,6 @@ import { useBoard } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
 import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
-import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { hasCard } from "@/utils/card-nav";
 import {
   filterCardIds,
@@ -80,11 +77,6 @@ const SAVED_VIEWS_FALLBACK = (
   />
 );
 
-export type BoardInspectorSlotProps = {
-  boardId: string;
-  onOpenCard: (cardId: string) => void;
-};
-
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
  * calendar by due dates, or flat table), wrapped with a filter toolbar.
@@ -94,25 +86,9 @@ export type BoardInspectorSlotProps = {
  * the view. The board title lives in the header (BoardTitle) — nothing is
  * duplicated here.
  */
-export function BoardSection({
-  InspectorSlot,
-}: { InspectorSlot?: ComponentType<BoardInspectorSlotProps> } = {}) {
-  const inspector = useBoardInspector();
-  // Read by handleCardClick without making the callback depend on every
-  // panel state change; the 390 sheet is gone by the time its card closes.
-  const inspectorRef = useRef(inspector);
-  useEffect(() => {
-    inspectorRef.current = inspector;
-  }, [inspector]);
-  const cardReturnFocusRef = useRef<HTMLElement | null>(null);
-  const {
-    board,
-    roleOf,
-    setBoardColumnStyle,
-    loadCardDetail,
-    readModelPartial,
-    retryReadModel,
-  } = useBoard();
+export function BoardSection() {
+  const { board, roleOf, loadCardDetail, readModelPartial, retryReadModel } =
+    useBoard();
   const { user } = useAuth();
   // Undefined until the roster loads — never `[]` as "loaded": the saved-view
   // drift pass would otherwise treat every assignee as deleted.
@@ -154,8 +130,7 @@ export function BoardSection({
     },
     [setSearchParams],
   );
-  const { view, setView, density, setDensity, openFiltersRef } = useBoardView();
-
+  const { view, setView, density, openFiltersRef } = useBoardView();
   const active = isFilterActive(filter);
   const serverMode = isApiEnabled();
   const query = filter.query.trim();
@@ -431,12 +406,6 @@ export function BoardSection({
   ]);
   const handleCardClick = useCallback(
     (cardId: string) => {
-      // The 390 sheet closes before the editor mounts, taking the peek's
-      // "Open full card" button with it. Remember the inspector toggle so
-      // closing the editor returns focus to the panel's doorway (H5).
-      const panel = inspectorRef.current;
-      cardReturnFocusRef.current =
-        panel?.mode === "sheet" && panel.open ? panel.triggerRef.current : null;
       setOpenCardId(cardId);
       // A history push, not a replace: Back then closes the dialog. The
       // functional update keeps this callback stable across URL changes, so
@@ -505,8 +474,6 @@ export function BoardSection({
       boardId={board.id}
       order={selectionOrder}
       enabled={selectionEnabled}
-      peekOpen={inspector?.open && !inspector.cardOpen}
-      showPeek={inspector?.showCard}
     >
       <main
         data-testid="board-main"
@@ -526,9 +493,12 @@ export function BoardSection({
         {view !== "watch" ? (
           <div
             data-testid="board-toolbar"
-            className="mb-3 flex items-start gap-2"
+            className="mb-3 flex min-w-0 flex-wrap items-center gap-2"
           >
-            <div className="min-w-0 flex-1">
+            <div
+              data-testid="filter-search-region"
+              className="min-w-0 flex-1 basis-72"
+            >
               <FilterBar
                 filter={filter}
                 labels={board.labels}
@@ -555,6 +525,9 @@ export function BoardSection({
                 />
               </Suspense>
             </SavedViewsMenuBoundary>
+            <ViewSwitcher value={view} onChange={setView} />
+            <BoardSelectionToggle />
+            <BoardAppearanceMenu />
           </div>
         ) : null}
         {serverPending ? (
@@ -585,22 +558,6 @@ export function BoardSection({
             </button>
           </p>
         ) : null}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <ViewSwitcher value={view} onChange={setView} />
-          <div className="flex flex-wrap items-center gap-2">
-            <BoardSelectionToggle />
-            {/* Board-view display controls: column style, glass + card density. */}
-            {view === "board" ? (
-              <BoardDisplayMenu
-                density={density}
-                onDensityChange={setDensity}
-                columnStyle={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
-                onColumnStyleChange={setBoardColumnStyle}
-                readOnly={readOnly}
-              />
-            ) : null}
-          </div>
-        </div>
         {view === "board" ? (
           <DndBoard
             filteredCardIds={filteredIds ?? undefined}
@@ -655,16 +612,12 @@ export function BoardSection({
             readOnly={readOnly}
             focusCommentId={focusCommentId}
             focusAttachmentId={focusAttachmentId}
-            returnFocusRef={cardReturnFocusRef}
             onOpenChange={(open) => {
               if (!open) closeCard();
             }}
           />
         </ErrorBoundary>
       </main>
-      {InspectorSlot ? (
-        <InspectorSlot boardId={board.id} onOpenCard={handleCardClick} />
-      ) : null}
     </CardSelectionProvider>
   );
 }

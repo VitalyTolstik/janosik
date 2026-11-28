@@ -292,10 +292,17 @@ describe("BoardSection saved views integration", () => {
     renderBoard();
 
     const toolbar = screen.getByTestId("board-toolbar");
-    expect(toolbar).toHaveClass("flex", "items-start", "gap-2");
+    expect(toolbar).toHaveClass(
+      "flex",
+      "min-w-0",
+      "flex-wrap",
+      "items-center",
+      "gap-2",
+    );
     expect(screen.getByTestId("filter-bar").parentElement).toHaveClass(
       "min-w-0",
       "flex-1",
+      "basis-72",
     );
     expect(await screen.findByTestId("saved-views-menu")).toHaveClass(
       "h-9",
