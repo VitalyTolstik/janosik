@@ -7,7 +7,7 @@ import type { Page, TestInfo } from "@playwright/test";
 import { test, expect } from "@/fixtures/collaboration.js";
 import type { BoardFixture } from "@/fixtures/board.js";
 import { getBoard } from "@/helpers/boards.js";
-import { openFilters, closeFilters } from "@/helpers/filters.js";
+import { openFilters, closeFilters, facetCount } from "@/helpers/filters.js";
 import { undoButton } from "@/helpers/history.js";
 import { openTable, tableRow } from "@/helpers/views.js";
 
@@ -107,7 +107,7 @@ async function capture(page: Page, testInfo: TestInfo, surface: string) {
 
 async function audit(page: Page) {
   const violations = await page.evaluate(async () => {
-    // Measure the final colors after the filter button changes variant.
+    // Measure the final colors after any running UI transitions.
     const transitions = document
       .getAnimations()
       .filter((animation) => animation instanceof CSSTransition);
@@ -123,7 +123,11 @@ async function audit(page: Page) {
     });
     return violations.map(({ id, nodes }) => ({
       id,
-      targets: nodes.map(({ target }) => target),
+      nodes: nodes.map(({ target, html, failureSummary }) => ({
+        target,
+        html,
+        failureSummary,
+      })),
     }));
   });
   expect(violations).toEqual([]);
@@ -277,8 +281,14 @@ for (const width of [390, 1024, 1440]) {
         await expect(
           facet.getByRole("checkbox", { name: "Billing reconciliation" }),
         ).toHaveCount(0);
-        await facet.getByRole("checkbox", { name: epicTitle }).click();
+        const epicOption = facet.getByRole("checkbox", { name: epicTitle });
+        await epicOption.click();
         await expect(page).toHaveURL(new RegExp(`f\\.epic=${epicId}`));
+        await expect(epicOption).toBeChecked();
+        await expect(epicOption).toBeInViewport();
+        const count = facetCount(page);
+        await expect(count).toBeVisible();
+        await expect(count).toHaveText("1");
         await capture(page, testInfo, "filter");
         await audit(page);
         await closeFilters(page);
