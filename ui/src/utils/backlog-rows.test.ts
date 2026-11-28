@@ -88,7 +88,6 @@ describe("Backlog rows", () => {
       "card:ordinary",
       "card:unknown",
       "completed",
-      "footer",
     ]);
     expect(model.hiddenCount).toBe(1);
     expect(model.cardIds).toEqual(["finished-child", "ordinary", "unknown"]);
@@ -102,7 +101,7 @@ describe("Backlog rows", () => {
     });
     expect(epics.get("complete")?.chip.completed).toBe(true);
     expect(rowOffsets(model.rows)).toEqual([
-      0, 120, 240, 276, 396, 516, 636, 684, 732,
+      0, 120, 240, 276, 396, 516, 636, 684,
     ]);
   });
 
@@ -123,9 +122,48 @@ describe("Backlog rows", () => {
       "epic-footer:active",
       "other",
       "card:finished-child",
+      "epic:complete",
     ]);
     expect(model.rows[0]).toMatchObject({ expanded: true });
-    expect(rowOffsets(model.rows)).toEqual([0, 100, 148, 184, 240]);
+    expect(rowOffsets(model.rows)).toEqual([0, 64, 108, 144, 200, 256]);
+  });
+
+  it("uses compact heights for the header, children, composer and completed tile", () => {
+    const epics = collectBacklogEpics(board);
+    const collapse = { expanded: new Set(["active"]), completedOpen: true };
+    const build = (compact: boolean) =>
+      new Map(
+        buildBacklogRows(
+          epics,
+          board.cards,
+          board.columns[0].cardIds,
+          collapse,
+          compact,
+          undefined,
+          false,
+        ).rows.map(({ key, height }) => [key, height]),
+      );
+    const compact = build(true);
+    expect(compact.get("epic:active")).toBe(64);
+    expect(compact.get("card:active-child")).toBe(56);
+    expect(compact.get("card:ordinary")).toBe(56);
+    expect(compact.get("epic-add:active")).toBe(44);
+    expect(compact.get("epic:complete")).toBe(56);
+    expect(build(false).get("epic:complete")).toBe(72);
+  });
+
+  it("assigns stable unique codes for duplicate positions regardless of input order", () => {
+    const epics = [epic("b", 0), epic("a", 0), epic("c", 1)];
+    const codes = (items: Epic[]) =>
+      [...collectBacklogEpics({ ...board, epics: items })].map(
+        ([id, { code }]) => [id, code],
+      );
+    expect(codes(epics)).toEqual([
+      ["a", "EP-1"],
+      ["b", "EP-2"],
+      ["c", "EP-3"],
+    ]);
+    expect(codes([...epics].reverse())).toEqual(codes(epics));
   });
 
   it("keeps the first/last rows reachable and anchors mixed rows through changes", () => {

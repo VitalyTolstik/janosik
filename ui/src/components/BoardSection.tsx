@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoard } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
-import { epicSummaryProgress } from "@/store/read-model";
+import { unhydratedEpicProgress } from "@/store/read-model";
 import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
 import { hasCard } from "@/utils/card-nav";
@@ -236,7 +236,7 @@ export function BoardSection() {
   const epics = useMemo(
     () =>
       board?.epics?.length
-        ? collectBacklogEpics(board, epicSummaryProgress(board.epics))
+        ? collectBacklogEpics(board, unhydratedEpicProgress(board))
         : undefined,
     [board],
   );

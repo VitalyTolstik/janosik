@@ -1,5 +1,14 @@
+import type { BaseUIEvent } from "@base-ui/react/types";
 import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
-import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type TouchEvent,
+} from "react";
 
 import {
   Tooltip,
@@ -60,6 +69,7 @@ function EpicChip({ code, title, completed }: CardEpicChip) {
 }
 
 interface CardItemProps {
+  onTouchDragStart?: (event: TouchEvent<HTMLElement>) => void;
   epicChip?: CardEpicChip;
   card: Card;
   /**
@@ -184,6 +194,7 @@ const seenCardIds = new Set<string>();
  */
 function CardItemView({
   card,
+  onTouchDragStart,
   epicChip,
   boardId,
   labels,
@@ -286,6 +297,29 @@ function CardItemView({
       onArchive={onArchive}
     >
       <article
+        onTouchStart={
+          onTouchDragStart &&
+          ((event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.closest(
+                "button, a, input, [data-testid='card-select']",
+              )
+            )
+              return;
+            // Base UI stops touchstart at the trigger, so the sortable
+            // listener has to run here.
+            onTouchDragStart(event);
+          })
+        }
+        onContextMenu={(
+          event: MouseEvent<HTMLElement> &
+            Partial<BaseUIEvent<MouseEvent<HTMLElement>>>,
+        ) => {
+          if (!isDragging) return;
+          event.preventDefault();
+          event.preventBaseUIHandler?.();
+        }}
         onClick={
           onClick || onToggleSelect
             ? (event) => {

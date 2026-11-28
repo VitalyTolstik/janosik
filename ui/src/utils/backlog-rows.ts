@@ -33,12 +33,14 @@ export interface BacklogEpic {
 
 export function collectBacklogEpics(
   board: Board,
-  summaryProgress?: ReadonlyMap<string, EpicProgress>,
+  unhydratedProgress?: ReadonlyMap<string, EpicProgress>,
 ): Map<string, BacklogEpic> {
   const epics = new Map<string, BacklogEpic>();
   const ordered = (board.epics ?? []).slice().sort(compareEpics);
+  let codeNumber = 0;
   ordered.forEach((epic, index) => {
-    const code = `EP-${epic.position + 1}`;
+    codeNumber = Math.max(codeNumber + 1, epic.position + 1);
+    const code = `EP-${codeNumber}`;
     epics.set(epic.id, {
       epic,
       code,
@@ -78,12 +80,12 @@ export function collectBacklogEpics(
     }
   }
   for (const [entry, union] of labels) entry.labelIds = [...union];
-  if (incomplete && summaryProgress) {
+  if (incomplete && unhydratedProgress) {
     for (const [id, entry] of epics) {
-      const progress = summaryProgress.get(id);
+      const progress = unhydratedProgress.get(id);
       if (progress) {
-        entry.total = progress.total;
-        entry.done = progress.done;
+        entry.done += Math.max(0, progress.done);
+        entry.total += Math.max(0, progress.done) + Math.max(0, progress.open);
       }
     }
   }
@@ -95,19 +97,31 @@ type BacklogRow = WindowRow &
     | { kind: "epic"; entry: BacklogEpic; expanded: boolean }
     | { kind: "child"; cardId: string; entry: BacklogEpic }
     | { kind: "epic-footer"; entry: BacklogEpic }
+    | { kind: "epic-add"; entry: BacklogEpic }
     | { kind: "other"; count: number }
     | { kind: "card"; cardId: string }
     | { kind: "completed"; count: number }
-    | { kind: "footer" }
   );
+
+interface EpicGroup {
+  entry: BacklogEpic;
+  start: number;
+  end: number;
+}
 
 export interface BacklogRows {
   rows: BacklogRow[];
+  groups: ReadonlyMap<number, EpicGroup>;
   cardIds: string[];
+  epicCount: number;
   hiddenCount: number;
 }
 
 export const OTHER_CARDS_DROP_ID = 0;
+
+export function epicChildrenId(id: string) {
+  return `epic-children-${encodeURIComponent(id)}`;
+}
 
 export function buildBacklogRows(
   epics: ReadonlyMap<string, BacklogEpic>,
@@ -137,56 +151,69 @@ export function buildBacklogRows(
 
   const rows: BacklogRow[] = [];
   const cardIds: string[] = [];
+  const groups = new Map<number, EpicGroup>();
   const completed: BacklogEpic[] = [];
+  const canAdd = !readOnly && !filtered;
+  let epicCount = 0;
   let hiddenCount = 0;
   const cardHeight = compact ? COMPACT_CARD_ROW_HEIGHT : CARD_ROW_HEIGHT;
   for (const [id, entry] of epics) {
+    if (filtered && !entry.childIds.some((child) => filteredMatches.has(child)))
+      continue;
+    epicCount++;
     if (entry.epic.status === "completed") {
-      if (!filtered) completed.push(entry);
+      completed.push(entry);
       continue;
     }
     const group = children.get(id) ?? [];
-    if (
-      filtered &&
-      group.length === 0 &&
-      !entry.childIds.some((child) => filteredMatches?.has(child))
-    )
-      continue;
     const expanded = filtered || collapse.expanded.has(id);
+    const start = rows.length;
     rows.push({
       kind: "epic",
       key: `epic:${id}`,
       entry,
       expanded,
-      height: compact ? 100 : CARD_ROW_HEIGHT,
+      height: compact ? 64 : CARD_ROW_HEIGHT,
     });
     if (!expanded) {
       hiddenCount += group.length;
-      continue;
-    }
-    for (const cardId of group) {
+    } else {
+      for (const cardId of group) {
+        rows.push({
+          kind: "child",
+          key: `card:${cardId}`,
+          cardId,
+          entry,
+          height: cardHeight,
+        });
+        cardIds.push(cardId);
+      }
       rows.push({
-        kind: "child",
-        key: `card:${cardId}`,
-        cardId,
+        kind: "epic-footer",
+        key: `epic-footer:${id}`,
         entry,
-        height: cardHeight,
+        height: canAdd || compact ? 44 : 48,
       });
-      cardIds.push(cardId);
+      if (canAdd)
+        rows.push({
+          kind: "epic-add",
+          key: `epic-add:${id}`,
+          entry,
+          height: compact ? 44 : 48,
+        });
     }
+    const section = { entry, start, end: rows.length };
+    for (let index = start; index < section.end; index++)
+      groups.set(index, section);
+  }
+  if (!filtered || ordinary.length > 0) {
     rows.push({
-      kind: "epic-footer",
-      key: `epic-footer:${id}`,
-      entry,
-      height: readOnly || filtered ? 48 : 92,
+      kind: "other",
+      key: "other",
+      count: ordinary.length,
+      height: 36,
     });
   }
-  rows.push({
-    kind: "other",
-    key: "other",
-    count: ordinary.length,
-    height: 36,
-  });
   for (const cardId of ordinary) {
     rows.push({
       kind: "card",
@@ -196,25 +223,24 @@ export function buildBacklogRows(
     });
     cardIds.push(cardId);
   }
-  if (completed.length > 0) {
+  if (!filtered && completed.length > 0) {
     rows.push({
       kind: "completed",
       key: "completed",
       count: completed.length,
       height: 48,
     });
-    if (collapse.completedOpen) {
-      for (const entry of completed) {
-        rows.push({
-          kind: "epic",
-          key: `epic:${entry.epic.id}`,
-          entry,
-          expanded: false,
-          height: compact ? 100 : CARD_ROW_HEIGHT,
-        });
-      }
+  }
+  if (filtered || collapse.completedOpen) {
+    for (const entry of completed) {
+      rows.push({
+        kind: "epic",
+        key: `epic:${entry.epic.id}`,
+        entry,
+        expanded: false,
+        height: compact ? 56 : 72,
+      });
     }
   }
-  if (!readOnly) rows.push({ kind: "footer", key: "footer", height: 48 });
-  return { rows, cardIds, hiddenCount };
+  return { rows, groups, cardIds, epicCount, hiddenCount };
 }

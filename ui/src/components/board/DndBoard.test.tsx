@@ -16,7 +16,11 @@ import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
 import { useEpicCollapse } from "@/hooks/use-epic-collapse";
-import { buildBacklogRows, collectBacklogEpics } from "@/utils/backlog-rows";
+import {
+  buildBacklogRows,
+  collectBacklogEpics,
+  OTHER_CARDS_DROP_ID,
+} from "@/utils/backlog-rows";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 
 /**
@@ -240,6 +244,22 @@ describe("DndBoard drag orchestration (T-6)", () => {
     expect(snapshot().membership["card-2"]).toBeUndefined();
     expect(snapshot().membership["card-3"]).toBe("card-1");
   });
+
+  it.each([OTHER_CARDS_DROP_ID, "card-1"])(
+    "detaches a Doing child dropped on Backlog ordinary target %s",
+    (target) => {
+      seedBoard(true);
+      renderBoard(true);
+      startDrag("card-2", "card");
+      drop("card-2", "col-2");
+      expect(snapshot().membership["card-2"]).toBe("card-1");
+      startDrag("card-2", "card");
+      if (typeof target === "string") dragOver("card-2", target);
+      drop("card-2", target);
+      expect(snapshot().cardIds["col-1"]).toContain("card-2");
+      expect(snapshot().membership["card-2"]).toBeUndefined();
+    },
+  );
 
   it("moves a card into another column", () => {
     renderBoard();

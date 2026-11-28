@@ -638,26 +638,20 @@ export function DndBoard({
             lastSibling < 0 ? remaining.length : lastSibling + 1,
             epicTarget.epic.id,
           );
-        } else if (
-          otherTarget &&
-          fromColumn.id === backlogColumnId &&
-          dropCard.epicId !== undefined &&
-          epics?.get(dropCard.epicId)?.epic.status === "active"
-        ) {
-          const index = dropColumn.cardIds
-            .filter((id) => id !== activeId)
-            .findIndex((id) => {
-              const epicId = getCard(id)?.epicId;
-              return (
-                epicId === undefined ||
-                epics.get(epicId)?.epic.status !== "active"
-              );
-            });
+        } else if (otherTarget && dropCard.epicId !== undefined) {
+          const remaining = dropColumn.cardIds.filter((id) => id !== activeId);
+          const index = remaining.findIndex((id) => {
+            const epicId = getCard(id)?.epicId;
+            return (
+              epicId === undefined ||
+              epics?.get(epicId)?.epic.status !== "active"
+            );
+          });
           moveCard(
             activeId,
             fromColumn.id,
             overContainer,
-            index < 0 ? dropColumn.cardIds.length - 1 : index,
+            index < 0 ? remaining.length : index,
             null,
           );
         } else if (otherTarget && fromColumn.id !== overContainer) {
@@ -675,7 +669,6 @@ export function DndBoard({
       if (
         epics &&
         dropCard &&
-        fromColumn.id === backlogColumnId &&
         overContainer === backlogColumnId &&
         overId !== activeId &&
         !Object.hasOwn(cols, overId)
@@ -684,11 +677,12 @@ export function DndBoard({
         const hoveredEpic =
           hoveredEpicId === undefined ? undefined : epics.get(hoveredEpicId);
         if (hoveredEpic?.epic.status === "active") {
-          if (dropCard.epicId !== hoveredEpicId) nextEpicId = hoveredEpicId;
-        } else if (
-          dropCard.epicId !== undefined &&
-          epics.get(dropCard.epicId)?.epic.status === "active"
-        ) {
+          if (
+            fromColumn.id === backlogColumnId &&
+            dropCard.epicId !== hoveredEpicId
+          )
+            nextEpicId = hoveredEpicId;
+        } else if (dropCard.epicId !== undefined) {
           nextEpicId = null;
         }
       }
@@ -714,16 +708,13 @@ export function DndBoard({
               ? cols[overContainer].length
               : cols[overContainer].indexOf(overId);
         if (toIndex !== -1) {
-          if (nextEpicId === undefined)
-            moveCard(activeId, fromColumn.id, activeContainer, toIndex);
-          else
-            moveCard(
-              activeId,
-              fromColumn.id,
-              activeContainer,
-              toIndex,
-              nextEpicId,
-            );
+          moveCard(
+            activeId,
+            fromColumn.id,
+            activeContainer,
+            toIndex,
+            nextEpicId,
+          );
         }
         return;
       }
@@ -749,6 +740,7 @@ export function DndBoard({
         fromColumn.id,
         overContainer,
         Math.min(targetIndex, overItems.length),
+        nextEpicId,
       );
     },
     [
@@ -1053,7 +1045,10 @@ export function DndBoard({
 
       <DragOverlay className="pointer-events-none">
         {activeCard ? (
-          <div className="rotate-3 cursor-grabbing">
+          <div
+            data-testid="card-drag-overlay"
+            className="rotate-3 cursor-grabbing"
+          >
             <CardItem
               card={activeCard}
               labels={activeLabels}

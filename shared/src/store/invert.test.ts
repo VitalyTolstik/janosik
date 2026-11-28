@@ -331,6 +331,16 @@ const PLANS: Record<BoardAction["type"], Plan> = {
   MOVE_CARD: [
     {
       type: "MOVE_CARD",
+      cardId: "c-4",
+      fromColumnId: "col-b",
+      fromIndex: 0,
+      toColumnId: "col-a",
+      toIndex: 2,
+      epicId: epic.id,
+      at: AT,
+    },
+    {
+      type: "MOVE_CARD",
       cardId: "c-1",
       fromColumnId: "col-a",
       fromIndex: 0,

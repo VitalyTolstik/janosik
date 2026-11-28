@@ -1,12 +1,16 @@
-import type {
-  Board,
-  BoardCardDetailDto,
-  BoardCardSummaryDto,
-  BoardReadColumnDto,
-  BoardReadSummaryDto,
-  Card,
-  Epic,
-  EpicProgress,
+import {
+  boardEpicProgress,
+  boardReducer,
+  workflowDoneColumnIds,
+  type Board,
+  type BoardAction,
+  type BoardCardDetailDto,
+  type BoardCardSummaryDto,
+  type BoardReadColumnDto,
+  type BoardReadSummaryDto,
+  type BoardState,
+  type Card,
+  type EpicProgress,
 } from "@janosik/shared";
 
 /**
@@ -20,17 +24,62 @@ import type {
  * `GET /boards/:id/cards/:cardId`.
  */
 
-// Keep the authoritative rollup while the card pages are still arriving,
-// without embedding read metadata in the portable board model.
-const summaryProgress = new WeakMap<
-  Epic[],
-  ReadonlyMap<string, EpicProgress>
+// Track only the part of the server rollup that the UI cannot derive yet.
+// The live board accounts for loaded cards, including optimistic changes.
+const pendingEpicProgress = new WeakMap<
+  Board,
+  {
+    cards: ReadonlyMap<string, boolean>;
+    progress: ReadonlyMap<string, EpicProgress>;
+  }
 >();
 
-export function epicSummaryProgress(
-  epics: Epic[],
-): ReadonlyMap<string, EpicProgress> | undefined {
-  return summaryProgress.get(epics);
+export function unhydratedEpicProgress(board: Board) {
+  return pendingEpicProgress.get(board)?.progress;
+}
+
+export function readModelReducer(
+  state: BoardState,
+  action: BoardAction,
+): BoardState {
+  const next = boardReducer(state, action);
+  if (next === state || !("boardId" in action)) return next;
+  const index = action.boardId
+    ? state.findIndex(({ id }) => id === action.boardId)
+    : 0;
+  const current = state[index];
+  const updated = next[index];
+  if (!current || !updated || current === updated || current.id !== updated.id)
+    return next;
+
+  const pending = pendingEpicProgress.get(
+    action.type === "RESTORE_BOARD" ? action.board : current,
+  );
+  if (!pending) return next;
+  if (action.type !== "HYDRATE_CARDS") {
+    pendingEpicProgress.set(updated, pending);
+    return next;
+  }
+
+  const cards = new Map(pending.cards);
+  const progress = new Map(pending.progress);
+  for (const { id } of action.cards) {
+    const card = cardById(updated.cards, id);
+    const done = cards.get(id);
+    if (!card || done === undefined) continue;
+    cards.delete(id);
+    const outstanding =
+      card.epicId === undefined ? undefined : progress.get(card.epicId);
+    if (outstanding && card.archivedAt === undefined) {
+      progress.set(card.epicId!, {
+        total: outstanding.total - 1,
+        done: outstanding.done - Number(done),
+        open: outstanding.open - Number(!done),
+      });
+    }
+  }
+  if (cards.size > 0) pendingEpicProgress.set(updated, { cards, progress });
+  return next;
 }
 
 /** True when every detail field of the card is already in the store. */
@@ -280,14 +329,7 @@ export function boardFromSummary(
   const epics = summary.epics?.length
     ? summary.epics.map(({ progress: _progress, ...epic }) => epic)
     : undefined;
-  if (epics) {
-    summaryProgress.set(
-      epics,
-      new Map(summary.epics.map(({ id, progress }) => [id, progress])),
-    );
-  }
-
-  return {
+  const board: Board = {
     id: meta.id,
     title: meta.title,
     columns: summary.columns.map(toColumn),
@@ -320,6 +362,33 @@ export function boardFromSummary(
     // maintain it through archive/unarchive/delete actions.
     archivedCardIds: [...summary.archivedCardIds],
   };
+  if (epics) {
+    const missing = new Map<string, boolean>();
+    const doneColumns = new Set(workflowDoneColumnIds(board));
+    for (const column of board.columns) {
+      for (const id of column.cardIds) {
+        if (!cardById(cards, id)) missing.set(id, doneColumns.has(column.id));
+      }
+    }
+    if (missing.size > 0) {
+      const loaded = boardEpicProgress(board);
+      const progress = new Map(
+        summary.epics.map(({ id, progress }) => {
+          const known = loaded.get(id)!;
+          return [
+            id,
+            {
+              total: progress.total - known.total,
+              done: progress.done - known.done,
+              open: progress.open - known.open,
+            },
+          ] as const;
+        }),
+      );
+      pendingEpicProgress.set(board, { cards: missing, progress });
+    }
+  }
+  return board;
 }
 
 function toColumn(column: BoardReadColumnDto): Board["columns"][number] {

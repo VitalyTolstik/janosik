@@ -1,6 +1,6 @@
 import { useDroppable } from "@dnd-kit/core";
 import { ChevronDown, Ellipsis, Plus } from "lucide-react";
-import { memo, useId, useState, type ReactNode } from "react";
+import { memo, useId, useState } from "react";
 import {
   LABEL_COLOR_CHIP,
   type Card,
@@ -19,11 +19,15 @@ import { formatDateOnly, useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoardMember } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
-import { OTHER_CARDS_DROP_ID, type BacklogEpic } from "@/utils/backlog-rows";
+import {
+  epicChildrenId,
+  OTHER_CARDS_DROP_ID,
+  type BacklogEpic,
+} from "@/utils/backlog-rows";
 
 const TOUCH_TARGET =
   "min-h-11 min-w-11 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
-const EPIC_RAIL = "border-x border-(--epic-border) bg-(--epic-surface)";
+export const EPIC_RAIL = "border-x border-(--epic-border) bg-(--epic-surface)";
 const PAGE_SIZE = 12;
 
 interface EpicCardsProps {
@@ -46,9 +50,9 @@ function EpicCardLinks({
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={
-            menu ? t("epic.menu", { title: entry.epic.title }) : undefined
-          }
+          aria-label={t(menu ? "epic.menu" : "epic.showAllFor", {
+            title: entry.epic.title,
+          })}
           className={cn(
             TOUCH_TARGET,
             menu
@@ -160,6 +164,7 @@ const EpicFace = memo(function EpicFace({
   done,
   total,
   expanded,
+  compact,
 }: {
   epic: Epic;
   code: string;
@@ -168,6 +173,7 @@ const EpicFace = memo(function EpicFace({
   done: number;
   total: number;
   expanded: boolean;
+  compact: boolean;
 }) {
   const { lang, t, tp } = useI18n();
   const owner = useBoardMember(boardId, epic.ownerId);
@@ -181,46 +187,69 @@ const EpicFace = memo(function EpicFace({
   const completed = epic.status === "completed";
   return (
     <>
-      <span className="flex h-5 items-center gap-1.5">
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-1.5",
+          compact ? "pr-8" : "h-5",
+        )}
+      >
         {completed ? null : (
           <ChevronDown
             aria-hidden
             size={14}
-            className={cn("text-(--epic-ink)", expanded && "rotate-180")}
+            className={cn(
+              "shrink-0 text-(--epic-ink)",
+              expanded && "rotate-180",
+            )}
           />
         )}
+        {compact ? null : (
+          <span
+            className="rounded-full border px-1.5 text-ui-micro font-bold text-(--epic-ink)"
+            style={{
+              borderColor: "var(--epic-border)",
+              backgroundColor: "var(--epic-track)",
+            }}
+          >
+            {t("epic.badge")}
+          </span>
+        )}
+        <span className="shrink-0 text-ui-meta text-muted-foreground">
+          {code}
+        </span>
+        {compact && (
+          <span
+            className="truncate text-ui-body font-semibold"
+            title={epic.title}
+          >
+            {epic.title}
+          </span>
+        )}
+      </span>
+      {compact ? null : (
         <span
-          className={cn(
-            "rounded-full border px-1.5 text-ui-micro font-bold tracking-wide",
-            completed
-              ? "border-border text-muted-foreground"
-              : "border-(--epic-border) bg-(--epic-track) text-(--epic-ink)",
-          )}
+          className="line-clamp-2 break-words pr-7 text-ui-body font-semibold leading-tight"
+          title={epic.title}
         >
-          {t("epic.badge")}
-        </span>{" "}
-        <span className="text-ui-meta text-muted-foreground">{code}</span>
-      </span>{" "}
-      <span
-        className="line-clamp-2 break-words pr-7 text-ui-body font-semibold leading-tight text-foreground"
-        title={epic.title}
-      >
-        {epic.title}
-      </span>{" "}
+          {epic.title}
+        </span>
+      )}
       <span className="mt-auto flex items-center gap-1.5 text-ui-meta tabular-nums">
         <span
-          className={cn(
-            "h-1 min-w-4 flex-1 overflow-hidden rounded-full",
-            completed ? "bg-border" : "bg-(--epic-track)",
-          )}
+          className="h-1 min-w-4 flex-1 overflow-hidden rounded-full"
+          style={{
+            backgroundColor: completed ? "var(--border)" : "var(--epic-track)",
+          }}
           aria-hidden
         >
           <span
-            className={cn(
-              "block h-full rounded-full",
-              completed ? "bg-muted-foreground" : "bg-(--epic-accent)",
-            )}
-            style={{ width: `${total === 0 ? 0 : (done / total) * 100}%` }}
+            className="block h-full rounded-full"
+            style={{
+              backgroundColor: completed
+                ? "var(--muted-foreground)"
+                : "var(--epic-accent)",
+              width: `${total === 0 ? 0 : (done / total) * 100}%`,
+            }}
           />
         </span>
         <span
@@ -241,7 +270,7 @@ const EpicFace = memo(function EpicFace({
           {tp("epic.open", total - done)}
         </span>
       </span>{" "}
-      {ownerName || due || labels.length ? (
+      {!compact && (ownerName || due || labels.length > 0) ? (
         <span className="flex h-4 min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-ui-micro text-muted-foreground">
           {owner && ownerName ? (
             <span
@@ -288,6 +317,7 @@ export const BacklogEpicTile = memo(function BacklogEpicTile({
   onCardClick,
   boardId,
   labels,
+  compact,
   expanded,
   toggle,
   filterExpanded,
@@ -295,6 +325,7 @@ export const BacklogEpicTile = memo(function BacklogEpicTile({
 }: EpicCardsProps & {
   boardId?: string;
   labels: Label[];
+  compact: boolean;
   expanded: boolean;
   toggle: (id: string) => void;
   filterExpanded: boolean;
@@ -318,10 +349,11 @@ export const BacklogEpicTile = memo(function BacklogEpicTile({
       done={done}
       total={total}
       expanded={expanded}
+      compact={compact || completed}
     />
   );
   const faceClass =
-    "flex h-full w-full min-w-0 flex-col gap-0.5 px-3 py-1.5 text-left";
+    "flex h-full w-full flex-col gap-0.5 rounded-lg px-3 py-1.5 text-left";
   return (
     <div
       ref={setNodeRef}
@@ -329,14 +361,22 @@ export const BacklogEpicTile = memo(function BacklogEpicTile({
       data-epic-expanded={expanded}
       data-epic-id={epic.id}
       data-epic-over={isOver || undefined}
+      data-epic-completed={completed || undefined}
       className={cn(
-        "backlog-epic relative h-full rounded-lg border",
+        "relative h-full rounded-lg border",
         completed
-          ? "border-border bg-muted/45"
+          ? "border-border"
           : "border-(--epic-border) border-l-[3px] border-l-(--epic-accent) bg-(--epic-surface)",
-        expanded && "rounded-b-none",
-        isOver && "ring-2 ring-inset ring-(--epic-accent)",
       )}
+      style={{
+        backgroundColor: completed
+          ? "color-mix(in oklab, var(--muted) 45%, transparent)"
+          : undefined,
+        borderBottomStyle: expanded ? "dashed" : undefined,
+        borderBottomLeftRadius: expanded ? 0 : undefined,
+        borderBottomRightRadius: expanded ? 0 : undefined,
+        boxShadow: isOver ? "inset 0 0 0 2px var(--epic-accent)" : undefined,
+      }}
     >
       {completed ? (
         <div className={faceClass}>{face}</div>
@@ -345,19 +385,25 @@ export const BacklogEpicTile = memo(function BacklogEpicTile({
           type="button"
           aria-expanded={expanded}
           aria-disabled={filterExpanded || undefined}
+          aria-controls={epicChildrenId(epic.id)}
           aria-describedby={progressId}
           onClick={filterExpanded ? undefined : () => toggle(epic.id)}
           className={cn(
             faceClass,
-            "rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           )}
         >
+          <span className="sr-only">
+            {t(expanded ? "epic.collapse" : "epic.expand")}
+          </span>
           {face}
         </button>
       )}
-      <span id={progressId} hidden>
-        {t("epic.progress", { done, total })}
-      </span>
+      {!completed && (
+        <span id={progressId} hidden>
+          {t("epic.progress", { done, total })}
+        </span>
+      )}
       <EpicCardLinks
         entry={entry}
         getCard={getCard}
@@ -400,28 +446,35 @@ export function BacklogEpicFooter({
   entry,
   getCard,
   onCardClick,
-  children,
-}: EpicCardsProps & { children?: ReactNode }) {
+  last,
+}: EpicCardsProps & { last: boolean }) {
   const { t, tp } = useI18n();
   const { elsewhereOpen, elsewhereDone } = entry;
   return (
-    <div className={cn(EPIC_RAIL, "h-full rounded-b-lg border-b px-2 pb-1")}>
-      <div className="flex h-11 items-center gap-1">
-        <span className="min-w-0 flex-1 text-ui-meta leading-tight text-muted-foreground">
-          {elsewhereOpen && elsewhereDone
+    <div
+      className={cn(
+        EPIC_RAIL,
+        "flex h-full items-center gap-1 px-2",
+        last && "rounded-b-lg border-b",
+      )}
+    >
+      <span className="min-w-0 flex-1 text-ui-meta leading-tight text-muted-foreground">
+        {entry.total === 0
+          ? t("epic.noCards")
+          : elsewhereOpen && elsewhereDone
             ? t("epic.elsewhereProgress", {
                 open: elsewhereOpen,
                 done: elsewhereDone,
               })
             : tp("epic.elsewhere", elsewhereOpen + elsewhereDone)}
-        </span>
+      </span>
+      {entry.childIds.length > 0 && (
         <EpicCardLinks
           entry={entry}
           getCard={getCard}
           onCardClick={onCardClick}
         />
-      </div>
-      {children}
+      )}
     </div>
   );
 }
@@ -433,6 +486,7 @@ export function BacklogCardComposer({
   columnId,
   disabled,
   disabledReason,
+  onOpenChange,
 }: {
   labels: Label[];
   onSubmit: (title: string, labels?: string[]) => void;
@@ -440,13 +494,18 @@ export function BacklogCardComposer({
   columnId?: string;
   disabled: boolean;
   disabledReason?: string;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  };
   const label = t(epic ? "epic.addSubtask" : "composer.add");
   const title = epic ? t("epic.newSubtask", { title: epic.title }) : label;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -471,7 +530,7 @@ export function BacklogCardComposer({
           defaultComposing
           inputLabel={title}
           onSubmit={onSubmit}
-          onClose={() => setOpen(false)}
+          onClose={() => changeOpen(false)}
         />
       </PopoverContent>
     </Popover>

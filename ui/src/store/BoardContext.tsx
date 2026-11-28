@@ -21,7 +21,6 @@ import {
 import {
   BOARD_CARD_DETAIL_BATCH_MAX,
   BOARD_CARD_PAGE_LIMIT_MAX,
-  boardReducer,
   boardStarterPlan,
   boardTemplatePlan,
   LIMITS,
@@ -76,6 +75,7 @@ import {
   cardFromDetail,
   cardFromSummary,
   hasCardDetail,
+  readModelReducer,
 } from "@/store/read-model";
 import { hasCard } from "@/utils/card-nav";
 import {
@@ -523,7 +523,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }
   const boot = bootRef.current;
 
-  const [state, dispatchRaw] = useReducer(boardReducer, boot.state);
+  const [state, dispatchRaw] = useReducer(readModelReducer, boot.state);
   const [dataIssue, setDataIssue] = useState<DataIssue | null>(boot.issue);
   const [syncStatus, setSyncStatus] = useState<BoardStateValue["syncStatus"]>(
     serverMode ? "loading" : "ready",
@@ -775,7 +775,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       (action as { actorId?: string | null }).actorId === undefined
         ? ({ ...action, actorId: userIdRef.current ?? null } as BoardAction)
         : action;
-    stateRef.current = boardReducer(stateRef.current, stamped);
+    stateRef.current = readModelReducer(stateRef.current, stamped);
     dispatchRaw(stamped);
   }, []);
 
