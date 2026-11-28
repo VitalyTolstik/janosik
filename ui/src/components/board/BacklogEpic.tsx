@@ -27,7 +27,6 @@ import {
 
 const TOUCH_TARGET =
   "min-h-11 min-w-11 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
-export const EPIC_RAIL = "border-x border-(--epic-border) bg-(--epic-surface)";
 const PAGE_SIZE = 12;
 
 interface EpicCardsProps {
@@ -453,8 +452,7 @@ export function BacklogEpicFooter({
   return (
     <div
       className={cn(
-        EPIC_RAIL,
-        "flex h-full items-center gap-1 px-2",
+        "flex h-full items-center gap-1 border-x border-(--epic-border) bg-(--epic-surface) px-2",
         last && "rounded-b-lg border-b",
       )}
     >

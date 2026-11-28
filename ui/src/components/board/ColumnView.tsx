@@ -24,7 +24,6 @@ import {
   BacklogEpicFooter,
   BacklogEpicTile,
   BacklogOtherCards,
-  EPIC_RAIL,
 } from "@/components/board/BacklogEpic";
 import {
   Popover,
@@ -68,6 +67,7 @@ import {
 
 /** Stable empty list for an empty column's SortableContext. */
 const NO_IDS: string[] = [];
+const EPIC_RAIL = "border-x border-(--epic-border) bg-(--epic-surface)";
 
 interface ColumnViewProps {
   column: Column;
