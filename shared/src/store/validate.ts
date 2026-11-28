@@ -1404,7 +1404,7 @@ export type BoardsValidationResult =
  * card fields), so old exports keep importing. What it cannot repair is
  * refused here with a field path instead of surfacing later as a raw
  * `TypeError` or a server 500: wrong types on required fields, timestamps
- * that are not dates, collections over `LIMITS`, duplicate ids, a column
+ * that are not dates, collections over their import limits, duplicate ids, a column
  * listing a card that does not exist, a card sitting in two places.
  */
 export function validateImportedBoards(
@@ -1472,15 +1472,13 @@ function checkImportedBoard(
 
   if (includeEpics && board.epics !== undefined) {
     const ids = new Set<unknown>();
-    readArray(board, "epics", `${field}.epics`, LIMITS.epicsPerBoard).forEach(
-      (entry, index) => {
-        const epicField = `${field}.epics[${index}]`;
-        const epic = validateEpic(entry, epicField, true);
-        if (ids.has(epic.id))
-          fail(`${epicField}.id`, "duplicates another epic");
-        ids.add(epic.id);
-      },
-    );
+    // Undo can restore a tombstone after the board reaches the create limit.
+    readArray(board, "epics", `${field}.epics`).forEach((entry, index) => {
+      const epicField = `${field}.epics[${index}]`;
+      const epic = validateEpic(entry, epicField, true);
+      if (ids.has(epic.id)) fail(`${epicField}.id`, "duplicates another epic");
+      ids.add(epic.id);
+    });
   }
 
   const cards = asRecord(board.cards, `${field}.cards`);

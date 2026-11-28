@@ -3,10 +3,17 @@ import type { INestApplication } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { Test } from "@nestjs/testing";
 import type { Board, BoardAction, Epic } from "@janosik/shared";
-import { boardReducer, invert } from "@janosik/shared";
+import {
+  boardReducer,
+  epicOf,
+  invert,
+  LIMITS,
+  MAX_BOARD_EXPORT_BYTES,
+} from "@janosik/shared";
 import request from "supertest";
 
 import { AppModule } from "@/app.module";
+import { BoardsService } from "@/boards/boards.service";
 import { setupApp } from "@/common/app-setup";
 import { PrismaService } from "@/common/prisma/prisma.service";
 import { stripAttribution } from "./support/attribution";
@@ -177,6 +184,7 @@ describe("Epic foundation (e2e)", () => {
       expect(await board(boardId)).toEqual(changed);
       await command(boardId, invert(before, action)!).expect(200);
       expect(await board(boardId)).toEqual(before);
+      return changed;
     };
     await checkUndo({
       type: "UPDATE_EPIC",
@@ -208,6 +216,24 @@ describe("Epic foundation (e2e)", () => {
       epicId: null,
       at: at + 40,
     });
+    const nextEpic = newEpic({ title: "Next launch" });
+    await command(boardId, { type: "ADD_EPIC", epic: nextEpic, at }).expect(
+      200,
+    );
+    const moved = await checkUndo({
+      type: "MOVE_CARD",
+      cardId: child,
+      fromColumnId: backlog,
+      toColumnId: done,
+      fromIndex: 0,
+      toIndex: 0,
+      epicId: nextEpic.id,
+      at: at + 50,
+    });
+    expect(moved.cards[child].epicId).toBe(nextEpic.id);
+    expect(moved.columns.find((entry) => entry.id === done)?.cardIds[0]).toBe(
+      child,
+    );
 
     const before = await board(boardId);
     const childRows = await prisma.card.findMany({
@@ -240,7 +266,7 @@ describe("Epic foundation (e2e)", () => {
       }),
     ).toEqual(childRows);
     const deleted = await board(boardId);
-    expect(deleted.epics).toBeUndefined();
+    expect(epicOf(deleted, epic.id)).toBeUndefined();
     expect(deleted.cards[child].epicId).toBe(epic.id);
     await command(boardId, invert(before, deletion)!).expect(200);
     expect(await board(boardId)).toEqual(before);
@@ -276,14 +302,8 @@ describe("Epic foundation (e2e)", () => {
     }).expect(400);
     await command(boardId, add).expect(409);
 
-    const local = newEpic();
+    const local = newEpic({ status: "completed" });
     await command(boardId, { ...add, epic: local }).expect(200);
-    await command(boardId, {
-      type: "SET_EPIC_STATUS",
-      epicId: local.id,
-      status: "completed",
-      at: Date.now(),
-    }).expect(200);
     await command(boardId, {
       type: "SET_CARD_EPIC",
       cardId,
@@ -314,7 +334,241 @@ describe("Epic foundation (e2e)", () => {
     expect((await board(boardId)).epics?.[0]).toMatchObject({
       id: local.id,
       status: "completed",
+      completedAt: add.at,
     });
+  });
+
+  it.each(["live", "soft-deleted"])(
+    "keeps recently deleted card and column membership for a %s epic",
+    async (state) => {
+      const at = Date.now();
+      const boardId = await createBoard("Recently deleted epic cards");
+      const columnId = await column(boardId, "Backlog");
+      const epic = newEpic();
+      await command(boardId, { type: "ADD_EPIC", epic, at }).expect(200);
+      const cardId = await card(boardId, columnId, epic.id);
+      const otherCardId = await card(boardId, columnId, epic.id);
+      const before = await board(boardId);
+      const deleteEpic: BoardAction = {
+        type: "DELETE_EPIC",
+        epicId: epic.id,
+        at,
+      };
+      if (state === "soft-deleted") {
+        await command(boardId, deleteEpic).expect(200);
+      }
+
+      await command(boardId, { type: "DELETE_CARD", cardId, at }).expect(200);
+      await server()
+        .post(`${path(boardId)}/deleted/cards/${cardId}/restore`)
+        .set(auth())
+        .expect(200);
+      expect((await board(boardId)).cards[cardId].epicId).toBe(epic.id);
+
+      await command(boardId, { type: "DELETE_COLUMN", columnId, at }).expect(
+        200,
+      );
+      await server()
+        .post(`${path(boardId)}/deleted/columns/${columnId}/restore`)
+        .set(auth())
+        .expect(200);
+      const restored = await board(boardId);
+      for (const id of [cardId, otherCardId]) {
+        expect(restored.cards[id].epicId).toBe(epic.id);
+      }
+      expect(epicOf(restored, restored.cards[cardId].epicId)).toEqual(
+        state === "live" ? before.epics?.[0] : undefined,
+      );
+      if (state === "soft-deleted") {
+        await command(boardId, invert(before, deleteEpic)!).expect(200);
+      }
+      const summary = await server()
+        .get(`${path(boardId)}/summary`)
+        .set(auth())
+        .expect(200);
+      expect(summary.body.epics[0]).toMatchObject({
+        id: epic.id,
+        progress: { total: 2, done: 2, open: 0 },
+      });
+    },
+  );
+
+  it("restores the existing owner after they leave the board", async () => {
+    const at = Date.now();
+    const boardId = await createBoard("Former epic owner");
+    const member = await register("former-epic-owner");
+    await prisma.boardMember.create({
+      data: {
+        boardId,
+        userId: member.id,
+        role: "MEMBER",
+        acceptedAt: new Date(),
+      },
+    });
+    const epic = newEpic({ ownerId: member.id });
+    await command(boardId, { type: "ADD_EPIC", epic, at }, member.token).expect(
+      200,
+    );
+    await server()
+      .delete(`${path(boardId)}/members/me`)
+      .set(auth(member.token))
+      .expect(200);
+
+    const before = await board(boardId);
+    const remove: BoardAction = { type: "DELETE_EPIC", epicId: epic.id, at };
+    await command(boardId, remove).expect(200);
+    const restore = invert(before, remove)!;
+    expect(restore.type).toBe("RESTORE_EPIC");
+    if (restore.type !== "RESTORE_EPIC") throw new Error("Expected epic undo");
+    const outsider = await register("unrelated-epic-owner");
+    await command(boardId, {
+      ...restore,
+      epic: { ...restore.epic, ownerId: outsider.id },
+    }).expect(400);
+    await command(boardId, restore).expect(200);
+    expect((await board(boardId)).epics).toEqual(before.epics);
+    const members = await server()
+      .get(`${path(boardId)}/members`)
+      .set(auth())
+      .expect(200);
+    expect(members.body).not.toContainEqual(
+      expect.objectContaining({ userId: member.id }),
+    );
+    await command(boardId, {
+      type: "UPDATE_EPIC",
+      epicId: epic.id,
+      ownerId: member.id,
+      at,
+    }).expect(400);
+  });
+
+  it("restores over the epic create limit and round-trips the board through export", async () => {
+    const at = Date.now();
+    const boardId = await createBoard("Epic cap");
+    const epic = newEpic();
+    await command(boardId, { type: "ADD_EPIC", epic, at }).expect(200);
+    await prisma.epic.createMany({
+      data: Array.from({ length: LIMITS.epicsPerBoard - 1 }, (_, index) => ({
+        boardId,
+        title: `Seeded epic ${index + 1}`,
+        position: index + 1,
+      })),
+    });
+    const before = await board(boardId);
+    expect(before.epics).toHaveLength(LIMITS.epicsPerBoard);
+    const remove: BoardAction = { type: "DELETE_EPIC", epicId: epic.id, at };
+    const add: BoardAction = { type: "ADD_EPIC", epic: newEpic(), at };
+    await command(boardId, add).expect(409);
+    await command(boardId, remove).expect(200);
+    await command(boardId, add).expect(200);
+    await command(boardId, invert(before, remove)!).expect(200);
+    const restored = await board(boardId);
+    expect(restored.epics).toHaveLength(LIMITS.epicsPerBoard + 1);
+    expect(restored.epics?.[0]).toEqual(before.epics?.[0]);
+
+    const exported = await server()
+      .get(`${path(boardId)}/export`)
+      .set(auth())
+      .expect(200);
+    const imported = await server()
+      .post("/api/v1/boards/import")
+      .set(auth())
+      .send(exported.body)
+      .expect(201);
+    expect(imported.body[0].epics).toHaveLength(LIMITS.epicsPerBoard + 1);
+  });
+
+  it("returns epic touches and refreshes progress for card and column lifecycle commands", async () => {
+    const at = Date.now();
+    const boardId = await createBoard("Epic progress invalidation");
+    const backlog = await column(boardId, "Backlog");
+    const done = await column(boardId, "Done");
+    const epic = newEpic();
+    await command(boardId, { type: "ADD_EPIC", epic, at }).expect(200);
+    const cardId = await card(boardId, backlog, epic.id);
+    const readSummary = () =>
+      server()
+        .get(`${path(boardId)}/summary`)
+        .set(auth());
+    let { etag } = (await readSummary().expect(200)).header;
+
+    async function checkProgress(
+      action: BoardAction,
+      total: number,
+      done: number,
+    ) {
+      const commandId = randomUUID();
+      const result = await command(
+        boardId,
+        action,
+        owner.token,
+        commandId,
+      ).expect(200);
+      expect(result.body.versions).toHaveProperty(`epic:${epic.id}`);
+      const log = await prisma.command.findFirstOrThrow({
+        where: { id: commandId },
+      });
+      expect(log.touches).toContain(`epic:${epic.id}`);
+      const summary = await readSummary()
+        .set("If-None-Match", etag)
+        .expect(200);
+      etag = summary.header.etag;
+      expect(summary.body.epics[0].progress).toEqual({
+        total,
+        done,
+        open: total - done,
+      });
+    }
+
+    await checkProgress({ type: "ARCHIVE_CARD", cardId, at }, 0, 0);
+    await checkProgress(
+      { type: "UNARCHIVE_CARD", cardId, columnId: backlog, at },
+      1,
+      0,
+    );
+    const before = await board(boardId);
+    const deleteCard: BoardAction = { type: "DELETE_CARD", cardId, at };
+    await checkProgress(deleteCard, 0, 0);
+    await checkProgress(invert(before, deleteCard)!, 1, 0);
+    const archiveColumn: BoardAction = {
+      type: "ARCHIVE_COLUMN_CARDS",
+      columnId: backlog,
+      at,
+    };
+    await checkProgress(archiveColumn, 0, 0);
+    await checkProgress(invert(before, archiveColumn)!, 1, 0);
+    // The fallback Done column changes even though the deleted column was empty.
+    const deleteColumn: BoardAction = {
+      type: "DELETE_COLUMN",
+      columnId: done,
+      at,
+    };
+    await checkProgress(deleteColumn, 1, 1);
+    await checkProgress(invert(before, deleteColumn)!, 1, 0);
+  });
+
+  it("includes live epic descriptions in the export size preflight", async () => {
+    const boardId = await createBoard("Epic export budget");
+    const epic = await prisma.epic.create({
+      data: { boardId, title: "Large epic" },
+    });
+    await prisma.$executeRaw`
+      UPDATE "Epic" SET description = repeat('x', ${MAX_BOARD_EXPORT_BYTES + 1}::int)
+      WHERE id = ${epic.id}
+    `;
+    await expect(
+      app.get(BoardsService).assertExportFitsPreflight(boardId),
+    ).rejects.toMatchObject({ status: 413 });
+    const exportBoard = () =>
+      server()
+        .get(`${path(boardId)}/export`)
+        .set(auth());
+    await exportBoard().expect(413);
+    await prisma.epic.update({
+      where: { id: epic.id },
+      data: { deletedAt: new Date() },
+    });
+    await exportBoard().expect(200);
   });
 
   it("replays an epic and its card in a dry-run, and tracks the epic version in agent runs", async () => {

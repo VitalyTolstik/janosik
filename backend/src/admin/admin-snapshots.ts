@@ -43,6 +43,7 @@ type CardRow = {
   dueDate: Date | null;
   priority: string | null;
   assigneeId: string | null;
+  epicId: string | null;
   archivedAt: Date | null;
   deletedAt: Date | null;
   position: number;
@@ -144,6 +145,7 @@ function toCardSnapshot(
     ...(row.assigneeId !== null && liveAssignees.has(row.assigneeId)
       ? { assigneeId: row.assigneeId }
       : {}),
+    ...(row.epicId !== null ? { epicId: row.epicId } : {}),
     ...(cover !== undefined ? { cover } : {}),
     labelIds: row.labels.map((label) => label.labelId),
     ...(links.length > 0 ? { links } : {}),

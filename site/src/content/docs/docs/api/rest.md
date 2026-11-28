@@ -98,15 +98,16 @@ the envelope with the importer as `ADMIN`. An empty or invalid envelope answers
 writes nothing. The envelope is:
 
 ```json
-{ "app": "janosik", "schemaVersion": 3, "exportedAt": 0, "boards": [] }
+{ "app": "janosik", "schemaVersion": 4, "exportedAt": 0, "boards": [] }
 ```
 
-Version 3 adds the optional per-board `agentPolicy`; version 2 added the
-optional `workflow`; version 1/2 files still import (with no policy). The
-importer mints fresh column and card ids and rewrites the workflow references;
-a transition whose column is missing is dropped rather than failing the import.
+Version 4 adds optional board epics and card epic membership. Versions 1–3
+still import, including the optional `workflow` from version 2 and
+`agentPolicy` from version 3. The importer assigns new column, card, and epic
+IDs and remaps workflow references and card epic membership. It drops
+transitions with missing columns and memberships with missing epics.
 
-`GET /boards/:id/export` streams one `BoardEnvelope` (`schemaVersion: 3`) and
+`GET /boards/:id/export` streams one `BoardEnvelope` (`schemaVersion: 4`) and
 refuses an export above `MAX_BOARD_EXPORT_BYTES` with `413`. `GET
 /boards/:id/deleted` lists the board's soft-deleted cards, columns, comments and
 card-face files inside the operator retention window, newest first; the body is

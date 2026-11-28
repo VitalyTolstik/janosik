@@ -246,17 +246,18 @@ export interface BoardScopedAction {
    * Set by `invert()`: this command undoes another one (TASK-21.7d).
    *
    * The flag keeps the *local* reducer responsive during an undo, but it is
-   * not proof of anything: TASK-180.2 M13 made the server check every
-   * `RESTORE_*` (and MOVE/UNARCHIVE) against the current WIP/collection
-   * limits, ignoring a client-supplied `inverse:true`. Client undo of
+   * not proof of anything: TASK-180.2 M13 made the server check card,
+   * column, label and checklist restores (and MOVE/UNARCHIVE) against
+   * current WIP/collection limits. Client undo of
    * `MOVE_CARD`/`UNARCHIVE_CARD` waits for that server answer instead of
    * applying optimistically (M16), and a refusal keeps the undo step.
    *
    * Two structural caps hold even in the reducer: `columnsPerBoard` and
    * `cardsPerColumn`; a restore never overwrites an id that is still on the
    * board. Text clamps still apply: they bound a field, not a collection.
-   * The only caller allowed past the server's restore limits is the internal
-   * run-revert path, which passes its own non-wire option.
+   * Run revert can bypass applicable server restore limits through its
+   * internal option. Epic restore requires an existing tombstone and can
+   * exceed the epic create limit.
    */
   inverse?: boolean;
   /**
@@ -1000,9 +1001,7 @@ function renameBoard(board: Board, action: RenameBoardAction): Board {
 function reduceEpic(board: Board, action: BoardScoped<EpicAction>): Board {
   const epics = board.epics ?? [];
   if (action.type === "ADD_EPIC" || action.type === "RESTORE_EPIC") {
-    if (epics.length >= LIMITS.epicsPerBoard || epicOf(board, action.epic.id)) {
-      return board;
-    }
+    if (epicOf(board, action.epic.id)) return board;
     if (action.type === "RESTORE_EPIC") {
       if (!action.inverse) return board;
       const restored = normalizeEpic(action.epic, action.index);
@@ -1014,6 +1013,7 @@ function reduceEpic(board: Board, action: BoardScoped<EpicAction>): Board {
         epics: insertAt(epics, index < 0 ? epics.length : index, restored),
       };
     }
+    if (epics.length >= LIMITS.epicsPerBoard) return board;
     const position = Math.min(
       MAX_EPIC_POSITION,
       (epics.at(-1)?.position ?? -1) + 1,

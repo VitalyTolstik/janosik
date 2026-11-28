@@ -175,6 +175,7 @@ const RESTORE_ACTIONS = new Set<string>([
   "RESTORE_CARD",
   "RESTORE_COLUMN",
   "RESTORE_COLUMN_CARDS",
+  "RESTORE_EPIC",
   "RESTORE_LABEL",
   "RESTORE_CHECKLIST",
   "RESTORE_CHECKLIST_ITEM",
@@ -2551,17 +2552,21 @@ export class CommandsService {
     action: BoardAction,
   ): Promise<void> {
     const boardId = board.id;
+    let restoresPreviousOwner = false;
     if (action.type === "ADD_EPIC" || action.type === "RESTORE_EPIC") {
       const id = action.epic.id;
       const row = await tx.epic.findUnique({
         where: { id },
-        select: { boardId: true },
+        select: { boardId: true, ownerId: true },
       });
       if (epicOf(board, id) || (row && row.boardId !== boardId)) {
         parentageConflict("action.epic.id", "Epic id is already in use");
       }
-      if (action.type === "RESTORE_EPIC" && !row) {
-        parentageConflict("action.epic.id", "Epic is no longer restorable");
+      if (action.type === "RESTORE_EPIC") {
+        if (!row) {
+          parentageConflict("action.epic.id", "Epic is no longer restorable");
+        }
+        restoresPreviousOwner = row.ownerId === (action.epic.ownerId ?? null);
       }
     }
 
@@ -2571,7 +2576,7 @@ export class CommandsService {
         : action.type === "UPDATE_EPIC"
           ? action.ownerId
           : undefined;
-    if (ownerId != null) {
+    if (ownerId != null && !restoresPreviousOwner) {
       const member = await tx.boardMember.findFirst({
         where: { boardId, userId: ownerId, ...activeMembershipWhere() },
         select: { id: true },
@@ -3119,10 +3124,9 @@ export class CommandsService {
    * TASK-80 used to exempt the whole `RESTORE_*` family because it is the
    * shape of an undo. TASK-180.2 M13: the flag/type comes from the client,
    * so a forged restore could add a 51st label, a 21st checklist, a 101st
-   * item or a card into a full column. Restores are now checked exactly like
-   * the fresh add they perform. The one exemption is internal: a run revert
-   * restoring a deleted entity may exceed the current limit, and the run
-   * path sets `exemptRestoreLimits` itself (never a wire field).
+   * item or a card into a full column. Run revert can bypass the applicable
+   * limits through the internal `exemptRestoreLimits` option. Epic restores
+   * can exceed the create limit because they require a same-board tombstone.
    */
   private assertNoWipConflict(
     board: Board,
@@ -3192,7 +3196,6 @@ export class CommandsService {
         return;
       }
       case "ADD_EPIC":
-      case "RESTORE_EPIC":
         if ((board.epics?.length ?? 0) >= LIMITS.epicsPerBoard) reject();
         return;
       case "ADD_LABEL": {

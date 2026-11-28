@@ -1737,7 +1737,9 @@ export class BoardsService {
   /**
    * Preflight used by both the single-board export and the account bundle:
    * `pg_column_size` catches a grossly oversized board before `getAggregate`
-   * allocates it. The exact 25 MB check still runs on the serialized string.
+   * allocates it. Epic descriptions can be compressed or stored out of line,
+   * so include their full text length. The exact 25 MB check still runs on
+   * the serialized string.
    */
   async assertExportFitsPreflight(boardId: string): Promise<void> {
     const [estimate] = await this.prisma.$queryRaw<Array<{ bytes: bigint }>>`
@@ -1751,6 +1753,9 @@ export class BoardsService {
         + COALESCE((SELECT SUM(pg_column_size(l.*))
           FROM "Label" l
           WHERE l."boardId" = ${boardId} AND l."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(GREATEST(pg_column_size(e.*), octet_length(e.description)))
+          FROM "Epic" e
+          WHERE e."boardId" = ${boardId} AND e."deletedAt" IS NULL), 0)
         + COALESCE((SELECT SUM(pg_column_size(cl.*))
           FROM "CardLink" cl
           WHERE cl."boardId" = ${boardId} AND cl."deletedAt" IS NULL), 0)

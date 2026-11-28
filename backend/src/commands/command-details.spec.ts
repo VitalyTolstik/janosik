@@ -1,4 +1,4 @@
-import type { Board, BoardAction, Card } from "@janosik/shared";
+import type { Board, BoardAction, Card, Epic } from "@janosik/shared";
 import {
   capCommandDetails,
   COMMAND_DETAILS_MAX_BYTES,
@@ -43,6 +43,15 @@ function makeBoard(card: Card = makeCard()): Board {
 }
 
 const base = { boardId: "board-1", at: AT } as const;
+const epic: Epic = {
+  id: "epic-1",
+  title: "Release",
+  color: "rose",
+  status: "active",
+  position: 0,
+  createdAt: AT,
+  updatedAt: AT,
+};
 
 describe("commandDetails", () => {
   it("preserves a change at the end of a long card order within the size cap", () => {
@@ -237,6 +246,128 @@ describe("commandDetails", () => {
     expect(commandDetails(action, before, after)).toEqual({
       detail: "Done",
       changes: [{ field: "column", from: "Todo", to: "Done" }],
+    });
+  });
+
+  it("names created, deleted and restored epics in history", () => {
+    const before = makeBoard(makeCard({ epicId: epic.id }));
+    const withEpic = { ...before, epics: [epic] };
+    const added = {
+      detail: "Release",
+      changes: [{ field: "epic", from: null, to: "Release" }],
+    };
+    expect(
+      commandDetails({ ...base, type: "ADD_EPIC", epic }, before, withEpic),
+    ).toEqual(added);
+    expect(
+      commandDetails(
+        { ...base, type: "DELETE_EPIC", epicId: epic.id },
+        withEpic,
+        before,
+      ),
+    ).toEqual({
+      detail: "Release (1 card keeps its column)",
+      changes: [{ field: "epic", from: "Release", to: null }],
+    });
+    expect(
+      commandDetails(
+        { ...base, type: "RESTORE_EPIC", inverse: true, epic, index: 0 },
+        before,
+        withEpic,
+      ),
+    ).toEqual(added);
+  });
+
+  it("records changed epic fields and status", () => {
+    const before = { ...makeBoard(), epics: [epic] };
+    const changes = { title: "Relaunch", ownerId: "user-2", dueDate: AT };
+    const updated = { ...before, epics: [{ ...epic, ...changes }] };
+    expect(
+      commandDetails(
+        { ...base, type: "UPDATE_EPIC", epicId: epic.id, ...changes },
+        before,
+        updated,
+      ),
+    ).toEqual({
+      detail: "Relaunch",
+      changes: [
+        { field: "epicTitle", from: "Release", to: "Relaunch" },
+        { field: "epicOwner", from: null, to: "user-2" },
+        { field: "epicDue", from: null, to: new Date(AT).toISOString() },
+      ],
+    });
+    const status = "completed";
+    expect(
+      commandDetails(
+        { ...base, type: "SET_EPIC_STATUS", epicId: epic.id, status },
+        before,
+        { ...before, epics: [{ ...epic, status }] },
+      ),
+    ).toEqual({
+      detail: "Release",
+      changes: [{ field: "epicStatus", from: "active", to: "completed" }],
+    });
+  });
+
+  it("captures epic membership on card create, clear and cross-column move", () => {
+    const withoutMember = { ...makeBoard(), epics: [epic] };
+    withoutMember.columns[0].cardIds = [];
+    delete withoutMember.cards["card-1"];
+    const assigned = {
+      ...makeBoard(makeCard({ epicId: epic.id })),
+      epics: [epic],
+    };
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "ADD_CARD",
+          columnId: "col-1",
+          newCardId: "card-1",
+          title: "Old title",
+          epicId: epic.id,
+        },
+        withoutMember,
+        assigned,
+      ),
+    ).toEqual({
+      detail: "Old title",
+      changes: [{ field: "epic", from: null, to: "Release" }],
+    });
+    const unassigned = { ...makeBoard(), epics: [epic] };
+    expect(
+      commandDetails(
+        { ...base, type: "SET_CARD_EPIC", cardId: "card-1", epicId: null },
+        assigned,
+        unassigned,
+      ),
+    ).toEqual({
+      detail: "Old title",
+      changes: [{ field: "epic", from: "Release", to: null }],
+    });
+    assigned.columns[0].cardIds = [];
+    assigned.columns[1].cardIds = ["card-1"];
+    expect(
+      commandDetails(
+        {
+          ...base,
+          type: "MOVE_CARD",
+          cardId: "card-1",
+          fromColumnId: "col-1",
+          fromIndex: 0,
+          toColumnId: "col-2",
+          toIndex: 0,
+          epicId: epic.id,
+        },
+        unassigned,
+        assigned,
+      ),
+    ).toEqual({
+      detail: "Done",
+      changes: [
+        { field: "column", from: "Todo", to: "Done" },
+        { field: "epic", from: null, to: "Release" },
+      ],
     });
   });
 

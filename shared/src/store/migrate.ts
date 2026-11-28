@@ -487,14 +487,12 @@ function normalizeEpics(board: Board): Board {
   if (board.epics === undefined) return board;
   const ids = new Set<string>();
   const candidates = Array.isArray(board.epics) ? board.epics : [];
-  const epics = candidates
-    .slice(0, LIMITS.epicsPerBoard)
-    .flatMap((value, index) => {
-      const epic = normalizeEpic(value, index);
-      if (!epic || ids.has(epic.id)) return [];
-      ids.add(epic.id);
-      return [epic];
-    });
+  const epics = candidates.flatMap((value, index) => {
+    const epic = normalizeEpic(value, index);
+    if (!epic || ids.has(epic.id)) return [];
+    ids.add(epic.id);
+    return [epic];
+  });
   epics.sort(compareEpics);
   if (
     candidates === board.epics &&

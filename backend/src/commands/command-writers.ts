@@ -10,7 +10,7 @@ import type {
   Epic,
   LabelAssignment,
 } from "@janosik/shared";
-import { cardOf, epicOf } from "@janosik/shared";
+import { boardEpicProgress, cardOf, epicOf } from "@janosik/shared";
 
 /**
  * Per-action writers (ROADMAP §7.4.1 variant В).
@@ -259,6 +259,21 @@ function touchCardEpics(...cards: (Card | undefined)[]): string[] {
   return cards.flatMap((card) =>
     card?.epicId === undefined ? [] : [touch.epic(card.epicId)],
   );
+}
+
+function touchChangedEpicProgress(before: Board, after: Board): string[] {
+  if (!after.epics?.length) return [];
+  // Deleting or restoring a column can also change which remaining column
+  // counts as Done, so the affected epics need not have cards in that column.
+  const previous = boardEpicProgress(before);
+  const touches: string[] = [];
+  for (const [id, progress] of boardEpicProgress(after)) {
+    const old = previous.get(id);
+    if (!old || old.total !== progress.total || old.done !== progress.done) {
+      touches.push(touch.epic(id));
+    }
+  }
+  return touches;
 }
 
 function epicWriteData(epic: Epic) {
@@ -907,6 +922,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         boardTouch,
         touch.column(action.columnId),
         ...touchCards(activeIds),
+        ...touchChangedEpicProgress(before, after),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -1082,6 +1098,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         // `versions` and the run pre-image, or a later command in the same
         // run would compare its pre-image against a stale column version.
         ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+        ...touchCardEpics(sourceColumn ? card : undefined),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -1126,6 +1143,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         boardTouch,
         touch.column(action.columnId),
         ...touchCards(archived),
+        ...touchCardEpics(...archived.map((id) => cardOf(after, id))),
       ];
     }
 
@@ -1158,6 +1176,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           boardTouch,
           touch.card(card.id),
           touch.column(column.id),
+          ...touchCardEpics(card.archivedAt === undefined ? card : undefined),
           ...touchChecklists(card.checklists),
         ];
       }
@@ -1219,7 +1238,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           ...touchChecklists(card.checklists),
         );
       }
-      return touchList;
+      return [...touchList, ...touchChangedEpicProgress(before, after)];
     }
 
     case "RESTORE_COLUMN_CARDS": {
@@ -1252,7 +1271,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         );
       }
       await writeCardPositions(tx, column.id, column.cardIds);
-      return touchList;
+      return [...touchList, ...touchChangedEpicProgress(before, after)];
     }
 
     case "SET_CARD_LABEL": {
@@ -1740,6 +1759,7 @@ async function writeCardAction(
         boardTouch,
         touch.card(card.id),
         ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+        ...touchCardEpics(sourceColumn ? card : undefined),
       ];
     }
 
@@ -1758,7 +1778,12 @@ async function writeCardAction(
         },
       });
       await writeCardPositions(tx, column.id, column.cardIds);
-      return [boardTouch, touch.column(column.id), touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.column(column.id),
+        touch.card(card.id),
+        ...touchCardEpics(card),
+      ];
     }
 
     case "MOVE_CARD": {
