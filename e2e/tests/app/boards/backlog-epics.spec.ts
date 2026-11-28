@@ -554,9 +554,10 @@ test.describe("390px touch", () => {
         type: "touchStart",
         touchPoints: [start],
       });
-      // dnd-kit activates after 220 ms. Move before the 500 ms context menu
-      // can cancel the drag, and wait for the overlay only after moving.
-      await page.waitForTimeout(230);
+      // The dnd-kit sensor activates after 220 ms and the Base UI menu opens
+      // after 500 ms. Waiting 300 ms leaves ~80 ms for activation and ~200 ms
+      // to move before the menu opens.
+      await page.waitForTimeout(300);
       return { start, pressedAt };
     }
 
