@@ -536,6 +536,11 @@ test.describe("390px touch", () => {
       await board.card(backlog, `Touch filler ${index}`);
     }
     await board.open(page);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
     const source = card(page, "Review confirmation copy");
     const activeTile = tile(page, active.id);
     const scroller = columnSection(page, "Backlog").getByTestId(
@@ -545,20 +550,15 @@ test.describe("390px touch", () => {
     const commands = watchCommands(page);
     const session = await page.context().newCDPSession(page);
 
-    async function lift(scroll = true) {
-      if (scroll) await source.scrollIntoViewIfNeeded();
+    async function lift() {
       const { x, y } = (await source.boundingBox())!;
       const start = { x: x + 32, y: y + 18 };
-      const pressedAt = performance.now();
       await session.send("Input.dispatchTouchEvent", {
         type: "touchStart",
         touchPoints: [start],
       });
-      // The dnd-kit sensor activates after 220 ms and the Base UI menu opens
-      // after 500 ms. Waiting 300 ms leaves ~80 ms for activation and ~200 ms
-      // to move before the menu opens.
-      await page.waitForTimeout(300);
-      return { start, pressedAt };
+      await expect(overlay).toBeVisible();
+      return start;
     }
 
     async function move(
@@ -581,10 +581,9 @@ test.describe("390px touch", () => {
     async function drop(target: Locator) {
       await source.scrollIntoViewIfNeeded();
       const { x, y, width, height } = (await target.boundingBox())!;
-      const { start, pressedAt } = await lift(false);
+      const start = await lift();
       await move(start, { x: x + width / 2, y: y + height / 2 });
       await expect(overlay).toBeVisible();
-      expect(performance.now() - pressedAt).toBeGreaterThanOrEqual(210);
       const command = nextCommand(page, "MOVE_CARD");
       await session.send("Input.dispatchTouchEvent", {
         type: "touchEnd",
@@ -623,10 +622,9 @@ test.describe("390px touch", () => {
     await source.scrollIntoViewIfNeeded();
     const before = await scroller.evaluate((element) => element.scrollTop);
     const scrollBox = (await scroller.boundingBox())!;
-    const { start, pressedAt } = await lift(false);
+    const start = await lift();
     await move(start, { x: start.x, y: scrollBox.y + scrollBox.height - 16 });
     await expect(overlay).toBeVisible();
-    expect(performance.now() - pressedAt).toBeGreaterThanOrEqual(210);
     await expect
       .poll(() => scroller.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(before + 100);
@@ -642,25 +640,29 @@ test.describe("390px touch", () => {
       element.scrollTop = 0;
     });
     await source.scrollIntoViewIfNeeded();
-    const sourceBox = (await source.boundingBox())!;
-    await session.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ x: sourceBox.x + 32, y: sourceBox.y + 18 }],
-    });
+    await lift();
     const menu = page.getByTestId("card-context-menu");
-    await expect(menu).toBeVisible();
-    await expect(overlay).toHaveCount(0);
+    // Keep the finger down past Base UI's 500 ms context-menu delay.
+    await page.evaluate(
+      () => new Promise((resolve) => setTimeout(resolve, 600)),
+    );
+    await expect(overlay).toBeVisible();
+    await expect(menu).toHaveCount(0);
     await session.send("Input.dispatchTouchEvent", {
-      type: "touchEnd",
+      type: "touchCancel",
       touchPoints: [],
     });
+    await expect(overlay).toHaveCount(0);
+    await source.getByTestId("board-card-actions").tap();
+    await expect(menu).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
-    expect(commands).toEqual([attached, detached]);
     await source.tap();
     await expect(
       page.getByRole("dialog", { name: "Card details" }),
     ).toBeVisible();
+    expect(commands).toEqual([attached, detached]);
+    expect(errors).toEqual([]);
   });
 });
 

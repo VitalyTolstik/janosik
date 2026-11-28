@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import en from "@/locales/en/translation.json";
+import ru from "@/locales/ru/translation.json";
 import { FIELD_KEYS, formatChangeValue, sentenceFor } from "@/utils/activity";
 import type { ActivityFeedEntry } from "@janosik/shared";
 
@@ -30,6 +31,12 @@ const ACTION_TYPES = [
   "REMOVE_BOARD",
   "IMPORT_BOARDS",
   "RESTORE_BOARD",
+  "ADD_EPIC",
+  "UPDATE_EPIC",
+  "SET_EPIC_STATUS",
+  "SET_CARD_EPIC",
+  "DELETE_EPIC",
+  "RESTORE_EPIC",
   // card
   "ADD_CARD",
   "UPDATE_CARD",
@@ -78,6 +85,25 @@ describe("sentenceFor", () => {
     const { key } = sentenceFor(entry(type), "en", false);
     expect(key).not.toBe("activity.changed");
     expect(en).toHaveProperty(key);
+    expect(ru).toHaveProperty(key);
+  });
+
+  it.each([
+    ["SET_CARD_EPIC", null, "Checkout", "activity.epic-set"],
+    ["SET_CARD_EPIC", "Checkout", null, "activity.epic-removed"],
+    ["epic-set", null, "Checkout", "activity.epic-set"],
+    ["epic-removed", "Checkout", null, "activity.epic-removed"],
+  ] as const)("names the epic for %s", (type, from, to, key) => {
+    const item =
+      type === "SET_CARD_EPIC"
+        ? { ...entry(type), changes: [{ field: "epic", from, to }] }
+        : { ...entry(type), detail: "Checkout" };
+    for (const lang of ["en", "ru"] as const)
+      expect(sentenceFor(item, lang, false)).toEqual({
+        key,
+        params: { detail: "Checkout" },
+      });
+    expect(en[key]).not.toBe(ru[key]);
   });
 
   it("falls back to a neutral board sentence for an unknown type", () => {

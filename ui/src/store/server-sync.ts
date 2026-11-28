@@ -25,6 +25,7 @@ import { ApiError } from "@/api/client";
 /** Why a command did not land on the server. */
 export type SendFailure =
   | { kind: "offline" }
+  | { kind: "skipped" }
   /** `columnId` lets the toast name the destination and its limit. */
   | { kind: "wip"; columnId?: string }
   | { kind: "version" }
@@ -116,19 +117,22 @@ export class ServerSync {
     boardId: string,
     action: BoardAction,
     preconditions?: Record<string, number>,
+    shouldSend?: () => boolean | Promise<boolean>,
   ): Promise<SendOutcome> {
     if (this.disposed) {
       return Promise.resolve({ ok: false, failure: { kind: "offline" } });
     }
-    if (globalThis.navigator?.onLine === false) {
-      return Promise.resolve(this.recordFailure({ kind: "offline" }));
-    }
-    if (action.type === "UPDATE_CARD" && action.quiet === true) {
-      return this.deferQuiet(boardId, action);
+    if (shouldSend === undefined) {
+      if (globalThis.navigator?.onLine === false) {
+        return Promise.resolve(this.recordFailure({ kind: "offline" }));
+      }
+      if (action.type === "UPDATE_CARD" && action.quiet === true) {
+        return this.deferQuiet(boardId, action);
+      }
     }
     // Anything else must not overtake the text the user just typed.
     this.flushQuiet(boardId);
-    return this.sendNow(boardId, action, preconditions);
+    return this.sendNow(boardId, action, preconditions, shouldSend);
   }
 
   /**
@@ -263,10 +267,17 @@ export class ServerSync {
     boardId: string,
     action: BoardAction,
     preconditions?: Record<string, number>,
+    shouldSend?: () => boolean | Promise<boolean>,
   ): Promise<SendOutcome> {
     this.bump(boardId, 1);
     const chain = this.chains.get(boardId) ?? Promise.resolve();
-    const run = chain.then(() => this.attempt(boardId, action, preconditions));
+    const run = chain.then(async (): Promise<SendOutcome> => {
+      // Reserve the position now, but check the prerequisite at send time.
+      if (shouldSend !== undefined && !(await shouldSend())) {
+        return { ok: false, failure: { kind: "skipped" } };
+      }
+      return this.attempt(boardId, action, preconditions);
+    });
     this.chains.set(
       boardId,
       run.then(

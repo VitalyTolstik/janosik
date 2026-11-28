@@ -16,6 +16,7 @@ import {
   Check,
   CircleUserRound,
   CopyPlus,
+  Diamond,
   Link2,
   ListChecks,
   Lock,
@@ -54,6 +55,10 @@ import {
   COVER_GRADIENT_KEYS,
   LABEL_COLOR_KEYS,
 } from "@/utils/palette-keys";
+import {
+  EpicOption,
+  NewAssignmentEpicDialog,
+} from "@/components/board/EpicAssignmentParts";
 import { DueDatePickerContent } from "@/components/board/CardDueDate";
 import { Button } from "@/components/ui/button";
 import {
@@ -82,7 +87,7 @@ import {
   useBoardState,
 } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
-import { hasCardDetail } from "@/store/read-model";
+import { hasCardDetail, unhydratedEpicProgress } from "@/store/read-model";
 import { moveTargetBlockReason } from "@/utils/workflow";
 import { WorkflowRulesDialog } from "@/components/board/WorkflowRulesDialog";
 import { userLabel } from "@/utils/avatar";
@@ -93,6 +98,8 @@ import {
   suggestLinkTargets,
   wouldCreateCycle,
 } from "@/utils/links";
+import { collectBacklogEpics } from "@/utils/backlog-rows";
+import { addAssignmentEpic } from "@/utils/epic-assignment";
 import { createId } from "@/utils/id";
 
 /**
@@ -115,6 +122,8 @@ export interface CardContextMenuProps {
   children:
     | ReactElement
     | ((controls: { open: (anchor?: Element | null) => void }) => ReactElement);
+  isDragging?: boolean;
+  touchDragEnabled?: boolean;
   /** VIEWER mode (TASK-35): only the read-only actions stay in the menu. */
   readOnly?: boolean;
   /** Opens the card dialog — the "Open card" item. */
@@ -128,6 +137,8 @@ export interface CardContextMenuProps {
 export function CardContextMenu({
   cardId,
   children,
+  isDragging = false,
+  touchDragEnabled = false,
   readOnly = false,
   onOpen,
   onDuplicate,
@@ -136,30 +147,47 @@ export function CardContextMenu({
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<Element | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [newEpic, setNewEpic] = useState<((title: string) => void) | null>(
+    null,
+  );
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const menuFinalFocus = useCallback(
+    () =>
+      anchor instanceof HTMLElement
+        ? anchor
+        : (triggerRef.current?.closest<HTMLElement>("[tabindex]") ??
+          triggerRef.current),
+    [anchor],
+  );
+  const returnFocus = () => menuFinalFocus()?.focus({ preventScroll: true });
   const openMenu = (anchorElement?: Element | null) => {
     setAnchor(anchorElement ?? null);
     setOpen(true);
   };
   const handleOpenChange: ComponentProps<typeof ContextMenu>["onOpenChange"] = (
     nextOpen,
-    { event },
+    details,
   ) => {
-    if (nextOpen && event.type === "touchstart" && "dndKit" in event) {
-      // Movement cancels Base UI's long press. If its stationary hold opens
-      // the menu, cancel the touch sensor at the original touch target.
-      event.target?.dispatchEvent(new Event("touchcancel", { bubbles: true }));
+    const { event } = details;
+    const touchPress =
+      event.type === "touchstart" ||
+      ("pointerType" in event && event.pointerType === "touch");
+    if (nextOpen && (isDragging || (touchDragEnabled && touchPress))) {
+      details.cancel();
+      return;
     }
+    if (nextOpen) setAnchor(null);
     setOpen(nextOpen);
-    if (!nextOpen) setAnchor(null);
   };
   const trigger =
     typeof children === "function" ? children({ open: openMenu }) : children;
   return (
     <>
       <ContextMenu open={open} onOpenChange={handleOpenChange}>
-        <ContextMenuTrigger render={trigger} />
+        <ContextMenuTrigger ref={triggerRef} render={trigger} />
         <ContextMenuContent
           data-testid="card-context-menu"
+          finalFocus={newEpic ? false : menuFinalFocus}
           anchor={anchor ?? undefined}
           side={anchor ? "bottom" : undefined}
           align={anchor ? "start" : undefined}
@@ -176,10 +204,42 @@ export function CardContextMenu({
               setOpen(false);
               setRulesOpen(true);
             }}
+            onEpicChange={() => {
+              const target = menuFinalFocus();
+              const fallback =
+                target
+                  ?.closest("section")
+                  ?.querySelector<HTMLElement>("header[tabindex]") ??
+                document.querySelector<HTMLElement>(
+                  '[data-testid="board-main"]',
+                );
+              window.requestAnimationFrame(() => {
+                if (
+                  target &&
+                  !target.isConnected &&
+                  document.activeElement === document.body
+                )
+                  fallback?.focus({ preventScroll: true });
+              });
+            }}
+            onNewEpic={(submit) => {
+              setOpen(false);
+              setNewEpic(() => submit);
+            }}
             close={() => setOpen(false)}
           />
         </ContextMenuContent>
       </ContextMenu>
+      {newEpic && !readOnly ? (
+        <NewAssignmentEpicDialog
+          returnFocus={returnFocus}
+          onClose={() => setNewEpic(null)}
+          onSubmit={(title) => {
+            setNewEpic(null);
+            newEpic(title);
+          }}
+        />
+      ) : null}
       {rulesOpen ? (
         <WorkflowRulesDialog open={rulesOpen} onOpenChange={setRulesOpen} />
       ) : null}
@@ -204,9 +264,13 @@ function CardContextMenuBody({
   onDuplicate,
   onArchive,
   onShowRules,
+  onNewEpic,
+  onEpicChange,
   close,
 }: Omit<CardContextMenuProps, "children"> & {
   onShowRules: () => void;
+  onNewEpic: (submit: (title: string) => void) => void;
+  onEpicChange: () => void;
   close: () => void;
 }) {
   const { t } = useI18n();
@@ -214,6 +278,8 @@ function CardContextMenuBody({
   const { board } = useBoardState();
   const { role } = useBoardAccess();
   const {
+    dispatch,
+    dispatchEpicCreation,
     toggleCardLabel,
     addLabel,
     setCardPriority,
@@ -254,6 +320,23 @@ function CardContextMenuBody({
   }, [boardId, cardId, detailReady, loadCardDetail]);
 
   if (!board || !card || boardId === undefined) return null;
+
+  const readOnlyMenu =
+    readOnly || role === "VIEWER" || board.archivedAt !== undefined;
+  const epics = readOnlyMenu
+    ? undefined
+    : collectBacklogEpics(board, unhydratedEpicProgress(board));
+  const pickEpic = (epicId: string | null) => {
+    if (epicId === (card.epicId ?? null)) return;
+    onEpicChange();
+    void dispatch({
+      type: "SET_CARD_EPIC",
+      boardId,
+      cardId,
+      epicId,
+      at: Date.now(),
+    });
+  };
 
   const linkPick = (target: Card) => {
     const option = linkOption ?? LINK_TYPE_OPTIONS[0];
@@ -299,7 +382,7 @@ function CardContextMenuBody({
         </ContextMenuItem>
       ) : null}
 
-      {!readOnly ? (
+      {!readOnlyMenu ? (
         <>
           {onOpen ? <ContextMenuSeparator /> : null}
           <MoveToSub
@@ -337,6 +420,61 @@ function CardContextMenuBody({
             assigneeId={card.assigneeId}
             onPick={(userId) => setCardAssign(cardId, userId)}
           />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger
+              className="max-lg:min-h-11"
+              data-testid="ctx-epic-trigger"
+            >
+              <Diamond />
+              {t("epic.assign")}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent
+              className="w-60"
+              data-testid="ctx-epic-content"
+            >
+              {[...(epics?.values() ?? [])]
+                .filter(({ epic }) => epic.status === "active")
+                .map((entry) => (
+                  <ContextMenuItem
+                    key={entry.epic.id}
+                    className="max-lg:min-h-11"
+                    onClick={() => pickEpic(entry.epic.id)}
+                  >
+                    <EpicOption entry={entry} />
+                  </ContextMenuItem>
+                ))}
+              <ContextMenuItem
+                className="max-lg:min-h-11"
+                onClick={() => pickEpic(null)}
+              >
+                {t("epic.none")}
+              </ContextMenuItem>
+              {epics && epics.size < LIMITS.epicsPerBoard ? (
+                <ContextMenuItem
+                  className="max-lg:min-h-11"
+                  onClick={() =>
+                    onNewEpic((title) => {
+                      onEpicChange();
+                      addAssignmentEpic(boardId, title, dispatchEpicCreation, [
+                        cardId,
+                      ]);
+                    })
+                  }
+                >
+                  {t("epic.new")}
+                </ContextMenuItem>
+              ) : null}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          {card.epicId !== undefined ? (
+            <ContextMenuItem
+              className="max-lg:min-h-11"
+              onClick={() => pickEpic(null)}
+              data-testid="ctx-remove-epic"
+            >
+              {t("epic.remove")}
+            </ContextMenuItem>
+          ) : null}
           {!detailReady ? (
             // Base UI requires GroupLabel inside a Group; a bare label
             // crashes the whole board when a summary card is right-clicked.
@@ -456,10 +594,10 @@ function CardContextMenuBody({
         {t("card.menu.openNewTab")}
       </ContextMenuItem>
 
-      {!readOnly && (onDuplicate || onArchive) ? (
+      {!readOnlyMenu && (onDuplicate || onArchive) ? (
         <ContextMenuSeparator />
       ) : null}
-      {onDuplicate && !readOnly ? (
+      {onDuplicate && !readOnlyMenu ? (
         <ContextMenuItem
           onClick={() => onDuplicate(cardId)}
           data-testid="ctx-duplicate"
@@ -468,7 +606,7 @@ function CardContextMenuBody({
           {t("card.duplicate")}
         </ContextMenuItem>
       ) : null}
-      {onArchive && !readOnly ? (
+      {onArchive && !readOnlyMenu ? (
         <ContextMenuItem
           variant="destructive"
           onClick={() => onArchive(cardId)}

@@ -125,6 +125,7 @@ interface ColumnViewProps {
   workflowBlockedReason?: string;
   backlog?: BacklogRows;
   epics?: ReadonlyMap<string, BacklogEpic>;
+  isBacklog?: boolean;
   epicCollapse?: EpicCollapse;
   getCard?: (id: string) => Card | undefined;
 }
@@ -161,6 +162,7 @@ function ColumnViewBody({
   workflowBlockedReason,
   backlog,
   epics,
+  isBacklog,
   epicCollapse,
   getCard,
 }: ColumnViewProps) {
@@ -320,7 +322,10 @@ function ColumnViewBody({
     return (
       <SortableCard
         card={card}
-        epicChip={entry?.chip}
+        epicChip={
+          isBacklog || entry?.epic.status === "active" ? entry?.chip : undefined
+        }
+        showEpicTitle={!isBacklog}
         boardId={boardId}
         labels={resolveLabels(card.labelIds)}
         highlight={highlight}

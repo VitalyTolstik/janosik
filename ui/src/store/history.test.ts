@@ -559,6 +559,64 @@ describe("BoardHistory rollback (TASK-29)", () => {
     expect(history.undo()).toMatchObject({ cardId: "card-2" });
   });
 
+  it.each(["SET_CARD_EPIC", "MOVE_CARD"] as const)(
+    "rebases a later %s inverse past the failed assignment",
+    (type) => {
+      const history = new BoardHistory();
+      const board = freshBoard();
+      board.epics = ["failed-epic", "chosen-epic"].map((id, position) => ({
+        id,
+        title: id,
+        color: "rose",
+        status: "active",
+        position,
+        createdAt: 1,
+        updatedAt: 1,
+      }));
+      const failed: BoardAction = {
+        type: "SET_CARD_EPIC",
+        cardId: "card-1",
+        epicId: "failed-epic",
+        at: AT,
+        activityIds: ["failed-activity"],
+      };
+      const choice = {
+        ...failed,
+        epicId: "chosen-epic",
+        at: AT + 1,
+        activityIds: ["chosen-activity"],
+      };
+      const later: BoardAction =
+        type === "MOVE_CARD"
+          ? {
+              ...choice,
+              type,
+              fromColumnId: "col-backlog",
+              fromIndex: 0,
+              toColumnId: "col-progress",
+              toIndex: 1,
+            }
+          : choice;
+      const optimistic = apply(board, failed);
+      expect(optimistic.cards["card-1"].activity).toContainEqual(
+        expect.objectContaining({ id: "failed-activity" }),
+      );
+      history.push(board, failed);
+      history.push(optimistic, later);
+
+      expect(history.rollbackStep(failed, true)).toEqual({
+        kind: "superseded",
+      });
+      const restored = apply(apply(optimistic, later), history.undo()!);
+      expect(restored.cards["card-1"]).toEqual(board.cards["card-1"]);
+      expect(restored.columns).toEqual(board.columns);
+      expect(history.canUndo()).toBe(false);
+      expect(history.redo()).toEqual(later);
+      expect(apply(restored, later).cards["card-1"].epicId).toBe("chosen-epic");
+      expect(history.canRedo()).toBe(false);
+    },
+  );
+
   it("reports none for a command that recorded no step", () => {
     const history = new BoardHistory();
     expect(history.rollbackStep(updateCard("card-1", "X"))).toEqual({

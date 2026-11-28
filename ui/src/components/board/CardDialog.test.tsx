@@ -1724,3 +1724,97 @@ describe("CardDialog layout (fixed visual order)", () => {
     expect(title.closest(".overflow-y-auto")).toBeNull();
   });
 });
+
+describe("CardDialog epic membership", () => {
+  function seed(archived = false) {
+    localStorage.clear();
+    const board = createSeedBoard();
+    board.epics = [
+      {
+        id: "checkout",
+        title: "Checkout reliability",
+        status: "active",
+        color: "rose",
+        position: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "account",
+        title: "Account cleanup",
+        status: "completed",
+        color: "rose",
+        position: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    if (archived) {
+      board.archivedAt = 2;
+      const card = Object.values(board.cards).find(
+        ({ title }) => title === "Design the new onboarding flow",
+      )!;
+      card.epicId = "checkout";
+    }
+    localStorage.setItem("janosik-boards", JSON.stringify([board]));
+  }
+
+  it("selects and clears with arrows and Enter, and returns focus on Escape", async () => {
+    seed();
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    const picker = within(dialog).getByRole("combobox", {
+      name: "Epic",
+    });
+    picker.focus();
+    await user.keyboard("{ArrowDown}");
+    const options = await screen.findByRole("listbox", { name: "Epic" });
+    expect(
+      within(options).queryByText("Account cleanup"),
+    ).not.toBeInTheDocument();
+    await user.keyboard("{ArrowUp}{Enter}");
+    expect(picker).toHaveTextContent("Checkout reliability");
+    expect(picker).toHaveFocus();
+    await user.keyboard("{ArrowDown}{Escape}");
+    expect(options).not.toBeInTheDocument();
+    expect(dialog).toBeVisible();
+    expect(picker).toHaveFocus();
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    expect(picker).toHaveTextContent("No epic");
+  });
+
+  it("creates a title-only epic in place and updates the card", async () => {
+    seed();
+    const user = userEvent.setup();
+    const dialog = await openCardDialog("Design the new onboarding flow");
+    const picker = within(dialog).getByTestId("card-epic");
+    await user.click(picker);
+    await user.click(screen.getByRole("option", { name: "+ New epic…" }));
+    const title = within(dialog).getByRole("textbox", { name: "Epic title" });
+    await user.type(title, "  Launch checks ");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create and assign" }),
+    );
+    await waitFor(() => expect(picker).toHaveTextContent("Launch checks"));
+    expect(picker).toHaveFocus();
+    await user.click(picker);
+    expect(
+      screen.getByRole("option", { name: /Launch checks/ }),
+    ).toHaveTextContent("0/1");
+  });
+
+  it("shows the epic as text in a read-only dialog", async () => {
+    seed(true);
+    const [board] = JSON.parse(
+      localStorage.getItem("janosik-boards")!,
+    ) as Board[];
+    const card = Object.values(board.cards).find(
+      ({ epicId }) => epicId === "checkout",
+    )!;
+    renderBoard(`/board/${board.id}?card=${card.id}`);
+    expect(await screen.findByTestId("card-epic-readonly")).toHaveTextContent(
+      "Checkout reliability",
+    );
+    expect(screen.queryByTestId("card-epic")).not.toBeInTheDocument();
+  });
+});

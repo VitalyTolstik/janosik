@@ -14,6 +14,7 @@ import {
   descriptionSnippet,
   EMPTY_FILTER,
   filterCardIds,
+  indexEpicTitlesByCard,
   groupSearchHits,
   isFilterActive,
   matchesCardFilter,
@@ -1116,5 +1117,96 @@ describe("filter URL state", () => {
     const cleaned = writeFilterParams(EMPTY_FILTER, params);
     expect(cleaned.get("card")).toBe("c-1");
     expect(cleaned.toString()).toBe("card=c-1");
+  });
+});
+
+describe("epic filtering", () => {
+  const cards = {
+    a: { ...card("a", "Declined transaction", []), epicId: "e1" },
+    b: { ...card("b", "Check ledger", []), epicId: "e2" },
+    c: { ...card("c", "Other work", []), epicId: "deleted" },
+    d: card("d", "Unassigned", []),
+  };
+  const columns = { todo: Object.keys(cards) };
+  const epicTitleByCard = indexEpicTitlesByCard(cards, [
+    {
+      id: "e1",
+      title: "Checkout reliability",
+      status: "active",
+      color: "rose",
+      position: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    {
+      id: "e2",
+      title: "Accounting",
+      status: "completed",
+      color: "rose",
+      position: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ]);
+
+  it("round-trips all parameters and drops duplicate and unknown ids", () => {
+    const selected = {
+      ...EMPTY_FILTER,
+      epicIds: ["e1", "e2"],
+      hasEpic: true,
+      noEpic: true,
+    };
+    const params = writeFilterParams(
+      selected,
+      new URLSearchParams("card=a&f.epic=old"),
+    );
+    expect(params.get("card")).toBe("a");
+    expect(params.get("f.epic")).toBe("e1,e2");
+    expect(params.get("f.hasEpic")).toBe("1");
+    expect(params.get("f.noEpic")).toBe("1");
+    expect(readFilterParams(params)).toEqual(selected);
+    params.set("f.epic", "e1,unknown,e1,e2,,");
+    expect(readFilterParams(params, new Set(["e1", "e2"]))).toEqual(selected);
+    expect(writeFilterParams(EMPTY_FILTER, params).toString()).toBe("card=a");
+    expect(activeFacetCount(selected)).toBe(1);
+    expect(isFilterActive(selected)).toBe(true);
+  });
+
+  it.each([
+    [{ epicIds: ["e1", "e2"] }, ["a", "b"]],
+    [{ epicIds: ["e1"], noEpic: true }, ["a", "c", "d"]],
+    [{ hasEpic: true }, ["a", "b"]],
+    [{ noEpic: true }, ["c", "d"]],
+    [{ query: "CHECKout" }, ["a"]],
+    [{ query: "checkout", epicIds: ["e2"] }, []],
+  ] satisfies Array<[Partial<CardFilter>, string[]]>)(
+    "matches %j",
+    (filter, expected) => {
+      expect(
+        filterCardIds(
+          columns,
+          cards,
+          { ...EMPTY_FILTER, ...filter },
+          NOW,
+          [],
+          undefined,
+          epicTitleByCard,
+        ),
+      ).toEqual({ todo: expected });
+    },
+  );
+
+  it("still restricts server text matches by epic membership", () => {
+    expect(
+      filterCardIds(
+        columns,
+        cards,
+        { ...EMPTY_FILTER, query: "attachment", epicIds: ["e1"] },
+        NOW,
+        [],
+        new Set(["a", "b"]),
+        epicTitleByCard,
+      ),
+    ).toEqual({ todo: ["a"] });
   });
 });

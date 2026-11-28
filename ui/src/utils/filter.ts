@@ -2,6 +2,7 @@ import type {
   Board,
   Card,
   CardPriority,
+  Epic,
   Label,
   WorkspaceSearchMatch,
 } from "@janosik/shared";
@@ -82,6 +83,9 @@ export interface CardFilter {
    */
   blocked: boolean;
   hasLinks: boolean;
+  epicIds: string[];
+  hasEpic: boolean;
+  noEpic: boolean;
 }
 
 /**
@@ -113,6 +117,9 @@ export const EMPTY_FILTER: CardFilter = {
   unassigned: false,
   blocked: false,
   hasLinks: false,
+  epicIds: [],
+  hasEpic: false,
+  noEpic: false,
 };
 
 /**
@@ -135,6 +142,9 @@ export const FILTER_PARAM_KEYS = [
   "unassigned",
   "blocked",
   "links",
+  "epic",
+  "hasEpic",
+  "noEpic",
 ] as const;
 
 const FILTER_PARAM_PREFIX = "f.";
@@ -157,7 +167,10 @@ function csv(value: string | null): string[] {
  * Read a filter from URL parameters. Invalid or unknown values are ignored
  * (the URL is user-editable), so a hand-typed link can never break the board.
  */
-export function readFilterParams(params: URLSearchParams): CardFilter {
+export function readFilterParams(
+  params: URLSearchParams,
+  knownEpicIds?: ReadonlySet<string>,
+): CardFilter {
   const due = params.get(paramKey("due"));
   const created = params.get(paramKey("created"));
   const createdOn = params.get(paramKey("createdOn"));
@@ -185,6 +198,11 @@ export function readFilterParams(params: URLSearchParams): CardFilter {
     unassigned: params.get(paramKey("unassigned")) === "1",
     blocked: params.get(paramKey("blocked")) === "1",
     hasLinks: params.get(paramKey("links")) === "1",
+    epicIds: [...new Set(csv(params.get(paramKey("epic"))))].filter(
+      (id) => knownEpicIds?.has(id) ?? true,
+    ),
+    hasEpic: params.get(paramKey("hasEpic")) === "1",
+    noEpic: params.get(paramKey("noEpic")) === "1",
   };
 }
 
@@ -215,7 +233,15 @@ export function writeFilterParams(
   if (filter.unassigned) params.set(paramKey("unassigned"), "1");
   if (filter.blocked) params.set(paramKey("blocked"), "1");
   if (filter.hasLinks) params.set(paramKey("links"), "1");
+  if (filter.epicIds.length > 0)
+    params.set(paramKey("epic"), filter.epicIds.join(","));
+  if (filter.hasEpic) params.set(paramKey("hasEpic"), "1");
+  if (filter.noEpic) params.set(paramKey("noEpic"), "1");
   return params;
+}
+
+export function hasEpicFacet(filter: CardFilter): boolean {
+  return filter.epicIds.length > 0 || filter.hasEpic || filter.noEpic;
 }
 
 /** True when at least one facet restricts the board. */
@@ -231,7 +257,8 @@ export function isFilterActive(filter: CardFilter): boolean {
     filter.assignees.length > 0 ||
     filter.unassigned ||
     filter.blocked ||
-    filter.hasLinks
+    filter.hasLinks ||
+    hasEpicFacet(filter)
   );
 }
 
@@ -251,6 +278,7 @@ export function activeFacetCount(filter: CardFilter): number {
   if (filter.assignees.length > 0 || filter.unassigned) count += 1;
   if (filter.blocked) count += 1;
   if (filter.hasLinks) count += 1;
+  if (hasEpicFacet(filter)) count += 1;
   return count;
 }
 
@@ -349,9 +377,24 @@ export function matchesCardFilter(
   labels: Label[] = [],
   /** Link facts (TASK-46), precomputed by the caller when needed. */
   linkFacts?: { blocked: boolean; linked: boolean },
+  /** Lowercased title of the live epic, when the card has one. */
+  epicTitle?: string,
 ): boolean {
   const query = filter.query.trim().toLowerCase();
-  if (query !== "" && !cardTextMatches(card, labels, query)) return false;
+  if (
+    query !== "" &&
+    !epicTitle?.includes(query) &&
+    !cardTextMatches(card, labels, query)
+  )
+    return false;
+
+  if (hasEpicFacet(filter)) {
+    if (epicTitle === undefined) {
+      if (!filter.noEpic) return false;
+    } else if (!filter.hasEpic && !filter.epicIds.includes(card.epicId!)) {
+      return false;
+    }
+  }
 
   // An exact day overrides the relative window (mutually exclusive in the UI).
   if (filter.createdOn === null) {
@@ -395,6 +438,24 @@ export function matchesCardFilter(
   return true;
 }
 
+/** Index summary card memberships once per board update, before matching. */
+export function indexEpicTitlesByCard(
+  cards: Readonly<Record<string, Card>>,
+  epics: readonly Epic[],
+): ReadonlyMap<string, string> {
+  const epicTitleByCard = new Map<string, string>();
+  if (epics.length === 0) return epicTitleByCard;
+  const titles = new Map(
+    epics.map(({ id, title }) => [id, title.toLowerCase()]),
+  );
+  for (const card of Object.values(cards)) {
+    const title =
+      card.epicId === undefined ? undefined : titles.get(card.epicId);
+    if (title !== undefined) epicTitleByCard.set(card.id, title);
+  }
+  return epicTitleByCard;
+}
+
 /**
  * Filter each column's ordered card ids, preserving the order within a
  * column. Missing cards are dropped. Used to derive the ids passed to
@@ -413,6 +474,7 @@ export function filterCardIds(
    * under a contradicting due/label/assignee filter.
    */
   serverMatchIds?: ReadonlySet<string>,
+  epicTitleByCard?: ReadonlyMap<string, string>,
 ): Record<string, string[]> {
   // The link facets need board-wide facts — build them once per run, and
   // only when one of the facets is actually in play.
@@ -432,10 +494,12 @@ export function filterCardIds(
       const card = cards[id];
       if (card === undefined) return false;
       const facts = needsLinks ? factsFor(id) : undefined;
-      if (matchesCardFilter(card, filter, now, labels, facts)) return true;
+      const epicTitle = epicTitleByCard?.get(id);
+      if (matchesCardFilter(card, filter, now, labels, facts, epicTitle))
+        return true;
       return (
         serverMatchIds?.has(id) === true &&
-        matchesCardFilter(card, facetFilter, now, labels, facts)
+        matchesCardFilter(card, facetFilter, now, labels, facts, epicTitle)
       );
     });
   }

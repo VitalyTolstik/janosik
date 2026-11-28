@@ -23,6 +23,7 @@ import {
   BOARD_CARD_PAGE_LIMIT_MAX,
   boardStarterPlan,
   boardTemplatePlan,
+  invert,
   LIMITS,
   serializeExport,
   type BoardAction,
@@ -268,6 +269,11 @@ export interface AddBoardOptions {
  */
 interface BoardActionsValue {
   dispatch: (action: BoardAction) => void | Promise<boolean>;
+  dispatchEpicCreation: (
+    create: Extract<BoardAction, { type: "ADD_EPIC" }> & { boardId: string },
+    cardIds: readonly string[],
+    signal?: AbortSignal,
+  ) => { created: Promise<boolean>; assignments: Promise<boolean>[] };
   /**
    * TASK-200.9: load one card's full detail (description/checklists/links)
    * on demand. Resolves `null` for a card that no longer exists.
@@ -1279,34 +1285,33 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   // object would give `dispatch` (and with it the whole actions context) a
   // new identity on every state change and undo the render isolation of
   // TASK-21.4.
-  const labelPreimageGatesRef = useRef(new Map<string, Promise<boolean>>());
+  const historyGatesRef = useRef(new Map<string, Promise<boolean>>());
   /**
-   * TASK-200.9: hold undo/redo presses until every in-flight DELETE_LABEL
-   * has answered and amended its inverse. A gate chains on the board's
-   * previous one, so two fast deletes still release in command order; a
-   * failed delete resolves the chain `false` and the queued press is dropped
-   * instead of undoing an unrelated older step.
+   * Hold undo/redo while optimistic steps can still have their inverses
+   * amended (label deletion or inline epic creation and assignment).
+   * A gate chains on the board's previous one. A failed operation drops a
+   * waiting press instead of undoing an unrelated older step.
    */
-  const beginLabelPreimageGate = useCallback((boardId: string) => {
+  const beginHistoryGate = useCallback((boardId: string) => {
     let release!: (ok: boolean) => void;
     const gate = new Promise<boolean>((resolve) => {
       release = resolve;
     });
     const previous =
-      labelPreimageGatesRef.current.get(boardId) ?? Promise.resolve(true);
+      historyGatesRef.current.get(boardId) ?? Promise.resolve(true);
     const chained = previous.then((ok) => gate.then((mine) => ok && mine));
-    labelPreimageGatesRef.current.set(boardId, chained);
+    historyGatesRef.current.set(boardId, chained);
     return (ok: boolean) => {
       release(ok);
       void chained.finally(() => {
-        if (labelPreimageGatesRef.current.get(boardId) === chained) {
-          labelPreimageGatesRef.current.delete(boardId);
+        if (historyGatesRef.current.get(boardId) === chained) {
+          historyGatesRef.current.delete(boardId);
         }
       });
     };
   }, []);
-  const waitForLabelPreimage = useCallback(
-    (boardId: string) => labelPreimageGatesRef.current.get(boardId),
+  const waitForHistory = useCallback(
+    (boardId: string) => historyGatesRef.current.get(boardId),
     [],
   );
 
@@ -1327,7 +1332,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     getActiveBoardId,
     hotkeysEnabled: board !== undefined && roles[board.id] !== "VIEWER",
     apply,
-    waitForPreimage: waitForLabelPreimage,
+    waitForPreimage: waitForHistory,
     ...(serverMode
       ? {
           send: sendUndoRedo,
@@ -2420,7 +2425,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const runDispatch = useCallback(
     (
       action: BoardAction,
-      opts?: { silentFailure?: boolean },
+      opts?: {
+        silentFailure?: boolean;
+        shouldSend?: () => Promise<boolean>;
+      },
       releasePreimageGate?: (ok: boolean) => void,
     ): void | Promise<boolean> => {
       const boardId =
@@ -2453,7 +2461,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
       if (!serverMode) return;
       bumpEpoch(boardId);
-      const sent = sync.enqueue(boardId, scoped).then(async (outcome) => {
+      const pending = sync.enqueue(
+        boardId,
+        scoped,
+        undefined,
+        opts?.shouldSend,
+      );
+      const sent = pending.then(async (outcome) => {
         // One coalesced send → one set of side effects (see the ref's note).
         if (handledOutcomesRef.current.has(outcome)) {
           drainRefetch(boardId);
@@ -2486,10 +2500,34 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         }
         let reverted = true;
         if (before !== undefined) {
-          const rollback = rollbackStep(boardId, scoped);
+          const dependentAssignment =
+            opts?.shouldSend !== undefined && scoped.type === "SET_CARD_EPIC";
+          const rollback = rollbackStep(boardId, scoped, dependentAssignment);
           const current = stateRef.current.find((b) => b.id === boardId);
           if (rollback.kind === "reverted") {
             apply(rollback.undo);
+          } else if (rollback.kind === "superseded") {
+            // The newer choice is already visible and its inverse was rebased.
+          } else if (
+            dependentAssignment &&
+            current?.cards[scoped.cardId]?.epicId === scoped.epicId
+          ) {
+            const card = current.cards[scoped.cardId];
+            const undo = invert(before, scoped);
+            if (undo?.type === "SET_CARD_EPIC") {
+              // Other edits may sit above this assignment. Restore only the
+              // membership and remove this command's optimistic activity.
+              apply({
+                ...undo,
+                cardUpdatedAt:
+                  card.updatedAt === scoped.at
+                    ? undo.cardUpdatedAt
+                    : card.updatedAt,
+                cardActivity: (card.activity ?? []).filter(
+                  ({ id }) => id !== scoped.activityIds?.[0],
+                ),
+              });
+            }
           } else if (rollback.kind === "none" && current === after) {
             // Nothing was recorded (board-level command) and nothing has
             // touched the board since the optimistic apply: the pre-command
@@ -2515,7 +2553,12 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         } else {
           // TASK-177.9: a caller with domain-specific copy suppresses the
           // generic sync toast so one failure never shows two messages.
-          if (opts?.silentFailure !== true) showFailure(outcome.failure);
+          if (
+            opts?.silentFailure !== true &&
+            outcome.failure.kind !== "skipped"
+          ) {
+            showFailure(outcome.failure);
+          }
           realtimeRef.current?.settled(boardId);
           drainRefetch(boardId);
         }
@@ -2588,7 +2631,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       // created *before* this read, so a Ctrl+Z during the preflight waits
       // for the label step instead of popping an unrelated older one.
       if (serverMode && action.type === "DELETE_LABEL") {
-        const release = beginLabelPreimageGate(boardId);
+        const release = beginHistoryGate(boardId);
         const commandId = createId();
         return api.getLabelAssignments(boardId, action.labelId).then(
           (assignments) => {
@@ -2625,8 +2668,46 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       runDispatch,
       showFailure,
       amendLabelPreimage,
-      beginLabelPreimageGate,
+      beginHistoryGate,
     ],
+  );
+
+  const dispatchEpicCreation = useCallback<
+    BoardActionsValue["dispatchEpicCreation"]
+  >(
+    (create, cardIds, signal) => {
+      const { boardId, epic, at } = create;
+      const before = getBoardById(boardId);
+      const release = serverMode ? beginHistoryGate(boardId) : undefined;
+      const result = runDispatch(create);
+      const locallyCreated = getBoardById(boardId) !== before;
+      const created = result ?? Promise.resolve(locallyCreated);
+      const shouldSend = async () => (await created) && !signal?.aborted;
+      const assignments = cardIds.map((cardId) => {
+        if (!serverMode && !locallyCreated) return created;
+        return (
+          runDispatch(
+            {
+              type: "SET_CARD_EPIC",
+              boardId,
+              cardId,
+              epicId: epic.id,
+              at,
+              activityIds: [createId()],
+            },
+            { shouldSend },
+          ) ?? Promise.resolve(true)
+        );
+      });
+      if (release !== undefined) {
+        void Promise.all([created, ...assignments]).then(
+          (results) => release(results.every(Boolean)),
+          () => release(false),
+        );
+      }
+      return { created, assignments };
+    },
+    [beginHistoryGate, getBoardById, runDispatch, serverMode],
   );
 
   // The archive dialog may close while work is being sent. Keep the queue
@@ -3004,6 +3085,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<BoardActionsValue>(
     () => ({
       dispatch,
+      dispatchEpicCreation,
       loadCardDetail,
       loadCardDetails,
       retryReadModel,
@@ -3030,6 +3112,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     }),
     [
       dispatch,
+      dispatchEpicCreation,
       loadCardDetail,
       loadCardDetails,
       retryReadModel,
@@ -3643,6 +3726,10 @@ function createReadOnlyBoardActions(): BoardActionsValue {
   const noop = (): void => undefined;
   return {
     dispatch: noop,
+    dispatchEpicCreation: () => ({
+      created: Promise.resolve(false),
+      assignments: [],
+    }),
     loadCardDetail: () => Promise.resolve(null),
     loadCardDetails: () => Promise.resolve(true),
     retryReadModel: noop,

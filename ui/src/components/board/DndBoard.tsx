@@ -22,14 +22,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardItem } from "@/components/board/CardItem";
@@ -45,6 +38,7 @@ import { useCardSelection } from "@/store/board-selection";
 import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
 import { blockedMoveMessage, workflowBlockReason } from "@/utils/workflow";
+import { EPIC_THEME } from "@/components/board/epic-theme";
 import type { EpicCollapse } from "@/hooks/use-epic-collapse";
 import {
   buildBacklogRows,
@@ -59,17 +53,6 @@ import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
-
-const EPIC_THEME = {
-  "--epic-ink": "light-dark(#9f1239, #fecdd3)",
-  "--epic-accent": "light-dark(#be123c, #fb7185)",
-  "--epic-border":
-    "light-dark(#fecdd3, color-mix(in oklab, var(--epic-accent) 36%, var(--border)))",
-  "--epic-surface":
-    "light-dark(#fff1f4, color-mix(in oklab, #fda4af 8%, var(--card)))",
-  "--epic-track":
-    "color-mix(in oklab, var(--epic-accent) 16%, var(--epic-surface))",
-} as CSSProperties;
 
 /** Stable empties, so the resolvers survive a board-less render. */
 const NO_LABELS: Label[] = [];
@@ -964,7 +947,7 @@ export function DndBoard({
     >
       <div
         className="flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto pb-4"
-        style={backlog ? EPIC_THEME : undefined}
+        style={epics ? EPIC_THEME : undefined}
       >
         <p className="sr-only" role="status">
           {blockedNotice ?? ""}
@@ -1007,6 +990,7 @@ export function DndBoard({
                   columnId === backlogColumnId ? displayedBacklog : undefined
                 }
                 epics={epics}
+                isBacklog={columnId === backlogColumnId}
                 epicCollapse={
                   columnId === backlogColumnId ? epicCollapse : undefined
                 }

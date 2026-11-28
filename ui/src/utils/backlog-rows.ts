@@ -6,7 +6,7 @@ import {
   type EpicProgress,
 } from "@janosik/shared";
 
-import type { CardEpicChip } from "@/components/board/CardItem";
+import type { CardEpicChip } from "@/components/board/EpicChip";
 import {
   CARD_ROW_HEIGHT,
   COMPACT_CARD_ROW_HEIGHT,

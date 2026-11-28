@@ -9,6 +9,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { CalendarView } from "@/components/board/CalendarView";
+import { CardItem } from "@/components/board/CardItem";
 import { DndBoard } from "@/components/board/DndBoard";
 import { TableView } from "@/components/board/TableView";
 import { ToastProvider } from "@/components/Toast";
@@ -117,6 +118,48 @@ describe("card context menu (right-click)", () => {
     expect(screen.getByTestId("ctx-copy-link")).toBeInTheDocument();
     expect(screen.getByTestId("ctx-duplicate")).toBeInTheDocument();
     expect(screen.getByTestId("ctx-archive")).toBeInTheDocument();
+  });
+
+  it("vetoes the context menu while the card is being dragged", async () => {
+    const card = BOARD.cards["c-1"];
+    const { rerender } = render(
+      tree(<CardItem card={card} labels={[]} isDragging />),
+    );
+    rightClick(screen.getByTestId("card-title"));
+    expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument();
+
+    rerender(tree(<CardItem card={card} labels={[]} />));
+    rightClick(screen.getByTestId("card-title"));
+    expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
+  });
+
+  it("creates an epic from the menu and assigns only the originating card", async () => {
+    await openMenuOnBoard();
+    const submenu = await openSub("ctx-epic-trigger", "ctx-epic-content");
+    fireEvent.click(
+      within(submenu).getByRole("menuitem", { name: /New epic/ }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "New epic" });
+    fireEvent.change(within(dialog).getByRole("textbox"), {
+      target: { value: "Release readiness" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create and assign" }),
+    );
+
+    await waitFor(() => {
+      const [board]: Board[] = JSON.parse(
+        localStorage.getItem("janosik-boards")!,
+      );
+      expect(board.epics).toEqual([
+        expect.objectContaining({
+          title: "Release readiness",
+          status: "active",
+        }),
+      ]);
+      expect(board.cards["c-1"].epicId).toBe(board.epics![0].id);
+      expect(board.cards["c-2"].epicId).toBeUndefined();
+    });
   });
 
   it("opens the menu on a summary card without a Base UI group crash", async () => {
@@ -283,4 +326,50 @@ describe("card context menu (right-click)", () => {
     rightClick(unscheduledRow);
     expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
   });
+});
+
+it("assigns and removes an epic through the card context menu", async () => {
+  const board: Board = {
+    ...BOARD,
+    epics: [
+      {
+        id: "e1",
+        title: "Checkout reliability",
+        color: "rose",
+        status: "active",
+        position: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "e2",
+        title: "Account cleanup",
+        color: "rose",
+        status: "completed",
+        position: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+  };
+  localStorage.setItem("janosik-boards", JSON.stringify([board]));
+  await openMenuOnBoard();
+  const submenu = await openSub("ctx-epic-trigger", "ctx-epic-content");
+  expect(
+    within(submenu).queryByText("Account cleanup"),
+  ).not.toBeInTheDocument();
+  fireEvent.click(
+    within(submenu).getByRole("menuitem", { name: /Checkout reliability/ }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument(),
+  );
+  rightClick(screen.getByText("Alpha card"));
+  fireEvent.click(await screen.findByTestId("ctx-remove-epic"));
+  await waitFor(() =>
+    expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument(),
+  );
+  rightClick(screen.getByText("Alpha card"));
+  expect(await screen.findByTestId("ctx-epic-trigger")).toBeInTheDocument();
+  expect(screen.queryByTestId("ctx-remove-epic")).not.toBeInTheDocument();
 });

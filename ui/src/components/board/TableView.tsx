@@ -22,6 +22,9 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 
+import { EpicChip, type CardEpicChip } from "@/components/board/EpicChip";
+import { EPIC_THEME } from "@/components/board/epic-theme";
+import { collectBacklogEpics } from "@/utils/backlog-rows";
 import { CardContextMenu } from "@/components/board/CardContextMenu";
 import {
   OPTIONAL_COLUMNS,
@@ -177,6 +180,10 @@ export function TableView({
     return map;
   }, [members]);
 
+  const epics = useMemo(
+    () => (board?.epics?.length ? collectBacklogEpics(board) : undefined),
+    [board],
+  );
   const [sort, setSort] = useState<SortState | null>(null);
   const [visibleColumns, setVisibleColumns] =
     useState<OptionalColumn[]>(readStoredColumns);
@@ -342,9 +349,10 @@ export function TableView({
         columnIndex,
         (userId) => assigneeNameById.get(userId) ?? "",
         lang,
+        (epicId) => epics?.get(epicId)?.epic.title,
       );
     return [...rows].sort(cmp);
-  }, [board, rows, sort, lang, assigneeNameById]);
+  }, [board, rows, sort, lang, assigneeNameById, epics]);
 
   // The selection provider lives above the view (BoardSection) and cannot
   // see this visual sort; publish the row order whenever it changes. The key
@@ -416,6 +424,9 @@ export function TableView({
     <TableRow
       key={card.id}
       card={card}
+      epicChip={
+        card.epicId === undefined ? undefined : epics?.get(card.epicId)?.chip
+      }
       boardId={board?.id}
       cardLabels={labelsOf(card.labelIds)}
       columnId={column.id}
@@ -465,6 +476,7 @@ export function TableView({
   };
 
   const optionalCount = visibleColumns.length;
+  const showEpic = visibleColumns.includes("epic");
 
   // The toolbar "+ Add card" is dead weight when every column is full —
   // the popover would only show disabled choices.
@@ -512,7 +524,7 @@ export function TableView({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto hidden h-7 gap-1 px-2 text-ui-label lg:inline-flex"
+              className="ml-auto h-7 gap-1 px-2 text-ui-label max-lg:h-11 max-lg:min-w-11 sm:hidden lg:inline-flex"
               aria-label={t("view.table.columnsSettings")}
               data-testid="table-columns-settings"
             >
@@ -529,6 +541,10 @@ export function TableView({
             {OPTIONAL_COLUMNS.map((column) => (
               <DropdownMenuCheckboxItem
                 key={column}
+                className={cn(
+                  "max-lg:min-h-11",
+                  column !== "epic" && "hidden lg:flex",
+                )}
                 checked={visibleColumns.includes(column)}
                 onCheckedChange={() =>
                   setVisibleColumns((prev) =>
@@ -551,7 +567,10 @@ export function TableView({
         data-testid="table-scroll"
         className="flex-1 overflow-x-auto overflow-y-auto overscroll-contain"
       >
-        <table className="w-full table-fixed border-collapse text-ui-body">
+        <table
+          className="w-full table-fixed border-collapse text-ui-body"
+          style={EPIC_THEME}
+        >
           <thead>
             <tr className="border-b border-border/60">
               <SortHeader
@@ -559,21 +578,30 @@ export function TableView({
                 sortKey="title"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[42%] min-[360px]:w-[52%] sm:w-40 md:w-auto lg:w-72"
+                className={cn(
+                  showEpic ? "w-[42%]" : "w-[42%] min-[360px]:w-[52%]",
+                  "sm:w-40 md:w-auto lg:w-72",
+                )}
               />
               <SortHeader
                 label={t("view.table.column")}
                 sortKey="column"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[30%] max-sm:px-2 min-[360px]:w-[26%] sm:w-28 lg:w-40"
+                className={cn(
+                  showEpic ? "w-[22%]" : "w-[30%] min-[360px]:w-[26%]",
+                  "max-sm:px-2 sm:w-28 lg:w-40",
+                )}
               />
               <SortHeader
                 label={t("dueDate.label")}
                 sortKey="due"
                 sort={sort}
                 onCycle={cycleSort}
-                className="w-[28%] max-sm:px-2 min-[360px]:w-[22%] sm:w-28 lg:w-48"
+                className={cn(
+                  showEpic ? "w-[17%]" : "w-[28%] min-[360px]:w-[22%]",
+                  "max-sm:px-2 sm:w-28 lg:w-48",
+                )}
               />
               <th
                 scope="col"
@@ -597,6 +625,15 @@ export function TableView({
                   sort={sort}
                   onCycle={cycleSort}
                   className="hidden w-32 md:table-cell lg:w-36"
+                />
+              ) : null}
+              {showEpic ? (
+                <SortHeader
+                  label={t("view.table.epic")}
+                  sortKey="epic"
+                  sort={sort}
+                  onCycle={cycleSort}
+                  className="w-[19%] max-sm:px-2 sm:w-32 lg:w-44"
                 />
               ) : null}
               {visibleColumns.includes("checklists") ? (
@@ -694,6 +731,7 @@ export function TableView({
 
 interface TableRowProps {
   card: Card;
+  epicChip?: CardEpicChip;
   /** The board id — resolves the assignee cell's member (TASK-49). */
   boardId: string | undefined;
   /** Resolved labels of this card (stable — see `useCardLabels`). */
@@ -758,6 +796,7 @@ interface TableRowProps {
 
 function TableRowBody({
   card,
+  epicChip,
   boardId,
   cardLabels,
   columnId,
@@ -795,6 +834,7 @@ function TableRowBody({
   measureRef,
 }: TableRowProps) {
   const { t, lang } = useI18n();
+  const showEpic = visibleColumns.includes("epic");
   // Attribution (TASK-36): the transient foreign highlight only — the
   // "who changed it" avatar chip was retired in TASK-49 (owner's call).
   const attribution = useEntityAttribution(card.id);
@@ -983,6 +1023,7 @@ function TableRowBody({
                   className={cn(
                     "block truncate text-foreground/90 focus-visible:ring-2 focus-visible:ring-primary/40",
                     !readOnly && (selectionMode ? "pr-0" : "pr-14 lg:pr-16"),
+                    showEpic && "max-sm:line-clamp-2 max-sm:whitespace-normal",
                   )}
                 >
                   <HighlightedText text={card.title} query={highlight ?? ""} />
@@ -1259,6 +1300,20 @@ function TableRowBody({
               data-testid="table-assignee"
             >
               <AssigneeCell boardId={boardId} assigneeId={card.assigneeId} />
+            </td>
+          ) : null}
+          {showEpic ? (
+            <td className="min-w-0 px-2 py-2 sm:px-3" data-testid="table-epic">
+              {epicChip ? (
+                <EpicChip {...epicChip} showTitle />
+              ) : (
+                <span
+                  aria-label={t("epic.none")}
+                  className="text-muted-foreground"
+                >
+                  —
+                </span>
+              )}
             </td>
           ) : null}
           {visibleColumns.includes("checklists") ? (
