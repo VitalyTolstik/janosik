@@ -3,9 +3,10 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { test, expect } from "@/fixtures/board.js";
-import { login } from "@/fixtures/auth.js";
+import { login, randomIp } from "@/fixtures/auth.js";
 import { acceptInvitation, inviteMember } from "@/helpers/collaboration.js";
-import { openMembers } from "@/helpers/header.js";
+import { openMembers, openShare } from "@/helpers/header.js";
+import { appUrl, siteUrl } from "@/helpers/urls.js";
 
 const axeSource = readFileSync(
   createRequire(import.meta.url).resolve("axe-core"),
@@ -85,6 +86,14 @@ async function documentAxe(page: import("@playwright/test").Page) {
     }));
   });
   expect(violations).toEqual([]);
+}
+
+/** Full-page axe in Watch; the view switcher must stay mounted as the exit. */
+async function documentAxeInWatch(page: import("@playwright/test").Page) {
+  await page.getByTestId("view-watch").click();
+  await expect(page.getByTestId("watch-view")).toBeVisible();
+  await expect(page.getByTestId("view-switcher")).toBeVisible();
+  await documentAxe(page);
 }
 
 async function seedBoard(board: import("@/fixtures/board.js").BoardFixture) {
@@ -215,6 +224,15 @@ test("recommended header and toolbar structure at 1440", async ({
   }
   await expect(page.getByTestId("bulk-select-toggle")).toBeVisible();
 
+  // The toolbar overflow is present in Calendar and Table too; only Watch
+  // keeps the slim toolbar without appearance controls.
+  for (const name of ["calendar", "table"] as const) {
+    await page.getByTestId(`view-${name}`).click();
+    await expect(page.getByTestId("board-toolbar-menu")).toBeVisible();
+  }
+  await page.getByTestId("view-board").click();
+  await expect(page.getByTestId("board-toolbar-menu")).toBeVisible();
+
   // The toolbar overflow is Board appearance only.
   await page.getByTestId("board-toolbar-menu").click();
   const toolbarMenu = page.getByRole("menu").last();
@@ -294,6 +312,7 @@ test("recommended header and toolbar structure at 1440", async ({
           animations: "disabled",
         });
       }
+      await documentAxeInWatch(page);
     }
   }
 });
@@ -346,6 +365,7 @@ for (const width of [390, 768, 1024, 1920]) {
             animations: "disabled",
           });
         }
+        await documentAxeInWatch(page);
       }
     }
   });
@@ -477,22 +497,206 @@ test("Members and Share dialogs stay axe-clean at 390", async ({
   await seedBoard(board);
   await page.setViewportSize({ width: 390, height: 900 });
   await board.open(page);
-  await page.getByTestId("people-trigger").click();
-  let menu = page.getByRole("menu", { name: "People" });
-  await menu.getByRole("menuitem", { name: "Members" }).click();
-  await expect(page.getByTestId("board-members-box")).toBeVisible();
+  const dialog = await openMembers(page);
+  await expect(dialog.getByTestId("board-members-box")).toBeVisible();
   await documentAxe(page);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("board-members-box")).toHaveCount(0);
 
-  await page.getByTestId("people-trigger").click();
-  menu = page.getByRole("menu", { name: "People" });
-  if ((await menu.getByTestId("people-share").count()) > 0) {
-    await menu.getByRole("menuitem", { name: "Share" }).click();
+  const share = await openShare(page);
+  await expect(share.getByTestId("share-ttl")).toBeVisible();
+  await documentAxe(page);
+});
+
+test("Members and Share stay axe-clean for lapsed and expired rows at 390/768 light/dark", async ({
+  page,
+  board,
+  browser,
+  createUser,
+}) => {
+  const lapsed = await createUser();
+  const pending = await createUser();
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  const past = new Date(Date.now() - 60_000).toISOString();
+
+  for (const [email, expiresAt] of [
+    [lapsed.email, future],
+    [pending.email, past],
+  ] as const) {
+    const invited = await board.api.post(`/api/v1/boards/${board.id}/members`, {
+      data: { email, role: "VIEWER", expiresAt },
+    });
+    expect(invited.status(), await invited.text()).toBe(201);
+  }
+
+  // Accept the first invitation, then move that VIEWER into the lapsed state.
+  // The second invitation stays pending and is already expired.
+  const inviteeContext = await browser.newContext({ locale: "en-US" });
+  try {
+    const inviteePage = await inviteeContext.newPage();
+    await login(inviteePage, lapsed);
+    await acceptInvitation(inviteePage, board.title);
+  } finally {
+    await inviteeContext.close();
+  }
+  const members = (await (
+    await board.api.get(`/api/v1/boards/${board.id}/members`)
+  ).json()) as { userId: string; email: string }[];
+  const lapsedId = members.find(
+    (member) => member.email === lapsed.email,
+  )!.userId;
+  const updated = await board.api.patch(
+    `/api/v1/boards/${board.id}/members/${lapsedId}`,
+    { data: { role: "VIEWER", expiresAt: past } },
+  );
+  expect(updated.ok(), await updated.text()).toBeTruthy();
+
+  await board.open(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  for (const width of [390, 768]) {
+    for (const theme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(
+        (value) => localStorage.setItem("janosik-theme", value),
+        theme,
+      );
+      await page.reload();
+      await expect(page.getByTestId("board-title")).toBeVisible();
+      await expect(page.locator("html")).toHaveClass(
+        new RegExp(`\\b${theme}\\b`),
+      );
+
+      await documentAxe(page);
+
+      const dialog = await openMembers(page);
+      await expect(dialog.getByTestId("board-pending-expired")).toBeVisible();
+      await expect(
+        dialog
+          .getByTestId("board-member-expiry")
+          .filter({ hasText: "expired" }),
+      ).toBeVisible();
+      await documentAxe(page);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("board-members-box")).toHaveCount(0);
+
+      await openShare(page);
+      await expect(page.getByTestId("share-ttl")).toBeVisible();
+      await documentAxe(page);
+      await page.keyboard.press("Escape");
+    }
+  }
+});
+
+test("People trigger stays axe-clean with a busy presence stack", async ({
+  page,
+  board,
+  browser,
+  createUser,
+  playwright,
+}) => {
+  test.slow();
+  await board.open(page);
+
+  const contexts: import("@playwright/test").BrowserContext[] = [];
+  const addPresence = async (index: number) => {
+    const user = await createUser();
+    const ip = randomIp();
+    const unauthenticated = await playwright.request.newContext({
+      baseURL: siteUrl,
+      extraHTTPHeaders: { "X-Forwarded-For": ip },
+    });
+    let token: string;
+    try {
+      const logged = await unauthenticated.post("/api/v1/auth/login", {
+        data: user,
+      });
+      expect(logged.ok()).toBeTruthy();
+      token = ((await logged.json()) as { accessToken: string }).accessToken;
+    } finally {
+      await unauthenticated.dispose();
+    }
+
+    const api = await playwright.request.newContext({
+      baseURL: siteUrl,
+      extraHTTPHeaders: {
+        "X-Forwarded-For": ip,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    try {
+      const invited = await board.api.post(
+        `/api/v1/boards/${board.id}/members`,
+        { data: { email: user.email, role: "MEMBER" } },
+      );
+      expect(invited.status()).toBe(201);
+      const invitations = (await (
+        await api.get("/api/v1/invitations")
+      ).json()) as { id: string; boardId: string }[];
+      const invitation = invitations.find((item) => item.boardId === board.id);
+      expect(invitation).toBeDefined();
+      const accepted = await api.post(
+        `/api/v1/invitations/${invitation!.id}/accept`,
+      );
+      expect(accepted.ok()).toBeTruthy();
+      const named = await api.patch("/api/v1/users/me", {
+        data: { displayName: `Presence ${index + 1}` },
+      });
+      expect(named.ok(), await named.text()).toBeTruthy();
+    } finally {
+      await api.dispose();
+    }
+
+    const context = await browser.newContext({
+      extraHTTPHeaders: { "X-Forwarded-For": ip },
+      locale: "en-US",
+    });
+    contexts.push(context);
+    const extraPage = await context.newPage();
+    await login(extraPage, user);
+    await expect(extraPage.getByTestId("account-trigger")).toBeVisible();
+    await extraPage.goto(new URL(`board/${board.id}`, appUrl).href);
     await expect(
-      page.getByRole("dialog", { name: "Share this board" }),
+      extraPage.getByRole("button", { name: "Switch board" }),
     ).toBeVisible();
-    await documentAxe(page);
+  };
+
+  const scanHeader = async (avatars: number, overflow: "+1" | null) => {
+    for (const width of [390, 1440]) {
+      for (const lang of ["en", "ru"] as const) {
+        await page.setViewportSize({ width, height: 900 });
+        const localized = new URL(page.url());
+        localized.searchParams.set("lng", lang);
+        await page.goto(localized.href);
+        await expect(page.getByTestId("board-title")).toBeVisible();
+        await expect(page.getByTestId("people-avatar")).toHaveCount(avatars, {
+          timeout: 20_000,
+        });
+        if (overflow === null) {
+          await expect(page.getByTestId("people-overflow")).toHaveCount(0);
+        } else {
+          await expect(page.getByTestId("people-overflow")).toHaveText(
+            overflow,
+          );
+        }
+        await documentAxe(page);
+      }
+    }
+  };
+
+  try {
+    // Two people: the visible initials sit next to each other without a
+    // badge. Axe must still find the space-separated suffix in the name.
+    await addPresence(0);
+    await scanHeader(2, null);
+
+    // Owner + three members = three visible faces and a +1 overflow, the
+    // state where the initials and the badge sit next to each other.
+    await addPresence(1);
+    await addPresence(2);
+    await scanHeader(3, "+1");
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
   }
 });
 
