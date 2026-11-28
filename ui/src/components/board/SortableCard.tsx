@@ -2,11 +2,12 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { memo } from "react";
 
-import { CardItem } from "@/components/board/CardItem";
+import { CardItem, type CardEpicChip } from "@/components/board/CardItem";
 import type { CardLinkFacts } from "@/utils/links";
 import type { Card, Label } from "@janosik/shared";
 
 interface SortableCardProps {
+  epicChip?: CardEpicChip;
   card: Card;
   /** The board id — resolves the assignee badge's member (TASK-49). */
   boardId?: string;
@@ -49,6 +50,7 @@ interface SortableCardProps {
  */
 function SortableCardView({
   card,
+  epicChip,
   boardId,
   labels,
   highlight,
@@ -128,6 +130,7 @@ function SortableCardView({
     >
       <CardItem
         card={card}
+        epicChip={epicChip}
         boardId={boardId}
         labels={labels}
         isDragging={isDragging}

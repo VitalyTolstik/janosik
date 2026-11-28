@@ -8,6 +8,7 @@ import {
   type BoardReadSummaryDto,
   type Card,
 } from "@janosik/shared";
+import { collectBacklogEpics } from "@/utils/backlog-rows";
 import { cardLinkIndex } from "@/utils/links";
 import {
   boardFromSummary,
@@ -16,6 +17,7 @@ import {
   cardFromDetail,
   cardFromSummary,
   cardHasDescription,
+  epicSummaryProgress,
   hasCardDetail,
 } from "./read-model";
 
@@ -152,6 +154,40 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(Object.keys(board.cards).sort()).toEqual(["c-1", "c-arch"]);
     expect(board.cards["c-2"]).toBeUndefined();
     expect(board.cards["c-arch"]?.archivedAt).toBe(5);
+  });
+
+  it("keeps the server's epic rollup until the live card placements are hydrated", () => {
+    const dto = summary({
+      epics: [
+        {
+          id: "epic-1",
+          title: "Epic",
+          color: "rose",
+          status: "active",
+          position: 0,
+          createdAt: 1,
+          updatedAt: 1,
+          progress: { total: 3, done: 2, open: 1 },
+        },
+      ],
+    });
+    dto.columns[0].cards[0].epicId = "epic-1";
+    const board = boardFromSummary(dto);
+    const progress = epicSummaryProgress(board.epics!);
+    expect(board.epics?.[0]).not.toHaveProperty("progress");
+    expect(collectBacklogEpics(board, progress).get("epic-1")).toMatchObject({
+      total: 3,
+      done: 2,
+      childIds: ["c-1"],
+    });
+
+    board.cards["c-2"] = cardFromSummary(summaryCard("c-2"));
+    board.cards["c-3"] = cardFromSummary(summaryCard("c-3"));
+    expect(collectBacklogEpics(board, progress).get("epic-1")).toMatchObject({
+      total: 1,
+      done: 1,
+      childIds: ["c-1"],
+    });
   });
 
   it("preserves a loaded detail across a refetch of the same card", () => {

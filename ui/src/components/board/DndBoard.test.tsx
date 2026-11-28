@@ -1,5 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { useMemo, type ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,8 @@ import { BoardBackgroundProvider } from "@/hooks/use-board-background";
 import { BoardGlassProvider } from "@/hooks/use-board-glass";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { I18nProvider } from "@/i18n";
+import { useEpicCollapse } from "@/hooks/use-epic-collapse";
+import { buildBacklogRows, collectBacklogEpics } from "@/utils/backlog-rows";
 import { BoardProvider, useBoard } from "@/store/BoardContext";
 
 /**
@@ -65,7 +67,7 @@ function dragOver(activeId: string, overId: string) {
   );
 }
 
-function drop(activeId: string, overId: string) {
+function drop(activeId: string, overId: string | number) {
   act(() =>
     dnd.handlers.onDragEnd?.({
       active: { id: activeId, rect: { current: { translated: null } } },
@@ -74,7 +76,7 @@ function drop(activeId: string, overId: string) {
   );
 }
 
-function seedBoard() {
+function seedBoard(withEpic = false) {
   localStorage.setItem(
     "janosik-boards",
     JSON.stringify([
@@ -91,12 +93,28 @@ function seedBoard() {
           { id: "col-2", title: "Doing", cardIds: ["card-3"], createdAt: 2 },
           { id: "col-3", title: "Empty", cardIds: [], createdAt: 3 },
         ],
+        ...(withEpic
+          ? {
+              epics: [
+                {
+                  id: "card-1",
+                  title: "Epic",
+                  position: 0,
+                  status: "active",
+                  color: "rose",
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+              ],
+            }
+          : {}),
         cards: Object.fromEntries(
           ["card-1", "card-2", "card-3"].map((id) => [
             id,
             {
               id,
               title: id,
+              ...(withEpic && id === "card-2" ? { epicId: "card-1" } : {}),
               labelIds: [],
               createdAt: 1,
               updatedAt: 1,
@@ -116,6 +134,9 @@ function BoardProbe() {
   const snapshot = board
     ? {
         columnOrder: board.columns.map((col) => col.id),
+        membership: Object.fromEntries(
+          Object.values(board.cards).map((card) => [card.id, card.epicId]),
+        ),
         cardIds: Object.fromEntries(
           board.columns.map((col) => [col.id, col.cardIds]),
         ),
@@ -124,7 +145,36 @@ function BoardProbe() {
   return <pre data-testid="board-probe">{JSON.stringify(snapshot)}</pre>;
 }
 
-function renderBoard() {
+function EpicBoard() {
+  const { board } = useBoard();
+  const collapse = useEpicCollapse(board?.id, "local", board?.epics);
+  const epics = useMemo(
+    () => (board ? collectBacklogEpics(board) : undefined),
+    [board],
+  );
+  const backlog =
+    board && epics
+      ? buildBacklogRows(
+          epics,
+          board.cards,
+          board.columns[0].cardIds,
+          collapse,
+          false,
+          undefined,
+          false,
+        )
+      : undefined;
+  return (
+    <DndBoard
+      onCardClick={() => {}}
+      epics={epics}
+      backlog={backlog}
+      epicCollapse={collapse}
+    />
+  );
+}
+
+function renderBoard(withEpic = false) {
   render(
     <ThemeProvider>
       <BoardBackgroundProvider>
@@ -134,7 +184,11 @@ function renderBoard() {
               <MemoryRouter initialEntries={["/board/b-1"]}>
                 <ToastProvider>
                   <BoardProvider>
-                    <DndBoard onCardClick={() => {}} />
+                    {withEpic ? (
+                      <EpicBoard />
+                    ) : (
+                      <DndBoard onCardClick={() => {}} />
+                    )}
                     <BoardProbe />
                   </BoardProvider>
                 </ToastProvider>
@@ -152,6 +206,7 @@ function snapshot() {
     screen.getByTestId("board-probe").textContent ?? "null",
   ) as {
     columnOrder: string[];
+    membership: Record<string, string>;
     cardIds: Record<string, string[]>;
   };
 }
@@ -161,6 +216,29 @@ describe("DndBoard drag orchestration (T-6)", () => {
     localStorage.clear();
     seedBoard();
     dnd.handlers = {};
+  });
+
+  it("resolves a tile independently of card ids and detaches only on a Backlog drop", () => {
+    seedBoard(true);
+    renderBoard(true);
+    startDrag("card-3", "card");
+    drop("card-3", 1);
+    expect(snapshot().cardIds["col-1"]).toEqual(["card-1", "card-2", "card-3"]);
+    expect(snapshot().membership["card-3"]).toBe("card-1");
+
+    startDrag("card-3", "card");
+    drop("card-3", "card-2");
+    expect(snapshot().membership["card-3"]).toBe("card-1");
+
+    startDrag("card-3", "card");
+    drop("card-3", "col-2");
+    expect(snapshot().cardIds["col-2"]).toEqual(["card-3"]);
+    expect(snapshot().membership["card-3"]).toBe("card-1");
+
+    startDrag("card-2", "card");
+    drop("card-2", "card-1");
+    expect(snapshot().membership["card-2"]).toBeUndefined();
+    expect(snapshot().membership["card-3"]).toBe("card-1");
   });
 
   it("moves a card into another column", () => {

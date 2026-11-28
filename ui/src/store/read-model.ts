@@ -5,6 +5,8 @@ import type {
   BoardReadColumnDto,
   BoardReadSummaryDto,
   Card,
+  Epic,
+  EpicProgress,
 } from "@janosik/shared";
 
 /**
@@ -17,6 +19,19 @@ import type {
  * dialog or asking for an undo preimage replaces it with the full card from
  * `GET /boards/:id/cards/:cardId`.
  */
+
+// Keep the authoritative rollup while the card pages are still arriving,
+// without embedding read metadata in the portable board model.
+const summaryProgress = new WeakMap<
+  Epic[],
+  ReadonlyMap<string, EpicProgress>
+>();
+
+export function epicSummaryProgress(
+  epics: Epic[],
+): ReadonlyMap<string, EpicProgress> | undefined {
+  return summaryProgress.get(epics);
+}
 
 /** True when every detail field of the card is already in the store. */
 export function hasCardDetail(card: Card | undefined): boolean {
@@ -262,17 +277,23 @@ export function boardFromSummary(
     cards[id] = cardFromSummary(incoming);
   }
 
+  const epics = summary.epics?.length
+    ? summary.epics.map(({ progress: _progress, ...epic }) => epic)
+    : undefined;
+  if (epics) {
+    summaryProgress.set(
+      epics,
+      new Map(summary.epics.map(({ id, progress }) => [id, progress])),
+    );
+  }
+
   return {
     id: meta.id,
     title: meta.title,
     columns: summary.columns.map(toColumn),
     cards,
     labels: summary.labels.map((label) => ({ ...label })),
-    ...(summary.epics?.length
-      ? {
-          epics: summary.epics.map(({ progress: _progress, ...epic }) => epic),
-        }
-      : {}),
+    ...(epics ? { epics } : {}),
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     ...(meta.columnStyle !== undefined

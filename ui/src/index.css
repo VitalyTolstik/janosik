@@ -281,6 +281,15 @@ html.light {
   --chip-warning: #92400e;
 }
 
+.backlog-epic[data-epic-expanded="true"] {
+  border-bottom-style: dashed;
+}
+
+.backlog-child {
+  background: linear-gradient(var(--epic-border), var(--epic-border)) 6px 0 /
+    1px 100% no-repeat var(--epic-surface);
+}
+
 /* Filled action tokens (TASK-177.20 UI review).
  *
  * The raw `--primary` / `--danger` tones are tuned for accents and text, not

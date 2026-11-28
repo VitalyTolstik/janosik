@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Lock } from "lucide-react";
+import { ChevronDown, GripVertical, Lock } from "lucide-react";
 import {
   Fragment,
   memo,
@@ -18,6 +18,19 @@ import {
 } from "react";
 
 import { AddCardZone } from "@/components/board/AddCardZone";
+import {
+  BacklogCardComposer,
+  BacklogEpicFooter,
+  BacklogEpicTile,
+  BacklogOtherCards,
+} from "@/components/board/BacklogEpic";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import type { EpicCollapse } from "@/hooks/use-epic-collapse";
+import type { BacklogEpic, BacklogRows } from "@/utils/backlog-rows";
 import { CardComposer } from "@/components/board/CardComposer";
 import { ColumnAccentPicker } from "@/components/board/ColumnAccentPicker";
 import { columnAccentVars } from "@/utils/column-accent";
@@ -104,6 +117,10 @@ interface ColumnViewProps {
    * a lock and the reason, so a forbidden drop is never a silent no-op.
    */
   workflowBlockedReason?: string;
+  backlog?: BacklogRows;
+  epics?: ReadonlyMap<string, BacklogEpic>;
+  epicCollapse?: EpicCollapse;
+  getCard?: (id: string) => Card | undefined;
 }
 
 /**
@@ -136,6 +153,10 @@ function ColumnViewBody({
   columnStyle = DEFAULT_COLUMN_ACCENT_STYLE,
   readOnly = false,
   workflowBlockedReason,
+  backlog,
+  epics,
+  epicCollapse,
+  getCard,
 }: ColumnViewProps) {
   const {
     addCard,
@@ -216,25 +237,30 @@ function ColumnViewBody({
   const count = cards.length;
   const compact = density === "compact";
   const rowHeight = compact ? COMPACT_CARD_ROW_HEIGHT : CARD_ROW_HEIGHT;
-  const { scrollRef, onScroll, range, scrollToIndex } = useCardWindow(
-    count,
+  const { scrollRef, onScroll, range, scrollToIndex, offsetAt } = useCardWindow(
+    backlog?.rows.length ?? count,
     rowHeight,
+    backlog?.rows,
   );
   // The inline composer is stateful; keep every card mounted while it is open
   // so scrolling cannot unmount the editor and drop its draft (TASK-139).
-  const windowed = inlineAdd === null;
+  const windowed = backlog !== undefined || inlineAdd === null;
   const rowStart = windowed ? range.start : 0;
   const rowEnd = windowed ? range.end : count;
   const cursorIndex = cursorCardId
-    ? cards.findIndex((card) => card.id === cursorCardId)
+    ? backlog
+      ? backlog.rows.findIndex((row) => row.key === `card:${cursorCardId}`)
+      : cards.findIndex((card) => card.id === cursorCardId)
     : -1;
+  const lastCursor = useRef<string>();
 
   // j/k can walk past the mounted window; scroll the column before the
   // cursor's card is looked up for `scrollIntoView` (TASK-139).
   useLayoutEffect(() => {
-    if (!windowed || cursorIndex < 0) return;
-    scrollToIndex(cursorIndex);
-  }, [cursorIndex, scrollToIndex, windowed]);
+    if (lastCursor.current === cursorCardId) return;
+    lastCursor.current = cursorCardId;
+    if (windowed && cursorIndex >= 0) scrollToIndex(cursorIndex);
+  }, [cursorCardId, cursorIndex, scrollToIndex, windowed]);
 
   const {
     attributes,
@@ -255,8 +281,9 @@ function ColumnViewBody({
   const wipLimit = column.wipLimit;
   // The visible count includes hidden-by-filter cards only when no filter
   // overrides `cardIds` — the limit is judged on the real column contents.
-  const atWipLimit = wipLimit !== undefined && count >= wipLimit;
-  const overWipLimit = wipLimit !== undefined && count > wipLimit;
+  const realCount = backlog ? column.cardIds.length : count;
+  const atWipLimit = wipLimit !== undefined && realCount >= wipLimit;
+  const overWipLimit = wipLimit !== undefined && realCount > wipLimit;
   // The hover duplicate puts the copy into this column — dead when the
   // real column contents (not the filtered view) cannot take one more.
   const duplicateDisabled = isColumnFull(column);
@@ -287,6 +314,55 @@ function ColumnViewBody({
     deleteColumn(column.id);
     setConfirmDelete(false);
   };
+
+  const renderCard = (card: Card, nested = false) => {
+    const entry =
+      !nested && card.epicId !== undefined
+        ? epics?.get(card.epicId)
+        : undefined;
+    return (
+      <SortableCard
+        card={card}
+        epicChip={entry?.chip}
+        boardId={boardId}
+        labels={resolveLabels(card.labelIds)}
+        highlight={highlight}
+        descriptionMatch={descriptionMatchIds?.has(card.id)}
+        isCursor={card.id === cursorCardId}
+        linkFacts={linkIndex.factsOf(card.id)}
+        onCardClick={onCardClick ? handleCardClick : undefined}
+        onCardDuplicate={readOnly ? undefined : handleCardDuplicate}
+        onCardArchive={readOnly ? undefined : archiveCard}
+        duplicateDisabled={duplicateDisabled}
+        duplicateDisabledReason={duplicateDisabledReason}
+        compact={compact}
+        readOnly={readOnly}
+        selected={selection.selectedSet.has(card.id)}
+        selectionMode={selection.enabled && selection.mode}
+        onToggleSelect={selection.enabled ? selection.toggle : undefined}
+      />
+    );
+  };
+
+  const submitAtGap = (title: string, labelIds?: string[], index?: number) => {
+    addCard(column.id, title, labelIds, index);
+    setInlineAdd((state) =>
+      state ? { ...state, count: state.count + 1 } : state,
+    );
+  };
+
+  const indices = useMemo(
+    () =>
+      backlog
+        ? new Map(column.cardIds.map((id, index) => [id, index]))
+        : undefined,
+    [backlog, column.cardIds],
+  );
+  const backlogScrollableCount = backlog
+    ? backlog.rows.length - (readOnly ? 0 : 1)
+    : 0;
+  const backlogEnd = Math.min(range.end, backlogScrollableCount);
+  const backlogStart = Math.min(range.start, backlogEnd);
 
   const accent = column.accent;
   const accentActive = accent !== undefined;
@@ -361,9 +437,11 @@ function ColumnViewBody({
             <span
               data-testid="column-wip"
               title={
-                atWipLimit
-                  ? t("column.wipLimitReached", { limit: wipLimit })
-                  : undefined
+                backlog && backlog.hiddenCount > 0
+                  ? t("epic.hidden", { count: backlog.hiddenCount })
+                  : atWipLimit
+                    ? t("column.wipLimitReached", { limit: wipLimit })
+                    : undefined
               }
               className={cn(
                 "flex h-5 shrink-0 items-center justify-center rounded-full px-1.5 text-ui-micro font-medium",
@@ -374,8 +452,16 @@ function ColumnViewBody({
                     : "bg-hover text-muted-foreground",
               )}
             >
-              {wipLimit !== undefined ? `${count}/${wipLimit}` : count}
+              {wipLimit !== undefined ? `${realCount}/${wipLimit}` : realCount}
             </span>
+            {backlog && epics ? (
+              <span
+                className="max-w-20 truncate rounded-full border border-(--epic-border) bg-(--epic-surface) px-1.5 text-ui-micro font-bold text-(--epic-ink)"
+                title={t("epic.hidden", { count: backlog.hiddenCount })}
+              >
+                {t("epic.codeCount", { count: epics.size })}
+              </span>
+            ) : null}
             {readOnly ? null : (
               <>
                 <ColumnAccentPicker
@@ -426,9 +512,188 @@ function ColumnViewBody({
           ref={scrollRef}
           onScroll={onScroll}
           data-testid="column-card-scroll"
-          className="flex-1 overflow-y-auto px-2 pb-1"
+          className={cn(
+            "flex-1 overflow-y-auto px-2 pb-1",
+            backlog && "[overflow-anchor:none]",
+          )}
         >
-          {count === 0 ? (
+          {backlog && epicCollapse && getCard ? (
+            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+              <ul className="py-1" data-testid="backlog-rows">
+                {backlogStart > 0 ? (
+                  <li aria-hidden style={{ height: offsetAt(backlogStart) }} />
+                ) : null}
+                {backlog.rows.slice(backlogStart, backlogEnd).map((row) => {
+                  switch (row.kind) {
+                    case "epic":
+                      return (
+                        <li
+                          key={row.key}
+                          className="pt-2"
+                          style={{ height: row.height }}
+                        >
+                          <BacklogEpicTile
+                            entry={row.entry}
+                            getCard={getCard}
+                            onCardClick={onCardClick}
+                            boardId={boardId}
+                            labels={resolveLabels(row.entry.labelIds)}
+                            expanded={row.expanded}
+                            toggle={epicCollapse.toggleEpic}
+                            filterExpanded={isFiltered}
+                            dropDisabled={isFiltered || readOnly}
+                          />
+                        </li>
+                      );
+                    case "child": {
+                      const card = getCard(row.cardId);
+                      return card ? (
+                        <li
+                          key={row.key}
+                          data-epic-child={row.entry.epic.id}
+                          className="backlog-child border-x border-(--epic-border) pl-3.5 pr-1.5 pt-2"
+                        >
+                          {renderCard(card, true)}
+                        </li>
+                      ) : null;
+                    }
+                    case "epic-footer":
+                      return (
+                        <li key={row.key} style={{ height: row.height }}>
+                          <BacklogEpicFooter
+                            entry={row.entry}
+                            getCard={getCard}
+                            onCardClick={onCardClick}
+                          >
+                            {readOnly || isFiltered ? null : (
+                              <BacklogCardComposer
+                                labels={labels}
+                                epic={row.entry.epic}
+                                disabled={duplicateDisabled}
+                                disabledReason={duplicateDisabledReason}
+                                onSubmit={(title, labelIds) =>
+                                  addCard(
+                                    column.id,
+                                    title,
+                                    labelIds,
+                                    undefined,
+                                    row.entry.epic.id,
+                                  )
+                                }
+                              />
+                            )}
+                          </BacklogEpicFooter>
+                        </li>
+                      );
+                    case "other":
+                      return (
+                        <li key={row.key} style={{ height: row.height }}>
+                          <BacklogOtherCards
+                            count={row.count}
+                            disabled={isFiltered || readOnly}
+                          />
+                        </li>
+                      );
+                    case "card": {
+                      const card = getCard(row.cardId);
+                      if (!card) return null;
+                      const index = indices?.get(card.id) ?? 0;
+                      return (
+                        <Fragment key={row.key}>
+                          <AddCardZone
+                            index={index}
+                            fixedHeight
+                            interactive={inlineAddAllowed}
+                            onInsert={handleInsertAt}
+                          />
+                          <li>
+                            {inlineAddAllowed && inlineAdd?.index === index ? (
+                              <Popover
+                                open
+                                onOpenChange={(open) => {
+                                  if (!open) setInlineAdd(null);
+                                }}
+                              >
+                                <PopoverAnchor asChild>
+                                  <div>{renderCard(card)}</div>
+                                </PopoverAnchor>
+                                <PopoverContent
+                                  aria-label={t("composer.add")}
+                                  className="p-2"
+                                >
+                                  <CardComposer
+                                    key={`inline-${index}`}
+                                    labels={labels}
+                                    defaultComposing
+                                    inputLabel={t("composer.add")}
+                                    atIndex={index + inlineAdd.count}
+                                    onClose={() => setInlineAdd(null)}
+                                    onSubmit={submitAtGap}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            ) : (
+                              renderCard(card)
+                            )}
+                          </li>
+                        </Fragment>
+                      );
+                    }
+                    case "completed":
+                      return (
+                        <li
+                          key={row.key}
+                          style={{ height: row.height }}
+                          className="pt-1"
+                        >
+                          <button
+                            type="button"
+                            aria-expanded={epicCollapse.completedOpen}
+                            className="flex h-11 w-full items-center gap-1.5 rounded-md px-1 text-left text-ui-label font-semibold text-muted-foreground hover:bg-hover focus-visible:outline-2 focus-visible:outline-primary"
+                            onClick={epicCollapse.toggleCompleted}
+                          >
+                            <ChevronDown
+                              size={14}
+                              aria-hidden
+                              className={
+                                epicCollapse.completedOpen
+                                  ? "rotate-180"
+                                  : undefined
+                              }
+                            />
+                            {t("epic.completed", { count: row.count })}
+                          </button>
+                        </li>
+                      );
+                    case "footer":
+                      return null;
+                  }
+                })}
+                {backlogEnd < backlogScrollableCount ? (
+                  <li
+                    aria-hidden
+                    style={{
+                      height:
+                        offsetAt(backlogScrollableCount) - offsetAt(backlogEnd),
+                    }}
+                  />
+                ) : null}
+                {readOnly ? null : (
+                  <li className="h-12 pt-1">
+                    <BacklogCardComposer
+                      columnId={column.id}
+                      labels={labels}
+                      disabled={duplicateDisabled}
+                      disabledReason={duplicateDisabledReason}
+                      onSubmit={(title, labelIds) =>
+                        addCard(column.id, title, labelIds)
+                      }
+                    />
+                  </li>
+                )}
+              </ul>
+            </SortableContext>
+          ) : count === 0 ? (
             inlineAdd ? (
               // Empty column + opened inline composer: the composer takes
               // the empty state's place (first commit moves to the regular
@@ -477,7 +742,6 @@ function ColumnViewBody({
                 ) : null}
                 {cards.slice(rowStart, rowEnd).map((card, offset) => {
                   const i = rowStart + offset;
-                  const cardLabels = resolveLabels(card.labelIds);
                   return (
                     <Fragment key={card.id}>
                       {inlineAdd?.index === i ? (
@@ -505,33 +769,7 @@ function ColumnViewBody({
                           onInsert={handleInsertAt}
                         />
                       )}
-                      <li>
-                        <SortableCard
-                          card={card}
-                          boardId={boardId}
-                          labels={cardLabels}
-                          highlight={highlight}
-                          descriptionMatch={descriptionMatchIds?.has(card.id)}
-                          isCursor={card.id === cursorCardId}
-                          linkFacts={linkIndex.factsOf(card.id)}
-                          onCardClick={
-                            onCardClick ? handleCardClick : undefined
-                          }
-                          onCardDuplicate={
-                            readOnly ? undefined : handleCardDuplicate
-                          }
-                          onCardArchive={readOnly ? undefined : archiveCard}
-                          duplicateDisabled={duplicateDisabled}
-                          duplicateDisabledReason={duplicateDisabledReason}
-                          compact={compact}
-                          readOnly={readOnly}
-                          selected={selection.selectedSet.has(card.id)}
-                          selectionMode={selection.enabled && selection.mode}
-                          onToggleSelect={
-                            selection.enabled ? selection.toggle : undefined
-                          }
-                        />
-                      </li>
+                      <li>{renderCard(card)}</li>
                     </Fragment>
                   );
                 })}
@@ -571,7 +809,7 @@ function ColumnViewBody({
           )}
         </div>
 
-        {readOnly ? null : (
+        {readOnly || backlog ? null : (
           <footer className="px-2 pb-2 pt-1.5">
             <CardComposer
               columnId={column.id}

@@ -13,6 +13,8 @@ import { useSearchParams } from "react-router-dom";
 import { api, isApiEnabled } from "@/api/client";
 import { FilterBar } from "@/components/board/FilterBar";
 import { DndBoard } from "@/components/board/DndBoard";
+import { useEpicCollapse } from "@/hooks/use-epic-collapse";
+import { buildBacklogRows, collectBacklogEpics } from "@/utils/backlog-rows";
 // Calendar/table render only after a view switch — lazy chunks (TASK-34).
 import {
   CalendarView,
@@ -38,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoard } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
+import { epicSummaryProgress } from "@/store/read-model";
 import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
 import { hasCard } from "@/utils/card-nav";
@@ -222,6 +225,52 @@ export function BoardSection() {
     );
   }, [active, board, filter, serverCardIds]);
 
+  const readOnly =
+    board !== undefined &&
+    (roleOf(board.id) === "VIEWER" || board.archivedAt !== undefined);
+  const epicCollapse = useEpicCollapse(
+    board?.id,
+    savedViewsUserId,
+    board?.epics,
+  );
+  const epics = useMemo(
+    () =>
+      board?.epics?.length
+        ? collectBacklogEpics(board, epicSummaryProgress(board.epics))
+        : undefined,
+    [board],
+  );
+  const backlogColumn = board?.columns[0];
+  const filteredMatches = useMemo(
+    () =>
+      filteredIds ? new Set(Object.values(filteredIds).flat()) : undefined,
+    [filteredIds],
+  );
+  const backlog = useMemo(
+    () =>
+      view === "board" && board && backlogColumn && epics
+        ? buildBacklogRows(
+            epics,
+            board.cards,
+            filteredIds?.[backlogColumn.id] ?? backlogColumn.cardIds,
+            epicCollapse,
+            density === "compact",
+            filteredMatches,
+            readOnly,
+          )
+        : undefined,
+    [
+      view,
+      board,
+      backlogColumn,
+      epics,
+      filteredIds,
+      epicCollapse,
+      density,
+      filteredMatches,
+      readOnly,
+    ],
+  );
   const matchCount = filteredIds
     ? Object.values(filteredIds).reduce((sum, ids) => sum + ids.length, 0)
     : 0;
@@ -233,9 +282,12 @@ export function BoardSection() {
       board === undefined
         ? []
         : board.columns.flatMap(
-            (column) => filteredIds?.[column.id] ?? column.cardIds,
+            (column, index) =>
+              (index === 0 ? backlog?.cardIds : undefined) ??
+              filteredIds?.[column.id] ??
+              column.cardIds,
           ),
-    [board, filteredIds],
+    [board, filteredIds, backlog],
   );
   // The table publishes its sorted/filtered row order; Shift ranges and
   // "select all visible" must use exactly that order. Keyed by board so a
@@ -448,12 +500,6 @@ export function BoardSection() {
     );
   }
 
-  // VIEWER is read-only: the server answers 403 to every command, so the UI
-  // hides the mutating affordances instead of offering actions that bounce.
-  // An archived board is read-only for the same reason: the command path
-  // refuses writes until the board is restored from the switcher.
-  const readOnly =
-    roleOf(board.id) === "VIEWER" || board.archivedAt !== undefined;
   // A global-search hit can name the exact comment/attachment under the card
   // (TASK-177.13). The dialog scrolls to it and highlights it; an id that is
   // not in the loaded page/list is ignored, so the fallback is the card with
@@ -560,6 +606,9 @@ export function BoardSection() {
         ) : null}
         {view === "board" ? (
           <DndBoard
+            backlog={backlog}
+            epics={epics}
+            epicCollapse={epicCollapse}
             filteredCardIds={filteredIds ?? undefined}
             isFiltering={active}
             filterPending={serverPending}

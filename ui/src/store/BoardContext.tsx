@@ -297,6 +297,7 @@ interface BoardActionsValue {
     title: string,
     labelIds?: string[],
     atIndex?: number,
+    epicId?: string,
   ) => void;
   updateCard: (
     cardId: string,
@@ -385,6 +386,7 @@ interface BoardActionsValue {
     fromColumnId: string,
     toColumnId: string,
     toIndex: number,
+    epicId?: string | null,
   ) => void;
   moveColumn: (columnId: string, fromIndex: number, toIndex: number) => void;
   /** Sets (or clears, `wipLimit === undefined`) a column's WIP limit. */
@@ -3198,6 +3200,7 @@ function createBoardActions(
       title: string,
       labelIds?: string[],
       atIndex?: number,
+      epicId?: string,
     ) =>
       dispatch({
         type: "ADD_CARD",
@@ -3206,6 +3209,7 @@ function createBoardActions(
         title,
         labelIds,
         atIndex,
+        ...(epicId === undefined ? {} : { epicId }),
         activityIds: ids(1),
         at: Date.now(),
       }),
@@ -3490,6 +3494,7 @@ function createBoardActions(
       fromColumnId: string,
       toColumnId: string,
       toIndex: number,
+      epicId?: string | null,
     ) => {
       const from = getBoard()?.columns.find((c) => c.id === fromColumnId);
       dispatch({
@@ -3500,6 +3505,7 @@ function createBoardActions(
         fromIndex: Math.max(0, from?.cardIds.indexOf(cardId) ?? 0),
         toColumnId,
         toIndex,
+        ...(epicId === undefined ? {} : { epicId }),
         activityIds: ids(1),
         at: Date.now(),
       });
