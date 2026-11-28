@@ -554,9 +554,10 @@ test.describe("390px touch", () => {
         type: "touchStart",
         touchPoints: [start],
       });
-      await expect(overlay).toBeVisible();
-      expect(performance.now() - pressedAt).toBeGreaterThanOrEqual(210);
-      return start;
+      // dnd-kit activates after 220 ms. Move before the 500 ms context menu
+      // can cancel the drag, and wait for the overlay only after moving.
+      await page.waitForTimeout(230);
+      return { start, pressedAt };
     }
 
     async function move(
@@ -577,9 +578,12 @@ test.describe("390px touch", () => {
     }
 
     async function drop(target: Locator) {
-      const start = await lift();
+      await source.scrollIntoViewIfNeeded();
       const { x, y, width, height } = (await target.boundingBox())!;
+      const { start, pressedAt } = await lift(false);
       await move(start, { x: x + width / 2, y: y + height / 2 });
+      await expect(overlay).toBeVisible();
+      expect(performance.now() - pressedAt).toBeGreaterThanOrEqual(210);
       const command = nextCommand(page, "MOVE_CARD");
       await session.send("Input.dispatchTouchEvent", {
         type: "touchEnd",
@@ -618,8 +622,10 @@ test.describe("390px touch", () => {
     await source.scrollIntoViewIfNeeded();
     const before = await scroller.evaluate((element) => element.scrollTop);
     const scrollBox = (await scroller.boundingBox())!;
-    const start = await lift(false);
+    const { start, pressedAt } = await lift(false);
     await move(start, { x: start.x, y: scrollBox.y + scrollBox.height - 16 });
+    await expect(overlay).toBeVisible();
+    expect(performance.now() - pressedAt).toBeGreaterThanOrEqual(210);
     await expect
       .poll(() => scroller.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(before + 100);
