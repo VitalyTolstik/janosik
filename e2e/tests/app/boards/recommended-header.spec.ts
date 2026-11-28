@@ -63,6 +63,10 @@ async function expectVisualOrder(
 }
 
 async function documentAxe(page: import("@playwright/test").Page) {
+  // Stable scan: the presence enter animation blends the avatar ink while it
+  // runs, which makes a contrast check depend on wall-clock timing. Axe runs
+  // on the settled UI, matching the reduced-motion requirement.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.evaluate(axeSource as unknown as () => void);
   const violations = await page.evaluate(async () => {
     const { axe } = window as unknown as {
@@ -88,7 +92,7 @@ async function seedBoard(board: import("@/fixtures/board.js").BoardFixture) {
   // so axe's label-content-name-mismatch runs against human-recognisable
   // visible text on the People trigger and the card assignee.
   const named = await board.api.patch("/api/v1/users/me", {
-    data: { displayName: "Test User", avatarColor: "teal" },
+    data: { displayName: "Test User" },
   });
   expect(named.ok(), await named.text()).toBeTruthy();
   await board.command({
