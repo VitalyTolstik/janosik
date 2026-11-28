@@ -16,6 +16,7 @@ import {
   type BoardInvitationDto,
   type BoardMemberDto,
   type BoardReadSummaryDto,
+  boardEpicProgress,
   type BoardRole,
   type BoardSummary,
   type BoardSseEvent,
@@ -979,7 +980,7 @@ export class FakeServer {
       if (!board) return json(404, { message: "Board not found" });
       return json(200, {
         app: "janosik",
-        schemaVersion: 3,
+        schemaVersion: 4,
         exportedAt: Date.now(),
         boards: [structuredClone(board)],
       });
@@ -1421,6 +1422,7 @@ export class FakeServer {
     const archivedPage = archived
       .slice(0, limit)
       .map((card) => this.readSummaryCard(board, card));
+    const progress = boardEpicProgress(board);
     return {
       board: {
         id: board.id,
@@ -1455,6 +1457,12 @@ export class FakeServer {
       },
       columns,
       labels: board.labels.map((label) => ({ ...label })),
+      epics: (board.epics ?? []).map(
+        ({ description: _description, ...epic }) => ({
+          ...epic,
+          progress: progress.get(epic.id)!,
+        }),
+      ),
       limits: {
         cardsPerColumn: LIMITS.cardsPerColumn,
         columns: LIMITS.columnsPerBoard,
@@ -1491,6 +1499,7 @@ export class FakeServer {
     return {
       id: card.id,
       title: card.title,
+      ...(card.epicId !== undefined ? { epicId: card.epicId } : {}),
       columnId:
         board.columns.find((column) => column.cardIds.includes(card.id))?.id ??
         card.archivedFromColumnId ??

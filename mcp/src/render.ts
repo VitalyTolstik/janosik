@@ -15,7 +15,11 @@ import type {
   CommentDto,
   Label,
 } from "@janosik/shared";
-import { DEFAULT_CARD_PRIORITY, DEFAULT_COMMENT_KIND } from "@janosik/shared";
+import {
+  boardEpicProgress,
+  DEFAULT_CARD_PRIORITY,
+  DEFAULT_COMMENT_KIND,
+} from "@janosik/shared";
 
 import { bullets, code, formatTimestamp } from "./format.js";
 
@@ -69,8 +73,12 @@ export function renderBoardSummaries(boards: BoardSummary[]): string {
 }
 
 /** A full board: columns, their cards, labels and a summary header. */
-export function renderBoard(board: Board): string {
+export function renderBoard(
+  board: Board,
+  progress = boardEpicProgress(board),
+): string {
   const labels = labelsById(board.labels);
+  const epics = new Map(board.epics?.map((epic) => [epic.id, epic]));
   const allCards = Object.values(board.cards);
   const archived = allCards.filter((card) => card.archivedAt !== undefined);
   const header =
@@ -87,10 +95,12 @@ export function renderBoard(board: Board): string {
     const cards = column.cardIds
       .map((id) => board.cards[id])
       .filter((card): card is Card => card !== undefined)
-      .map(
-        (card) =>
-          `- ${card.title}${cardBadges(card, labels)} — ${code(card.id)}`,
-      );
+      .map((card) => {
+        const epic =
+          card.epicId === undefined ? undefined : epics.get(card.epicId);
+        const membership = epic ? ` [epic: ${epic.title}]` : "";
+        return `- ${card.title}${cardBadges(card, labels)}${membership} — ${code(card.id)}`;
+      });
     return `## ${column.title}${wip}\n${code(column.id)}\n\n${bullets(cards, "_(empty)_")}`;
   });
 
@@ -110,7 +120,16 @@ export function renderBoard(board: Board): string {
         )}`
       : "";
 
-  return `${header}\n\n${columns.join("\n\n")}${labelList}${archive}`;
+  const epicList = board.epics?.length
+    ? `\n\n## Epics\n\n${bullets(
+        board.epics.map((epic) => {
+          const count = progress.get(epic.id);
+          return `${epic.title} (${epic.status}, ${count?.done ?? 0}/${count?.total ?? 0} done) — ${code(epic.id)}`;
+        }),
+      )}`
+    : "";
+
+  return `${header}\n\n${columns.join("\n\n")}${epicList}${labelList}${archive}`;
 }
 
 /** A single card in full: fields, description, checklists and links. */

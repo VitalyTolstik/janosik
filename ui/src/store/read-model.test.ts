@@ -67,6 +67,7 @@ function summary(
       },
     ],
     labels: [],
+    epics: [],
     limits: { cardsPerColumn: 1000, columns: 12 },
     archivedCardIds: ["c-arch"],
     archivedCards: [summaryCard("c-arch", { archivedAt: 5 })],

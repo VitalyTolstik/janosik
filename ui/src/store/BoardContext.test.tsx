@@ -141,7 +141,7 @@ describe("BoardContext dispatch/history (TASK-33)", () => {
       boards: Board[];
     };
     expect(parsed.app).toBe("janosik");
-    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.schemaVersion).toBe(4);
     expect(parsed.boards.map((board) => board.id)).toEqual(["b-1"]);
   });
 

@@ -19,6 +19,7 @@ export * from "./board-templates";
 export * from "./board-template-plan";
 export * from "./utils/text";
 export * from "./utils/column-limits";
+export * from "./epics";
 export * from "./utils/board-serialization";
 export * from "./utils/storage-keys";
 export * from "./api";

@@ -38,6 +38,7 @@ const TABLES = [
   "CardLink",
   "CardLabel",
   "Card",
+  "Epic",
   "Column",
   "Label",
   "BoardShare",

@@ -4,6 +4,7 @@ import type {
   CardLink as CardLinkRow,
   Column as ColumnRow,
   Label as LabelRow,
+  Epic as EpicRow,
   Prisma,
   User as UserRow,
 } from "@prisma/client";
@@ -19,6 +20,7 @@ import type {
   Checklist,
   CoverColor,
   CoverGradient,
+  Epic,
   LabelColor,
   UserAvatarColor,
 } from "@janosik/shared";
@@ -88,7 +90,7 @@ export async function loadBoardAggregateWithRevision(
     }));
   if (!board) return null;
 
-  const [columns, labels, cards, links] = await Promise.all([
+  const [columns, labels, cards, links, epics] = await Promise.all([
     db.column.findMany({
       where: { boardId, deletedAt: null },
       orderBy: { position: "asc" },
@@ -124,10 +126,14 @@ export async function loadBoardAggregateWithRevision(
       where: { boardId, deletedAt: null },
       orderBy: [{ position: "asc" }, { id: "asc" }],
     }),
+    db.epic.findMany({
+      where: { boardId, deletedAt: null },
+      orderBy: EPIC_ORDER,
+    }),
   ]);
 
   return {
-    board: toBoardAggregate(board, columns, cards, labels, links),
+    board: toBoardAggregate(board, columns, cards, labels, links, epics),
     revision: board.aggregateRevision,
   };
 }
@@ -167,6 +173,7 @@ export function toBoardAggregate(
   cards: CardWithRelations[],
   labels: LabelRow[],
   links: CardLinkRow[] = [],
+  epics: EpicRow[] = [],
 ): BoardAggregate {
   const boardLabelIds = new Set(labels.map((label) => label.id));
 
@@ -232,6 +239,7 @@ export function toBoardAggregate(
       };
     }),
     cards: cardsMap,
+    ...(epics.length > 0 ? { epics: epics.map(toEpic) } : {}),
     labels: labels.map((label) => ({
       id: label.id,
       name: label.name,
@@ -261,6 +269,46 @@ export function toBoardAggregate(
         }
       : {}),
     ...(board.archivedAt ? { archivedAt: board.archivedAt.getTime() } : {}),
+  };
+}
+
+export const EPIC_ORDER = [
+  { position: "asc" },
+  { createdAt: "asc" },
+  { id: "asc" },
+] satisfies Prisma.EpicOrderByWithRelationInput[];
+
+export const EPIC_HEADER_SELECT = {
+  id: true,
+  title: true,
+  status: true,
+  ownerId: true,
+  startDate: true,
+  dueDate: true,
+  position: true,
+  completedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.EpicSelect;
+
+type EpicHeader = Prisma.EpicGetPayload<{ select: typeof EPIC_HEADER_SELECT }>;
+
+export function toEpic(
+  row: EpicHeader & { description?: string | null },
+): Epic {
+  return {
+    id: row.id,
+    title: row.title,
+    color: "rose",
+    status: row.status === "completed" ? "completed" : "active",
+    position: row.position,
+    createdAt: row.createdAt.getTime(),
+    updatedAt: row.updatedAt.getTime(),
+    ...(row.ownerId !== null ? { ownerId: row.ownerId } : {}),
+    ...(row.startDate ? { startDate: row.startDate.getTime() } : {}),
+    ...(row.dueDate ? { dueDate: row.dueDate.getTime() } : {}),
+    ...(row.completedAt ? { completedAt: row.completedAt.getTime() } : {}),
+    ...(row.description != null ? { description: row.description } : {}),
   };
 }
 
@@ -298,6 +346,7 @@ export function toCard(
   return {
     id: card.id,
     title: card.title,
+    ...(card.epicId ? { epicId: card.epicId } : {}),
     ...(card.description !== null ? { description: card.description } : {}),
     ...(checklists ? { checklists } : {}),
     ...(card.dueDate ? { dueDate: card.dueDate.getTime() } : {}),

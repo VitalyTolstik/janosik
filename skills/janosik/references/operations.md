@@ -65,6 +65,10 @@ request.
   contract before moving it into the last column.
 - Duplicate only when a separate card or column is wanted. Duplication is not a
   substitute for moving or unarchiving, and repeated duplicate calls create copies.
+- Group a plan in a board epic with `janosik_create_epic`. Pass the epic id
+  as `epicId` to card create or update, or null on update to clear membership.
+  Read board-wide progress with `janosik_get_board`. Complete or reopen with
+  `janosik_update_epic`. Deletion requires an admin token and keeps the cards.
 - Manage existing labels with create/rename/color tools; use
   `janosik_set_card_label` for card membership. Deleting a board label affects
   cards using it. Do not treat label deletion as removing it from one card.

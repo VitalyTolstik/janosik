@@ -10,6 +10,8 @@ import type {
   ChecklistItem,
   Column,
   ColumnAccentStyle,
+  Epic,
+  EpicStatus,
   Label,
 } from "../types/kanban";
 import {
@@ -28,6 +30,13 @@ import { evaluateTransition, readBoardWorkflow } from "../workflow";
 import type { BoardWorkflow } from "../workflow";
 import { createSeedBoard } from "./seed-data";
 import { clampText, clamp } from "../utils/text";
+import {
+  compareEpics,
+  epicDate,
+  epicOf,
+  MAX_EPIC_POSITION,
+  normalizeEpic,
+} from "../epics";
 import { atWipLimit } from "../utils/column-limits";
 
 /**
@@ -237,17 +246,18 @@ export interface BoardScopedAction {
    * Set by `invert()`: this command undoes another one (TASK-21.7d).
    *
    * The flag keeps the *local* reducer responsive during an undo, but it is
-   * not proof of anything: TASK-180.2 M13 made the server check every
-   * `RESTORE_*` (and MOVE/UNARCHIVE) against the current WIP/collection
-   * limits, ignoring a client-supplied `inverse:true`. Client undo of
+   * not proof of anything: TASK-180.2 M13 made the server check card,
+   * column, label and checklist restores (and MOVE/UNARCHIVE) against
+   * current WIP/collection limits. Client undo of
    * `MOVE_CARD`/`UNARCHIVE_CARD` waits for that server answer instead of
    * applying optimistically (M16), and a refusal keeps the undo step.
    *
    * Two structural caps hold even in the reducer: `columnsPerBoard` and
    * `cardsPerColumn`; a restore never overwrites an id that is still on the
    * board. Text clamps still apply: they bound a field, not a collection.
-   * The only caller allowed past the server's restore limits is the internal
-   * run-revert path, which passes its own non-wire option.
+   * Run revert can bypass applicable server restore limits through its
+   * internal option. Epic restore requires an existing tombstone and can
+   * exceed the epic create limit.
    */
   inverse?: boolean;
   /**
@@ -293,6 +303,7 @@ export interface AddCardAction {
   title: string;
   /** Labels to attach to the new card right away (from the composer). */
   labelIds?: string[];
+  epicId?: string | null;
   /**
    * Insert position within the column (inline "add between cards").
    * Clamped to [0, count]; omitted appends to the end.
@@ -619,6 +630,8 @@ export interface MoveCardAction {
   toColumnId: string;
   /** Insert position in the destination column (0-based). */
   toIndex: number;
+  /** Omitted keeps membership; null clears it. */
+  epicId?: string | null;
 }
 
 export interface MoveColumnAction {
@@ -814,7 +827,40 @@ export interface UnarchiveBoardAction {
   at: number;
 }
 
+export interface UpdateEpicAction {
+  type: "UPDATE_EPIC";
+  epicId: string;
+  title?: string;
+  description?: string | null;
+  ownerId?: string | null;
+  startDate?: number | null;
+  dueDate?: number | null;
+  epicUpdatedAt?: number;
+}
+
+export interface SetCardEpicAction {
+  type: "SET_CARD_EPIC";
+  cardId: string;
+  epicId: string | null;
+}
+
+export type EpicAction =
+  | { type: "ADD_EPIC"; epic: Epic }
+  | UpdateEpicAction
+  | {
+      type: "SET_EPIC_STATUS";
+      epicId: string;
+      status: EpicStatus;
+      /** The completion timestamp an inverse restores. */
+      completedAt?: number | null;
+      epicUpdatedAt?: number;
+    }
+  | { type: "DELETE_EPIC"; epicId: string; keepEmptyEpics?: boolean }
+  | { type: "RESTORE_EPIC"; epic: Epic; index: number };
+
 export type BoardAction =
+  | BoardScoped<EpicAction>
+  | BoardScoped<SetCardEpicAction>
   | BoardScoped<AddColumnAction>
   | BoardScoped<RenameColumnAction>
   | BoardScoped<DeleteColumnAction>
@@ -952,6 +998,145 @@ function renameBoard(board: Board, action: RenameBoardAction): Board {
   return { ...board, title };
 }
 
+function reduceEpic(board: Board, action: BoardScoped<EpicAction>): Board {
+  const epics = board.epics ?? [];
+  if (action.type === "ADD_EPIC" || action.type === "RESTORE_EPIC") {
+    if (epicOf(board, action.epic.id)) return board;
+    if (action.type === "RESTORE_EPIC") {
+      if (!action.inverse) return board;
+      const restored = normalizeEpic(action.epic, action.index);
+      if (!restored) return board;
+      // The saved index may be stale after another epic was removed.
+      const index = epics.findIndex((epic) => compareEpics(restored, epic) < 0);
+      return {
+        ...board,
+        epics: insertAt(epics, index < 0 ? epics.length : index, restored),
+      };
+    }
+    if (epics.length >= LIMITS.epicsPerBoard) return board;
+    const position = Math.min(
+      MAX_EPIC_POSITION,
+      (epics.at(-1)?.position ?? -1) + 1,
+    );
+    const epic = normalizeEpic(
+      {
+        ...action.epic,
+        position,
+        createdAt: action.at,
+        updatedAt: action.at,
+        completedAt: action.epic.status === "completed" ? action.at : undefined,
+      },
+      position,
+    );
+    return epic
+      ? { ...board, epics: [...epics, epic].sort(compareEpics) }
+      : board;
+  }
+
+  const epic = epicOf(board, action.epicId);
+  if (!epic) return board;
+  if (action.type === "DELETE_EPIC") {
+    const remaining = epics.filter((item) => item !== epic);
+    const next = { ...board };
+    if (remaining.length || (action.inverse && action.keepEmptyEpics))
+      next.epics = remaining;
+    else delete next.epics;
+    return next;
+  }
+
+  const next = { ...epic };
+  if (action.type === "SET_EPIC_STATUS") {
+    if (epic.status === action.status) return board;
+    next.status = action.status;
+    const completedAt =
+      action.inverse && action.completedAt !== undefined
+        ? action.completedAt
+        : action.status === "completed"
+          ? action.at
+          : null;
+    if (completedAt === null || action.status === "active")
+      delete next.completedAt;
+    else next.completedAt = Math.trunc(completedAt);
+  } else {
+    if (action.title !== undefined) {
+      const title = clampText(action.title.trim(), LIMITS.epicTitle);
+      if (!title) return board;
+      next.title = title;
+    }
+    if (action.description === null) delete next.description;
+    else if (action.description !== undefined) {
+      next.description = clampText(action.description, LIMITS.epicDescription);
+    }
+    if (action.ownerId === null) delete next.ownerId;
+    else if (action.ownerId !== undefined) next.ownerId = action.ownerId;
+    for (const key of ["startDate", "dueDate"] as const) {
+      const value = action[key];
+      if (value === null) delete next[key];
+      else if (value !== undefined) {
+        const date = epicDate(value);
+        if (date !== undefined) next[key] = date;
+      }
+    }
+    if (
+      (
+        ["title", "description", "ownerId", "startDate", "dueDate"] as const
+      ).every((key) => epic[key] === next[key])
+    )
+      return board;
+  }
+  next.updatedAt =
+    (action.inverse ? action.epicUpdatedAt : undefined) ?? action.at;
+  return {
+    ...board,
+    epics: epics.map((item) => (item === epic ? next : item)),
+  };
+}
+
+function canSetCardEpic(
+  board: Board,
+  epicId: string | null | undefined,
+  previous?: string,
+  inverse?: boolean,
+): boolean {
+  return (
+    epicId == null ||
+    epicId === previous ||
+    inverse === true ||
+    epicOf(board, epicId)?.status === "active"
+  );
+}
+
+function withCardEpic(card: Card, epicId: string | null | undefined): Card {
+  const next = { ...card };
+  if (epicId == null) delete next.epicId;
+  else next.epicId = epicId;
+  return next;
+}
+
+function setCardEpic(
+  board: Board,
+  action: BoardScoped<SetCardEpicAction>,
+  options: ReduceOptions,
+): Board {
+  const card = cardOf(board, action.cardId);
+  const { epicId } = action;
+  if (
+    !card ||
+    card.epicId === (epicId ?? undefined) ||
+    !canSetCardEpic(board, epicId, card.epicId, action.inverse)
+  )
+    return board;
+  const next = appendActivity(
+    { ...withCardEpic(card, epicId), updatedAt: cardStamp(action) },
+    epicId === null ? "epic-removed" : "epic-set",
+    action,
+    0,
+    options,
+    epicOf(board, epicId ?? card.epicId)?.title,
+  );
+  return { ...board, cards: { ...board.cards, [card.id]: next } };
+}
+
 function addCard(
   board: Board,
   action: BoardScoped<AddCardAction>,
@@ -962,6 +1147,7 @@ function addCard(
   if (!isFreshCardId(board, action.newCardId)) return board;
   if (column.cardIds.length >= LIMITS.cardsPerColumn) return board;
   if (atWipLimit(column, true)) return board;
+  if (!canSetCardEpic(board, action.epicId)) return board;
   const at = action.at;
   const newCard: Card = {
     id: action.newCardId,
@@ -972,6 +1158,7 @@ function addCard(
     labelIds: (action.labelIds ?? []).filter((id) =>
       board.labels.some((label) => label.id === id),
     ),
+    ...(action.epicId != null ? { epicId: action.epicId } : {}),
     createdAt: at,
     updatedAt: at,
   };
@@ -1534,6 +1721,7 @@ function duplicateCard(
     createdAt: at,
     updatedAt: at,
   };
+  if (!epicOf(board, copy.epicId)) delete copy.epicId;
   if (copy.activity === undefined) delete copy.activity;
   if (copy.links === undefined) delete copy.links;
   if (copy.incomingLinks === undefined) delete copy.incomingLinks;
@@ -1619,6 +1807,7 @@ function duplicateColumn(
       createdAt: at,
       updatedAt: at,
     };
+    if (!epicOf(board, cardCopy.epicId)) delete cardCopy.epicId;
     if (cardCopy.activity === undefined) delete cardCopy.activity;
     if (cardCopy.links === undefined) delete cardCopy.links;
     if (cardCopy.incomingLinks === undefined) delete cardCopy.incomingLinks;
@@ -2593,10 +2782,11 @@ function moveCard(
   if (!to) return board;
   const sameColumn = from.id === to.id;
 
-  // Moving to the position the card already occupies is a no-op.
-  if (sameColumn && from.cardIds.indexOf(action.cardId) === action.toIndex) {
+  if (!canSetCardEpic(board, action.epicId, card.epicId, action.inverse))
     return board;
-  }
+  const nextEpicId =
+    action.epicId === undefined ? card.epicId : (action.epicId ?? undefined);
+  const membershipChanged = card.epicId !== nextEpicId;
 
   // Workflow structure + card conditions, checked before WIP so a blocked
   // transition is not masked by a full destination. The role is deliberately
@@ -2630,26 +2820,32 @@ function moveCard(
   // A drop that lands the card back where it was (an out-of-range index
   // clamped onto its own position) must not count as a change: it would
   // bump `updatedAt` and cost the user an undo step for nothing.
-  if (sameCardOrder(board.columns, columns)) return board;
+  const orderChanged = !sameCardOrder(board.columns, columns);
+  if (!orderChanged && !membershipChanged) return board;
 
   // Cross-column moves land in the feed; same-column reorders don't
   // (they're pure layout, not progress).
   let cards = board.cards;
-  if (!sameColumn) {
+  if (!sameColumn || membershipChanged) {
+    const next = membershipChanged
+      ? { ...withCardEpic(card, nextEpicId), updatedAt: cardStamp(action) }
+      : card;
+    const epicTitle = membershipChanged
+      ? epicOf(board, nextEpicId ?? card.epicId)?.title
+      : undefined;
+    const type = orderChanged
+      ? "moved"
+      : nextEpicId === undefined
+        ? "epic-removed"
+        : "epic-set";
+    const detail = type === "moved" ? to.title : epicTitle;
     cards = {
       ...board.cards,
-      [action.cardId]: appendActivity(
-        card,
-        "moved",
-        action,
-        0,
-        options,
-        to.title,
-      ),
+      [action.cardId]: appendActivity(next, type, action, 0, options, detail),
     };
   }
 
-  return { ...board, columns, cards };
+  return { ...board, columns: orderChanged ? columns : board.columns, cards };
 }
 
 /** Reorder columns with arrayMove semantics (like @dnd-kit's arrayMove). */
@@ -3409,6 +3605,14 @@ export function boardReducer(
       return committed(deleteColumn(board, action));
     case "RENAME_BOARD":
       return committed(renameBoard(board, action));
+    case "ADD_EPIC":
+    case "UPDATE_EPIC":
+    case "SET_EPIC_STATUS":
+    case "DELETE_EPIC":
+    case "RESTORE_EPIC":
+      return committed(reduceEpic(board, action));
+    case "SET_CARD_EPIC":
+      return committed(setCardEpic(board, action, options));
     case "ADD_CARD":
       return committed(addCard(board, action, options));
     case "UPDATE_CARD":

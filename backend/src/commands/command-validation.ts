@@ -37,6 +37,12 @@ export const ACTION_REGISTRY: Record<CommandActionType, true> = {
   SET_COLUMN_WIP_LIMIT: true,
   SET_COLUMN_ACCENT: true,
   SET_COLUMN_CARD_ORDER: true,
+  ADD_EPIC: true,
+  UPDATE_EPIC: true,
+  SET_EPIC_STATUS: true,
+  SET_CARD_EPIC: true,
+  DELETE_EPIC: true,
+  RESTORE_EPIC: true,
   ADD_CARD: true,
   UPDATE_CARD: true,
   TOUCH_CARD: true,
@@ -91,7 +97,7 @@ export const COMMAND_AT_MAX_SKEW_MS = 5 * 60 * 1000;
 const MAX_DATE_MS = 8.64e15;
 
 /** Field names whose numeric values the writers turn into `Date`s. */
-const DATE_FIELD = /^(at|dueDate|[a-z]+At)$/;
+const DATE_FIELD = /^(at|startDate|dueDate|[a-zA-Z]+At)$/;
 
 /** A validated command action plus the wire DTO it came from. */
 export interface PreparedCommand {

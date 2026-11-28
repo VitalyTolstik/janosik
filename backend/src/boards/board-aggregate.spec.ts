@@ -23,6 +23,7 @@ describe("loadBoardAggregate", () => {
       board: { findFirst: jest.fn() },
       column: { findMany: jest.fn().mockResolvedValue([]) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
+      epic: { findMany: jest.fn().mockResolvedValue([]) },
       card: { findMany: jest.fn().mockResolvedValue([]) },
       cardLink: { findMany: jest.fn().mockResolvedValue([]) },
     };
@@ -46,6 +47,7 @@ describe("loadBoardAggregate", () => {
       board: { findFirst: jest.fn().mockResolvedValue(boardRow) },
       column: { findMany: jest.fn().mockResolvedValue([]) },
       label: { findMany: jest.fn().mockResolvedValue([]) },
+      epic: { findMany: jest.fn().mockResolvedValue([]) },
       card: { findMany: jest.fn().mockResolvedValue([]) },
       cardLink: { findMany: jest.fn().mockResolvedValue([]) },
     };

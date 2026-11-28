@@ -1215,6 +1215,10 @@ export class BoardsService {
           where: { boardId, deletedAt: null },
           data: { deletedAt: now },
         });
+        await tx.epic.updateMany({
+          where: { boardId, deletedAt: null },
+          data: { deletedAt: now, version: { increment: 1 } },
+        });
         // A live share of a deleted board is dead by definition — revoke it so
         // the master panel shows an explicit "revoked" instead of a link that
         // silently answers 410. Snapshot shares deliberately survive the board
@@ -1733,7 +1737,9 @@ export class BoardsService {
   /**
    * Preflight used by both the single-board export and the account bundle:
    * `pg_column_size` catches a grossly oversized board before `getAggregate`
-   * allocates it. The exact 25 MB check still runs on the serialized string.
+   * allocates it. Epic descriptions can be compressed or stored out of line,
+   * so include their full text length. The exact 25 MB check still runs on
+   * the serialized string.
    */
   async assertExportFitsPreflight(boardId: string): Promise<void> {
     const [estimate] = await this.prisma.$queryRaw<Array<{ bytes: bigint }>>`
@@ -1747,6 +1753,9 @@ export class BoardsService {
         + COALESCE((SELECT SUM(pg_column_size(l.*))
           FROM "Label" l
           WHERE l."boardId" = ${boardId} AND l."deletedAt" IS NULL), 0)
+        + COALESCE((SELECT SUM(GREATEST(pg_column_size(e.*), octet_length(e.description)))
+          FROM "Epic" e
+          WHERE e."boardId" = ${boardId} AND e."deletedAt" IS NULL), 0)
         + COALESCE((SELECT SUM(pg_column_size(cl.*))
           FROM "CardLink" cl
           WHERE cl."boardId" = ${boardId} AND cl."deletedAt" IS NULL), 0)
@@ -1817,6 +1826,7 @@ export class BoardsService {
       ),
       columns: boards.reduce((sum, board) => sum + board.columns.length, 0),
       labels: boards.reduce((sum, board) => sum + board.labels.length, 0),
+      epics: boards.reduce((sum, board) => sum + (board.epics?.length ?? 0), 0),
       withinLimit,
     };
   }

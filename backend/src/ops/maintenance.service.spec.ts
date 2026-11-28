@@ -36,6 +36,7 @@ function makePrisma(): PrismaService {
     },
     column: purgeable(),
     label: purgeable(),
+    epic: purgeable(),
     board: purgeable(),
     activity: sweepable(0),
     adminAuditLog: sweepable(0),

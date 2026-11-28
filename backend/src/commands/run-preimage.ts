@@ -6,7 +6,7 @@ import type {
   Checklist,
   ChecklistItem,
 } from "@janosik/shared";
-import { invert } from "@janosik/shared";
+import { epicOf, invert } from "@janosik/shared";
 import { jsonSafe } from "./command-validation";
 
 /**
@@ -25,7 +25,13 @@ type Tx = Prisma.TransactionClient;
 
 /** Entity kinds a pre-image can describe. */
 type EntityKind =
-  "board" | "column" | "card" | "label" | "checklist" | "checklistItem";
+  | "board"
+  | "column"
+  | "card"
+  | "label"
+  | "epic"
+  | "checklist"
+  | "checklistItem";
 
 export interface PreimageEntity {
   /** `Command.touches` label (`card:<id>`, …). */
@@ -62,6 +68,7 @@ interface CandidateIds {
   column: Set<string>;
   card: Set<string>;
   label: Set<string>;
+  epic: Set<string>;
   checklist: Set<string>;
   checklistItem: Set<string>;
 }
@@ -132,6 +139,7 @@ function candidateIds(before: Board, action: BoardAction): CandidateIds {
     column: new Set(),
     card: new Set(),
     label: new Set(),
+    epic: new Set(),
     checklist: new Set(),
     checklistItem: new Set(),
   };
@@ -186,6 +194,15 @@ function candidateIds(before: Board, action: BoardAction): CandidateIds {
       : before.columns.find((column) => column.cardIds.includes(cardId));
 
   switch (action.type) {
+    case "ADD_EPIC":
+    case "RESTORE_EPIC":
+      add(ids, "epic", action.epic.id);
+      break;
+    case "UPDATE_EPIC":
+    case "SET_EPIC_STATUS":
+    case "DELETE_EPIC":
+      add(ids, "epic", action.epicId);
+      break;
     case "DELETE_CARD": {
       const card = before.cards[action.cardId];
       const column = sourceColumn(action.cardId);
@@ -321,6 +338,8 @@ function snapshotOf(
       const label = before.labels.find((entry) => entry.id === id);
       return label ?? null;
     }
+    case "epic":
+      return epicOf(before, id) ?? null;
     case "checklist":
       return findChecklist(before, id)?.checklist ?? null;
     case "checklistItem":
@@ -346,8 +365,8 @@ async function loadRows(
     }
   };
 
-  const [boards, columns, cards, labels, checklists, items] = await Promise.all(
-    [
+  const [boards, columns, cards, labels, epics, checklists, items] =
+    await Promise.all([
       ids.board.size === 0
         ? Promise.resolve([])
         : tx.board.findMany({
@@ -372,6 +391,12 @@ async function loadRows(
             where: { id: { in: [...ids.label] } },
             select: { id: true, version: true, deletedAt: true },
           }),
+      ids.epic.size === 0
+        ? Promise.resolve([])
+        : tx.epic.findMany({
+            where: { id: { in: [...ids.epic] } },
+            select: { id: true, version: true, deletedAt: true },
+          }),
       ids.checklist.size === 0
         ? Promise.resolve([])
         : tx.checklist.findMany({
@@ -384,13 +409,13 @@ async function loadRows(
             where: { id: { in: [...ids.checklistItem] } },
             select: { id: true, version: true, deletedAt: true },
           }),
-    ],
-  );
+    ]);
 
   put("board", boards);
   put("column", columns);
   put("card", cards);
   put("label", labels);
+  put("epic", epics);
   put("checklist", checklists);
   put("checklistItem", items);
   return rows;
@@ -412,6 +437,7 @@ export async function capturePreimage(
     "column",
     "card",
     "label",
+    "epic",
     "checklist",
     "checklistItem",
   ];
@@ -452,18 +478,22 @@ export async function finalizePreimage(
     column: new Set(),
     card: new Set(),
     label: new Set(),
+    epic: new Set(),
     checklist: new Set(),
     checklistItem: new Set(),
   };
   const wanted = new Set(touches);
   for (const label of touches) {
-    const [kind, id] = label.split(":");
-    if (id === undefined) continue;
+    const separator = label.indexOf(":");
+    if (separator === -1) continue;
+    const kind = label.slice(0, separator);
+    const id = label.slice(separator + 1);
     if (
       kind === "board" ||
       kind === "column" ||
       kind === "card" ||
       kind === "label" ||
+      (kind === "epic" && seed.entities.has(label)) ||
       kind === "checklist" ||
       kind === "checklistItem"
     ) {

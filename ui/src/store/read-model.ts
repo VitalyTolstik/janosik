@@ -77,6 +77,7 @@ export function cardFromSummary(dto: BoardCardSummaryDto): Card {
   return {
     id: dto.id,
     title: dto.title,
+    ...(dto.epicId !== undefined ? { epicId: dto.epicId } : {}),
     ...(dto.dueDate !== undefined ? { dueDate: dto.dueDate } : {}),
     ...(dto.priority !== undefined ? { priority: dto.priority } : {}),
     ...(dto.assigneeId !== undefined ? { assigneeId: dto.assigneeId } : {}),
@@ -267,6 +268,11 @@ export function boardFromSummary(
     columns: summary.columns.map(toColumn),
     cards,
     labels: summary.labels.map((label) => ({ ...label })),
+    ...(summary.epics?.length
+      ? {
+          epics: summary.epics.map(({ progress: _progress, ...epic }) => epic),
+        }
+      : {}),
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     ...(meta.columnStyle !== undefined

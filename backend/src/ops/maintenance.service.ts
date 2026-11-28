@@ -551,6 +551,11 @@ export class MaintenanceService {
         },
       })
     ).count;
+    count += (
+      await this.prisma.epic.deleteMany({
+        where: { ...stale, board: { deletedAt: null } },
+      })
+    ).count;
     // Boards last: a deleted board keeps its row (and its feed/log/shares)
     // until the window passes, then the whole subtree goes — cards and their
     // blobs were already reclaimed by the passes above, but a chunk retried

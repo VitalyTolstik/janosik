@@ -31,11 +31,18 @@ import {
   BOARD_CARD_PAGE_LIMIT_MAX,
   COVER_COLORS,
   COVER_GRADIENTS,
+  countEpicProgress,
   isCardLinkType,
   LIMITS,
 } from "@janosik/shared";
 import { PrismaService } from "@/common/prisma/prisma.service";
-import { toBoardAggregate, toCard } from "./board-aggregate";
+import {
+  EPIC_HEADER_SELECT,
+  EPIC_ORDER,
+  toBoardAggregate,
+  toCard,
+  toEpic,
+} from "./board-aggregate";
 import type { BoardReadBuildBudget } from "@/common/board-read.service";
 
 /** ETag projections (part of the TASK-200.6 validator and single-flight key). */
@@ -44,7 +51,7 @@ export const BOARD_CARDS_ROUTE = "GET /boards/:id/cards";
 export const BOARD_CARD_DETAIL_ROUTE = "GET /boards/:id/cards/:cardId";
 
 export function boardSummaryProjection(limit: number): string {
-  return `board-summary:v1:limit=${limit}`;
+  return `board-summary:v2:limit=${limit}`;
 }
 
 export function boardPageProjection(input: {
@@ -54,7 +61,7 @@ export function boardPageProjection(input: {
   limit: number;
 }): string {
   return [
-    "board-page:v1",
+    "board-page:v2",
     `column=${input.columnId ?? ""}`,
     `archived=${input.archived ? "1" : "0"}`,
     `cursor=${input.cursor ?? ""}`,
@@ -63,11 +70,11 @@ export function boardPageProjection(input: {
 }
 
 export function boardCardDetailProjection(cardId: string): string {
-  return `board-card-detail:v1:card=${cardId}`;
+  return `board-card-detail:v2:card=${cardId}`;
 }
 
 export function boardCardDetailsProjection(ids: readonly string[]): string {
-  return `board-card-details:v1:ids=${ids.join(",")}`;
+  return `board-card-details:v2:ids=${ids.join(",")}`;
 }
 
 /** Decoded, board-scoped keyset cursor. Not secret; tampering is validated. */
@@ -128,6 +135,7 @@ const CARD_SUMMARY_SELECT = {
   id: true,
   columnId: true,
   title: true,
+  epicId: true,
   position: true,
   version: true,
   descriptionLength: true,
@@ -241,7 +249,7 @@ export class BoardReadModelService {
     const pageLimit = Math.max(1, Math.min(limit, BOARD_CARD_PAGE_LIMIT_MAX));
     return this.readTransaction(budget, async (tx) => {
       const board = await this.summaryRow(tx, boardId);
-      const [columns, labels, activeIds, archivedIds, stamp] =
+      const [columns, labels, activeIds, archivedIds, epics, stamp] =
         await Promise.all([
           tx.column.findMany({
             where: { boardId, deletedAt: null },
@@ -253,12 +261,12 @@ export class BoardReadModelService {
           }),
           tx.card.findMany({
             where: {
-              column: { boardId },
+              column: { boardId, deletedAt: null },
               deletedAt: null,
               archivedAt: null,
             },
             orderBy: [{ columnId: "asc" }, { position: "asc" }, { id: "asc" }],
-            select: { id: true, columnId: true, position: true },
+            select: { id: true, columnId: true, position: true, epicId: true },
           }),
           tx.card.findMany({
             where: {
@@ -268,6 +276,11 @@ export class BoardReadModelService {
             },
             orderBy: [{ archivedAt: "desc" }, { id: "desc" }],
             select: { id: true, columnId: true, archivedAt: true },
+          }),
+          tx.epic.findMany({
+            where: { boardId, deletedAt: null },
+            orderBy: EPIC_ORDER,
+            select: EPIC_HEADER_SELECT,
           }),
           this.stamp(tx, boardId),
         ]);
@@ -388,9 +401,19 @@ export class BoardReadModelService {
         role,
       };
 
+      const progress = countEpicProgress(
+        { columns: readColumns, workflow: meta.workflow },
+        epics.map(({ id }) => id),
+        activeIds,
+      );
+
       return {
         board: readMeta,
         columns: readColumns,
+        epics: epics.map((row) => ({
+          ...toEpic(row),
+          progress: progress.get(row.id)!,
+        })),
         labels: labels.map((label) => ({
           id: label.id,
           name: label.name,
@@ -877,6 +900,7 @@ export class BoardReadModelService {
         linkCount: facts.degree,
         blocked: facts.blocked,
         labelIds: labelsByCard.get(row.id) ?? [],
+        ...(row.epicId ? { epicId: row.epicId } : {}),
         ...(row.dueDate ? { dueDate: row.dueDate.getTime() } : {}),
         ...(row.priority ? { priority: row.priority as CardPriority } : {}),
         ...(row.assigneeId ? { assigneeId: row.assigneeId } : {}),

@@ -1,5 +1,10 @@
 import type { ActivityChange, Board, BoardAction, Card } from "@janosik/shared";
-import { cardOf, DEFAULT_CARD_PRIORITY } from "@janosik/shared";
+import {
+  boardEpicProgress,
+  cardOf,
+  DEFAULT_CARD_PRIORITY,
+  epicOf,
+} from "@janosik/shared";
 
 /**
  * The display snapshot stored on a `Command` row (TASK-37) and rendered by
@@ -174,6 +179,21 @@ function isoOrNull(at: number | undefined): string | null {
   return at === undefined ? null : new Date(at).toISOString();
 }
 
+function cardEpicChange(
+  before: Board,
+  after: Board,
+  cardId: string,
+): ActivityChange | undefined {
+  const previous = cardOf(before, cardId)?.epicId;
+  const next = cardOf(after, cardId)?.epicId;
+  if (previous === next) return undefined;
+  return {
+    field: "epic",
+    from: epicOf(before, previous)?.title ?? null,
+    to: epicOf(after, next)?.title ?? null,
+  };
+}
+
 /**
  * The diff of one just-applied command, or `null` when the command has no
  * story to tell at a field level (a create, an archive, a no-op). Pure:
@@ -193,6 +213,74 @@ function uncappedCommandDetails(
   after: Board,
 ): CommandDetails | null {
   switch (action.type) {
+    case "ADD_EPIC":
+    case "RESTORE_EPIC": {
+      const title = epicOf(after, action.epic.id)?.title ?? action.epic.title;
+      return {
+        detail: title,
+        changes: [{ field: "epic", from: null, to: title }],
+      };
+    }
+    case "DELETE_EPIC": {
+      const epic = epicOf(before, action.epicId);
+      if (!epic) return null;
+      const count = boardEpicProgress(before).get(epic.id)?.total ?? 0;
+      return {
+        detail: `${epic.title} (${count} ${count === 1 ? "card keeps its column" : "cards keep their columns"})`,
+        changes: [{ field: "epic", from: epic.title, to: null }],
+      };
+    }
+    case "SET_EPIC_STATUS": {
+      const from = epicOf(before, action.epicId);
+      const to = epicOf(after, action.epicId);
+      if (!from || !to) return null;
+      return {
+        detail: to.title,
+        changes: [{ field: "epicStatus", from: from.status, to: to.status }],
+      };
+    }
+    case "UPDATE_EPIC": {
+      const from = epicOf(before, action.epicId);
+      const to = epicOf(after, action.epicId);
+      if (!from || !to) return null;
+      const [fromDescription, toDescription] = clipPair(
+        from.description ?? null,
+        to.description ?? null,
+      );
+      const changes: ActivityChange[] = [
+        { field: "epicTitle", from: from.title, to: to.title },
+        { field: "epicDescription", from: fromDescription, to: toDescription },
+        {
+          field: "epicOwner",
+          from: from.ownerId ?? null,
+          to: to.ownerId ?? null,
+        },
+        {
+          field: "epicStart",
+          from: isoOrNull(from.startDate),
+          to: isoOrNull(to.startDate),
+        },
+        {
+          field: "epicDue",
+          from: isoOrNull(from.dueDate),
+          to: isoOrNull(to.dueDate),
+        },
+      ];
+      return {
+        detail: to.title,
+        changes: changes.filter((change) => change.from !== change.to),
+      };
+    }
+    case "SET_CARD_EPIC":
+    case "ADD_CARD": {
+      const cardId =
+        action.type === "ADD_CARD" ? action.newCardId : action.cardId;
+      const change = cardEpicChange(before, after, cardId);
+      return change
+        ? { detail: cardOf(after, cardId)?.title, changes: [change] }
+        : null;
+    }
+
     case "UPDATE_CARD": {
       const from = cardOf(before, action.cardId);
       const to = cardOf(after, action.cardId);
@@ -224,6 +312,7 @@ function uncappedCommandDetails(
     case "MOVE_CARD": {
       const from = columnTitle(before, action.cardId);
       const to = columnTitle(after, action.cardId);
+      const changes: ActivityChange[] = [];
       if (action.fromColumnId === action.toColumnId) {
         const fromIndex =
           before.columns
@@ -233,23 +322,21 @@ function uncappedCommandDetails(
           after.columns
             .find((column) => column.id === action.toColumnId)
             ?.cardIds.indexOf(action.cardId) ?? -1;
-        if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return null;
-        return {
-          ...(to !== null ? { detail: to } : {}),
-          changes: [
-            {
-              field: "position",
-              from: String(fromIndex + 1),
-              to: String(toIndex + 1),
-            },
-          ],
-        };
+        if (fromIndex >= 0 && toIndex >= 0 && fromIndex !== toIndex) {
+          changes.push({
+            field: "position",
+            from: String(fromIndex + 1),
+            to: String(toIndex + 1),
+          });
+        }
+      } else if (from !== to) {
+        changes.push({ field: "column", from, to });
       }
-      if (from === to) return null;
-      return {
-        ...(to !== null ? { detail: to } : {}),
-        changes: [{ field: "column", from, to }],
-      };
+      const epic = cardEpicChange(before, after, action.cardId);
+      if (epic) changes.push(epic);
+      return changes.length > 0
+        ? { ...(to !== null ? { detail: to } : {}), changes }
+        : null;
     }
 
     // Board- and column-level commands have no card to hang a diff on, but

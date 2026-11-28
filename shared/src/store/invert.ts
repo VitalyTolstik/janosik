@@ -1,6 +1,7 @@
 import type { BoardAction } from "./board-reducer";
 import { cardOf, DEFAULT_CARD_PRIORITY } from "./board-reducer";
 import type { Board, Card, CardActivityEvent } from "../types/kanban";
+import { epicOf } from "../epics";
 import { clamp } from "../utils/text";
 
 /**
@@ -191,6 +192,74 @@ function build(before: Board, action: BoardAction): BoardAction | null {
     case "RENAME_BOARD":
       return { ...head, type: "RENAME_BOARD", title: before.title };
 
+    case "ADD_EPIC":
+      return {
+        ...head,
+        type: "DELETE_EPIC",
+        epicId: action.epic.id,
+        ...(before.epics?.length === 0 ? { keepEmptyEpics: true } : {}),
+      };
+    case "DELETE_EPIC": {
+      const index =
+        before.epics?.findIndex(({ id }) => id === action.epicId) ?? -1;
+      if (index < 0) return null;
+      return {
+        ...head,
+        type: "RESTORE_EPIC",
+        epic: before.epics![index],
+        index,
+      };
+    }
+    case "RESTORE_EPIC":
+      return { ...head, type: "DELETE_EPIC", epicId: action.epic.id };
+    case "UPDATE_EPIC": {
+      const epic = epicOf(before, action.epicId);
+      if (!epic) return null;
+      return {
+        ...head,
+        type: "UPDATE_EPIC",
+        epicId: epic.id,
+        epicUpdatedAt: epic.updatedAt,
+        ...(action.title !== undefined ? { title: epic.title } : {}),
+        ...(action.description !== undefined
+          ? { description: epic.description ?? null }
+          : {}),
+        ...(action.ownerId !== undefined
+          ? { ownerId: epic.ownerId ?? null }
+          : {}),
+        ...(action.startDate !== undefined
+          ? { startDate: epic.startDate ?? null }
+          : {}),
+        ...(action.dueDate !== undefined
+          ? { dueDate: epic.dueDate ?? null }
+          : {}),
+      };
+    }
+    case "SET_EPIC_STATUS": {
+      const epic = epicOf(before, action.epicId);
+      if (!epic) return null;
+      return {
+        ...head,
+        type: "SET_EPIC_STATUS",
+        epicId: epic.id,
+        status: epic.status,
+        completedAt: epic.completedAt ?? null,
+        epicUpdatedAt: epic.updatedAt,
+      };
+    }
+    case "SET_CARD_EPIC": {
+      const card = cardOf(before, action.cardId);
+      if (!card) return null;
+      return {
+        ...head,
+        type: "SET_CARD_EPIC",
+        cardId: card.id,
+        epicId: card.epicId ?? null,
+        cardUpdatedAt: card.updatedAt,
+        cardActivity: feedOf(card),
+      };
+    }
+
     /* ------------------------------------------------------------------ cards */
     case "ADD_CARD":
       return { ...head, type: "DELETE_CARD", cardId: action.newCardId };
@@ -340,6 +409,9 @@ function build(before: Board, action: BoardAction): BoardAction | null {
         fromIndex: landed,
         toColumnId: from.id,
         toIndex: spot.index,
+        ...(action.epicId !== undefined
+          ? { epicId: card.epicId ?? null, cardUpdatedAt: card.updatedAt }
+          : {}),
         cardActivity: feedOf(card),
       };
     }

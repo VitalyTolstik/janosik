@@ -1,3 +1,4 @@
+import type { Board } from "../types/kanban";
 import type { BoardState } from "../store/board-reducer";
 import { normalizeBoards } from "../store/migrate";
 import { validateImportedBoards } from "../store/validate";
@@ -12,13 +13,8 @@ import { validateImportedBoards } from "../store/validate";
  */
 
 export const EXPORT_APP = "janosik";
-/**
- * Version 2 added the optional `Board.workflow`; version 3 (TASK-166) adds
- * the optional `Board.agentPolicy`. The parser still accepts files written by
- * version 1 and 2 clients; an older client refuses a newer export instead of
- * silently dropping the workflow or the board policy.
- */
-export const EXPORT_SCHEMA_VERSION = 3;
+/** Version 4 adds board epics and card membership. */
+export const EXPORT_SCHEMA_VERSION = 4;
 
 export interface BoardExportFile {
   app: typeof EXPORT_APP;
@@ -41,7 +37,7 @@ export function serializeExport(boards: BoardState): string {
     app: EXPORT_APP,
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: Date.now(),
-    boards,
+    boards: boards.map(withoutDanglingMembership),
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -93,11 +89,38 @@ export function parseExportValue(
   // then the lenient pass for what it can repair (clamps, legacy shapes) —
   // a malformed file fails here with a field path, not with a TypeError
   // inside normalization or a 500 from the server's writer.
-  const checked = validateImportedBoards(file.boards, options);
+  const includeEpics = version >= 4;
+  const checked = validateImportedBoards(file.boards, {
+    ...options,
+    includeEpics,
+  });
   if (!checked.ok) {
     throw new Error(
       `Invalid board data at ${checked.field}: ${checked.message}`,
     );
   }
-  return normalizeBoards(checked.boards);
+  const boards = includeEpics
+    ? checked.boards
+    : checked.boards.map(({ epics: _epics, ...board }) =>
+        withoutDanglingMembership(board),
+      );
+  return normalizeBoards(boards).map(withoutDanglingMembership);
+}
+
+/** A backup contains only live epics, so it cannot restore dangling memberships. */
+function withoutDanglingMembership(board: Board): Board {
+  const ids = new Set(board.epics?.map(({ id }) => id));
+  let cards = board.cards;
+  for (const [id, card] of Object.entries(board.cards)) {
+    if (
+      !Object.hasOwn(card, "epicId") ||
+      (card.epicId !== undefined && ids.has(card.epicId))
+    )
+      continue;
+    if (cards === board.cards) cards = { ...cards };
+    const copy = { ...card };
+    delete copy.epicId;
+    cards[id] = copy;
+  }
+  return cards === board.cards ? board : { ...board, cards };
 }

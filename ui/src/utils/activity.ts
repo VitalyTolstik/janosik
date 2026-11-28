@@ -18,6 +18,8 @@ const LOCAL_KEYS = {
   "description-changed": "activity.description-changed",
   moved: "activity.moved",
   "label-added": "activity.label-added",
+  "epic-set": "activity.epic-set",
+  "epic-removed": "activity.epic-removed",
   "label-removed": "activity.label-removed",
   "due-date-set": "activity.due-date-set",
   "due-date-removed": "activity.due-date-removed",
@@ -52,6 +54,12 @@ const COMMAND_KEYS: Record<string, MessageKey> = {
   REMOVE_CARD_LINK: "activity.link-removed",
   SET_CARD_COVER: "activity.cover-set",
   SET_CARD_LABEL: "activity.label-added",
+  ADD_EPIC: "activity.epic-created",
+  UPDATE_EPIC: "activity.epic-updated",
+  SET_EPIC_STATUS: "activity.epic-status",
+  DELETE_EPIC: "activity.epic-deleted",
+  RESTORE_EPIC: "activity.epic-restored",
+  SET_CARD_EPIC: "activity.epic-set",
   ADD_CHECKLIST: "activity.checklist-added",
   RENAME_CHECKLIST: "activity.checklist-renamed",
   DELETE_CHECKLIST: "activity.checklist-removed",
@@ -183,6 +191,13 @@ export const FIELD_KEYS: Record<string, MessageKey> = {
   link: "history.field.link",
   column: "history.field.column",
   label: "history.field.label",
+  epic: "history.field.epic",
+  epicTitle: "history.field.title",
+  epicDescription: "history.field.description",
+  epicOwner: "history.field.epicOwner",
+  epicStart: "history.field.epicStart",
+  epicDue: "history.field.dueDate",
+  epicStatus: "history.field.epicStatus",
   checklist: "history.field.checklist",
   checklistItem: "history.field.checklistItem",
   comment: "history.field.comment",
@@ -211,14 +226,17 @@ export function formatChangeValue(
   memberName?: (userId: string) => string,
 ): string {
   if (value === null) return "—";
-  if (field === "dueDate" || field === "expiresAt") {
+  if (
+    ["dueDate", "epicStart", "epicDue"].includes(field) ||
+    field === "expiresAt"
+  ) {
     const at = Date.parse(value);
     if (Number.isFinite(at)) return formatDate(at, lang, hour12);
   }
   if (field === "priority" && CARD_PRIORITIES.includes(value as CardPriority)) {
     return priorityLabel(value as CardPriority, lang);
   }
-  if (field === "assignee" || field === "claimedBy") {
+  if (field === "assignee" || field === "epicOwner" || field === "claimedBy") {
     return memberName ? memberName(value) : value;
   }
   return value;
@@ -251,6 +269,18 @@ export function sentenceFor(
   // a bare "Moved" instead (the board feed does not always carry a snapshot).
   if (entry.type === "MOVE_CARD" && !entry.detail) {
     return { key: "activity.movedPlain" };
+  }
+
+  const epicChange = entry.changes?.find((change) => change.field === "epic");
+  if (
+    entry.type === "SET_CARD_EPIC" ||
+    (entry.type === "MOVE_CARD" && entry.changes?.length === 1 && epicChange)
+  ) {
+    return {
+      key:
+        epicChange?.to != null ? "activity.epic-set" : "activity.epic-removed",
+      params: { detail: epicChange?.to ?? epicChange?.from ?? "" },
+    };
   }
 
   if (entry.type === "SET_CARD_LABEL") {

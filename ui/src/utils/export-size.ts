@@ -16,7 +16,11 @@ export function estimateBoardExportBytes(boards: BoardState): number {
     for (const label of board.labels) {
       bytes += 32 + label.name.length;
     }
+    for (const epic of board.epics ?? []) {
+      bytes += 192 + epic.title.length + (epic.description?.length ?? 0);
+    }
     for (const card of Object.values(board.cards)) {
+      bytes += card.epicId === undefined ? 0 : 16 + card.epicId.length;
       bytes += 96 + card.title.length + (card.description?.length ?? 0);
       for (const labelId of card.labelIds ?? []) bytes += labelId.length + 8;
       bytes += (card.links?.length ?? 0) * 96;

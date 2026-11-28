@@ -125,6 +125,7 @@ export function diffBoards(before: Board, after: Board): PlanChangeDto[] {
     changes,
   );
   diffEntities(before.labels, after.labels, "label", changes);
+  diffEntities(before.epics ?? [], after.epics ?? [], "epic", changes);
 
   return changes.sort((a, b) => a.touch.localeCompare(b.touch));
 }

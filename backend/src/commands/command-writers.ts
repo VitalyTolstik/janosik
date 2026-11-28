@@ -7,9 +7,10 @@ import type {
   Card,
   Checklist,
   ChecklistItem,
+  Epic,
   LabelAssignment,
 } from "@janosik/shared";
-import { cardOf } from "@janosik/shared";
+import { boardEpicProgress, cardOf, epicOf } from "@janosik/shared";
 
 /**
  * Per-action writers (ROADMAP §7.4.1 variant В).
@@ -249,9 +250,47 @@ export const touch = {
   column: (id: string) => `column:${id}`,
   card: (id: string) => `card:${id}`,
   label: (id: string) => `label:${id}`,
+  epic: (id: string) => `epic:${id}`,
   checklist: (id: string) => `checklist:${id}`,
   checklistItem: (id: string) => `checklistItem:${id}`,
 };
+
+function touchCardEpics(...cards: (Card | undefined)[]): string[] {
+  return cards.flatMap((card) =>
+    card?.epicId === undefined ? [] : [touch.epic(card.epicId)],
+  );
+}
+
+function touchChangedEpicProgress(before: Board, after: Board): string[] {
+  if (!after.epics?.length) return [];
+  // Deleting or restoring a column can also change which remaining column
+  // counts as Done, so the affected epics need not have cards in that column.
+  const previous = boardEpicProgress(before);
+  const touches: string[] = [];
+  for (const [id, progress] of boardEpicProgress(after)) {
+    const old = previous.get(id);
+    if (!old || old.total !== progress.total || old.done !== progress.done) {
+      touches.push(touch.epic(id));
+    }
+  }
+  return touches;
+}
+
+function epicWriteData(epic: Epic) {
+  return {
+    title: epic.title,
+    description: epic.description ?? null,
+    color: epic.color,
+    status: epic.status,
+    ownerId: epic.ownerId ?? null,
+    startDate: epic.startDate === undefined ? null : new Date(epic.startDate),
+    dueDate: epic.dueDate === undefined ? null : new Date(epic.dueDate),
+    position: epic.position,
+    completedAt:
+      epic.completedAt === undefined ? null : new Date(epic.completedAt),
+    updatedAt: new Date(epic.updatedAt),
+  };
+}
 
 function columnOf(board: Board, columnId: string) {
   return board.columns.find((column) => column.id === columnId);
@@ -366,6 +405,7 @@ function cardCreateData(
     version: 0,
     deletedAt: null,
     lastActorId: actorId,
+    epicId: card.epicId ?? null,
     title: card.title,
     description: card.description ?? null,
     coverType: card.cover?.type ?? null,
@@ -392,6 +432,7 @@ function cardUpdateData(
 ): Prisma.CardUncheckedUpdateInput {
   return {
     lastActorId: actorId,
+    epicId: card.epicId ?? null,
     title: card.title,
     description: card.description ?? null,
     coverType: card.cover?.type ?? null,
@@ -662,6 +703,94 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
   const boardTouch = touch.board(boardId);
 
   switch (action.type) {
+    case "ADD_EPIC":
+    case "RESTORE_EPIC": {
+      const epic = epicOf(after, action.epic.id);
+      if (!epic) return [boardTouch];
+      // An ADD after undo revives its own tombstone. Keep this scoped even
+      // though command validation already checked the id's board.
+      const revived = await tx.epic.updateMany({
+        where: { id: epic.id, boardId, deletedAt: { not: null } },
+        data: {
+          ...epicWriteData(epic),
+          createdAt: new Date(epic.createdAt),
+          deletedAt: null,
+          version: { increment: 1 },
+        },
+      });
+      if (revived.count === 0) {
+        if (action.type === "RESTORE_EPIC") {
+          throw new ConflictException({
+            message: "Epic is no longer restorable",
+            field: "action.epic.id",
+          });
+        }
+        try {
+          await tx.epic.create({
+            data: {
+              id: epic.id,
+              boardId,
+              ...epicWriteData(epic),
+              createdAt: new Date(epic.createdAt),
+            },
+          });
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            throw new ConflictException({
+              message: "Epic id is already in use",
+              field: "action.epic.id",
+            });
+          }
+          throw error;
+        }
+      }
+      return [boardTouch, touch.epic(epic.id)];
+    }
+
+    case "UPDATE_EPIC":
+    case "SET_EPIC_STATUS": {
+      const epic = epicOf(after, action.epicId);
+      if (!epic) return [boardTouch];
+      await tx.epic.update({
+        where: { id: epic.id, boardId, deletedAt: null },
+        data: { ...epicWriteData(epic), version: { increment: 1 } },
+      });
+      return [boardTouch, touch.epic(epic.id)];
+    }
+
+    case "DELETE_EPIC":
+      await tx.epic.update({
+        where: { id: action.epicId, boardId, deletedAt: null },
+        data: {
+          deletedAt: new Date(ctx.at),
+          updatedAt: new Date(ctx.at),
+          version: { increment: 1 },
+        },
+      });
+      return [boardTouch, touch.epic(action.epicId)];
+
+    case "SET_CARD_EPIC": {
+      const card = cardOf(after, action.cardId);
+      if (!card) return [boardTouch];
+      await tx.card.update({
+        where: { id: card.id },
+        data: {
+          epicId: card.epicId ?? null,
+          lastActorId: ctx.actorId,
+          updatedAt: new Date(card.updatedAt),
+          version: { increment: 1 },
+        },
+      });
+      return [
+        boardTouch,
+        touch.card(card.id),
+        ...touchCardEpics(cardOf(before, card.id), card),
+      ];
+    }
+
     case "RENAME_BOARD": {
       // `after.title` is already trimmed/clamped by the reducer. The board
       // row's `updatedAt`/`version` are bumped once for every command in
@@ -793,6 +922,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         boardTouch,
         touch.column(action.columnId),
         ...touchCards(activeIds),
+        ...touchChangedEpicProgress(before, after),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -830,9 +960,10 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         boardTouch,
         touch.column(copy.id),
         ...touchCards(copy.cardIds),
-        ...copy.cardIds.flatMap((id) =>
-          touchChecklists(cardOf(after, id)?.checklists),
-        ),
+        ...copy.cardIds.flatMap((id) => [
+          ...touchChecklists(cardOf(after, id)?.checklists),
+          ...touchCardEpics(cardOf(after, id)),
+        ]),
       ];
     }
 
@@ -899,7 +1030,12 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
       );
       await writeCardLabels(tx, boardId, card.id, card.labelIds);
       await writeCardPositions(tx, column.id, column.cardIds);
-      return [boardTouch, touch.column(column.id), touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.column(column.id),
+        touch.card(card.id),
+        ...touchCardEpics(card),
+      ];
     }
 
     case "UPDATE_CARD":
@@ -962,6 +1098,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         // `versions` and the run pre-image, or a later command in the same
         // run would compare its pre-image against a stale column version.
         ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+        ...touchCardEpics(sourceColumn ? card : undefined),
         ...checklistIds.map((id) => touch.checklist(id)),
         ...itemIds.map((id) => touch.checklistItem(id)),
       ];
@@ -1006,6 +1143,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         boardTouch,
         touch.column(action.columnId),
         ...touchCards(archived),
+        ...touchCardEpics(...archived.map((id) => cardOf(after, id))),
       ];
     }
 
@@ -1038,6 +1176,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           boardTouch,
           touch.card(card.id),
           touch.column(column.id),
+          ...touchCardEpics(card.archivedAt === undefined ? card : undefined),
           ...touchChecklists(card.checklists),
         ];
       }
@@ -1099,7 +1238,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
           ...touchChecklists(card.checklists),
         );
       }
-      return touchList;
+      return [...touchList, ...touchChangedEpicProgress(before, after)];
     }
 
     case "RESTORE_COLUMN_CARDS": {
@@ -1132,7 +1271,7 @@ async function writeAction(tx: Tx, ctx: WriteContext): Promise<string[]> {
         );
       }
       await writeCardPositions(tx, column.id, column.cardIds);
-      return touchList;
+      return [...touchList, ...touchChangedEpicProgress(before, after)];
     }
 
     case "SET_CARD_LABEL": {
@@ -1526,6 +1665,7 @@ async function writeCardAction(
       touch.column(column.id),
       touch.card(copy.id),
       ...touchChecklists(copy.checklists),
+      ...touchCardEpics(copy),
     ];
   }
 
@@ -1619,6 +1759,7 @@ async function writeCardAction(
         boardTouch,
         touch.card(card.id),
         ...(sourceColumn !== undefined ? [touch.column(sourceColumn.id)] : []),
+        ...touchCardEpics(sourceColumn ? card : undefined),
       ];
     }
 
@@ -1637,38 +1778,49 @@ async function writeCardAction(
         },
       });
       await writeCardPositions(tx, column.id, column.cardIds);
-      return [boardTouch, touch.column(column.id), touch.card(card.id)];
+      return [
+        boardTouch,
+        touch.column(column.id),
+        touch.card(card.id),
+        ...touchCardEpics(card),
+      ];
     }
 
     case "MOVE_CARD": {
-      const column = after.columns.find((c) => c.cardIds.includes(card.id));
-      const toColumnId = column?.id ?? action.toColumnId;
+      const previous = cardOf(before, card.id);
+      const membershipChanged = previous?.epicId !== card.epicId;
+      const sameColumn = action.fromColumnId === action.toColumnId;
+      const fromIds = cardIdsOf(before, action.fromColumnId);
+      const toIds = cardIdsOf(after, action.toColumnId);
+      const orderChanged =
+        !sameColumn || fromIds.some((id, index) => id !== toIds[index]);
       await tx.card.update({
         where: { id: card.id },
         data: {
-          columnId: toColumnId,
+          ...(orderChanged ? { columnId: action.toColumnId } : {}),
+          ...(membershipChanged ? { epicId: card.epicId ?? null } : {}),
           lastActorId: actorId,
           updatedAt: new Date(card.updatedAt),
           version: { increment: 1 },
         },
       });
-      await writeCardPositions(
-        tx,
-        action.fromColumnId,
-        cardIdsOf(after, action.fromColumnId),
-      );
-      if (action.toColumnId !== action.fromColumnId) {
+      if (orderChanged) {
         await writeCardPositions(
           tx,
-          action.toColumnId,
-          cardIdsOf(after, action.toColumnId),
+          action.fromColumnId,
+          cardIdsOf(after, action.fromColumnId),
         );
+        if (!sameColumn) await writeCardPositions(tx, action.toColumnId, toIds);
       }
       return [
         boardTouch,
-        touch.column(action.fromColumnId),
-        touch.column(action.toColumnId),
+        ...(orderChanged
+          ? [touch.column(action.fromColumnId), touch.column(action.toColumnId)]
+          : []),
         touch.card(card.id),
+        ...(membershipChanged || !sameColumn
+          ? touchCardEpics(previous, card)
+          : []),
       ];
     }
 
@@ -1802,6 +1954,14 @@ export async function collectVersions(
       load: (ids) =>
         tx.card.findMany({
           where: { id: { in: ids } },
+          select: { id: true, version: true },
+        }),
+    },
+    {
+      prefix: "epic",
+      load: (ids) =>
+        tx.epic.findMany({
+          where: { boardId, id: { in: ids } },
           select: { id: true, version: true },
         }),
     },

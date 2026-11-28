@@ -1,4 +1,5 @@
 import type { BoardAction, BoardState } from "./board-reducer";
+import { MAX_EPIC_POSITION } from "../epics";
 import { isCardLinkType } from "./card-links";
 import { validateWorkflowShape } from "../workflow";
 import {
@@ -7,6 +8,7 @@ import {
   CLAIM_LEASE_MAX_MS,
   COVER_COLORS,
   COVER_GRADIENTS,
+  EPIC_STATUSES,
   isColumnAccentStyle,
   LABEL_COLORS,
   LIMITS,
@@ -71,6 +73,8 @@ const CARD_STAMPED_TYPES: ReadonlySet<string> = new Set([
   "SET_CARD_DUE_DATE",
   "SET_CARD_PRIORITY",
   "SET_CARD_ASSIGN",
+  "SET_CARD_EPIC",
+  "MOVE_CARD",
   "SET_CARD_LABEL",
   "CLAIM_CARD",
   "SET_CARD_TASK_SPEC",
@@ -87,7 +91,6 @@ const CARD_STAMPED_TYPES: ReadonlySet<string> = new Set([
 ]);
 const CARD_ACTIVITY_REWIND_TYPES: ReadonlySet<string> = new Set([
   ...[...CARD_STAMPED_TYPES].filter((type) => type !== "TOUCH_CARD"),
-  "MOVE_CARD",
 ]);
 
 /**
@@ -96,6 +99,12 @@ const CARD_ACTIVITY_REWIND_TYPES: ReadonlySet<string> = new Set([
  * an unknown type before the full command shape is parsed.
  */
 export const BOARD_ACTION_TYPES = [
+  "ADD_EPIC",
+  "UPDATE_EPIC",
+  "SET_EPIC_STATUS",
+  "SET_CARD_EPIC",
+  "DELETE_EPIC",
+  "RESTORE_EPIC",
   "ADD_COLUMN",
   "RENAME_COLUMN",
   "DELETE_COLUMN",
@@ -488,6 +497,7 @@ function validateCard(value: unknown, field: string): Json {
       max: LIMITS.description,
     }),
   );
+  put(out, "epicId", readOptionalId(card, "epicId", `${field}.epicId`));
   out.labelIds = readIdArray(
     card,
     "labelIds",
@@ -719,6 +729,48 @@ function validateLabel(value: unknown, field: string): Json {
   };
 }
 
+function validateEpicStatus(value: unknown, field: string): string {
+  if (!(EPIC_STATUSES as readonly unknown[]).includes(value)) {
+    fail(field, "must be active or completed");
+  }
+  return value as string;
+}
+
+function validateEpic(value: unknown, field: string, imported = false): Json {
+  const epic = asRecord(value, field);
+  if (epic.color !== "rose") fail(`${field}.color`, "must be rose");
+  const out: Json = {
+    id: readId(epic, "id", `${field}.id`),
+    title: readString(epic, "title", `${field}.title`, {
+      nonBlank: true,
+      max: imported ? undefined : LIMITS.epicTitle,
+    }),
+    color: epic.color,
+    status: validateEpicStatus(epic.status, `${field}.status`),
+    createdAt: readTimestamp(epic, "createdAt", `${field}.createdAt`),
+    updatedAt: readTimestamp(epic, "updatedAt", `${field}.updatedAt`),
+  };
+  const position = imported
+    ? readOptionalInteger(epic, "position", `${field}.position`)
+    : readInteger(epic, "position", `${field}.position`);
+  if (position !== undefined && !imported && position > MAX_EPIC_POSITION) {
+    fail(`${field}.position`, `must be at most ${MAX_EPIC_POSITION}`);
+  }
+  put(out, "position", position);
+  put(
+    out,
+    "description",
+    readOptionalString(epic, "description", `${field}.description`, {
+      max: imported ? undefined : LIMITS.epicDescription,
+    }),
+  );
+  put(out, "ownerId", readOptionalId(epic, "ownerId", `${field}.ownerId`));
+  for (const key of ["startDate", "dueDate", "completedAt"]) {
+    put(out, key, readOptionalTimestamp(epic, key, `${field}.${key}`));
+  }
+  return out;
+}
+
 /** A restore payload's card list — never more than one column holds. */
 function validateCards(action: Json): Json[] {
   return readArray(action, "cards", "action.cards", LIMITS.cardsPerColumn).map(
@@ -742,8 +794,105 @@ function parseAction(action: Json): BoardAction {
   const text = (key: string, max: number): string =>
     readString(action, key, `action.${key}`, { nonBlank: true, max });
 
+  const optionalEpicId = () =>
+    action.epicId === null ? null : optionalId("epicId");
+  const inverseEpicStamp = (target: Json) => {
+    if (target.inverse === true) {
+      put(
+        target,
+        "epicUpdatedAt",
+        readOptionalTimestamp(action, "epicUpdatedAt", "action.epicUpdatedAt"),
+      );
+    }
+  };
+
   let result: Json;
   switch (type) {
+    case "ADD_EPIC":
+    case "RESTORE_EPIC":
+      result = out();
+      if (type === "RESTORE_EPIC") {
+        if (result.inverse !== true)
+          fail("action.inverse", "must be true for RESTORE_EPIC");
+        result.index = index("index");
+      }
+      result.epic = validateEpic(action.epic, "action.epic");
+      break;
+    case "UPDATE_EPIC":
+      result = out();
+      result.epicId = id("epicId");
+      if (
+        ["title", "description", "ownerId", "startDate", "dueDate"].every(
+          (key) => action[key] === undefined,
+        )
+      )
+        fail("action", "must include at least one epic field to update");
+      if (action.title !== undefined)
+        result.title = text("title", LIMITS.epicTitle);
+      put(
+        result,
+        "description",
+        action.description === null
+          ? null
+          : readOptionalString(action, "description", "action.description", {
+              max: LIMITS.epicDescription,
+            }),
+      );
+      put(
+        result,
+        "ownerId",
+        action.ownerId === null ? null : optionalId("ownerId"),
+      );
+      for (const key of ["startDate", "dueDate"]) {
+        put(
+          result,
+          key,
+          action[key] === null
+            ? null
+            : readOptionalTimestamp(action, key, `action.${key}`),
+        );
+      }
+      inverseEpicStamp(result);
+      break;
+    case "SET_EPIC_STATUS":
+      result = out();
+      result.epicId = id("epicId");
+      result.status = validateEpicStatus(action.status, "action.status");
+      inverseEpicStamp(result);
+      if (result.inverse === true) {
+        put(
+          result,
+          "completedAt",
+          action.completedAt === null
+            ? null
+            : readOptionalTimestamp(
+                action,
+                "completedAt",
+                "action.completedAt",
+              ),
+        );
+      }
+      break;
+    case "DELETE_EPIC":
+      result = out();
+      result.epicId = id("epicId");
+      if (result.inverse === true) {
+        put(
+          result,
+          "keepEmptyEpics",
+          readOptionalBoolean(
+            action,
+            "keepEmptyEpics",
+            "action.keepEmptyEpics",
+          ),
+        );
+      }
+      break;
+    case "SET_CARD_EPIC":
+      result = out();
+      result.cardId = id("cardId");
+      result.epicId = action.epicId === null ? null : id("epicId");
+      break;
     case "ADD_COLUMN":
       result = out();
       result.newColumnId = id("newColumnId");
@@ -873,6 +1022,7 @@ function parseAction(action: Json): BoardAction {
         );
       }
       put(result, "atIndex", optionalIndex("atIndex"));
+      put(result, "epicId", optionalEpicId());
       break;
     case "UPDATE_CARD":
       result = out();
@@ -1041,6 +1191,7 @@ function parseAction(action: Json): BoardAction {
       result.toColumnId = id("toColumnId");
       result.fromIndex = index("fromIndex");
       result.toIndex = index("toIndex");
+      put(result, "epicId", optionalEpicId());
       break;
     case "DUPLICATE_CARD":
       result = out();
@@ -1253,12 +1404,12 @@ export type BoardsValidationResult =
  * card fields), so old exports keep importing. What it cannot repair is
  * refused here with a field path instead of surfacing later as a raw
  * `TypeError` or a server 500: wrong types on required fields, timestamps
- * that are not dates, collections over `LIMITS`, duplicate ids, a column
+ * that are not dates, collections over their import limits, duplicate ids, a column
  * listing a card that does not exist, a card sitting in two places.
  */
 export function validateImportedBoards(
   input: unknown,
-  options: { maxBoards?: number | null } = {},
+  options: { maxBoards?: number | null; includeEpics?: boolean } = {},
 ): BoardsValidationResult {
   try {
     if (!Array.isArray(input)) fail("boards", "must be an array");
@@ -1270,7 +1421,11 @@ export function validateImportedBoards(
     const boardIds = new Set<string>();
     input.forEach((board, index) => {
       const field = `boards[${index}]`;
-      const id = checkImportedBoard(board, field);
+      const id = checkImportedBoard(
+        board,
+        field,
+        options.includeEpics !== false,
+      );
       if (boardIds.has(id)) fail(`${field}.id`, "duplicates another board");
       boardIds.add(id);
     });
@@ -1284,7 +1439,11 @@ export function validateImportedBoards(
 }
 
 /** Check one imported board; returns its id. */
-function checkImportedBoard(value: unknown, field: string): string {
+function checkImportedBoard(
+  value: unknown,
+  field: string,
+  includeEpics: boolean,
+): string {
   const board = asRecord(value, field);
   const id = readId(board, "id", `${field}.id`);
   readString(board, "title", `${field}.title`);
@@ -1311,9 +1470,25 @@ function checkImportedBoard(value: unknown, field: string): string {
     },
   );
 
+  if (includeEpics && board.epics !== undefined) {
+    const ids = new Set<unknown>();
+    // Undo can restore a tombstone after the board reaches the create limit.
+    readArray(board, "epics", `${field}.epics`).forEach((entry, index) => {
+      const epicField = `${field}.epics[${index}]`;
+      const epic = validateEpic(entry, epicField, true);
+      if (ids.has(epic.id)) fail(`${epicField}.id`, "duplicates another epic");
+      ids.add(epic.id);
+    });
+  }
+
   const cards = asRecord(board.cards, `${field}.cards`);
   for (const [key, entry] of Object.entries(cards)) {
-    checkImportedCard(key, entry, `${field}.cards[${JSON.stringify(key)}]`);
+    checkImportedCard(
+      key,
+      entry,
+      `${field}.cards[${JSON.stringify(key)}]`,
+      includeEpics,
+    );
   }
 
   const columnIds = new Set<string>();
@@ -1373,9 +1548,15 @@ function checkImportedBoard(value: unknown, field: string): string {
 }
 
 /** Check one imported card stored under `key`. */
-function checkImportedCard(key: string, value: unknown, field: string): void {
+function checkImportedCard(
+  key: string,
+  value: unknown,
+  field: string,
+  includeEpics: boolean,
+): void {
   const card = asRecord(value, field);
   const id = readId(card, "id", `${field}.id`);
+  if (includeEpics) readOptionalId(card, "epicId", `${field}.epicId`);
   if (id !== key) fail(`${field}.id`, "must match the key it is stored under");
   // Blank titles are repaired by normalizeBoards to the neutral placeholder:
   // rejecting them here would make a legacy backup (or a hand-edited export)

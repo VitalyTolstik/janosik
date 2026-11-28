@@ -195,6 +195,8 @@ export interface CardReadModelMeta {
 }
 
 export interface Card {
+  /** Board-scoped membership. A soft-deleted epic can still be referenced. */
+  epicId?: string;
   id: string;
   title: string;
   /** Optional multi-line notes. Omitted (not empty) when unset. */
@@ -315,6 +317,8 @@ export const CARD_ACTIVITY_TYPES = [
   "due-date-removed",
   "priority-set",
   "assignee-set",
+  "epic-set",
+  "epic-removed",
   "claimed",
   "claim-released",
   "task-spec-changed",
@@ -384,6 +388,9 @@ export const UNTITLED_CARD_TITLE = "—";
  * validates against the same constants.
  */
 export const LIMITS = {
+  epicsPerBoard: 200,
+  epicTitle: 200,
+  epicDescription: 10_000,
   /** Board title (inline header + switcher create form). */
   boardTitle: 100,
   /** Column title (create + rename). */
@@ -831,7 +838,36 @@ function readPolicyInt(
     : null;
 }
 
+export const EPIC_STATUSES = ["active", "completed"] as const;
+export type EpicStatus = (typeof EPIC_STATUSES)[number];
+
+export interface Epic {
+  id: string;
+  title: string;
+  description?: string;
+  color: "rose";
+  status: EpicStatus;
+  ownerId?: string;
+  startDate?: number;
+  dueDate?: number;
+  position: number;
+  completedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface EpicProgress {
+  total: number;
+  done: number;
+  open: number;
+}
+
+export interface EpicSummary extends Omit<Epic, "description"> {
+  progress: EpicProgress;
+}
+
 export interface Board {
+  epics?: Epic[];
   id: string;
   title: string;
   /** Ordered columns — this array defines the horizontal order. */

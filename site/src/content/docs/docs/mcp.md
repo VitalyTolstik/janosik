@@ -6,7 +6,7 @@ description: Let AI agents read and manage a board with the Janosik MCP server a
 The `@janosik/mcp` server exposes a board to any MCP client (Claude, Cursor,
 VS Code, opencode, Codex). An agent uses a personal API key to read boards,
 create and move cards, update checklists, assign work and reserve tasks. It can
-also add comments, link cards and manage public share links. It exposes **84
+also add comments, link cards and manage public share links. It exposes **87
 tools in 16 groups**: 13 groups are enabled by default and `members`, `shares`
 and `account` are opt-in.
 
