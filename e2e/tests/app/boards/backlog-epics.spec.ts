@@ -545,8 +545,8 @@ test.describe("390px touch", () => {
     const commands = watchCommands(page);
     const session = await page.context().newCDPSession(page);
 
-    async function lift() {
-      await source.scrollIntoViewIfNeeded();
+    async function lift(scroll = true) {
+      if (scroll) await source.scrollIntoViewIfNeeded();
       const { x, y } = (await source.boundingBox())!;
       const start = { x: x + 32, y: y + 18 };
       const pressedAt = performance.now();
@@ -615,9 +615,10 @@ test.describe("390px touch", () => {
     ).toHaveCount(0);
     await disclosure(activeTile).tap();
 
-    const start = await lift();
+    await source.scrollIntoViewIfNeeded();
     const before = await scroller.evaluate((element) => element.scrollTop);
     const scrollBox = (await scroller.boundingBox())!;
+    const start = await lift(false);
     await move(start, { x: start.x, y: scrollBox.y + scrollBox.height - 16 });
     await expect
       .poll(() => scroller.evaluate((element) => element.scrollTop))
