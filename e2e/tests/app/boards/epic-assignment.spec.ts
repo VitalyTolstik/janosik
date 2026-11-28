@@ -107,6 +107,13 @@ async function capture(page: Page, testInfo: TestInfo, surface: string) {
 
 async function audit(page: Page) {
   const violations = await page.evaluate(async () => {
+    // Measure the final colors after the filter button changes variant.
+    const transitions = document
+      .getAnimations()
+      .filter((animation) => animation instanceof CSSTransition);
+    await Promise.allSettled(
+      transitions.map((transition) => transition.finished),
+    );
     const { axe } = window as unknown as { axe: typeof import("axe-core") };
     const { violations } = await axe.run(document, {
       runOnly: {

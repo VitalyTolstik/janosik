@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { epicOf, LIMITS, type Board, type Card } from "@janosik/shared";
 
 import {
@@ -28,15 +28,28 @@ export function CardEpic({
   const { dispatch } = useBoardActions();
   const labelId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
+  const pendingCreation = useRef(false);
+  const restoreTriggerFocus = useRef(false);
   const [creating, setCreating] = useState(false);
   const current = epicOf(board, card.epicId);
 
   useEffect(() => () => onNewOpenChange(null), [onNewOpenChange]);
 
+  useLayoutEffect(() => {
+    if (creating || !restoreTriggerFocus.current) return;
+    restoreTriggerFocus.current = false;
+    trigger.current?.focus();
+  }, [creating]);
+
   function close() {
+    if (pendingCreation.current) {
+      pendingCreation.current = false;
+      trigger.current?.focus();
+    } else {
+      restoreTriggerFocus.current = true;
+    }
     setCreating(false);
     onNewOpenChange(null);
-    trigger.current?.focus();
   }
 
   function pick(id: string | null) {
@@ -100,13 +113,15 @@ export function CardEpic({
             testId="card-epic"
             triggerRef={trigger}
             onCloseAutoFocus={(event) => {
-              // The title input owns focus once creation starts, including
-              // when the listbox unmounts after its exit transition.
-              if (creating) event.preventDefault();
+              if (!pendingCreation.current) return;
+              event.preventDefault();
+              pendingCreation.current = false;
+              setCreating(true);
             }}
             onChange={(id) => {
               if (id === newOption) {
-                setCreating(true);
+                // The listbox must finish closing before the form takes focus.
+                pendingCreation.current = true;
                 onNewOpenChange(close);
               } else {
                 void pick(id || null);
