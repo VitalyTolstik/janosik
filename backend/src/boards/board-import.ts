@@ -105,6 +105,32 @@ export async function persistBoard(
     });
   }
 
+  const epicIdMap = new Map<string, string>();
+  const epicRows = (board.epics ?? []).map(
+    (epic): Prisma.EpicCreateManyInput => {
+      const id = randomUUID();
+      epicIdMap.set(epic.id, id);
+      return {
+        id,
+        boardId: created.id,
+        title: epic.title,
+        description: epic.description,
+        color: epic.color,
+        status: epic.status,
+        ownerId: epic.ownerId === userId ? userId : null,
+        startDate:
+          epic.startDate === undefined ? null : new Date(epic.startDate),
+        dueDate: epic.dueDate === undefined ? null : new Date(epic.dueDate),
+        position: epic.position,
+        completedAt:
+          epic.completedAt === undefined ? null : new Date(epic.completedAt),
+        createdAt: new Date(epic.createdAt),
+        updatedAt: new Date(epic.updatedAt),
+      };
+    },
+  );
+  if (epicRows.length) await tx.epic.createMany({ data: epicRows });
+
   // Active cards resolved from the ordered column arrays; archived cards fall
   // back to the first column (see the JSDoc above).
   const columnForCard = new Map<string, string>();
@@ -167,6 +193,8 @@ export async function persistBoard(
     cardRows.push({
       id,
       columnId,
+      epicId:
+        card.epicId === undefined ? null : (epicIdMap.get(card.epicId) ?? null),
       title: card.title,
       description: card.description ?? null,
       coverType: card.cover?.type ?? null,

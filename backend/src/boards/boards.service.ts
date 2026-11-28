@@ -1215,6 +1215,10 @@ export class BoardsService {
           where: { boardId, deletedAt: null },
           data: { deletedAt: now },
         });
+        await tx.epic.updateMany({
+          where: { boardId, deletedAt: null },
+          data: { deletedAt: now, version: { increment: 1 } },
+        });
         // A live share of a deleted board is dead by definition — revoke it so
         // the master panel shows an explicit "revoked" instead of a link that
         // silently answers 410. Snapshot shares deliberately survive the board
@@ -1817,6 +1821,7 @@ export class BoardsService {
       ),
       columns: boards.reduce((sum, board) => sum + board.columns.length, 0),
       labels: boards.reduce((sum, board) => sum + board.labels.length, 0),
+      epics: boards.reduce((sum, board) => sum + (board.epics?.length ?? 0), 0),
       withinLimit,
     };
   }

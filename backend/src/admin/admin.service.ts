@@ -3265,6 +3265,10 @@ export class AdminService {
             where: { boardId: id, ...stale },
             data: { deletedAt: null, version: { increment: 1 } },
           });
+          await tx.epic.updateMany({
+            where: { boardId: id, ...stale },
+            data: { deletedAt: null, version: { increment: 1 } },
+          });
           await tx.boardShare.updateMany({
             where: { boardId: id, revokedAt: stamp },
             data: { revokedAt: null },

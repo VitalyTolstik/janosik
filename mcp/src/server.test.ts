@@ -39,6 +39,7 @@ let cardOverrides: Record<string, unknown>;
 let searchFailure: number | null;
 let archivedBoard: boolean;
 let boardWorkflow: unknown;
+let boardEpics: unknown[];
 let approvalStatus:
   "pending" | "approved" | "rejected" | "expired" | "cancelled" | "consumed";
 /** Command action type that answers 409 approval_required without a header. */
@@ -136,6 +137,7 @@ function board(cards: Record<string, unknown> = {}) {
     createdAt: 1,
     updatedAt: 1,
     ...(boardWorkflow ? { workflow: boardWorkflow } : {}),
+    ...(boardEpics.length ? { epics: boardEpics } : {}),
   };
 }
 
@@ -1007,6 +1009,7 @@ beforeEach(() => {
   searchFailure = null;
   archivedBoard = false;
   boardWorkflow = null;
+  boardEpics = [];
   approvalStatus = "pending";
   approvalRequiredFor = null;
   readyEndpointMissing = false;
@@ -1051,6 +1054,136 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("janosik MCP server", () => {
+  it("keeps epic membership and board-wide progress in a sliced summary", async () => {
+    boardEpics = [
+      {
+        id: "epic-1",
+        title: "Launch",
+        description: "Full notes",
+        color: "rose",
+        status: "active",
+        position: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    cardOverrides = { k1: { ...board().cards.k1, epicId: "epic-1" } };
+    const client = await connect();
+    const result = await client.callTool({
+      name: "janosik_get_board",
+      arguments: {
+        boardId: "b1",
+        columnId: "col1",
+        detail: "summary",
+        response_format: "json",
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      board: {
+        epics: [{ id: "epic-1", progress: { total: 1, done: 0, open: 1 } }],
+        cards: { k1: { epicId: "epic-1" } },
+      },
+    });
+    expect(JSON.stringify(result.structuredContent)).not.toContain(
+      "Full notes",
+    );
+    await client.close();
+  });
+
+  it("writes epic CRUD and card membership over the command transport", async () => {
+    const client = await connect();
+    const created = await client.callTool({
+      name: "janosik_create_epic",
+      arguments: {
+        boardId: "b1",
+        epicId: "epic-1",
+        title: "Launch",
+        dueDate: "2026-12-01",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    expect(calls.at(-1)?.body).toMatchObject({
+      action: {
+        type: "ADD_EPIC",
+        epic: { id: "epic-1", title: "Launch", dueDate: Date.UTC(2026, 11, 1) },
+      },
+    });
+    const updated = await client.callTool({
+      name: "janosik_update_epic",
+      arguments: {
+        boardId: "b1",
+        epicId: "epic-1",
+        description: null,
+        status: "completed",
+      },
+    });
+    expect(updated.isError).toBeFalsy();
+    expect(calls.at(-1)?.body).toMatchObject({
+      commands: [
+        {
+          action: { type: "UPDATE_EPIC", epicId: "epic-1", description: null },
+        },
+        {
+          action: {
+            type: "SET_EPIC_STATUS",
+            epicId: "epic-1",
+            status: "completed",
+          },
+        },
+      ],
+    });
+    await client.callTool({
+      name: "janosik_create_card",
+      arguments: {
+        boardId: "b1",
+        columnId: "col1",
+        title: "Subtask",
+        epicId: "epic-1",
+      },
+    });
+    expect(calls.at(-1)?.body).toMatchObject({
+      commands: [{ action: { type: "ADD_CARD", epicId: "epic-1" } }],
+    });
+    await client.callTool({
+      name: "janosik_update_card",
+      arguments: {
+        boardId: "b1",
+        cardId: "k1",
+        title: "Retitled",
+        epicId: null,
+      },
+    });
+    expect(calls.at(-1)?.body).toMatchObject({
+      commands: [
+        { action: { type: "UPDATE_CARD", title: "Retitled" } },
+        { action: { type: "SET_CARD_EPIC", cardId: "k1", epicId: null } },
+      ],
+    });
+    approvalRequiredFor = "DELETE_EPIC";
+    const deleteArgs = {
+      boardId: "b1",
+      epicId: "epic-1",
+      commandId: "delete-epic-1",
+    };
+    const pending = await client.callTool({
+      name: "janosik_delete_epic",
+      arguments: deleteArgs,
+    });
+    expect(pending.isError).toBe(true);
+    const approved = await client.callTool({
+      name: "janosik_delete_epic",
+      arguments: { ...deleteArgs, approvalId: "approval-epic" },
+    });
+    expect(approved.isError).toBeFalsy();
+    expect(calls.at(-1)?.body).toMatchObject({
+      commandId: "delete-epic-1",
+      action: { type: "DELETE_EPIC", epicId: "epic-1" },
+    });
+    expect(calls.at(-1)?.headers?.["X-Approval-Id"]).toBe("approval-epic");
+    await client.close();
+  });
+
   it("registers the full tool catalog with every toolset", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
@@ -1059,7 +1192,7 @@ describe("janosik MCP server", () => {
     // removed the invitation and profile tools (session-only routes);
     // TASK-166.7 added three read-only run tools; TASK-166.8 added the
     // plan/apply pair.
-    expect(names.length).toBe(84);
+    expect(names.length).toBe(87);
     expect(names).toContain("janosik_list_boards");
     expect(names).toContain("janosik_create_card");
     expect(names).toContain("janosik_request_approval");

@@ -6,6 +6,44 @@ import { sanitizePublicFrame } from "./share.controller";
  * minus a few keys".
  */
 describe("sanitizePublicFrame (TASK-185.2)", () => {
+  it("resyncs epic commands and projects card commands without membership", () => {
+    const command = {
+      type: "command",
+      seq: 3,
+      boardId: "board",
+      touches: ["epic:private", "card:card"],
+    };
+    expect(
+      sanitizePublicFrame({
+        ...command,
+        action: {
+          type: "UPDATE_EPIC",
+          epicId: "private",
+          description: "Private description",
+          at: 4,
+        },
+      }),
+    ).toEqual({ type: "resync" });
+    const frame = sanitizePublicFrame({
+      ...command,
+      action: {
+        type: "MOVE_CARD",
+        fromColumnId: "from",
+        toColumnId: "to",
+        fromIndex: 0,
+        toIndex: 0,
+        cardId: "card",
+        epicId: "private",
+        at: 4,
+      },
+    });
+    expect(frame).toMatchObject({
+      touches: ["card:card"],
+      action: { type: "MOVE_CARD" },
+    });
+    expect(JSON.stringify(frame)).not.toContain("private");
+  });
+
   it("projects an activity frame to the comment allowlist only", () => {
     const frame = sanitizePublicFrame({
       type: "activity",

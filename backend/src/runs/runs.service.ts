@@ -867,7 +867,7 @@ export class RunsService {
       }
     };
 
-    const [boards, columns, cards, labels, checklists, items] =
+    const [boards, columns, cards, labels, epics, checklists, items] =
       await Promise.all([
         idsFor("board").length === 0
           ? Promise.resolve([])
@@ -895,6 +895,12 @@ export class RunsService {
               where: { id: { in: idsFor("label") } },
               select: { id: true, version: true, deletedAt: true },
             }),
+        idsFor("epic").length === 0
+          ? Promise.resolve([])
+          : client.epic.findMany({
+              where: { boardId, id: { in: idsFor("epic") } },
+              select: { id: true, version: true, deletedAt: true },
+            }),
         idsFor("checklist").length === 0
           ? Promise.resolve([])
           : client.checklist.findMany({
@@ -912,6 +918,7 @@ export class RunsService {
     put("column", columns);
     put("card", cards);
     put("label", labels);
+    put("epic", epics);
     put("checklist", checklists);
     put("checklistItem", items);
     return result;

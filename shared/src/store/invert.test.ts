@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { boardReducer, type BoardAction } from "./board-reducer";
 import { invert } from "./invert";
-import type { Board, Card } from "../types/kanban";
+import type { Board, Card, Epic } from "../types/kanban";
 
 /**
  * The invariant the whole of TASK-21.7 exists for:
@@ -36,6 +36,17 @@ function persisted(board: Board): unknown {
 }
 
 const AT = 1_700_000_000_000;
+
+const epic: Epic = {
+  id: "epic",
+  title: "Release",
+  color: "rose",
+  status: "active",
+  position: 0,
+  createdAt: 1,
+  updatedAt: 2,
+};
+const restoredEpic: Epic = { ...epic, id: "restored-epic", position: 1 };
 
 function card(id: string, title: string, extra: Partial<Card> = {}): Card {
   return {
@@ -114,6 +125,7 @@ function fixture(): Board {
       { id: "l-2", name: "Dev", color: "blue" },
       { id: "l-3", name: "Spare", color: "pink" },
     ],
+    epics: [epic],
     columnStyle: "wash",
     createdAt: 1,
     updatedAt: 500,
@@ -133,6 +145,35 @@ function fixture(): Board {
 type Plan = BoardAction[] | "no-inverse";
 
 const PLANS: Record<BoardAction["type"], Plan> = {
+  ADD_EPIC: [{ type: "ADD_EPIC", epic: restoredEpic, at: AT }],
+  UPDATE_EPIC: [
+    {
+      type: "UPDATE_EPIC",
+      epicId: epic.id,
+      title: "New release",
+      description: "Details",
+      ownerId: "member",
+      startDate: 0,
+      dueDate: AT,
+      at: AT,
+    },
+  ],
+  SET_EPIC_STATUS: [
+    { type: "SET_EPIC_STATUS", epicId: epic.id, status: "completed", at: AT },
+  ],
+  SET_CARD_EPIC: [
+    { type: "SET_CARD_EPIC", cardId: "c-1", epicId: epic.id, at: AT },
+  ],
+  DELETE_EPIC: [{ type: "DELETE_EPIC", epicId: epic.id, at: AT }],
+  RESTORE_EPIC: [
+    {
+      type: "RESTORE_EPIC",
+      epic: restoredEpic,
+      index: 1,
+      inverse: true,
+      at: AT,
+    },
+  ],
   /* columns */
   ADD_COLUMN: [
     { type: "ADD_COLUMN", newColumnId: "col-new", title: "New", at: AT },

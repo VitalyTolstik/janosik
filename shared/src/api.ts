@@ -15,6 +15,7 @@ import type {
   CardCover,
   CardPriority,
   CommentKind,
+  EpicSummary,
   IncomingCardLink,
   Label,
 } from "./types/kanban";
@@ -789,6 +790,7 @@ export const BOARD_CARD_DETAIL_BATCH_MAX = 50;
  * detail-only content. `archived` cards use the same shape.
  */
 export interface BoardCardSummaryDto {
+  epicId?: string;
   id: string;
   title: string;
   columnId: string;
@@ -869,6 +871,7 @@ export interface BoardReadMetaDto {
  * first page per column; never descriptions, checklists or links.
  */
 export interface BoardReadSummaryDto {
+  epics: EpicSummary[];
   board: BoardReadMetaDto;
   columns: BoardReadColumnDto[];
   labels: Label[];
@@ -1499,6 +1502,7 @@ export type BoardEnvelope = BoardExportFile;
 
 /** TASK-166: `POST /boards/import?dryRun=1` preview — writes nothing. */
 export interface BoardImportPreviewDto {
+  epics: number;
   boards: number;
   cards: number;
   columns: number;

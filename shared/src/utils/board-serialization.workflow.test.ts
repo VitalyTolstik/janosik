@@ -39,11 +39,11 @@ function board(): Board {
   };
 }
 
-describe("export schema v3", () => {
-  it("writes version 3 with the workflow and reads it back", () => {
+describe("export schema v4", () => {
+  it("writes version 4 with the workflow and reads it back", () => {
     const raw = serializeExport([board()]);
-    expect(JSON.parse(raw).schemaVersion).toBe(3);
-    expect(EXPORT_SCHEMA_VERSION).toBe(3);
+    expect(JSON.parse(raw).schemaVersion).toBe(4);
+    expect(EXPORT_SCHEMA_VERSION).toBe(4);
     expect(parseExport(raw)).toEqual([board()]);
   });
 

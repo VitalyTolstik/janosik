@@ -26,6 +26,7 @@ import {
   cardOf,
   duplicateChecklistId,
   duplicateChecklistItemId,
+  epicOf,
   evaluateCardTransition,
   evaluateTransition,
   hasLinkedPair,
@@ -294,7 +295,7 @@ export interface BatchApplyResult {
 /** A rollback action that a preview can prove the apply would refuse. */
 export interface InversePreconditionFailure {
   touch: string;
-  reason: "wip" | "assignee_not_member" | "payload_too_large";
+  reason: "wip" | "assignee_not_member" | "payload_too_large" | "epic_conflict";
   currentVersion: number;
 }
 
@@ -305,6 +306,11 @@ function inverseTouch(action: BoardAction): string {
     ["card", record.cardId],
     ["column", record.columnId],
     ["label", record.labelId],
+    [
+      "epic",
+      record.epicId ??
+        (action.type === "RESTORE_EPIC" ? action.epic.id : undefined),
+    ],
     ["checklist", record.checklistId],
     ["checklistItem", record.itemId],
   ];
@@ -1442,6 +1448,20 @@ export class CommandsService {
           });
         }
       }
+      try {
+        await this.assertEpicReferences(client, board, action);
+      } catch (error) {
+        if (!(
+          error instanceof BadRequestException ||
+          error instanceof ConflictException
+        ))
+          throw error;
+        failures.push({
+          touch: inverseTouch(action),
+          reason: "epic_conflict",
+          currentVersion,
+        });
+      }
       const next = boardReducer(
         [board],
         Object.assign({}, action, { boardId }) as BoardAction,
@@ -1479,6 +1499,7 @@ export class CommandsService {
     this.assertBoardWritable(board, entry.action.type);
     const db = this.prisma as unknown as Prisma.TransactionClient;
     await this.assertAssigneeIsBoardMember(db, boardId, entry.action);
+    await this.assertEpicReferences(db, board, entry.action);
     await this.assertClaimIsFree(
       db,
       boardId,
@@ -1659,6 +1680,7 @@ export class CommandsService {
     this.assertBoardWritable(board, action.type);
 
     await this.assertAssigneeIsBoardMember(tx, boardId, action);
+    await this.assertEpicReferences(tx, board, action);
     await this.assertClaimIsFree(
       tx,
       boardId,
@@ -2522,6 +2544,114 @@ export class CommandsService {
     }
   }
 
+  /** Resolve membership against the running aggregate, including prior plan commands. */
+  private async assertEpicReferences(
+    tx: Prisma.TransactionClient,
+    board: Board,
+    action: BoardAction,
+  ): Promise<void> {
+    const boardId = board.id;
+    if (action.type === "ADD_EPIC" || action.type === "RESTORE_EPIC") {
+      const id = action.epic.id;
+      const row = await tx.epic.findUnique({
+        where: { id },
+        select: { boardId: true },
+      });
+      if (epicOf(board, id) || (row && row.boardId !== boardId)) {
+        parentageConflict("action.epic.id", "Epic id is already in use");
+      }
+      if (action.type === "RESTORE_EPIC" && !row) {
+        parentageConflict("action.epic.id", "Epic is no longer restorable");
+      }
+    }
+
+    const ownerId =
+      action.type === "ADD_EPIC" || action.type === "RESTORE_EPIC"
+        ? action.epic.ownerId
+        : action.type === "UPDATE_EPIC"
+          ? action.ownerId
+          : undefined;
+    if (ownerId != null) {
+      const member = await tx.boardMember.findFirst({
+        where: { boardId, userId: ownerId, ...activeMembershipWhere() },
+        select: { id: true },
+      });
+      if (!member) {
+        throw new BadRequestException({
+          message: "Epic owner must be an active board member",
+          field:
+            action.type === "UPDATE_EPIC"
+              ? "action.ownerId"
+              : "action.epic.ownerId",
+        });
+      }
+    }
+
+    if (
+      action.type === "ADD_CARD" ||
+      action.type === "MOVE_CARD" ||
+      action.type === "SET_CARD_EPIC"
+    ) {
+      if (action.epicId == null) return;
+      if (
+        "cardId" in action &&
+        cardOf(board, action.cardId)?.epicId === action.epicId
+      )
+        return;
+      const epic = epicOf(board, action.epicId);
+      if (epic?.status === "active") return;
+      // Undo can recover a previous same-board membership even when the
+      // epic has since completed or been soft-deleted.
+      if (action.type !== "ADD_CARD" && action.inverse === true) {
+        if (
+          epic ||
+          (await tx.epic.findFirst({
+            where: { id: action.epicId, boardId },
+            select: { id: true },
+          }))
+        )
+          return;
+      }
+      throw new BadRequestException({
+        message: "Card membership requires an active epic on this board",
+        field: "action.epicId",
+      });
+    }
+
+    const restored =
+      action.type === "RESTORE_CARD"
+        ? [action.card]
+        : action.type === "RESTORE_COLUMN" ||
+            action.type === "RESTORE_COLUMN_CARDS"
+          ? action.cards
+          : [];
+    const epicIds = [
+      ...new Set(
+        restored.flatMap(({ epicId }) =>
+          epicId !== undefined && !epicOf(board, epicId) ? [epicId] : [],
+        ),
+      ),
+    ];
+    if (epicIds.length === 0) return;
+    const rows = await tx.epic.findMany({
+      where: { id: { in: epicIds } },
+      select: { id: true, boardId: true },
+    });
+    if (
+      rows.length !== epicIds.length ||
+      rows.some((row) => row.boardId !== boardId)
+    ) {
+      throw new BadRequestException({
+        message:
+          "Restored card membership refers to an unavailable epic on this board",
+        field:
+          action.type === "RESTORE_CARD"
+            ? "action.card.epicId"
+            : "action.cards",
+      });
+    }
+  }
+
   /**
    * Jira-style assignee (TASK-49): the assignee must be an active board
    * member — a row that has accepted its invitation (TASK-35 addendum)
@@ -2931,7 +3061,9 @@ export class CommandsService {
         });
       }
       const match =
-        /^(board|column|card|label|checklist|checklistItem):(.+)$/.exec(key);
+        /^(board|column|card|label|epic|checklist|checklistItem):(.+)$/.exec(
+          key,
+        );
       // A `board:` key is only meaningful for the board the command targets;
       // any other board id is a client bug, not a precondition to check.
       if (!match || (match[1] === "board" && match[2] !== boardId)) {
@@ -3059,6 +3191,10 @@ export class CommandsService {
         if (board.columns.length >= LIMITS.columnsPerBoard) reject();
         return;
       }
+      case "ADD_EPIC":
+      case "RESTORE_EPIC":
+        if ((board.epics?.length ?? 0) >= LIMITS.epicsPerBoard) reject();
+        return;
       case "ADD_LABEL": {
         // A duplicate id is a reducer no-op, not a limit violation.
         if (board.labels.some((label) => label.id === action.label.id)) return;
@@ -3281,6 +3417,15 @@ async function entityVersions(
       "card",
       await tx.card.findMany({
         where: { column: { boardId }, id: { in: idsOf("card") } },
+        select,
+      }),
+    );
+  }
+  if (wanted.has("epic")) {
+    put(
+      "epic",
+      await tx.epic.findMany({
+        where: { boardId, id: { in: idsOf("epic") } },
         select,
       }),
     );

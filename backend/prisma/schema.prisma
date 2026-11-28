@@ -50,6 +50,7 @@ model User {
   commands         Command[]
   refreshTokens    RefreshToken[]
   attachments      Attachment[]
+  ownedEpics       Epic[]                  @relation("EpicOwner")
   assignedCards    Card[]                  @relation("CardAssignee")
   emailChanges     EmailChangeCode[]
   verifications    EmailVerificationCode[]
@@ -229,6 +230,7 @@ model Board {
   members            BoardMember[]
   columns            Column[]
   labels             Label[]
+  epics              Epic[]
   cardLinks          CardLink[]
   activity           Activity[]
   commands           Command[]
@@ -664,6 +666,8 @@ model Card {
   id                   String       @id
   column               Column       @relation(fields: [columnId], references: [id])
   columnId             String
+  epicId               String?
+  epic                 Epic?        @relation(fields: [epicId], references: [id], onDelete: SetNull)
   title                String       @db.VarChar(300) // LIMITS.cardTitle
   description          String?      @db.Text // markdown, LIMITS.description
   // TASK-200.2: stored character length so a ready summary can expose
@@ -714,6 +718,7 @@ model Card {
   @@index([createdAt])
   @@index([priority, updatedAt])
   @@index([attachmentCount, updatedAt])
+  @@index([epicId])
   @@index([assigneeId]) // admin user-detail "assigned cards" (TASK-49)
   @@index([claimedByTokenId])
   @@index([claimedBySessionId])
@@ -751,6 +756,32 @@ model CardLink {
   @@index([type, createdAt]) // admin type filters
   @@index([boardId, type, createdAt]) // admin type + board
   @@index([deletedAt]) // purge sweep (TASK-148)
+}
+
+model Epic {
+  id          String    @id @default(cuid())
+  board       Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId     String
+  title       String    @db.VarChar(200)
+  description String?   @db.Text
+  color       String    @default("rose")
+  status      String    @default("active")
+  ownerId     String?
+  owner       User?     @relation("EpicOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  startDate   DateTime?
+  dueDate     DateTime?
+  position    Int       @default(0)
+  completedAt DateTime?
+  deletedAt   DateTime?
+  version     Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  cards       Card[]
+
+  @@index([boardId, deletedAt, status, position])
+  @@index([boardId, status])
+  @@index([ownerId])
+  @@index([dueDate])
 }
 
 model Label {

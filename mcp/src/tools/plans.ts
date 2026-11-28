@@ -121,7 +121,7 @@ export function registerPlanTools(server: McpServer, client: JanosikClient) {
     {
       title: "Preview a plan (dry run)",
       description:
-        "Dry-run a multi-step or bulk edit: validates every command with the same rules as /commands/batch, replays the board reducer in memory and returns the canonical planHash, a before/after diff, warnings and conflicts. Writes nothing and creates no run. Bulk work goes through this pair; 50 card creates = up to 100 commands, the per-plan limit. Pass the returned commands and planHash unchanged to janosik_apply_plan.",
+        "Dry-run a multi-step or bulk edit: validates every command with the same rules as /commands/batch, replays the board reducer in memory and returns the canonical planHash, a before/after diff, warnings and conflicts. Writes nothing and creates no run. Bulk work goes through this pair; 50 card creates = up to 100 commands, the per-plan limit. Include ADD_EPIC before any cards that reference its id. Pass the returned commands and planHash unchanged to janosik_apply_plan.",
       inputSchema: {
         boardId: z.string().describe("Board id."),
         commands: z

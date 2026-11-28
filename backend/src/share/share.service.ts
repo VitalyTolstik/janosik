@@ -1110,12 +1110,19 @@ export function sanitizePublicBoard(board: BoardAggregate): BoardAggregate {
   const cards = Object.fromEntries(
     Object.entries(board.cards ?? {}).map(([id, card]) => {
       const copy = { ...card };
+      delete copy.epicId;
+      if (copy.activity) {
+        copy.activity = copy.activity.filter(
+          ({ type }) => type !== "epic-set" && type !== "epic-removed",
+        );
+      }
       delete copy.claimedByTokenId;
       delete copy.claimedBySessionId;
       return [id, copy];
     }),
   );
   const copy = { ...board, cards };
+  delete copy.epics;
   // Pause is operational and never leaves the member surface (ADR §6.3).
   delete copy.agentsPausedAt;
   delete copy.agentsPausedBy;

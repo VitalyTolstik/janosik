@@ -9,14 +9,17 @@
 
 import {
   DEFAULT_CARD_PRIORITY,
+  boardEpicProgress,
   type Board,
   type Card,
   type CardPriority,
+  type EpicSummary,
   type Label,
 } from "@janosik/shared";
 
 /** A card without its document: identity, status and size hints only. */
 export interface CardSummary {
+  epicId?: string;
   id: string;
   title: string;
   columnId: string;
@@ -38,6 +41,7 @@ export interface CardSummary {
 
 /** A board read without the per-card documents. */
 export interface BoardSummary {
+  epics?: EpicSummary[];
   id: string;
   title: string;
   columns: Array<{
@@ -87,6 +91,7 @@ export function summarizeCard(
     id: card.id,
     title: card.title,
     columnId,
+    ...(card.epicId !== undefined ? { epicId: card.epicId } : {}),
     priority: card.priority ?? DEFAULT_CARD_PRIORITY,
     assigneeId: card.assigneeId ?? null,
     dueDate: card.dueDate ?? null,
@@ -102,7 +107,10 @@ export function summarizeCard(
 }
 
 /** Project a whole board read. */
-export function summarizeBoard(board: Board): BoardSummary {
+export function summarizeBoard(
+  board: Board,
+  progress = boardEpicProgress(board),
+): BoardSummary {
   const blocked = blockedIds(board);
   const columnOf = new Map<string, string>();
   for (const column of board.columns) {
@@ -123,6 +131,14 @@ export function summarizeBoard(board: Board): BoardSummary {
     })),
     cards,
     labels: board.labels,
+    ...(board.epics?.length
+      ? {
+          epics: board.epics.map(({ description: _description, ...epic }) => ({
+            ...epic,
+            progress: progress.get(epic.id)!,
+          })),
+        }
+      : {}),
     createdAt: board.createdAt,
     updatedAt: board.updatedAt,
     ...(board.archivedAt !== undefined ? { archivedAt: board.archivedAt } : {}),

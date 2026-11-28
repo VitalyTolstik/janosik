@@ -321,7 +321,9 @@ export function workflowInitialColumnId(board: Board): string | undefined {
  * to the last column for boards without a workflow — the pre-feature MCP
  * convention.
  */
-export function workflowDoneColumnIds(board: Board): string[] {
+export function workflowDoneColumnIds(
+  board: Pick<Board, "workflow"> & { columns: readonly { id: string }[] },
+): string[] {
   const configured = (board.workflow?.doneColumnIds ?? []).filter((id) =>
     board.columns.some((column) => column.id === id),
   );

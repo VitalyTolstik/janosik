@@ -43,6 +43,7 @@ function fakePrisma() {
       ),
     },
     label: { findMany: jest.fn().mockResolvedValue([]) },
+    epic: { findMany: jest.fn().mockResolvedValue([]) },
     card: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),
@@ -70,12 +71,32 @@ describe("BoardReadModelService query budget", () => {
     const { tx, prisma } = fakePrisma();
     const service = new BoardReadModelService(prisma as never);
 
-    await service.summary("board-1", "MEMBER", 50, budget);
+    const now = new Date("2026-01-01T00:00:00Z");
+    tx.epic.findMany.mockResolvedValue(
+      Array.from({ length: 100 }, (_, position) => ({
+        id: `epic-${position}`,
+        title: `Epic ${position}`,
+        status: "active",
+        ownerId: null,
+        startDate: null,
+        dueDate: null,
+        completedAt: null,
+        position,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
+    const summary = await service.summary("board-1", "MEMBER", 50, budget);
+    expect(summary.epics).toHaveLength(100);
 
     // active ids + archived ids + 12 first pages + archived first page
     expect(tx.card.findMany).toHaveBeenCalledTimes(15);
     expect(tx.column.findMany).toHaveBeenCalledTimes(1);
     expect(tx.label.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.epic.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.epic.findMany.mock.calls[0][0].select).not.toHaveProperty(
+      "description",
+    );
     expect(tx.board.findFirst).toHaveBeenCalledTimes(1);
   });
 

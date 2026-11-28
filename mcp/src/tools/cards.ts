@@ -36,6 +36,7 @@ import {
   isRateLimited,
   isTransientNetworkError,
   isVersionConflict,
+  NoChangeError,
   rateLimitDelayMs,
 } from "../errors.js";
 import {
@@ -160,7 +161,7 @@ export function registerCardTools(
       title: "Create a card",
       description:
         "Create a card in a column. Optionally set its description, priority, " +
-        "assignee and due date in the same call (each applied as a command). " +
+        "assignee, epic and due date in the same call. " +
         "Returns the new card id, the highest board sequence in the batch and the batch run id.",
       inputSchema: {
         boardId: boardIdSchema,
@@ -185,6 +186,10 @@ export function registerCardTools(
           .string()
           .optional()
           .describe("Due date, ISO-8601 (e.g. 2026-11-01T09:00:00Z)."),
+        epicId: idSchema
+          .nullable()
+          .optional()
+          .describe("Active epic id. Null leaves the card unassigned."),
         labelIds: z
           .array(idSchema)
           .max(LIMITS.labelsPerCard)
@@ -210,6 +215,7 @@ export function registerCardTools(
       cardId,
       title,
       labelIds,
+      epicId,
       position,
       description,
       priority,
@@ -252,6 +258,7 @@ export function registerCardTools(
             columnId,
             title,
             ...(labelIds ? { labelIds } : {}),
+            ...(epicId !== undefined ? { epicId } : {}),
             ...(position !== undefined ? { atIndex: position } : {}),
           },
           ...(expectedVersion !== undefined
@@ -356,7 +363,7 @@ export function registerCardTools(
     {
       title: "Update a card",
       description:
-        "Change a card's title and/or description. Only the fields you pass " +
+        "Change a card's title, description or epic. Only the fields you pass " +
         "are written. Several agents may edit one card: pass " +
         "expectedDescription (the text you read) to write only if nobody " +
         "changed the description since, instead of overwriting their edit.",
@@ -374,6 +381,10 @@ export function registerCardTools(
           .max(LIMITS.description)
           .optional()
           .describe("New description (markdown). An empty string clears it."),
+        epicId: idSchema
+          .nullable()
+          .optional()
+          .describe("Active epic id. Null removes the current membership."),
         expectedDescription: z
           .string()
           .max(LIMITS.description)
@@ -391,6 +402,7 @@ export function registerCardTools(
       cardId,
       title,
       description,
+      epicId,
       expectedDescription,
       expectedVersion,
     }) => {
@@ -400,6 +412,39 @@ export function registerCardTools(
         ...(title !== undefined ? { title } : {}),
         ...(description !== undefined ? { description } : {}),
       };
+      if (epicId !== undefined) {
+        // Keep a mixed text and membership edit atomic. Pin the board seq
+        // when comparing a description, so a racing edit fails the batch.
+        let ifMatch = expectedVersion;
+        if (expectedDescription !== undefined) {
+          const { board, seq } = await client.getBoardWithSeq(boardId);
+          const card = Object.hasOwn(board.cards, cardId)
+            ? board.cards[cardId]
+            : undefined;
+          if (!card) return cardNotFound(cardId, boardId);
+          if ((card.description ?? "") !== expectedDescription) {
+            return errorResult(
+              `Error: card ${cardId}'s description changed since you read it. ` +
+                "Re-read it with janosik_get_card, merge, and retry.",
+            );
+          }
+          ifMatch ??= seq;
+        }
+        const items: BatchCommandItem[] = [];
+        if (title !== undefined || description !== undefined)
+          items.push({ action: patch });
+        items.push({ action: { type: "SET_CARD_EPIC", cardId, epicId } });
+        items[0].ifMatch = ifMatch;
+        const result = await client.commandBatch(boardId, items);
+        if (
+          result.results.every(
+            ({ versions }) => Object.keys(versions).length === 0,
+          )
+        ) {
+          throw new NoChangeError("SET_CARD_EPIC");
+        }
+        return textOnly(`Updated card ${cardId}.`, batchCommandFields(result));
+      }
       // Full-board update path: explicit `expectedVersion`, or the fallback
       // for a pre-200.7 server without the one-card context route.
       const updateWithBoard = async (boardVersion?: number) => {

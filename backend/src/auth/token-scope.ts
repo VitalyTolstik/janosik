@@ -231,6 +231,7 @@ const DESTRUCTIVE_COMMAND_POLICY: Record<
 };
 
 const RESTORE_COMMANDS = new Set<string>([
+  "RESTORE_EPIC",
   "RESTORE_CARD",
   "RESTORE_COLUMN",
   "RESTORE_COLUMN_CARDS",
@@ -295,6 +296,9 @@ export function classifyCommandAction(
       requiredScope: "admin",
       destructive: false,
     };
+  }
+  if (action.type === "DELETE_EPIC") {
+    return { action: action.type, requiredScope: "admin", destructive: true };
   }
   const destructive = DESTRUCTIVE_COMMAND_POLICY[action.type];
   if (destructive) {

@@ -9,7 +9,7 @@ machine-readable task contract, comment with a typed kind, tick checklists,
 assign people and link cards. Writes can be pinned to the board version they
 read when they use the command API (compare-and-set), so a concurrent edit is
 refused. Member and share-link tools are opt-in; agent-session tools are in the
-default set. The server exposes 84 tools across 16 groups.
+default set. The server exposes 87 tools across 16 groups.
 
 Board-content edits go through the command log the UI uses and stream live
 to board viewers. MCP edits do not enter the UI's local undo stack; use
@@ -358,6 +358,11 @@ tool-call retry returns the first result instead of creating a second one.
 `janosik_archive_card`, `janosik_unarchive_card`,
 `janosik_delete_card`, `janosik_search_cards`, `janosik_list_ready_cards`,
 `janosik_wait_for_work`
+
+**Epics** (boards toolset) — `janosik_create_epic`, `janosik_update_epic`
+(edit, complete or reopen), `janosik_delete_epic` (soft delete, admin preset).
+Read epics with `janosik_get_board`. Set `epicId` on card create or update,
+or pass null on update to clear membership.
 
 **Labels** — `janosik_list_labels`, `janosik_create_label`,
 `janosik_rename_label`, `janosik_set_label_color`, `janosik_delete_label`,

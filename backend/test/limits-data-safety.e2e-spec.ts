@@ -243,7 +243,7 @@ describe("Limits & data safety (e2e)", () => {
       });
 
       const envelope = await exportEnvelope(board.id);
-      expect(envelope.schemaVersion).toBe(3);
+      expect(envelope.schemaVersion).toBe(4);
       expect(envelope.boards[0].agentPolicy).toEqual(policy);
 
       const imported = await server()
@@ -331,6 +331,7 @@ describe("Limits & data safety (e2e)", () => {
         cards: 0,
         columns: 0,
         labels: 0,
+        epics: 0,
         withinLimit: true,
       });
       expect(await prisma.board.count()).toBe(before);

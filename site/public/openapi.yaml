@@ -1123,7 +1123,7 @@ paths:
       operationId: exportBoard
       summary: Export a board
       description: |
-        Streams the portable JSON envelope (`schemaVersion: 3`). An export
+        Streams the portable JSON envelope (`schemaVersion: 4`). An export
         above `MAX_BOARD_EXPORT_BYTES` is refused with `413` instead of being
         truncated.
       responses:
@@ -4711,6 +4711,7 @@ components:
       properties:
         id: { type: string }
         title: { type: string }
+        epicId: { type: string }
         columnId: { type: string }
         position: { type: integer }
         version: { type: integer }
@@ -4806,6 +4807,7 @@ components:
           board,
           columns,
           labels,
+          epics,
           limits,
           archivedCardIds,
           archivedCards,
@@ -4827,6 +4829,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Label"
+        epics:
+          type: array
+          items:
+            $ref: "#/components/schemas/EpicSummary"
         limits:
           type: object
           required: [cardsPerColumn, columns]
@@ -4964,6 +4970,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Label"
+        epics:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/Epic"
         createdAt:
           type: integer
         updatedAt:
@@ -4985,6 +4996,40 @@ components:
           type: string
         archivedAt:
           type: integer
+    EpicHeader:
+      type: object
+      required: [id, title, color, status, position, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        color: { type: string, const: rose }
+        status: { type: string, enum: [active, completed] }
+        ownerId: { type: string }
+        startDate: { type: integer }
+        dueDate: { type: integer }
+        position: { type: integer, minimum: 0 }
+        completedAt: { type: integer }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+    Epic:
+      allOf:
+        - $ref: "#/components/schemas/EpicHeader"
+        - type: object
+          properties:
+            description: { type: string, maxLength: 10000 }
+    EpicSummary:
+      allOf:
+        - $ref: "#/components/schemas/EpicHeader"
+        - type: object
+          required: [progress]
+          properties:
+            progress:
+              type: object
+              required: [total, done, open]
+              properties:
+                total: { type: integer, minimum: 0 }
+                done: { type: integer, minimum: 0 }
+                open: { type: integer, minimum: 0 }
     Column:
       type: object
       required: [id, title, cardIds, createdAt]
@@ -5012,6 +5057,7 @@ components:
           type: string
         title:
           type: string
+        epicId: { type: string }
         description:
           type: string
         checklists:
@@ -5366,7 +5412,7 @@ components:
           const: janosik
         schemaVersion:
           type: integer
-          enum: [1, 2, 3]
+          enum: [1, 2, 3, 4]
         exportedAt:
           type: integer
         boards:
@@ -5375,7 +5421,7 @@ components:
             $ref: "#/components/schemas/BoardAggregate"
     BoardImportPreview:
       type: object
-      required: [boards, cards, columns, labels, withinLimit]
+      required: [boards, cards, columns, labels, epics, withinLimit]
       properties:
         boards:
           type: integer
@@ -5384,6 +5430,8 @@ components:
         columns:
           type: integer
         labels:
+          type: integer
+        epics:
           type: integer
         withinLimit:
           type: boolean
@@ -5965,6 +6013,12 @@ components:
         browser undo/import operations and are refused to a PAT. Field-level
         detail for those legacy actions is in the Command API docs.
       oneOf:
+        - $ref: "#/components/schemas/ActionAddEpic"
+        - $ref: "#/components/schemas/ActionUpdateEpic"
+        - $ref: "#/components/schemas/ActionSetEpicStatus"
+        - $ref: "#/components/schemas/ActionSetCardEpic"
+        - $ref: "#/components/schemas/ActionDeleteEpic"
+        - $ref: "#/components/schemas/ActionRestoreEpic"
         - $ref: "#/components/schemas/ActionAddCard"
         - $ref: "#/components/schemas/ActionUpdateCard"
         - $ref: "#/components/schemas/ActionTouchCard"
@@ -6042,6 +6096,65 @@ components:
             - IMPORT_BOARDS
             - ADD_BOARD
             - REMOVE_BOARD
+    ActionAddEpic:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, epic]
+          properties:
+            type: { type: string, const: ADD_EPIC }
+            epic:
+              $ref: "#/components/schemas/Epic"
+    ActionUpdateEpic:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, epicId]
+          properties:
+            type: { type: string, const: UPDATE_EPIC }
+            epicId: { type: string }
+            title: { type: string, minLength: 1, maxLength: 200 }
+            description: { type: [string, "null"], maxLength: 10000 }
+            ownerId: { type: [string, "null"] }
+            startDate: { type: [integer, "null"] }
+            dueDate: { type: [integer, "null"] }
+    ActionSetEpicStatus:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, epicId, status]
+          properties:
+            type: { type: string, const: SET_EPIC_STATUS }
+            epicId: { type: string }
+            status: { type: string, enum: [active, completed] }
+    ActionSetCardEpic:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, cardId, epicId]
+          properties:
+            type: { type: string, const: SET_CARD_EPIC }
+            cardId: { type: string }
+            epicId: { type: [string, "null"] }
+    ActionDeleteEpic:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, epicId]
+          properties:
+            type: { type: string, const: DELETE_EPIC }
+            epicId: { type: string }
+    ActionRestoreEpic:
+      allOf:
+        - $ref: "#/components/schemas/ActionBase"
+        - type: object
+          required: [type, epic, index, inverse]
+          properties:
+            type: { type: string, const: RESTORE_EPIC }
+            epic:
+              $ref: "#/components/schemas/Epic"
+            index: { type: integer, minimum: 0 }
+            inverse: { type: boolean, const: true }
     ActionAddCard:
       allOf:
         - $ref: "#/components/schemas/ActionBase"
@@ -6061,6 +6174,7 @@ components:
               type: array
               items:
                 type: string
+            epicId: { type: [string, "null"] }
             atIndex:
               type: integer
               minimum: 0
@@ -6110,6 +6224,9 @@ components:
               minimum: 0
             toColumnId:
               type: string
+            epicId:
+              type: [string, "null"]
+              description: Omit to preserve membership. Null clears it.
             toIndex:
               type: integer
               minimum: 0

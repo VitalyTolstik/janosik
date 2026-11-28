@@ -4,7 +4,7 @@
  * creating a board and import are REST endpoints.
  */
 
-import { LIMITS, type Board } from "@janosik/shared";
+import { boardEpicProgress, LIMITS, type Board } from "@janosik/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -81,7 +81,7 @@ export function registerBoardTools(
       title: "Get a Janosik board",
       description:
         "Read a board: columns with their cards, every card's badges, the " +
-        "label set and the board version (`seq`). Card and column ids returned " +
+        "epics, label set and the board version (`seq`). Card and column ids returned " +
         "here are what the other tools expect; pass `seq` as a write's " +
         "expectedVersion to refuse a write that would clobber a concurrent " +
         "change. On a large board pass columnId to read one column; archived " +
@@ -128,17 +128,19 @@ export function registerBoardTools(
             "janosik_get_board without columnId for current ids.",
         );
       }
+      const progress = boardEpicProgress(full);
+      const markdown = renderBoard(board, progress);
       const hint = "Pass columnId to read one column at a time.";
       if (detail === "summary") {
         return respond(
           response_format,
-          { board: summarizeBoard(board), seq },
-          `${renderBoard(board)}\n\n_(summary: descriptions and checklists ` +
+          { board: summarizeBoard(board, progress), seq },
+          `${markdown}\n\n_(summary: descriptions and checklists ` +
             "omitted — read a card with janosik_get_card for the full text.)_",
           hint,
         );
       }
-      return respond(response_format, { board, seq }, renderBoard(board), hint);
+      return respond(response_format, { board, seq }, markdown, hint);
     },
   );
 

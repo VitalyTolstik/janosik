@@ -19,6 +19,7 @@ import {
 } from "../types/kanban";
 import type { BoardState } from "./board-reducer";
 import { isCardLinkType, linkPairKey } from "./card-links";
+import { compareEpics, normalizeEpic } from "../epics";
 import { readBoardWorkflow } from "../workflow";
 import { clamp, clampText } from "../utils/text";
 
@@ -482,9 +483,40 @@ function normalizeBoard(board: Board): Board {
   };
 }
 
+function normalizeEpics(board: Board): Board {
+  if (board.epics === undefined) return board;
+  const ids = new Set<string>();
+  const candidates = Array.isArray(board.epics) ? board.epics : [];
+  const epics = candidates
+    .slice(0, LIMITS.epicsPerBoard)
+    .flatMap((value, index) => {
+      const epic = normalizeEpic(value, index);
+      if (!epic || ids.has(epic.id)) return [];
+      ids.add(epic.id);
+      return [epic];
+    });
+  epics.sort(compareEpics);
+  if (
+    candidates === board.epics &&
+    epics.length === candidates.length &&
+    epics.every((epic, index) => {
+      const previous = candidates[index];
+      return (
+        Object.keys(previous).length === Object.keys(epic).length &&
+        (Object.keys(epic) as (keyof typeof epic)[]).every(
+          (key) => epic[key] === previous[key],
+        )
+      );
+    })
+  )
+    return board;
+  return { ...board, epics };
+}
+
 /** Normalize every board in the state array (no-op when already current). */
 export function normalizeBoards(state: BoardState): BoardState {
-  return state.map((board) => {
+  return state.map((input) => {
+    const board = normalizeEpics(input);
     // `typeof` first: stored data is not trusted to have the declared
     // types, and a property read off `null` must not escape as a TypeError.
     const needsFix =
