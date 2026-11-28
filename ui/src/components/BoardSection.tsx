@@ -528,7 +528,7 @@ export function BoardSection() {
           ) : null}
           <ViewSwitcher value={view} onChange={setView} />
           {view !== "watch" ? <BoardSelectionToggle /> : null}
-          {view === "board" ? <BoardAppearanceMenu /> : null}
+          {view !== "watch" ? <BoardAppearanceMenu /> : null}
         </div>
         {serverPending ? (
           <p

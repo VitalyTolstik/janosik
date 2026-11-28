@@ -279,6 +279,21 @@ describe.each(themes)("$name theme contrast pairs", ({ name, css, ui }) => {
     }
   });
 
+  it("danger status text clears AA on every surface and the 10% badge", () => {
+    const text = ui["--agent-tone-danger"];
+    expect(text, "--agent-tone-danger is defined").toBeTruthy();
+    for (const surface of surfaces) {
+      expect(
+        contrast(text, surface.value),
+        `danger status on ${surface.token}`,
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(text, tint(css["--danger"], surface.value, 0.1)),
+        `danger badge on ${surface.token}`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it.each(LABEL_PAIRS)(
     "%s label chips clear AA on the 15%% tint",
     (name, baseToken) => {

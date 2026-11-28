@@ -905,7 +905,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
       "Invitation expired",
     );
     expect(within(row).getByTestId("board-pending-expired")).toHaveClass(
-      "text-danger",
+      "text-(--agent-tone-danger)",
     );
   });
 });

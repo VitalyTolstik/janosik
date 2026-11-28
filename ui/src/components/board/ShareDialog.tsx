@@ -382,7 +382,7 @@ function ShareRow({
           /s/{share.token}
         </span>
         {revoked || expired ? (
-          <span className="text-ui-label text-destructive">
+          <span className="text-ui-label text-(--agent-tone-danger)">
             {revoked ? t("share.revoked") : t("share.expired")}
           </span>
         ) : null}

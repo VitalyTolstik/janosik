@@ -491,6 +491,9 @@ describe("H1 header: People + Board menu", () => {
         "People — 2 people on this board — A B",
       ),
     );
+    // The visible initials must carry the same separators as the name,
+    // otherwise axe's label-content-name check sees "AB".
+    expect(people).toHaveTextContent("A B");
     // The avatar stack is grouped under the People icon and hidden from the
     // accessibility tree: it must never compete with the account trigger.
     const group = screen.getByTestId("people-presence-group");

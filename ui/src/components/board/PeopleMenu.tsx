@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Share2, UserPlus, Users } from "lucide-react";
 import type { BoardRole, PresenceUser } from "@janosik/shared";
 
@@ -103,29 +103,37 @@ export function PeopleMenu() {
                 className="flex items-center"
               >
                 {visible.map((person, index) => (
-                  <span
-                    key={person.id}
-                    data-testid="people-avatar"
-                    className={cn("janosik-presence-in", index > 0 && "-ml-2")}
-                  >
-                    <UserAvatar
-                      userId={person.id}
-                      displayName={person.displayName}
-                      email=""
-                      color={person.avatarColor}
-                      avatarPath={person.avatarPath}
-                      size="sm"
-                      className="ring-2 ring-background"
-                    />
-                  </span>
+                  <Fragment key={person.id}>
+                    {index > 0 ? " " : null}
+                    <span
+                      data-testid="people-avatar"
+                      className={cn(
+                        "janosik-presence-in",
+                        index > 0 && "-ml-2",
+                      )}
+                    >
+                      <UserAvatar
+                        userId={person.id}
+                        displayName={person.displayName}
+                        email=""
+                        color={person.avatarColor}
+                        avatarPath={person.avatarPath}
+                        size="sm"
+                        className="ring-2 ring-background"
+                      />
+                    </span>
+                  </Fragment>
                 ))}
                 {overflow > 0 ? (
-                  <span
-                    data-testid="people-overflow"
-                    className="-ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-ui-micro font-semibold tabular-nums text-muted-foreground ring-2 ring-background"
-                  >
-                    +{overflow}
-                  </span>
+                  <Fragment>
+                    {" "}
+                    <span
+                      data-testid="people-overflow"
+                      className="-ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-ui-micro font-semibold tabular-nums text-muted-foreground ring-2 ring-background"
+                    >
+                      +{overflow}
+                    </span>
+                  </Fragment>
                 ) : null}
               </span>
               <span

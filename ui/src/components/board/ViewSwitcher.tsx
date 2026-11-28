@@ -41,6 +41,7 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
         <button
           key={id}
           type="button"
+          data-testid={`view-${id}`}
           aria-pressed={value === id}
           onClick={() => onChange(id)}
           className={cn(

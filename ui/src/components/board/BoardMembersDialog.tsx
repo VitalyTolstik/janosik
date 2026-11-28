@@ -865,7 +865,9 @@ export function BoardMembersPanel({
                           data-testid="board-member-expiry"
                           className={cn(
                             "break-words text-ui-label",
-                            expired ? "text-danger" : "text-muted-foreground",
+                            expired
+                              ? "text-(--agent-tone-danger)"
+                              : "text-muted-foreground",
                           )}
                         >
                           {member.expiresAt === null
@@ -1089,7 +1091,7 @@ export function BoardMembersPanel({
                     {expired ? (
                       <span
                         data-testid="board-pending-expired"
-                        className="shrink-0 rounded bg-danger/10 px-1 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-danger"
+                        className="shrink-0 rounded bg-danger/10 px-1 py-0.5 text-ui-micro font-medium uppercase tracking-wide text-(--agent-tone-danger)"
                       >
                         {t("board.members.pending.expired")}
                       </span>
