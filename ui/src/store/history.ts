@@ -298,26 +298,31 @@ export class BoardHistory {
       action.type === "SET_CARD_EPIC" &&
       entry.undo.type === "SET_CARD_EPIC"
     ) {
-      const next = this.past
-        .slice(index + 1)
-        .find(
-          ({ undo }) =>
-            undo.type === "SET_CARD_EPIC" && undo.cardId === action.cardId,
-        );
-      if (
-        next?.undo.type === "SET_CARD_EPIC" &&
-        next.undo.epicId === action.epicId
+      for (
+        let laterIndex = index + 1;
+        laterIndex < this.past.length;
+        laterIndex++
       ) {
+        const next = this.past[laterIndex];
+        const { undo } = next;
+        if (
+          (undo.type !== "SET_CARD_EPIC" && undo.type !== "MOVE_CARD") ||
+          undo.epicId === undefined ||
+          undo.cardId !== action.cardId
+        ) {
+          continue;
+        }
+        if (undo.epicId !== action.epicId) break;
         // Undoing the newer choice must restore the membership that preceded
         // the failed command, which never reached the server.
         next.undo = {
-          ...next.undo,
+          ...undo,
           epicId: entry.undo.epicId,
           cardUpdatedAt:
-            next.undo.cardUpdatedAt === action.at
+            undo.cardUpdatedAt === action.at
               ? entry.undo.cardUpdatedAt
-              : next.undo.cardUpdatedAt,
-          cardActivity: next.undo.cardActivity?.filter(
+              : undo.cardUpdatedAt,
+          cardActivity: undo.cardActivity?.filter(
             ({ id }) => id !== action.activityIds?.[0],
           ),
         };

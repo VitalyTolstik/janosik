@@ -8,7 +8,11 @@ import { test, expect } from "@/fixtures/collaboration.js";
 import type { BoardFixture } from "@/fixtures/board.js";
 import { getBoard } from "@/helpers/boards.js";
 import { openFilters, closeFilters, facetCount } from "@/helpers/filters.js";
-import { closeCardDialog, undoButton } from "@/helpers/history.js";
+import {
+  closeCardDialog,
+  columnSection,
+  undoButton,
+} from "@/helpers/history.js";
 import { openTable, tableRow } from "@/helpers/views.js";
 
 const visualDir = process.env.E2E_E3_VISUAL_DIR;
@@ -63,7 +67,7 @@ async function seedAssignments(board: BoardFixture) {
     epicId: completedId,
     status: "completed",
   });
-  return { alpha, beta, epicId, otherId };
+  return { alpha, beta, epicId, otherId, backlog, doing };
 }
 
 async function openReleaseBoard(board: BoardFixture, page: Page) {
@@ -614,6 +618,137 @@ for (const scenario of [
         .poll(state)
         .toEqual({ alpha: undefined, beta: undefined, created: false });
     }
+    await expect(undoButton(page)).toBeDisabled();
+  });
+}
+
+for (const surface of ["dialog", "context", "bulk"]) {
+  test(`undo restores the card after a membership move and refused ${surface} creation`, async ({
+    page,
+    board,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { alpha, beta, epicId, backlog, doing } =
+      await seedAssignments(board);
+    await board.open(page);
+    const card = face(page, alphaTitle);
+    const picker = page.getByRole("combobox", { name: "Epic", exact: true });
+    const source = columnSection(page, "In progress");
+    const tile = page.locator(`[data-epic-id="${epicId}"]`);
+    const commandUrl = `**/api/v1/boards/${board.id}/commands`;
+    const commands: string[] = [];
+    let refusedEpicId: string | undefined;
+    let releaseCreate!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    await page.route(commandUrl, async (route) => {
+      const { action } = route.request().postDataJSON();
+      commands.push(action.type);
+      if (action.type === "ADD_EPIC") {
+        refusedEpicId = action.epic.id;
+        await createGate;
+        await route.fulfill({
+          status: 400,
+          json: { code: "validation_failed", field: "action.epic.title" },
+        });
+      } else {
+        await route.continue();
+      }
+    });
+
+    try {
+      if (surface === "dialog") {
+        await card.getByTestId("card-title").click();
+        await picker.click();
+        await page.getByRole("option", { name: "+ New epic…" }).click();
+      } else if (surface === "context") {
+        await openContext(page, alphaTitle, false);
+        await page.getByTestId("ctx-epic-trigger").click();
+        await page.getByRole("menuitem", { name: "+ New epic…" }).click();
+      } else {
+        await page.getByTestId("bulk-select-toggle").click();
+        await card.getByTestId("card-title").click();
+        await face(page, betaTitle).getByTestId("card-title").click();
+        await page.getByTestId("bulk-epic").click();
+        await page.getByRole("menuitem", { name: "+ New epic…" }).click();
+      }
+      await page
+        .getByRole("textbox", { name: "Epic title" })
+        .fill("First intent");
+      await page.getByRole("button", { name: "Create and assign" }).click();
+      await expect.poll(() => commands).toEqual(["ADD_EPIC"]);
+      expect(refusedEpicId).toBeDefined();
+      if (surface === "dialog") await closeCardDialog(page);
+      if (surface === "bulk") {
+        await expect(
+          face(page, betaTitle).getByTestId("card-epic-chip"),
+        ).toContainText("First intent");
+        await page.getByTestId("bulk-select-toggle").click();
+      }
+      await expect(card.getByTestId("card-epic-chip")).toContainText(
+        "First intent",
+      );
+
+      await tile.scrollIntoViewIfNeeded();
+      await card.hover({ position: { x: 32, y: 18 } });
+      const start = (await card.boundingBox())!;
+      const end = (await tile.boundingBox())!;
+      await page.mouse.down();
+      await page.mouse.move(start.x + 32, start.y + 28);
+      await expect(page.getByTestId("card-drag-overlay")).toBeVisible();
+      await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, {
+        steps: 16,
+      });
+      await page.mouse.up();
+      await expect(source.getByText(alphaTitle, { exact: true })).toHaveCount(
+        0,
+      );
+      expect(commands).toEqual(["ADD_EPIC"]);
+    } finally {
+      releaseCreate();
+    }
+
+    const state = async () => {
+      const snapshot = await getBoard(board.api, board.id);
+      return {
+        column: snapshot.columns.find(({ cardIds }) => cardIds.includes(alpha))
+          ?.id,
+        membership: snapshot.cards[alpha]?.epicId,
+        betaMembership: snapshot.cards[beta]?.epicId,
+        created: snapshot.epics?.some(({ id }) => id === refusedEpicId),
+      };
+    };
+    await expect.poll(state).toEqual({
+      column: backlog,
+      membership: epicId,
+      betaMembership: undefined,
+      created: false,
+    });
+    expect(commands).toEqual(["ADD_EPIC", "MOVE_CARD"]);
+
+    const [undone] = await Promise.all([
+      page.waitForResponse((response) => {
+        const request = response.request();
+        if (
+          request.method() !== "POST" ||
+          !request.url().endsWith(`/boards/${board.id}/commands`)
+        )
+          return false;
+        const { action } = request.postDataJSON();
+        return action.type === "MOVE_CARD" && action.inverse === true;
+      }),
+      undoButton(page).click(),
+    ]);
+    expect(undone.status(), await undone.text()).toBe(200);
+    await expect.poll(state).toEqual({
+      column: doing,
+      membership: undefined,
+      betaMembership: undefined,
+      created: false,
+    });
+    await expect(source.getByText(alphaTitle, { exact: true })).toBeVisible();
+    await expect(card.getByTestId("card-epic-chip")).toHaveCount(0);
     await expect(undoButton(page)).toBeDisabled();
   });
 }
