@@ -96,6 +96,7 @@ export async function dragCardToColumn(
 /** The subset of the board aggregate the view tests assert against. */
 export interface BoardSnapshot {
   id: string;
+  epics?: { id: string }[];
   columns: { id: string; title: string; cardIds: string[] }[];
   cards: Record<
     string,

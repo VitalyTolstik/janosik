@@ -55,7 +55,11 @@ export interface UndoHistory {
    * opposite side (`undo` inside `do`) is returned for the caller to apply,
    * or the step is only marked dead when newer commands sit on top.
    */
-  rollback: (boardId: string, action: BoardAction) => RollbackOutcome;
+  rollback: (
+    boardId: string,
+    action: BoardAction,
+    rebaseEpicAssignment?: boolean,
+  ) => RollbackOutcome;
   /**
    * Mark steps invalidated by a foreign change (focus refetch, TASK-29) —
    * undo will skip them instead of clobbering the other writer's edit.
@@ -340,9 +344,12 @@ export function useUndoHistory({
   const undo = useCallback(() => run("undo"), [run]);
   const redo = useCallback(() => run("redo"), [run]);
 
-  const rollback = useCallback(
-    (boardId: string, action: BoardAction): RollbackOutcome => {
-      const outcome = stackFor(boardId).rollbackStep(action);
+  const rollback = useCallback<UndoHistory["rollback"]>(
+    (boardId, action, rebaseEpicAssignment) => {
+      const outcome = stackFor(boardId).rollbackStep(
+        action,
+        rebaseEpicAssignment,
+      );
       // The step is gone: the header's undo button must not offer it.
       sync();
       return outcome;

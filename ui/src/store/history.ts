@@ -46,6 +46,8 @@ export type RollbackOutcome =
   | { kind: "reverted"; undo: BoardAction }
   /** The step is buried under newer commands — marked dead, nothing applied. */
   | { kind: "dead" }
+  /** A newer membership edit already replaced the failed assignment. */
+  | { kind: "superseded" }
   /** The command recorded no step (board-level, no inverse) — nothing to do. */
   | { kind: "none" };
 
@@ -278,7 +280,10 @@ export class BoardHistory {
    * newer commands already sit on top, the step is only marked dead (its
    * optimistic change stays until the board reconciles with the server).
    */
-  rollbackStep(action: BoardAction): RollbackOutcome {
+  rollbackStep(
+    action: BoardAction,
+    rebaseEpicAssignment = false,
+  ): RollbackOutcome {
     const commandId = (action as { commandId?: string }).commandId;
     const index = this.past.findIndex(
       (entry) =>
@@ -287,12 +292,45 @@ export class BoardHistory {
           (entry.do as { commandId?: string }).commandId === commandId),
     );
     if (index === -1) return { kind: "none" };
+    const entry = this.past[index];
+    if (
+      rebaseEpicAssignment &&
+      action.type === "SET_CARD_EPIC" &&
+      entry.undo.type === "SET_CARD_EPIC"
+    ) {
+      const next = this.past
+        .slice(index + 1)
+        .find(
+          ({ undo }) =>
+            undo.type === "SET_CARD_EPIC" && undo.cardId === action.cardId,
+        );
+      if (
+        next?.undo.type === "SET_CARD_EPIC" &&
+        next.undo.epicId === action.epicId
+      ) {
+        // Undoing the newer choice must restore the membership that preceded
+        // the failed command, which never reached the server.
+        next.undo = {
+          ...next.undo,
+          epicId: entry.undo.epicId,
+          cardUpdatedAt:
+            next.undo.cardUpdatedAt === action.at
+              ? entry.undo.cardUpdatedAt
+              : next.undo.cardUpdatedAt,
+          cardActivity: next.undo.cardActivity?.filter(
+            ({ id }) => id !== action.activityIds?.[0],
+          ),
+        };
+        this.past.splice(index, 1);
+        return { kind: "superseded" };
+      }
+    }
     if (index !== this.past.length - 1) {
       this.past[index].dead = true;
       if (this.lastAction === this.past[index].do) this.lastAction = null;
       return { kind: "dead" };
     }
-    const entry = this.past.splice(index, 1)[0];
+    this.past.splice(index, 1);
     if (this.lastAction === entry.do) this.lastAction = null;
     return { kind: "reverted", undo: entry.undo };
   }

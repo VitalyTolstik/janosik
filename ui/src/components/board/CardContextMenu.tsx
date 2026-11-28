@@ -272,6 +272,7 @@ function CardContextMenuBody({
   const { role } = useBoardAccess();
   const {
     dispatch,
+    dispatchEpicCreation,
     toggleCardLabel,
     addLabel,
     setCardPriority,
@@ -445,13 +446,11 @@ function CardContextMenuBody({
                 <ContextMenuItem
                   className="max-lg:min-h-11"
                   onClick={() =>
-                    onNewEpic(async (title) => {
-                      const { id, result } = addAssignmentEpic(
-                        boardId,
-                        title,
-                        dispatch,
-                      );
-                      if ((await result) !== false) pickEpic(id);
+                    onNewEpic((title) => {
+                      onEpicChange();
+                      addAssignmentEpic(boardId, title, dispatchEpicCreation, [
+                        cardId,
+                      ]);
                     })
                   }
                 >

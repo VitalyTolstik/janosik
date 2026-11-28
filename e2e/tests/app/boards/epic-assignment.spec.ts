@@ -8,7 +8,7 @@ import { test, expect } from "@/fixtures/collaboration.js";
 import type { BoardFixture } from "@/fixtures/board.js";
 import { getBoard } from "@/helpers/boards.js";
 import { openFilters, closeFilters, facetCount } from "@/helpers/filters.js";
-import { undoButton } from "@/helpers/history.js";
+import { closeCardDialog, undoButton } from "@/helpers/history.js";
 import { openTable, tableRow } from "@/helpers/views.js";
 
 const visualDir = process.env.E2E_E3_VISUAL_DIR;
@@ -457,4 +457,210 @@ test("creates an epic in the card dialog and undoes assignment and creation inde
   await expect(
     page.getByRole("option", { name: /Webhook recovery/ }),
   ).toHaveCount(0);
+});
+
+for (const scenario of [
+  { surface: "dialog", rejectCreate: false },
+  { surface: "context", rejectCreate: false },
+  { surface: "bulk", rejectCreate: false },
+  { surface: "dialog", rejectCreate: true },
+  { surface: "bulk", rejectCreate: true },
+] as const) {
+  const { surface, rejectCreate } = scenario;
+  test(`${surface} creation preserves a later epic choice${rejectCreate ? " when creation is refused" : ""}`, async ({
+    page,
+    board,
+  }) => {
+    const { alpha, beta, epicId } = await seedAssignments(board);
+    await board.open(page);
+    const card = face(page, alphaTitle);
+    const picker = page.getByRole("combobox", { name: "Epic", exact: true });
+    const bulk = surface === "bulk";
+    async function openEpicContext() {
+      await openContext(page, alphaTitle, false);
+      await page.getByTestId("ctx-epic-trigger").click();
+      return page.getByTestId("ctx-epic-content");
+    }
+
+    const commands: { type: string; cardId?: string; epicId: string }[] = [];
+    let releaseCreate!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    await page.route(`**/api/v1/boards/${board.id}/commands`, async (route) => {
+      const { action } = route.request().postDataJSON();
+      if (action.type === "ADD_EPIC") {
+        commands.push({ type: action.type, epicId: action.epic.id });
+        await createGate;
+        if (rejectCreate) {
+          await route.fulfill({
+            status: 400,
+            json: { message: "Invalid epic", field: "action.epic.title" },
+          });
+          return;
+        }
+      } else if (action.type === "SET_CARD_EPIC") {
+        const { type, cardId, epicId } = action;
+        commands.push({ type, cardId, epicId });
+      }
+      await route.continue();
+    });
+
+    try {
+      if (surface === "dialog") {
+        await card.getByTestId("card-title").click();
+        await picker.click();
+        await page.getByRole("option", { name: "+ New epic…" }).click();
+      } else if (bulk) {
+        await page.getByTestId("bulk-select-toggle").click();
+        await card.getByTestId("card-title").click();
+        await face(page, betaTitle).getByTestId("card-title").click();
+        await page.getByTestId("bulk-epic").click();
+        await page
+          .getByTestId("bulk-epic-menu")
+          .getByRole("menuitem", { name: "+ New epic…" })
+          .click();
+      } else {
+        const menu = await openEpicContext();
+        await menu.getByRole("menuitem", { name: "+ New epic…" }).click();
+      }
+      await page
+        .getByRole("textbox", { name: "Epic title" })
+        .fill("First intent");
+      await page.getByRole("button", { name: "Create and assign" }).click();
+      await expect
+        .poll(() => commands.map(({ type }) => type))
+        .toEqual(["ADD_EPIC"]);
+      if (surface === "dialog") {
+        await picker.click();
+        await page.getByRole("option", { name: new RegExp(epicTitle) }).click();
+        await expect(picker).toContainText(epicTitle);
+      } else {
+        const menu = await openEpicContext();
+        await menu
+          .getByRole("menuitem", { name: new RegExp(epicTitle) })
+          .click();
+        await expect(card.getByTestId("card-epic-chip")).toContainText(
+          epicTitle,
+        );
+      }
+      expect(commands).toHaveLength(1);
+    } finally {
+      releaseCreate();
+    }
+
+    const createdId = commands[0].epicId;
+    const assign = (cardId: string, epicId: string) => ({
+      type: "SET_CARD_EPIC",
+      cardId,
+      epicId,
+    });
+    await expect
+      .poll(() => commands)
+      .toEqual([
+        { type: "ADD_EPIC", epicId: createdId },
+        ...(rejectCreate ? [] : [assign(alpha, createdId)]),
+        ...(bulk && !rejectCreate ? [assign(beta, createdId)] : []),
+        assign(alpha, epicId),
+      ]);
+
+    const state = async () => {
+      const snapshot = await getBoard(board.api, board.id);
+      return {
+        alpha: snapshot.cards[alpha]?.epicId,
+        beta: snapshot.cards[beta]?.epicId,
+        created: snapshot.epics?.some(({ id }) => id === createdId) ?? false,
+      };
+    };
+    await expect.poll(state).toEqual({
+      alpha: epicId,
+      beta: bulk && !rejectCreate ? createdId : undefined,
+      created: !rejectCreate,
+    });
+    await closeCardDialog(page);
+    if (bulk) {
+      if (!rejectCreate) {
+        await expect(page.getByTestId("bulk-status")).toContainText(
+          "Changed: 2 of 2.",
+        );
+      }
+      await page.getByTestId("bulk-select-toggle").click();
+    }
+    await expect(card.getByTestId("card-epic-chip")).toContainText(epicTitle);
+    if (rejectCreate && bulk) {
+      await expect(
+        face(page, betaTitle).getByTestId("card-epic-chip"),
+      ).toHaveCount(0);
+    }
+    await undoButton(page).click();
+    await expect.poll(state).toEqual({
+      alpha: rejectCreate ? undefined : createdId,
+      beta: bulk && !rejectCreate ? createdId : undefined,
+      created: !rejectCreate,
+    });
+    if (bulk && !rejectCreate) {
+      await undoButton(page).click();
+      await expect
+        .poll(state)
+        .toEqual({ alpha: createdId, beta: undefined, created: true });
+    }
+    if (!rejectCreate) {
+      await undoButton(page).click();
+      await expect
+        .poll(state)
+        .toEqual({ alpha: undefined, beta: undefined, created: true });
+      await undoButton(page).click();
+      await expect
+        .poll(state)
+        .toEqual({ alpha: undefined, beta: undefined, created: false });
+    }
+    await expect(undoButton(page)).toBeDisabled();
+  });
+}
+
+test("cancelling bulk creation assignments keeps the in-flight card and skips the rest", async ({
+  page,
+  board,
+}) => {
+  const { alpha, beta } = await seedAssignments(board);
+  await board.open(page);
+  const assigned: string[] = [];
+  let releaseAssignment!: () => void;
+  const assignmentGate = new Promise<void>((resolve) => {
+    releaseAssignment = resolve;
+  });
+  await page.route(`**/api/v1/boards/${board.id}/commands`, async (route) => {
+    const { action } = route.request().postDataJSON();
+    if (action.type === "SET_CARD_EPIC") {
+      assigned.push(action.cardId);
+      if (assigned.length === 1) await assignmentGate;
+    }
+    await route.continue();
+  });
+
+  await page.getByTestId("bulk-select-toggle").click();
+  await face(page, alphaTitle).getByTestId("card-title").click();
+  const betaCard = face(page, betaTitle);
+  await betaCard.getByTestId("card-title").click();
+  await page.getByTestId("bulk-epic").click();
+  await page.getByRole("menuitem", { name: "+ New epic…" }).click();
+  try {
+    await page
+      .getByRole("textbox", { name: "Epic title" })
+      .fill("First intent");
+    await page.getByRole("button", { name: "Create and assign" }).click();
+    await expect.poll(() => assigned).toEqual([alpha]);
+    await page.getByTestId("bulk-clear").click();
+  } finally {
+    releaseAssignment();
+  }
+  await expect(page.getByTestId("bulk-status")).toContainText(
+    "Stopped: 1 of 2 processed.",
+  );
+  await expect(betaCard.getByTestId("card-epic-chip")).toHaveCount(0);
+  const { cards, epics } = await getBoard(board.api, board.id);
+  expect(cards[alpha]?.epicId).toBeDefined();
+  expect(epics?.some(({ id }) => id === cards[alpha]?.epicId)).toBe(true);
+  expect(cards[beta]?.epicId).toBeUndefined();
+  expect(assigned).toEqual([alpha]);
 });

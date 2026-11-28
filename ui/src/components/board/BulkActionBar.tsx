@@ -128,7 +128,8 @@ export function BoardSelectionToggle() {
  * reports and the existing undo/rollback semantics.
  */
 export function BulkActionBar() {
-  const { board, dispatch, roleOf, addColumn, addLabel } = useBoard();
+  const { board, dispatch, dispatchEpicCreation, roleOf, addColumn, addLabel } =
+    useBoard();
   const selection = useCardSelection();
   const { t, tp } = useI18n();
   const toast = useToast();
@@ -164,7 +165,7 @@ export function BulkActionBar() {
     text: string;
   } | null>(null);
 
-  const cancelRef = useRef(false);
+  const batchAbortRef = useRef<AbortController | null>(null);
   const aliveRef = useRef(true);
   const barRef = useRef<HTMLElement | null>(null);
   const deleteConfirmRef = useRef<HTMLButtonElement>(null);
@@ -179,6 +180,7 @@ export function BulkActionBar() {
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      batchAbortRef.current?.abort();
     };
   }, []);
 
@@ -195,7 +197,7 @@ export function BulkActionBar() {
 
   const requestCancel = useCallback(() => {
     if (busy === null) return false;
-    cancelRef.current = true;
+    batchAbortRef.current?.abort();
     setCancelling(true);
     // Calendar/Watch remove Cancel when the run ends; land on Dismiss.
     if (!selection.enabled) pendingBarFocusRef.current = "dismiss";
@@ -447,9 +449,11 @@ export function BulkActionBar() {
   const runBatch = useCallback(
     async (
       ids: readonly string[],
-      step: (cardId: string) => StepResult | Promise<StepResult>,
+      step: (cardId: string, index: number) => StepResult | Promise<StepResult>,
+      prepare?: (signal: AbortSignal) => Promise<boolean>,
     ): Promise<RunResult> => {
-      cancelRef.current = false;
+      const abort = new AbortController();
+      batchAbortRef.current = abort;
       setCancelling(false);
       setFailures([]);
       setLastRun(null);
@@ -458,13 +462,14 @@ export function BulkActionBar() {
       const cardFailures: Failure[] = [];
       let changed = 0;
       let done = 0;
+      const ready = prepare === undefined || (await prepare(abort.signal));
 
       for (const cardId of ids) {
-        if (cancelRef.current || !aliveRef.current) break;
+        if (!ready || abort.signal.aborted || !aliveRef.current) break;
         const title = board?.cards[cardId]?.title ?? cardId;
         let result: StepResult;
         try {
-          result = await step(cardId);
+          result = await step(cardId, done);
         } catch {
           result = { ok: false };
         }
@@ -481,8 +486,8 @@ export function BulkActionBar() {
         if (aliveRef.current) setBusy({ done, total: ids.length });
       }
 
-      const cancelled = cancelRef.current && done < ids.length;
-      cancelRef.current = false;
+      const cancelled = abort.signal.aborted && done < ids.length;
+      batchAbortRef.current = null;
       const result: RunResult = {
         ids,
         failures: cardFailures,
@@ -1302,15 +1307,35 @@ export function BulkActionBar() {
           {newEpicOpen && !readOnly ? (
             <NewAssignmentEpicDialog
               onClose={() => setNewEpicOpen(false)}
-              returnFocus={() => epicTrigger.current?.focus()}
+              returnFocus={() => {
+                if (epicTrigger.current?.disabled) {
+                  focusSurvivingBarControl("clear");
+                } else {
+                  epicTrigger.current?.focus();
+                }
+              }}
               onSubmit={async (title) => {
                 setNewEpicOpen(false);
-                const { id, result } = addAssignmentEpic(
-                  board.id,
-                  title,
-                  dispatch,
+                const ids = [...selection.selectedIds];
+                let created = false;
+                let assignments: Promise<boolean>[];
+                const result = await runBatch(
+                  ids,
+                  async (_cardId, index) => ({ ok: await assignments[index] }),
+                  async (signal) => {
+                    const creation = addAssignmentEpic(
+                      board.id,
+                      title,
+                      dispatchEpicCreation,
+                      ids,
+                      signal,
+                    );
+                    assignments = creation.assignments;
+                    created = await creation.created;
+                    return created;
+                  },
                 );
-                if ((await result) !== false) await applyEpic(id);
+                if (created) report("epic", result);
               }}
             />
           ) : null}

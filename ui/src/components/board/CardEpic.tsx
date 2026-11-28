@@ -25,7 +25,7 @@ export function CardEpic({
   onNewOpenChange: (close: (() => void) | null) => void;
 }) {
   const { t } = useI18n();
-  const { dispatch } = useBoardActions();
+  const { dispatch, dispatchEpicCreation } = useBoardActions();
   const labelId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const pendingCreation = useRef(false);
@@ -131,14 +131,11 @@ export function CardEpic({
           {creating ? (
             <EpicTitleForm
               onCancel={close}
-              onSubmit={async (title) => {
+              onSubmit={(title) => {
                 close();
-                const { id, result } = addAssignmentEpic(
-                  board.id,
-                  title,
-                  dispatch,
-                );
-                if ((await result) !== false) await pick(id);
+                addAssignmentEpic(board.id, title, dispatchEpicCreation, [
+                  card.id,
+                ]);
               }}
             />
           ) : null}
