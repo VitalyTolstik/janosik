@@ -46,6 +46,7 @@ import { boardBackgroundById } from "@/types/board-background";
 import { hasCard } from "@/utils/card-nav";
 import {
   filterCardIds,
+  indexEpicTitlesByCard,
   isFilterActive,
   readFilterParams,
   resolveFilterChange,
@@ -109,7 +110,17 @@ export function BoardSection() {
   // use `replace` so typing a query does not fill the history with a step per
   // keystroke; the open-card param (`?card=`) is preserved by the serializer.
   const [searchParams, setSearchParams] = useSearchParams();
-  const filter = useMemo(() => readFilterParams(searchParams), [searchParams]);
+  const boardLoaded = board !== undefined;
+  const boardEpics = board?.epics;
+  const knownEpicIds = useMemo(
+    () =>
+      boardLoaded ? new Set((boardEpics ?? []).map(({ id }) => id)) : undefined,
+    [boardLoaded, boardEpics],
+  );
+  const filter = useMemo(
+    () => readFilterParams(searchParams, knownEpicIds),
+    [searchParams, knownEpicIds],
+  );
   // The URL is the source of truth, but the router applies it in a transition:
   // until that render lands, `filter` above is stale. Two quick facet picks
   // (or a facet pick followed by typing) would otherwise compute from the
@@ -213,6 +224,10 @@ export function BoardSection() {
       ? serverMatch.descriptionIds
       : undefined;
 
+  const epicTitleByCard = useMemo(
+    () => indexEpicTitlesByCard(board?.cards ?? {}, board?.epics ?? []),
+    [board?.cards, board?.epics],
+  );
   const filteredIds = useMemo(() => {
     if (!active || !board) return null;
     return filterCardIds(
@@ -222,8 +237,9 @@ export function BoardSection() {
       Date.now(),
       board.labels,
       serverCardIds,
+      epicTitleByCard,
     );
-  }, [active, board, filter, serverCardIds]);
+  }, [active, board, filter, serverCardIds, epicTitleByCard]);
 
   const readOnly =
     board !== undefined &&
@@ -547,6 +563,7 @@ export function BoardSection() {
                 <FilterBar
                   filter={filter}
                   labels={board.labels}
+                  epics={board.epics}
                   boardId={board.id}
                   matchCount={matchCount}
                   matchPending={serverPending}
@@ -563,6 +580,7 @@ export function BoardSection() {
                     view={view}
                     labels={board.labels}
                     assigneeIds={savedViewAssigneeIds}
+                    epicIds={knownEpicIds}
                     onApply={(nextFilter, nextView) => {
                       setFilter(nextFilter);
                       if (nextView) setView(nextView);

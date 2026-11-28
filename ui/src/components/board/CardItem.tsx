@@ -1,5 +1,13 @@
 import type { BaseUIEvent } from "@base-ui/react/types";
-import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
+import {
+  AlignLeft,
+  Archive,
+  Check,
+  CopyPlus,
+  Ellipsis,
+  ListTodo,
+  X,
+} from "lucide-react";
 import {
   memo,
   useEffect,
@@ -15,6 +23,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { EpicChip, type CardEpicChip } from "@/components/board/EpicChip";
 import { CardContextMenu } from "@/components/board/CardContextMenu";
 import { DueBadge } from "@/components/board/DueBadge";
 import { LinkedCardsPopover } from "@/components/board/LinkedCardsPopover";
@@ -45,32 +54,10 @@ import {
   type Label,
 } from "@janosik/shared";
 
-export interface CardEpicChip {
-  code: string;
-  title: string;
-  completed: boolean;
-}
-
-function EpicChip({ code, title, completed }: CardEpicChip) {
-  return (
-    <span
-      data-testid="card-epic-chip"
-      title={title}
-      className={cn(
-        "shrink-0 rounded border px-1 text-ui-micro font-semibold",
-        completed
-          ? "border-border bg-muted text-muted-foreground"
-          : "border-(--epic-border) bg-(--epic-surface) text-(--epic-ink)",
-      )}
-    >
-      {code}
-    </span>
-  );
-}
-
 interface CardItemProps {
   onTouchDragStart?: (event: TouchEvent<HTMLElement>) => void;
   epicChip?: CardEpicChip;
+  showEpicTitle?: boolean;
   card: Card;
   /**
    * The board id — the assignee badge (TASK-49) resolves the member's
@@ -196,6 +183,7 @@ function CardItemView({
   card,
   onTouchDragStart,
   epicChip,
+  showEpicTitle,
   boardId,
   labels,
   isDragging,
@@ -288,14 +276,8 @@ function CardItemView({
   // (owner's call): the badge doubles as the row's anchor on every card.
   const priority = card.priority ?? DEFAULT_CARD_PRIORITY;
 
-  return (
-    <CardContextMenu
-      cardId={card.id}
-      readOnly={readOnly}
-      onOpen={onClick}
-      onDuplicate={onDuplicate}
-      onArchive={onArchive}
-    >
+  function cardFace(open: (anchor?: Element | null) => void) {
+    return (
       <article
         onTouchStart={
           onTouchDragStart &&
@@ -384,6 +366,13 @@ function CardItemView({
           (selectionMode || selected) && "pl-9 max-lg:pl-12",
           selected &&
             "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/40",
+          onClick &&
+            !readOnly &&
+            !isDragging &&
+            !selectionMode &&
+            (compact
+              ? "no-hover:pr-12"
+              : "no-hover:[&_[data-testid=card-title]]:pr-11"),
           entering && "animate-card-in",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
@@ -589,7 +578,9 @@ function CardItemView({
                 {done}/{total}
               </span>
             ) : null}
-            {epicChip ? <EpicChip {...epicChip} /> : null}
+            {epicChip ? (
+              <EpicChip {...epicChip} showTitle={showEpicTitle} />
+            ) : null}
             <PriorityBadge priority={priority} />
             {card.assigneeId ? (
               <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
@@ -679,7 +670,9 @@ function CardItemView({
           the padding absorb any stray pixel. */}
             <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                {epicChip ? <EpicChip {...epicChip} /> : null}
+                {epicChip ? (
+                  <EpicChip {...epicChip} showTitle={showEpicTitle} />
+                ) : null}
                 {hasDescription ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -774,7 +767,37 @@ function CardItemView({
             ) : null}
           </>
         )}
+        {onClick && !readOnly && !isDragging && !selectionMode ? (
+          <button
+            type="button"
+            data-testid="board-card-actions"
+            aria-label={t("card.actions")}
+            aria-haspopup="menu"
+            className={cn(
+              "absolute right-1 top-1 flex size-11 items-center justify-center rounded-md bg-card text-muted-foreground shadow-sm hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring",
+              "pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 no-hover:pointer-events-auto no-hover:opacity-100",
+            )}
+            onClick={(event) => {
+              event.stopPropagation();
+              open(event.currentTarget);
+            }}
+          >
+            <Ellipsis className="size-4" aria-hidden />
+          </button>
+        ) : null}
       </article>
+    );
+  }
+
+  return (
+    <CardContextMenu
+      cardId={card.id}
+      readOnly={readOnly}
+      onOpen={onClick}
+      onDuplicate={onDuplicate}
+      onArchive={onArchive}
+    >
+      {({ open }) => cardFace(open)}
     </CardContextMenu>
   );
 }

@@ -105,6 +105,7 @@ export interface BoardSnapshot {
       dueDate?: number;
       labelIds: string[];
       assigneeId?: string;
+      epicId?: string;
       priority?: string;
       archivedAt?: number;
     }

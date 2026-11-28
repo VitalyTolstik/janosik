@@ -19,6 +19,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
+import { EpicDot } from "@/components/board/EpicAssignmentParts";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar-lazy";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ import { cn } from "@/lib/utils";
 import {
   LABEL_COLOR_DOT,
   LIMITS,
+  type Epic,
   type Label,
   type LabelColor,
 } from "@janosik/shared";
@@ -46,6 +48,7 @@ import { isOverlayOpen } from "@/utils/overlay";
 import { pad2 } from "@/utils/time";
 import {
   activeFacetCount,
+  hasEpicFacet,
   EMPTY_FILTER,
   isFilterActive,
   type CardFilter,
@@ -105,6 +108,7 @@ interface FilterBarProps {
   filter: CardFilter;
   /** Board labels to offer in the label picker. */
   labels: Label[];
+  epics?: readonly Epic[];
   /** The board id — the assignee facet enumerates the member roster (TASK-49). */
   boardId?: string;
   /** Total number of matching cards across all columns (for the count). */
@@ -214,22 +218,31 @@ function OptionRow({
 }
 
 interface CheckRowProps {
+  className?: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
   children: React.ReactNode;
 }
 
 /** Checkbox-style row (label facets: pick any combination). */
-function CheckRow({ checked, onCheckedChange, children }: CheckRowProps) {
+function CheckRow({
+  className,
+  checked,
+  onCheckedChange,
+  children,
+}: CheckRowProps) {
   return (
     <button
       type="button"
       role="checkbox"
       aria-checked={checked}
       onClick={() => onCheckedChange(!checked)}
-      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-ui-body text-foreground transition-colors hover:bg-hover"
+      className={cn(
+        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-ui-body text-foreground transition-colors hover:bg-hover",
+        className,
+      )}
     >
-      <span className="flex items-center gap-2">{children}</span>
+      <span className="flex min-w-0 items-center gap-2">{children}</span>
       <span
         className={cn(
           "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
@@ -259,6 +272,7 @@ function CheckRow({ checked, onCheckedChange, children }: CheckRowProps) {
 export function FilterBar({
   filter,
   labels,
+  epics,
   boardId,
   matchCount,
   matchPending = false,
@@ -267,6 +281,7 @@ export function FilterBar({
 }: FilterBarProps) {
   const { t, tp, lang } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [epicQuery, setEpicQuery] = useState("");
   const [facetsOpen, setFacetsOpen] = useState(false);
   useImperativeHandle(openFacetsRef, () => () => setFacetsOpen(true), []);
   const [dayCalendarOpen, setDayCalendarOpen] = useState(false);
@@ -275,6 +290,19 @@ export function FilterBar({
   const active = isFilterActive(filter);
   const facetCount = activeFacetCount(filter);
   const query = filter.query;
+  const selectableEpics = (epics ?? []).filter(
+    (epic) => epic.status === "active",
+  );
+  const epicMatches = selectableEpics.filter(({ title }) =>
+    title.toLowerCase().includes(epicQuery.trim().toLowerCase()),
+  );
+  const clearEpicFacet = () =>
+    onChange((current) => ({
+      ...current,
+      epicIds: [],
+      hasEpic: false,
+      noEpic: false,
+    }));
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -371,7 +399,13 @@ export function FilterBar({
       </div>
 
       {/* Faceted filters (labels, due date, creation date) */}
-      <Popover open={facetsOpen} onOpenChange={setFacetsOpen}>
+      <Popover
+        open={facetsOpen}
+        onOpenChange={(open) => {
+          setFacetsOpen(open);
+          if (!open) setEpicQuery("");
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
             variant={facetCount > 0 ? "secondary" : "outline"}
@@ -570,6 +604,86 @@ export function FilterBar({
               {t("filter.assignee.unassigned")}
             </CheckRow>
           </FilterSection>
+          <FilterSection title={t("epic.field")}>
+            <div data-testid="filter-epic">
+              {selectableEpics.length > 0 ? (
+                <>
+                  <Input
+                    aria-label={t("epic.search")}
+                    placeholder={t("epic.search")}
+                    value={epicQuery}
+                    onChange={(event) => setEpicQuery(event.target.value)}
+                    className="mb-1 max-lg:h-11"
+                  />
+                  <div className="max-h-44 overflow-y-auto">
+                    {epicMatches.map((epic) => (
+                      <CheckRow
+                        className="max-lg:min-h-11"
+                        key={epic.id}
+                        checked={filter.epicIds.includes(epic.id)}
+                        onCheckedChange={(checked) =>
+                          onChange((current) => ({
+                            ...current,
+                            hasEpic: false,
+                            epicIds: checked
+                              ? [...new Set([...current.epicIds, epic.id])]
+                              : current.epicIds.filter((id) => id !== epic.id),
+                          }))
+                        }
+                      >
+                        <EpicDot />
+                        <span className="min-w-0 truncate" title={epic.title}>
+                          {epic.title}
+                        </span>
+                      </CheckRow>
+                    ))}
+                    {epicMatches.length === 0 ? (
+                      <p className="px-2 py-1 text-ui-meta text-muted-foreground">
+                        {t("epic.noMatches")}
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+              <CheckRow
+                className="max-lg:min-h-11"
+                checked={filter.hasEpic}
+                onCheckedChange={(checked) =>
+                  onChange((current) => ({
+                    ...current,
+                    epicIds: [],
+                    hasEpic: checked,
+                    noEpic: checked ? false : current.noEpic,
+                  }))
+                }
+              >
+                {t("epic.only")}
+              </CheckRow>
+              <CheckRow
+                className="max-lg:min-h-11"
+                checked={filter.noEpic}
+                onCheckedChange={(checked) =>
+                  onChange((current) => ({
+                    ...current,
+                    noEpic: checked,
+                    hasEpic: checked ? false : current.hasEpic,
+                  }))
+                }
+              >
+                {t("epic.none")}
+              </CheckRow>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="max-lg:min-h-11"
+                disabled={!hasEpicFacet(filter)}
+                onClick={clearEpicFacet}
+              >
+                {t("epic.reset")}
+              </Button>
+            </div>
+          </FilterSection>
           <FilterSection title={t("filter.links")}>
             <CheckRow
               checked={filter.blocked}
@@ -698,6 +812,7 @@ export function FilterBar({
         filter.createdOn ||
         filter.due !== "any" ||
         filter.priorities.length > 0 ||
+        hasEpicFacet(filter) ||
         filter.assignees.length > 0 ||
         filter.unassigned ||
         filter.blocked ||
@@ -837,6 +952,19 @@ export function FilterBar({
               </span>
             );
           })}
+          {hasEpicFacet(filter) ? (
+            <button
+              type="button"
+              data-facet="epic"
+              className="inline-flex min-h-7 items-center gap-1 rounded-full border border-border bg-card px-2 text-ui-meta hover:bg-hover max-lg:min-h-11"
+              aria-label={t("epic.reset")}
+              onClick={clearEpicFacet}
+            >
+              <EpicDot />
+              {t("epic.field")}
+              <X className="size-3" aria-hidden />
+            </button>
+          ) : null}
           {selectedAssignees.map(({ userId, member }) => (
             <span
               key={userId}

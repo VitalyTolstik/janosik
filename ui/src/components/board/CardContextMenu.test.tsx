@@ -284,3 +284,49 @@ describe("card context menu (right-click)", () => {
     expect(await screen.findByTestId("card-context-menu")).toBeInTheDocument();
   });
 });
+
+it("assigns and removes an epic through the card context menu", async () => {
+  const board: Board = {
+    ...BOARD,
+    epics: [
+      {
+        id: "e1",
+        title: "Checkout reliability",
+        color: "rose",
+        status: "active",
+        position: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "e2",
+        title: "Account cleanup",
+        color: "rose",
+        status: "completed",
+        position: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+  };
+  localStorage.setItem("janosik-boards", JSON.stringify([board]));
+  await openMenuOnBoard();
+  const submenu = await openSub("ctx-epic-trigger", "ctx-epic-content");
+  expect(
+    within(submenu).queryByText("Account cleanup"),
+  ).not.toBeInTheDocument();
+  fireEvent.click(
+    within(submenu).getByRole("menuitem", { name: /Checkout reliability/ }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument(),
+  );
+  rightClick(screen.getByText("Alpha card"));
+  fireEvent.click(await screen.findByTestId("ctx-remove-epic"));
+  await waitFor(() =>
+    expect(screen.queryByTestId("card-context-menu")).not.toBeInTheDocument(),
+  );
+  rightClick(screen.getByText("Alpha card"));
+  expect(await screen.findByTestId("ctx-epic-trigger")).toBeInTheDocument();
+  expect(screen.queryByTestId("ctx-remove-epic")).not.toBeInTheDocument();
+});

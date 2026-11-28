@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 export interface SelectOption<T extends string> {
   value: T;
   label: string;
+  content?: ReactNode;
 }
 
 interface SelectFieldProps<T extends string> {
@@ -28,6 +29,9 @@ interface SelectFieldProps<T extends string> {
   /** Optional decorative icon before the selected value. */
   leadingIcon?: ReactNode;
   chevronClassName?: string;
+  labelledBy?: string;
+  displayLabel?: string;
+  triggerRef?: React.RefObject<HTMLButtonElement>;
 }
 
 /**
@@ -49,9 +53,13 @@ export function SelectField<T extends string>({
   className,
   leadingIcon,
   chevronClassName,
+  labelledBy,
+  displayLabel,
+  triggerRef: externalTriggerRef,
 }: SelectFieldProps<T>) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const internalTriggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = externalTriggerRef ?? internalTriggerRef;
   const selected = options.find((option) => option.value === value);
   const combobox = useCombobox({
     options: options as readonly ComboboxOption[],
@@ -71,7 +79,8 @@ export function SelectField<T extends string>({
           ref={triggerRef}
           disabled={disabled}
           aria-label={ariaLabel}
-          title={selected?.label}
+          aria-labelledby={labelledBy}
+          title={displayLabel ?? selected?.label}
           {...combobox.triggerProps}
           data-testid={testId}
           className={cn(
@@ -81,7 +90,9 @@ export function SelectField<T extends string>({
         >
           <span className="flex min-w-0 items-center gap-1.5">
             {leadingIcon}
-            <span className="truncate">{selected?.label ?? ""}</span>
+            <span className="truncate">
+              {displayLabel ?? selected?.label ?? ""}
+            </span>
           </span>
           <ChevronDown
             className={cn(
@@ -103,6 +114,7 @@ export function SelectField<T extends string>({
         onFocusOutside={(event) => event.preventDefault()}
         {...combobox.listboxProps}
         aria-label={ariaLabel}
+        aria-labelledby={labelledBy}
         data-testid={`${testId}-listbox`}
         className="z-[70] max-h-64 overflow-y-auto overscroll-contain rounded-md border bg-popover p-1 text-popover-foreground shadow-xl outline-none"
         style={{
@@ -123,14 +135,16 @@ export function SelectField<T extends string>({
               data-testid={`${testId}-option-${option.value}`}
               onClick={() => combobox.choose(index)}
               className={cn(
-                "flex min-h-9 w-full items-center justify-between rounded-md border border-transparent px-2 py-1.5 text-left text-ui-body leading-[1.35] transition-colors max-lg:min-h-11",
+                "flex min-h-9 w-full items-center justify-between gap-2 rounded-md border border-transparent px-2 py-1.5 text-left text-ui-body leading-[1.35] transition-colors max-lg:min-h-11",
                 active && "bg-hover",
                 checked
                   ? "border-primary/30 bg-primary/10 font-medium text-foreground hover:bg-primary/10"
                   : "text-foreground/90 hover:bg-hover",
               )}
             >
-              <span className="min-w-0 truncate">{option.label}</span>
+              {option.content ?? (
+                <span className="min-w-0 truncate">{option.label}</span>
+              )}
               {checked ? (
                 <Check
                   className="h-3.5 w-3.5 shrink-0 text-primary"

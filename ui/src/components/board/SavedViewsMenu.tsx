@@ -133,6 +133,7 @@ export interface SavedViewsMenuProps {
    * because a live board always contains at least the current user.
    */
   assigneeIds?: readonly string[];
+  epicIds?: ReadonlySet<string>;
   /** Apply a stored view. The caller owns the URL/history write. */
   onApply: (filter: CardFilter, view?: SavedViewProjection) => void;
   /** Disable the trigger (e.g. while the board is unavailable). */
@@ -146,6 +147,7 @@ export function SavedViewsMenu({
   view,
   labels,
   assigneeIds,
+  epicIds,
   onApply,
   disabled = false,
 }: SavedViewsMenuProps) {
@@ -257,6 +259,7 @@ export function SavedViewsMenu({
             view={view}
             labels={labels}
             assigneeIds={assigneeIds}
+            epicIds={epicIds}
             onApply={onApply}
             onClose={closeAndRestoreFocus}
             onCountChange={updateCount}
@@ -275,6 +278,7 @@ function SavedViewsPanel({
   view,
   labels,
   assigneeIds,
+  epicIds,
   onApply,
   onClose,
   onCountChange,
@@ -469,6 +473,15 @@ function SavedViewsPanel({
     setConfirmDelete(null);
   };
 
+  const updateFilters = (name: string) => {
+    if (!filterActive || writeBlocked) return;
+    const projection = isSavedViewProjection(view) ? view : undefined;
+    const updated = views.map((saved) =>
+      saved.name === name ? { name, filter, view: projection } : saved,
+    );
+    if (persist(updated) !== null) returnToList(() => focusView(name));
+  };
+
   const submitRename = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mode.kind !== "rename") return;
@@ -512,6 +525,7 @@ function SavedViewsPanel({
     const pruned = pruneSavedViews([saved], {
       labelIds: labels?.map((label) => label.id),
       assigneeIds: knownAssigneeIds,
+      epicIds: epicIds && [...epicIds],
     });
     const target = sanitizeSavedViews(pruned.views)[0];
     const dropped =
@@ -777,6 +791,17 @@ function SavedViewsPanel({
                         className="h-11"
                         data-testid="saved-views-rename-input"
                       />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="min-h-11 self-start lg:min-h-8"
+                        disabled={!filterActive || writeBlocked}
+                        onClick={() => updateFilters(saved.name)}
+                        data-testid="saved-views-update-filters"
+                      >
+                        {t("savedViews.useCurrentFilters")}
+                      </Button>
                       {renameNameError !== null && (
                         <p
                           id="saved-view-rename-error"

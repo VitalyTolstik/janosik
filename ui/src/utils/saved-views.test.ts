@@ -610,3 +610,54 @@ describe("pruneSavedViews", () => {
     expect(result.droppedViewNames).toEqual(["Other"]);
   });
 });
+
+describe("saved views v2 epic filters", () => {
+  it("reads a v1 view with neutral epic fields and upgrades on write", () => {
+    seedRaw({
+      version: 1,
+      views: [{ name: "Urgent", view: "table", filter: { due: "overdue" } }],
+    });
+    const loaded = loadSavedViews(USER, BOARD);
+    expect(loaded).toEqual({ status: "ok", migrated: true, views: [view()] });
+    expect(
+      JSON.parse(localStorage.getItem(savedViewsKey(USER, BOARD))!).version,
+    ).toBe(1);
+    expect(saveSavedViews(USER, BOARD, loaded.views).ok).toBe(true);
+    expect(
+      JSON.parse(localStorage.getItem(savedViewsKey(USER, BOARD))!).version,
+    ).toBe(2);
+  });
+
+  it("sanitizes epic-only views and prunes deleted ids on apply", () => {
+    seedRaw({
+      version: 2,
+      views: [
+        {
+          name: "Epic view",
+          filter: {
+            epicIds: ["e1", " e1 ", " ", 123, "gone"],
+            hasEpic: "1",
+            noEpic: true,
+          },
+        },
+      ],
+    });
+    const { views } = loadSavedViews(USER, BOARD);
+    expect(views[0].filter).toEqual({
+      ...EMPTY_FILTER,
+      epicIds: ["e1", "gone"],
+      noEpic: true,
+    });
+    const pruned = pruneSavedViews(views, { epicIds: ["e1"] });
+    expect(pruned.changedViewNames).toEqual(["Epic view"]);
+    expect(pruned.views[0].filter).toEqual({
+      ...EMPTY_FILTER,
+      epicIds: ["e1"],
+      noEpic: true,
+    });
+    expect(saveSavedViews(USER, BOARD, pruned.views)).toEqual({
+      ok: true,
+      views: pruned.views,
+    });
+  });
+});

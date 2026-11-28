@@ -136,6 +136,7 @@ function BoardProbe() {
               labels: card.labelIds,
               archivedAt: card.archivedAt,
               assigneeId: card.assigneeId,
+              epicId: card.epicId,
             },
           ]),
         ),
@@ -1429,4 +1430,106 @@ describe("bulk card actions", () => {
     expect(screen.queryByTestId("bulk-select-toggle")).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
+});
+
+describe("bulk epic assignment", () => {
+  function boardWithEpic() {
+    const board = seedBoard();
+    board.epics = [
+      {
+        id: "epic-1",
+        title: "Checkout reliability",
+        color: "rose",
+        status: "active",
+        position: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    localStorage.setItem("janosik-boards", JSON.stringify([board]));
+    return board;
+  }
+
+  async function assignEpic(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByTestId("bulk-epic"));
+    await user.click(
+      screen.getByRole("menuitem", { name: /Checkout reliability/ }),
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    api.clearAccessToken();
+  });
+
+  it("assigns, clears, and undoes the last card independently", async () => {
+    boardWithEpic();
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Alpha");
+    await selectByClick(user, "Bravo");
+    await assignEpic(user);
+    expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+      "Changed: 2 of 2.",
+    );
+    await user.click(screen.getByTestId("bulk-epic"));
+    await user.click(
+      screen.getByRole("menuitem", { name: "Remove from epic" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("board-probe")).not.toHaveTextContent("epic-1"),
+    );
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    const cards = JSON.parse(
+      screen.getByTestId("board-probe").textContent!,
+    ).labels;
+    expect(cards["card-alpha"].epicId).toBeUndefined();
+    expect(cards["card-bravo"].epicId).toBe("epic-1");
+  });
+
+  it.each(["refuse", "cancel"] as const)(
+    "handles a %s during a sequential batch",
+    async (mode) => {
+      vi.stubEnv("VITE_API_URL", "http://api.test/api/v1");
+      api.onAuthLost = null;
+      const server = new FakeServer([boardWithEpic()]);
+      vi.stubGlobal("fetch", server.handle);
+      const user = userEvent.setup();
+      tree(<SelectionHarness />);
+      expect(
+        await screen.findByText("Alpha", {}, { timeout: 15_000 }),
+      ).toBeVisible();
+      await enterSelectionMode(user);
+      await user.click(screen.getByTestId("bulk-select-all"));
+      if (mode === "refuse")
+        server.failNextCommand(409, { conflict: "version" });
+      const release = server.holdNextCommand();
+      await assignEpic(user);
+      expect(await screen.findByTestId("bulk-progress")).toBeInTheDocument();
+      if (mode === "cancel")
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+      act(() => release());
+      await waitFor(() =>
+        expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+          mode === "cancel" ? "Stopped: 1 of 3 processed." : "Changed: 2 of 3.",
+        ),
+      );
+      if (mode === "refuse")
+        expect(screen.getByTestId("bulk-errors")).toHaveTextContent("Alpha");
+      const cards = JSON.parse(
+        screen.getByTestId("board-probe").textContent!,
+      ).labels;
+      expect(cards["card-alpha"].epicId).toBe(
+        mode === "cancel" ? "epic-1" : undefined,
+      );
+      expect(cards["card-bravo"].epicId).toBe(
+        mode === "cancel" ? undefined : "epic-1",
+      );
+    },
+  );
 });

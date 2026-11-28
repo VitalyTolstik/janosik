@@ -10,6 +10,7 @@ import { EMPTY_FILTER, type CardFilter } from "@/utils/filter";
 import {
   loadSavedViews,
   MAX_SAVED_VIEWS,
+  SAVED_VIEWS_VERSION,
   savedViewsKey,
   saveSavedViews,
   type SavedView,
@@ -385,7 +386,7 @@ describe("SavedViewsMenu", () => {
     const { onApply } = renderMenu({ labels: [] });
     await openMenu();
 
-    const raw = `{"version":2,"views":[]}`;
+    const raw = `{"version":${SAVED_VIEWS_VERSION + 1},"views":[]}`;
     localStorage.setItem(savedViewsKey(USER, BOARD), raw);
     await userEvent.click(
       screen.getByRole("button", { name: /Apply view.*Only missing/ }),
@@ -755,7 +756,7 @@ describe("SavedViewsMenu", () => {
 
     localStorage.setItem(
       savedViewsKey(USER, BOARD),
-      `{"version":2,"views":[]}`,
+      `{"version":${SAVED_VIEWS_VERSION + 1},"views":[]}`,
     );
     await userEvent.click(
       screen.getByRole("button", { name: "Delete “Keep”" }),
@@ -803,7 +804,7 @@ describe("SavedViewsMenu", () => {
   });
 
   it("locks writes for a newer payload version", async () => {
-    const raw = `{"version":2,"views":[]}`;
+    const raw = `{"version":${SAVED_VIEWS_VERSION + 1},"views":[]}`;
     localStorage.setItem(savedViewsKey(USER, BOARD), raw);
     renderMenu();
     await openMenu();
@@ -816,7 +817,7 @@ describe("SavedViewsMenu", () => {
   });
 
   it("locks writes when a newer payload appears before saving", async () => {
-    const raw = `{"version":2,"views":[]}`;
+    const raw = `{"version":${SAVED_VIEWS_VERSION + 1},"views":[]}`;
     renderMenu();
     await openMenu();
     await userEvent.click(screen.getByTestId("saved-views-save-current"));
@@ -859,7 +860,7 @@ describe("SavedViewsMenu", () => {
 
     expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
       "aria-label",
-      "Saved views (2)",
+      "Saved views · 2",
     );
     expect(screen.getByTestId("saved-views-count-badge")).toHaveTextContent(
       "2",
@@ -885,14 +886,14 @@ describe("SavedViewsMenu", () => {
 
     expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
       "aria-label",
-      "Saved views (2)",
+      "Saved views · 2",
     );
 
     rerender({ boardId: "board-2" });
 
     expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
       "aria-label",
-      "Saved views (1)",
+      "Saved views · 1",
     );
     expect(screen.getByTestId("saved-views-count-badge")).toHaveTextContent(
       "1",

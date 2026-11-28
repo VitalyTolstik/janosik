@@ -207,3 +207,41 @@ describe("TableView sorting", () => {
     }
   });
 });
+
+it("persists the optional epic column and sorts flat rows by epic title", () => {
+  localStorage.clear();
+  seedBoard();
+  const [board] = JSON.parse(localStorage.getItem("janosik-boards")!);
+  board.epics = [
+    {
+      id: "a",
+      title: "Accounting",
+      color: "rose",
+      status: "active",
+      position: 11,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    {
+      id: "b",
+      title: "Checkout",
+      color: "rose",
+      status: "active",
+      position: 12,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ];
+  board.cards["card-a"].epicId = "b";
+  board.cards["card-c"].epicId = "a";
+  localStorage.setItem("janosik-boards", JSON.stringify([board]));
+  localStorage.setItem("janosik-table-columns", JSON.stringify(["epic"]));
+  renderTable();
+  sortBy("table-sort-epic", 1);
+  expect(rowTitles()).toEqual(["Gamma task", "Alpha task", "Beta task"]);
+  expect(screen.getAllByTestId("table-epic")[0]).toHaveTextContent(
+    "EP-12 Accounting",
+  );
+  fireEvent.click(screen.getByTestId("table-sort-epic"));
+  expect(rowTitles()).toEqual(["Alpha task", "Gamma task", "Beta task"]);
+});

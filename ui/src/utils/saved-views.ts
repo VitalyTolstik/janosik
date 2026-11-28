@@ -33,7 +33,7 @@ import {
  */
 
 /** Payload schema version. Bump only together with a reader migration. */
-export const SAVED_VIEWS_VERSION = 1;
+export const SAVED_VIEWS_VERSION = 2;
 /** Saved views kept per account + board. */
 export const MAX_SAVED_VIEWS = 20;
 /** Maximum saved-view name, in UTF-16 characters (matches the input cap). */
@@ -72,7 +72,7 @@ export type SavedViewsLoadStatus =
 export interface SavedViewsLoadResult {
   status: SavedViewsLoadStatus;
   views: SavedView[];
-  /** The key held a legacy bare array; the next write upgrades the shape. */
+  /** The key held an older payload; the next write upgrades it. */
   migrated?: boolean;
   /** Where unparsable/wrong-shape text was copied, when that succeeded. */
   quarantineKey?: string | null;
@@ -83,6 +83,7 @@ export interface SavedViewsOptions {
   labelIds?: readonly string[];
   /** Board member ids currently present. Undefined means "not loaded". */
   assigneeIds?: readonly string[];
+  epicIds?: readonly string[];
 }
 
 export interface PrunedSavedViews {
@@ -179,6 +180,9 @@ export function sanitizeSavedViewFilter(value: unknown): CardFilter | null {
     unassigned: raw.unassigned === true,
     blocked: raw.blocked === true,
     hasLinks: raw.hasLinks === true,
+    epicIds: uniqueStrings(raw.epicIds),
+    hasEpic: raw.hasEpic === true,
+    noEpic: raw.noEpic === true,
   };
   return isFilterActive(filter) ? filter : null;
 }
@@ -237,7 +241,8 @@ function parsePayload(value: unknown): ParsedPayload {
   // still read as "newer", not as damaged data that gets quarantined.
   if (typeof raw.version === "number") {
     if (raw.version > SAVED_VIEWS_VERSION) return { kind: "unsupported" };
-    if (raw.version !== SAVED_VIEWS_VERSION) return { kind: "invalid" };
+    if (raw.version !== 1 && raw.version !== SAVED_VIEWS_VERSION)
+      return { kind: "invalid" };
   } else if (raw.version !== undefined) {
     return { kind: "invalid" };
   }
@@ -245,7 +250,7 @@ function parsePayload(value: unknown): ParsedPayload {
   return {
     kind: "views",
     views: raw.views,
-    migrated: raw.version === undefined,
+    migrated: raw.version !== SAVED_VIEWS_VERSION,
   };
 }
 
@@ -452,7 +457,8 @@ export function pruneSavedViews(
     options.labelIds === undefined ? null : new Set(options.labelIds);
   const assignees =
     options.assigneeIds === undefined ? null : new Set(options.assigneeIds);
-  if (labels === null && assignees === null) {
+  const epics = options.epicIds === undefined ? null : new Set(options.epicIds);
+  if (labels === null && assignees === null && epics === null) {
     return {
       views: [...views],
       missingOptions: false,
@@ -471,14 +477,23 @@ export function pruneSavedViews(
     const assigneeIds = assignees
       ? view.filter.assignees.filter((id) => assignees.has(id))
       : view.filter.assignees;
+    const epicIds = epics
+      ? view.filter.epicIds.filter((id) => epics.has(id))
+      : view.filter.epicIds;
     const changed =
       labelIds.length !== view.filter.labelIds.length ||
-      assigneeIds.length !== view.filter.assignees.length;
+      assigneeIds.length !== view.filter.assignees.length ||
+      epicIds.length !== view.filter.epicIds.length;
     if (!changed) {
       next.push(view);
       continue;
     }
-    const filter = { ...view.filter, labelIds, assignees: assigneeIds };
+    const filter = {
+      ...view.filter,
+      labelIds,
+      assignees: assigneeIds,
+      epicIds,
+    };
     if (!isFilterActive(filter)) {
       droppedViewNames.push(view.name);
       continue;

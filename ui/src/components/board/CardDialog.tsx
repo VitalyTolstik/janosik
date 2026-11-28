@@ -37,6 +37,7 @@ import { CardAssignee } from "@/components/board/CardAssignee";
 import { CardTaskSpec } from "@/components/board/CardTaskSpec";
 import { CardClaim } from "@/components/board/CardClaim";
 import { CardLinks } from "@/components/board/CardLinks";
+import { CardEpic } from "@/components/board/CardEpic";
 import { CardCoverPicker } from "@/components/board/CardCoverPicker";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { LabelPicker } from "@/components/board/LabelPicker";
@@ -209,6 +210,10 @@ export function CardDialog({
   // a temporal-dead-zone access (TASK-156).
   const card = board && cardId ? board.cards[cardId] : undefined;
   const { t, lang } = useI18n();
+  const closeNewEpicRef = useRef<(() => void) | null>(null);
+  const onNewEpicOpenChange = useCallback((close: (() => void) | null) => {
+    closeNewEpicRef.current = close;
+  }, []);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
@@ -1047,6 +1052,7 @@ export function CardDialog({
         open={open}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
+            closeNewEpicRef.current?.();
             setLinkEditorCardId(null);
             setLabelPickerOpen(false);
             setDeleteConfirm(false);
@@ -1061,6 +1067,11 @@ export function CardDialog({
             // The inline task-spec editor owns Escape: keep the dialog and
             // its staged draft open. Radix runs this on document capture, so
             // a bubble-phase stopPropagation in the form would be too late.
+            if (closeNewEpicRef.current) {
+              event.preventDefault();
+              closeNewEpicRef.current();
+              return;
+            }
             if (taskSpecEditingRef.current) {
               event.preventDefault();
               return;
@@ -1476,6 +1487,14 @@ export function CardDialog({
                   cardId={card.id}
                   assigneeId={card.assigneeId}
                   readOnly={readOnly}
+                />
+
+                <CardEpic
+                  key={card.id}
+                  board={board}
+                  card={card}
+                  readOnly={readOnly}
+                  onNewOpenChange={onNewEpicOpenChange}
                 />
 
                 {readOnly ? null : (

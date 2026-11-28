@@ -232,7 +232,7 @@ describe("BoardSection saved views integration", () => {
 
     expect(await screen.findByTestId("saved-views-menu")).toHaveAttribute(
       "aria-label",
-      "Saved views (2)",
+      "Saved views · 2",
     );
     await openSavedViews();
     expect(
@@ -245,7 +245,7 @@ describe("BoardSection saved views integration", () => {
     await screen.findByText("Beta card");
     expect(screen.getByTestId("saved-views-menu")).toHaveAttribute(
       "aria-label",
-      "Saved views (1)",
+      "Saved views · 1",
     );
     await openSavedViews();
     expect(

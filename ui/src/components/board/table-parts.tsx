@@ -15,7 +15,7 @@ export function checklistProgress(card: Card): { done: number; total: number } {
 
 /** Sortable headers (TASK-14.1 item 7). */
 export type SortKey =
-  "title" | "column" | "due" | "priority" | "assignee" | "createdAt";
+  "title" | "column" | "due" | "priority" | "assignee" | "epic" | "createdAt";
 
 export interface SortState {
   key: SortKey;
@@ -45,6 +45,7 @@ export function compareTableRows(
   columnIndex: Map<string, number>,
   assigneeName: (userId: string) => string,
   lang: string,
+  epicTitle?: (epicId: string) => string | undefined,
 ): number {
   switch (sort.key) {
     case "title":
@@ -83,6 +84,16 @@ export function compareTableRows(
         ) * sort.dir
       );
     }
+    case "epic": {
+      const aTitle = a.card.epicId ? epicTitle?.(a.card.epicId) : undefined;
+      const bTitle = b.card.epicId ? epicTitle?.(b.card.epicId) : undefined;
+      if (aTitle === bTitle) return 0;
+      if (aTitle === undefined) return 1;
+      if (bTitle === undefined) return -1;
+      return (
+        aTitle.localeCompare(bTitle, lang, { sensitivity: "base" }) * sort.dir
+      );
+    }
     case "createdAt":
       return (a.card.createdAt - b.card.createdAt) * sort.dir;
   }
@@ -92,6 +103,7 @@ export function compareTableRows(
 export const OPTIONAL_COLUMNS = [
   "priority",
   "assignee",
+  "epic",
   "checklists",
   "description",
   "createdAt",

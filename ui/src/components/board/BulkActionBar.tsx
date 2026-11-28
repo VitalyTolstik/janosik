@@ -1,6 +1,8 @@
 import {
   Archive,
   Check,
+  Diamond,
+  Ellipsis,
   ListChecks,
   LoaderCircle,
   MoveRight,
@@ -12,6 +14,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  EpicOption,
+  NewAssignmentEpicDialog,
+} from "@/components/board/EpicAssignmentParts";
 import { ConfirmDialog } from "@/components/board/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +34,9 @@ import { useToast } from "@/components/Toast";
 import { useI18n } from "@/i18n";
 import { useBoard } from "@/store/BoardContext";
 import { useCardSelection } from "@/store/board-selection";
+import { unhydratedEpicProgress } from "@/store/read-model";
+import { collectBacklogEpics } from "@/utils/backlog-rows";
+import { addAssignmentEpic } from "@/utils/epic-assignment";
 import { useBoardMembersList } from "@/store/board-live";
 import { userLabel } from "@/utils/avatar";
 import { createId } from "@/utils/id";
@@ -65,7 +74,16 @@ interface RunResult {
   cancelled: boolean;
 }
 
-type BulkKind = "move" | "archive" | "delete" | "label" | "assign";
+type BulkKind = "move" | "archive" | "delete" | "label" | "assign" | "epic";
+
+const BULK_SUCCESS = {
+  move: "bulk.moved",
+  archive: "bulk.archived",
+  delete: "bulk.deleted",
+  label: "bulk.labelled",
+  assign: "bulk.assigned",
+  epic: "bulk.epicAssigned",
+} as const satisfies Record<BulkKind, string>;
 type BarFocusTarget = "dismiss" | "clear" | "first";
 
 const ACTION_BUTTON = "h-9 max-lg:h-11 text-ui-body";
@@ -128,6 +146,8 @@ export function BulkActionBar() {
     total: number;
     cancelled: boolean;
   } | null>(null);
+  const [newEpicOpen, setNewEpicOpen] = useState(false);
+  const epicTrigger = useRef<HTMLButtonElement>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   // Destructive delete is armed in place: the trash turns into a red check
   // and a cancel icon. No modal, one deliberate second click.
@@ -486,7 +506,7 @@ export function BulkActionBar() {
       kind: BulkKind,
       result: RunResult,
       destructive = false,
-      successKey?: "bulk.unassigned",
+      successKey?: "bulk.unassigned" | "bulk.epicRemoved",
     ) => {
       if (!aliveRef.current) return;
       // Calendar/Watch remove Cancel when the run ends. If the run took the
@@ -535,21 +555,7 @@ export function BulkActionBar() {
         else selection.replace(nextSelection);
       }
       if (result.changed > 0) {
-        toast.success(
-          tp(
-            successKey ??
-              (kind === "move"
-                ? "bulk.moved"
-                : kind === "archive"
-                  ? "bulk.archived"
-                  : kind === "delete"
-                    ? "bulk.deleted"
-                    : kind === "label"
-                      ? "bulk.labelled"
-                      : "bulk.assigned"),
-            result.changed,
-          ),
-        );
+        toast.success(tp(successKey ?? BULK_SUCCESS[kind], result.changed));
       } else if (result.failures.length === 0) {
         toast.info(t("bulk.noChanges"));
       }
@@ -749,6 +755,33 @@ export function BulkActionBar() {
     [board, report, runAction, runBatch, selection.selectedIds, t],
   );
 
+  const applyEpic = async (epicId: string | null) => {
+    if (!board || readOnly) return;
+    const result = await runBatch(
+      [...selection.selectedIds],
+      async (cardId) => {
+        const card = board.cards[cardId];
+        if (!card) return { ok: false, reason: t("card.notFound") };
+        if ((card.epicId ?? null) === epicId)
+          return { ok: true, changed: false };
+        const ok = await runAction({
+          type: "SET_CARD_EPIC",
+          boardId: board.id,
+          cardId,
+          epicId,
+          at: Date.now(),
+        });
+        return { ok, changed: ok };
+      },
+    );
+    report(
+      "epic",
+      result,
+      false,
+      epicId === null ? "bulk.epicRemoved" : undefined,
+    );
+  };
+
   const labels = board?.labels ?? [];
   const selectedIds = new Set(selection.selectedIds);
   const selectedCards = selection.selectedIds
@@ -764,6 +797,7 @@ export function BulkActionBar() {
 
   if (!board || !visible || (readOnly && busy === null)) return null;
 
+  const epics = collectBacklogEpics(board, unhydratedEpicProgress(board));
   const displayedCount = busy?.total ?? selection.count;
   const busyLabel =
     busy === null
@@ -1196,6 +1230,86 @@ export function BulkActionBar() {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : null}
+
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                ref={epicTrigger}
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="bulk-epic"
+                className={cn(
+                  ACTION_BUTTON,
+                  "gap-1.5 max-sm:min-w-11 max-sm:px-0",
+                )}
+                disabled={
+                  !selection.enabled || busy !== null || selection.count === 0
+                }
+              >
+                <Diamond className="size-3.5 max-sm:hidden" aria-hidden />
+                <Ellipsis className="size-4 sm:hidden" aria-hidden />
+                <span className="max-sm:sr-only">{t("epic.field")}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              collisionPadding={8}
+              className="max-h-(--radix-dropdown-menu-content-available-height) w-60 overflow-y-auto"
+              data-testid="bulk-epic-menu"
+            >
+              <DropdownMenuLabel>{t("epic.assign")}</DropdownMenuLabel>
+              {[...epics.values()]
+                .filter(({ epic }) => epic.status === "active")
+                .map((entry) => (
+                  <DropdownMenuItem
+                    key={entry.epic.id}
+                    className="max-lg:min-h-11"
+                    onSelect={() => void applyEpic(entry.epic.id)}
+                  >
+                    <EpicOption entry={entry} />
+                  </DropdownMenuItem>
+                ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="max-lg:min-h-11"
+                onSelect={() => void applyEpic(null)}
+              >
+                {t("epic.none")}
+              </DropdownMenuItem>
+              {epics.size < LIMITS.epicsPerBoard ? (
+                <DropdownMenuItem
+                  className="max-lg:min-h-11"
+                  onSelect={() => setNewEpicOpen(true)}
+                >
+                  {t("epic.new")}
+                </DropdownMenuItem>
+              ) : null}
+              {selectedCards.some((card) => card.epicId !== undefined) ? (
+                <DropdownMenuItem
+                  className="max-lg:min-h-11"
+                  onSelect={() => void applyEpic(null)}
+                >
+                  {t("epic.remove")}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {newEpicOpen && !readOnly ? (
+            <NewAssignmentEpicDialog
+              onClose={() => setNewEpicOpen(false)}
+              returnFocus={() => epicTrigger.current?.focus()}
+              onSubmit={async (title) => {
+                setNewEpicOpen(false);
+                const { id, result } = addAssignmentEpic(
+                  board.id,
+                  title,
+                  dispatch,
+                );
+                if ((await result) !== false) await applyEpic(id);
+              }}
+            />
           ) : null}
 
           <Button
