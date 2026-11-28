@@ -1532,7 +1532,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Card clicks open the editor at every width again (the peek-only selection
   path is gone). The remaining H5 a11y fixes keep the People/assignee
   label-in-name clean in busy presence stacks (spaces between initials and
-  `+N`, not a concatenated string), the Members profile and long emails
+  `+N`, not a concatenated string), the phone/tablet face stack shrinks to
+  1+`+N` at 390 and 2+`+N` at 768 so the 44 px People trigger never overlaps
+  the board switcher or Agents, the Members profile and long emails
   readable at 390/768, the lapsed/expired Members text and badge on the
   AA-checked danger status token, and Watch's status rail a named focusable
   region. Verified at 390/768/1024/1440/1920 in light/dark EN/RU with

@@ -63,6 +63,19 @@ async function expectVisualOrder(
   }
 }
 
+/** True when two layout boxes overlap on both axes. */
+function overlaps(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
+  );
+}
+
 async function documentAxe(page: import("@playwright/test").Page) {
   // Stable scan: the presence enter animation blends the avatar ink while it
   // runs, which makes a contrast check depend on wall-clock timing. Axe runs
@@ -661,23 +674,58 @@ test("People trigger stays axe-clean with a busy presence stack", async ({
     ).toBeVisible();
   };
 
-  const scanHeader = async (avatars: number, overflow: "+1" | null) => {
-    for (const width of [390, 1440]) {
+  const scanHeader = async (total: number) => {
+    for (const width of [390, 768, 1440]) {
       for (const lang of ["en", "ru"] as const) {
         await page.setViewportSize({ width, height: 900 });
         const localized = new URL(page.url());
         localized.searchParams.set("lng", lang);
         await page.goto(localized.href);
         await expect(page.getByTestId("board-title")).toBeVisible();
-        await expect(page.getByTestId("people-avatar")).toHaveCount(avatars, {
+        const faces = Math.min(
+          total,
+          width === 390 ? 1 : width === 768 ? 2 : 3,
+        );
+        const overflow = total - faces;
+        await expect(page.getByTestId("people-avatar")).toHaveCount(faces, {
           timeout: 20_000,
         });
-        if (overflow === null) {
+        if (overflow === 0) {
           await expect(page.getByTestId("people-overflow")).toHaveCount(0);
         } else {
           await expect(page.getByTestId("people-overflow")).toHaveText(
-            overflow,
+            `+${overflow}`,
           );
+        }
+        if (total === 4 && width !== 1440) {
+          const trigger = page.getByTestId("people-trigger");
+          const [triggerBox, switcherBox, agentsBox] = await Promise.all([
+            trigger.boundingBox(),
+            page.getByTestId("board-switcher-trigger").boundingBox(),
+            page.getByTestId("agent-control-trigger").boundingBox(),
+          ]);
+          expect(triggerBox, "People trigger has a box").not.toBeNull();
+          expect(switcherBox, "board switcher has a box").not.toBeNull();
+          expect(agentsBox, "Agents trigger has a box").not.toBeNull();
+          expect(
+            overlaps(triggerBox!, switcherBox!),
+            "People does not overlap the board switcher",
+          ).toBe(false);
+          expect(
+            overlaps(triggerBox!, agentsBox!),
+            "People does not overlap the Agents trigger",
+          ).toBe(false);
+          const metrics = await trigger.evaluate((element) => ({
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+          }));
+          expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+          expect(triggerBox!.width).toBeGreaterThanOrEqual(44);
+          expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+          await page.screenshot({
+            path: `${visualDir}busy-${width}-${lang}.png`,
+            animations: "disabled",
+          });
         }
         await documentAxe(page);
       }
@@ -685,16 +733,18 @@ test("People trigger stays axe-clean with a busy presence stack", async ({
   };
 
   try {
-    // Two people: the visible initials sit next to each other without a
-    // badge. Axe must still find the space-separated suffix in the name.
+    // Two people: the visible initials sit next to each other (two faces from
+    // tablet up, one plus +1 on the phone). Axe must still find the
+    // space-separated suffix in the name.
     await addPresence(0);
-    await scanHeader(2, null);
+    await scanHeader(2);
 
-    // Owner + three members = three visible faces and a +1 overflow, the
-    // state where the initials and the badge sit next to each other.
+    // Four people: one face +3 on the phone, two +2 at 768, three +1 at
+    // desktop. The phone/tablet layouts must stay clear of the switcher and
+    // Agents and keep the 44 px target.
     await addPresence(1);
     await addPresence(2);
-    await scanHeader(3, "+1");
+    await scanHeader(4);
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
   }

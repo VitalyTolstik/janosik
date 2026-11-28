@@ -5,6 +5,7 @@ import type { BoardRole, PresenceUser } from "@janosik/shared";
 import { isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardPeople } from "@/hooks/use-board-people";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,7 @@ import { useBoard } from "@/store/BoardContext";
 import { useBoardMember, useBoardPresence } from "@/store/board-live";
 import { userInitials, userLabel } from "@/utils/avatar";
 
+/** Desktop face cap; phone/tablet narrow it so the header never overlaps. */
 const MAX_VISIBLE = 3;
 
 const ROLE_KEYS: Record<BoardRole, MessageKey> = {
@@ -51,13 +53,18 @@ export function PeopleMenu() {
   const users = useBoardPresence(board?.id);
   const [open, setOpen] = useState(false);
   const people = useBoardPeople();
+  const isPhone = useMediaQuery("(max-width: 639px)");
+  const isTablet = useMediaQuery("(max-width: 1023px)");
 
   // Members, sharing and presence are server-only concepts; local mode had
   // no members/share/presence triggers before H1 either.
   if (!isApiEnabled() || !board || !people) return null;
   const { menuRef: triggerRef, showMembers, showShare, openDialog } = people;
 
-  const visible = users.slice(0, MAX_VISIBLE);
+  // Keep the faces compact enough for the phone/tablet header: one face on
+  // phones, two through the tablet squeeze, three only at desktop widths.
+  const maxVisible = isPhone ? 1 : isTablet ? 2 : MAX_VISIBLE;
+  const visible = users.slice(0, maxVisible);
   const overflow = users.length - visible.length;
   const baseLabel =
     users.length > 1
@@ -85,7 +92,7 @@ export function PeopleMenu() {
               size="icon"
               aria-label={label}
               data-testid="people-trigger"
-              className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
+              className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:w-auto max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
             >
               {/* The presence faces are the People entry (recommended header):
                   they are decorative inside the button, whose accessible name
@@ -139,7 +146,7 @@ export function PeopleMenu() {
               <span
                 aria-hidden="true"
                 data-testid="people-live-dot"
-                className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-background bg-success"
+                className="absolute right-0 top-0 h-2 w-2 rounded-full border border-background bg-success"
               />
             </Button>
           </DropdownMenuTrigger>
