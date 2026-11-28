@@ -11,7 +11,7 @@ test("the invite calendar refuses an access deadline in the past", async ({
   await board.open(page);
   const dialog = await openMembers(page);
   await dialog.getByRole("textbox", { name: "Email" }).fill(partner.user.email);
-  await dialog.getByRole("button", { name: "Role", exact: true }).click();
+  await dialog.getByTestId("role-trigger").last().click();
   await page.getByRole("radio", { name: "Viewer", exact: true }).click();
   await dialog.getByTestId("expiry-trigger").click();
   await expect(page.getByTestId("expiry-calendar")).toBeVisible();

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Share2, UserPlus, Users } from "lucide-react";
 import type { BoardRole, PresenceUser } from "@janosik/shared";
 
 import { isApiEnabled } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
 import { useBoardPeople } from "@/hooks/use-board-people";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useOpenProfile } from "@/components/board/UserProfileDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +22,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { BreakableText } from "@/components/ui/breakable-text";
 import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import { useBoardMember, useBoardPresence } from "@/store/board-live";
-import { userLabel } from "@/utils/avatar";
+import { userInitials, userLabel } from "@/utils/avatar";
 
+/** Desktop face cap; phone/tablet narrow it so the header never overlaps. */
 const MAX_VISIBLE = 3;
 
 const ROLE_KEYS: Record<BoardRole, MessageKey> = {
@@ -50,18 +53,33 @@ export function PeopleMenu() {
   const users = useBoardPresence(board?.id);
   const [open, setOpen] = useState(false);
   const people = useBoardPeople();
+  const isPhone = useMediaQuery("(max-width: 639px)");
+  const isTablet = useMediaQuery("(max-width: 1023px)");
 
   // Members, sharing and presence are server-only concepts; local mode had
   // no members/share/presence triggers before H1 either.
   if (!isApiEnabled() || !board || !people) return null;
   const { menuRef: triggerRef, showMembers, showShare, openDialog } = people;
 
-  const visible = users.slice(0, MAX_VISIBLE);
+  // Keep the faces compact enough for the phone/tablet header: one face on
+  // phones, two through the tablet squeeze, three only at desktop widths.
+  const maxVisible = isPhone ? 1 : isTablet ? 2 : MAX_VISIBLE;
+  const visible = users.slice(0, maxVisible);
   const overflow = users.length - visible.length;
-  const label =
+  const baseLabel =
     users.length > 1
       ? `${t("people.button")} — ${tp("presence.people", users.length)}`
       : t("people.button");
+  // Axe's label-content-name check compares visible text, so the initials (and
+  // the +N badge) must stay in the name even though the group is decorative
+  // for screen readers. Two-word names produce two-letter initials.
+  const visibleInitials = visible
+    .map((person) => userInitials(person.displayName, ""))
+    .join(" ");
+  const visibleSuffix = [visibleInitials, overflow > 0 ? `+${overflow}` : ""]
+    .filter(Boolean)
+    .join(" ");
+  const label = visibleSuffix ? `${baseLabel} — ${visibleSuffix}` : baseLabel;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -74,15 +92,27 @@ export function PeopleMenu() {
               size="icon"
               aria-label={label}
               data-testid="people-trigger"
-              className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:w-11 max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
+              className="group relative shrink-0 gap-1 rounded-full border border-border/60 bg-card/60 px-1.5 hover:border-primary/40 hover:bg-card max-lg:h-11 max-lg:w-auto max-lg:min-w-11 lg:h-8 lg:w-auto lg:min-w-8 lg:rounded-full lg:px-2"
             >
-              <span className="hidden items-center lg:flex">
-                {visible.length === 0 ? (
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  visible.map((person, index) => (
+              {/* The presence faces are the People entry (recommended header):
+                  they are decorative inside the button, whose accessible name
+                  identifies the menu, so the initials never read as a second
+                  account (H5). */}
+              {visible.length === 0 ? (
+                <Users
+                  className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              ) : null}
+              <span
+                aria-hidden="true"
+                data-testid="people-presence-group"
+                className="flex items-center"
+              >
+                {visible.map((person, index) => (
+                  <Fragment key={person.id}>
+                    {index > 0 ? " " : null}
                     <span
-                      key={person.id}
                       data-testid="people-avatar"
                       className={cn(
                         "janosik-presence-in",
@@ -99,25 +129,24 @@ export function PeopleMenu() {
                         className="ring-2 ring-background"
                       />
                     </span>
-                  ))
-                )}
+                  </Fragment>
+                ))}
                 {overflow > 0 ? (
-                  <span
-                    data-testid="people-overflow"
-                    className="-ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-ui-micro font-semibold tabular-nums text-muted-foreground ring-2 ring-background"
-                  >
-                    +{overflow}
-                  </span>
+                  <Fragment>
+                    {" "}
+                    <span
+                      data-testid="people-overflow"
+                      className="-ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-muted text-ui-micro font-semibold tabular-nums text-muted-foreground ring-2 ring-background"
+                    >
+                      +{overflow}
+                    </span>
+                  </Fragment>
                 ) : null}
               </span>
-              <Users
-                className="h-[18px] w-[18px] text-muted-foreground lg:hidden"
-                aria-hidden
-              />
               <span
                 aria-hidden="true"
                 data-testid="people-live-dot"
-                className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border border-background bg-success"
+                className="absolute right-0 top-0 h-2 w-2 rounded-full border border-background bg-success"
               />
             </Button>
           </DropdownMenuTrigger>
@@ -214,7 +243,9 @@ function PeoplePresenceRow({
         avatarPath={person.avatarPath ?? member?.avatarPath}
         size="sm"
       />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="min-w-0 flex-1 break-words" title={name}>
+        <BreakableText text={name} />
+      </span>
       {isMe ? (
         <span className="shrink-0 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
           {t("presence.you")}

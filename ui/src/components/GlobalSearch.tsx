@@ -159,13 +159,14 @@ export function GlobalSearch({
     <>
       <Tooltip>
         <TooltipTrigger asChild>
-          {/* Labeled trigger: a muted "Global search" hint sits to the left
-              of the magnifier (hidden on narrow screens — the icon stays). */}
+          {/* Labeled trigger: a muted "Search" hint sits to the left of the
+              magnifier (hidden on narrow screens — the icon stays). */}
           <Button
             ref={triggerRef}
             variant="ghost"
             size="sm"
             aria-label={t("search.label")}
+            data-testid="global-search-trigger"
             onClick={() => setOpenBoth(true)}
             className={cn(
               "gap-1.5 text-muted-foreground transition-colors hover:text-foreground",

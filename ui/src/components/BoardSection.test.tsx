@@ -1105,11 +1105,12 @@ describe("TableView interactivity (TASK-14.1)", () => {
     const full = screen.getAllByTestId("card-title")[0].closest("article");
     expect(full?.className).toContain("h-[112px]");
 
-    // Radix DropdownMenu opens on pointerdown, not click.
-    fireEvent.pointerDown(screen.getByTestId("board-display-menu"), {
+    // Radix DropdownMenu opens on pointerdown, not click. The appearance
+    // controls now live directly in the toolbar overflow.
+    fireEvent.pointerDown(screen.getByTestId("board-toolbar-menu"), {
       button: 0,
     });
-    fireEvent.click(screen.getByTestId("density-toggle"));
+    fireEvent.click(await screen.findByTestId("density-toggle"));
 
     await waitFor(() => {
       const compact = screen.getAllByTestId("card-title")[0].closest("article");
@@ -1132,9 +1133,17 @@ describe("TableView interactivity (TASK-14.1)", () => {
       { timeout: 15_000 },
     );
     expect(view).toBeInTheDocument();
-    // No cards and the filter toolbar is hidden in the bare watch view.
+    // No cards and the filter toolbar is hidden in the bare watch view, but
+    // the view switcher must stay so Watch is not a dead end.
     expect(view.querySelectorAll("article")).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /Filters/i })).toBeNull();
-    expect(localStorage.getItem("janosik-board-view")).toBe("watch");
+    expect(screen.getByTestId("view-switcher")).toBeVisible();
+    fireEvent.click(
+      screen.getByTestId("view-switcher").querySelector("button")!,
+    );
+    expect(await screen.findByTestId("board-toolbar")).toHaveTextContent(
+      "Filters",
+    );
+    expect(localStorage.getItem("janosik-board-view")).toBe("board");
   });
 });

@@ -38,10 +38,7 @@ import type { CardLinkIndex } from "@/utils/links";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { useBoardActions } from "@/store/BoardContext";
-import {
-  useCardPeekSelection,
-  useCardSelection,
-} from "@/store/board-selection";
+import { useCardSelection } from "@/store/board-selection";
 import type { Card, Column, Label } from "@janosik/shared";
 import { LIMITS } from "@janosik/shared";
 import { isColumnFull } from "@janosik/shared";
@@ -154,7 +151,6 @@ function ColumnViewBody({
   } = useBoardActions();
   const { t, tp } = useI18n();
   const selection = useCardSelection();
-  const peek = useCardPeekSelection();
   const [renameOpen, setRenameOpen] = useState(false);
   const openRename = useCallback(() => setRenameOpen(true), []);
   // Touch has no reliable `dblclick` here: the header owns dnd-kit's
@@ -530,13 +526,6 @@ function ColumnViewBody({
                           compact={compact}
                           readOnly={readOnly}
                           selected={selection.selectedSet.has(card.id)}
-                          peekSelected={
-                            peek?.peekOpen && peek.selectedCardId === card.id
-                          }
-                          onSelectPeek={
-                            peek?.peekOpen ? peek.selectCard : undefined
-                          }
-                          onOpenPeek={peek?.openPeek}
                           selectionMode={selection.enabled && selection.mode}
                           onToggleSelect={
                             selection.enabled ? selection.toggle : undefined

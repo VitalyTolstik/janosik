@@ -121,8 +121,47 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(screen.getAllByTestId("board-member-row")).toHaveLength(2);
     expect(screen.getByTestId("board-members-invite")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Role of Boris" }),
+      screen.getByRole("button", { name: /^Role of Boris\b/ }),
     ).toHaveTextContent("Admin");
+  });
+
+  it("keeps a long self profile and a lapsed expiry readable on a narrow row", async () => {
+    const self: BoardMemberDto = {
+      ...ADMIN,
+      displayName: null,
+      email: "owner-20261127212322@v1review.example",
+    };
+    const lapsed: BoardMemberDto = {
+      ...MEMBER,
+      userId: "user-3",
+      displayName: null,
+      email: "lapsed-20261127212322@v1review.example",
+      role: "VIEWER",
+      expiresAt: Date.now() - 60_000,
+    };
+    vi.spyOn(api, "listMembers").mockResolvedValue([self, lapsed]);
+
+    renderPanel(true, undefined, self.userId);
+
+    const [selfRow] = await screen.findAllByTestId("board-member-row");
+    const selfOpen = within(selfRow).getByTestId("board-member-open");
+    // 390: the profile owns a full wrapped row instead of collapsing beside
+    // the role/leave controls; 768+: it goes back to one flex line.
+    expect(selfOpen.className).toContain("basis-full");
+    expect(selfOpen.className).toContain("sm:basis-0");
+    expect(within(selfRow).getByTestId("board-member-email")).toHaveTextContent(
+      self.email,
+    );
+    expect(selfRow).toHaveTextContent("owner-20261127212322@v1review.example");
+
+    const lapsedRow = screen
+      .getAllByTestId("board-member-row")
+      .find((row) => row.dataset.userId === lapsed.userId)!;
+    const expiry = within(lapsedRow).getByTestId("board-member-expiry");
+    expect(expiry).toHaveTextContent(/until .*access expired/);
+    // No ellipsis: the complete expiry sentence stays in the DOM and the row
+    // is allowed to grow instead of hiding the lapsed state.
+    expect(expiry.className).not.toContain("truncate");
   });
 
   it("filters the roster by name or email and shows an empty state", async () => {
@@ -233,7 +272,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     await screen.findByText("Boris");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Role of quiet@example.com" }),
+      screen.getByRole("button", { name: /^Role of quiet@example\.com\b/ }),
     );
     fireEvent.click(screen.getByRole("radio", { name: "Viewer" }));
 
@@ -242,7 +281,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     });
     expect(
       await screen.findByRole("button", {
-        name: "Role of quiet@example.com",
+        name: /^Role of quiet@example\.com\b/,
       }),
     ).toHaveTextContent("Viewer");
     expect(await screen.findByText("Role updated")).toBeInTheDocument();
@@ -264,7 +303,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Access until — quiet@example.com",
+        name: /^Access until — quiet@example\.com\b/,
       }),
     );
     await screen.findByTestId("expiry-calendar");
@@ -304,7 +343,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     renderPanel(true);
     await screen.findByText("Boris");
 
-    const picker = screen.getByRole("button", { name: "Role of Boris" });
+    const picker = screen.getByRole("button", { name: /^Role of Boris\b/ });
     expect(picker).toBeDisabled();
     expect(picker.closest("span")).toHaveAttribute(
       "title",
@@ -434,7 +473,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
 
     renderPanel(true);
     await screen.findByText("Boris");
-    fireEvent.click(screen.getByRole("button", { name: "Role of Boris" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Role of Boris\b/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Member" }));
 
     expect(
@@ -626,7 +665,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     );
     await screen.findByText("Boris");
     expect(
-      screen.getByRole("button", { name: "Role of Boris" }),
+      screen.getByRole("button", { name: /^Role of Boris\b/ }),
     ).toHaveTextContent("Admin");
 
     act(() => {
@@ -866,7 +905,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
       "Invitation expired",
     );
     expect(within(row).getByTestId("board-pending-expired")).toHaveClass(
-      "text-danger",
+      "text-(--agent-tone-danger)",
     );
   });
 });

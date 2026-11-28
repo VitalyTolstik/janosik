@@ -180,6 +180,7 @@ export function BoardSwitcher({
             aria-label={t(
               archivedEntry ? "board.switcher.archived" : "board.switcher.aria",
             )}
+            data-testid="board-switcher-trigger"
             aria-expanded={open}
             className={cn(
               "shrink-0 text-muted-foreground hover:text-foreground [&_svg]:transition-transform [&_svg]:duration-150 data-[state=open]:text-foreground",

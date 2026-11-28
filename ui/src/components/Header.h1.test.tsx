@@ -378,7 +378,7 @@ describe("header dialog lifecycle", () => {
   it("returns palette focus to the brand link when navigation removes the search trigger", async () => {
     const router = renderHeader(new FakeServer([board]));
     await screen.findByTestId("people-trigger");
-    const trigger = screen.getByRole("button", { name: "Global search" });
+    const trigger = screen.getByRole("button", { name: "Search" });
     await userEvent.click(trigger);
     const search = await screen.findByTestId("global-search-input");
     expect(search).toHaveFocus();
@@ -480,6 +480,30 @@ describe("H1 header: People + Board menu", () => {
     );
   });
 
+  it("keeps the People presence faces decorative and leaves the account entry distinct", async () => {
+    const server = new FakeServer([board]);
+    server.initialPresence = [ADMIN, BORIS];
+    renderHeader(server);
+
+    const people = await screen.findByTestId("people-trigger");
+    await waitFor(() =>
+      expect(people).toHaveAccessibleName(
+        "People — 2 people on this board — A B",
+      ),
+    );
+    // The visible initials must carry the same separators as the name,
+    // otherwise axe's label-content-name check sees "AB".
+    expect(people).toHaveTextContent("A B");
+    // The avatar stack is grouped under the People icon and hidden from the
+    // accessibility tree: it must never compete with the account trigger.
+    const group = screen.getByTestId("people-presence-group");
+    expect(group).toHaveAttribute("aria-hidden", "true");
+    expect(within(people).getAllByTestId("people-avatar")).toHaveLength(2);
+    expect(within(people).queryByTestId("people-overflow")).toBeNull();
+    expect(within(people).queryByText("Admin")).toBeNull();
+    expect(screen.getByTestId("account-trigger")).toHaveAccessibleName(/Admin/);
+  });
+
   it("opens members and share from People and returns focus to the trigger", async () => {
     renderHeader(new FakeServer([board]));
     await openPeople();
@@ -518,7 +542,7 @@ describe("H1 header: People + Board menu", () => {
     await waitFor(() =>
       expect(people).toHaveAttribute(
         "aria-label",
-        "People — 2 people on this board",
+        "People — 2 people on this board — A B",
       ),
     );
     await userEvent.click(people);

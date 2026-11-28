@@ -1,9 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { memo } from "react";
-import { PanelRight } from "lucide-react";
 
-import { useI18n } from "@/i18n";
 import { CardItem } from "@/components/board/CardItem";
 import type { CardLinkFacts } from "@/utils/links";
 import type { Card, Label } from "@janosik/shared";
@@ -42,9 +40,6 @@ interface SortableCardProps {
   selectionMode?: boolean;
   /** Toggles this card in the bulk selection (shift extends the range). */
   onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
-  peekSelected?: boolean;
-  onSelectPeek?: (cardId: string) => void;
-  onOpenPeek?: (cardId: string) => void;
 }
 
 /**
@@ -70,12 +65,7 @@ function SortableCardView({
   selected = false,
   selectionMode = false,
   onToggleSelect,
-  peekSelected,
-  onSelectPeek,
-  onOpenPeek,
 }: SortableCardProps) {
-  const { t } = useI18n();
-  const showPeekControl = Boolean(onOpenPeek && !selectionMode);
   const {
     attributes,
     listeners,
@@ -114,7 +104,6 @@ function SortableCardView({
       // invalid on a group (TASK-156); a title gives the group its name.
       aria-pressed={undefined}
       aria-label={card.title}
-      aria-current={!readOnly && peekSelected ? "true" : undefined}
       data-card-selected={selected || undefined}
       onKeyDown={(event) => {
         // dnd-kit's keyboard activator (Space) first; Enter on the focused
@@ -156,22 +145,7 @@ function SortableCardView({
         selected={selected}
         selectionMode={selectionMode}
         onToggleSelect={onToggleSelect}
-        peekSelected={peekSelected}
-        onSelectPeek={onSelectPeek}
-        hasPeekControl={showPeekControl}
       />
-      {showPeekControl ? (
-        <button
-          type="button"
-          aria-label={t("inspector.peekCard")}
-          className="absolute right-0 bottom-0 z-10 grid size-11 place-items-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-ring md:hidden"
-          onPointerDown={(event) => event.stopPropagation()}
-          onTouchStart={(event) => event.stopPropagation()}
-          onClick={() => onOpenPeek?.(card.id)}
-        >
-          <PanelRight className="size-4" aria-hidden />
-        </button>
-      ) : null}
     </div>
   );
 }

@@ -5,6 +5,29 @@ const execFileAsync = promisify(execFile);
 
 /** Mutate only the disposable Compose database created by run-docker.sh. */
 async function runSql(sql: string) {
+  // A local isolated stack (API + Vite + an existing Postgres container) can
+  // opt in with explicit container/database names instead of a Compose
+  // project. CI keeps using the disposable project below.
+  const container = process.env.E2E_SQL_CONTAINER;
+  const database = process.env.E2E_SQL_DB;
+  if (container && database) {
+    await execFileAsync("docker", [
+      "exec",
+      "-e",
+      `PGPASSWORD=${process.env.E2E_SQL_PASSWORD ?? "janosik"}`,
+      container,
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "janosik",
+      "-d",
+      database,
+      "-c",
+      sql,
+    ]);
+    return;
+  }
   const project = process.env.E2E_COMPOSE_PROJECT ?? "";
   if (!/^janosik-e2e-[a-f0-9]{12}$/.test(project))
     throw new Error("A disposable E2E Compose project is required");

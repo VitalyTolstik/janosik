@@ -71,6 +71,52 @@ describe("CardItem title clamping", () => {
   });
 });
 
+describe("CardItem card activation", () => {
+  it("opens the modal on click and Enter, and lets bulk selection win", () => {
+    const onClick = vi.fn();
+    const onToggleSelect = vi.fn();
+    const card = { ...baseCard, title: "Selection card" };
+
+    const { rerender } = render(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem card={card} labels={[]} onClick={onClick} readOnly />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    const article = screen.getByTestId("card-title").closest("article")!;
+
+    fireEvent.click(article);
+    expect(onClick).toHaveBeenCalledExactlyOnceWith(card.id);
+
+    fireEvent.keyDown(article, { key: "Enter" });
+    expect(onClick).toHaveBeenCalledTimes(2);
+
+    fireEvent.keyDown(article, { key: " " });
+    expect(onClick).toHaveBeenCalledTimes(3);
+
+    rerender(
+      <I18nProvider>
+        <TooltipProvider>
+          <CardItem
+            card={card}
+            labels={[]}
+            onClick={onClick}
+            onToggleSelect={onToggleSelect}
+            selectionMode
+          />
+        </TooltipProvider>
+      </I18nProvider>,
+    );
+    onClick.mockClear();
+    fireEvent.click(article, { shiftKey: true });
+    expect(onToggleSelect).toHaveBeenCalledExactlyOnceWith(card.id, true);
+    expect(onClick).not.toHaveBeenCalled();
+    fireEvent.doubleClick(article);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
 describe("CardItem fixed tile layout", () => {
   it("renders every card at the same fixed size", () => {
     renderCard();
@@ -536,9 +582,18 @@ describe("assignee badge (TASK-49)", () => {
     renderWithLive(live, { ...baseCard, assigneeId: "u-boris" });
 
     expect(screen.getByTestId("card-assignee")).toBeInTheDocument();
+    expect(screen.getByTestId("card-assignee")).toHaveAccessibleName(
+      "Assigned to Boris B",
+    );
     expect(screen.getByTestId("user-avatar")).toHaveAttribute(
       "aria-label",
       "Boris",
+    );
+    // The initials are decorative; hiding them keeps the visible text out of
+    // the button name and clears axe label-content-name-mismatch (H5).
+    expect(screen.getByTestId("user-avatar").parentElement).toHaveAttribute(
+      "aria-hidden",
+      "true",
     );
   });
 

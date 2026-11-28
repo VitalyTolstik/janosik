@@ -155,10 +155,12 @@ describe("AccountDialog (TASK-36.1)", () => {
 
     // The header trigger is part of the same auth state: new name, new color.
     const trigger = screen.getByTestId("account-trigger");
-    await waitFor(() => expect(trigger).toHaveTextContent("Vera"));
+    await waitFor(() => expect(trigger).toHaveAccessibleName(/Vera/));
     expect(trigger.querySelector("[data-testid='user-avatar']")).toHaveClass(
       "bg-teal",
     );
+    // Avatar-only trigger: the name is not visible text in the header.
+    expect(trigger).not.toHaveTextContent("Vera");
   });
 
   it("saves the immediate attention email opt-out through the dedicated endpoint", async () => {
@@ -246,7 +248,8 @@ describe("AccountDialog (TASK-36.1)", () => {
     await waitFor(() => expect(server.account.displayName).toBe("Vera"));
     // The successful profile write reached the header even though the
     // follow-up settings write was refused.
-    expect(screen.getByTestId("account-trigger")).toHaveTextContent("Vera");
+    expect(screen.getByTestId("account-trigger")).toHaveAccessibleName(/Vera/);
+    expect(screen.getByTestId("account-trigger")).not.toHaveTextContent("Vera");
     await waitFor(() => expect(attention).toBeChecked());
   });
 

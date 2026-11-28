@@ -11,10 +11,19 @@ test("saving the display name updates the header and survives a reload", async (
   await dialog.getByTestId("account-display-name").fill("Vera E2E");
   await dialog.getByTestId("account-profile-save").click();
   await expect(page.getByText("Profile updated")).toBeVisible();
-  await expect(page.getByTestId("account-trigger")).toContainText("Vera E2E");
+  // The recommended account trigger is avatar-only; the name stays in the
+  // aria-label (the accessible name) rather than visible text. The account
+  // dialog is still open here, so Radix hides the header from the
+  // accessibility tree — assert the attribute that carries the name.
+  await expect(page.getByTestId("account-trigger")).toHaveAttribute(
+    "aria-label",
+    /Vera E2E/,
+  );
 
   await page.reload();
-  await expect(page.getByTestId("account-trigger")).toContainText("Vera E2E");
+  await expect(page.getByTestId("account-trigger")).toHaveAccessibleName(
+    /Vera E2E/,
+  );
 });
 
 test("saving an avatar color updates the header avatar", async ({

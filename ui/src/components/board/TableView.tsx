@@ -78,10 +78,7 @@ import { isColumnFull } from "@janosik/shared";
 import { cn } from "@/lib/utils";
 import { createId } from "@/utils/id";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
-import {
-  useCardPeekSelection,
-  useCardSelection,
-} from "@/store/board-selection";
+import { useCardSelection } from "@/store/board-selection";
 import {
   LABEL_COLOR_CHIP,
   type BoardRole,
@@ -163,7 +160,6 @@ export function TableView({
   } = useBoard();
   const { role } = useBoardAccess();
   const selection = useCardSelection();
-  const peek = useCardPeekSelection();
   const { t, lang } = useI18n();
   const toast = useToast();
   const labelsOf = useCardLabels(board?.labels ?? NO_LABELS);
@@ -437,8 +433,6 @@ export function TableView({
       selectionMode={selection.enabled && selection.mode}
       onToggleSelect={selection.enabled ? selection.toggle : undefined}
       onOpen={onCardClick}
-      onSelectPeek={peek?.peekOpen ? peek.selectCard : undefined}
-      peekSelected={peek?.peekOpen && peek.selectedCardId === card.id}
       onStartTitleEdit={setEditingTitleId}
       onSubmitTitle={submitTitleEdit}
       onCancelTitle={cancelTitleEdit}
@@ -727,8 +721,6 @@ interface TableRowProps {
   /** Toggles this row in the bulk selection (shift extends the range). */
   onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
   onOpen: (cardId: string) => void;
-  onSelectPeek?: (cardId: string) => void;
-  peekSelected?: boolean;
   onStartTitleEdit: (cardId: string) => void;
   /** Commits the inline editor's own (uncontrolled) value. */
   onSubmitTitle: (cardId: string, title: string) => void;
@@ -783,8 +775,6 @@ function TableRowBody({
   selectionMode = false,
   onToggleSelect,
   onOpen,
-  onSelectPeek,
-  peekSelected,
   onStartTitleEdit,
   onSubmitTitle,
   onCancelTitle,
@@ -872,10 +862,6 @@ function TableRowBody({
               }
               return;
             }
-            if (onSelectPeek) {
-              onSelectPeek(card.id);
-              return;
-            }
             const target = event.target as HTMLElement;
             if (target.closest('[data-testid="table-title-cell"]') === null) {
               onOpen(card.id);
@@ -891,20 +877,6 @@ function TableRowBody({
               onOpen(card.id);
             }, 220);
           }}
-          onDoubleClick={
-            onSelectPeek && !selectionMode
-              ? (event) => {
-                  if (event.defaultPrevented || shouldLeaveToBrowser(event))
-                    return;
-                  if (
-                    event.target instanceof Element &&
-                    event.target.closest("button, a, input")
-                  )
-                    return;
-                  onOpen(card.id);
-                }
-              : undefined
-          }
           onAuxClick={(event) => {
             // Wheel-click (middle button) opens the card in a new tab — the
             // row is a <tr>, so the browser has no href to act on by itself.
@@ -913,14 +885,12 @@ function TableRowBody({
               openCardInNewTab(boardId, card.id);
             }
           }}
-          aria-current={peekSelected ? "true" : undefined}
           data-testid="table-row"
           data-card-selected={selected || undefined}
           data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
           className={cn(
             "cursor-pointer touch-manipulation border-b border-border/40 transition-colors last:border-b-0 hover:bg-muted/40",
             selected && "bg-primary/5",
-            peekSelected && "ring-2 ring-inset ring-primary",
             attribution?.highlight === true && "janosik-foreign-row",
             isTouchDragging && "opacity-60",
             isTouchOver && "bg-primary/10 ring-1 ring-inset ring-primary/40",
@@ -1002,7 +972,7 @@ function TableRowBody({
                     onOpen(card.id);
                   }}
                   onDoubleClick={
-                    readOnly || selectionMode || onSelectPeek
+                    readOnly || selectionMode
                       ? undefined
                       : (event) => {
                           cancelPendingOpen();

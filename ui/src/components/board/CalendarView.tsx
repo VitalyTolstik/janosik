@@ -55,7 +55,6 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useTouchDrag } from "@/hooks/use-touch-drag";
 import { cn } from "@/lib/utils";
 import { formatDateOnly, formatTime, useHour12, useI18n } from "@/i18n";
-import { useCardPeekSelection } from "@/store/board-selection";
 import { useBoard } from "@/store/BoardContext";
 import {
   LABEL_COLOR_DOT,
@@ -298,7 +297,6 @@ export function CalendarView({
 }: CalendarViewProps) {
   const { board, addCard, setCardDueDate, duplicateCard, archiveCard } =
     useBoard();
-  const peek = useCardPeekSelection();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
   const { t, tp, lang } = useI18n();
   const hour12 = useHour12();
@@ -612,21 +610,11 @@ export function CalendarView({
 
   function cardActivation(cardId: string) {
     return {
-      "aria-current":
-        peek?.peekOpen && peek.selectedCardId === cardId ? true : undefined,
       onClick(event: ReactMouseEvent<HTMLButtonElement>) {
         if (chipModifierOpen(event, cardId)) return;
         event.stopPropagation();
-        if (event.detail > 0 && peek?.peekOpen) peek.selectCard(cardId);
-        else onCardClick(cardId);
+        onCardClick(cardId);
       },
-      onDoubleClick: peek?.peekOpen
-        ? (event: ReactMouseEvent<HTMLButtonElement>) => {
-            if (shouldLeaveToBrowser(event)) return;
-            event.stopPropagation();
-            onCardClick(cardId);
-          }
-        : undefined,
     };
   }
 
@@ -671,9 +659,6 @@ export function CalendarView({
             className={cn(
               "block min-h-6 w-full touch-manipulation truncate rounded-md border border-border/60 bg-muted/40 py-1 pl-1.5 pr-7 text-left text-ui-meta text-foreground/80 transition-colors hover:border-primary/50",
               !readOnly && "cursor-grab active:cursor-grabbing",
-              peek?.peekOpen &&
-                peek.selectedCardId === card.id &&
-                "ring-2 ring-inset ring-primary",
               touchDrag.activePayload === card.id &&
                 "opacity-60 ring-1 ring-primary/50",
             )}
@@ -722,9 +707,6 @@ export function CalendarView({
             title={`${entry.columnTitle} · ${entry.card.title}${entry.labels.length > 0 ? ` · ${entry.labels.map((l) => l.name).join(", ")}` : ""}`}
             className={cn(
               "flex min-h-6 w-full touch-manipulation items-center gap-1.5 rounded-md py-1 pl-1.5 pr-7 text-left text-ui-meta text-foreground/80 transition-colors hover:bg-hover",
-              peek?.peekOpen &&
-                peek.selectedCardId === entry.card.id &&
-                "ring-2 ring-inset ring-primary",
             )}
           >
             {entry.labels.length > 0 ? (
@@ -805,9 +787,6 @@ export function CalendarView({
               {...cardActivation(card.id)}
               className={cn(
                 "flex min-h-6 w-full touch-manipulation items-stretch gap-1 overflow-hidden rounded-md border text-left text-ui-meta leading-tight transition-colors hover:border-primary/50",
-                peek?.peekOpen &&
-                  peek.selectedCardId === card.id &&
-                  "ring-2 ring-inset ring-primary",
                 status === "overdue" &&
                   "border-danger/40 bg-danger/10 text-(--chip-red)",
                 status === "soon" &&

@@ -177,7 +177,7 @@ test("board header keeps the title and Agents action usable at tablet widths", a
       expect(layout.agentHeight).toBeGreaterThanOrEqual(44);
     }
     const search = page.getByRole("button", {
-      name: "Global search",
+      name: "Search",
     });
     if (width === 721) {
       await expect(
@@ -186,15 +186,15 @@ test("board header keeps the title and Agents action usable at tablet widths", a
     }
     if (width < 721) {
       await expect(search).toBeHidden();
-      await expect(page.getByText("Global search")).toBeHidden();
+      await expect(page.getByText("Search")).toBeHidden();
     } else {
       // The icon-only entry stays pointer-reachable on touch tablets; the
       // label waits for 1024.
       await expect(search).toBeVisible();
       if (width < 1024) {
-        await expect(page.getByText("Global search")).toBeHidden();
+        await expect(page.getByText("Search")).toBeHidden();
       } else {
-        await expect(page.getByText("Global search")).toBeVisible();
+        await expect(page.getByText("Search")).toBeVisible();
       }
     }
   }
@@ -224,7 +224,7 @@ test("a long board title keeps every header control hittable at 640–768", asyn
   await page.mouse.move(0, 0);
   await expect(undo).toBeEnabled();
   await expect(redo).toBeEnabled();
-  const search = page.getByRole("button", { name: "Global search" });
+  const search = page.getByRole("button", { name: "Search" });
   const people = page.getByTestId("people-trigger");
   const agents = page.getByTestId("agent-control-trigger");
   const boardMenu = page.getByTestId("board-menu-trigger");
@@ -292,7 +292,7 @@ test("a long board title keeps every header control hittable at 640–768", asyn
       await expectHittable(label, control);
     }
     if (width >= 721) {
-      await expectHittable("Global search", search);
+      await expectHittable("Search", search);
     } else {
       // Phones keep search behind ⌘K.
       await expect(search).toBeHidden();
@@ -370,7 +370,7 @@ test("a realistic board title keeps its full name with search visible", async ({
     await expect(page.getByRole("heading", { name: timeline })).toBeVisible();
 
     // Search stays available at the tablet widths.
-    const search = page.getByRole("button", { name: "Global search" });
+    const search = page.getByRole("button", { name: "Search" });
     await expect(search).toBeVisible();
     const hitInsideSearch = await search.evaluate((element) => {
       const rect = element.getBoundingClientRect();

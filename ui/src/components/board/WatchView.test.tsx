@@ -145,6 +145,19 @@ describe("WatchView (TASK-142)", () => {
     expect(screen.getByTestId("watch-presence-list")).toHaveTextContent("Ada");
   });
 
+  it("makes the scrollable status rail a named, keyboard-focusable region", () => {
+    renderWatch();
+    const status = screen.getByRole("region", { name: "Board status" });
+    expect(status).toHaveAttribute("tabindex", "0");
+    expect(status).toHaveTextContent("Columns");
+    expect(status).toHaveTextContent("Online");
+    // The feed keeps its own named region; the two must not collapse into an
+    // ambiguous single landmark.
+    expect(
+      screen.getByRole("region", { name: "Live activity" }),
+    ).toBeInTheDocument();
+  });
+
   it("mounts no cards and no drag & drop — it is a pure observer", () => {
     const { container } = renderWatch();
 

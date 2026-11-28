@@ -60,6 +60,22 @@ export async function openBoardSettings(page: Page): Promise<Locator> {
   return dialog;
 }
 
+/** Open the toolbar `...` overflow (Board appearance only). */
+export async function openBoardAppearance(page: Page): Promise<Locator> {
+  const trigger = page.getByTestId("board-toolbar-menu");
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if ((await trigger.getAttribute("aria-expanded")) !== "true") break;
+    await page.keyboard.press("Escape");
+  }
+  if ((await trigger.getAttribute("aria-expanded")) === "true") {
+    await trigger.click();
+  }
+  await trigger.click();
+  const menu = page.getByRole("menu").last();
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 export async function openCardArchive(page: Page): Promise<Locator> {
   await openBoardMenu(page);
   await page.getByRole("menuitem", { name: /Card archive/ }).click();

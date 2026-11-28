@@ -382,7 +382,7 @@ function ShareRow({
           /s/{share.token}
         </span>
         {revoked || expired ? (
-          <span className="text-ui-label text-destructive">
+          <span className="text-ui-label text-(--agent-tone-danger)">
             {revoked ? t("share.revoked") : t("share.expired")}
           </span>
         ) : null}
@@ -658,7 +658,7 @@ function TtlPicker({
         <Button
           variant="outline"
           size="sm"
-          aria-label={t("share.ttl.label")}
+          aria-label={`${t("share.ttl.label")} ${label(value)}`}
           data-testid="share-ttl"
           className="h-8 min-w-[5.5rem] justify-between gap-1.5 px-2 font-normal max-lg:min-h-11"
         >

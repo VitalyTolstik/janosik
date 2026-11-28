@@ -26,7 +26,7 @@ import {
   openCardInNewTab,
   shouldLeaveToBrowser,
 } from "@/utils/card-nav";
-import { userAvatarVar, userLabel } from "@/utils/avatar";
+import { userAvatarVar, userInitials, userLabel } from "@/utils/avatar";
 import type { CardLinkFacts } from "@/utils/links";
 import {
   LABEL_COLOR_CHIP,
@@ -97,9 +97,6 @@ interface CardItemProps {
   selectionMode?: boolean;
   /** Toggles this card in the bulk selection (shift extends the range). */
   onToggleSelect?: (cardId: string, shiftKey?: boolean) => void;
-  peekSelected?: boolean;
-  onSelectPeek?: (cardId: string) => void;
-  hasPeekControl?: boolean;
   /**
    * TASK-200.9: the server filter matched this card's description. A
    * read-model summary has only `descriptionChars`, so only the server can
@@ -179,9 +176,6 @@ function CardItemView({
   selected = false,
   selectionMode = false,
   onToggleSelect,
-  peekSelected,
-  onSelectPeek,
-  hasPeekControl,
   descriptionMatch,
 }: CardItemProps) {
   const [titleRef, titleClamped] = useClamped(!compact);
@@ -286,20 +280,6 @@ function CardItemView({
                   }
                   return;
                 }
-                (onSelectPeek ?? onClick)(card.id);
-              }
-            : undefined
-        }
-        onDoubleClick={
-          onSelectPeek && onClick && !selectionMode
-            ? (event) => {
-                if (event.defaultPrevented || shouldLeaveToBrowser(event))
-                  return;
-                if (
-                  event.target instanceof Element &&
-                  event.target.closest("button, a, input")
-                )
-                  return;
                 onClick(card.id);
               }
             : undefined
@@ -331,8 +311,6 @@ function CardItemView({
               },
             }
           : {})}
-        aria-current={readOnly && peekSelected ? "true" : undefined}
-        data-card-peek-selected={peekSelected || undefined}
         data-card-cursor={isCursor || undefined}
         data-card-selected={selected || undefined}
         data-card-href={boardId ? cardHref(boardId, card.id) : undefined}
@@ -347,8 +325,6 @@ function CardItemView({
           entering && "animate-card-in",
           isDragging && "opacity-40",
           isCursor && "border-primary ring-2 ring-primary/60",
-          peekSelected && "border-primary ring-2 ring-inset ring-primary",
-          hasPeekControl && "max-md:pr-12",
         )}
       >
         {onToggleSelect && (selectionMode || selected) ? (
@@ -768,6 +744,8 @@ function AssigneeBadge({
   const member = useBoardMember(boardId, assigneeId);
   if (member === undefined) return null;
   const name = userLabel(member.displayName, member.email);
+  const initials = userInitials(member.displayName, member.email);
+  const assignedLabel = t("card.assignee.assignedTo", { name });
 
   return (
     <Tooltip>
@@ -775,25 +753,28 @@ function AssigneeBadge({
         <button
           type="button"
           data-testid="card-assignee"
-          aria-label={t("card.assignee.assignedTo", { name })}
+          aria-label={`${assignedLabel} ${initials}`}
           onClick={(event) => {
             // Don't let the click open the card dialog.
             event.stopPropagation();
             openProfile(assigneeId);
           }}
-          className="shrink-0 rounded-full transition-transform hover:scale-110"
+          className="relative shrink-0 rounded-full transition-transform after:absolute after:-inset-2.5 after:content-[''] hover:scale-110"
         >
-          <UserAvatar
-            userId={member?.userId ?? assigneeId}
-            displayName={member?.displayName ?? null}
-            email={member?.email ?? ""}
-            color={member?.avatarColor}
-            avatarPath={member?.avatarPath}
-            size="sm"
-          />
+          {/* The initials are decorative; the button name is "Assigned to…". */}
+          <span aria-hidden="true" className="inline-flex">
+            <UserAvatar
+              userId={member?.userId ?? assigneeId}
+              displayName={member?.displayName ?? null}
+              email={member?.email ?? ""}
+              color={member?.avatarColor}
+              avatarPath={member?.avatarPath}
+              size="sm"
+            />
+          </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent>{t("card.assignee.assignedTo", { name })}</TooltipContent>
+      <TooltipContent>{assignedLabel}</TooltipContent>
     </Tooltip>
   );
 }

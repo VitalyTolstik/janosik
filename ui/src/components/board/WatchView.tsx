@@ -302,8 +302,16 @@ export function WatchView({ boardId }: WatchViewProps) {
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(14rem,20rem)_1fr]">
-        {/* Left rail: column status + who is online. */}
-        <aside className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 lg:border-b-0 lg:border-r">
+        {/* Left rail: column status + who is online. It scrolls on short
+            viewports, so it is a named, keyboard-focusable region — a
+            scrollable area must be reachable without a pointer (axe
+            scrollable-region-focusable, H5). */}
+        <aside
+          role="region"
+          aria-label={t("watch.status")}
+          tabIndex={0}
+          className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain border-b border-muted-foreground/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring lg:border-b-0 lg:border-r"
+        >
           <Section title={t("watch.columnList")}>
             <ul data-testid="watch-column-list">
               {board.columns.map((column) => {

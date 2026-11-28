@@ -100,7 +100,7 @@ function renderPalette() {
 }
 
 async function openAndType(query: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Global search" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   const input = await screen.findByTestId("global-search-input");
   fireEvent.change(input, { target: { value: query } });
   return input;

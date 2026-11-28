@@ -175,6 +175,7 @@ export function DataMenuDialogs({
     setDeletedOpen,
     setRulesOpen,
   } = menu;
+  const { t } = useI18n();
   return (
     <>
       <input
@@ -182,6 +183,7 @@ export function DataMenuDialogs({
         name="import-file"
         type="file"
         accept="application/json,.json"
+        aria-label={t("data.import")}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

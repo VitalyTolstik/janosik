@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
 } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -28,12 +27,11 @@ import { CardDialog } from "@/components/board/CardDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useBoardView } from "@/components/board/BoardViewProvider";
 import { ViewSwitcher } from "@/components/board/ViewSwitcher";
-import { BoardDisplayMenu } from "@/components/board/BoardDisplayMenu";
+import { BoardAppearanceMenu } from "@/components/board/BoardAppearanceMenu";
 import { SavedViewsMenuBoundary } from "@/components/board/SavedViewsMenuBoundary";
 import { loadSavedViewsMenu } from "@/components/board/saved-views-loader";
 import { ArchivedBoardNotice } from "@/components/board/ArchivedBoardNotice";
 import { useToast } from "@/components/Toast";
-import { useBoardInspector } from "@/hooks/use-board-inspector";
 import { useBoardBackground } from "@/hooks/use-board-background";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -42,7 +40,6 @@ import { useBoard } from "@/store/BoardContext";
 import { useBoardMembersList } from "@/store/board-live";
 import { CardSelectionProvider } from "@/store/board-selection";
 import { boardBackgroundById } from "@/types/board-background";
-import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
 import { hasCard } from "@/utils/card-nav";
 import {
   filterCardIds,
@@ -80,11 +77,6 @@ const SAVED_VIEWS_FALLBACK = (
   />
 );
 
-export type BoardInspectorSlotProps = {
-  boardId: string;
-  onOpenCard: (cardId: string) => void;
-};
-
 /**
  * BoardSection — renders the active board in the chosen view (kanban strip,
  * calendar by due dates, or flat table), wrapped with a filter toolbar.
@@ -94,18 +86,9 @@ export type BoardInspectorSlotProps = {
  * the view. The board title lives in the header (BoardTitle) — nothing is
  * duplicated here.
  */
-export function BoardSection({
-  InspectorSlot,
-}: { InspectorSlot?: ComponentType<BoardInspectorSlotProps> } = {}) {
-  const inspector = useBoardInspector();
-  const {
-    board,
-    roleOf,
-    setBoardColumnStyle,
-    loadCardDetail,
-    readModelPartial,
-    retryReadModel,
-  } = useBoard();
+export function BoardSection() {
+  const { board, roleOf, loadCardDetail, readModelPartial, retryReadModel } =
+    useBoard();
   const { user } = useAuth();
   // Undefined until the roster loads — never `[]` as "loaded": the saved-view
   // drift pass would otherwise treat every assignee as deleted.
@@ -147,8 +130,7 @@ export function BoardSection({
     },
     [setSearchParams],
   );
-  const { view, setView, density, setDensity, openFiltersRef } = useBoardView();
-
+  const { view, setView, density, openFiltersRef } = useBoardView();
   const active = isFilterActive(filter);
   const serverMode = isApiEnabled();
   const query = filter.query.trim();
@@ -492,8 +474,6 @@ export function BoardSection({
       boardId={board.id}
       order={selectionOrder}
       enabled={selectionEnabled}
-      peekOpen={inspector?.open && !inspector.cardOpen}
-      showPeek={inspector?.showCard}
     >
       <main
         data-testid="board-main"
@@ -508,42 +488,48 @@ export function BoardSection({
         {board.archivedAt !== undefined ? (
           <ArchivedBoardNotice boardId={board.id} className="mb-3" />
         ) : null}
-        {/* The watch view reads the whole board feed; a card filter would only
-          contradict it, so the toolbar is hidden there. */}
-        {view !== "watch" ? (
-          <div
-            data-testid="board-toolbar"
-            className="mb-3 flex items-start gap-2"
-          >
-            <div className="min-w-0 flex-1">
-              <FilterBar
-                filter={filter}
-                labels={board.labels}
-                boardId={board.id}
-                matchCount={matchCount}
-                matchPending={serverPending}
-                onChange={setFilter}
-                openFacetsRef={openFiltersRef}
-              />
-            </div>
-            <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
-              <Suspense fallback={SAVED_VIEWS_FALLBACK}>
-                <SavedViewsMenu
-                  userId={savedViewsUserId}
-                  boardId={board.id}
+        {/* The watch view reads the whole board feed; the card filter would
+          contradict it, so search/Filters/saved views are hidden there. The
+          view switcher always stays mounted — it is the only way back. */}
+        <div
+          data-testid="board-toolbar"
+          className="mb-3 flex min-w-0 flex-wrap items-center gap-2"
+        >
+          {view !== "watch" ? (
+            <>
+              <div data-testid="filter-search-region" className="contents">
+                <FilterBar
                   filter={filter}
-                  view={view}
                   labels={board.labels}
-                  assigneeIds={savedViewAssigneeIds}
-                  onApply={(nextFilter, nextView) => {
-                    setFilter(nextFilter);
-                    if (nextView) setView(nextView);
-                  }}
+                  boardId={board.id}
+                  matchCount={matchCount}
+                  matchPending={serverPending}
+                  onChange={setFilter}
+                  openFacetsRef={openFiltersRef}
                 />
-              </Suspense>
-            </SavedViewsMenuBoundary>
-          </div>
-        ) : null}
+              </div>
+              <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
+                <Suspense fallback={SAVED_VIEWS_FALLBACK}>
+                  <SavedViewsMenu
+                    userId={savedViewsUserId}
+                    boardId={board.id}
+                    filter={filter}
+                    view={view}
+                    labels={board.labels}
+                    assigneeIds={savedViewAssigneeIds}
+                    onApply={(nextFilter, nextView) => {
+                      setFilter(nextFilter);
+                      if (nextView) setView(nextView);
+                    }}
+                  />
+                </Suspense>
+              </SavedViewsMenuBoundary>
+            </>
+          ) : null}
+          <ViewSwitcher value={view} onChange={setView} />
+          {view !== "watch" ? <BoardSelectionToggle /> : null}
+          {view !== "watch" ? <BoardAppearanceMenu /> : null}
+        </div>
         {serverPending ? (
           <p
             role="status"
@@ -572,22 +558,6 @@ export function BoardSection({
             </button>
           </p>
         ) : null}
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <ViewSwitcher value={view} onChange={setView} />
-          <div className="flex flex-wrap items-center gap-2">
-            <BoardSelectionToggle />
-            {/* Board-view display controls: column style, glass + card density. */}
-            {view === "board" ? (
-              <BoardDisplayMenu
-                density={density}
-                onDensityChange={setDensity}
-                columnStyle={board.columnStyle ?? DEFAULT_COLUMN_ACCENT_STYLE}
-                onColumnStyleChange={setBoardColumnStyle}
-                readOnly={readOnly}
-              />
-            ) : null}
-          </div>
-        </div>
         {view === "board" ? (
           <DndBoard
             filteredCardIds={filteredIds ?? undefined}
@@ -648,9 +618,6 @@ export function BoardSection({
           />
         </ErrorBoundary>
       </main>
-      {InspectorSlot ? (
-        <InspectorSlot boardId={board.id} onOpenCard={handleCardClick} />
-      ) : null}
     </CardSelectionProvider>
   );
 }

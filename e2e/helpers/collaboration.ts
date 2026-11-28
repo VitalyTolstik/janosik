@@ -120,7 +120,9 @@ export async function inviteMember(
   const dialog = await openMembers(page);
   await dialog.getByRole("textbox", { name: "Email" }).fill(email);
   if (role !== "Member") {
-    await dialog.getByRole("button", { name: "Role", exact: true }).click();
+    // The invite form's picker is the last role trigger in the dialog; the
+    // roster rows above it have their own per-member pickers.
+    await dialog.getByTestId("role-trigger").last().click();
     await page.getByRole("radio", { name: role, exact: true }).click();
   }
   const saved = page.waitForResponse(

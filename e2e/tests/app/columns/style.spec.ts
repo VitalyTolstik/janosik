@@ -1,6 +1,7 @@
 import { type Page } from "@playwright/test";
 import { test, expect } from "@/fixtures/board.js";
 import { columnSection, expectHistory, redo, undo } from "@/helpers/history.js";
+import { openBoardAppearance } from "@/helpers/header.js";
 
 /**
  * Column accent styles (TASK-164): per-column color, board-wide shape,
@@ -32,7 +33,7 @@ test("keeps board display preferences in the combined menu after reload", async 
 }) => {
   await board.column("Todo");
   await board.open(page);
-  await page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(page);
 
   const toggles = ["density-toggle", "glass-opacity", "glass-blur"];
   const expected: Record<string, string> = {};
@@ -49,7 +50,7 @@ test("keeps board display preferences in the combined menu after reload", async 
   );
 
   await page.reload();
-  await page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(page);
   for (const id of toggles) {
     await expect(page.getByTestId(id)).toHaveAttribute(
       "aria-checked",
@@ -186,7 +187,7 @@ test("applies the board shape only to accented columns", async ({
   await expect(plain).toHaveAttribute("data-column-accent", "none");
   await expect(plain).toHaveAttribute("data-column-accent-style", "none");
 
-  await page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(page);
   await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-band").click();
   await expect(accented).toHaveAttribute("data-column-accent-style", "band");
@@ -264,7 +265,7 @@ test("renders all nine accent shapes in light and dark", async ({
       "brand",
     );
 
-    await page.getByTestId("board-display-menu").click();
+    await openBoardAppearance(page);
     for (const style of styles) {
       // Open and select with the keyboard: moving the pointer across the
       // gap between the nested menus can close the submenu before the click.
@@ -382,20 +383,14 @@ test("applies all nine board-wide shapes and persists the choice", async ({
     "dot",
     "signature",
   ];
-  await page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(page);
   // The open dropdown marks the board inert/aria-hidden, so address the
   // column by its DOM attribute instead of the header's role.
   const accentColumn = page.locator('section[data-column-accent="ocean"]');
   for (const style of styles) {
-    // Applying a shape re-renders the board and closes the style submenu.
-    // Close and reopen the display menu explicitly: clicking the trigger
-    // while the previous submenu is still animating out can land on the
-    // closing portal and leave the item unreachable.
-    await page.keyboard.press("Escape");
-    const displayMenu = page.getByTestId("board-display-menu");
-    await expect(displayMenu).toHaveAttribute("aria-expanded", "false");
-    await displayMenu.click();
-    await expect(displayMenu).toHaveAttribute("aria-expanded", "true");
+    // Applying a shape re-renders the board and may leave the menu closing;
+    // the helper resets to a known closed state before reopening.
+    await openBoardAppearance(page);
     const styleMenu = page.getByTestId("column-style-menu");
     await styleMenu.click();
     await expect(styleMenu).toHaveAttribute("aria-expanded", "true");
@@ -444,7 +439,7 @@ test("undo and redo the color and the board shape", async ({ page, board }) => {
     "red",
   );
 
-  await page.getByTestId("board-display-menu").click();
+  await openBoardAppearance(page);
   await page.getByTestId("column-style-menu").click();
   await page.getByTestId("column-style-menu-band").click();
   await page.keyboard.press("Escape");
