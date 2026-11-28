@@ -122,6 +122,8 @@ export interface CardContextMenuProps {
   children:
     | ReactElement
     | ((controls: { open: (anchor?: Element | null) => void }) => ReactElement);
+  isDragging?: boolean;
+  touchDragEnabled?: boolean;
   /** VIEWER mode (TASK-35): only the read-only actions stay in the menu. */
   readOnly?: boolean;
   /** Opens the card dialog — the "Open card" item. */
@@ -135,6 +137,8 @@ export interface CardContextMenuProps {
 export function CardContextMenu({
   cardId,
   children,
+  isDragging = false,
+  touchDragEnabled = false,
   readOnly = false,
   onOpen,
   onDuplicate,
@@ -162,12 +166,15 @@ export function CardContextMenu({
   };
   const handleOpenChange: ComponentProps<typeof ContextMenu>["onOpenChange"] = (
     nextOpen,
-    { event },
+    details,
   ) => {
-    if (nextOpen && event.type === "touchstart" && "dndKit" in event) {
-      // Movement cancels Base UI's long press. If its stationary hold opens
-      // the menu, cancel the touch sensor at the original touch target.
-      event.target?.dispatchEvent(new Event("touchcancel", { bubbles: true }));
+    const { event } = details;
+    const touchPress =
+      event.type === "touchstart" ||
+      ("pointerType" in event && event.pointerType === "touch");
+    if (nextOpen && (isDragging || (touchDragEnabled && touchPress))) {
+      details.cancel();
+      return;
     }
     if (nextOpen) setAnchor(null);
     setOpen(nextOpen);

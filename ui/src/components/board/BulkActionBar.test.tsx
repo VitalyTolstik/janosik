@@ -129,6 +129,7 @@ function BoardProbe() {
     <div data-testid="board-probe">
       {JSON.stringify({
         columns: board?.columns.map((column) => [column.id, column.cardIds]),
+        epics: board?.epics,
         labels: Object.fromEntries(
           Object.entries(board?.cards ?? {}).map(([id, card]) => [
             id,
@@ -1482,7 +1483,9 @@ describe("bulk epic assignment", () => {
       screen.getByRole("menuitem", { name: "Remove from epic" }),
     );
     await waitFor(() =>
-      expect(screen.getByTestId("board-probe")).not.toHaveTextContent("epic-1"),
+      expect(screen.getByTestId("board-probe")).not.toHaveTextContent(
+        '"epicId":"epic-1"',
+      ),
     );
     await user.click(screen.getByRole("button", { name: "Undo" }));
     const cards = JSON.parse(
@@ -1490,6 +1493,41 @@ describe("bulk epic assignment", () => {
     ).labels;
     expect(cards["card-alpha"].epicId).toBeUndefined();
     expect(cards["card-bravo"].epicId).toBe("epic-1");
+  });
+
+  it("creates one epic for the selected cards and undoes assignments separately", async () => {
+    seedBoard();
+    const user = userEvent.setup();
+    tree(<SelectionHarness />);
+    await enterSelectionMode(user);
+    await selectByClick(user, "Alpha");
+    await selectByClick(user, "Bravo");
+    await user.click(screen.getByTestId("bulk-epic"));
+    await user.click(screen.getByRole("menuitem", { name: /New epic/ }));
+    const dialog = screen.getByRole("dialog", { name: "New epic" });
+    await user.type(within(dialog).getByRole("textbox"), "  Renewals  ");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Create and assign" }),
+    );
+    expect(screen.getByTestId("bulk-status")).toHaveTextContent(
+      "Changed: 2 of 2.",
+    );
+
+    const snapshot = () =>
+      JSON.parse(screen.getByTestId("board-probe").textContent!) as {
+        epics: NonNullable<Board["epics"]>;
+        labels: Record<string, { epicId?: string }>;
+      };
+    const { epics, labels } = snapshot();
+    expect(epics).toEqual([expect.objectContaining({ title: "Renewals" })]);
+    const id = epics[0].id;
+    expect(labels["card-alpha"].epicId).toBe(id);
+    expect(labels["card-bravo"].epicId).toBe(id);
+    expect(labels["card-charlie"].epicId).toBeUndefined();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(snapshot().labels["card-alpha"].epicId).toBe(id);
+    expect(snapshot().labels["card-bravo"].epicId).toBeUndefined();
   });
 
   it.each(["refuse", "cancel"] as const)(

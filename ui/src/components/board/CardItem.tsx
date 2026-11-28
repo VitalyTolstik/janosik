@@ -1,4 +1,3 @@
-import type { BaseUIEvent } from "@base-ui/react/types";
 import {
   AlignLeft,
   Archive,
@@ -14,7 +13,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type MouseEvent,
   type TouchEvent,
 } from "react";
 
@@ -294,14 +292,6 @@ function CardItemView({
             onTouchDragStart(event);
           })
         }
-        onContextMenu={(
-          event: MouseEvent<HTMLElement> &
-            Partial<BaseUIEvent<MouseEvent<HTMLElement>>>,
-        ) => {
-          if (!isDragging) return;
-          event.preventDefault();
-          event.preventBaseUIHandler?.();
-        }}
         onClick={
           onClick || onToggleSelect
             ? (event) => {
@@ -792,6 +782,8 @@ function CardItemView({
   return (
     <CardContextMenu
       cardId={card.id}
+      isDragging={isDragging}
+      touchDragEnabled={onTouchDragStart !== undefined}
       readOnly={readOnly}
       onOpen={onClick}
       onDuplicate={onDuplicate}

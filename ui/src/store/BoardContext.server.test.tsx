@@ -9,7 +9,13 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 
-import type { Board, Card, CommandRequest } from "@janosik/shared";
+import type {
+  Board,
+  BoardAction,
+  Card,
+  CommandRequest,
+  Epic,
+} from "@janosik/shared";
 import { BOARD_STORAGE_KEY } from "@janosik/shared";
 import { api, ApiError } from "@/api/client";
 import { I18nProvider } from "@/i18n";
@@ -246,6 +252,199 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("inline epic creation in server mode", () => {
+  const originalEpic: Epic = {
+    id: "original-epic",
+    title: "Original epic",
+    color: "rose",
+    status: "active",
+    position: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const laterEpic = {
+    ...originalEpic,
+    id: "later-epic",
+    title: "Later epic",
+    position: 1,
+  };
+  const newEpic = {
+    ...originalEpic,
+    id: "new-epic",
+    title: "New epic",
+    position: 2,
+    createdAt: 10,
+    updatedAt: 10,
+  };
+
+  function EpicProbe({ signal }: { signal?: AbortSignal }) {
+    const { board, dispatch, dispatchEpicCreation } = useBoard();
+    return (
+      <>
+        <output data-testid="epic-id">{board?.cards["c-1"]?.epicId}</output>
+        <output data-testid="epics">
+          {board?.epics?.map(({ id }) => id).join(",")}
+        </output>
+        <button
+          type="button"
+          onClick={() =>
+            dispatchEpicCreation(
+              { type: "ADD_EPIC", boardId: "b-1", at: 10, epic: newEpic },
+              ["c-1"],
+              signal,
+            )
+          }
+        >
+          Create and assign
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            dispatch({
+              type: "SET_CARD_EPIC",
+              boardId: "b-1",
+              cardId: "c-1",
+              epicId: laterEpic.id,
+              at: 20,
+            })
+          }
+        >
+          Assign to later epic
+        </button>
+      </>
+    );
+  }
+
+  async function setup(signal?: AbortSignal) {
+    const board = seedBoard();
+    board.epics = [originalEpic, laterEpic];
+    board.cards["c-1"].epicId = originalEpic.id;
+    const server = new FakeServer([board]);
+    vi.stubGlobal("fetch", server.handle);
+    const send = vi.spyOn(api, "sendCommand");
+    renderApp(
+      "/board/b-1",
+      <>
+        <Probe />
+        <EpicProbe signal={signal} />
+      </>,
+    );
+    await waitReady();
+    return {
+      server,
+      send,
+      commands: () => send.mock.calls.map(([, request]) => request.action),
+      serverCard: () => server.boards.get("b-1")?.cards["c-1"],
+    };
+  }
+
+  function chooseLaterEpic() {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Assign to later epic" }),
+    );
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(laterEpic.id);
+  }
+
+  function createEpic() {
+    fireEvent.click(screen.getByRole("button", { name: "Create and assign" }));
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(newEpic.id);
+  }
+
+  function assignment(epicId: string): Partial<BoardAction> {
+    return { type: "SET_CARD_EPIC", cardId: "c-1", epicId };
+  }
+
+  it("sends the dependent assignment ahead of a later choice and releases waiting undo after creation", async () => {
+    const { server, commands, serverCard } = await setup();
+    const release = server.holdNextCommandBeforeCommit();
+    createEpic();
+    chooseLaterEpic();
+    await waitFor(() =>
+      expect(commands()).toMatchObject([{ type: "ADD_EPIC" }]),
+    );
+
+    fireEvent.click(screen.getByTestId("undo"));
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(laterEpic.id);
+    expect(serverCard()?.epicId).toBe(originalEpic.id);
+    act(release);
+    await waitFor(() =>
+      expect(commands()).toMatchObject([
+        { type: "ADD_EPIC" },
+        assignment(newEpic.id),
+        assignment(laterEpic.id),
+        assignment(newEpic.id),
+      ]),
+    );
+    await waitFor(() => expect(serverCard()?.epicId).toBe(newEpic.id));
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(newEpic.id);
+
+    fireEvent.click(screen.getByTestId("redo"));
+    await waitFor(() => expect(serverCard()?.epicId).toBe(laterEpic.id));
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(laterEpic.id);
+  });
+
+  it("skips assignment after refused creation and rebases undo for the later epic choice", async () => {
+    const { commands, send, serverCard } = await setup();
+    let refuse!: () => void;
+    send.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          refuse = () => reject(new ApiError(403, null));
+        }),
+    );
+    createEpic();
+    chooseLaterEpic();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId("undo"));
+
+    act(refuse);
+    await waitFor(() => expect(serverCard()?.epicId).toBe(laterEpic.id));
+    await waitFor(() =>
+      expect(screen.getByTestId("epics")).not.toHaveTextContent(newEpic.id),
+    );
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(laterEpic.id);
+    expect(commands()).toMatchObject([
+      { type: "ADD_EPIC" },
+      assignment(laterEpic.id),
+    ]);
+    expect(screen.getByTestId("can-redo")).toHaveTextContent("false");
+
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() => expect(serverCard()?.epicId).toBe(originalEpic.id));
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(originalEpic.id);
+    expect(screen.getByTestId("can-undo")).toHaveTextContent("false");
+    fireEvent.click(screen.getByTestId("redo"));
+    await waitFor(() => expect(serverCard()?.epicId).toBe(laterEpic.id));
+  });
+
+  it("skips an aborted assignment while keeping the created epic and the later card edit", async () => {
+    const controller = new AbortController();
+    const { server, commands, serverCard } = await setup(controller.signal);
+    const release = server.holdNextCommand();
+    createEpic();
+    await waitFor(() =>
+      expect(server.boards.get("b-1")?.epics).toContainEqual(newEpic),
+    );
+    fireEvent.click(screen.getByTestId("edit"));
+    controller.abort();
+    act(release);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("epic-id")).toHaveTextContent(originalEpic.id),
+    );
+    await waitFor(() => expect(serverCard()?.title).toBe("Mine"));
+    expect(screen.getByTestId("epics")).toHaveTextContent(newEpic.id);
+    expect(screen.getByTestId("card-title")).toHaveTextContent("Mine");
+    expect(commands()).toMatchObject([
+      { type: "ADD_EPIC" },
+      { type: "UPDATE_CARD" },
+    ]);
+    fireEvent.click(screen.getByTestId("undo"));
+    await waitFor(() => expect(serverCard()?.title).toBe("Hello"));
+    expect(screen.getByTestId("epic-id")).toHaveTextContent(originalEpic.id);
+  });
 });
 
 describe("BoardProvider in server mode", () => {

@@ -76,6 +76,47 @@ describe("ServerSync", () => {
     expect(sent).toEqual(["RENAME_COLUMN", "MOVE_CARD"]);
   });
 
+  it("reserves the dependent command's queue position and skips it without a send failure", async () => {
+    let resolveGuard!: (allowed: boolean) => void;
+    const guard = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveGuard = resolve;
+        }),
+    );
+    const sent: string[] = [];
+    const sync = new ServerSync({
+      send: async (_boardId, request) => {
+        sent.push(request.commandId);
+        return okResponse();
+      },
+    });
+
+    const first = sync.enqueue("b-1", renameColumn("first"));
+    const dependent = sync.enqueue(
+      "b-1",
+      moveCard("dependent"),
+      undefined,
+      guard,
+    );
+    const later = sync.enqueue("b-1", moveCard("later"));
+    const otherBoard = sync.enqueue("b-2", renameColumn("other-board"));
+    expect(guard).not.toHaveBeenCalled();
+    await Promise.all([first, otherBoard]);
+    await vi.waitFor(() => expect(guard).toHaveBeenCalledTimes(1));
+    expect(sent).toEqual(["first", "other-board"]);
+
+    resolveGuard(false);
+    await expect(dependent).resolves.toEqual({
+      ok: false,
+      failure: { kind: "skipped" },
+    });
+    await expect(later).resolves.toMatchObject({ ok: true });
+    expect(sent).toEqual(["first", "other-board", "later"]);
+    expect(sync.wasSent("b-1", "dependent")).toBe(false);
+    expect(sync.failureCount).toBe(0);
+  });
+
   it("coalesces quiet edits per card and sends only the newest", async () => {
     vi.useFakeTimers();
     const requests: Array<string | undefined> = [];
