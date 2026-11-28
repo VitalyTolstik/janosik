@@ -1527,13 +1527,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   avatar-only. The toolbar is one row — card search → Filters → saved views →
   view switcher → Select → `…` — with Board appearance only in the toolbar
   overflow; Board settings, Data & backups, Card archive and Help stay in the
-  header's `…` menu, so no item appears twice. Card clicks open the editor at
-  every width again (the peek-only selection path is gone). The remaining H5
-  a11y fixes keep the People/assignee label-in-name clean, the Members profile
-  and long emails readable at 390/768, the lapsed expiry complete, and Watch's
-  status rail a named focusable region. Verified at 390/768/1024/1440/1920 in
-  light/dark EN/RU with full-page axe 0, plus the recommended-header structure,
-  disjoint menu contents, and card-modal regression tests.
+  header's `…` menu, so no item appears twice. The view switcher stays mounted
+  in Watch at every width, so Watch is never a dead end. Card clicks open the
+  editor at every width again (the peek-only selection path is gone). The
+  remaining H5 a11y fixes keep the People/assignee label-in-name clean
+  (including two-letter initials), the Members profile and long emails
+  readable at 390/768, the lapsed expiry complete, and Watch's status rail a
+  named focusable region. Verified at 390/768/1024/1440/1920 in light/dark
+  EN/RU with full-page axe 0, plus the recommended-header structure, disjoint
+  menu contents, Watch→Board return and card-modal regression tests.
 - TASK-177.17 makes comment deletion explicit: the confirmation names the
   author in its title, shows a short excerpt of the exact comment, and keeps
   the honest “cannot be undone” copy. Comments are soft-deleted server-side,

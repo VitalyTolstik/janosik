@@ -162,6 +162,8 @@ function RolePicker({
 }: RolePickerProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const roleLabel = t(ROLE_KEYS[value]);
+  const name = label.includes(roleLabel) ? label : `${label} ${roleLabel}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -170,7 +172,7 @@ function RolePicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          aria-label={label}
+          aria-label={name}
           data-testid="role-trigger"
           className={cn(
             "justify-between gap-1.5 font-normal",
@@ -242,6 +244,15 @@ function ExpiryPicker({
   const { t, lang } = useI18n();
   const hour12 = useHour12();
   const [open, setOpen] = useState(false);
+  const display =
+    value === null
+      ? t("board.members.expires.never")
+      : `${formatDateOnly(value, lang)}, ${formatTime(
+          formatTimeOfDay(new Date(value)),
+          lang,
+          hour12,
+        )}`;
+  const name = label.includes(display) ? label : `${label} ${display}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -251,17 +262,11 @@ function ExpiryPicker({
           size="sm"
           disabled={disabled}
           data-testid="expiry-trigger"
-          aria-label={label}
+          aria-label={name}
           className="h-8 gap-1.5 px-2 text-ui-label font-normal text-muted-foreground"
         >
           <CalendarClock className="h-3.5 w-3.5" />
-          {value === null
-            ? t("board.members.expires.never")
-            : `${formatDateOnly(value, lang)}, ${formatTime(
-                formatTimeOfDay(new Date(value)),
-                lang,
-                hour12,
-              )}`}
+          {display}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -828,7 +833,6 @@ export function BoardMembersPanel({
                   <button
                     type="button"
                     data-testid="board-member-open"
-                    aria-label={t("profile.open", { name: label })}
                     onClick={() => openProfile(member.userId)}
                     className="flex w-full min-w-0 basis-full items-center gap-3 rounded-md text-left transition-opacity hover:opacity-80 sm:w-auto sm:flex-1 sm:basis-0"
                   >
@@ -875,6 +879,9 @@ export function BoardMembersPanel({
                         </p>
                       ) : null}
                     </div>
+                    <span className="sr-only">
+                      {t("profile.open", { name: label })}
+                    </span>
                   </button>
 
                   {isSelf && onLeave !== undefined ? (
@@ -1073,7 +1080,12 @@ export function BoardMembersPanel({
                   className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-1.5 py-1.5 text-ui-body"
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <span className="min-w-0 truncate">{invitation.email}</span>
+                    <span
+                      className="min-w-0 break-words"
+                      title={invitation.email}
+                    >
+                      <BreakableText text={invitation.email} />
+                    </span>
                     {expired ? (
                       <span
                         data-testid="board-pending-expired"

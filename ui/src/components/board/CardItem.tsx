@@ -26,7 +26,7 @@ import {
   openCardInNewTab,
   shouldLeaveToBrowser,
 } from "@/utils/card-nav";
-import { userAvatarVar, userLabel } from "@/utils/avatar";
+import { userAvatarVar, userInitials, userLabel } from "@/utils/avatar";
 import type { CardLinkFacts } from "@/utils/links";
 import {
   LABEL_COLOR_CHIP,
@@ -744,6 +744,8 @@ function AssigneeBadge({
   const member = useBoardMember(boardId, assigneeId);
   if (member === undefined) return null;
   const name = userLabel(member.displayName, member.email);
+  const initials = userInitials(member.displayName, member.email);
+  const assignedLabel = t("card.assignee.assignedTo", { name });
 
   return (
     <Tooltip>
@@ -751,13 +753,13 @@ function AssigneeBadge({
         <button
           type="button"
           data-testid="card-assignee"
-          aria-label={t("card.assignee.assignedTo", { name })}
+          aria-label={`${assignedLabel} ${initials}`}
           onClick={(event) => {
             // Don't let the click open the card dialog.
             event.stopPropagation();
             openProfile(assigneeId);
           }}
-          className="shrink-0 rounded-full transition-transform hover:scale-110"
+          className="relative shrink-0 rounded-full transition-transform after:absolute after:-inset-2.5 after:content-[''] hover:scale-110"
         >
           {/* The initials are decorative; the button name is "Assigned to…". */}
           <span aria-hidden="true" className="inline-flex">
@@ -772,7 +774,7 @@ function AssigneeBadge({
           </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent>{t("card.assignee.assignedTo", { name })}</TooltipContent>
+      <TooltipContent>{assignedLabel}</TooltipContent>
     </Tooltip>
   );
 }

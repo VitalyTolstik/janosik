@@ -488,48 +488,48 @@ export function BoardSection() {
         {board.archivedAt !== undefined ? (
           <ArchivedBoardNotice boardId={board.id} className="mb-3" />
         ) : null}
-        {/* The watch view reads the whole board feed; a card filter would only
-          contradict it, so the toolbar is hidden there. */}
-        {view !== "watch" ? (
-          <div
-            data-testid="board-toolbar"
-            className="mb-3 flex min-w-0 flex-wrap items-center gap-2"
-          >
-            <div
-              data-testid="filter-search-region"
-              className="min-w-0 flex-1 basis-72"
-            >
-              <FilterBar
-                filter={filter}
-                labels={board.labels}
-                boardId={board.id}
-                matchCount={matchCount}
-                matchPending={serverPending}
-                onChange={setFilter}
-                openFacetsRef={openFiltersRef}
-              />
-            </div>
-            <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
-              <Suspense fallback={SAVED_VIEWS_FALLBACK}>
-                <SavedViewsMenu
-                  userId={savedViewsUserId}
-                  boardId={board.id}
+        {/* The watch view reads the whole board feed; the card filter would
+          contradict it, so search/Filters/saved views are hidden there. The
+          view switcher always stays mounted — it is the only way back. */}
+        <div
+          data-testid="board-toolbar"
+          className="mb-3 flex min-w-0 flex-wrap items-center gap-2"
+        >
+          {view !== "watch" ? (
+            <>
+              <div data-testid="filter-search-region" className="contents">
+                <FilterBar
                   filter={filter}
-                  view={view}
                   labels={board.labels}
-                  assigneeIds={savedViewAssigneeIds}
-                  onApply={(nextFilter, nextView) => {
-                    setFilter(nextFilter);
-                    if (nextView) setView(nextView);
-                  }}
+                  boardId={board.id}
+                  matchCount={matchCount}
+                  matchPending={serverPending}
+                  onChange={setFilter}
+                  openFacetsRef={openFiltersRef}
                 />
-              </Suspense>
-            </SavedViewsMenuBoundary>
-            <ViewSwitcher value={view} onChange={setView} />
-            <BoardSelectionToggle />
-            <BoardAppearanceMenu />
-          </div>
-        ) : null}
+              </div>
+              <SavedViewsMenuBoundary fallback={savedViewsUnavailable}>
+                <Suspense fallback={SAVED_VIEWS_FALLBACK}>
+                  <SavedViewsMenu
+                    userId={savedViewsUserId}
+                    boardId={board.id}
+                    filter={filter}
+                    view={view}
+                    labels={board.labels}
+                    assigneeIds={savedViewAssigneeIds}
+                    onApply={(nextFilter, nextView) => {
+                      setFilter(nextFilter);
+                      if (nextView) setView(nextView);
+                    }}
+                  />
+                </Suspense>
+              </SavedViewsMenuBoundary>
+            </>
+          ) : null}
+          <ViewSwitcher value={view} onChange={setView} />
+          {view !== "watch" ? <BoardSelectionToggle /> : null}
+          {view === "board" ? <BoardAppearanceMenu /> : null}
+        </div>
         {serverPending ? (
           <p
             role="status"

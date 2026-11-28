@@ -21,11 +21,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { BreakableText } from "@/components/ui/breakable-text";
 import { useI18n, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useBoard } from "@/store/BoardContext";
 import { useBoardMember, useBoardPresence } from "@/store/board-live";
-import { userLabel } from "@/utils/avatar";
+import { userInitials, userLabel } from "@/utils/avatar";
 
 const MAX_VISIBLE = 3;
 
@@ -58,10 +59,20 @@ export function PeopleMenu() {
 
   const visible = users.slice(0, MAX_VISIBLE);
   const overflow = users.length - visible.length;
-  const label =
+  const baseLabel =
     users.length > 1
       ? `${t("people.button")} — ${tp("presence.people", users.length)}`
       : t("people.button");
+  // Axe's label-content-name check compares visible text, so the initials (and
+  // the +N badge) must stay in the name even though the group is decorative
+  // for screen readers. Two-word names produce two-letter initials.
+  const visibleInitials = visible
+    .map((person) => userInitials(person.displayName, ""))
+    .join(" ");
+  const visibleSuffix = [visibleInitials, overflow > 0 ? `+${overflow}` : ""]
+    .filter(Boolean)
+    .join(" ");
+  const label = visibleSuffix ? `${baseLabel} — ${visibleSuffix}` : baseLabel;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -217,7 +228,9 @@ function PeoplePresenceRow({
         avatarPath={person.avatarPath ?? member?.avatarPath}
         size="sm"
       />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="min-w-0 flex-1 break-words" title={name}>
+        <BreakableText text={name} />
+      </span>
       {isMe ? (
         <span className="shrink-0 text-ui-micro font-medium uppercase tracking-wide text-muted-foreground">
           {t("presence.you")}

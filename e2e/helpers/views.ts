@@ -55,6 +55,40 @@ export function calendarChip(page: Page, title: string): Locator {
   return page.getByTestId("calendar-chip").filter({ hasText: title });
 }
 
+/**
+ * Native HTML5 drag via a real mouse path. Playwright's `dragTo` no longer
+ * starts Chrome's native drag for these buttons in the CI browser; the same
+ * pointer sequence a user performs (down, small move, path, up) does.
+ */
+export async function dragChipToDay(
+  page: Page,
+  source: Locator,
+  key: string,
+): Promise<void> {
+  const target = calendarDay(page, key);
+  await source.scrollIntoViewIfNeeded();
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox)
+    throw new Error("Calendar chip or target day is hidden");
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2,
+    sourceBox.y + sourceBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    sourceBox.x + sourceBox.width / 2 + 10,
+    sourceBox.y + sourceBox.height / 2,
+    { steps: 5 },
+  );
+  await page.mouse.move(
+    targetBox.x + targetBox.width / 2,
+    targetBox.y + targetBox.height / 2,
+    { steps: 20 },
+  );
+  await page.mouse.up();
+}
+
 export function tableRow(page: Page, title: string): Locator {
   return page.getByTestId("table-row").filter({ hasText: title });
 }

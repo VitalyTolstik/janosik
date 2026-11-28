@@ -583,7 +583,7 @@ describe("assignee badge (TASK-49)", () => {
 
     expect(screen.getByTestId("card-assignee")).toBeInTheDocument();
     expect(screen.getByTestId("card-assignee")).toHaveAccessibleName(
-      "Assigned to Boris",
+      "Assigned to Boris B",
     );
     expect(screen.getByTestId("user-avatar")).toHaveAttribute(
       "aria-label",

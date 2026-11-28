@@ -325,10 +325,7 @@ export function FilterBar({
   const dotClass = (color: LabelColor) => LABEL_COLOR_DOT[color];
 
   return (
-    <div
-      data-testid="filter-bar"
-      className="flex w-full min-w-0 flex-wrap items-center gap-2"
-    >
+    <div data-testid="filter-bar" className="contents">
       {/* Search by card name */}
       <div className="relative min-w-0 flex-1 basis-56">
         <Search
@@ -338,6 +335,7 @@ export function FilterBar({
         <Input
           ref={inputRef}
           name="filter-search"
+          data-testid="filter-search-input"
           value={query}
           maxLength={LIMITS.query}
           aria-describedby={

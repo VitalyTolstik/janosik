@@ -1133,9 +1133,17 @@ describe("TableView interactivity (TASK-14.1)", () => {
       { timeout: 15_000 },
     );
     expect(view).toBeInTheDocument();
-    // No cards and the filter toolbar is hidden in the bare watch view.
+    // No cards and the filter toolbar is hidden in the bare watch view, but
+    // the view switcher must stay so Watch is not a dead end.
     expect(view.querySelectorAll("article")).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /Filters/i })).toBeNull();
-    expect(localStorage.getItem("janosik-board-view")).toBe("watch");
+    expect(screen.getByTestId("view-switcher")).toBeVisible();
+    fireEvent.click(
+      screen.getByTestId("view-switcher").querySelector("button")!,
+    );
+    expect(await screen.findByTestId("board-toolbar")).toHaveTextContent(
+      "Filters",
+    );
+    expect(localStorage.getItem("janosik-board-view")).toBe("board");
   });
 });

@@ -299,11 +299,8 @@ describe("BoardSection saved views integration", () => {
       "items-center",
       "gap-2",
     );
-    expect(screen.getByTestId("filter-bar").parentElement).toHaveClass(
-      "min-w-0",
-      "flex-1",
-      "basis-72",
-    );
+    expect(screen.getByTestId("filter-search-region")).toHaveClass("contents");
+    expect(screen.getByTestId("filter-bar")).toHaveClass("contents");
     expect(await screen.findByTestId("saved-views-menu")).toHaveClass(
       "h-9",
       "w-9",

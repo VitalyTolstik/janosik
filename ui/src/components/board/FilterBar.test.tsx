@@ -87,7 +87,7 @@ describe("FilterBar", () => {
       "sm:w-auto",
     );
     expect(screen.getByTestId("filter-reset")).toHaveClass("h-8");
-    expect(screen.getByTestId("filter-bar")).toHaveClass("flex-wrap");
+    expect(screen.getByTestId("filter-bar")).toHaveClass("contents");
   });
 
   it("gives the filters trigger a 44px touch target on mobile", () => {

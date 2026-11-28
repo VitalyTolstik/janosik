@@ -121,7 +121,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     expect(screen.getAllByTestId("board-member-row")).toHaveLength(2);
     expect(screen.getByTestId("board-members-invite")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Role of Boris" }),
+      screen.getByRole("button", { name: /^Role of Boris\b/ }),
     ).toHaveTextContent("Admin");
   });
 
@@ -272,7 +272,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     await screen.findByText("Boris");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Role of quiet@example.com" }),
+      screen.getByRole("button", { name: /^Role of quiet@example\.com\b/ }),
     );
     fireEvent.click(screen.getByRole("radio", { name: "Viewer" }));
 
@@ -281,7 +281,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     });
     expect(
       await screen.findByRole("button", {
-        name: "Role of quiet@example.com",
+        name: /^Role of quiet@example\.com\b/,
       }),
     ).toHaveTextContent("Viewer");
     expect(await screen.findByText("Role updated")).toBeInTheDocument();
@@ -303,7 +303,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Access until — quiet@example.com",
+        name: /^Access until — quiet@example\.com\b/,
       }),
     );
     await screen.findByTestId("expiry-calendar");
@@ -343,7 +343,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     renderPanel(true);
     await screen.findByText("Boris");
 
-    const picker = screen.getByRole("button", { name: "Role of Boris" });
+    const picker = screen.getByRole("button", { name: /^Role of Boris\b/ });
     expect(picker).toBeDisabled();
     expect(picker.closest("span")).toHaveAttribute(
       "title",
@@ -473,7 +473,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
 
     renderPanel(true);
     await screen.findByText("Boris");
-    fireEvent.click(screen.getByRole("button", { name: "Role of Boris" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Role of Boris\b/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Member" }));
 
     expect(
@@ -665,7 +665,7 @@ describe("BoardMembersPanel (TASK-35)", () => {
     );
     await screen.findByText("Boris");
     expect(
-      screen.getByRole("button", { name: "Role of Boris" }),
+      screen.getByRole("button", { name: /^Role of Boris\b/ }),
     ).toHaveTextContent("Admin");
 
     act(() => {

@@ -1,6 +1,12 @@
 import { test, expect } from "@/fixtures/board.js";
 import { ageCommand, ageFeedEntries } from "@/helpers/disposable-database.js";
 
+// Both tests age feed rows and then run a process-wide (not board-scoped)
+// maintenance sweep. Running them in parallel lets one test purge the other
+// test's "old" rows before its UI assertion, so the file owns the sweep
+// serially.
+test.describe.configure({ mode: "serial" });
+
 test("watch drops expired commands and activity after the retention sweep", async ({
   page,
   board,

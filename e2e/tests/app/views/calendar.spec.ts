@@ -7,6 +7,7 @@ import {
   calendarChip,
   calendarDay,
   dayKey,
+  dragChipToDay,
   openCalendar,
   openView,
   todayKey,
@@ -81,7 +82,7 @@ test("reschedules a chip between days and keeps the time of day", async ({
       response.url().includes(`/boards/${board.id}/commands`) &&
       response.request().method() === "POST",
   );
-  await chip.dragTo(calendarDay(page, target.key));
+  await dragChipToDay(page, chip, target.key);
   await saved;
 
   const targetCell = calendarDay(page, target.key);
@@ -310,7 +311,7 @@ test("plans an unscheduled card by dragging it onto a day", async ({
       response.url().includes(`/boards/${board.id}/commands`) &&
       response.request().method() === "POST",
   );
-  await item.dragTo(calendarDay(page, target.key));
+  await dragChipToDay(page, item, target.key);
   await saved;
 
   await expect(

@@ -23,8 +23,9 @@ import { ColumnStyleOptions } from "./ColumnStyleMenu";
 
 /**
  * Board appearance controls (column style, density, glass) as menu content.
- * The recommended header has no standalone appearance trigger: BoardMenu
- * renders these items from its `...` overflow, so the toolbar keeps one row.
+ * The recommended header has no standalone appearance trigger:
+ * BoardAppearanceMenu renders these items from the toolbar `...` overflow, so
+ * the toolbar keeps one row.
  */
 export function BoardAppearanceMenuItems() {
   const { t } = useI18n();

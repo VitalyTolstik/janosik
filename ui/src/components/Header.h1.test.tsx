@@ -487,7 +487,9 @@ describe("H1 header: People + Board menu", () => {
 
     const people = await screen.findByTestId("people-trigger");
     await waitFor(() =>
-      expect(people).toHaveAccessibleName("People — 2 people on this board"),
+      expect(people).toHaveAccessibleName(
+        "People — 2 people on this board — A B",
+      ),
     );
     // The avatar stack is grouped under the People icon and hidden from the
     // accessibility tree: it must never compete with the account trigger.
@@ -537,7 +539,7 @@ describe("H1 header: People + Board menu", () => {
     await waitFor(() =>
       expect(people).toHaveAttribute(
         "aria-label",
-        "People — 2 people on this board",
+        "People — 2 people on this board — A B",
       ),
     );
     await userEvent.click(people);
