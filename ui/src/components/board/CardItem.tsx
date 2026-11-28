@@ -1,5 +1,14 @@
+import type { BaseUIEvent } from "@base-ui/react/types";
 import { AlignLeft, Archive, Check, CopyPlus, ListTodo, X } from "lucide-react";
-import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type TouchEvent,
+} from "react";
 
 import {
   Tooltip,
@@ -36,7 +45,32 @@ import {
   type Label,
 } from "@janosik/shared";
 
+export interface CardEpicChip {
+  code: string;
+  title: string;
+  completed: boolean;
+}
+
+function EpicChip({ code, title, completed }: CardEpicChip) {
+  return (
+    <span
+      data-testid="card-epic-chip"
+      title={title}
+      className={cn(
+        "shrink-0 rounded border px-1 text-ui-micro font-semibold",
+        completed
+          ? "border-border bg-muted text-muted-foreground"
+          : "border-(--epic-border) bg-(--epic-surface) text-(--epic-ink)",
+      )}
+    >
+      {code}
+    </span>
+  );
+}
+
 interface CardItemProps {
+  onTouchDragStart?: (event: TouchEvent<HTMLElement>) => void;
+  epicChip?: CardEpicChip;
   card: Card;
   /**
    * The board id — the assignee badge (TASK-49) resolves the member's
@@ -160,6 +194,8 @@ const seenCardIds = new Set<string>();
  */
 function CardItemView({
   card,
+  onTouchDragStart,
+  epicChip,
   boardId,
   labels,
   isDragging,
@@ -261,6 +297,29 @@ function CardItemView({
       onArchive={onArchive}
     >
       <article
+        onTouchStart={
+          onTouchDragStart &&
+          ((event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.closest(
+                "button, a, input, [data-testid='card-select']",
+              )
+            )
+              return;
+            // Base UI stops touchstart at the trigger, so the sortable
+            // listener has to run here.
+            onTouchDragStart(event);
+          })
+        }
+        onContextMenu={(
+          event: MouseEvent<HTMLElement> &
+            Partial<BaseUIEvent<MouseEvent<HTMLElement>>>,
+        ) => {
+          if (!isDragging) return;
+          event.preventDefault();
+          event.preventBaseUIHandler?.();
+        }}
         onClick={
           onClick || onToggleSelect
             ? (event) => {
@@ -319,6 +378,9 @@ function CardItemView({
           compact
             ? "flex h-12 items-center gap-2 px-3"
             : "flex h-[112px] flex-col gap-1 px-3 py-2",
+          epicChip &&
+            !epicChip.completed &&
+            "border-l-[3px] border-l-(--epic-accent)",
           (selectionMode || selected) && "pl-9 max-lg:pl-12",
           selected &&
             "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/40",
@@ -527,6 +589,7 @@ function CardItemView({
                 {done}/{total}
               </span>
             ) : null}
+            {epicChip ? <EpicChip {...epicChip} /> : null}
             <PriorityBadge priority={priority} />
             {card.assigneeId ? (
               <AssigneeBadge assigneeId={card.assigneeId} boardId={boardId} />
@@ -616,6 +679,7 @@ function CardItemView({
           the padding absorb any stray pixel. */}
             <div className="mt-auto flex h-7 shrink-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                {epicChip ? <EpicChip {...epicChip} /> : null}
                 {hasDescription ? (
                   <Tooltip>
                     <TooltipTrigger asChild>

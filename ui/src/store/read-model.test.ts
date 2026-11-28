@@ -8,6 +8,7 @@ import {
   type BoardReadSummaryDto,
   type Card,
 } from "@janosik/shared";
+import { collectBacklogEpics } from "@/utils/backlog-rows";
 import { cardLinkIndex } from "@/utils/links";
 import {
   boardFromSummary,
@@ -16,6 +17,8 @@ import {
   cardFromDetail,
   cardFromSummary,
   cardHasDescription,
+  readModelReducer,
+  unhydratedEpicProgress,
   hasCardDetail,
 } from "./read-model";
 
@@ -152,6 +155,86 @@ describe("read-model adapters (TASK-200.9)", () => {
     expect(Object.keys(board.cards).sort()).toEqual(["c-1", "c-arch"]);
     expect(board.cards["c-2"]).toBeUndefined();
     expect(board.cards["c-arch"]?.archivedAt).toBe(5);
+  });
+
+  it("combines unhydrated members with optimistic subtask adds and moves", () => {
+    const dto = summary({
+      epics: [
+        {
+          id: "epic-1",
+          title: "Epic",
+          color: "rose",
+          status: "active",
+          position: 0,
+          createdAt: 1,
+          updatedAt: 1,
+          progress: { total: 2, done: 0, open: 2 },
+        },
+      ],
+    });
+    dto.columns.push({
+      ...dto.columns[0],
+      id: "done",
+      title: "Done",
+      cardIds: [],
+      cards: [],
+      nextCursor: null,
+    });
+    dto.columns[0].cards[0].epicId = "epic-1";
+    const board = boardFromSummary(dto);
+    const rollup = (current: Board) =>
+      collectBacklogEpics(current, unhydratedEpicProgress(current)).get(
+        "epic-1",
+      );
+
+    expect(board.epics?.[0]).not.toHaveProperty("progress");
+    expect(rollup(board)).toMatchObject({
+      total: 2,
+      done: 0,
+      childIds: ["c-1"],
+    });
+
+    const added = readModelReducer([board], {
+      type: "ADD_CARD",
+      boardId: board.id,
+      newCardId: "c-new",
+      columnId: "col-1",
+      title: "Optimistic subtask",
+      epicId: "epic-1",
+      at: 25,
+    });
+    expect(rollup(added[0])).toMatchObject({
+      total: 3,
+      done: 0,
+      childIds: ["c-1", "c-new"],
+    });
+
+    const moved = readModelReducer(added, {
+      type: "MOVE_CARD",
+      boardId: board.id,
+      cardId: "c-new",
+      fromColumnId: "col-1",
+      fromIndex: 3,
+      toColumnId: "done",
+      toIndex: 0,
+      at: 26,
+    });
+    expect(rollup(moved[0])).toMatchObject({ total: 3, done: 1 });
+
+    const partial = readModelReducer(moved, {
+      type: "HYDRATE_CARDS",
+      boardId: board.id,
+      cards: [cardFromSummary(summaryCard("c-2", { epicId: "epic-1" }))],
+    });
+    expect(rollup(partial[0])).toMatchObject({ total: 3, done: 1 });
+
+    const hydrated = readModelReducer(partial, {
+      type: "HYDRATE_CARDS",
+      boardId: board.id,
+      cards: [cardFromSummary(summaryCard("c-3"))],
+    });
+    expect(rollup(hydrated[0])).toMatchObject({ total: 3, done: 1 });
+    expect(unhydratedEpicProgress(hydrated[0])).toBeUndefined();
   });
 
   it("preserves a loaded detail across a refetch of the same card", () => {

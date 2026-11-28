@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
 } from "react";
@@ -139,7 +140,15 @@ export function CardContextMenu({
     setAnchor(anchorElement ?? null);
     setOpen(true);
   };
-  const handleOpenChange = (nextOpen: boolean) => {
+  const handleOpenChange: ComponentProps<typeof ContextMenu>["onOpenChange"] = (
+    nextOpen,
+    { event },
+  ) => {
+    if (nextOpen && event.type === "touchstart" && "dndKit" in event) {
+      // Movement cancels Base UI's long press. If its stationary hold opens
+      // the menu, cancel the touch sensor at the original touch target.
+      event.target?.dispatchEvent(new Event("touchcancel", { bubbles: true }));
+    }
     setOpen(nextOpen);
     if (!nextOpen) setAnchor(null);
   };

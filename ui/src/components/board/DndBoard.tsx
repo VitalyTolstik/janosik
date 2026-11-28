@@ -11,6 +11,7 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type UniqueIdentifier,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -21,7 +22,14 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import { AddColumnControl } from "@/components/board/AddColumnControl";
 import { CardItem } from "@/components/board/CardItem";
@@ -32,10 +40,18 @@ import { useCardList } from "@/hooks/use-card-list";
 import type { BoardDensity } from "@/hooks/use-board-density";
 import { useI18n } from "@/i18n";
 import { useBoard, useBoardAccess } from "@/store/BoardContext";
+import { cardById } from "@/store/read-model";
 import { useCardSelection } from "@/store/board-selection";
 import { useToast } from "@/components/Toast";
 import { isColumnFull } from "@janosik/shared";
 import { blockedMoveMessage, workflowBlockReason } from "@/utils/workflow";
+import type { EpicCollapse } from "@/hooks/use-epic-collapse";
+import {
+  buildBacklogRows,
+  OTHER_CARDS_DROP_ID,
+  type BacklogEpic,
+  type BacklogRows,
+} from "@/utils/backlog-rows";
 import { applyCardOver } from "@/utils/dnd";
 import { cn } from "@/lib/utils";
 import { cardLinkIndex, linkSignature } from "@/utils/links";
@@ -43,6 +59,17 @@ import { isEditableTarget, shortcutLetterCode } from "@/utils/keyboard";
 import { isOverlayOpen } from "@/utils/overlay";
 import { LIMITS, type Card, type Column, type Label } from "@janosik/shared";
 import { DEFAULT_COLUMN_ACCENT_STYLE } from "@janosik/shared";
+
+const EPIC_THEME = {
+  "--epic-ink": "light-dark(#9f1239, #fecdd3)",
+  "--epic-accent": "light-dark(#be123c, #fb7185)",
+  "--epic-border":
+    "light-dark(#fecdd3, color-mix(in oklab, var(--epic-accent) 36%, var(--border)))",
+  "--epic-surface":
+    "light-dark(#fff1f4, color-mix(in oklab, #fda4af 8%, var(--card)))",
+  "--epic-track":
+    "color-mix(in oklab, var(--epic-accent) 16%, var(--epic-surface))",
+} as CSSProperties;
 
 /** Stable empties, so the resolvers survive a board-less render. */
 const NO_LABELS: Label[] = [];
@@ -114,6 +141,9 @@ const TOUCH_SENSOR_OPTIONS = {
 const NO_SENSORS: ReturnType<typeof useSensors> = [];
 
 interface DndBoardProps {
+  backlog?: BacklogRows;
+  epics?: ReadonlyMap<string, BacklogEpic>;
+  epicCollapse?: EpicCollapse;
   /** Per-column card ids with a filter applied — overrides each column's
    *  stored order while the filter is active. */
   filteredCardIds?: Record<string, string[]>;
@@ -135,6 +165,9 @@ interface DndBoardProps {
 }
 
 export function DndBoard({
+  backlog,
+  epics,
+  epicCollapse,
   filteredCardIds,
   isFiltering = false,
   filterPending = false,
@@ -152,6 +185,22 @@ export function DndBoard({
   const toast = useToast();
   const resolveLabels = useCardLabels(board?.labels ?? NO_LABELS);
   const resolveCards = useCardList(board?.cards ?? NO_CARDS);
+  const cardsById = board?.cards ?? NO_CARDS;
+  const getCard = useCallback(
+    (id: string) => cardById(cardsById, id),
+    [cardsById],
+  );
+  const backlogColumn = board?.columns[0];
+  const backlogColumnId = backlogColumn?.id;
+  const epicDrops = useMemo(
+    () =>
+      new Map(
+        [...(epics?.values() ?? [])]
+          .filter(({ epic }) => epic.status === "active")
+          .map((entry) => [entry.dropId, entry]),
+      ),
+    [epics],
+  );
   // One link index per *link signature* (TASK-46): a title edit must not
   // swap the index object out from under the memoized columns, while a
   // link add/remove (or an archive of a blocker) must. The memo is keyed
@@ -202,11 +251,8 @@ export function DndBoard({
     setDraftState(next);
   }, []);
 
-  // Keyboard cursor (j/k navigation): flat index over the visible cards —
-  // columns in board order, cards in (filtered) column order. `e`/Enter
-  // opens the cursor's card dialog. Cleared by Escape or when the board
-  // changes (the index belongs to one board's layout).
-  const [cursor, setCursor] = useState<number | null>(null);
+  // The cursor follows an id across changes to the visible row order.
+  const [cursor, setCursor] = useState<string | null>(null);
   const boardId = board?.id;
   useEffect(() => {
     setCursor(null);
@@ -229,7 +275,7 @@ export function DndBoard({
   // MultipleContainers preset: remember the last matched droppable so a
   // layout-shift frame (over === null right after a cross-column move) never
   // makes the card "fall out" of the target column mid-drag.
-  const lastOverIdRef = useRef<string | null>(null);
+  const lastOverIdRef = useRef<UniqueIdentifier | null>(null);
   const recentlyMovedRef = useRef(false);
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -256,8 +302,8 @@ export function DndBoard({
       if (current?.mode === "column") {
         return closestCenter({
           ...args,
-          droppableContainers: args.droppableContainers.filter((c) =>
-            columnIds.includes(String(c.id)),
+          droppableContainers: args.droppableContainers.filter(
+            (c) => typeof c.id === "string" && columnIds.includes(c.id),
           ),
         });
       }
@@ -267,32 +313,38 @@ export function DndBoard({
         pointerIntersections.length > 0
           ? pointerIntersections
           : rectIntersection(args);
-      let overId = getFirstCollision(intersections, "id");
+      const specialTarget = pointerIntersections.find(
+        ({ id }) => typeof id === "number",
+      );
+      const firstHit =
+        specialTarget?.id ?? getFirstCollision(intersections, "id");
 
-      if (overId != null) {
+      if (firstHit != null) {
         const columnCards =
-          current?.mode === "card"
-            ? current.columns[overId as string]
+          current?.mode === "card" &&
+          typeof firstHit === "string" &&
+          Object.hasOwn(current.columns, firstHit)
+            ? current.columns[firstHit]
             : undefined;
-        if (columnCards && columnCards.length > 0) {
-          // Column body hit — resolve to its closest card instead.
-          overId = closestCenter({
-            ...args,
-            droppableContainers: args.droppableContainers.filter((c) =>
-              columnCards.includes(String(c.id)),
-            ),
-          })[0]?.id;
-        }
-        if (overId != null) {
-          lastOverIdRef.current = String(overId);
-          return [{ id: overId }];
-        }
+        // A column body resolves to a mounted card when one is nearby.
+        const overId = columnCards?.length
+          ? (closestCenter({
+              ...args,
+              droppableContainers: args.droppableContainers.filter(
+                (c) => typeof c.id === "string" && columnCards.includes(c.id),
+              ),
+            })[0]?.id ?? firstHit)
+          : firstHit;
+        lastOverIdRef.current = overId;
+        return [{ id: overId }];
       }
 
       if (recentlyMovedRef.current && current?.mode === "card") {
         lastOverIdRef.current = current.activeCardId;
       }
-      return lastOverIdRef.current ? [{ id: lastOverIdRef.current }] : [];
+      return lastOverIdRef.current === null
+        ? []
+        : [{ id: lastOverIdRef.current }];
     },
     [board],
   );
@@ -309,7 +361,8 @@ export function DndBoard({
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
       if (!board || isFiltering || readOnly) return;
-      const id = event.active.id as string;
+      const id = event.active.id;
+      if (typeof id !== "string") return;
       const type = event.active.data.current?.type;
       lastOverIdRef.current = null;
       recentlyMovedRef.current = false;
@@ -340,7 +393,13 @@ export function DndBoard({
       const { active, over } = event;
       if (!over) return;
       const activeId = active.id as string;
-      const overId = over.id as string;
+      const overId = over.id;
+      // The epic header and Other cards separator are commit-only targets.
+      // Reparenting into a collapsed group mid-drag would remove its node.
+      if (typeof overId !== "string") {
+        setBlockedNotice(null);
+        return;
+      }
       if (activeId === overId) return;
 
       const current = draftRef.current;
@@ -381,12 +440,11 @@ export function DndBoard({
         current.columns[colId].includes(activeId),
       );
       if (!fromColId) return;
-      const toColId =
-        overId in current.columns
-          ? overId
-          : Object.keys(current.columns).find((colId) =>
-              current.columns[colId].includes(overId),
-            );
+      const toColId = Object.hasOwn(current.columns, overId)
+        ? overId
+        : Object.keys(current.columns).find((colId) =>
+            current.columns[colId].includes(overId),
+          );
       if (!toColId || fromColId === toColId) return;
 
       // A workflow-forbidden column keeps the card visually in its source
@@ -475,13 +533,24 @@ export function DndBoard({
       // firing while `over` stays the same card, so the draft alone can be
       // one slot stale — dragEnd's arrayMove fixes exactly that.
       const cols = current.columns;
-      const overId = event.over?.id as string | undefined;
-      if (!overId) return; // no valid target — the draft is discarded anyway
+      const overId = event.over?.id;
+      if (overId === undefined) return; // No valid target; discard the draft.
+      const epicTarget =
+        typeof overId === "number" ? epicDrops.get(overId) : undefined;
+      const otherTarget =
+        overId === OTHER_CARDS_DROP_ID && backlog !== undefined;
 
       const findCol = (id: string) =>
-        id in cols ? id : Object.keys(cols).find((c) => cols[c].includes(id));
+        Object.hasOwn(cols, id)
+          ? id
+          : Object.keys(cols).find((c) => cols[c].includes(id));
       const activeContainer = findCol(activeId);
-      const overContainer = findCol(overId);
+      const overContainer =
+        typeof overId === "string"
+          ? findCol(overId)
+          : epicTarget || otherTarget
+            ? backlogColumnId
+            : undefined;
       if (!activeContainer || !overContainer) return;
 
       const fromColumn = board.columns.find((col) =>
@@ -545,6 +614,79 @@ export function DndBoard({
         );
       };
 
+      if (typeof overId === "number") {
+        if (!dropColumn || !dropCard) return;
+        if (isWipBlocked(overContainer)) {
+          notifyWipBlocked(overContainer);
+          return;
+        }
+        if (epicTarget) {
+          if (
+            fromColumn.id === dropColumn.id &&
+            dropCard.epicId === epicTarget.epic.id
+          )
+            return;
+          const remaining = dropColumn.cardIds.filter((id) => id !== activeId);
+          let lastSibling = -1;
+          remaining.forEach((id, index) => {
+            if (getCard(id)?.epicId === epicTarget.epic.id) lastSibling = index;
+          });
+          moveCard(
+            activeId,
+            fromColumn.id,
+            overContainer,
+            lastSibling < 0 ? remaining.length : lastSibling + 1,
+            epicTarget.epic.id,
+          );
+        } else if (otherTarget && dropCard.epicId !== undefined) {
+          const remaining = dropColumn.cardIds.filter((id) => id !== activeId);
+          const index = remaining.findIndex((id) => {
+            const epicId = getCard(id)?.epicId;
+            return (
+              epicId === undefined ||
+              epics?.get(epicId)?.epic.status !== "active"
+            );
+          });
+          moveCard(
+            activeId,
+            fromColumn.id,
+            overContainer,
+            index < 0 ? remaining.length : index,
+            null,
+          );
+        } else if (otherTarget && fromColumn.id !== overContainer) {
+          moveCard(
+            activeId,
+            fromColumn.id,
+            overContainer,
+            dropColumn.cardIds.length,
+          );
+        }
+        return;
+      }
+
+      let nextEpicId: string | null | undefined;
+      if (
+        epics &&
+        dropCard &&
+        overContainer === backlogColumnId &&
+        overId !== activeId &&
+        !Object.hasOwn(cols, overId)
+      ) {
+        const hoveredEpicId = getCard(overId)?.epicId;
+        const hoveredEpic =
+          hoveredEpicId === undefined ? undefined : epics.get(hoveredEpicId);
+        if (hoveredEpic?.epic.status === "active") {
+          if (
+            fromColumn.id === backlogColumnId &&
+            dropCard.epicId !== hoveredEpicId
+          )
+            nextEpicId = hoveredEpicId;
+        } else if (dropCard.epicId !== undefined) {
+          nextEpicId = null;
+        }
+      }
+
       if (activeContainer === overContainer) {
         // The card already sits in the landed column (same-column reorder —
         // the draft never touched it — or an earlier cross-column hover).
@@ -562,11 +704,17 @@ export function DndBoard({
         const toIndex =
           overId === activeId
             ? activeIndex
-            : overId in cols
+            : Object.hasOwn(cols, overId)
               ? cols[overContainer].length
               : cols[overContainer].indexOf(overId);
         if (toIndex !== -1) {
-          moveCard(activeId, fromColumn.id, activeContainer, toIndex);
+          moveCard(
+            activeId,
+            fromColumn.id,
+            activeContainer,
+            toIndex,
+            nextEpicId,
+          );
         }
         return;
       }
@@ -580,10 +728,9 @@ export function DndBoard({
         overRect != null &&
         translated.top > overRect.top + overRect.height;
       const overItems = cols[overContainer];
-      const targetIndex =
-        overId in cols
-          ? overItems.length
-          : Math.max(0, overItems.indexOf(overId)) + (insertAfter ? 1 : 0);
+      const targetIndex = Object.hasOwn(cols, overId)
+        ? overItems.length
+        : Math.max(0, overItems.indexOf(overId)) + (insertAfter ? 1 : 0);
       if (isWipBlocked(overContainer)) {
         notifyWipBlocked(overContainer);
         return;
@@ -593,9 +740,24 @@ export function DndBoard({
         fromColumn.id,
         overContainer,
         Math.min(targetIndex, overItems.length),
+        nextEpicId,
       );
     },
-    [board, moveCard, moveColumn, updateDraft, toast, t, role, readOnly],
+    [
+      board,
+      moveCard,
+      moveColumn,
+      updateDraft,
+      toast,
+      t,
+      role,
+      readOnly,
+      epicDrops,
+      backlogColumnId,
+      backlog,
+      epics,
+      getCard,
+    ],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -616,22 +778,72 @@ export function DndBoard({
     [onCardClick],
   );
 
+  // Render columns in the live draft order while a column drag is active.
+  // Both memoized because `columnOrder` feeds `SortableContext items`:
+  // a fresh array there changes dnd-kit's sortable context on every render,
+  // and that re-renders every `useSortable` consumer — every column and
+  // every card — straight through their `memo` (TASK-21.4.1).
+  const columnOrder = useMemo(
+    () =>
+      draft?.mode === "column"
+        ? draft.columnOrder
+        : (board?.columns ?? NO_COLUMNS).map((col) => col.id),
+    [draft, board?.columns],
+  );
+  const columnsById = useMemo(
+    () => new Map((board?.columns ?? NO_COLUMNS).map((col) => [col.id, col])),
+    [board?.columns],
+  );
+
+  const flatCardIds = useMemo(
+    () =>
+      columnOrder.flatMap(
+        (id) =>
+          (id === backlogColumnId ? backlog?.cardIds : undefined) ??
+          filteredCardIds?.[id] ??
+          columnsById.get(id)?.cardIds ??
+          [],
+      ),
+    [columnOrder, backlogColumnId, backlog, filteredCardIds, columnsById],
+  );
+  const cursorCardId =
+    cursor !== null && flatCardIds.includes(cursor) ? cursor : undefined;
+  const displayedBacklog = useMemo(() => {
+    if (
+      !backlog ||
+      !epics ||
+      !epicCollapse ||
+      !backlogColumnId ||
+      draft?.mode !== "card"
+    )
+      return backlog;
+    return buildBacklogRows(
+      epics,
+      cardsById,
+      draft.columns[backlogColumnId] ?? [],
+      epicCollapse,
+      density === "compact",
+      undefined,
+      readOnly,
+    );
+  }, [
+    backlog,
+    epics,
+    epicCollapse,
+    backlogColumnId,
+    draft,
+    cardsById,
+    density,
+    readOnly,
+  ]);
+
   // j/k navigate the visible cards, e/Enter open the cursor's dialog,
   // n opens a composer (cursor's column, else the first), c opens the
   // column composer, Escape clears the cursor. The overlay itself lives in
-  // ShortcutsDialog ("?"). Hooks stay above the `!board` early return, so
-  // the visible-card derivation is repeated here for the keydown closure.
+  // ShortcutsDialog ("?").
   useEffect(() => {
     if (!board) return;
-    const order =
-      draft?.mode === "column"
-        ? draft.columnOrder
-        : board.columns.map((col) => col.id);
-    const columns = new Map(board.columns.map((col) => [col.id, col]));
-    const flatCardIds = order.flatMap(
-      (colId) => filteredCardIds?.[colId] ?? columns.get(colId)?.cardIds ?? [],
-    );
-    const focusedCardId = cursor !== null ? flatCardIds[cursor] : undefined;
+    const focusedCardId = cursorCardId;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing)
         return;
@@ -644,11 +856,14 @@ export function DndBoard({
         setCursor((prev) => {
           const total = flatCardIds.length;
           if (total === 0) return null;
-          if (prev === null) return code === "KeyJ" ? 0 : total - 1;
-          return Math.min(
-            Math.max(code === "KeyJ" ? prev + 1 : prev - 1, 0),
-            total - 1,
-          );
+          const index = prev === null ? -1 : flatCardIds.indexOf(prev);
+          if (index === -1) return flatCardIds[code === "KeyJ" ? 0 : total - 1];
+          return flatCardIds[
+            Math.min(
+              Math.max(code === "KeyJ" ? index + 1 : index - 1, 0),
+              total - 1,
+            )
+          ];
         });
       } else if (
         (code === "KeyX" || shortcutLetterCode(event) === "KeyX") &&
@@ -677,17 +892,21 @@ export function DndBoard({
         event.preventDefault();
         const columnId =
           (focusedCardId &&
-            order.find((colId) =>
+            columnOrder.find((colId) =>
               (
                 filteredCardIds?.[colId] ??
-                columns.get(colId)?.cardIds ??
+                columnsById.get(colId)?.cardIds ??
                 []
               ).includes(focusedCardId),
             )) ||
-          order[0];
-        document
-          .querySelector<HTMLElement>(`[data-composer-trigger="${columnId}"]`)
-          ?.click();
+          columnOrder[0];
+        const trigger = document.querySelector<HTMLElement>(
+          `[data-composer-trigger="${columnId}"]`,
+        );
+        if (backlog && columnId === backlogColumnId) {
+          trigger?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        }
+        trigger?.click();
       } else if (code === "KeyC" && !readOnly) {
         event.preventDefault();
         document
@@ -699,34 +918,23 @@ export function DndBoard({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [board, draft, cursor, filteredCardIds, onCardClick, readOnly, selection]);
-
-  // Render columns in the live draft order while a column drag is active.
-  // Both memoized because `columnOrder` feeds `SortableContext items`:
-  // a fresh array there changes dnd-kit's sortable context on every render,
-  // and that re-renders every `useSortable` consumer — every column and
-  // every card — straight through their `memo` (TASK-21.4.1).
-  const columnOrder = useMemo(
-    () =>
-      draft?.mode === "column"
-        ? draft.columnOrder
-        : (board?.columns ?? NO_COLUMNS).map((col) => col.id),
-    [draft, board?.columns],
-  );
-  const columnsById = useMemo(
-    () => new Map((board?.columns ?? NO_COLUMNS).map((col) => [col.id, col])),
-    [board?.columns],
-  );
+  }, [
+    board,
+    draft,
+    cursor,
+    cursorCardId,
+    flatCardIds,
+    backlog,
+    backlogColumnId,
+    columnOrder,
+    columnsById,
+    filteredCardIds,
+    onCardClick,
+    readOnly,
+    selection,
+  ]);
 
   if (!board) return null;
-
-  // Flat list of visible card ids (columns in order, filtered column
-  // contents) — the coordinate space of the j/k keyboard cursor.
-  const visibleCardIds = columnOrder.flatMap(
-    (colId) =>
-      filteredCardIds?.[colId] ?? columnsById.get(colId)?.cardIds ?? [],
-  );
-  const cursorCardId = cursor !== null ? visibleCardIds[cursor] : undefined;
 
   const draggedCard =
     draft?.mode === "card" ? board.cards[draft.activeCardId] : undefined;
@@ -754,7 +962,10 @@ export function DndBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto pb-4">
+      <div
+        className="flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto pb-4"
+        style={backlog ? EPIC_THEME : undefined}
+      >
         <p className="sr-only" role="status">
           {blockedNotice ?? ""}
         </p>
@@ -792,6 +1003,16 @@ export function DndBoard({
                 boardId={board.id}
                 cards={resolveCards(column, override ?? column.cardIds)}
                 labels={board.labels}
+                backlog={
+                  columnId === backlogColumnId ? displayedBacklog : undefined
+                }
+                epics={epics}
+                epicCollapse={
+                  columnId === backlogColumnId ? epicCollapse : undefined
+                }
+                getCard={
+                  columnId === backlogColumnId && backlog ? getCard : undefined
+                }
                 linkIndex={linkIndex}
                 overridden={override !== undefined}
                 isFiltered={isFiltering}
@@ -822,9 +1043,12 @@ export function DndBoard({
         )}
       </div>
 
-      <DragOverlay>
+      <DragOverlay className="pointer-events-none">
         {activeCard ? (
-          <div className="rotate-3 cursor-grabbing">
+          <div
+            data-testid="card-drag-overlay"
+            className="rotate-3 cursor-grabbing"
+          >
             <CardItem
               card={activeCard}
               labels={activeLabels}

@@ -1,12 +1,13 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { memo } from "react";
+import { memo, type TouchEvent } from "react";
 
-import { CardItem } from "@/components/board/CardItem";
+import { CardItem, type CardEpicChip } from "@/components/board/CardItem";
 import type { CardLinkFacts } from "@/utils/links";
 import type { Card, Label } from "@janosik/shared";
 
 interface SortableCardProps {
+  epicChip?: CardEpicChip;
   card: Card;
   /** The board id — resolves the assignee badge's member (TASK-49). */
   boardId?: string;
@@ -49,6 +50,7 @@ interface SortableCardProps {
  */
 function SortableCardView({
   card,
+  epicChip,
   boardId,
   labels,
   highlight,
@@ -77,6 +79,11 @@ function SortableCardView({
     // `role="button"`/`tabIndex` dnd-kit adds, so cards are not announced as
     // buttons and the keyboard can reach the card's own controls.
   } = useSortable({ id: card.id, data: { type: "card" }, disabled: readOnly });
+  const {
+    onTouchStart,
+    ...wrapperListeners
+  }: { onTouchStart?: (event: TouchEvent<HTMLElement>) => void } =
+    listeners ?? {};
 
   return (
     <div
@@ -94,7 +101,7 @@ function SortableCardView({
         transition: isDragging ? undefined : transition,
       }}
       {...(readOnly ? {} : attributes)}
-      {...(readOnly ? {} : listeners)}
+      {...(readOnly ? {} : wrapperListeners)}
       // dnd-kit marks the wrapper `role="button"`; the card face already is
       // a button and carries its own controls, so nested buttons were
       // announced (TASK-152, C17). Keep focusability/keys and the
@@ -128,6 +135,8 @@ function SortableCardView({
     >
       <CardItem
         card={card}
+        onTouchDragStart={readOnly ? undefined : onTouchStart}
+        epicChip={epicChip}
         boardId={boardId}
         labels={labels}
         isDragging={isDragging}

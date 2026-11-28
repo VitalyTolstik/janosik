@@ -1045,6 +1045,19 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
       cardId: "card-3",
       at,
     });
+    state = boardReducer(state, {
+      type: "ADD_EPIC",
+      epic: {
+        id: "epic-1",
+        title: "Epic",
+        color: "rose",
+        status: "active",
+        position: 0,
+        createdAt: at,
+        updatedAt: at,
+      },
+      at,
+    });
     const before = state[0];
     const labelId = before.labels[0].id;
     const commands: BoardAction[] = [
@@ -1065,6 +1078,16 @@ describe("validateBoardAction — rebuilds the action (S-4)", () => {
         fromIndex: 0,
         toColumnId: "col-done",
         toIndex: 0,
+        at,
+      },
+      {
+        type: "MOVE_CARD",
+        cardId: "card-1",
+        fromColumnId: "col-backlog",
+        fromIndex: 0,
+        toColumnId: "col-done",
+        toIndex: 0,
+        epicId: "epic-1",
         at,
       },
       {

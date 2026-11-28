@@ -22,6 +22,7 @@ function AddCardZoneBody({
   onInsert,
   interactive = true,
   touchVisible = false,
+  fixedHeight = false,
 }: {
   index: number;
   /** Receives the gap index, so one stable handler serves every zone. */
@@ -33,6 +34,7 @@ function AddCardZoneBody({
    *  end zone (and the empty-column one) is the only card-creation path
    *  on touch, so it renders as a persistent ghost instead. */
   touchVisible?: boolean;
+  fixedHeight?: boolean;
 }) {
   const { t } = useI18n();
   if (!interactive) {
@@ -42,7 +44,10 @@ function AddCardZoneBody({
     <li
       data-testid={`card-insert-zone-${index}`}
       className={cn(
-        "group/zone flex h-2 shrink-0 items-center transition-[height] duration-200 hover:delay-150 hover:h-8",
+        "group/zone flex h-2 shrink-0 items-center",
+        fixedHeight
+          ? "relative z-10"
+          : "transition-[height] duration-200 hover:delay-150 hover:h-8",
         touchVisible && "no-hover:h-8",
       )}
     >
@@ -57,6 +62,7 @@ function AddCardZoneBody({
         onClick={onInsert ? () => onInsert(index) : undefined}
         className={cn(
           "pointer-events-none flex h-8 w-full items-center gap-1.5 rounded-lg px-2 text-ui-body text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/zone:pointer-events-auto group-hover/zone:delay-150 group-hover/zone:opacity-100 hover:bg-hover/60 hover:text-foreground",
+          fixedHeight && "absolute inset-x-0 top-0 bg-card shadow-sm",
           touchVisible && "no-hover:pointer-events-auto no-hover:opacity-100",
         )}
       >

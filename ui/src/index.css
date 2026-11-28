@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source("./");
 /* Brand tokens (colour / shape / type / motion) — single source of truth in
    the `brand/` workspace, mirrored in `brand/src/tokens.ts`. */
 @import "../../brand/src/tokens.css";
@@ -29,6 +29,11 @@
    Without this the chips silently lost their colors wherever the class was
    not repeated in ui/ (23 utilities: text-pink, bg-success/15, …). */
 @source "../../shared/src";
+/* Test fixtures contain class names that never render in the app. */
+@source not "./**/*.test.{ts,tsx}";
+@source not "./test";
+@source not "./admin/test";
+@source not "../../shared/src/**/*.test.ts";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -279,6 +284,11 @@ html.light {
   --chip-pink: #9d174d;
   --chip-slate: #334155;
   --chip-warning: #92400e;
+}
+
+.backlog-child {
+  background: linear-gradient(var(--epic-border), var(--epic-border)) 6px 0 /
+    1px 100% no-repeat var(--epic-surface);
 }
 
 /* Filled action tokens (TASK-177.20 UI review).

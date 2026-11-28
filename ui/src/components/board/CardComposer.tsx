@@ -19,6 +19,7 @@ interface CardComposerProps {
   /** Board labels to offer inline — picked before the card is created. */
   labels?: Label[];
   placeholder?: string;
+  inputLabel?: string;
   /**
    * Column id exposed as `data-composer-trigger` on the idle button —
    * the `n` shortcut opens the composer by "clicking" this trigger.
@@ -49,6 +50,7 @@ export function CardComposer({
   onSubmit,
   labels,
   placeholder,
+  inputLabel,
   columnId,
   disabled,
   disabledReason,
@@ -140,6 +142,7 @@ export function CardComposer({
       <Textarea
         autoFocus
         name="card-composer"
+        aria-label={inputLabel}
         value={title}
         maxLength={LIMITS.cardTitle}
         onChange={(event) => setTitle(event.target.value)}

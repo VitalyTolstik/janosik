@@ -1,6 +1,7 @@
 import {
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type RefObject,
@@ -50,28 +51,83 @@ interface CardWindow {
   range: CardWindowRange;
   /** Scroll the column so the card at `index` is visible. */
   scrollToIndex: (index: number) => void;
+  offsetAt: (index: number) => number;
 }
 
-function computeRange(
+export interface WindowRow {
+  key: string;
+  height: number;
+}
+
+export function rowOffsets(rows: readonly WindowRow[]): number[] {
+  const offsets = [0];
+  for (const row of rows)
+    offsets.push(offsets[offsets.length - 1] + row.height);
+  return offsets;
+}
+
+function rowAt(offsets: readonly number[], pixel: number): number {
+  let lo = 0;
+  let hi = offsets.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (offsets[mid] <= pixel) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+export function computeRange(
   count: number,
   scrollTop: number,
   viewportHeight: number,
   rowHeight: number,
+  offsets?: readonly number[],
 ): CardWindowRange {
-  const totalHeight = count * rowHeight;
-  // A shrinking column can leave a stale scrollTop above the new maximum
-  // until the browser settles it; clamp here so the window never goes blank.
+  const totalHeight = offsets?.[count] ?? count * rowHeight;
+  // Clamp a stale scroll offset after rows are removed.
   const top = Math.min(
     Math.max(0, scrollTop - LIST_PADDING_TOP),
     Math.max(0, totalHeight - viewportHeight),
   );
+  const bottom = top + viewportHeight;
+  const bottomIndex = offsets ? rowAt(offsets, bottom) : undefined;
   return {
-    start: Math.max(0, Math.floor(top / rowHeight) - OVERSCAN),
+    start: Math.max(
+      0,
+      (offsets ? rowAt(offsets, top) : Math.floor(top / rowHeight)) - OVERSCAN,
+    ),
     end: Math.min(
       count,
-      Math.ceil((top + viewportHeight) / rowHeight) + OVERSCAN,
+      (offsets && bottomIndex !== undefined
+        ? bottomIndex + (offsets[bottomIndex] < bottom ? 1 : 0)
+        : Math.ceil(bottom / rowHeight)) + OVERSCAN,
     ),
   };
+}
+
+export function anchoredScrollTop(
+  previous: readonly WindowRow[],
+  previousOffsets: readonly number[],
+  next: readonly WindowRow[],
+  nextOffsets: readonly number[],
+  scrollTop: number,
+): number {
+  if (scrollTop <= LIST_PADDING_TOP || next.length === 0) return scrollTop;
+  const first = Math.min(
+    previous.length - 1,
+    rowAt(previousOffsets, scrollTop - LIST_PADDING_TOP),
+  );
+  const byKey = new Map(next.map(({ key }, index) => [key, index]));
+  for (let index = first; index >= 0; index--) {
+    const target = byKey.get(previous[index].key);
+    if (target !== undefined) {
+      return index === first
+        ? Math.max(0, nextOffsets[target] + scrollTop - previousOffsets[index])
+        : nextOffsets[target] + LIST_PADDING_TOP;
+    }
+  }
+  return 0;
 }
 
 /**
@@ -94,8 +150,15 @@ function computeRange(
 export function useCardWindow(
   count: number,
   rowHeight: number = CARD_ROW_HEIGHT,
+  rows?: readonly WindowRow[],
 ): CardWindow {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const offsets = useMemo(() => rows && rowOffsets(rows), [rows]);
+  const previous = useRef<{ rows: readonly WindowRow[]; offsets: number[] }>();
+  const offsetAt = useCallback(
+    (index: number) => offsets?.[index] ?? index * rowHeight,
+    [offsets, rowHeight],
+  );
   const [viewport, setViewport] = useState({
     scrollTop: 0,
     height: INITIAL_VIEWPORT_HEIGHT,
@@ -124,26 +187,48 @@ export function useCardWindow(
     return () => observer.disconnect();
   }, [readViewport]);
 
+  useLayoutEffect(() => {
+    const old = previous.current;
+    previous.current = rows && offsets ? { rows, offsets } : undefined;
+    const el = scrollRef.current;
+    if (!el || !old || !rows || !offsets || old.rows === rows) return;
+    el.scrollTop = anchoredScrollTop(
+      old.rows,
+      old.offsets,
+      rows,
+      offsets,
+      viewport.scrollTop,
+    );
+    readViewport();
+  }, [rows, offsets, viewport.scrollTop, readViewport]);
+
   const scrollToIndex = useCallback(
     (index: number) => {
       const el = scrollRef.current;
       if (!el) return;
       const height = el.clientHeight || INITIAL_VIEWPORT_HEIGHT;
-      const top = LIST_PADDING_TOP + index * rowHeight;
-      const bottom = top + rowHeight;
+      const top = LIST_PADDING_TOP + offsetAt(index);
+      const bottom = LIST_PADDING_TOP + offsetAt(index + 1);
       if (top >= el.scrollTop && bottom <= el.scrollTop + height) return;
 
       const nextTop = top < el.scrollTop ? top : bottom - height;
       el.scrollTop = nextTop;
       setViewport({ scrollTop: nextTop, height });
     },
-    [rowHeight],
+    [offsetAt],
   );
 
   return {
     scrollRef,
     onScroll: readViewport,
-    range: computeRange(count, viewport.scrollTop, viewport.height, rowHeight),
+    range: computeRange(
+      count,
+      viewport.scrollTop,
+      viewport.height,
+      rowHeight,
+      offsets,
+    ),
     scrollToIndex,
+    offsetAt,
   };
 }
